@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "llm-orc"
+version = "0.1.0"
+description = "Multi-agent LLM communication system with flexible role definitions"
+authors = [
+    {name = "Nathan Green", email = "contact@nate.green"},
+]
+dependencies = [
+    "asyncio",
+    "websockets",
+    "aiohttp",
+    "pydantic",
+    "mcp",
+    "anthropic",
+    "google-generativeai",
+    "ollama",
+    "pytest",
+    "pytest-asyncio",
+]
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "ruff",
+    "mypy",
+    "pytest-cov",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "PT"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "--cov=llm_orc --cov-report=term-missing"
