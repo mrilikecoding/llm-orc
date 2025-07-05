@@ -1,12 +1,13 @@
 """Test suite for the flexible role system."""
 
 import pytest
+
 from llm_orc.roles import RoleDefinition, RoleManager
 
 
 class TestRoleDefinition:
     """Test role definition creation and validation."""
-    
+
     def test_create_basic_role(self):
         """Should create a basic role with name and prompt."""
         role = RoleDefinition(
@@ -15,7 +16,7 @@ class TestRoleDefinition:
         )
         assert role.name == "engineer"
         assert "senior software engineer" in role.prompt
-        
+
     def test_create_role_with_context(self):
         """Should create role with additional context and capabilities."""
         role = RoleDefinition(
@@ -34,7 +35,7 @@ class TestRoleDefinition:
 
 class TestRoleManager:
     """Test role management and retrieval."""
-    
+
     def test_register_role(self):
         """Should register a new role."""
         manager = RoleManager()
@@ -44,7 +45,7 @@ class TestRoleManager:
         )
         manager.register_role(role)
         assert "designer" in manager.roles
-        
+
     def test_get_role(self):
         """Should retrieve registered role."""
         manager = RoleManager()
@@ -56,9 +57,10 @@ class TestRoleManager:
         retrieved = manager.get_role("artist")
         assert retrieved.name == "artist"
         assert "creative artist" in retrieved.prompt
-        
+
     def test_get_nonexistent_role_raises_error(self):
         """Should raise error for non-existent role."""
         manager = RoleManager()
         with pytest.raises(KeyError):
             manager.get_role("nonexistent")
+
