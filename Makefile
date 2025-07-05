@@ -2,33 +2,34 @@
 
 # Development commands
 setup:
-	pip install -e ".[dev]"
+	uv sync
 
 test:
-	pytest
+	uv run pytest
 
 lint:
-	ruff check src tests
-	mypy src tests
+	uv run ruff check src tests
+	uv run mypy src tests
 
 format:
-	black src tests
-	ruff --fix src tests
+	uv run black src tests
+	uv run ruff --fix src tests
 
 clean:
-	rm -rf build/ dist/ *.egg-info/
+	rm -rf build/ dist/ *.egg-info/ .venv/
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
+	uv clean
 
 install:
-	pip install -e .
+	uv sync --no-dev
 
 # TDD cycle helpers
 red:
-	pytest --tb=short -v
+	uv run pytest --tb=short -v
 
 green:
-	pytest --tb=short
+	uv run pytest --tb=short
 
 refactor:
-	pytest --tb=short && make lint
+	uv run pytest --tb=short && make lint

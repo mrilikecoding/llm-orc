@@ -23,13 +23,6 @@ dependencies = [
 ]
 requires-python = ">=3.11"
 
-[project.optional-dependencies]
-dev = [
-    "black",
-    "ruff",
-    "mypy",
-    "pytest-cov",
-]
 
 [tool.black]
 line-length = 88
@@ -50,3 +43,11 @@ warn_unused_configs = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "--cov=llm_orc --cov-report=term-missing"
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+    "mypy>=1.16.1",
+    "pytest-cov>=6.2.1",
+    "ruff>=0.12.2",
+]
