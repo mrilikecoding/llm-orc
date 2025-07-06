@@ -54,32 +54,80 @@ make clean         # Clean build artifacts
 
 ## Usage
 
+### Quick Start: Single Agent
+
 ```python
-from llm_orc.roles import RoleDefinition, RoleManager
-from llm_orc.models import ClaudeModel, ModelManager
+from llm_orc.orchestration import Agent
+from llm_orc.models import OllamaModel
+from llm_orc.roles import RoleDefinition
+import asyncio
 
-# Define agent roles
-shakespeare = RoleDefinition(
-    name="shakespeare",
-    prompt="You are William Shakespeare, the renowned playwright.",
-    context={"era": "Elizabethan", "specialties": ["poetry", "drama"]}
-)
+async def main():
+    # Create agent
+    role = RoleDefinition(
+        name="assistant",
+        prompt="You are a helpful assistant."
+    )
+    model = OllamaModel(model_name="llama3")
+    agent = Agent("assistant", role, model)
+    
+    # Get response
+    response = await agent.respond_to_message("What is machine learning?")
+    print(f"Agent: {response}")
 
-engineer = RoleDefinition(
-    name="engineer", 
-    prompt="You are a senior software engineer focused on clean code and TDD."
-)
-
-# Set up models
-claude = ClaudeModel(api_key="your-api-key")
-models = ModelManager()
-models.register_model("claude", claude)
-
-# Create role manager
-roles = RoleManager()
-roles.register_role(shakespeare)
-roles.register_role(engineer)
+asyncio.run(main())
 ```
+
+### Multi-Agent Conversation
+
+```python
+from llm_orc.orchestration import Agent, ConversationOrchestrator
+
+async def conversation_example():
+    # Create agents
+    shakespeare = Agent("shakespeare", shakespeare_role, ollama_model)
+    einstein = Agent("einstein", einstein_role, ollama_model)
+    
+    # Orchestrate conversation
+    orchestrator = ConversationOrchestrator()
+    orchestrator.register_agent(shakespeare)
+    orchestrator.register_agent(einstein)
+    
+    conversation_id = await orchestrator.start_conversation(
+        participants=["shakespeare", "einstein"],
+        topic="Art and Science"
+    )
+    
+    response = await orchestrator.send_agent_message(
+        sender="shakespeare",
+        recipient="einstein",
+        content="What is the nature of beauty in mathematics?",
+        conversation_id=conversation_id
+    )
+    
+    print(f"Einstein: {response}")
+
+asyncio.run(conversation_example())
+```
+
+### PR Review Example
+
+```python
+# Review a GitHub PR with specialist agents
+python examples/pr_review_with_gh_cli.py https://github.com/owner/repo/pull/123
+```
+
+## Documentation
+
+- **[Agent Orchestration Guide](docs/agent_orchestration.md)** - Comprehensive guide to multi-agent conversations
+- **[Examples Directory](examples/)** - Practical examples and use cases
+- **[API Reference](src/llm_orc/)** - Core module documentation
+
+## Examples
+
+- `examples/shakespeare_einstein_conversation.py` - Historical figure dialogue
+- `examples/pr_review_with_gh_cli.py` - GitHub PR review with specialist agents
+- `tests/test_agent_orchestration.py` - Testing patterns and usage examples
 
 ## Development Status
 
