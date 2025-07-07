@@ -38,6 +38,13 @@ class TestEnsembleExecutor:
             "Agent 1 response: This looks good",
             "Agent 2 response: I found some issues"
         ]
+        mock_model.get_last_usage.return_value = {
+            "total_tokens": 30,
+            "input_tokens": 20,
+            "output_tokens": 10,
+            "cost_usd": 0.005,
+            "duration_ms": 50
+        }
         
         # Create role definitions
         role1 = RoleDefinition(name="tester", prompt="You are a tester")
@@ -49,6 +56,18 @@ class TestEnsembleExecutor:
         # Mock the role and model loading
         executor._load_role = AsyncMock(side_effect=[role1, role2])
         executor._load_model = AsyncMock(return_value=mock_model)
+        
+        # Create mock synthesis model
+        mock_synthesis_model = AsyncMock(spec=ModelInterface)
+        mock_synthesis_model.generate_response.return_value = "Synthesis: Combined results from both agents"
+        mock_synthesis_model.get_last_usage.return_value = {
+            "total_tokens": 50,
+            "input_tokens": 30,
+            "output_tokens": 20,
+            "cost_usd": 0.01,
+            "duration_ms": 100
+        }
+        executor._get_synthesis_model = AsyncMock(return_value=mock_synthesis_model)
         
         # Execute ensemble
         result = await executor.execute(config, input_data="Test this code")
@@ -91,9 +110,23 @@ class TestEnsembleExecutor:
         # Mock different models
         claude_model = AsyncMock(spec=ModelInterface)
         claude_model.generate_response.return_value = "Claude analysis result"
+        claude_model.get_last_usage.return_value = {
+            "total_tokens": 40,
+            "input_tokens": 25,
+            "output_tokens": 15,
+            "cost_usd": 0.008,
+            "duration_ms": 80
+        }
         
         llama_model = AsyncMock(spec=ModelInterface)
         llama_model.generate_response.return_value = "Llama check result"
+        llama_model.get_last_usage.return_value = {
+            "total_tokens": 25,
+            "input_tokens": 15,
+            "output_tokens": 10,
+            "cost_usd": 0.003,
+            "duration_ms": 60
+        }
         
         # Mock role
         analyst_role = RoleDefinition(name="analyst", prompt="Analyze this")
@@ -102,6 +135,18 @@ class TestEnsembleExecutor:
         executor = EnsembleExecutor()
         executor._load_role = AsyncMock(side_effect=[analyst_role, checker_role])
         executor._load_model = AsyncMock(side_effect=[claude_model, llama_model])
+        
+        # Create mock synthesis model
+        mock_synthesis_model = AsyncMock(spec=ModelInterface)
+        mock_synthesis_model.generate_response.return_value = "Synthesis: The analysis and check both confirm the feature is solid"
+        mock_synthesis_model.get_last_usage.return_value = {
+            "total_tokens": 35,
+            "input_tokens": 20,
+            "output_tokens": 15,
+            "cost_usd": 0.006,
+            "duration_ms": 70
+        }
+        executor._get_synthesis_model = AsyncMock(return_value=mock_synthesis_model)
         
         result = await executor.execute(config, input_data="Analyze this feature")
         
