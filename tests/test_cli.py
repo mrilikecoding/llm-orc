@@ -1,7 +1,6 @@
 """Tests for CLI interface."""
 
 import tempfile
-from pathlib import Path
 
 import yaml
 from click.testing import CliRunner
@@ -68,10 +67,10 @@ class TestCLI:
                 "agents": [{"name": "agent1", "role": "tester", "model": "claude-3-sonnet"}],
                 "coordinator": {"synthesis_prompt": "Test", "output_format": "json"}
             }
-            
+
             with open(f"{temp_dir}/test_ensemble.yaml", 'w') as f:
                 yaml.dump(ensemble, f)
-            
+
             runner = CliRunner()
             result = runner.invoke(cli, ["list-ensembles", "--config-dir", temp_dir])
             assert result.exit_code == 0
@@ -91,10 +90,10 @@ class TestCLI:
                 ],
                 "coordinator": {"synthesis_prompt": "Combine results", "output_format": "json"}
             }
-            
+
             with open(f"{temp_dir}/working_ensemble.yaml", 'w') as f:
                 yaml.dump(ensemble, f)
-            
+
             runner = CliRunner()
             result = runner.invoke(cli, ["invoke", "--config-dir", temp_dir, "working_ensemble"])
             # Should now succeed and show execution results (using JSON output)
