@@ -1,12 +1,26 @@
 # LLM Orchestra
 
-Multi-agent LLM communication system with flexible role definitions and MCP integration.
+A multi-agent LLM communication system for ensemble orchestration and intelligent analysis.
+
+## Overview
+
+LLM Orchestra lets you coordinate multiple AI agents for complex analysis tasks. Run code reviews with security and performance specialists, analyze architecture decisions from multiple angles, or get systematic coverage of any multi-faceted problem.
+
+Mix expensive cloud models with free local models - use Claude for strategic insights while Llama3 handles systematic analysis tasks.
+
+## Key Features
+
+- **Multi-Agent Ensembles**: Coordinate specialized agents for different aspects of analysis
+- **Cost Optimization**: Mix expensive and free models based on what each task needs
+- **CLI Interface**: Simple commands with piping support (`cat code.py | llm-orc invoke code-review`)
+- **YAML Configuration**: Easy ensemble setup with readable config files
+- **Usage Tracking**: Token counting, cost estimation, and timing metrics
 
 ## Installation
 
 ### For End Users
 ```bash
-pip install llm-orc
+pip install llm-orchestra
 ```
 
 ### For Development
@@ -15,120 +29,115 @@ pip install llm-orc
 git clone https://github.com/mrilikecoding/llm-orc.git
 cd llm-orc
 
-# Install uv (if not already installed)
-pip install uv
-
-# Set up development environment
-make setup
-# or manually: uv sync
+# Install with development dependencies
+uv sync --dev
 ```
 
-## Development Workflow
+## Quick Start
 
-### Running Tests
+### 1. Create an Ensemble Configuration
+
+Create `~/.llm-orc/ensembles/code-review.yaml`:
+
+```yaml
+name: code-review
+description: Multi-perspective code review ensemble
+
+agents:
+  - name: security-reviewer
+    role: security-analyst
+    model: llama3
+    timeout_seconds: 60
+
+  - name: performance-reviewer
+    role: performance-analyst  
+    model: llama3
+    timeout_seconds: 60
+
+coordinator:
+  synthesis_prompt: |
+    You are a senior engineering lead. Synthesize the security and performance 
+    analysis into actionable recommendations.
+  output_format: json
+  timeout_seconds: 90
+```
+
+### 2. Invoke an Ensemble
+
 ```bash
-make test          # Run all tests with coverage
-make red           # Run tests with verbose output (TDD Red phase)
-make green         # Run tests with short output (TDD Green phase)  
-make refactor      # Run tests + linting (TDD Refactor phase)
+# Analyze code from a file
+cat mycode.py | llm-orc invoke code-review
+
+# Or provide input directly
+llm-orc invoke code-review --input "Review this function: def add(a, b): return a + b"
+
+# JSON output for integration
+llm-orc invoke code-review --input "..." --output-format json
+
+# List available ensembles
+llm-orc list-ensembles
 ```
 
-### Code Quality
+## Use Cases
+
+### Code Review
+Get systematic analysis across security, performance, and maintainability dimensions. Each agent focuses on their specialty while synthesis provides actionable recommendations.
+
+### Architecture Review  
+Analyze system designs from scalability, security, performance, and reliability perspectives. Identify bottlenecks and suggest architectural patterns.
+
+### Product Strategy
+Evaluate business decisions from market, financial, competitive, and user experience angles. Get comprehensive analysis for complex strategic choices.
+
+### Research Analysis
+Systematic literature review, methodology evaluation, or multi-dimensional analysis of research questions.
+
+## Model Support
+
+- **Claude** (Anthropic) - Strategic analysis and synthesis
+- **Gemini** (Google) - Multi-modal and reasoning tasks  
+- **Ollama** - Local deployment of open-source models (Llama3, etc.)
+- **Custom models** - Extensible interface for additional providers
+
+## Configuration
+
+Ensemble configurations support:
+
+- **Agent specialization** with role-specific prompts
+- **Timeout management** per agent and coordinator
+- **Model selection** with local and cloud options
+- **Synthesis strategies** for combining agent outputs
+- **Output formatting** (text, JSON) for integration
+
+## Cost Optimization
+
+- **Local models** (free) for systematic analysis tasks
+- **Cloud models** (paid) reserved for strategic insights
+- **Usage tracking** shows exactly what each analysis costs
+- **Intelligent routing** based on task complexity
+
+## Development
+
 ```bash
-make lint          # Run linting checks
-make format        # Format code with black and ruff
+# Run tests
+uv run pytest
+
+# Run linting
+uv run ruff check .
+uv run black --check .
+
+# Type checking
+uv run mypy src/llm_orc
 ```
 
-### Other Commands
-```bash
-make clean         # Clean build artifacts
-```
+## Research
 
-## Architecture
+This project includes comparative analysis of multi-agent vs single-agent approaches. See [docs/ensemble_vs_single_agent_analysis.md](docs/ensemble_vs_single_agent_analysis.md) for detailed findings.
 
-- **Flexible Role System**: Define custom agent personas (Shakespeare, Einstein, engineer, dancer, etc.)
-- **Multi-Model Support**: Claude, Gemini, local models via Ollama
-- **MCP Integration**: Client and server capabilities for external resources
-- **Real-time Communication**: WebSocket-based agent interaction
-- **Extensible Design**: Plugin architecture for custom roles and models
+## Philosophy
 
-## Usage
+**Reduce toil, don't replace creativity.** Use AI to handle systematic, repetitive analysis while preserving human creativity and strategic thinking.
 
-### Quick Start: Single Agent
+## License
 
-```python
-from llm_orc.orchestration import Agent
-from llm_orc.models import OllamaModel
-from llm_orc.roles import RoleDefinition
-import asyncio
-
-async def main():
-    # Create agent
-    role = RoleDefinition(
-        name="assistant",
-        prompt="You are a helpful assistant."
-    )
-    model = OllamaModel(model_name="llama3")
-    agent = Agent("assistant", role, model)
-    
-    # Get response
-    response = await agent.respond_to_message("What is machine learning?")
-    print(f"Agent: {response}")
-
-asyncio.run(main())
-```
-
-### Multi-Agent Conversation
-
-```python
-from llm_orc.orchestration import Agent, ConversationOrchestrator
-
-async def conversation_example():
-    # Create agents
-    shakespeare = Agent("shakespeare", shakespeare_role, ollama_model)
-    einstein = Agent("einstein", einstein_role, ollama_model)
-    
-    # Orchestrate conversation
-    orchestrator = ConversationOrchestrator()
-    orchestrator.register_agent(shakespeare)
-    orchestrator.register_agent(einstein)
-    
-    conversation_id = await orchestrator.start_conversation(
-        participants=["shakespeare", "einstein"],
-        topic="Art and Science"
-    )
-    
-    response = await orchestrator.send_agent_message(
-        sender="shakespeare",
-        recipient="einstein",
-        content="What is the nature of beauty in mathematics?",
-        conversation_id=conversation_id
-    )
-    
-    print(f"Einstein: {response}")
-
-asyncio.run(conversation_example())
-```
-
-### PR Review Example
-
-```python
-# Review a GitHub PR with specialist agents
-python examples/pr_review_with_gh_cli.py https://github.com/owner/repo/pull/123
-```
-
-## Documentation
-
-- **[Agent Orchestration Guide](docs/agent_orchestration.md)** - Comprehensive guide to multi-agent conversations
-- **[Examples Directory](examples/)** - Practical examples and use cases
-- **[API Reference](src/llm_orc/)** - Core module documentation
-
-## Examples
-
-- `examples/shakespeare_einstein_conversation.py` - Historical figure dialogue
-- `examples/pr_review_with_gh_cli.py` - GitHub PR review with specialist agents
-- `tests/test_agent_orchestration.py` - Testing patterns and usage examples
-
-## Development Status
-
-Following TDD principles and eddi-lab workflow standards. See [Issues](https://github.com/mrilikecoding/llm-orc/issues) for current development priorities.
+MIT License - see [LICENSE](LICENSE) for details.

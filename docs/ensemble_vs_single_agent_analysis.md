@@ -283,4 +283,4 @@ This hybrid intelligence architecture opens possibilities that neither approach 
 
 ---
 
-_This analysis was conducted using LLM Orchestra v1.0 with ensemble configurations available in the project repository. For reproducible analysis and ensemble recipes, see the `/ensembles` directory._
+_This analysis was conducted using LLM Orchestra v0.1.0 with ensemble configurations available in the project repository. For reproducible analysis and ensemble recipes, see the `/ensembles` directory._
