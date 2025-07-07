@@ -4,7 +4,6 @@ import asyncio
 import json
 import os
 import sys
-from pathlib import Path
 
 import click
 
@@ -42,7 +41,7 @@ def invoke(ensemble_name: str, config_dir: str, input: str, output_format: str):
     if config_dir is None:
         # Default to ~/.llm-orc/ensembles if no config dir specified
         config_dir = os.path.expanduser("~/.llm-orc/ensembles")
-    
+
     # Handle input from stdin if not provided via --input
     if input is None:
         if not sys.stdin.isatty():
@@ -51,55 +50,55 @@ def invoke(ensemble_name: str, config_dir: str, input: str, output_format: str):
         else:
             # No input provided and not piped, use default
             input = "Please analyze this."
-    
+
     loader = EnsembleLoader()
     ensemble_config = loader.find_ensemble(config_dir, ensemble_name)
-    
+
     if ensemble_config is None:
         raise click.ClickException(f"Ensemble '{ensemble_name}' not found in {config_dir}")
-    
+
     if output_format == "text":
         click.echo(f"Invoking ensemble: {ensemble_name}")
         click.echo(f"Description: {ensemble_config.description}")
         click.echo(f"Agents: {len(ensemble_config.agents)}")
         click.echo(f"Input: {input}")
         click.echo("---")
-    
+
     # Execute the ensemble
     async def run_ensemble():
         executor = EnsembleExecutor()
         return await executor.execute(ensemble_config, input)
-    
+
     try:
         result = asyncio.run(run_ensemble())
-        
+
         if output_format == "json":
             click.echo(json.dumps(result, indent=2))
         else:
             # Text format - show readable output
             click.echo(f"Status: {result['status']}")
             click.echo(f"Duration: {result['metadata']['duration']}")
-            
+
             # Show usage summary
             if 'usage' in result['metadata']:
                 usage = result['metadata']['usage']
                 totals = usage.get('totals', {})
-                click.echo(f"\nUsage Summary:")
+                click.echo("\nUsage Summary:")
                 click.echo(f"  Total Tokens: {totals.get('total_tokens', 0):,}")
                 click.echo(f"  Total Cost: ${totals.get('total_cost_usd', 0.0):.4f}")
                 click.echo(f"  Agents: {totals.get('agents_count', 0)}")
-                
+
                 # Show per-agent usage
                 agents_usage = usage.get('agents', {})
                 if agents_usage:
-                    click.echo(f"\nPer-Agent Usage:")
+                    click.echo("\nPer-Agent Usage:")
                     for agent_name, agent_usage in agents_usage.items():
                         tokens = agent_usage.get('total_tokens', 0)
                         cost = agent_usage.get('cost_usd', 0.0)
                         duration = agent_usage.get('duration_ms', 0)
                         model = agent_usage.get('model', 'unknown')
                         click.echo(f"  {agent_name} ({model}): {tokens:,} tokens, ${cost:.4f}, {duration}ms")
-                
+
                 # Show synthesis usage if present
                 synthesis_usage = usage.get('synthesis', {})
                 if synthesis_usage:
@@ -108,17 +107,17 @@ def invoke(ensemble_name: str, config_dir: str, input: str, output_format: str):
                     duration = synthesis_usage.get('duration_ms', 0)
                     model = synthesis_usage.get('model', 'unknown')
                     click.echo(f"  synthesis ({model}): {tokens:,} tokens, ${cost:.4f}, {duration}ms")
-            
+
             click.echo("\nAgent Results:")
             for agent_name, agent_result in result["results"].items():
                 if agent_result["status"] == "success":
                     click.echo(f"  {agent_name}: {agent_result['response']}")
                 else:
                     click.echo(f"  {agent_name}: ERROR - {agent_result['error']}")
-            
+
             if result.get("synthesis"):
                 click.echo(f"\nSynthesis: {result['synthesis']}")
-                
+
     except Exception as e:
         raise click.ClickException(f"Ensemble execution failed: {str(e)}")
 
@@ -134,10 +133,10 @@ def list_ensembles(config_dir: str):
     if config_dir is None:
         # Default to ~/.llm-orc/ensembles if no config dir specified
         config_dir = os.path.expanduser("~/.llm-orc/ensembles")
-    
+
     loader = EnsembleLoader()
     ensembles = loader.list_ensembles(config_dir)
-    
+
     if not ensembles:
         click.echo(f"No ensembles found in {config_dir}")
         click.echo("  (Create .yaml files with ensemble configurations)")

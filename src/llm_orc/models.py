@@ -3,7 +3,7 @@
 import asyncio
 import time
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Any
 
 import google.generativeai as genai
 import ollama
@@ -14,7 +14,7 @@ class ModelInterface(ABC):
     """Abstract interface for LLM models."""
 
     def __init__(self):
-        self._last_usage: Optional[Dict[str, Any]] = None
+        self._last_usage: dict[str, Any] | None = None
 
     @property
     @abstractmethod
@@ -27,7 +27,7 @@ class ModelInterface(ABC):
         """Generate a response from the model."""
         pass
 
-    def get_last_usage(self) -> Optional[Dict[str, Any]]:
+    def get_last_usage(self) -> dict[str, Any] | None:
         """Get usage metrics from the last API call."""
         return self._last_usage
 
@@ -66,25 +66,25 @@ class ClaudeModel(ModelInterface):
     async def generate_response(self, message: str, role_prompt: str) -> str:
         """Generate response using Claude API."""
         start_time = time.time()
-        
+
         response = await self.client.messages.create(
             model=self.model,
             max_tokens=1000,
             system=role_prompt,
             messages=[{"role": "user", "content": message}],
         )
-        
+
         duration_ms = int((time.time() - start_time) * 1000)
-        
+
         # Record usage metrics
         input_tokens = response.usage.input_tokens
         output_tokens = response.usage.output_tokens
-        
+
         # Estimate cost (simplified pricing for Claude)
         cost_per_input_token = 0.000003  # $3 per million input tokens
         cost_per_output_token = 0.000015  # $15 per million output tokens
         cost_usd = (input_tokens * cost_per_input_token) + (output_tokens * cost_per_output_token)
-        
+
         self._record_usage(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -92,7 +92,7 @@ class ClaudeModel(ModelInterface):
             cost_usd=cost_usd,
             model_name=self.model
         )
-        
+
         return response.content[0].text
 
 
@@ -120,18 +120,18 @@ class GeminiModel(ModelInterface):
         response = await loop.run_in_executor(
             None, lambda: self.client.generate_content(prompt)
         )
-        
+
         duration_ms = int((time.time() - start_time) * 1000)
-        
+
         # Estimate token usage for Gemini (rough approximation)
         estimated_input_tokens = len(prompt) // 4
         estimated_output_tokens = len(response.text) // 4
-        
+
         # Estimate cost (simplified Gemini pricing)
         cost_per_input_token = 0.0000005  # $0.50 per million input tokens
         cost_per_output_token = 0.0000015  # $1.50 per million output tokens
         cost_usd = (estimated_input_tokens * cost_per_input_token) + (estimated_output_tokens * cost_per_output_token)
-        
+
         self._record_usage(
             input_tokens=estimated_input_tokens,
             output_tokens=estimated_output_tokens,
@@ -139,7 +139,7 @@ class GeminiModel(ModelInterface):
             cost_usd=cost_usd,
             model_name=self.model_name
         )
-        
+
         return response.text
 
 
@@ -161,7 +161,7 @@ class OllamaModel(ModelInterface):
     async def generate_response(self, message: str, role_prompt: str) -> str:
         """Generate response using Ollama API."""
         start_time = time.time()
-        
+
         response = await self.client.chat(
             model=self.model_name,
             messages=[
@@ -169,17 +169,17 @@ class OllamaModel(ModelInterface):
                 {"role": "user", "content": message},
             ],
         )
-        
+
         duration_ms = int((time.time() - start_time) * 1000)
-        
+
         # For local models, estimate token usage (Ollama doesn't provide exact counts)
         # This is a rough approximation: ~4 characters per token
         content = response["message"]["content"]
         prompt_length = len(role_prompt) + len(message)
-        
+
         estimated_input_tokens = prompt_length // 4
         estimated_output_tokens = len(content) // 4
-        
+
         self._record_usage(
             input_tokens=estimated_input_tokens,
             output_tokens=estimated_output_tokens,
@@ -187,7 +187,7 @@ class OllamaModel(ModelInterface):
             cost_usd=0.0,  # Local models have no API cost
             model_name=self.model_name
         )
-        
+
         return content
 
 
