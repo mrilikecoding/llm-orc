@@ -78,14 +78,10 @@ warn_unused_configs = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "--cov=llm_orc --cov-report=term-missing"
+markers = [
+    "asyncio: marks tests as requiring asyncio"
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/llm_orc"]
 
-[dependency-groups]
-dev = [
-    "black>=25.1.0",
-    "mypy>=1.16.1",
-    "pytest-cov>=6.2.1",
-    "ruff>=0.12.2",
-]
