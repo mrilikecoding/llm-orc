@@ -19,7 +19,7 @@ class TestMessage:
             sender="agent-1",
             recipient="agent-2",
             content="Hello there!",
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         assert message.id == "msg-123"
@@ -36,7 +36,7 @@ class TestMessage:
             sender="agent-1",
             recipient="agent-2",
             content="Hello there!",
-            timestamp=timestamp
+            timestamp=timestamp,
         )
 
         result = message.to_dict()
@@ -55,7 +55,7 @@ class TestMessage:
             "sender": "agent-1",
             "recipient": "agent-2",
             "content": "Hello there!",
-            "timestamp": timestamp.isoformat()
+            "timestamp": timestamp.isoformat(),
         }
 
         message = Message.from_dict(data)
@@ -82,8 +82,7 @@ class TestConversationManager:
         manager = ConversationManager()
 
         conversation_id = manager.start_conversation(
-            participants=["agent-1", "agent-2"],
-            topic="Test discussion"
+            participants=["agent-1", "agent-2"], topic="Test discussion"
         )
 
         assert conversation_id in manager.conversations
@@ -97,8 +96,7 @@ class TestConversationManager:
         """Should add message to existing conversation."""
         manager = ConversationManager()
         conversation_id = manager.start_conversation(
-            participants=["agent-1", "agent-2"],
-            topic="Test discussion"
+            participants=["agent-1", "agent-2"], topic="Test discussion"
         )
 
         message = Message(
@@ -106,7 +104,7 @@ class TestConversationManager:
             sender="agent-1",
             recipient="agent-2",
             content="Hello there!",
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         manager.add_message(conversation_id, message)
@@ -119,8 +117,7 @@ class TestConversationManager:
         """Should retrieve conversation history."""
         manager = ConversationManager()
         conversation_id = manager.start_conversation(
-            participants=["agent-1", "agent-2"],
-            topic="Test discussion"
+            participants=["agent-1", "agent-2"], topic="Test discussion"
         )
 
         message1 = Message(
@@ -128,14 +125,14 @@ class TestConversationManager:
             sender="agent-1",
             recipient="agent-2",
             content="Hello!",
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
         message2 = Message(
             id="msg-2",
             sender="agent-2",
             recipient="agent-1",
             content="Hi there!",
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         manager.add_message(conversation_id, message1)
@@ -167,8 +164,7 @@ class TestMessageProtocol:
 
         # Create conversation first
         conversation_id = manager.start_conversation(
-            participants=["agent-1", "agent-2"],
-            topic="Test discussion"
+            participants=["agent-1", "agent-2"], topic="Test discussion"
         )
 
         # Mock the message delivery
@@ -178,7 +174,7 @@ class TestMessageProtocol:
             sender="agent-1",
             recipient="agent-2",
             content="Hello there!",
-            conversation_id=conversation_id
+            conversation_id=conversation_id,
         )
 
         assert result is not None
@@ -195,8 +191,7 @@ class TestMessageProtocol:
 
         # Start a conversation
         conversation_id = manager.start_conversation(
-            participants=["agent-1", "agent-2"],
-            topic="Test discussion"
+            participants=["agent-1", "agent-2"], topic="Test discussion"
         )
 
         # Agent 1 sends first message
@@ -204,7 +199,7 @@ class TestMessageProtocol:
             sender="agent-1",
             recipient="agent-2",
             content="Hello!",
-            conversation_id=conversation_id
+            conversation_id=conversation_id,
         )
 
         # Check that agent-2 is now expected to respond
@@ -215,7 +210,7 @@ class TestMessageProtocol:
             sender="agent-2",
             recipient="agent-1",
             content="Hi there!",
-            conversation_id=conversation_id
+            conversation_id=conversation_id,
         )
 
         # Check that turn has switched back to agent-1
@@ -229,8 +224,7 @@ class TestMessageProtocol:
 
         # Create conversation first
         conversation_id = manager.start_conversation(
-            participants=["agent-1", "agent-2"],
-            topic="Test discussion"
+            participants=["agent-1", "agent-2"], topic="Test discussion"
         )
 
         # Mock a slow message delivery that exceeds timeout
@@ -244,6 +238,5 @@ class TestMessageProtocol:
                 sender="agent-1",
                 recipient="agent-2",
                 content="Hello there!",
-                conversation_id=conversation_id
+                conversation_id=conversation_id,
             )
-

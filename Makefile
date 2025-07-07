@@ -13,7 +13,7 @@ lint:
 
 format:
 	uv run black src tests
-	uv run ruff --fix src tests
+	uv run ruff check --fix src tests
 
 clean:
 	rm -rf build/ dist/ *.egg-info/ .venv/

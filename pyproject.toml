@@ -20,8 +20,13 @@ dependencies = [
     "ollama",
     "pytest",
     "pytest-asyncio",
+    "click",
+    "pyyaml",
 ]
 requires-python = ">=3.11"
+
+[project.scripts]
+llm-orc = "llm_orc.cli:cli"
 
 
 [tool.black]
@@ -31,6 +36,8 @@ target-version = ['py311']
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+
+[tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "PT"]
 
 [tool.mypy]

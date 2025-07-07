@@ -33,7 +33,8 @@ class TestClaudeModel:
         # Mock the anthropic client
         model.client = AsyncMock()
         model.client.messages.create.return_value = Mock(
-            content=[Mock(text="Hello from Claude!")]
+            content=[Mock(text="Hello from Claude!")],
+            usage=Mock(input_tokens=10, output_tokens=5)
         )
 
         response = await model.generate_response(
@@ -75,9 +76,7 @@ class TestOllamaModel:
 
         # Mock the ollama client
         model.client = AsyncMock()
-        model.client.chat.return_value = {
-            "message": {"content": "Hello from Ollama!"}
-        }
+        model.client.chat.return_value = {"message": {"content": "Hello from Ollama!"}}
 
         response = await model.generate_response(
             "Hello", role_prompt="You are helpful."
@@ -118,4 +117,3 @@ class TestModelManager:
 
         with pytest.raises(KeyError):
             manager.get_model("nonexistent")
-
