@@ -24,7 +24,7 @@ class Message:
             "sender": self.sender,
             "recipient": self.recipient,
             "content": self.content,
-            "timestamp": self.timestamp.isoformat()
+            "timestamp": self.timestamp.isoformat(),
         }
 
     @classmethod
@@ -35,7 +35,7 @@ class Message:
             sender=data["sender"],
             recipient=data["recipient"],
             content=data["content"],
-            timestamp=datetime.fromisoformat(data["timestamp"])
+            timestamp=datetime.fromisoformat(data["timestamp"]),
         )
 
 
@@ -54,7 +54,7 @@ class ConversationManager:
             "participants": participants,
             "topic": topic,
             "messages": [],
-            "created_at": datetime.now()
+            "created_at": datetime.now(),
         }
 
         self.active_conversations.append(conversation_id)
@@ -85,11 +85,7 @@ class MessageProtocol:
         self.current_speakers: dict[str, str] = {}  # conversation_id -> current_speaker
 
     async def send_message(
-        self,
-        sender: str,
-        recipient: str,
-        content: str,
-        conversation_id: str
+        self, sender: str, recipient: str, content: str, conversation_id: str
     ) -> Message:
         """Send message and handle turn-taking."""
         message = Message(
@@ -97,7 +93,7 @@ class MessageProtocol:
             sender=sender,
             recipient=recipient,
             content=content,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         # Add to conversation
@@ -125,4 +121,3 @@ class MessageProtocol:
     def get_current_speaker(self, conversation_id: str) -> str | None:
         """Get the agent expected to speak next in the conversation."""
         return self.current_speakers.get(conversation_id)
-

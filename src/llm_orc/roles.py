@@ -28,4 +28,3 @@ class RoleManager:
         if name not in self.roles:
             raise KeyError(f"Role '{name}' not found")
         return self.roles[name]
-

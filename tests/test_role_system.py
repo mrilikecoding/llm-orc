@@ -12,7 +12,7 @@ class TestRoleDefinition:
         """Should create a basic role with name and prompt."""
         role = RoleDefinition(
             name="engineer",
-            prompt="You are a senior software engineer focused on clean code and TDD."
+            prompt="You are a senior software engineer focused on clean code and TDD.",
         )
         assert role.name == "engineer"
         assert "senior software engineer" in role.prompt
@@ -25,8 +25,8 @@ class TestRoleDefinition:
             context={
                 "era": "Elizabethan",
                 "specialties": ["poetry", "drama", "language"],
-                "personality": "eloquent, witty, passionate"
-            }
+                "personality": "eloquent, witty, passionate",
+            },
         )
         assert role.name == "shakespeare"
         assert role.context["era"] == "Elizabethan"
@@ -41,7 +41,7 @@ class TestRoleManager:
         manager = RoleManager()
         role = RoleDefinition(
             name="designer",
-            prompt="You are a creative designer focused on user experience."
+            prompt="You are a creative designer focused on user experience.",
         )
         manager.register_role(role)
         assert "designer" in manager.roles
@@ -50,8 +50,7 @@ class TestRoleManager:
         """Should retrieve registered role."""
         manager = RoleManager()
         role = RoleDefinition(
-            name="artist",
-            prompt="You are a creative artist exploring digital mediums."
+            name="artist", prompt="You are a creative artist exploring digital mediums."
         )
         manager.register_role(role)
         retrieved = manager.get_role("artist")
@@ -63,4 +62,3 @@ class TestRoleManager:
         manager = RoleManager()
         with pytest.raises(KeyError):
             manager.get_role("nonexistent")
-

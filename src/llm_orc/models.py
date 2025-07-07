@@ -41,7 +41,7 @@ class ClaudeModel(ModelInterface):
             model=self.model,
             max_tokens=1000,
             system=role_prompt,
-            messages=[{"role": "user", "content": message}]
+            messages=[{"role": "user", "content": message}],
         )
         return response.content[0].text
 
@@ -66,8 +66,7 @@ class GeminiModel(ModelInterface):
         # Run in thread pool since Gemini doesn't have async support
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
-            None,
-            lambda: self.client.generate_content(prompt)
+            None, lambda: self.client.generate_content(prompt)
         )
         return response.text
 
@@ -75,7 +74,9 @@ class GeminiModel(ModelInterface):
 class OllamaModel(ModelInterface):
     """Ollama model implementation."""
 
-    def __init__(self, model_name: str = "llama2", host: str = "http://localhost:11434"):
+    def __init__(
+        self, model_name: str = "llama2", host: str = "http://localhost:11434"
+    ):
         self.model_name = model_name
         self.host = host
         self.client = ollama.AsyncClient(host=host)
@@ -90,8 +91,8 @@ class OllamaModel(ModelInterface):
             model=self.model_name,
             messages=[
                 {"role": "system", "content": role_prompt},
-                {"role": "user", "content": message}
-            ]
+                {"role": "user", "content": message},
+            ],
         )
         return response["message"]["content"]
 
@@ -115,4 +116,3 @@ class ModelManager:
     def list_models(self) -> dict[str, str]:
         """List all registered models."""
         return {key: model.name for key, model in self.models.items()}
-

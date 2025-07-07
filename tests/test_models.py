@@ -75,9 +75,7 @@ class TestOllamaModel:
 
         # Mock the ollama client
         model.client = AsyncMock()
-        model.client.chat.return_value = {
-            "message": {"content": "Hello from Ollama!"}
-        }
+        model.client.chat.return_value = {"message": {"content": "Hello from Ollama!"}}
 
         response = await model.generate_response(
             "Hello", role_prompt="You are helpful."
@@ -118,4 +116,3 @@ class TestModelManager:
 
         with pytest.raises(KeyError):
             manager.get_model("nonexistent")
-
