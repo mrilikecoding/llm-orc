@@ -195,8 +195,8 @@ class EnsembleExecutor:
                 self._execute_agent(agent_config, input_data),
                 timeout=timeout_seconds
             )
-        except TimeoutError:
-            raise Exception(f"Agent execution timed out after {timeout_seconds} seconds")
+        except TimeoutError as e:
+            raise Exception(f"Agent execution timed out after {timeout_seconds} seconds") from e
 
     async def _synthesize_results_with_timeout(
         self, config: EnsembleConfig, agent_results: dict[str, Any], timeout_seconds: int | None
@@ -211,5 +211,5 @@ class EnsembleExecutor:
                 self._synthesize_results(config, agent_results),
                 timeout=timeout_seconds
             )
-        except TimeoutError:
-            raise Exception(f"Synthesis timed out after {timeout_seconds} seconds")
+        except TimeoutError as e:
+            raise Exception(f"Synthesis timed out after {timeout_seconds} seconds") from e
