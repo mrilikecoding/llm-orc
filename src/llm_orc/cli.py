@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import sys
 from pathlib import Path
 
 import click
@@ -27,8 +28,8 @@ def cli():
 )
 @click.option(
     "--input",
-    default="Please analyze this.",
-    help="Input data for the ensemble",
+    default=None,
+    help="Input data for the ensemble (if not provided, reads from stdin)",
 )
 @click.option(
     "--output-format",
@@ -41,6 +42,15 @@ def invoke(ensemble_name: str, config_dir: str, input: str, output_format: str):
     if config_dir is None:
         # Default to ~/.llm-orc/ensembles if no config dir specified
         config_dir = os.path.expanduser("~/.llm-orc/ensembles")
+    
+    # Handle input from stdin if not provided via --input
+    if input is None:
+        if not sys.stdin.isatty():
+            # Read from stdin (piped input)
+            input = sys.stdin.read().strip()
+        else:
+            # No input provided and not piped, use default
+            input = "Please analyze this."
     
     loader = EnsembleLoader()
     ensemble_config = loader.find_ensemble(config_dir, ensemble_name)
