@@ -34,7 +34,10 @@ class EnsembleExecutor:
         agent_tasks = []
         for agent_config in config.agents:
             # Get timeout from agent config or coordinator config
-            timeout = agent_config.get("timeout_seconds") or config.coordinator.get("timeout_seconds")
+            timeout = (
+                agent_config.get("timeout_seconds") or
+                config.coordinator.get("timeout_seconds")
+            )
             task = self._execute_agent_with_timeout(agent_config, input_data, timeout)
             agent_tasks.append((agent_config["name"], task))
 
@@ -64,9 +67,12 @@ class EnsembleExecutor:
         if config.coordinator.get("synthesis_prompt"):
             try:
                 synthesis_timeout = config.coordinator.get("synthesis_timeout_seconds")
-                synthesis, synthesis_model = await self._synthesize_results_with_timeout(
-                    config, result["results"], synthesis_timeout
+                synthesis_result = await self._synthesize_results_with_timeout(
+                    config,
+                    result["results"],
+                    synthesis_timeout
                 )
+                synthesis, synthesis_model = synthesis_result
                 result["synthesis"] = synthesis
                 synthesis_usage = synthesis_model.get_last_usage()
             except Exception as e:
@@ -85,7 +91,9 @@ class EnsembleExecutor:
 
         return result
 
-    async def _execute_agent(self, agent_config: dict[str, Any], input_data: str) -> tuple[str, ModelInterface]:
+    async def _execute_agent(
+        self, agent_config: dict[str, Any], input_data: str
+    ) -> tuple[str, ModelInterface]:
         """Execute a single agent and return its response and model instance."""
         # Load role and model for this agent
         role = await self._load_role(agent_config["role"])
@@ -121,7 +129,9 @@ class EnsembleExecutor:
             # Default to Ollama for now
             return OllamaModel(model_name="llama3")
 
-    async def _synthesize_results(self, config: EnsembleConfig, agent_results: dict[str, Any]) -> tuple[str, ModelInterface]:
+    async def _synthesize_results(
+        self, config: EnsembleConfig, agent_results: dict[str, Any]
+    ) -> tuple[str, ModelInterface]:
         """Synthesize results from all agents."""
         synthesis_model = await self._get_synthesis_model()
 
@@ -133,7 +143,9 @@ class EnsembleExecutor:
             else:
                 results_text += f"\n{agent_name}: [Error: {result['error']}]\n"
 
-        synthesis_prompt = f"{config.coordinator['synthesis_prompt']}\n\nAgent Results:{results_text}"
+        synthesis_prompt = (
+            f"{config.coordinator['synthesis_prompt']}\n\nAgent Results:{results_text}"
+        )
 
         # Generate synthesis
         response = await synthesis_model.generate_response(
@@ -149,7 +161,9 @@ class EnsembleExecutor:
         # TODO: Make this configurable
         return OllamaModel(model_name="llama3")
 
-    def _calculate_usage_summary(self, agent_usage: dict[str, Any], synthesis_usage: dict[str, Any] | None) -> dict[str, Any]:
+    def _calculate_usage_summary(
+        self, agent_usage: dict[str, Any], synthesis_usage: dict[str, Any] | None
+    ) -> dict[str, Any]:
         """Calculate aggregated usage summary."""
         summary = {
             "agents": agent_usage,
@@ -175,10 +189,16 @@ class EnsembleExecutor:
         if synthesis_usage:
             summary["synthesis"] = synthesis_usage
             summary["totals"]["total_tokens"] += synthesis_usage.get("total_tokens", 0)
-            summary["totals"]["total_input_tokens"] += synthesis_usage.get("input_tokens", 0)
-            summary["totals"]["total_output_tokens"] += synthesis_usage.get("output_tokens", 0)
+            summary["totals"]["total_input_tokens"] += synthesis_usage.get(
+                "input_tokens", 0
+            )
+            summary["totals"]["total_output_tokens"] += synthesis_usage.get(
+                "output_tokens", 0
+            )
             summary["totals"]["total_cost_usd"] += synthesis_usage.get("cost_usd", 0.0)
-            summary["totals"]["total_duration_ms"] += synthesis_usage.get("duration_ms", 0)
+            summary["totals"]["total_duration_ms"] += synthesis_usage.get(
+                "duration_ms", 0
+            )
 
         return summary
 
@@ -196,10 +216,15 @@ class EnsembleExecutor:
                 timeout=timeout_seconds
             )
         except TimeoutError as e:
-            raise Exception(f"Agent execution timed out after {timeout_seconds} seconds") from e
+            raise Exception(
+                f"Agent execution timed out after {timeout_seconds} seconds"
+            ) from e
 
     async def _synthesize_results_with_timeout(
-        self, config: EnsembleConfig, agent_results: dict[str, Any], timeout_seconds: int | None
+        self,
+        config: EnsembleConfig,
+        agent_results: dict[str, Any],
+        timeout_seconds: int | None
     ) -> tuple[str, ModelInterface]:
         """Synthesize results with optional timeout."""
         if timeout_seconds is None:
@@ -212,4 +237,6 @@ class EnsembleExecutor:
                 timeout=timeout_seconds
             )
         except TimeoutError as e:
-            raise Exception(f"Synthesis timed out after {timeout_seconds} seconds") from e
+            raise Exception(
+                f"Synthesis timed out after {timeout_seconds} seconds"
+            ) from e
