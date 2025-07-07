@@ -1,5 +1,9 @@
 """Tests for CLI interface."""
 
+import tempfile
+from pathlib import Path
+
+import yaml
 from click.testing import CliRunner
 
 from llm_orc.cli import cli
@@ -53,3 +57,46 @@ class TestCLI:
         result = runner.invoke(cli, ["list-ensembles", "--help"])
         assert result.exit_code == 0
         assert "list" in result.output.lower() or "ensemble" in result.output.lower()
+
+    def test_cli_list_ensembles_with_actual_configs(self):
+        """Test listing ensembles when config files exist."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create a test ensemble file
+            ensemble = {
+                "name": "test_ensemble",
+                "description": "A test ensemble for CLI testing",
+                "agents": [{"name": "agent1", "role": "tester", "model": "claude-3-sonnet"}],
+                "coordinator": {"synthesis_prompt": "Test", "output_format": "json"}
+            }
+            
+            with open(f"{temp_dir}/test_ensemble.yaml", 'w') as f:
+                yaml.dump(ensemble, f)
+            
+            runner = CliRunner()
+            result = runner.invoke(cli, ["list-ensembles", "--config-dir", temp_dir])
+            assert result.exit_code == 0
+            assert "test_ensemble" in result.output
+            assert "A test ensemble for CLI testing" in result.output
+
+    def test_cli_invoke_existing_ensemble(self):
+        """Test invoking an ensemble that exists."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create a test ensemble file
+            ensemble = {
+                "name": "working_ensemble",
+                "description": "A working test ensemble",
+                "agents": [
+                    {"name": "agent1", "role": "tester", "model": "claude-3-sonnet"},
+                    {"name": "agent2", "role": "reviewer", "model": "claude-3-sonnet"}
+                ],
+                "coordinator": {"synthesis_prompt": "Combine results", "output_format": "json"}
+            }
+            
+            with open(f"{temp_dir}/working_ensemble.yaml", 'w') as f:
+                yaml.dump(ensemble, f)
+            
+            runner = CliRunner()
+            result = runner.invoke(cli, ["invoke", "--config-dir", temp_dir, "working_ensemble"])
+            # For now, should still fail because we haven't implemented execution yet
+            # But it should find the ensemble and show different error
+            assert "working_ensemble" in result.output

@@ -21,6 +21,7 @@ dependencies = [
     "pytest",
     "pytest-asyncio",
     "click",
+    "pyyaml",
 ]
 requires-python = ">=3.11"
 
