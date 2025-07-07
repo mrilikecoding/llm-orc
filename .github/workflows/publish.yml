@@ -1,0 +1,142 @@
+name: Publish to PyPI
+
+on:
+  push:
+    branches: [main]
+    paths: ['pyproject.toml']
+  release:
+    types: [published]
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version-changed: ${{ steps.check.outputs.changed }}
+      current-version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Get current version
+        id: version
+        run: |
+          VERSION=$(grep -E '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if version changed
+        id: check
+        run: |
+          if git diff HEAD~1 HEAD -- pyproject.toml | grep -q "^+version = "; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+  test:
+    needs: check-version
+    if: needs.check-version.outputs.version-changed == 'true' || github.event_name == 'release'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+
+      - name: Run tests
+        run: |
+          uv run pytest
+
+      - name: Run linting
+        run: |
+          uv run ruff check .
+          uv run black --check .
+
+      - name: Run type checking
+        run: |
+          uv run mypy src/llm_orc
+
+  publish-test-pypi:
+    needs: [check-version, test]
+    if: needs.check-version.outputs.version-changed == 'true' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/llm-orchestra/
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Build package
+        run: |
+          uv build
+
+      - name: Publish to Test PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          verbose: true
+
+  publish-pypi:
+    needs: [check-version, test]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/llm-orchestra/
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Build package
+        run: |
+          uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          verbose: true
+
+  notify:
+    needs: [check-version, publish-test-pypi, publish-pypi]
+    if: always() && (needs.publish-test-pypi.result == 'success' || needs.publish-pypi.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify success
+        run: |
+          if [[ "${{ needs.publish-pypi.result }}" == "success" ]]; then
+            echo "🎉 Successfully published llm-orchestra v${{ needs.check-version.outputs.current-version }} to PyPI!"
+          elif [[ "${{ needs.publish-test-pypi.result }}" == "success" ]]; then
+            echo "🧪 Successfully published llm-orchestra v${{ needs.check-version.outputs.current-version }} to Test PyPI!"
+          fi
