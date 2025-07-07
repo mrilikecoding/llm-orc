@@ -191,3 +191,97 @@ class TestEnsembleExecutor:
         synthesis_model.generate_response.assert_called_once()
         synthesis_call_args = synthesis_model.generate_response.call_args[1]
         assert "Summarize the analysis results" in synthesis_call_args["role_prompt"]
+
+    @pytest.mark.asyncio
+    async def test_execute_ensemble_tracks_usage_metrics(self):
+        """Test that ensemble execution tracks LLM usage metrics."""
+        config = EnsembleConfig(
+            name="usage_tracking_test",
+            description="Test usage tracking",
+            agents=[
+                {"name": "agent1", "role": "analyst", "model": "claude-3-sonnet"},
+                {"name": "agent2", "role": "reviewer", "model": "llama3"},
+            ],
+            coordinator={
+                "synthesis_prompt": "Combine results",
+                "output_format": "json"
+            }
+        )
+        
+        # Mock models with usage tracking
+        claude_model = AsyncMock(spec=ModelInterface)
+        claude_model.generate_response.return_value = "Claude response"
+        claude_model.get_last_usage.return_value = {
+            "input_tokens": 50,
+            "output_tokens": 100,
+            "total_tokens": 150,
+            "cost_usd": 0.0045,
+            "duration_ms": 1200,
+            "model": "claude-3-sonnet"
+        }
+        
+        llama_model = AsyncMock(spec=ModelInterface)
+        llama_model.generate_response.return_value = "Llama response"
+        llama_model.get_last_usage.return_value = {
+            "input_tokens": 45,
+            "output_tokens": 80,
+            "total_tokens": 125,
+            "cost_usd": 0.0,  # Local model, no cost
+            "duration_ms": 800,
+            "model": "llama3"
+        }
+        
+        synthesis_model = AsyncMock(spec=ModelInterface)
+        synthesis_model.generate_response.return_value = "Synthesized result"
+        synthesis_model.get_last_usage.return_value = {
+            "input_tokens": 200,
+            "output_tokens": 50,
+            "total_tokens": 250,
+            "cost_usd": 0.0075,
+            "duration_ms": 1500,
+            "model": "llama3"
+        }
+        
+        role = RoleDefinition(name="test", prompt="Test role")
+        
+        executor = EnsembleExecutor()
+        executor._load_role = AsyncMock(return_value=role)
+        executor._load_model = AsyncMock(side_effect=[claude_model, llama_model])
+        executor._get_synthesis_model = AsyncMock(return_value=synthesis_model)
+        
+        result = await executor.execute(config, input_data="Test usage tracking")
+        
+        # Verify usage tracking is included in results
+        assert "usage" in result["metadata"]
+        usage = result["metadata"]["usage"]
+        
+        # Check individual agent usage
+        assert "agents" in usage
+        agent_usage = usage["agents"]
+        
+        assert "agent1" in agent_usage
+        assert agent_usage["agent1"]["model"] == "claude-3-sonnet"
+        assert agent_usage["agent1"]["input_tokens"] == 50
+        assert agent_usage["agent1"]["output_tokens"] == 100
+        assert agent_usage["agent1"]["total_tokens"] == 150
+        assert agent_usage["agent1"]["cost_usd"] == 0.0045
+        assert agent_usage["agent1"]["duration_ms"] == 1200
+        
+        assert "agent2" in agent_usage
+        assert agent_usage["agent2"]["model"] == "llama3"
+        assert agent_usage["agent2"]["total_tokens"] == 125
+        assert agent_usage["agent2"]["cost_usd"] == 0.0
+        
+        # Check synthesis usage
+        assert "synthesis" in usage
+        synthesis_usage = usage["synthesis"]
+        assert synthesis_usage["total_tokens"] == 250
+        assert synthesis_usage["cost_usd"] == 0.0075
+        
+        # Check totals
+        assert "totals" in usage
+        totals = usage["totals"]
+        assert totals["total_tokens"] == 525  # 150 + 125 + 250
+        assert totals["total_cost_usd"] == 0.012  # 0.0045 + 0.0 + 0.0075
+        assert totals["total_duration_ms"] == 3500  # 1200 + 800 + 1500
+        assert totals["agents_count"] == 2

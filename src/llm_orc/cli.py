@@ -69,6 +69,36 @@ def invoke(ensemble_name: str, config_dir: str, input: str, output_format: str):
             # Text format - show readable output
             click.echo(f"Status: {result['status']}")
             click.echo(f"Duration: {result['metadata']['duration']}")
+            
+            # Show usage summary
+            if 'usage' in result['metadata']:
+                usage = result['metadata']['usage']
+                totals = usage.get('totals', {})
+                click.echo(f"\nUsage Summary:")
+                click.echo(f"  Total Tokens: {totals.get('total_tokens', 0):,}")
+                click.echo(f"  Total Cost: ${totals.get('total_cost_usd', 0.0):.4f}")
+                click.echo(f"  Agents: {totals.get('agents_count', 0)}")
+                
+                # Show per-agent usage
+                agents_usage = usage.get('agents', {})
+                if agents_usage:
+                    click.echo(f"\nPer-Agent Usage:")
+                    for agent_name, agent_usage in agents_usage.items():
+                        tokens = agent_usage.get('total_tokens', 0)
+                        cost = agent_usage.get('cost_usd', 0.0)
+                        duration = agent_usage.get('duration_ms', 0)
+                        model = agent_usage.get('model', 'unknown')
+                        click.echo(f"  {agent_name} ({model}): {tokens:,} tokens, ${cost:.4f}, {duration}ms")
+                
+                # Show synthesis usage if present
+                synthesis_usage = usage.get('synthesis', {})
+                if synthesis_usage:
+                    tokens = synthesis_usage.get('total_tokens', 0)
+                    cost = synthesis_usage.get('cost_usd', 0.0)
+                    duration = synthesis_usage.get('duration_ms', 0)
+                    model = synthesis_usage.get('model', 'unknown')
+                    click.echo(f"  synthesis ({model}): {tokens:,} tokens, ${cost:.4f}, {duration}ms")
+            
             click.echo("\nAgent Results:")
             for agent_name, agent_result in result["results"].items():
                 if agent_result["status"] == "success":
