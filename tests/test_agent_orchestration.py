@@ -1,7 +1,8 @@
 """Test suite for agent orchestration."""
 
-import pytest
 from unittest.mock import AsyncMock, Mock
+
+import pytest
 
 from llm_orc.models import ModelInterface
 from llm_orc.roles import RoleDefinition
@@ -15,13 +16,14 @@ class TestAgent:
         # Arrange
         role = RoleDefinition(
             name="shakespeare",
-            prompt="You are William Shakespeare, the renowned playwright."
+            prompt="You are William Shakespeare, the renowned playwright.",
         )
         model = Mock(spec=ModelInterface)
         model.name = "test-model"
 
         # Act
         from llm_orc.orchestration import Agent
+
         agent = Agent(name="shakespeare", role=role, model=model)
 
         # Assert
@@ -36,12 +38,15 @@ class TestAgent:
         # Arrange
         role = RoleDefinition(
             name="shakespeare",
-            prompt="You are William Shakespeare, the renowned playwright."
+            prompt="You are William Shakespeare, the renowned playwright.",
         )
         model = AsyncMock(spec=ModelInterface)
-        model.generate_response.return_value = "Hark! What light through yonder window breaks?"
-        
+        model.generate_response.return_value = (
+            "Hark! What light through yonder window breaks?"
+        )
+
         from llm_orc.orchestration import Agent
+
         agent = Agent(name="shakespeare", role=role, model=model)
 
         # Act - This will fail because respond_to_message doesn't exist yet
@@ -52,11 +57,10 @@ class TestAgent:
         assert len(agent.conversation_history) == 1
         assert agent.conversation_history[0]["message"] == "Tell me about beauty."
         assert agent.conversation_history[0]["response"] == response
-        
+
         # Verify model was called with correct parameters
         model.generate_response.assert_called_once_with(
-            message="Tell me about beauty.",
-            role_prompt=role.prompt
+            message="Tell me about beauty.", role_prompt=role.prompt
         )
 
 
@@ -68,14 +72,17 @@ class TestPracticalExamples:
         """Should orchestrate a conversation between Shakespeare and Einstein."""
         # Arrange - This will fail because ConversationOrchestrator doesn't exist yet
         from llm_orc.orchestration import Agent, ConversationOrchestrator
-        
+
         # Create Shakespeare agent
         shakespeare_role = RoleDefinition(
             name="shakespeare",
             prompt="You are William Shakespeare, the renowned playwright and poet. "
-                   "Speak in eloquent Elizabethan English with poetic flair. "
-                   "You are curious about science and the natural world.",
-            context={"era": "Elizabethan", "specialties": ["poetry", "drama", "language"]}
+            "Speak in eloquent Elizabethan English with poetic flair. "
+            "You are curious about science and the natural world.",
+            context={
+                "era": "Elizabethan",
+                "specialties": ["poetry", "drama", "language"],
+            },
         )
         shakespeare_model = AsyncMock(spec=ModelInterface)
         shakespeare_model.generate_response.return_value = (
@@ -83,14 +90,17 @@ class TestPracticalExamples:
             "Methinks the stars themselves dance to hidden laws most wondrous."
         )
         shakespeare_agent = Agent("shakespeare", shakespeare_role, shakespeare_model)
-        
-        # Create Einstein agent  
+
+        # Create Einstein agent
         einstein_role = RoleDefinition(
             name="einstein",
             prompt="You are Albert Einstein, the brilliant theoretical physicist. "
-                   "Speak thoughtfully about science, imagination, and the mysteries of the universe. "
-                   "You appreciate the beauty in both science and art.",
-            context={"era": "20th century", "specialties": ["physics", "relativity", "philosophy"]}
+            "Speak thoughtfully about science, imagination, and the mysteries of the universe. "
+            "You appreciate the beauty in both science and art.",
+            context={
+                "era": "20th century",
+                "specialties": ["physics", "relativity", "philosophy"],
+            },
         )
         einstein_model = AsyncMock(spec=ModelInterface)
         einstein_model.generate_response.return_value = (
@@ -98,40 +108,42 @@ class TestPracticalExamples:
             "What you call the dance of stars, I see as the elegant curvature of spacetime itself."
         )
         einstein_agent = Agent("einstein", einstein_role, einstein_model)
-        
+
         # Create orchestrator
         orchestrator = ConversationOrchestrator()
         # Mock the message delivery to avoid async timeout issues in tests
         orchestrator.message_protocol.deliver_message = AsyncMock()
-        
+
         orchestrator.register_agent(shakespeare_agent)
         orchestrator.register_agent(einstein_agent)
-        
+
         # Act - Start conversation
         conversation_id = await orchestrator.start_conversation(
             participants=["shakespeare", "einstein"],
             topic="The Nature of Beauty in Art and Science",
-            initial_message="What think you of the relationship between beauty and truth?"
+            initial_message="What think you of the relationship between beauty and truth?",
         )
-        
+
         # Einstein responds
         einstein_response = await orchestrator.send_agent_message(
             sender="einstein",
-            recipient="shakespeare", 
+            recipient="shakespeare",
             content="Beauty in science comes from elegant equations that reveal deep truths.",
-            conversation_id=conversation_id
+            conversation_id=conversation_id,
         )
-        
+
         # Assert
         assert conversation_id is not None
         assert einstein_response is not None
         # The response should be from Shakespeare (recipient) when Einstein sends a message to Shakespeare
-        assert "hark" in einstein_response.lower() or "cosmos" in einstein_response.lower()
-        
+        assert (
+            "hark" in einstein_response.lower() or "cosmos" in einstein_response.lower()
+        )
+
         # Verify both agents were called
         shakespeare_model.generate_response.assert_called_once()
         einstein_model.generate_response.assert_called_once()
-        
+
         # Verify conversation history
         assert len(shakespeare_agent.conversation_history) >= 1
         assert len(einstein_agent.conversation_history) >= 1
@@ -141,7 +153,7 @@ class TestPracticalExamples:
         """Should orchestrate a PR review with multiple specialist agents."""
         # Arrange - This will fail because PRReviewOrchestrator doesn't exist yet
         from llm_orc.orchestration import Agent, PRReviewOrchestrator
-        
+
         # Mock PR data
         pr_data = {
             "title": "Add user authentication system",
@@ -166,16 +178,16 @@ class TestPracticalExamples:
 """,
             "files_changed": ["auth.py", "requirements.txt"],
             "additions": 15,
-            "deletions": 2
+            "deletions": 2,
         }
-        
+
         # Create specialist agents
         senior_dev_role = RoleDefinition(
             name="senior_developer",
             prompt="You are a senior software developer focused on code quality, best practices, and maintainability. "
-                   "Review code for: design patterns, naming conventions, error handling, testing needs, and technical debt. "
-                   "Provide constructive feedback in 2-3 sentences.",
-            context={"specialties": ["code_quality", "best_practices", "architecture"]}
+            "Review code for: design patterns, naming conventions, error handling, testing needs, and technical debt. "
+            "Provide constructive feedback in 2-3 sentences.",
+            context={"specialties": ["code_quality", "best_practices", "architecture"]},
         )
         senior_dev_model = AsyncMock(spec=ModelInterface)
         senior_dev_model.generate_response.return_value = (
@@ -184,13 +196,13 @@ class TestPracticalExamples:
             "Unit tests for password hashing and token validation would strengthen this implementation."
         )
         senior_dev = Agent("senior_dev", senior_dev_role, senior_dev_model)
-        
+
         security_expert_role = RoleDefinition(
-            name="security_expert", 
+            name="security_expert",
             prompt="You are a cybersecurity expert focused on identifying security vulnerabilities and best practices. "
-                   "Review code for: authentication flaws, data validation, secret management, encryption standards. "
-                   "Provide security-focused feedback in 2-3 sentences.",
-            context={"specialties": ["security", "encryption", "authentication"]}
+            "Review code for: authentication flaws, data validation, secret management, encryption standards. "
+            "Provide security-focused feedback in 2-3 sentences.",
+            context={"specialties": ["security", "encryption", "authentication"]},
         )
         security_expert_model = AsyncMock(spec=ModelInterface)
         security_expert_model.generate_response.return_value = (
@@ -198,14 +210,16 @@ class TestPracticalExamples:
             "Password hashing with bcrypt is good practice, but consider adding rate limiting for authentication attempts. "
             "JWT expiration time of 24 hours might be too long for sensitive applications."
         )
-        security_expert = Agent("security_expert", security_expert_role, security_expert_model)
-        
+        security_expert = Agent(
+            "security_expert", security_expert_role, security_expert_model
+        )
+
         ux_reviewer_role = RoleDefinition(
             name="ux_reviewer",
             prompt="You are a UX specialist focused on user experience and accessibility. "
-                   "Review code changes for: user impact, error messages, accessibility, usability implications. "
-                   "Provide UX-focused feedback in 2-3 sentences.",
-            context={"specialties": ["user_experience", "accessibility", "usability"]}
+            "Review code changes for: user impact, error messages, accessibility, usability implications. "
+            "Provide UX-focused feedback in 2-3 sentences.",
+            context={"specialties": ["user_experience", "accessibility", "usability"]},
         )
         ux_reviewer_model = AsyncMock(spec=ModelInterface)
         ux_reviewer_model.generate_response.return_value = (
@@ -214,36 +228,45 @@ class TestPracticalExamples:
             "The 24-hour token expiration should align with user expectations and include session extension options."
         )
         ux_reviewer = Agent("ux_reviewer", ux_reviewer_role, ux_reviewer_model)
-        
+
         # Create PR review orchestrator
         pr_orchestrator = PRReviewOrchestrator()
         pr_orchestrator.register_reviewer(senior_dev)
         pr_orchestrator.register_reviewer(security_expert)
         pr_orchestrator.register_reviewer(ux_reviewer)
-        
+
         # Act - Conduct PR review
         review_results = await pr_orchestrator.review_pr(pr_data)
-        
+
         # Assert
         assert review_results is not None
         assert "reviews" in review_results
         assert len(review_results["reviews"]) == 3
-        
+
         # Check that each specialist provided feedback
         reviews = review_results["reviews"]
         senior_dev_review = next(r for r in reviews if r["reviewer"] == "senior_dev")
         security_review = next(r for r in reviews if r["reviewer"] == "security_expert")
         ux_review = next(r for r in reviews if r["reviewer"] == "ux_reviewer")
-        
-        assert "code structure" in senior_dev_review["feedback"].lower() or "error handling" in senior_dev_review["feedback"].lower()
-        assert "security" in security_review["feedback"].lower() or "vulnerability" in security_review["feedback"].lower()
-        assert "ux" in ux_review["feedback"].lower() or "user" in ux_review["feedback"].lower()
-        
+
+        assert (
+            "code structure" in senior_dev_review["feedback"].lower()
+            or "error handling" in senior_dev_review["feedback"].lower()
+        )
+        assert (
+            "security" in security_review["feedback"].lower()
+            or "vulnerability" in security_review["feedback"].lower()
+        )
+        assert (
+            "ux" in ux_review["feedback"].lower()
+            or "user" in ux_review["feedback"].lower()
+        )
+
         # Verify all models were called
         senior_dev_model.generate_response.assert_called_once()
         security_expert_model.generate_response.assert_called_once()
         ux_reviewer_model.generate_response.assert_called_once()
-        
+
         # Check consolidated summary exists
         assert "summary" in review_results
         assert review_results["summary"] is not None
