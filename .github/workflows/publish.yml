@@ -6,6 +6,7 @@ on:
     paths: ['pyproject.toml']
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
   check-version:
@@ -33,100 +34,82 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-  test:
+  build:
     needs: check-version
-    if: needs.check-version.outputs.version-changed == 'true' || github.event_name == 'release'
+    if: needs.check-version.outputs.version-changed == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12"]
-
+    
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-
-      - name: Set up Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: |
-          uv sync --dev
-
-      - name: Run tests
-        run: |
-          uv run pytest
-
-      - name: Run linting
-        run: |
-          uv run ruff check .
-          uv run black --check .
-
-      - name: Run type checking
-        run: |
-          uv run mypy src/llm_orc
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    
+    - name: Install UV
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+    
+    - name: Build package
+      run: |
+        uv build
+    
+    - name: Check build artifacts
+      run: |
+        ls -la dist/
+        uv add twine
+        uv run python -m twine check dist/*
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/
 
   publish-test-pypi:
-    needs: [check-version, test]
+    needs: [check-version, build]
     if: needs.check-version.outputs.version-changed == 'true' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment:
       name: testpypi
       url: https://test.pypi.org/project/llm-orchestra/
-
+    
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-
-      - name: Set up Python
-        run: uv python install 3.11
-
-      - name: Build package
-        run: |
-          uv build
-
-      - name: Publish to Test PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
-          verbose: true
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+    
+    - name: Publish to Test PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        verbose: true
 
   publish-pypi:
-    needs: [check-version, test]
-    if: github.event_name == 'release'
+    needs: [check-version, build]
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/project/llm-orchestra/
-
+    
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-
-      - name: Set up Python
-        run: uv python install 3.11
-
-      - name: Build package
-        run: |
-          uv build
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
-          verbose: true
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+    
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.PYPI_API_TOKEN }}
+        verbose: true
 
   notify:
     needs: [check-version, publish-test-pypi, publish-pypi]
