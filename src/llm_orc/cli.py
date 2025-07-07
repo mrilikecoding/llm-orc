@@ -1,11 +1,14 @@
 """Command line interface for llm-orc."""
 
+import asyncio
+import json
 import os
 from pathlib import Path
 
 import click
 
 from llm_orc.ensemble_config import EnsembleLoader
+from llm_orc.ensemble_execution import EnsembleExecutor
 
 
 @click.group()
@@ -22,14 +25,22 @@ def cli():
     default=None,
     help="Directory containing ensemble configurations",
 )
-def invoke(ensemble_name: str, config_dir: str):
+@click.option(
+    "--input",
+    default="Please analyze this.",
+    help="Input data for the ensemble",
+)
+@click.option(
+    "--output-format",
+    type=click.Choice(["json", "text"]),
+    default="text",
+    help="Output format for results",
+)
+def invoke(ensemble_name: str, config_dir: str, input: str, output_format: str):
     """Invoke an ensemble of agents."""
     if config_dir is None:
         # Default to ~/.llm-orc/ensembles if no config dir specified
         config_dir = os.path.expanduser("~/.llm-orc/ensembles")
-    
-    click.echo(f"Invoking ensemble: {ensemble_name}")
-    click.echo(f"Looking in config directory: {config_dir}")
     
     loader = EnsembleLoader()
     ensemble_config = loader.find_ensemble(config_dir, ensemble_name)
@@ -37,12 +48,39 @@ def invoke(ensemble_name: str, config_dir: str):
     if ensemble_config is None:
         raise click.ClickException(f"Ensemble '{ensemble_name}' not found in {config_dir}")
     
-    click.echo(f"Found ensemble: {ensemble_config.description}")
-    click.echo(f"Agents: {len(ensemble_config.agents)}")
+    if output_format == "text":
+        click.echo(f"Invoking ensemble: {ensemble_name}")
+        click.echo(f"Description: {ensemble_config.description}")
+        click.echo(f"Agents: {len(ensemble_config.agents)}")
+        click.echo(f"Input: {input}")
+        click.echo("---")
     
-    # For now, just show what we would do
-    # TODO: Implement actual ensemble execution
-    raise click.ClickException("Ensemble execution not implemented yet")
+    # Execute the ensemble
+    async def run_ensemble():
+        executor = EnsembleExecutor()
+        return await executor.execute(ensemble_config, input)
+    
+    try:
+        result = asyncio.run(run_ensemble())
+        
+        if output_format == "json":
+            click.echo(json.dumps(result, indent=2))
+        else:
+            # Text format - show readable output
+            click.echo(f"Status: {result['status']}")
+            click.echo(f"Duration: {result['metadata']['duration']}")
+            click.echo("\nAgent Results:")
+            for agent_name, agent_result in result["results"].items():
+                if agent_result["status"] == "success":
+                    click.echo(f"  {agent_name}: {agent_result['response']}")
+                else:
+                    click.echo(f"  {agent_name}: ERROR - {agent_result['error']}")
+            
+            if result.get("synthesis"):
+                click.echo(f"\nSynthesis: {result['synthesis']}")
+                
+    except Exception as e:
+        raise click.ClickException(f"Ensemble execution failed: {str(e)}")
 
 
 @cli.command("list-ensembles")
