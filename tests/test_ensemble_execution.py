@@ -1,5 +1,6 @@
 """Tests for ensemble execution."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock
 
@@ -285,3 +286,158 @@ class TestEnsembleExecutor:
         assert totals["total_cost_usd"] == 0.012  # 0.0045 + 0.0 + 0.0075
         assert totals["total_duration_ms"] == 3500  # 1200 + 800 + 1500
         assert totals["agents_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_execute_ensemble_with_timeout(self):
+        """Test that ensemble execution respects timeout settings."""
+        config = EnsembleConfig(
+            name="timeout_test",
+            description="Test timeout functionality",
+            agents=[
+                {"name": "slow_agent", "role": "analyst", "model": "slow-model"},
+            ],
+            coordinator={
+                "synthesis_prompt": "Summarize results",
+                "output_format": "json",
+                "timeout_seconds": 5  # 5 second timeout
+            }
+        )
+        
+        # Mock model that takes too long
+        slow_model = AsyncMock(spec=ModelInterface)
+        
+        async def slow_response(*args, **kwargs):
+            await asyncio.sleep(10)  # Takes 10 seconds, longer than 5 second timeout
+            return "This should timeout"
+        
+        slow_model.generate_response = slow_response
+        slow_model.get_last_usage.return_value = {
+            "input_tokens": 50,
+            "output_tokens": 100,
+            "total_tokens": 150,
+            "cost_usd": 0.001,
+            "duration_ms": 10000,
+            "model": "slow-model"
+        }
+        
+        role = RoleDefinition(name="analyst", prompt="Analyze")
+        
+        executor = EnsembleExecutor()
+        executor._load_role = AsyncMock(return_value=role)
+        executor._load_model = AsyncMock(return_value=slow_model)
+        
+        result = await executor.execute(config, input_data="Test timeout")
+        
+        # Should complete with errors due to timeout
+        assert result["status"] == "completed_with_errors"
+        assert "slow_agent" in result["results"]
+        agent_result = result["results"]["slow_agent"]
+        assert agent_result["status"] == "failed"
+        assert "timed out" in agent_result["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_ensemble_with_per_agent_timeout(self):
+        """Test that individual agents can have their own timeout settings."""
+        config = EnsembleConfig(
+            name="per_agent_timeout_test",
+            description="Test per-agent timeout functionality",
+            agents=[
+                {"name": "fast_agent", "role": "analyst", "model": "fast-model", "timeout_seconds": 10},
+                {"name": "slow_agent", "role": "reviewer", "model": "slow-model", "timeout_seconds": 2},
+            ],
+            coordinator={
+                "synthesis_prompt": "Combine results",
+                "output_format": "json"
+            }
+        )
+        
+        # Fast model
+        fast_model = AsyncMock(spec=ModelInterface)
+        fast_model.generate_response.return_value = "Fast response"
+        fast_model.get_last_usage.return_value = {
+            "input_tokens": 20, "output_tokens": 30, "total_tokens": 50,
+            "cost_usd": 0.001, "duration_ms": 500, "model": "fast-model"
+        }
+        
+        # Slow model that exceeds its timeout
+        slow_model = AsyncMock(spec=ModelInterface)
+        
+        async def slow_response(*args, **kwargs):
+            await asyncio.sleep(5)  # Takes 5 seconds, longer than 2 second timeout
+            return "This should timeout"
+        
+        slow_model.generate_response = slow_response
+        slow_model.get_last_usage.return_value = {
+            "input_tokens": 30, "output_tokens": 40, "total_tokens": 70,
+            "cost_usd": 0.002, "duration_ms": 5000, "model": "slow-model"
+        }
+        
+        role = RoleDefinition(name="test", prompt="Test")
+        
+        executor = EnsembleExecutor()
+        executor._load_role = AsyncMock(return_value=role)
+        executor._load_model = AsyncMock(side_effect=[fast_model, slow_model])
+        
+        result = await executor.execute(config, input_data="Test per-agent timeout")
+        
+        # Should complete with errors due to one agent timing out
+        assert result["status"] == "completed_with_errors"
+        
+        # Fast agent should succeed
+        assert result["results"]["fast_agent"]["status"] == "success"
+        assert result["results"]["fast_agent"]["response"] == "Fast response"
+        
+        # Slow agent should fail with timeout
+        assert result["results"]["slow_agent"]["status"] == "failed"
+        assert "timed out" in result["results"]["slow_agent"]["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_ensemble_with_synthesis_timeout(self):
+        """Test that synthesis step respects timeout settings."""
+        config = EnsembleConfig(
+            name="synthesis_timeout_test",
+            description="Test synthesis timeout",
+            agents=[
+                {"name": "agent1", "role": "analyst", "model": "fast-model"},
+            ],
+            coordinator={
+                "synthesis_prompt": "Synthesize results",
+                "output_format": "json",
+                "synthesis_timeout_seconds": 3
+            }
+        )
+        
+        # Fast agent
+        fast_model = AsyncMock(spec=ModelInterface)
+        fast_model.generate_response.return_value = "Agent response"
+        fast_model.get_last_usage.return_value = {
+            "input_tokens": 20, "output_tokens": 30, "total_tokens": 50,
+            "cost_usd": 0.001, "duration_ms": 500, "model": "fast-model"
+        }
+        
+        # Slow synthesis model
+        slow_synthesis_model = AsyncMock(spec=ModelInterface)
+        
+        async def slow_synthesis(*args, **kwargs):
+            await asyncio.sleep(5)  # Takes 5 seconds, longer than 3 second timeout
+            return "This should timeout"
+        
+        slow_synthesis_model.generate_response = slow_synthesis
+        slow_synthesis_model.get_last_usage.return_value = {
+            "input_tokens": 100, "output_tokens": 50, "total_tokens": 150,
+            "cost_usd": 0.003, "duration_ms": 5000, "model": "synthesis-model"
+        }
+        
+        role = RoleDefinition(name="analyst", prompt="Analyze")
+        
+        executor = EnsembleExecutor()
+        executor._load_role = AsyncMock(return_value=role)
+        executor._load_model = AsyncMock(return_value=fast_model)
+        executor._get_synthesis_model = AsyncMock(return_value=slow_synthesis_model)
+        
+        result = await executor.execute(config, input_data="Test synthesis timeout")
+        
+        # Should complete with errors due to synthesis timeout
+        assert result["status"] == "completed_with_errors"
+        assert result["results"]["agent1"]["status"] == "success"
+        assert "synthesis failed" in result["synthesis"].lower() or "timeout" in result["synthesis"].lower()

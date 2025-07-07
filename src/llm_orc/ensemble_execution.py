@@ -30,10 +30,12 @@ class EnsembleExecutor:
             }
         }
         
-        # Execute all agents concurrently
+        # Execute all agents concurrently with timeout handling
         agent_tasks = []
         for agent_config in config.agents:
-            task = self._execute_agent(agent_config, input_data)
+            # Get timeout from agent config or coordinator config
+            timeout = agent_config.get("timeout_seconds") or config.coordinator.get("timeout_seconds")
+            task = self._execute_agent_with_timeout(agent_config, input_data, timeout)
             agent_tasks.append((agent_config["name"], task))
         
         # Wait for all agents to complete and collect usage
@@ -61,7 +63,10 @@ class EnsembleExecutor:
         synthesis_usage = None
         if config.coordinator.get("synthesis_prompt"):
             try:
-                synthesis, synthesis_model = await self._synthesize_results(config, result["results"])
+                synthesis_timeout = config.coordinator.get("synthesis_timeout_seconds")
+                synthesis, synthesis_model = await self._synthesize_results_with_timeout(
+                    config, result["results"], synthesis_timeout
+                )
                 result["synthesis"] = synthesis
                 synthesis_usage = synthesis_model.get_last_usage()
             except Exception as e:
@@ -176,3 +181,35 @@ class EnsembleExecutor:
             summary["totals"]["total_duration_ms"] += synthesis_usage.get("duration_ms", 0)
         
         return summary
+    
+    async def _execute_agent_with_timeout(
+        self, agent_config: Dict[str, Any], input_data: str, timeout_seconds: Optional[int]
+    ) -> Tuple[str, ModelInterface]:
+        """Execute an agent with optional timeout."""
+        if timeout_seconds is None:
+            # No timeout specified, execute normally
+            return await self._execute_agent(agent_config, input_data)
+        
+        try:
+            return await asyncio.wait_for(
+                self._execute_agent(agent_config, input_data), 
+                timeout=timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            raise Exception(f"Agent execution timed out after {timeout_seconds} seconds")
+    
+    async def _synthesize_results_with_timeout(
+        self, config: EnsembleConfig, agent_results: Dict[str, Any], timeout_seconds: Optional[int]
+    ) -> Tuple[str, ModelInterface]:
+        """Synthesize results with optional timeout."""
+        if timeout_seconds is None:
+            # No timeout specified, execute normally
+            return await self._synthesize_results(config, agent_results)
+        
+        try:
+            return await asyncio.wait_for(
+                self._synthesize_results(config, agent_results),
+                timeout=timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            raise Exception(f"Synthesis timed out after {timeout_seconds} seconds")
