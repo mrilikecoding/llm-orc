@@ -58,7 +58,9 @@ class TestEnsembleExecutor:
 
         # Create mock synthesis model
         mock_synthesis_model = AsyncMock(spec=ModelInterface)
-        mock_synthesis_model.generate_response.return_value = "Synthesis: Combined results from both agents"
+        mock_synthesis_model.generate_response.return_value = (
+            "Synthesis: Combined results from both agents"
+        )
         mock_synthesis_model.get_last_usage.return_value = {
             "total_tokens": 50,
             "input_tokens": 30,
@@ -137,7 +139,9 @@ class TestEnsembleExecutor:
 
         # Create mock synthesis model
         mock_synthesis_model = AsyncMock(spec=ModelInterface)
-        mock_synthesis_model.generate_response.return_value = "Synthesis: The analysis and check both confirm the feature is solid"
+        mock_synthesis_model.generate_response.return_value = (
+            "Synthesis: The analysis and check both confirm the feature is solid"
+        )
         mock_synthesis_model.get_last_usage.return_value = {
             "total_tokens": 35,
             "input_tokens": 20,
@@ -386,8 +390,18 @@ class TestEnsembleExecutor:
             name="per_agent_timeout_test",
             description="Test per-agent timeout functionality",
             agents=[
-                {"name": "fast_agent", "role": "analyst", "model": "fast-model", "timeout_seconds": 10},
-                {"name": "slow_agent", "role": "reviewer", "model": "slow-model", "timeout_seconds": 2},
+                {
+                    "name": "fast_agent",
+                    "role": "analyst",
+                    "model": "fast-model",
+                    "timeout_seconds": 10
+                },
+                {
+                    "name": "slow_agent",
+                    "role": "reviewer",
+                    "model": "slow-model",
+                    "timeout_seconds": 2
+                },
             ],
             coordinator={
                 "synthesis_prompt": "Combine results",
@@ -484,4 +498,7 @@ class TestEnsembleExecutor:
         # Should complete with errors due to synthesis timeout
         assert result["status"] == "completed_with_errors"
         assert result["results"]["agent1"]["status"] == "success"
-        assert "synthesis failed" in result["synthesis"].lower() or "timeout" in result["synthesis"].lower()
+        assert (
+            "synthesis failed" in result["synthesis"].lower() or
+            "timeout" in result["synthesis"].lower()
+        )
