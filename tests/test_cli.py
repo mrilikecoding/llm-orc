@@ -64,7 +64,7 @@ class TestCLI:
             ensemble = {
                 "name": "test_ensemble",
                 "description": "A test ensemble for CLI testing",
-                "agents": [{"name": "agent1", "role": "tester", "model": "claude-3-sonnet"}],
+                "agents": [{"name": "agent1", "role": "tester", "model": "claude-3-sonnet"}],  # noqa: E501
                 "coordinator": {"synthesis_prompt": "Test", "output_format": "json"}
             }
 
@@ -88,14 +88,14 @@ class TestCLI:
                     {"name": "agent1", "role": "tester", "model": "claude-3-sonnet"},
                     {"name": "agent2", "role": "reviewer", "model": "claude-3-sonnet"}
                 ],
-                "coordinator": {"synthesis_prompt": "Combine results", "output_format": "json"}
+                "coordinator": {"synthesis_prompt": "Combine results", "output_format": "json"}  # noqa: E501
             }
 
             with open(f"{temp_dir}/working_ensemble.yaml", 'w') as f:
                 yaml.dump(ensemble, f)
 
             runner = CliRunner()
-            result = runner.invoke(cli, ["invoke", "--config-dir", temp_dir, "working_ensemble"])
+            result = runner.invoke(cli, ["invoke", "--config-dir", temp_dir, "working_ensemble"])  # noqa: E501
             # Should now succeed and show execution results (using JSON output)
             assert "working_ensemble" in result.output
             # Should see some execution output or JSON structure

@@ -21,7 +21,10 @@ class TestEnsembleConfig:
                 {"name": "agent1", "role": "tester", "model": "claude-3-sonnet"},
                 {"name": "agent2", "role": "reviewer", "model": "claude-3-sonnet"},
             ],
-            coordinator={"synthesis_prompt": "Combine the results", "output_format": "json"},
+            coordinator={
+                "synthesis_prompt": "Combine the results",
+                "output_format": "json"
+            },
         )
 
         assert config.name == "test_ensemble"
@@ -40,8 +43,16 @@ class TestEnsembleLoader:
             "name": "pr_review",
             "description": "Multi-perspective PR review ensemble",
             "agents": [
-                {"name": "security_reviewer", "role": "security_analyst", "model": "claude-3-sonnet"},
-                {"name": "performance_reviewer", "role": "performance_analyst", "model": "claude-3-sonnet"},
+                {
+                    "name": "security_reviewer",
+                    "role": "security_analyst",
+                    "model": "claude-3-sonnet"
+                },
+                {
+                    "name": "performance_reviewer",
+                    "role": "performance_analyst",
+                    "model": "claude-3-sonnet"
+                },
             ],
             "coordinator": {
                 "synthesis_prompt": "Synthesize security and performance feedback",

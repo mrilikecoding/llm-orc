@@ -95,7 +95,7 @@ class TestPracticalExamples:
         einstein_role = RoleDefinition(
             name="einstein",
             prompt="You are Albert Einstein, the brilliant theoretical physicist. "
-            "Speak thoughtfully about science, imagination, and the mysteries of the universe. "
+            "Speak thoughtfully about science, imagination, and the mysteries of the universe. "  # noqa: E501
             "You appreciate the beauty in both science and art.",
             context={
                 "era": "20th century",
@@ -104,8 +104,8 @@ class TestPracticalExamples:
         )
         einstein_model = AsyncMock(spec=ModelInterface)
         einstein_model.generate_response.return_value = (
-            "Ah, my poetic friend! The universe is indeed a symphony of mathematical harmony. "
-            "What you call the dance of stars, I see as the elegant curvature of spacetime itself."
+            "Ah, my poetic friend! The universe is indeed a symphony of mathematical harmony. "  # noqa: E501
+            "What you call the dance of stars, I see as the elegant curvature of spacetime itself."  # noqa: E501
         )
         einstein_agent = Agent("einstein", einstein_role, einstein_model)
 
@@ -121,21 +121,21 @@ class TestPracticalExamples:
         conversation_id = await orchestrator.start_conversation(
             participants=["shakespeare", "einstein"],
             topic="The Nature of Beauty in Art and Science",
-            initial_message="What think you of the relationship between beauty and truth?",
+            initial_message="What think you of the relationship between beauty and truth?",  # noqa: E501
         )
 
         # Einstein responds
         einstein_response = await orchestrator.send_agent_message(
             sender="einstein",
             recipient="shakespeare",
-            content="Beauty in science comes from elegant equations that reveal deep truths.",
+            content="Beauty in science comes from elegant equations that reveal deep truths.",  # noqa: E501
             conversation_id=conversation_id,
         )
 
         # Assert
         assert conversation_id is not None
         assert einstein_response is not None
-        # The response should be from Shakespeare (recipient) when Einstein sends a message to Shakespeare
+        # The response should be from Shakespeare (recipient) when Einstein sends a message to Shakespeare  # noqa: E501
         assert (
             "hark" in einstein_response.lower() or "cosmos" in einstein_response.lower()
         )
@@ -184,31 +184,31 @@ class TestPracticalExamples:
         # Create specialist agents
         senior_dev_role = RoleDefinition(
             name="senior_developer",
-            prompt="You are a senior software developer focused on code quality, best practices, and maintainability. "
-            "Review code for: design patterns, naming conventions, error handling, testing needs, and technical debt. "
+            prompt="You are a senior software developer focused on code quality, best practices, and maintainability. "  # noqa: E501
+            "Review code for: design patterns, naming conventions, error handling, testing needs, and technical debt. "  # noqa: E501
             "Provide constructive feedback in 2-3 sentences.",
             context={"specialties": ["code_quality", "best_practices", "architecture"]},
         )
         senior_dev_model = AsyncMock(spec=ModelInterface)
         senior_dev_model.generate_response.return_value = (
             "Code structure looks clean with proper separation of concerns. "
-            "Consider adding error handling for JWT encoding/decoding and using environment variables for the secret key. "
-            "Unit tests for password hashing and token validation would strengthen this implementation."
+            "Consider adding error handling for JWT encoding/decoding and using environment variables for the secret key. "  # noqa: E501
+            "Unit tests for password hashing and token validation would strengthen this implementation."  # noqa: E501
         )
         senior_dev = Agent("senior_dev", senior_dev_role, senior_dev_model)
 
         security_expert_role = RoleDefinition(
             name="security_expert",
-            prompt="You are a cybersecurity expert focused on identifying security vulnerabilities and best practices. "
-            "Review code for: authentication flaws, data validation, secret management, encryption standards. "
+            prompt="You are a cybersecurity expert focused on identifying security vulnerabilities and best practices. "  # noqa: E501
+            "Review code for: authentication flaws, data validation, secret management, encryption standards. "  # noqa: E501
             "Provide security-focused feedback in 2-3 sentences.",
             context={"specialties": ["security", "encryption", "authentication"]},
         )
         security_expert_model = AsyncMock(spec=ModelInterface)
         security_expert_model.generate_response.return_value = (
-            "CRITICAL: Hardcoded secret key 'secret_key' is a major security vulnerability - use environment variables. "
-            "Password hashing with bcrypt is good practice, but consider adding rate limiting for authentication attempts. "
-            "JWT expiration time of 24 hours might be too long for sensitive applications."
+            "CRITICAL: Hardcoded secret key 'secret_key' is a major security vulnerability - use environment variables. "  # noqa: E501
+            "Password hashing with bcrypt is good practice, but consider adding rate limiting for authentication attempts. "  # noqa: E501
+            "JWT expiration time of 24 hours might be too long for sensitive applications."  # noqa: E501
         )
         security_expert = Agent(
             "security_expert", security_expert_role, security_expert_model
@@ -216,16 +216,16 @@ class TestPracticalExamples:
 
         ux_reviewer_role = RoleDefinition(
             name="ux_reviewer",
-            prompt="You are a UX specialist focused on user experience and accessibility. "
-            "Review code changes for: user impact, error messages, accessibility, usability implications. "
+            prompt="You are a UX specialist focused on user experience and accessibility. "  # noqa: E501
+            "Review code changes for: user impact, error messages, accessibility, usability implications. "  # noqa: E501
             "Provide UX-focused feedback in 2-3 sentences.",
             context={"specialties": ["user_experience", "accessibility", "usability"]},
         )
         ux_reviewer_model = AsyncMock(spec=ModelInterface)
         ux_reviewer_model.generate_response.return_value = (
-            "From a UX perspective, this backend authentication system needs clear error messaging for users. "
-            "Consider implementing proper password strength requirements and user-friendly feedback for login failures. "
-            "The 24-hour token expiration should align with user expectations and include session extension options."
+            "From a UX perspective, this backend authentication system needs clear error messaging for users. "  # noqa: E501
+            "Consider implementing proper password strength requirements and user-friendly feedback for login failures. "  # noqa: E501
+            "The 24-hour token expiration should align with user expectations and include session extension options."  # noqa: E501
         )
         ux_reviewer = Agent("ux_reviewer", ux_reviewer_role, ux_reviewer_model)
 
