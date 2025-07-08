@@ -69,11 +69,13 @@ class TestMessageRoutingPerformance:
         agents = []
         for i in range(3):
             mock_model = AsyncMock(spec=ModelInterface)
-            mock_model.generate_response.return_value = f"Response from agent {i+1}"
+            mock_model.generate_response.return_value = f"Response from agent {i + 1}"
 
-            role = RoleDefinition(name=f"agent_{i+1}", prompt=f"You are agent {i+1}.")
+            role = RoleDefinition(
+                name=f"agent_{i + 1}", prompt=f"You are agent {i + 1}."
+            )
 
-            agent = Agent(f"agent_{i+1}", role, mock_model)
+            agent = Agent(f"agent_{i + 1}", role, mock_model)
             agents.append(agent)
 
         orchestrator = ConversationOrchestrator()

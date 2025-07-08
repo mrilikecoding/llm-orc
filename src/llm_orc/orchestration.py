@@ -132,15 +132,15 @@ class PRReviewOrchestrator:
     def _format_pr_for_review(self, pr_data: dict) -> str:
         """Format PR data into a review-friendly string."""
         return f"""
-PR Title: {pr_data['title']}
-Description: {pr_data['description']}
+PR Title: {pr_data["title"]}
+Description: {pr_data["description"]}
 
-Files Changed: {', '.join(pr_data.get('files_changed', []))}
-Additions: {pr_data.get('additions', 0)} lines
-Deletions: {pr_data.get('deletions', 0)} lines
+Files Changed: {", ".join(pr_data.get("files_changed", []))}
+Additions: {pr_data.get("additions", 0)} lines
+Deletions: {pr_data.get("deletions", 0)} lines
 
 Code Changes:
-{pr_data.get('diff', 'No diff available')}
+{pr_data.get("diff", "No diff available")}
 
 Please provide your specialist review focusing on your area of expertise.
 """.strip()

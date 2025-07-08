@@ -13,6 +13,7 @@ Mix expensive cloud models with free local models - use Claude for strategic ins
 - **Multi-Agent Ensembles**: Coordinate specialized agents for different aspects of analysis
 - **Cost Optimization**: Mix expensive and free models based on what each task needs
 - **CLI Interface**: Simple commands with piping support (`cat code.py | llm-orc invoke code-review`)
+- **Secure Authentication**: Encrypted API key storage with easy credential management
 - **YAML Configuration**: Easy ensemble setup with readable config files
 - **Usage Tracking**: Token counting, cost estimation, and timing metrics
 
@@ -35,7 +36,28 @@ uv sync --dev
 
 ## Quick Start
 
-### 1. Create an Ensemble Configuration
+### 1. Set Up Authentication
+
+Before using LLM Orchestra, configure authentication for your LLM providers:
+
+```bash
+# Interactive setup wizard
+llm-orc auth setup
+
+# Or add providers individually
+llm-orc auth add anthropic --api-key YOUR_ANTHROPIC_KEY
+llm-orc auth add google --api-key YOUR_GOOGLE_KEY
+
+# List configured providers
+llm-orc auth list
+
+# Test authentication
+llm-orc auth test anthropic
+```
+
+**Security**: API keys are encrypted and stored securely in `~/.llm-orc/credentials.yaml`.
+
+### 2. Create an Ensemble Configuration
 
 Create `~/.llm-orc/ensembles/code-review.yaml`:
 
@@ -62,7 +84,7 @@ coordinator:
   timeout_seconds: 90
 ```
 
-### 2. Invoke an Ensemble
+### 3. Invoke an Ensemble
 
 ```bash
 # Analyze code from a file
