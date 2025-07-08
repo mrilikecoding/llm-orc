@@ -3,21 +3,15 @@ name: Publish to PyPI
 on:
   push:
     branches: [main]
-    paths: ['pyproject.toml']
-  release:
-    types: [published]
   workflow_dispatch:
 
 jobs:
-  check-version:
+  get-version:
     runs-on: ubuntu-latest
     outputs:
-      version-changed: ${{ steps.check.outputs.changed }}
       current-version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
 
       - name: Get current version
         id: version
@@ -25,18 +19,7 @@ jobs:
           VERSION=$(grep -E '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Check if version changed
-        id: check
-        run: |
-          if git diff HEAD~1 HEAD -- pyproject.toml | grep -q "^+version = "; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-          else
-            echo "changed=false" >> $GITHUB_OUTPUT
-          fi
-
   build:
-    needs: check-version
-    if: needs.check-version.outputs.version-changed == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     
     steps:
@@ -68,31 +51,8 @@ jobs:
         name: dist
         path: dist/
 
-  publish-test-pypi:
-    needs: [check-version, build]
-    if: needs.check-version.outputs.version-changed == 'true' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    environment:
-      name: testpypi
-      url: https://test.pypi.org/project/llm-orchestra/
-    
-    steps:
-    - name: Download build artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: dist
-        path: dist/
-    
-    - name: Publish to Test PyPI
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        repository-url: https://test.pypi.org/legacy/
-        password: ${{ secrets.TEST_PYPI_API_TOKEN }}
-        verbose: true
-
   publish-pypi:
-    needs: [check-version, build]
-    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    needs: [get-version, build]
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -107,19 +67,17 @@ jobs:
     
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
+      continue-on-error: true
       with:
         password: ${{ secrets.PYPI_API_TOKEN }}
+        skip-existing: true
         verbose: true
 
   notify:
-    needs: [check-version, publish-test-pypi, publish-pypi]
-    if: always() && (needs.publish-test-pypi.result == 'success' || needs.publish-pypi.result == 'success')
+    needs: [get-version, publish-pypi]
+    if: always() && needs.publish-pypi.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Notify success
         run: |
-          if [[ "${{ needs.publish-pypi.result }}" == "success" ]]; then
-            echo "🎉 Successfully published llm-orchestra v${{ needs.check-version.outputs.current-version }} to PyPI!"
-          elif [[ "${{ needs.publish-test-pypi.result }}" == "success" ]]; then
-            echo "🧪 Successfully published llm-orchestra v${{ needs.check-version.outputs.current-version }} to Test PyPI!"
-          fi
+          echo "🎉 Successfully published llm-orchestra v${{ needs.get-version.outputs.current-version }} to PyPI!"
