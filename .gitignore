@@ -32,6 +32,9 @@ coverage.xml
 *.py,cover
 .hypothesis/
 
+# Type checking
+.mypy_cache/
+
 # Virtual environments
 .env
 .venv/
