@@ -34,7 +34,7 @@ class TestClaudeModel:
         model.client = AsyncMock()
         model.client.messages.create.return_value = Mock(
             content=[Mock(text="Hello from Claude!")],
-            usage=Mock(input_tokens=10, output_tokens=5)
+            usage=Mock(input_tokens=10, output_tokens=5),
         )
 
         response = await model.generate_response(

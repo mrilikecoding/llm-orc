@@ -83,9 +83,8 @@ class ClaudeModel(ModelInterface):
         # Estimate cost (simplified pricing for Claude)
         cost_per_input_token = 0.000003  # $3 per million input tokens
         cost_per_output_token = 0.000015  # $15 per million output tokens
-        cost_usd = (
-            (input_tokens * cost_per_input_token) +
-            (output_tokens * cost_per_output_token)
+        cost_usd = (input_tokens * cost_per_input_token) + (
+            output_tokens * cost_per_output_token
         )
 
         self._record_usage(
@@ -93,7 +92,7 @@ class ClaudeModel(ModelInterface):
             output_tokens=output_tokens,
             duration_ms=duration_ms,
             cost_usd=cost_usd,
-            model_name=self.model
+            model_name=self.model,
         )
 
         return response.content[0].text
@@ -133,9 +132,8 @@ class GeminiModel(ModelInterface):
         # Estimate cost (simplified Gemini pricing)
         cost_per_input_token = 0.0000005  # $0.50 per million input tokens
         cost_per_output_token = 0.0000015  # $1.50 per million output tokens
-        cost_usd = (
-            (estimated_input_tokens * cost_per_input_token) +
-            (estimated_output_tokens * cost_per_output_token)
+        cost_usd = (estimated_input_tokens * cost_per_input_token) + (
+            estimated_output_tokens * cost_per_output_token
         )
 
         self._record_usage(
@@ -143,7 +141,7 @@ class GeminiModel(ModelInterface):
             output_tokens=estimated_output_tokens,
             duration_ms=duration_ms,
             cost_usd=cost_usd,
-            model_name=self.model_name
+            model_name=self.model_name,
         )
 
         return response.text
@@ -191,7 +189,7 @@ class OllamaModel(ModelInterface):
             output_tokens=estimated_output_tokens,
             duration_ms=duration_ms,
             cost_usd=0.0,  # Local models have no API cost
-            model_name=self.model_name
+            model_name=self.model_name,
         )
 
         return content

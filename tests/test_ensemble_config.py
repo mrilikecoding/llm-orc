@@ -23,7 +23,7 @@ class TestEnsembleConfig:
             ],
             coordinator={
                 "synthesis_prompt": "Combine the results",
-                "output_format": "json"
+                "output_format": "json",
             },
         )
 
@@ -46,21 +46,21 @@ class TestEnsembleLoader:
                 {
                     "name": "security_reviewer",
                     "role": "security_analyst",
-                    "model": "claude-3-sonnet"
+                    "model": "claude-3-sonnet",
                 },
                 {
                     "name": "performance_reviewer",
                     "role": "performance_analyst",
-                    "model": "claude-3-sonnet"
+                    "model": "claude-3-sonnet",
                 },
             ],
             "coordinator": {
                 "synthesis_prompt": "Synthesize security and performance feedback",
-                "output_format": "structured"
-            }
+                "output_format": "structured",
+            },
         }
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(ensemble_yaml, f)
             yaml_path = f.name
 
@@ -83,24 +83,24 @@ class TestEnsembleLoader:
                 "name": "ensemble1",
                 "description": "First ensemble",
                 "agents": [{"name": "agent1", "role": "role1", "model": "model1"}],
-                "coordinator": {"synthesis_prompt": "Combine", "output_format": "json"}
+                "coordinator": {"synthesis_prompt": "Combine", "output_format": "json"},
             }
 
             ensemble2 = {
                 "name": "ensemble2",
                 "description": "Second ensemble",
                 "agents": [{"name": "agent2", "role": "role2", "model": "model2"}],
-                "coordinator": {"synthesis_prompt": "Merge", "output_format": "json"}
+                "coordinator": {"synthesis_prompt": "Merge", "output_format": "json"},
             }
 
             # Write ensemble files
-            with open(f"{temp_dir}/ensemble1.yaml", 'w') as f:
+            with open(f"{temp_dir}/ensemble1.yaml", "w") as f:
                 yaml.dump(ensemble1, f)
-            with open(f"{temp_dir}/ensemble2.yaml", 'w') as f:
+            with open(f"{temp_dir}/ensemble2.yaml", "w") as f:
                 yaml.dump(ensemble2, f)
 
             # Also create a non-yaml file that should be ignored
-            with open(f"{temp_dir}/not_an_ensemble.txt", 'w') as f:
+            with open(f"{temp_dir}/not_an_ensemble.txt", "w") as f:
                 f.write("This should be ignored")
 
             loader = EnsembleLoader()
@@ -126,10 +126,10 @@ class TestEnsembleLoader:
                 "name": "target_ensemble",
                 "description": "Target ensemble",
                 "agents": [{"name": "agent", "role": "role", "model": "model"}],
-                "coordinator": {"synthesis_prompt": "Process", "output_format": "json"}
+                "coordinator": {"synthesis_prompt": "Process", "output_format": "json"},
             }
 
-            with open(f"{temp_dir}/target_ensemble.yaml", 'w') as f:
+            with open(f"{temp_dir}/target_ensemble.yaml", "w") as f:
                 yaml.dump(ensemble, f)
 
             loader = EnsembleLoader()

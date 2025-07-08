@@ -27,22 +27,22 @@ class TestEnsembleExecutor:
             ],
             coordinator={
                 "synthesis_prompt": "Combine the results from both agents",
-                "output_format": "json"
-            }
+                "output_format": "json",
+            },
         )
 
         # Create mock model
         mock_model = AsyncMock(spec=ModelInterface)
         mock_model.generate_response.side_effect = [
             "Agent 1 response: This looks good",
-            "Agent 2 response: I found some issues"
+            "Agent 2 response: I found some issues",
         ]
         mock_model.get_last_usage.return_value = {
             "total_tokens": 30,
             "input_tokens": 20,
             "output_tokens": 10,
             "cost_usd": 0.005,
-            "duration_ms": 50
+            "duration_ms": 50,
         }
 
         # Create role definitions
@@ -66,7 +66,7 @@ class TestEnsembleExecutor:
             "input_tokens": 30,
             "output_tokens": 20,
             "cost_usd": 0.01,
-            "duration_ms": 100
+            "duration_ms": 100,
         }
         executor._get_synthesis_model = AsyncMock(return_value=mock_synthesis_model)
 
@@ -104,8 +104,8 @@ class TestEnsembleExecutor:
             ],
             coordinator={
                 "synthesis_prompt": "Compare the analysis and check",
-                "output_format": "structured"
-            }
+                "output_format": "structured",
+            },
         )
 
         # Mock different models
@@ -116,7 +116,7 @@ class TestEnsembleExecutor:
             "input_tokens": 25,
             "output_tokens": 15,
             "cost_usd": 0.008,
-            "duration_ms": 80
+            "duration_ms": 80,
         }
 
         llama_model = AsyncMock(spec=ModelInterface)
@@ -126,7 +126,7 @@ class TestEnsembleExecutor:
             "input_tokens": 15,
             "output_tokens": 10,
             "cost_usd": 0.003,
-            "duration_ms": 60
+            "duration_ms": 60,
         }
 
         # Mock role
@@ -147,7 +147,7 @@ class TestEnsembleExecutor:
             "input_tokens": 20,
             "output_tokens": 15,
             "cost_usd": 0.006,
-            "duration_ms": 70
+            "duration_ms": 70,
         }
         executor._get_synthesis_model = AsyncMock(return_value=mock_synthesis_model)
 
@@ -170,8 +170,8 @@ class TestEnsembleExecutor:
             ],
             coordinator={
                 "synthesis_prompt": "Combine available results",
-                "output_format": "json"
-            }
+                "output_format": "json",
+            },
         )
 
         # Create mock models - one works, one fails
@@ -213,8 +213,8 @@ class TestEnsembleExecutor:
             ],
             coordinator={
                 "synthesis_prompt": "Summarize the analysis results",
-                "output_format": "json"
-            }
+                "output_format": "json",
+            },
         )
 
         # Mock agent response
@@ -253,8 +253,8 @@ class TestEnsembleExecutor:
             ],
             coordinator={
                 "synthesis_prompt": "Combine results",
-                "output_format": "json"
-            }
+                "output_format": "json",
+            },
         )
 
         # Mock models with usage tracking
@@ -266,7 +266,7 @@ class TestEnsembleExecutor:
             "total_tokens": 150,
             "cost_usd": 0.0045,
             "duration_ms": 1200,
-            "model": "claude-3-sonnet"
+            "model": "claude-3-sonnet",
         }
 
         llama_model = AsyncMock(spec=ModelInterface)
@@ -277,7 +277,7 @@ class TestEnsembleExecutor:
             "total_tokens": 125,
             "cost_usd": 0.0,  # Local model, no cost
             "duration_ms": 800,
-            "model": "llama3"
+            "model": "llama3",
         }
 
         synthesis_model = AsyncMock(spec=ModelInterface)
@@ -288,7 +288,7 @@ class TestEnsembleExecutor:
             "total_tokens": 250,
             "cost_usd": 0.0075,
             "duration_ms": 1500,
-            "model": "llama3"
+            "model": "llama3",
         }
 
         role = RoleDefinition(name="test", prompt="Test role")
@@ -347,8 +347,8 @@ class TestEnsembleExecutor:
             coordinator={
                 "synthesis_prompt": "Summarize results",
                 "output_format": "json",
-                "timeout_seconds": 5  # 5 second timeout
-            }
+                "timeout_seconds": 5,  # 5 second timeout
+            },
         )
 
         # Mock model that takes too long
@@ -365,7 +365,7 @@ class TestEnsembleExecutor:
             "total_tokens": 150,
             "cost_usd": 0.001,
             "duration_ms": 10000,
-            "model": "slow-model"
+            "model": "slow-model",
         }
 
         role = RoleDefinition(name="analyst", prompt="Analyze")
@@ -394,27 +394,31 @@ class TestEnsembleExecutor:
                     "name": "fast_agent",
                     "role": "analyst",
                     "model": "fast-model",
-                    "timeout_seconds": 10
+                    "timeout_seconds": 10,
                 },
                 {
                     "name": "slow_agent",
                     "role": "reviewer",
                     "model": "slow-model",
-                    "timeout_seconds": 2
+                    "timeout_seconds": 2,
                 },
             ],
             coordinator={
                 "synthesis_prompt": "Combine results",
-                "output_format": "json"
-            }
+                "output_format": "json",
+            },
         )
 
         # Fast model
         fast_model = AsyncMock(spec=ModelInterface)
         fast_model.generate_response.return_value = "Fast response"
         fast_model.get_last_usage.return_value = {
-            "input_tokens": 20, "output_tokens": 30, "total_tokens": 50,
-            "cost_usd": 0.001, "duration_ms": 500, "model": "fast-model"
+            "input_tokens": 20,
+            "output_tokens": 30,
+            "total_tokens": 50,
+            "cost_usd": 0.001,
+            "duration_ms": 500,
+            "model": "fast-model",
         }
 
         # Slow model that exceeds its timeout
@@ -426,8 +430,12 @@ class TestEnsembleExecutor:
 
         slow_model.generate_response = slow_response
         slow_model.get_last_usage.return_value = {
-            "input_tokens": 30, "output_tokens": 40, "total_tokens": 70,
-            "cost_usd": 0.002, "duration_ms": 5000, "model": "slow-model"
+            "input_tokens": 30,
+            "output_tokens": 40,
+            "total_tokens": 70,
+            "cost_usd": 0.002,
+            "duration_ms": 5000,
+            "model": "slow-model",
         }
 
         role = RoleDefinition(name="test", prompt="Test")
@@ -461,16 +469,20 @@ class TestEnsembleExecutor:
             coordinator={
                 "synthesis_prompt": "Synthesize results",
                 "output_format": "json",
-                "synthesis_timeout_seconds": 3
-            }
+                "synthesis_timeout_seconds": 3,
+            },
         )
 
         # Fast agent
         fast_model = AsyncMock(spec=ModelInterface)
         fast_model.generate_response.return_value = "Agent response"
         fast_model.get_last_usage.return_value = {
-            "input_tokens": 20, "output_tokens": 30, "total_tokens": 50,
-            "cost_usd": 0.001, "duration_ms": 500, "model": "fast-model"
+            "input_tokens": 20,
+            "output_tokens": 30,
+            "total_tokens": 50,
+            "cost_usd": 0.001,
+            "duration_ms": 500,
+            "model": "fast-model",
         }
 
         # Slow synthesis model
@@ -482,8 +494,12 @@ class TestEnsembleExecutor:
 
         slow_synthesis_model.generate_response = slow_synthesis
         slow_synthesis_model.get_last_usage.return_value = {
-            "input_tokens": 100, "output_tokens": 50, "total_tokens": 150,
-            "cost_usd": 0.003, "duration_ms": 5000, "model": "synthesis-model"
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "total_tokens": 150,
+            "cost_usd": 0.003,
+            "duration_ms": 5000,
+            "model": "synthesis-model",
         }
 
         role = RoleDefinition(name="analyst", prompt="Analyze")
@@ -499,6 +515,6 @@ class TestEnsembleExecutor:
         assert result["status"] == "completed_with_errors"
         assert result["results"]["agent1"]["status"] == "success"
         assert (
-            "synthesis failed" in result["synthesis"].lower() or
-            "timeout" in result["synthesis"].lower()
+            "synthesis failed" in result["synthesis"].lower()
+            or "timeout" in result["synthesis"].lower()
         )

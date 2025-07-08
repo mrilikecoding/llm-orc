@@ -181,9 +181,7 @@ class TestMessageRoutingPerformance:
         registration_time_ms = (end_time - start_time) * 1000
 
         # Assert - Should register quickly
-        assert (
-            registration_time_ms < 10.0
-        ), (
+        assert registration_time_ms < 10.0, (
             f"Registering 10 agents took {registration_time_ms:.2f}ms, "
             "should be under 10ms"
         )
@@ -207,9 +205,7 @@ class TestPRReviewPerformance:
 
         # Create 3 fast reviewer agents
         reviewers = []
-        for _, specialty in enumerate([
-            "senior_dev", "security_expert", "ux_reviewer"
-        ]):
+        for _, specialty in enumerate(["senior_dev", "security_expert", "ux_reviewer"]):
             mock_model = AsyncMock(spec=ModelInterface)
             mock_model.generate_response.return_value = f"Fast review from {specialty}"
 

@@ -31,7 +31,9 @@ async def main():
 
     try:
         # Create Ollama models (using llama3 - adjust if you have different models)
-        shakespeare_model = OllamaModel(model_name="llama3", host="http://localhost:11434")
+        shakespeare_model = OllamaModel(
+            model_name="llama3", host="http://localhost:11434"
+        )
         einstein_model = OllamaModel(model_name="llama3", host="http://localhost:11434")
 
         # Create role definitions
@@ -42,13 +44,13 @@ async def main():
                 "the Elizabethan era. Speak in eloquent, poetic English with 'thee', "
                 "'thou', 'doth', 'hath', etc. You are deeply curious about the natural "
                 "world and the cosmos. Keep responses to 2-3 sentences and stay in "
-                "character. You find great wonder in both art and the mysteries of "\
+                "character. You find great wonder in both art and the mysteries of "
                 "existence."
             ),
             context={
                 "era": "Elizabethan",
-                "specialties": ["poetry", "drama", "language"]
-            }
+                "specialties": ["poetry", "drama", "language"],
+            },
         )
 
         einstein_role = RoleDefinition(
@@ -62,8 +64,8 @@ async def main():
             ),
             context={
                 "era": "20th century",
-                "specialties": ["physics", "relativity", "philosophy"]
-            }
+                "specialties": ["physics", "relativity", "philosophy"],
+            },
         )
 
         # Create agents
@@ -81,7 +83,7 @@ async def main():
         # Start conversation
         conversation_id = await orchestrator.start_conversation(
             participants=["shakespeare", "einstein"],
-            topic="The Nature of Beauty in Art and Science"
+            topic="The Nature of Beauty in Art and Science",
         )
 
         print("💬 CONVERSATION: The Nature of Beauty in Art and Science")
@@ -102,7 +104,7 @@ async def main():
             sender="shakespeare",
             recipient="einstein",
             content=shakespeare_opening,
-            conversation_id=conversation_id
+            conversation_id=conversation_id,
         )
         print(f"   {einstein_response}")
 
@@ -112,7 +114,7 @@ async def main():
             sender="einstein",
             recipient="shakespeare",
             content=einstein_response,
-            conversation_id=conversation_id
+            conversation_id=conversation_id,
         )
         print(f"   {shakespeare_response}")
 
@@ -122,7 +124,7 @@ async def main():
             sender="shakespeare",
             recipient="einstein",
             content=shakespeare_response,
-            conversation_id=conversation_id
+            conversation_id=conversation_id,
         )
         print(f"   {einstein_final}")
 

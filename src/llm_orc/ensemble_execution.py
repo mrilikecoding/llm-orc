@@ -24,19 +24,15 @@ class EnsembleExecutor:
             "input": {"data": input_data},
             "results": {},
             "synthesis": None,
-            "metadata": {
-                "agents_used": len(config.agents),
-                "started_at": start_time
-            }
+            "metadata": {"agents_used": len(config.agents), "started_at": start_time},
         }
 
         # Execute all agents concurrently with timeout handling
         agent_tasks = []
         for agent_config in config.agents:
             # Get timeout from agent config or coordinator config
-            timeout = (
-                agent_config.get("timeout_seconds") or
-                config.coordinator.get("timeout_seconds")
+            timeout = agent_config.get("timeout_seconds") or config.coordinator.get(
+                "timeout_seconds"
             )
             task = self._execute_agent_with_timeout(agent_config, input_data, timeout)
             agent_tasks.append((agent_config["name"], task))
@@ -49,17 +45,14 @@ class EnsembleExecutor:
                 agent_result, model_instance = await task
                 result["results"][agent_name] = {
                     "response": agent_result,
-                    "status": "success"
+                    "status": "success",
                 }
                 # Collect usage metrics
                 usage = model_instance.get_last_usage()
                 if usage:
                     agent_usage[agent_name] = usage
             except Exception as e:
-                result["results"][agent_name] = {
-                    "error": str(e),
-                    "status": "failed"
-                }
+                result["results"][agent_name] = {"error": str(e), "status": "failed"}
                 has_errors = True
 
         # Synthesize results if coordinator is configured
@@ -68,9 +61,7 @@ class EnsembleExecutor:
             try:
                 synthesis_timeout = config.coordinator.get("synthesis_timeout_seconds")
                 synthesis_result = await self._synthesize_results_with_timeout(
-                    config,
-                    result["results"],
-                    synthesis_timeout
+                    config, result["results"], synthesis_timeout
                 )
                 synthesis, synthesis_model = synthesis_result
                 result["synthesis"] = synthesis
@@ -111,8 +102,7 @@ class EnsembleExecutor:
         # For now, create a simple role
         # TODO: Load from role configuration files
         return RoleDefinition(
-            name=role_name,
-            prompt=f"You are a {role_name}. Provide helpful analysis."
+            name=role_name, prompt=f"You are a {role_name}. Provide helpful analysis."
         )
 
     async def _load_model(self, model_name: str) -> ModelInterface:
@@ -122,6 +112,7 @@ class EnsembleExecutor:
         if model_name.startswith("mock"):
             # Return a mock model that will be replaced in tests
             from unittest.mock import AsyncMock
+
             mock = AsyncMock(spec=ModelInterface)
             mock.generate_response.return_value = f"Response from {model_name}"
             return mock
@@ -149,8 +140,7 @@ class EnsembleExecutor:
 
         # Generate synthesis
         response = await synthesis_model.generate_response(
-            message="Please synthesize these results",
-            role_prompt=synthesis_prompt
+            message="Please synthesize these results", role_prompt=synthesis_prompt
         )
 
         return response, synthesis_model
@@ -173,8 +163,8 @@ class EnsembleExecutor:
                 "total_output_tokens": 0,
                 "total_cost_usd": 0.0,
                 "total_duration_ms": 0,
-                "agents_count": len(agent_usage)
-            }
+                "agents_count": len(agent_usage),
+            },
         }
 
         # Aggregate agent usage
@@ -212,8 +202,7 @@ class EnsembleExecutor:
 
         try:
             return await asyncio.wait_for(
-                self._execute_agent(agent_config, input_data),
-                timeout=timeout_seconds
+                self._execute_agent(agent_config, input_data), timeout=timeout_seconds
             )
         except TimeoutError as e:
             raise Exception(
@@ -224,7 +213,7 @@ class EnsembleExecutor:
         self,
         config: EnsembleConfig,
         agent_results: dict[str, Any],
-        timeout_seconds: int | None
+        timeout_seconds: int | None,
     ) -> tuple[str, ModelInterface]:
         """Synthesize results with optional timeout."""
         if timeout_seconds is None:
@@ -233,8 +222,7 @@ class EnsembleExecutor:
 
         try:
             return await asyncio.wait_for(
-                self._synthesize_results(config, agent_results),
-                timeout=timeout_seconds
+                self._synthesize_results(config, agent_results), timeout=timeout_seconds
             )
         except TimeoutError as e:
             raise Exception(
