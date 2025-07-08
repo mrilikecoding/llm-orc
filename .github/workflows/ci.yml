@@ -29,7 +29,7 @@ jobs:
     
     - name: Install dependencies
       run: |
-        uv sync --extra dev
+        uv sync --all-groups
     
     - name: Run tests
       run: |
@@ -38,12 +38,11 @@ jobs:
     - name: Run linting
       run: |
         uv run ruff check .
-        uv run black --check .
+        uv run ruff format --check .
     
-    # TODO: Fix type checking errors and re-enable
-    # - name: Run type checking
-    #   run: |
-    #     uv run mypy src/llm_orc
+    - name: Run type checking
+      run: |
+        uv run mypy src tests
 
   security:
     runs-on: ubuntu-latest
@@ -63,7 +62,7 @@ jobs:
     
     - name: Install dependencies
       run: |
-        uv sync --extra dev
+        uv sync --all-groups
     
     - name: Run security checks
       run: |
