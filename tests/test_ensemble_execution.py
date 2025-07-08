@@ -1,7 +1,8 @@
 """Tests for ensemble execution."""
 
 import asyncio
-from unittest.mock import AsyncMock
+from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -15,7 +16,7 @@ class TestEnsembleExecutor:
     """Test ensemble execution."""
 
     @pytest.mark.asyncio
-    async def test_execute_simple_ensemble(self):
+    async def test_execute_simple_ensemble(self) -> None:
         """Test executing a simple ensemble with mock agents."""
         # Create ensemble config
         config = EnsembleConfig(
@@ -52,10 +53,6 @@ class TestEnsembleExecutor:
         # Create executor with mock dependencies
         executor = EnsembleExecutor()
 
-        # Mock the role and model loading
-        executor._load_role = AsyncMock(side_effect=[role1, role2])
-        executor._load_model = AsyncMock(return_value=mock_model)
-
         # Create mock synthesis model
         mock_synthesis_model = AsyncMock(spec=ModelInterface)
         mock_synthesis_model.generate_response.return_value = (
@@ -68,10 +65,24 @@ class TestEnsembleExecutor:
             "cost_usd": 0.01,
             "duration_ms": 100,
         }
-        executor._get_synthesis_model = AsyncMock(return_value=mock_synthesis_model)
 
-        # Execute ensemble
-        result = await executor.execute(config, input_data="Test this code")
+        # Mock the role and model loading methods
+        with patch.object(
+            executor, '_load_role', new_callable=AsyncMock
+        ) as mock_load_role, \
+             patch.object(
+                 executor, '_load_model', new_callable=AsyncMock
+             ) as mock_load_model, \
+             patch.object(
+                 executor, '_get_synthesis_model', new_callable=AsyncMock
+             ) as mock_get_synthesis_model:
+
+            mock_load_role.side_effect = [role1, role2]
+            mock_load_model.return_value = mock_model
+            mock_get_synthesis_model.return_value = mock_synthesis_model
+
+            # Execute ensemble
+            result = await executor.execute(config, input_data="Test this code")
 
         # Verify result structure
         assert result["ensemble"] == "test_ensemble"
@@ -93,7 +104,7 @@ class TestEnsembleExecutor:
         assert metadata["agents_used"] == 2
 
     @pytest.mark.asyncio
-    async def test_execute_ensemble_with_different_models(self):
+    async def test_execute_ensemble_with_different_models(self) -> None:
         """Test executing ensemble with different models per agent."""
         config = EnsembleConfig(
             name="multi_model_ensemble",
@@ -134,8 +145,6 @@ class TestEnsembleExecutor:
         checker_role = RoleDefinition(name="checker", prompt="Check this")
 
         executor = EnsembleExecutor()
-        executor._load_role = AsyncMock(side_effect=[analyst_role, checker_role])
-        executor._load_model = AsyncMock(side_effect=[claude_model, llama_model])
 
         # Create mock synthesis model
         mock_synthesis_model = AsyncMock(spec=ModelInterface)
@@ -149,9 +158,23 @@ class TestEnsembleExecutor:
             "cost_usd": 0.006,
             "duration_ms": 70,
         }
-        executor._get_synthesis_model = AsyncMock(return_value=mock_synthesis_model)
 
-        result = await executor.execute(config, input_data="Analyze this feature")
+        # Mock the role and model loading methods
+        with patch.object(
+            executor, '_load_role', new_callable=AsyncMock
+        ) as mock_load_role, \
+             patch.object(
+                 executor, '_load_model', new_callable=AsyncMock
+             ) as mock_load_model, \
+             patch.object(
+                 executor, '_get_synthesis_model', new_callable=AsyncMock
+             ) as mock_get_synthesis_model:
+
+            mock_load_role.side_effect = [analyst_role, checker_role]
+            mock_load_model.side_effect = [claude_model, llama_model]
+            mock_get_synthesis_model.return_value = mock_synthesis_model
+
+            result = await executor.execute(config, input_data="Analyze this feature")
 
         assert result["status"] == "completed"
         assert len(result["results"]) == 2
@@ -159,7 +182,7 @@ class TestEnsembleExecutor:
         assert "local_agent" in result["results"]
 
     @pytest.mark.asyncio
-    async def test_execute_ensemble_handles_agent_failure(self):
+    async def test_execute_ensemble_handles_agent_failure(self) -> None:
         """Test that ensemble execution handles individual agent failures."""
         config = EnsembleConfig(
             name="test_ensemble_with_failure",
@@ -185,10 +208,19 @@ class TestEnsembleExecutor:
         role = RoleDefinition(name="tester", prompt="You are a tester")
 
         executor = EnsembleExecutor()
-        executor._load_role = AsyncMock(return_value=role)
-        executor._load_model = AsyncMock(side_effect=[working_model, failing_model])
 
-        result = await executor.execute(config, input_data="Test input")
+        # Mock the role and model loading methods
+        with patch.object(
+            executor, '_load_role', new_callable=AsyncMock
+        ) as mock_load_role, \
+             patch.object(
+                 executor, '_load_model', new_callable=AsyncMock
+             ) as mock_load_model:
+
+            mock_load_role.return_value = role
+            mock_load_model.side_effect = [working_model, failing_model]
+
+            result = await executor.execute(config, input_data="Test input")
 
         # Should still complete but mark failures
         assert result["status"] == "completed_with_errors"
@@ -203,7 +235,7 @@ class TestEnsembleExecutor:
         assert "error" in result["results"]["failing_agent"]
 
     @pytest.mark.asyncio
-    async def test_execute_ensemble_synthesis(self):
+    async def test_execute_ensemble_synthesis(self) -> None:
         """Test that ensemble execution includes synthesis of results."""
         config = EnsembleConfig(
             name="synthesis_test",
@@ -228,11 +260,23 @@ class TestEnsembleExecutor:
         role = RoleDefinition(name="analyst", prompt="Analyze")
 
         executor = EnsembleExecutor()
-        executor._load_role = AsyncMock(return_value=role)
-        executor._load_model = AsyncMock(return_value=agent_model)
-        executor._get_synthesis_model = AsyncMock(return_value=synthesis_model)
 
-        result = await executor.execute(config, input_data="Test analysis")
+        # Mock the role and model loading methods
+        with patch.object(
+            executor, '_load_role', new_callable=AsyncMock
+        ) as mock_load_role, \
+             patch.object(
+                 executor, '_load_model', new_callable=AsyncMock
+             ) as mock_load_model, \
+             patch.object(
+                 executor, '_get_synthesis_model', new_callable=AsyncMock
+             ) as mock_get_synthesis_model:
+
+            mock_load_role.return_value = role
+            mock_load_model.return_value = agent_model
+            mock_get_synthesis_model.return_value = synthesis_model
+
+            result = await executor.execute(config, input_data="Test analysis")
 
         assert result["synthesis"] == "Synthesized summary"
 
@@ -242,7 +286,7 @@ class TestEnsembleExecutor:
         assert "Summarize the analysis results" in synthesis_call_args["role_prompt"]
 
     @pytest.mark.asyncio
-    async def test_execute_ensemble_tracks_usage_metrics(self):
+    async def test_execute_ensemble_tracks_usage_metrics(self) -> None:
         """Test that ensemble execution tracks LLM usage metrics."""
         config = EnsembleConfig(
             name="usage_tracking_test",
@@ -294,11 +338,23 @@ class TestEnsembleExecutor:
         role = RoleDefinition(name="test", prompt="Test role")
 
         executor = EnsembleExecutor()
-        executor._load_role = AsyncMock(return_value=role)
-        executor._load_model = AsyncMock(side_effect=[claude_model, llama_model])
-        executor._get_synthesis_model = AsyncMock(return_value=synthesis_model)
 
-        result = await executor.execute(config, input_data="Test usage tracking")
+        # Mock the role and model loading methods
+        with patch.object(
+            executor, '_load_role', new_callable=AsyncMock
+        ) as mock_load_role, \
+             patch.object(
+                 executor, '_load_model', new_callable=AsyncMock
+             ) as mock_load_model, \
+             patch.object(
+                 executor, '_get_synthesis_model', new_callable=AsyncMock
+             ) as mock_get_synthesis_model:
+
+            mock_load_role.return_value = role
+            mock_load_model.side_effect = [claude_model, llama_model]
+            mock_get_synthesis_model.return_value = synthesis_model
+
+            result = await executor.execute(config, input_data="Test usage tracking")
 
         # Verify usage tracking is included in results
         assert "usage" in result["metadata"]
@@ -336,7 +392,7 @@ class TestEnsembleExecutor:
         assert totals["agents_count"] == 2
 
     @pytest.mark.asyncio
-    async def test_execute_ensemble_with_timeout(self):
+    async def test_execute_ensemble_with_timeout(self) -> None:
         """Test that ensemble execution respects timeout settings."""
         config = EnsembleConfig(
             name="timeout_test",
@@ -354,7 +410,7 @@ class TestEnsembleExecutor:
         # Mock model that takes too long
         slow_model = AsyncMock(spec=ModelInterface)
 
-        async def slow_response(*args, **kwargs):
+        async def slow_response(*args: Any, **kwargs: Any) -> str:
             await asyncio.sleep(10)  # Takes 10 seconds, longer than 5 second timeout
             return "This should timeout"
 
@@ -371,10 +427,19 @@ class TestEnsembleExecutor:
         role = RoleDefinition(name="analyst", prompt="Analyze")
 
         executor = EnsembleExecutor()
-        executor._load_role = AsyncMock(return_value=role)
-        executor._load_model = AsyncMock(return_value=slow_model)
 
-        result = await executor.execute(config, input_data="Test timeout")
+        # Mock the role and model loading methods
+        with patch.object(
+            executor, '_load_role', new_callable=AsyncMock
+        ) as mock_load_role, \
+             patch.object(
+                 executor, '_load_model', new_callable=AsyncMock
+             ) as mock_load_model:
+
+            mock_load_role.return_value = role
+            mock_load_model.return_value = slow_model
+
+            result = await executor.execute(config, input_data="Test timeout")
 
         # Should complete with errors due to timeout
         assert result["status"] == "completed_with_errors"
@@ -384,7 +449,7 @@ class TestEnsembleExecutor:
         assert "timed out" in agent_result["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_execute_ensemble_with_per_agent_timeout(self):
+    async def test_execute_ensemble_with_per_agent_timeout(self) -> None:
         """Test that individual agents can have their own timeout settings."""
         config = EnsembleConfig(
             name="per_agent_timeout_test",
@@ -424,7 +489,7 @@ class TestEnsembleExecutor:
         # Slow model that exceeds its timeout
         slow_model = AsyncMock(spec=ModelInterface)
 
-        async def slow_response(*args, **kwargs):
+        async def slow_response(*args: Any, **kwargs: Any) -> str:
             await asyncio.sleep(5)  # Takes 5 seconds, longer than 2 second timeout
             return "This should timeout"
 
@@ -441,10 +506,19 @@ class TestEnsembleExecutor:
         role = RoleDefinition(name="test", prompt="Test")
 
         executor = EnsembleExecutor()
-        executor._load_role = AsyncMock(return_value=role)
-        executor._load_model = AsyncMock(side_effect=[fast_model, slow_model])
 
-        result = await executor.execute(config, input_data="Test per-agent timeout")
+        # Mock the role and model loading methods
+        with patch.object(
+            executor, '_load_role', new_callable=AsyncMock
+        ) as mock_load_role, \
+             patch.object(
+                 executor, '_load_model', new_callable=AsyncMock
+             ) as mock_load_model:
+
+            mock_load_role.return_value = role
+            mock_load_model.side_effect = [fast_model, slow_model]
+
+            result = await executor.execute(config, input_data="Test per-agent timeout")
 
         # Should complete with errors due to one agent timing out
         assert result["status"] == "completed_with_errors"
@@ -458,7 +532,7 @@ class TestEnsembleExecutor:
         assert "timed out" in result["results"]["slow_agent"]["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_execute_ensemble_with_synthesis_timeout(self):
+    async def test_execute_ensemble_with_synthesis_timeout(self) -> None:
         """Test that synthesis step respects timeout settings."""
         config = EnsembleConfig(
             name="synthesis_timeout_test",
@@ -488,7 +562,7 @@ class TestEnsembleExecutor:
         # Slow synthesis model
         slow_synthesis_model = AsyncMock(spec=ModelInterface)
 
-        async def slow_synthesis(*args, **kwargs):
+        async def slow_synthesis(*args: Any, **kwargs: Any) -> str:
             await asyncio.sleep(5)  # Takes 5 seconds, longer than 3 second timeout
             return "This should timeout"
 
@@ -505,11 +579,23 @@ class TestEnsembleExecutor:
         role = RoleDefinition(name="analyst", prompt="Analyze")
 
         executor = EnsembleExecutor()
-        executor._load_role = AsyncMock(return_value=role)
-        executor._load_model = AsyncMock(return_value=fast_model)
-        executor._get_synthesis_model = AsyncMock(return_value=slow_synthesis_model)
 
-        result = await executor.execute(config, input_data="Test synthesis timeout")
+        # Mock the role and model loading methods
+        with patch.object(
+            executor, '_load_role', new_callable=AsyncMock
+        ) as mock_load_role, \
+             patch.object(
+                 executor, '_load_model', new_callable=AsyncMock
+             ) as mock_load_model, \
+             patch.object(
+                 executor, '_get_synthesis_model', new_callable=AsyncMock
+             ) as mock_get_synthesis_model:
+
+            mock_load_role.return_value = role
+            mock_load_model.return_value = fast_model
+            mock_get_synthesis_model.return_value = slow_synthesis_model
+
+            result = await executor.execute(config, input_data="Test synthesis timeout")
 
         # Should complete with errors due to synthesis timeout
         assert result["status"] == "completed_with_errors"

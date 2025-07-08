@@ -1,6 +1,7 @@
 """Tests for CLI authentication commands."""
 
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,17 +15,19 @@ class TestAuthCommands:
     """Test CLI authentication commands."""
 
     @pytest.fixture
-    def temp_config_dir(self):
+    def temp_config_dir(self) -> Iterator[Path]:
         """Create a temporary config directory for testing."""
         with tempfile.TemporaryDirectory() as temp_dir:
             yield Path(temp_dir)
 
     @pytest.fixture
-    def runner(self):
+    def runner(self) -> CliRunner:
         """Click test runner."""
         return CliRunner()
 
-    def test_auth_add_command_stores_api_key(self, runner, temp_config_dir):
+    def test_auth_add_command_stores_api_key(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
         """Test that 'auth add' command stores API key."""
         # Given
         provider = "anthropic"
@@ -52,7 +55,7 @@ class TestAuthCommands:
         credentials_file = temp_config_dir / "credentials.yaml"
         assert credentials_file.exists()
 
-    def test_auth_add_command_fails_without_api_key(self, runner):
+    def test_auth_add_command_fails_without_api_key(self, runner: CliRunner) -> None:
         """Test that 'auth add' command fails without API key."""
         # Given
         provider = "anthropic"
@@ -65,8 +68,8 @@ class TestAuthCommands:
         assert "Error: Missing option '--api-key'" in result.output
 
     def test_auth_list_command_shows_configured_providers(
-        self, runner, temp_config_dir
-    ):
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
         """Test that 'auth list' command shows configured providers."""
         # Given - Set up some providers
         # Add some providers first
@@ -107,8 +110,8 @@ class TestAuthCommands:
         assert "API key" in result.output
 
     def test_auth_list_command_shows_no_providers_message(
-        self, runner, temp_config_dir
-    ):
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
         """Test that 'auth list' command shows message when no providers configured."""
         # Given - No providers configured
         # When
@@ -120,7 +123,9 @@ class TestAuthCommands:
         assert result.exit_code == 0
         assert "No authentication providers configured" in result.output
 
-    def test_auth_remove_command_deletes_provider(self, runner, temp_config_dir):
+    def test_auth_remove_command_deletes_provider(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
         """Test that 'auth remove' command deletes a provider."""
         # Given - Set up a provider
         provider = "anthropic"
@@ -153,8 +158,8 @@ class TestAuthCommands:
         assert provider not in list_result.output
 
     def test_auth_remove_command_fails_for_nonexistent_provider(
-        self, runner, temp_config_dir
-    ):
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
         """Test that 'auth remove' command fails for non-existent provider."""
         # Given - No providers configured
         provider = "nonexistent"
@@ -167,7 +172,9 @@ class TestAuthCommands:
         assert result.exit_code != 0
         assert f"No authentication found for {provider}" in result.output
 
-    def test_auth_test_command_validates_credentials(self, runner, temp_config_dir):
+    def test_auth_test_command_validates_credentials(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
         """Test that 'auth test' command validates credentials."""
         # Given - Set up a provider
         provider = "anthropic"
@@ -198,8 +205,8 @@ class TestAuthCommands:
         assert f"Authentication for {provider} is working" in result.output
 
     def test_auth_test_command_fails_for_invalid_credentials(
-        self, runner, temp_config_dir
-    ):
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
         """Test that 'auth test' command fails for invalid credentials."""
         # Given - Set up a provider
         provider = "anthropic"
@@ -229,7 +236,9 @@ class TestAuthCommands:
         assert result.exit_code != 0
         assert f"Authentication for {provider} failed" in result.output
 
-    def test_auth_setup_command_interactive_wizard(self, runner, temp_config_dir):
+    def test_auth_setup_command_interactive_wizard(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
         """Test that 'auth setup' command runs interactive wizard."""
         # Given
         # Mock user input

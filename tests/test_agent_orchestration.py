@@ -1,6 +1,6 @@
 """Test suite for agent orchestration."""
 
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -11,7 +11,7 @@ from llm_orc.roles import RoleDefinition
 class TestAgent:
     """Test the Agent class."""
 
-    def test_agent_creation(self):
+    def test_agent_creation(self) -> None:
         """Should create an agent with name, role, and model."""
         # Arrange
         role = RoleDefinition(
@@ -33,7 +33,7 @@ class TestAgent:
         assert len(agent.conversation_history) == 0
 
     @pytest.mark.asyncio
-    async def test_agent_respond_to_message(self):
+    async def test_agent_respond_to_message(self) -> None:
         """Should generate response using role and model."""
         # Arrange
         role = RoleDefinition(
@@ -68,7 +68,7 @@ class TestPracticalExamples:
     """Test practical multi-agent conversation examples."""
 
     @pytest.mark.asyncio
-    async def test_shakespeare_einstein_conversation(self):
+    async def test_shakespeare_einstein_conversation(self) -> None:
         """Should orchestrate a conversation between Shakespeare and Einstein."""
         # Arrange - This will fail because ConversationOrchestrator doesn't exist yet
         from llm_orc.orchestration import Agent, ConversationOrchestrator
@@ -112,44 +112,46 @@ class TestPracticalExamples:
         # Create orchestrator
         orchestrator = ConversationOrchestrator()
         # Mock the message delivery to avoid async timeout issues in tests
-        orchestrator.message_protocol.deliver_message = AsyncMock()
+        with patch.object(
+            orchestrator.message_protocol, 'deliver_message', new_callable=AsyncMock
+        ):
+            orchestrator.register_agent(shakespeare_agent)
+            orchestrator.register_agent(einstein_agent)
 
-        orchestrator.register_agent(shakespeare_agent)
-        orchestrator.register_agent(einstein_agent)
+            # Act - Start conversation
+            conversation_id = await orchestrator.start_conversation(
+                participants=["shakespeare", "einstein"],
+                topic="The Nature of Beauty in Art and Science",
+                initial_message="What think you of the relationship between beauty and truth?",  # noqa: E501
+            )
 
-        # Act - Start conversation
-        conversation_id = await orchestrator.start_conversation(
-            participants=["shakespeare", "einstein"],
-            topic="The Nature of Beauty in Art and Science",
-            initial_message="What think you of the relationship between beauty and truth?",  # noqa: E501
-        )
+            # Einstein responds
+            einstein_response = await orchestrator.send_agent_message(
+                sender="einstein",
+                recipient="shakespeare",
+                content="Beauty in science comes from elegant equations that reveal deep truths.",  # noqa: E501
+                conversation_id=conversation_id,
+            )
 
-        # Einstein responds
-        einstein_response = await orchestrator.send_agent_message(
-            sender="einstein",
-            recipient="shakespeare",
-            content="Beauty in science comes from elegant equations that reveal deep truths.",  # noqa: E501
-            conversation_id=conversation_id,
-        )
+            # Assert
+            assert conversation_id is not None
+            assert einstein_response is not None
+            # The response should be from Shakespeare (recipient) when Einstein sends a message to Shakespeare  # noqa: E501
+            assert (
+                "hark" in einstein_response.lower()
+                or "cosmos" in einstein_response.lower()
+            )
 
-        # Assert
-        assert conversation_id is not None
-        assert einstein_response is not None
-        # The response should be from Shakespeare (recipient) when Einstein sends a message to Shakespeare  # noqa: E501
-        assert (
-            "hark" in einstein_response.lower() or "cosmos" in einstein_response.lower()
-        )
+            # Verify both agents were called
+            shakespeare_model.generate_response.assert_called_once()
+            einstein_model.generate_response.assert_called_once()
 
-        # Verify both agents were called
-        shakespeare_model.generate_response.assert_called_once()
-        einstein_model.generate_response.assert_called_once()
-
-        # Verify conversation history
-        assert len(shakespeare_agent.conversation_history) >= 1
-        assert len(einstein_agent.conversation_history) >= 1
+            # Verify conversation history
+            assert len(shakespeare_agent.conversation_history) >= 1
+            assert len(einstein_agent.conversation_history) >= 1
 
     @pytest.mark.asyncio
-    async def test_pr_review_panel(self):
+    async def test_pr_review_panel(self) -> None:
         """Should orchestrate a PR review with multiple specialist agents."""
         # Arrange - This will fail because PRReviewOrchestrator doesn't exist yet
         from llm_orc.orchestration import Agent, PRReviewOrchestrator

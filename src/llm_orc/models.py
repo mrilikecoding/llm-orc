@@ -13,7 +13,7 @@ from anthropic import AsyncAnthropic
 class ModelInterface(ABC):
     """Abstract interface for LLM models."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._last_usage: dict[str, Any] | None = None
 
     @property
@@ -53,7 +53,7 @@ class ModelInterface(ABC):
 class ClaudeModel(ModelInterface):
     """Claude model implementation."""
 
-    def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022"):
+    def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022") -> None:
         super().__init__()
         self.api_key = api_key
         self.model = model
@@ -95,18 +95,23 @@ class ClaudeModel(ModelInterface):
             model_name=self.model,
         )
 
-        return response.content[0].text
+        # Handle different content block types
+        content_block = response.content[0]
+        if hasattr(content_block, "text"):
+            return content_block.text
+        else:
+            return str(content_block)
 
 
 class GeminiModel(ModelInterface):
     """Gemini model implementation."""
 
-    def __init__(self, api_key: str, model: str = "gemini-pro"):
+    def __init__(self, api_key: str, model: str = "gemini-pro") -> None:
         super().__init__()
         self.api_key = api_key
         self.model_name = model
-        genai.configure(api_key=api_key)
-        self.client = genai.GenerativeModel(model)
+        genai.configure(api_key=api_key)  # type: ignore[attr-defined]
+        self.client = genai.GenerativeModel(model)  # type: ignore[attr-defined]
 
     @property
     def name(self) -> str:
@@ -144,7 +149,7 @@ class GeminiModel(ModelInterface):
             model_name=self.model_name,
         )
 
-        return response.text
+        return str(response.text)
 
 
 class OllamaModel(ModelInterface):
@@ -152,7 +157,7 @@ class OllamaModel(ModelInterface):
 
     def __init__(
         self, model_name: str = "llama2", host: str = "http://localhost:11434"
-    ):
+    ) -> None:
         super().__init__()
         self.model_name = model_name
         self.host = host
@@ -192,13 +197,13 @@ class OllamaModel(ModelInterface):
             model_name=self.model_name,
         )
 
-        return content
+        return str(content)
 
 
 class ModelManager:
     """Manages model instances and selection."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.models: dict[str, ModelInterface] = {}
 
     def register_model(self, key: str, model: ModelInterface) -> None:

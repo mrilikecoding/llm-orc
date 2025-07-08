@@ -1,6 +1,7 @@
 """Agent orchestration for multi-agent conversations."""
 
 from datetime import datetime
+from typing import Any
 
 from llm_orc.communication import ConversationManager, MessageProtocol
 from llm_orc.models import ModelInterface
@@ -14,7 +15,7 @@ class Agent:
         self.name = name
         self.role = role
         self.model = model
-        self.conversation_history = []
+        self.conversation_history: list[dict[str, Any]] = []
 
     async def respond_to_message(self, message: str) -> str:
         """Generate response to a message using the agent's role and model."""
@@ -34,17 +35,17 @@ class Agent:
 class ConversationOrchestrator:
     """Orchestrates multi-agent conversations."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.conversation_manager = ConversationManager()
         self.message_protocol = MessageProtocol(self.conversation_manager)
-        self.agents = {}
+        self.agents: dict[str, Agent] = {}
 
-    def register_agent(self, agent: Agent):
+    def register_agent(self, agent: Agent) -> None:
         """Register an agent for orchestration."""
         self.agents[agent.name] = agent
 
     async def start_conversation(
-        self, participants: list[str], topic: str, initial_message: str = None
+        self, participants: list[str], topic: str, initial_message: str | None = None
     ) -> str:
         """Start a conversation between registered agents."""
         # Validate participants
@@ -87,33 +88,33 @@ class ConversationOrchestrator:
         recipient_agent = self.agents[recipient]
         response = await recipient_agent.respond_to_message(content)
 
-        return response
+        return str(response)
 
 
 class PRReviewOrchestrator:
     """Orchestrates multi-agent PR reviews with specialist feedback."""
 
-    def __init__(self):
-        self.reviewers = {}
+    def __init__(self) -> None:
+        self.reviewers: dict[str, Agent] = {}
 
-    def register_reviewer(self, agent: Agent):
+    def register_reviewer(self, agent: Agent) -> None:
         """Register a specialist reviewer agent."""
         self.reviewers[agent.name] = agent
 
-    async def review_pr(self, pr_data: dict) -> dict:
+    async def review_pr(self, pr_data: dict[str, Any]) -> dict[str, Any]:
         """Conduct multi-agent PR review and return consolidated results."""
         # Format PR data for review
         pr_summary = self._format_pr_for_review(pr_data)
 
         # Collect reviews from all specialist agents
-        reviews = []
+        reviews: list[dict[str, Any]] = []
         for reviewer_name, reviewer_agent in self.reviewers.items():
             feedback = await reviewer_agent.respond_to_message(pr_summary)
             reviews.append(
                 {
                     "reviewer": reviewer_name,
                     "feedback": feedback,
-                    "specialization": reviewer_agent.role.context.get(
+                    "specialization": (reviewer_agent.role.context or {}).get(
                         "specialties", []
                     ),
                 }
@@ -129,7 +130,7 @@ class PRReviewOrchestrator:
             "total_reviewers": len(reviews),
         }
 
-    def _format_pr_for_review(self, pr_data: dict) -> str:
+    def _format_pr_for_review(self, pr_data: dict[str, Any]) -> str:
         """Format PR data into a review-friendly string."""
         return f"""
 PR Title: {pr_data["title"]}
@@ -145,7 +146,9 @@ Code Changes:
 Please provide your specialist review focusing on your area of expertise.
 """.strip()
 
-    async def _generate_summary(self, reviews: list, pr_data: dict) -> str:
+    async def _generate_summary(
+        self, reviews: list[dict[str, Any]], pr_data: dict[str, Any]
+    ) -> str:
         """Generate a consolidated summary of all reviews."""
         # For now, create a simple summary - could be enhanced with LLM later
         security_issues = []

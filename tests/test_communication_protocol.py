@@ -12,7 +12,7 @@ from llm_orc.communication import ConversationManager, Message, MessageProtocol
 class TestMessage:
     """Test the Message data structure."""
 
-    def test_message_creation(self):
+    def test_message_creation(self) -> None:
         """Should create a message with required fields."""
         message = Message(
             id="msg-123",
@@ -28,7 +28,7 @@ class TestMessage:
         assert message.content == "Hello there!"
         assert isinstance(message.timestamp, datetime)
 
-    def test_message_to_dict(self):
+    def test_message_to_dict(self) -> None:
         """Should convert message to dictionary."""
         timestamp = datetime.now()
         message = Message(
@@ -47,7 +47,7 @@ class TestMessage:
         assert result["content"] == "Hello there!"
         assert result["timestamp"] == timestamp.isoformat()
 
-    def test_message_from_dict(self):
+    def test_message_from_dict(self) -> None:
         """Should create message from dictionary."""
         timestamp = datetime.now()
         data = {
@@ -70,14 +70,14 @@ class TestMessage:
 class TestConversationManager:
     """Test conversation state management."""
 
-    def test_conversation_manager_initialization(self):
+    def test_conversation_manager_initialization(self) -> None:
         """Should initialize with empty conversation state."""
         manager = ConversationManager()
 
         assert len(manager.conversations) == 0
         assert len(manager.active_conversations) == 0
 
-    def test_start_conversation(self):
+    def test_start_conversation(self) -> None:
         """Should start a new conversation between agents."""
         manager = ConversationManager()
 
@@ -92,7 +92,7 @@ class TestConversationManager:
         assert conversation["topic"] == "Test discussion"
         assert len(conversation["messages"]) == 0
 
-    def test_add_message_to_conversation(self):
+    def test_add_message_to_conversation(self) -> None:
         """Should add message to existing conversation."""
         manager = ConversationManager()
         conversation_id = manager.start_conversation(
@@ -113,7 +113,7 @@ class TestConversationManager:
         assert len(conversation["messages"]) == 1
         assert conversation["messages"][0] == message
 
-    def test_get_conversation_history(self):
+    def test_get_conversation_history(self) -> None:
         """Should retrieve conversation history."""
         manager = ConversationManager()
         conversation_id = manager.start_conversation(
@@ -148,7 +148,7 @@ class TestConversationManager:
 class TestMessageProtocol:
     """Test message protocol and turn-taking coordination."""
 
-    def test_message_protocol_initialization(self):
+    def test_message_protocol_initialization(self) -> None:
         """Should initialize with conversation manager."""
         manager = ConversationManager()
         protocol = MessageProtocol(manager)
@@ -157,7 +157,7 @@ class TestMessageProtocol:
         assert len(protocol.pending_messages) == 0
 
     @pytest.mark.asyncio
-    async def test_send_message(self):
+    async def test_send_message(self) -> None:
         """Should send message and handle turn-taking."""
         manager = ConversationManager()
         protocol = MessageProtocol(manager)
@@ -168,23 +168,25 @@ class TestMessageProtocol:
         )
 
         # Mock the message delivery
-        protocol.deliver_message = AsyncMock()
+        from unittest.mock import patch
+        with patch.object(
+            protocol, 'deliver_message', new_callable=AsyncMock
+        ) as mock_deliver:
+            result = await protocol.send_message(
+                sender="agent-1",
+                recipient="agent-2",
+                content="Hello there!",
+                conversation_id=conversation_id,
+            )
 
-        result = await protocol.send_message(
-            sender="agent-1",
-            recipient="agent-2",
-            content="Hello there!",
-            conversation_id=conversation_id,
-        )
-
-        assert result is not None
-        assert result.sender == "agent-1"
-        assert result.recipient == "agent-2"
-        assert result.content == "Hello there!"
-        protocol.deliver_message.assert_called_once()
+            assert result is not None
+            assert result.sender == "agent-1"
+            assert result.recipient == "agent-2"
+            assert result.content == "Hello there!"
+            mock_deliver.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_handle_turn_taking(self):
+    async def test_handle_turn_taking(self) -> None:
         """Should coordinate turn-taking between agents."""
         manager = ConversationManager()
         protocol = MessageProtocol(manager)
@@ -217,7 +219,7 @@ class TestMessageProtocol:
         assert protocol.get_current_speaker(conversation_id) == "agent-1"
 
     @pytest.mark.asyncio
-    async def test_message_timeout_handling(self):
+    async def test_message_timeout_handling(self) -> None:
         """Should handle message timeouts gracefully."""
         manager = ConversationManager()
         protocol = MessageProtocol(manager, timeout=0.1)  # 100ms timeout
@@ -228,15 +230,21 @@ class TestMessageProtocol:
         )
 
         # Mock a slow message delivery that exceeds timeout
-        async def slow_delivery(msg):
+        from typing import Any
+        async def slow_delivery(msg: Any) -> None:
             await asyncio.sleep(0.2)  # Longer than 0.1s timeout
 
-        protocol.deliver_message = AsyncMock(side_effect=slow_delivery)
-
-        with pytest.raises(TimeoutError):
-            await protocol.send_message(
-                sender="agent-1",
-                recipient="agent-2",
-                content="Hello there!",
-                conversation_id=conversation_id,
-            )
+        from unittest.mock import patch
+        with patch.object(
+            protocol,
+            'deliver_message',
+            new_callable=AsyncMock,
+            side_effect=slow_delivery,
+        ):
+            with pytest.raises(TimeoutError):
+                await protocol.send_message(
+                    sender="agent-1",
+                    recipient="agent-2",
+                    content="Hello there!",
+                    conversation_id=conversation_id,
+                )

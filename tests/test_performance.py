@@ -14,7 +14,7 @@ class TestMessageRoutingPerformance:
     """Test message routing performance requirements."""
 
     @pytest.mark.asyncio
-    async def test_message_routing_latency_under_50ms(self):
+    async def test_message_routing_latency_under_50ms(self) -> None:
         """Should route messages between agents in under 50ms."""
         # Arrange - Create fast mock model
         mock_model = AsyncMock(spec=ModelInterface)
@@ -29,7 +29,7 @@ class TestMessageRoutingPerformance:
 
         orchestrator = ConversationOrchestrator()
         # Mock message delivery to avoid async timeout issues
-        orchestrator.message_protocol.deliver_message = AsyncMock()
+        orchestrator.message_protocol.deliver_message = AsyncMock()  # type: ignore[method-assign]
 
         orchestrator.register_agent(agent1)
         orchestrator.register_agent(agent2)
@@ -63,7 +63,7 @@ class TestMessageRoutingPerformance:
         assert len(agent2.conversation_history) == 1
 
     @pytest.mark.asyncio
-    async def test_multi_agent_conversation_performance(self):
+    async def test_multi_agent_conversation_performance(self) -> None:
         """Should handle multi-agent conversations efficiently."""
         # Arrange - Create 3 agents with fast mock models
         agents = []
@@ -79,7 +79,7 @@ class TestMessageRoutingPerformance:
             agents.append(agent)
 
         orchestrator = ConversationOrchestrator()
-        orchestrator.message_protocol.deliver_message = AsyncMock()
+        orchestrator.message_protocol.deliver_message = AsyncMock()  # type: ignore[method-assign]
 
         for agent in agents:
             orchestrator.register_agent(agent)
@@ -129,7 +129,7 @@ class TestMessageRoutingPerformance:
             assert len(agent.conversation_history) == 1
 
     @pytest.mark.asyncio
-    async def test_agent_response_generation_performance(self):
+    async def test_agent_response_generation_performance(self) -> None:
         """Should generate agent responses efficiently."""
         # Arrange
         mock_model = AsyncMock(spec=ModelInterface)
@@ -157,7 +157,7 @@ class TestMessageRoutingPerformance:
         assert len(agent.conversation_history) == 1
 
     @pytest.mark.asyncio
-    async def test_orchestrator_agent_registration_performance(self):
+    async def test_orchestrator_agent_registration_performance(self) -> None:
         """Should register agents efficiently."""
         # Arrange
         orchestrator = ConversationOrchestrator()
@@ -198,7 +198,7 @@ class TestPRReviewPerformance:
     """Test PR review orchestration performance."""
 
     @pytest.mark.asyncio
-    async def test_pr_review_orchestration_performance(self):
+    async def test_pr_review_orchestration_performance(self) -> None:
         """Should orchestrate PR reviews efficiently."""
         # Arrange - Create PR review orchestrator with fast mock agents
         from llm_orc.orchestration import PRReviewOrchestrator

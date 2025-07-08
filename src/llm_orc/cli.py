@@ -5,6 +5,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -15,7 +16,7 @@ from llm_orc.ensemble_execution import EnsembleExecutor
 
 @click.group()
 @click.version_option()
-def cli():
+def cli() -> None:
     """LLM Orchestra - Multi-agent LLM communication system."""
     pass
 
@@ -38,7 +39,9 @@ def cli():
     default="text",
     help="Output format for results",
 )
-def invoke(ensemble_name: str, config_dir: str, input_data: str, output_format: str):
+def invoke(
+    ensemble_name: str, config_dir: str, input_data: str, output_format: str
+) -> None:
     """Invoke an ensemble of agents."""
     if config_dir is None:
         # Default to ~/.llm-orc/ensembles if no config dir specified
@@ -69,7 +72,7 @@ def invoke(ensemble_name: str, config_dir: str, input_data: str, output_format: 
         click.echo("---")
 
     # Execute the ensemble
-    async def run_ensemble():
+    async def run_ensemble() -> dict[str, Any]:
         executor = EnsembleExecutor()
         return await executor.execute(ensemble_config, input_data)
 
@@ -138,7 +141,7 @@ def invoke(ensemble_name: str, config_dir: str, input_data: str, output_format: 
     default=None,
     help="Directory containing ensemble configurations",
 )
-def list_ensembles(config_dir: str):
+def list_ensembles(config_dir: str) -> None:
     """List available ensembles."""
     if config_dir is None:
         # Default to ~/.llm-orc/ensembles if no config dir specified
@@ -157,7 +160,7 @@ def list_ensembles(config_dir: str):
 
 
 @cli.group()
-def auth():
+def auth() -> None:
     """Authentication management commands."""
     pass
 
@@ -166,7 +169,7 @@ def auth():
 @click.argument("provider")
 @click.option("--api-key", required=True, help="API key for the provider")
 @click.option("--config-dir", default=None, help="Config directory path")
-def auth_add(provider: str, api_key: str, config_dir: str):
+def auth_add(provider: str, api_key: str, config_dir: str) -> None:
     """Add API key authentication for a provider."""
     config_path = Path(config_dir) if config_dir else None
     storage = CredentialStorage(config_path)
@@ -180,7 +183,7 @@ def auth_add(provider: str, api_key: str, config_dir: str):
 
 @auth.command("list")
 @click.option("--config-dir", default=None, help="Config directory path")
-def auth_list(config_dir: str):
+def auth_list(config_dir: str) -> None:
     """List configured authentication providers."""
     config_path = Path(config_dir) if config_dir else None
     storage = CredentialStorage(config_path)
@@ -200,7 +203,7 @@ def auth_list(config_dir: str):
 @auth.command("remove")
 @click.argument("provider")
 @click.option("--config-dir", default=None, help="Config directory path")
-def auth_remove(provider: str, config_dir: str):
+def auth_remove(provider: str, config_dir: str) -> None:
     """Remove authentication for a provider."""
     config_path = Path(config_dir) if config_dir else None
     storage = CredentialStorage(config_path)
@@ -221,7 +224,7 @@ def auth_remove(provider: str, config_dir: str):
 @auth.command("test")
 @click.argument("provider")
 @click.option("--config-dir", default=None, help="Config directory path")
-def auth_test(provider: str, config_dir: str):
+def auth_test(provider: str, config_dir: str) -> None:
     """Test authentication for a provider."""
     config_path = Path(config_dir) if config_dir else None
     auth_manager = AuthenticationManager(config_path)
@@ -244,7 +247,7 @@ def auth_test(provider: str, config_dir: str):
 
 @auth.command("setup")
 @click.option("--config-dir", default=None, help="Config directory path")
-def auth_setup(config_dir: str):
+def auth_setup(config_dir: str) -> None:
     """Interactive setup wizard for authentication."""
     config_path = Path(config_dir) if config_dir else None
     storage = CredentialStorage(config_path)

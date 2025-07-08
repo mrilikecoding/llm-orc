@@ -51,7 +51,8 @@ class CredentialStorage:
                 return {}
 
             decrypted_data = self._encryption_key.decrypt(encrypted_data.encode())
-            return yaml.safe_load(decrypted_data.decode())
+            loaded_data = yaml.safe_load(decrypted_data.decode())
+            return loaded_data if isinstance(loaded_data, dict) else {}
         except Exception:
             return {}
 
@@ -95,7 +96,8 @@ class CredentialStorage:
         credentials = self._load_credentials()
 
         if provider in credentials and "api_key" in credentials[provider]:
-            return credentials[provider]["api_key"]
+            api_key = credentials[provider]["api_key"]
+            return str(api_key) if api_key is not None else None
 
         return None
 

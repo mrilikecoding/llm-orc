@@ -87,3 +87,8 @@ markers = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/llm_orc"]
 
+[dependency-groups]
+dev = [
+    "types-pyyaml>=6.0.12.20250516",
+]
+

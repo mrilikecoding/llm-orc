@@ -8,7 +8,7 @@ from llm_orc.roles import RoleDefinition, RoleManager
 class TestRoleDefinition:
     """Test role definition creation and validation."""
 
-    def test_create_basic_role(self):
+    def test_create_basic_role(self) -> None:
         """Should create a basic role with name and prompt."""
         role = RoleDefinition(
             name="engineer",
@@ -17,7 +17,7 @@ class TestRoleDefinition:
         assert role.name == "engineer"
         assert "senior software engineer" in role.prompt
 
-    def test_create_role_with_context(self):
+    def test_create_role_with_context(self) -> None:
         """Should create role with additional context and capabilities."""
         role = RoleDefinition(
             name="shakespeare",
@@ -29,6 +29,7 @@ class TestRoleDefinition:
             },
         )
         assert role.name == "shakespeare"
+        assert role.context is not None
         assert role.context["era"] == "Elizabethan"
         assert "poetry" in role.context["specialties"]
 
@@ -36,7 +37,7 @@ class TestRoleDefinition:
 class TestRoleManager:
     """Test role management and retrieval."""
 
-    def test_register_role(self):
+    def test_register_role(self) -> None:
         """Should register a new role."""
         manager = RoleManager()
         role = RoleDefinition(
@@ -46,7 +47,7 @@ class TestRoleManager:
         manager.register_role(role)
         assert "designer" in manager.roles
 
-    def test_get_role(self):
+    def test_get_role(self) -> None:
         """Should retrieve registered role."""
         manager = RoleManager()
         role = RoleDefinition(
@@ -57,7 +58,7 @@ class TestRoleManager:
         assert retrieved.name == "artist"
         assert "creative artist" in retrieved.prompt
 
-    def test_get_nonexistent_role_raises_error(self):
+    def test_get_nonexistent_role_raises_error(self) -> None:
         """Should raise error for non-existent role."""
         manager = RoleManager()
         with pytest.raises(KeyError):

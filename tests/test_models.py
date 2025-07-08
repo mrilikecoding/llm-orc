@@ -16,17 +16,17 @@ from llm_orc.models import (
 class TestModelInterface:
     """Test the abstract model interface."""
 
-    def test_model_interface_is_abstract(self):
+    def test_model_interface_is_abstract(self) -> None:
         """Should not be able to instantiate ModelInterface directly."""
         with pytest.raises(TypeError):
-            ModelInterface()
+            ModelInterface()  # type: ignore[abstract]
 
 
 class TestClaudeModel:
     """Test Claude model implementation."""
 
     @pytest.mark.asyncio
-    async def test_claude_model_generate_response(self):
+    async def test_claude_model_generate_response(self) -> None:
         """Should generate response using Claude API."""
         model = ClaudeModel(api_key="test-key")
 
@@ -49,13 +49,14 @@ class TestGeminiModel:
     """Test Gemini model implementation."""
 
     @pytest.mark.asyncio
-    async def test_gemini_model_generate_response(self):
+    async def test_gemini_model_generate_response(self) -> None:
         """Should generate response using Gemini API."""
         model = GeminiModel(api_key="test-key")
 
         # Mock the genai client with proper async handling
         mock_response = Mock()
         mock_response.text = "Hello from Gemini!"
+        model.client = Mock()
         model.client.generate_content = Mock(return_value=mock_response)
 
         response = await model.generate_response(
@@ -70,7 +71,7 @@ class TestOllamaModel:
     """Test Ollama model implementation."""
 
     @pytest.mark.asyncio
-    async def test_ollama_model_generate_response(self):
+    async def test_ollama_model_generate_response(self) -> None:
         """Should generate response using Ollama API."""
         model = OllamaModel(model_name="llama2")
 
@@ -89,7 +90,7 @@ class TestOllamaModel:
 class TestModelManager:
     """Test model management and selection."""
 
-    def test_register_model(self):
+    def test_register_model(self) -> None:
         """Should register a new model."""
         manager = ModelManager()
         mock_model = Mock(spec=ModelInterface)
@@ -100,7 +101,7 @@ class TestModelManager:
         assert "test" in manager.models
         assert manager.models["test"] == mock_model
 
-    def test_get_model(self):
+    def test_get_model(self) -> None:
         """Should retrieve registered model."""
         manager = ModelManager()
         mock_model = Mock(spec=ModelInterface)
@@ -111,7 +112,7 @@ class TestModelManager:
 
         assert retrieved == mock_model
 
-    def test_get_nonexistent_model_raises_error(self):
+    def test_get_nonexistent_model_raises_error(self) -> None:
         """Should raise error for non-existent model."""
         manager = ModelManager()
 
