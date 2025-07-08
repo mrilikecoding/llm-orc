@@ -51,8 +51,27 @@ jobs:
         name: dist
         path: dist/
 
-  publish-pypi:
+  publish-test-pypi:
     needs: [get-version, build]
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist/
+    
+    - name: Publish to Test PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      continue-on-error: true
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        password: ${{ secrets.PYPI_TEST_API_KEY }}
+        skip-existing: true
+
+  publish-pypi:
+    needs: [get-version, build, publish-test-pypi]
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -74,10 +93,14 @@ jobs:
         verbose: true
 
   notify:
-    needs: [get-version, publish-pypi]
-    if: always() && needs.publish-pypi.result == 'success'
+    needs: [get-version, publish-test-pypi, publish-pypi]
+    if: always() && (needs.publish-pypi.result == 'success' || needs.publish-test-pypi.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Notify success
         run: |
-          echo "🎉 Successfully published llm-orchestra v${{ needs.get-version.outputs.current-version }} to PyPI!"
+          if [[ "${{ needs.publish-pypi.result }}" == "success" ]]; then
+            echo "🎉 Successfully published llm-orchestra v${{ needs.get-version.outputs.current-version }} to PyPI!"
+          elif [[ "${{ needs.publish-test-pypi.result }}" == "success" ]]; then
+            echo "🧪 Successfully published llm-orchestra v${{ needs.get-version.outputs.current-version }} to Test PyPI!"
+          fi
