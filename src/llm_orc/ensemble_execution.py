@@ -18,7 +18,7 @@ class EnsembleExecutor:
         start_time = time.time()
 
         # Initialize result structure
-        result = {
+        result: dict[str, Any] = {
             "ensemble": config.name,
             "status": "running",
             "input": {"data": input_data},
@@ -26,6 +26,9 @@ class EnsembleExecutor:
             "synthesis": None,
             "metadata": {"agents_used": len(config.agents), "started_at": start_time},
         }
+
+        # Ensure results is properly typed
+        results_dict: dict[str, Any] = result["results"]
 
         # Execute all agents concurrently with timeout handling
         agent_tasks = []
@@ -39,11 +42,11 @@ class EnsembleExecutor:
 
         # Wait for all agents to complete and collect usage
         has_errors = False
-        agent_usage = {}
+        agent_usage: dict[str, Any] = {}
         for agent_name, task in agent_tasks:
             try:
                 agent_result, model_instance = await task
-                result["results"][agent_name] = {
+                results_dict[agent_name] = {
                     "response": agent_result,
                     "status": "success",
                 }
@@ -52,7 +55,7 @@ class EnsembleExecutor:
                 if usage:
                     agent_usage[agent_name] = usage
             except Exception as e:
-                result["results"][agent_name] = {"error": str(e), "status": "failed"}
+                results_dict[agent_name] = {"error": str(e), "status": "failed"}
                 has_errors = True
 
         # Synthesize results if coordinator is configured
@@ -61,7 +64,7 @@ class EnsembleExecutor:
             try:
                 synthesis_timeout = config.coordinator.get("synthesis_timeout_seconds")
                 synthesis_result = await self._synthesize_results_with_timeout(
-                    config, result["results"], synthesis_timeout
+                    config, results_dict, synthesis_timeout
                 )
                 synthesis, synthesis_model = synthesis_result
                 result["synthesis"] = synthesis
@@ -76,9 +79,10 @@ class EnsembleExecutor:
         # Finalize result
         end_time = time.time()
         result["status"] = "completed_with_errors" if has_errors else "completed"
-        result["metadata"]["duration"] = f"{(end_time - start_time):.2f}s"
-        result["metadata"]["completed_at"] = end_time
-        result["metadata"]["usage"] = usage_summary
+        metadata_dict: dict[str, Any] = result["metadata"]
+        metadata_dict["duration"] = f"{(end_time - start_time):.2f}s"
+        metadata_dict["completed_at"] = end_time
+        metadata_dict["usage"] = usage_summary
 
         return result
 

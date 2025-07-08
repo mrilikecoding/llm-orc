@@ -42,7 +42,7 @@ class Message:
 class ConversationManager:
     """Manages conversation state between agents."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.conversations: dict[str, dict[str, Any]] = {}
         self.active_conversations: list[str] = []
 
@@ -72,7 +72,8 @@ class ConversationManager:
         if conversation_id not in self.conversations:
             raise KeyError(f"Conversation '{conversation_id}' not found")
 
-        return self.conversations[conversation_id]["messages"]
+        messages = self.conversations[conversation_id]["messages"]
+        return [msg for msg in messages if isinstance(msg, Message)]
 
 
 class MessageProtocol:

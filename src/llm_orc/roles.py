@@ -16,7 +16,7 @@ class RoleDefinition:
 class RoleManager:
     """Manages role definitions and retrieval."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.roles: dict[str, RoleDefinition] = {}
 
     def register_role(self, role: RoleDefinition) -> None:

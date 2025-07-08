@@ -12,7 +12,7 @@ from llm_orc.ensemble_config import EnsembleConfig, EnsembleLoader
 class TestEnsembleConfig:
     """Test ensemble configuration."""
 
-    def test_ensemble_config_creation(self):
+    def test_ensemble_config_creation(self) -> None:
         """Test creating an ensemble configuration."""
         config = EnsembleConfig(
             name="test_ensemble",
@@ -36,7 +36,7 @@ class TestEnsembleConfig:
 class TestEnsembleLoader:
     """Test ensemble configuration loading."""
 
-    def test_load_ensemble_from_yaml(self):
+    def test_load_ensemble_from_yaml(self) -> None:
         """Test loading ensemble configuration from YAML file."""
         # Create a temporary YAML file
         ensemble_yaml = {
@@ -75,7 +75,7 @@ class TestEnsembleLoader:
         finally:
             Path(yaml_path).unlink()
 
-    def test_list_ensembles_in_directory(self):
+    def test_list_ensembles_in_directory(self) -> None:
         """Test listing available ensembles in a directory."""
         with tempfile.TemporaryDirectory() as temp_dir:
             # Create a couple of ensemble files
@@ -111,14 +111,14 @@ class TestEnsembleLoader:
             assert "ensemble1" in ensemble_names
             assert "ensemble2" in ensemble_names
 
-    def test_load_nonexistent_ensemble(self):
+    def test_load_nonexistent_ensemble(self) -> None:
         """Test loading a nonexistent ensemble raises appropriate error."""
         loader = EnsembleLoader()
 
         with pytest.raises(FileNotFoundError):
             loader.load_from_file("/nonexistent/path.yaml")
 
-    def test_find_ensemble_by_name(self):
+    def test_find_ensemble_by_name(self) -> None:
         """Test finding an ensemble by name in a directory."""
         with tempfile.TemporaryDirectory() as temp_dir:
             # Create an ensemble file

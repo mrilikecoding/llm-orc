@@ -11,21 +11,21 @@ from llm_orc.cli import cli
 class TestCLI:
     """Test CLI interface."""
 
-    def test_cli_help(self):
+    def test_cli_help(self) -> None:
         """Test that CLI shows help message."""
         runner = CliRunner()
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
         assert "llm orchestra" in result.output.lower()
 
-    def test_cli_invoke_command_exists(self):
+    def test_cli_invoke_command_exists(self) -> None:
         """Test that invoke command exists."""
         runner = CliRunner()
         result = runner.invoke(cli, ["invoke", "--help"])
         assert result.exit_code == 0
         assert "invoke" in result.output.lower()
 
-    def test_cli_invoke_requires_ensemble_name(self):
+    def test_cli_invoke_requires_ensemble_name(self) -> None:
         """Test that invoke command requires ensemble name."""
         runner = CliRunner()
         result = runner.invoke(cli, ["invoke"])
@@ -34,7 +34,7 @@ class TestCLI:
             "ensemble" in result.output.lower() or "required" in result.output.lower()
         )
 
-    def test_cli_invoke_with_ensemble_name(self):
+    def test_cli_invoke_with_ensemble_name(self) -> None:
         """Test basic ensemble invocation."""
         runner = CliRunner()
         result = runner.invoke(cli, ["invoke", "test_ensemble"])
@@ -42,7 +42,7 @@ class TestCLI:
         assert result.exit_code != 0
         assert "test_ensemble" in result.output
 
-    def test_cli_invoke_with_config_option(self):
+    def test_cli_invoke_with_config_option(self) -> None:
         """Test invoke command accepts config directory option."""
         runner = CliRunner()
         result = runner.invoke(cli, ["invoke", "--config-dir", "/tmp", "test_ensemble"])
@@ -50,14 +50,14 @@ class TestCLI:
         # Should show that it's looking in the specified config directory
         assert "test_ensemble" in result.output
 
-    def test_cli_list_command_exists(self):
+    def test_cli_list_command_exists(self) -> None:
         """Test that list-ensembles command exists."""
         runner = CliRunner()
         result = runner.invoke(cli, ["list-ensembles", "--help"])
         assert result.exit_code == 0
         assert "list" in result.output.lower() or "ensemble" in result.output.lower()
 
-    def test_cli_list_ensembles_with_actual_configs(self):
+    def test_cli_list_ensembles_with_actual_configs(self) -> None:
         """Test listing ensembles when config files exist."""
         with tempfile.TemporaryDirectory() as temp_dir:
             # Create a test ensemble file
@@ -79,7 +79,7 @@ class TestCLI:
             assert "test_ensemble" in result.output
             assert "A test ensemble for CLI testing" in result.output
 
-    def test_cli_invoke_existing_ensemble(self):
+    def test_cli_invoke_existing_ensemble(self) -> None:
         """Test invoking an ensemble that exists."""
         with tempfile.TemporaryDirectory() as temp_dir:
             # Create a test ensemble file
