@@ -33,7 +33,7 @@ class EnsembleLoader:
             name=data["name"],
             description=data["description"],
             agents=data["agents"],
-            coordinator=data["coordinator"]
+            coordinator=data["coordinator"],
         )
 
     def list_ensembles(self, directory: str) -> list[EnsembleConfig]:
