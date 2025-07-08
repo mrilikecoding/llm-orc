@@ -67,16 +67,17 @@ class TestEnsembleExecutor:
         }
 
         # Mock the role and model loading methods
-        with patch.object(
-            executor, '_load_role', new_callable=AsyncMock
-        ) as mock_load_role, \
-             patch.object(
-                 executor, '_load_model', new_callable=AsyncMock
-             ) as mock_load_model, \
-             patch.object(
-                 executor, '_get_synthesis_model', new_callable=AsyncMock
-             ) as mock_get_synthesis_model:
-
+        with (
+            patch.object(
+                executor, "_load_role", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor, "_load_model", new_callable=AsyncMock
+            ) as mock_load_model,
+            patch.object(
+                executor, "_get_synthesis_model", new_callable=AsyncMock
+            ) as mock_get_synthesis_model,
+        ):
             mock_load_role.side_effect = [role1, role2]
             mock_load_model.return_value = mock_model
             mock_get_synthesis_model.return_value = mock_synthesis_model
@@ -160,16 +161,17 @@ class TestEnsembleExecutor:
         }
 
         # Mock the role and model loading methods
-        with patch.object(
-            executor, '_load_role', new_callable=AsyncMock
-        ) as mock_load_role, \
-             patch.object(
-                 executor, '_load_model', new_callable=AsyncMock
-             ) as mock_load_model, \
-             patch.object(
-                 executor, '_get_synthesis_model', new_callable=AsyncMock
-             ) as mock_get_synthesis_model:
-
+        with (
+            patch.object(
+                executor, "_load_role", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor, "_load_model", new_callable=AsyncMock
+            ) as mock_load_model,
+            patch.object(
+                executor, "_get_synthesis_model", new_callable=AsyncMock
+            ) as mock_get_synthesis_model,
+        ):
             mock_load_role.side_effect = [analyst_role, checker_role]
             mock_load_model.side_effect = [claude_model, llama_model]
             mock_get_synthesis_model.return_value = mock_synthesis_model
@@ -210,13 +212,14 @@ class TestEnsembleExecutor:
         executor = EnsembleExecutor()
 
         # Mock the role and model loading methods
-        with patch.object(
-            executor, '_load_role', new_callable=AsyncMock
-        ) as mock_load_role, \
-             patch.object(
-                 executor, '_load_model', new_callable=AsyncMock
-             ) as mock_load_model:
-
+        with (
+            patch.object(
+                executor, "_load_role", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor, "_load_model", new_callable=AsyncMock
+            ) as mock_load_model,
+        ):
             mock_load_role.return_value = role
             mock_load_model.side_effect = [working_model, failing_model]
 
@@ -262,16 +265,17 @@ class TestEnsembleExecutor:
         executor = EnsembleExecutor()
 
         # Mock the role and model loading methods
-        with patch.object(
-            executor, '_load_role', new_callable=AsyncMock
-        ) as mock_load_role, \
-             patch.object(
-                 executor, '_load_model', new_callable=AsyncMock
-             ) as mock_load_model, \
-             patch.object(
-                 executor, '_get_synthesis_model', new_callable=AsyncMock
-             ) as mock_get_synthesis_model:
-
+        with (
+            patch.object(
+                executor, "_load_role", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor, "_load_model", new_callable=AsyncMock
+            ) as mock_load_model,
+            patch.object(
+                executor, "_get_synthesis_model", new_callable=AsyncMock
+            ) as mock_get_synthesis_model,
+        ):
             mock_load_role.return_value = role
             mock_load_model.return_value = agent_model
             mock_get_synthesis_model.return_value = synthesis_model
@@ -340,16 +344,17 @@ class TestEnsembleExecutor:
         executor = EnsembleExecutor()
 
         # Mock the role and model loading methods
-        with patch.object(
-            executor, '_load_role', new_callable=AsyncMock
-        ) as mock_load_role, \
-             patch.object(
-                 executor, '_load_model', new_callable=AsyncMock
-             ) as mock_load_model, \
-             patch.object(
-                 executor, '_get_synthesis_model', new_callable=AsyncMock
-             ) as mock_get_synthesis_model:
-
+        with (
+            patch.object(
+                executor, "_load_role", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor, "_load_model", new_callable=AsyncMock
+            ) as mock_load_model,
+            patch.object(
+                executor, "_get_synthesis_model", new_callable=AsyncMock
+            ) as mock_get_synthesis_model,
+        ):
             mock_load_role.return_value = role
             mock_load_model.side_effect = [claude_model, llama_model]
             mock_get_synthesis_model.return_value = synthesis_model
@@ -429,13 +434,14 @@ class TestEnsembleExecutor:
         executor = EnsembleExecutor()
 
         # Mock the role and model loading methods
-        with patch.object(
-            executor, '_load_role', new_callable=AsyncMock
-        ) as mock_load_role, \
-             patch.object(
-                 executor, '_load_model', new_callable=AsyncMock
-             ) as mock_load_model:
-
+        with (
+            patch.object(
+                executor, "_load_role", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor, "_load_model", new_callable=AsyncMock
+            ) as mock_load_model,
+        ):
             mock_load_role.return_value = role
             mock_load_model.return_value = slow_model
 
@@ -508,13 +514,14 @@ class TestEnsembleExecutor:
         executor = EnsembleExecutor()
 
         # Mock the role and model loading methods
-        with patch.object(
-            executor, '_load_role', new_callable=AsyncMock
-        ) as mock_load_role, \
-             patch.object(
-                 executor, '_load_model', new_callable=AsyncMock
-             ) as mock_load_model:
-
+        with (
+            patch.object(
+                executor, "_load_role", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor, "_load_model", new_callable=AsyncMock
+            ) as mock_load_model,
+        ):
             mock_load_role.return_value = role
             mock_load_model.side_effect = [fast_model, slow_model]
 
@@ -581,16 +588,17 @@ class TestEnsembleExecutor:
         executor = EnsembleExecutor()
 
         # Mock the role and model loading methods
-        with patch.object(
-            executor, '_load_role', new_callable=AsyncMock
-        ) as mock_load_role, \
-             patch.object(
-                 executor, '_load_model', new_callable=AsyncMock
-             ) as mock_load_model, \
-             patch.object(
-                 executor, '_get_synthesis_model', new_callable=AsyncMock
-             ) as mock_get_synthesis_model:
-
+        with (
+            patch.object(
+                executor, "_load_role", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor, "_load_model", new_callable=AsyncMock
+            ) as mock_load_model,
+            patch.object(
+                executor, "_get_synthesis_model", new_callable=AsyncMock
+            ) as mock_get_synthesis_model,
+        ):
             mock_load_role.return_value = role
             mock_load_model.return_value = fast_model
             mock_get_synthesis_model.return_value = slow_synthesis_model

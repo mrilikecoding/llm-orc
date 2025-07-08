@@ -169,8 +169,9 @@ class TestMessageProtocol:
 
         # Mock the message delivery
         from unittest.mock import patch
+
         with patch.object(
-            protocol, 'deliver_message', new_callable=AsyncMock
+            protocol, "deliver_message", new_callable=AsyncMock
         ) as mock_deliver:
             result = await protocol.send_message(
                 sender="agent-1",
@@ -231,13 +232,15 @@ class TestMessageProtocol:
 
         # Mock a slow message delivery that exceeds timeout
         from typing import Any
+
         async def slow_delivery(msg: Any) -> None:
             await asyncio.sleep(0.2)  # Longer than 0.1s timeout
 
         from unittest.mock import patch
+
         with patch.object(
             protocol,
-            'deliver_message',
+            "deliver_message",
             new_callable=AsyncMock,
             side_effect=slow_delivery,
         ):
