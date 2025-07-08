@@ -113,7 +113,7 @@ class TestPracticalExamples:
         orchestrator = ConversationOrchestrator()
         # Mock the message delivery to avoid async timeout issues in tests
         with patch.object(
-            orchestrator.message_protocol, 'deliver_message', new_callable=AsyncMock
+            orchestrator.message_protocol, "deliver_message", new_callable=AsyncMock
         ):
             orchestrator.register_agent(shakespeare_agent)
             orchestrator.register_agent(einstein_agent)

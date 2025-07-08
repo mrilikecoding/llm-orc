@@ -54,9 +54,9 @@ class TestMessageRoutingPerformance:
 
         # Assert - Should be under 50ms
         assert response == "Fast response"
-        assert (
-            routing_time_ms < 50.0
-        ), f"Message routing took {routing_time_ms:.2f}ms, should be under 50ms"
+        assert routing_time_ms < 50.0, (
+            f"Message routing took {routing_time_ms:.2f}ms, should be under 50ms"
+        )
 
         # Verify agent responded
         mock_model.generate_response.assert_called_once()
@@ -120,9 +120,9 @@ class TestMessageRoutingPerformance:
         total_time_ms = (end_time - start_time) * 1000
 
         # Assert - 3 message exchanges should complete quickly
-        assert (
-            total_time_ms < 150.0
-        ), f"Multi-agent conversation took {total_time_ms:.2f}ms, should be under 150ms"
+        assert total_time_ms < 150.0, (
+            f"Multi-agent conversation took {total_time_ms:.2f}ms, should be under 150ms"
+        )
 
         # Verify all agents participated
         for agent in agents:
@@ -151,9 +151,9 @@ class TestMessageRoutingPerformance:
 
         # Assert - Should be very fast with mock model
         assert response == "Quick response"
-        assert (
-            response_time_ms < 10.0
-        ), f"Response generation took {response_time_ms:.2f}ms, should be under 10ms"
+        assert response_time_ms < 10.0, (
+            f"Response generation took {response_time_ms:.2f}ms, should be under 10ms"
+        )
         assert len(agent.conversation_history) == 1
 
     @pytest.mark.asyncio
@@ -240,9 +240,9 @@ class TestPRReviewPerformance:
         review_time_ms = (end_time - start_time) * 1000
 
         # Assert - Should complete review quickly with mock models
-        assert (
-            review_time_ms < 100.0
-        ), f"PR review took {review_time_ms:.2f}ms, should be under 100ms"
+        assert review_time_ms < 100.0, (
+            f"PR review took {review_time_ms:.2f}ms, should be under 100ms"
+        )
         assert len(review_results["reviews"]) == 3
         assert review_results["total_reviewers"] == 3
 
