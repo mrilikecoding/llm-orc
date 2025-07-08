@@ -32,6 +32,7 @@ dependencies = [
     "ollama",
     "click",
     "pyyaml",
+    "cryptography",
 ]
 requires-python = ">=3.11"
 

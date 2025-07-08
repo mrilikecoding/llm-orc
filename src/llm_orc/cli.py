@@ -4,9 +4,11 @@ import asyncio
 import json
 import os
 import sys
+from pathlib import Path
 
 import click
 
+from llm_orc.authentication import AuthenticationManager, CredentialStorage
 from llm_orc.ensemble_config import EnsembleLoader
 from llm_orc.ensemble_execution import EnsembleExecutor
 
@@ -152,6 +154,123 @@ def list_ensembles(config_dir: str):
         click.echo(f"Available ensembles in {config_dir}:")
         for ensemble in ensembles:
             click.echo(f"  {ensemble.name}: {ensemble.description}")
+
+
+@cli.group()
+def auth():
+    """Authentication management commands."""
+    pass
+
+
+@auth.command("add")
+@click.argument("provider")
+@click.option("--api-key", required=True, help="API key for the provider")
+@click.option("--config-dir", default=None, help="Config directory path")
+def auth_add(provider: str, api_key: str, config_dir: str):
+    """Add API key authentication for a provider."""
+    config_path = Path(config_dir) if config_dir else None
+    storage = CredentialStorage(config_path)
+
+    try:
+        storage.store_api_key(provider, api_key)
+        click.echo(f"API key for {provider} added successfully")
+    except Exception as e:
+        raise click.ClickException(f"Failed to store API key: {str(e)}") from e
+
+
+@auth.command("list")
+@click.option("--config-dir", default=None, help="Config directory path")
+def auth_list(config_dir: str):
+    """List configured authentication providers."""
+    config_path = Path(config_dir) if config_dir else None
+    storage = CredentialStorage(config_path)
+
+    try:
+        providers = storage.list_providers()
+        if not providers:
+            click.echo("No authentication providers configured")
+        else:
+            click.echo("Configured providers:")
+            for provider in providers:
+                click.echo(f"  {provider}: API key")
+    except Exception as e:
+        raise click.ClickException(f"Failed to list providers: {str(e)}") from e
+
+
+@auth.command("remove")
+@click.argument("provider")
+@click.option("--config-dir", default=None, help="Config directory path")
+def auth_remove(provider: str, config_dir: str):
+    """Remove authentication for a provider."""
+    config_path = Path(config_dir) if config_dir else None
+    storage = CredentialStorage(config_path)
+
+    try:
+        # Check if provider exists
+        if provider not in storage.list_providers():
+            raise click.ClickException(f"No authentication found for {provider}")
+
+        storage.remove_provider(provider)
+        click.echo(f"Authentication for {provider} removed")
+    except click.ClickException:
+        raise
+    except Exception as e:
+        raise click.ClickException(f"Failed to remove provider: {str(e)}") from e
+
+
+@auth.command("test")
+@click.argument("provider")
+@click.option("--config-dir", default=None, help="Config directory path")
+def auth_test(provider: str, config_dir: str):
+    """Test authentication for a provider."""
+    config_path = Path(config_dir) if config_dir else None
+    auth_manager = AuthenticationManager(config_path)
+    storage = CredentialStorage(config_path)
+
+    try:
+        api_key = storage.get_api_key(provider)
+        if not api_key:
+            raise click.ClickException(f"No authentication found for {provider}")
+
+        if auth_manager.authenticate(provider, api_key):
+            click.echo(f"Authentication for {provider} is working")
+        else:
+            raise click.ClickException(f"Authentication for {provider} failed")
+    except click.ClickException:
+        raise
+    except Exception as e:
+        raise click.ClickException(f"Failed to test authentication: {str(e)}") from e
+
+
+@auth.command("setup")
+@click.option("--config-dir", default=None, help="Config directory path")
+def auth_setup(config_dir: str):
+    """Interactive setup wizard for authentication."""
+    config_path = Path(config_dir) if config_dir else None
+    storage = CredentialStorage(config_path)
+
+    click.echo("Welcome to LLM Orchestra setup!")
+    click.echo("This wizard will help you configure authentication for LLM providers.")
+    click.echo()
+
+    while True:
+        provider = click.prompt("Provider name (e.g., anthropic, google, openai)")
+        api_key = click.prompt("API key", hide_input=True)
+
+        try:
+            storage.store_api_key(provider, api_key)
+            click.echo(f"✓ {provider} configured successfully")
+        except Exception as e:
+            click.echo(f"✗ Failed to configure {provider}: {str(e)}")
+
+        if not click.confirm("Add another provider?"):
+            break
+
+    click.echo()
+    click.echo(
+        "Setup complete! You can now use 'llm-orc auth list' to see your "
+        "configured providers."
+    )
 
 
 if __name__ == "__main__":
