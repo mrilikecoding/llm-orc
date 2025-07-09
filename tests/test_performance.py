@@ -121,7 +121,8 @@ class TestMessageRoutingPerformance:
 
         # Assert - 3 message exchanges should complete quickly
         assert total_time_ms < 150.0, (
-            f"Multi-agent conversation took {total_time_ms:.2f}ms, should be under 150ms"
+            f"Multi-agent conversation took {total_time_ms:.2f}ms, "
+            f"should be under 150ms"
         )
 
         # Verify all agents participated
