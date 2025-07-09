@@ -61,7 +61,7 @@ class TestScriptAgent:
     @pytest.mark.asyncio
     async def test_script_agent_receives_input_data(self) -> None:
         """Test that script agent receives input data via environment."""
-        config = {"script": "echo \"Input: $INPUT_DATA\""}
+        config = {"script": 'echo "Input: $INPUT_DATA"'}
         agent = ScriptAgent("test_agent", config)
 
         result = await agent.execute("test message")
@@ -73,4 +73,3 @@ class TestScriptAgent:
         agent = ScriptAgent("test_agent", config)
 
         assert agent.get_agent_type() == "script"
-

@@ -63,7 +63,7 @@ class ScriptAgent:
 
     async def _execute_script(self, script_content: str, env: dict[str, str]) -> str:
         """Execute script content in a temporary file."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
             f.write("#!/bin/bash\n")
             f.write("set -euo pipefail\n")  # Exit on error, undefined vars
             f.write(script_content)
@@ -80,7 +80,7 @@ class ScriptAgent:
                 text=True,
                 timeout=self.timeout,
                 env=env,
-                check=True
+                check=True,
             )
 
             return result.stdout
@@ -98,7 +98,7 @@ class ScriptAgent:
             text=True,
             timeout=self.timeout,
             env=env,
-            check=True
+            check=True,
         )
 
         return result.stdout
@@ -106,4 +106,3 @@ class ScriptAgent:
     def get_agent_type(self) -> str:
         """Return the agent type."""
         return "script"
-

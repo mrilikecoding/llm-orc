@@ -19,7 +19,7 @@ class TestEnsembleScriptIntegration:
                 {
                     "name": "echo_agent",
                     "type": "script",
-                    "command": "echo \"Script output: $INPUT_DATA\"",
+                    "command": 'echo "Script output: $INPUT_DATA"',
                     "timeout_seconds": 10,
                 }
             ],
@@ -34,9 +34,9 @@ class TestEnsembleScriptIntegration:
 
         assert result["status"] in ["completed", "completed_with_errors"]
         assert "echo_agent" in result["results"]
-        assert "Script output: test input" in result["results"]["echo_agent"][
-            "response"
-        ]
+        assert (
+            "Script output: test input" in result["results"]["echo_agent"]["response"]
+        )
 
     @pytest.mark.asyncio
     async def test_ensemble_with_mixed_agents(self) -> None:
@@ -48,7 +48,7 @@ class TestEnsembleScriptIntegration:
                 {
                     "name": "data_fetcher",
                     "type": "script",
-                    "script": "echo \"Data: $INPUT_DATA\"",
+                    "script": 'echo "Data: $INPUT_DATA"',
                 },
                 {
                     "name": "llm_analyzer",
@@ -90,4 +90,3 @@ class TestEnsembleScriptIntegration:
 
         assert config.agents[0]["type"] == "script"
         assert config.agents[0]["command"] == "echo 'test'"
-

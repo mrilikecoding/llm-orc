@@ -55,7 +55,7 @@ class EnsembleExecutor:
             except Exception as e:
                 results_dict[agent_config["name"]] = {
                     "error": str(e),
-                    "status": "failed"
+                    "status": "failed",
                 }
                 has_errors = True
 
@@ -65,10 +65,9 @@ class EnsembleExecutor:
         # Prepare enhanced input for LLM agents
         enhanced_input = input_data
         if context_data:
-            context_text = "\n\n".join([
-                f"=== {name} ===\n{data}"
-                for name, data in context_data.items()
-            ])
+            context_text = "\n\n".join(
+                [f"=== {name} ===\n{data}" for name, data in context_data.items()]
+            )
             enhanced_input = f"{input_data}\n\n{context_text}"
 
         # Execute LLM agents concurrently with enhanced input
