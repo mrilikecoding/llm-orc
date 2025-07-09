@@ -7,24 +7,27 @@ from typing import Any
 import yaml
 from cryptography.fernet import Fernet
 
+from llm_orc.config import ConfigurationManager
+
 
 class CredentialStorage:
     """Handles encrypted storage and retrieval of credentials."""
 
-    def __init__(self, config_dir: Path | None = None):
+    def __init__(self, config_manager: ConfigurationManager | None = None):
         """Initialize credential storage.
 
         Args:
-            config_dir: Directory to store credentials. Defaults to ~/.llm-orc
+            config_manager: Configuration manager instance. If None, creates a new one.
         """
-        self.config_dir = config_dir or Path.home() / ".llm-orc"
-        self.config_dir.mkdir(parents=True, exist_ok=True)
-        self.credentials_file = self.config_dir / "credentials.yaml"
+        self.config_manager = config_manager or ConfigurationManager()
+        self.config_manager.ensure_global_config_dir()
+        
+        self.credentials_file = self.config_manager.get_credentials_file()
         self._encryption_key = self._get_or_create_encryption_key()
 
     def _get_or_create_encryption_key(self) -> Fernet:
         """Get or create encryption key for credential storage."""
-        key_file = self.config_dir / ".encryption_key"
+        key_file = self.config_manager.get_encryption_key_file()
 
         if key_file.exists():
             with open(key_file, "rb") as f:
@@ -126,13 +129,13 @@ class CredentialStorage:
 class AuthenticationManager:
     """Manages authentication with LLM providers."""
 
-    def __init__(self, config_dir: Path | None = None):
+    def __init__(self, credential_storage: CredentialStorage):
         """Initialize authentication manager.
 
         Args:
-            config_dir: Directory to store credentials. Defaults to ~/.llm-orc
+            credential_storage: CredentialStorage instance to use for storing credentials
         """
-        self.credential_storage = CredentialStorage(config_dir)
+        self.credential_storage = credential_storage
         self._authenticated_clients: dict[str, Any] = {}
 
     def authenticate(self, provider: str, api_key: str) -> bool:
