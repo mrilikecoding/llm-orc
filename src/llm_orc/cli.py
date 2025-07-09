@@ -10,6 +10,7 @@ from typing import Any
 import click
 
 from llm_orc.authentication import AuthenticationManager, CredentialStorage
+from llm_orc.config import ConfigurationManager
 from llm_orc.ensemble_config import EnsembleLoader
 from llm_orc.ensemble_execution import EnsembleExecutor
 
@@ -43,9 +44,24 @@ def invoke(
     ensemble_name: str, config_dir: str, input_data: str, output_format: str
 ) -> None:
     """Invoke an ensemble of agents."""
+    # Initialize configuration manager
+    config_manager = ConfigurationManager()
+    
+    # Handle migration if needed
+    if config_manager.needs_migration():
+        click.echo("Migrating configuration from ~/.llm-orc to new location...")
+        config_manager.migrate_from_old_location()
+        click.echo(f"Configuration migrated to: {config_manager.global_config_dir}")
+    
+    # Determine ensemble directories
     if config_dir is None:
-        # Default to ~/.llm-orc/ensembles if no config dir specified
-        config_dir = os.path.expanduser("~/.llm-orc/ensembles")
+        # Use configuration manager to get ensemble directories
+        ensemble_dirs = config_manager.get_ensembles_dirs()
+        if not ensemble_dirs:
+            raise click.ClickException("No ensemble directories found. Run 'llm-orc config init' to set up local configuration.")
+    else:
+        # Use specified config directory
+        ensemble_dirs = [Path(config_dir)]
 
     # Handle input from stdin if not provided via --input
     if input_data is None:
@@ -56,12 +72,19 @@ def invoke(
             # No input provided and not piped, use default
             input_data = "Please analyze this."
 
+    # Find ensemble in the directories
     loader = EnsembleLoader()
-    ensemble_config = loader.find_ensemble(config_dir, ensemble_name)
+    ensemble_config = None
+    
+    for ensemble_dir in ensemble_dirs:
+        ensemble_config = loader.find_ensemble(str(ensemble_dir), ensemble_name)
+        if ensemble_config is not None:
+            break
 
     if ensemble_config is None:
+        searched_dirs = [str(d) for d in ensemble_dirs]
         raise click.ClickException(
-            f"Ensemble '{ensemble_name}' not found in {config_dir}"
+            f"Ensemble '{ensemble_name}' not found in: {', '.join(searched_dirs)}"
         )
 
     if output_format == "text":
@@ -160,6 +183,91 @@ def list_ensembles(config_dir: str) -> None:
 
 
 @cli.group()
+def config() -> None:
+    """Configuration management commands."""
+    pass
+
+
+@config.command()
+@click.option(
+    "--project-name",
+    default=None,
+    help="Name for the project (defaults to directory name)",
+)
+def init(project_name: str) -> None:
+    """Initialize local .llm-orc configuration for current project."""
+    config_manager = ConfigurationManager()
+    
+    try:
+        config_manager.init_local_config(project_name)
+        click.echo("Local configuration initialized successfully!")
+        click.echo(f"Created .llm-orc directory with:")
+        click.echo("  - ensembles/   (project-specific ensembles)")
+        click.echo("  - models/      (shared model configurations)")
+        click.echo("  - scripts/     (project-specific scripts)")
+        click.echo("  - config.yaml  (project configuration)")
+        click.echo("\nYou can now create project-specific ensembles in .llm-orc/ensembles/")
+    except ValueError as e:
+        raise click.ClickException(str(e))
+
+
+@config.command()
+def migrate() -> None:
+    """Migrate configuration from old ~/.llm-orc location to new XDG-compliant location."""
+    config_manager = ConfigurationManager()
+    
+    if not config_manager.needs_migration():
+        click.echo("No migration needed. Configuration is already in the correct location.")
+        return
+    
+    try:
+        config_manager.migrate_from_old_location()
+        click.echo("Configuration migrated successfully!")
+        click.echo(f"Old location: ~/.llm-orc")
+        click.echo(f"New location: {config_manager.global_config_dir}")
+    except ValueError as e:
+        raise click.ClickException(str(e))
+
+
+@config.command()
+def show() -> None:
+    """Show current configuration information."""
+    config_manager = ConfigurationManager()
+    
+    click.echo("Configuration Information:")
+    click.echo(f"Global config directory: {config_manager.global_config_dir}")
+    
+    if config_manager.local_config_dir:
+        click.echo(f"Local config directory: {config_manager.local_config_dir}")
+    else:
+        click.echo("Local config directory: Not found")
+    
+    click.echo("\nEnsemble directories (in search order):")
+    ensemble_dirs = config_manager.get_ensembles_dirs()
+    if ensemble_dirs:
+        for i, dir_path in enumerate(ensemble_dirs, 1):
+            click.echo(f"  {i}. {dir_path}")
+    else:
+        click.echo("  None found")
+    
+    if config_manager.needs_migration():
+        click.echo("\n⚠️  Migration available: Run 'llm-orc config migrate' to update configuration location")
+    
+    # Show project config if available
+    project_config = config_manager.load_project_config()
+    if project_config:
+        click.echo("\nProject Configuration:")
+        project_name = project_config.get('project', {}).get('name', 'Unknown')
+        click.echo(f"  Project name: {project_name}")
+        
+        profiles = project_config.get('model_profiles', {})
+        if profiles:
+            click.echo("  Model profiles:")
+            for profile_name in profiles.keys():
+                click.echo(f"    - {profile_name}")
+
+
+@cli.group()
 def auth() -> None:
     """Authentication management commands."""
     pass
@@ -168,11 +276,10 @@ def auth() -> None:
 @auth.command("add")
 @click.argument("provider")
 @click.option("--api-key", required=True, help="API key for the provider")
-@click.option("--config-dir", default=None, help="Config directory path")
-def auth_add(provider: str, api_key: str, config_dir: str) -> None:
+def auth_add(provider: str, api_key: str) -> None:
     """Add API key authentication for a provider."""
-    config_path = Path(config_dir) if config_dir else None
-    storage = CredentialStorage(config_path)
+    config_manager = ConfigurationManager()
+    storage = CredentialStorage(config_manager)
 
     try:
         storage.store_api_key(provider, api_key)
@@ -182,11 +289,10 @@ def auth_add(provider: str, api_key: str, config_dir: str) -> None:
 
 
 @auth.command("list")
-@click.option("--config-dir", default=None, help="Config directory path")
-def auth_list(config_dir: str) -> None:
+def auth_list() -> None:
     """List configured authentication providers."""
-    config_path = Path(config_dir) if config_dir else None
-    storage = CredentialStorage(config_path)
+    config_manager = ConfigurationManager()
+    storage = CredentialStorage(config_manager)
 
     try:
         providers = storage.list_providers()
@@ -202,11 +308,10 @@ def auth_list(config_dir: str) -> None:
 
 @auth.command("remove")
 @click.argument("provider")
-@click.option("--config-dir", default=None, help="Config directory path")
-def auth_remove(provider: str, config_dir: str) -> None:
+def auth_remove(provider: str) -> None:
     """Remove authentication for a provider."""
-    config_path = Path(config_dir) if config_dir else None
-    storage = CredentialStorage(config_path)
+    config_manager = ConfigurationManager()
+    storage = CredentialStorage(config_manager)
 
     try:
         # Check if provider exists
@@ -223,12 +328,11 @@ def auth_remove(provider: str, config_dir: str) -> None:
 
 @auth.command("test")
 @click.argument("provider")
-@click.option("--config-dir", default=None, help="Config directory path")
-def auth_test(provider: str, config_dir: str) -> None:
+def auth_test(provider: str) -> None:
     """Test authentication for a provider."""
-    config_path = Path(config_dir) if config_dir else None
-    auth_manager = AuthenticationManager(config_path)
-    storage = CredentialStorage(config_path)
+    config_manager = ConfigurationManager()
+    storage = CredentialStorage(config_manager)
+    auth_manager = AuthenticationManager(storage)
 
     try:
         api_key = storage.get_api_key(provider)
@@ -246,11 +350,10 @@ def auth_test(provider: str, config_dir: str) -> None:
 
 
 @auth.command("setup")
-@click.option("--config-dir", default=None, help="Config directory path")
-def auth_setup(config_dir: str) -> None:
+def auth_setup() -> None:
     """Interactive setup wizard for authentication."""
-    config_path = Path(config_dir) if config_dir else None
-    storage = CredentialStorage(config_path)
+    config_manager = ConfigurationManager()
+    storage = CredentialStorage(config_manager)
 
     click.echo("Welcome to LLM Orchestra setup!")
     click.echo("This wizard will help you configure authentication for LLM providers.")

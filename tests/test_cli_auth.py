@@ -33,19 +33,25 @@ class TestAuthCommands:
         provider = "anthropic"
         api_key = "test_key_123"
 
-        # When
-        result = runner.invoke(
-            cli,
-            [
-                "auth",
-                "add",
-                provider,
-                "--api-key",
-                api_key,
-                "--config-dir",
-                str(temp_config_dir),
-            ],
-        )
+        # Mock ConfigurationManager to use temp directory
+        with patch('llm_orc.cli.ConfigurationManager') as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+            mock_instance.ensure_global_config_dir.return_value = None
+            mock_instance.get_credentials_file.return_value = temp_config_dir / "credentials.yaml"
+            mock_instance.get_encryption_key_file.return_value = temp_config_dir / ".encryption_key"
+
+            # When
+            result = runner.invoke(
+                cli,
+                [
+                    "auth",
+                    "add",
+                    provider,
+                    "--api-key",
+                    api_key,
+                ],
+            )
 
         # Then
         assert result.exit_code == 0

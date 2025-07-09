@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from llm_orc.authentication import AuthenticationManager, CredentialStorage
+from llm_orc.config import ConfigurationManager
 
 
 class TestCredentialStorage:
@@ -21,7 +22,10 @@ class TestCredentialStorage:
     @pytest.fixture
     def credential_storage(self, temp_config_dir: Path) -> CredentialStorage:
         """Create CredentialStorage instance with temp directory."""
-        return CredentialStorage(config_dir=temp_config_dir)
+        # Create a mock config manager with the temp directory
+        config_manager = ConfigurationManager()
+        config_manager._global_config_dir = temp_config_dir
+        return CredentialStorage(config_manager)
 
     def test_store_api_key_creates_encrypted_file(
         self, credential_storage: CredentialStorage, temp_config_dir: Path
@@ -115,7 +119,11 @@ class TestAuthenticationManager:
     @pytest.fixture
     def auth_manager(self, temp_config_dir: Path) -> AuthenticationManager:
         """Create AuthenticationManager instance with temp directory."""
-        return AuthenticationManager(config_dir=temp_config_dir)
+        # Create a mock config manager with the temp directory
+        config_manager = ConfigurationManager()
+        config_manager._global_config_dir = temp_config_dir
+        storage = CredentialStorage(config_manager)
+        return AuthenticationManager(storage)
 
     def test_authenticate_with_api_key_success(
         self, auth_manager: AuthenticationManager
