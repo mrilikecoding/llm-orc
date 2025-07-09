@@ -17,10 +17,7 @@ class GitHubPRFetcher:
         """Check if GitHub CLI is available and authenticated."""
         try:
             subprocess.run(
-                ["gh", "--version"],
-                capture_output=True,
-                text=True,
-                check=True
+                ["gh", "--version"], capture_output=True, text=True, check=True
             )
         except (subprocess.CalledProcessError, FileNotFoundError):
             raise ValueError(
@@ -31,10 +28,7 @@ class GitHubPRFetcher:
         # Check if authenticated
         try:
             result = subprocess.run(
-                ["gh", "auth", "status"],
-                capture_output=True,
-                text=True,
-                check=True
+                ["gh", "auth", "status"], capture_output=True, text=True, check=True
             )
             if "logged in" not in result.stderr.lower():
                 raise ValueError("GitHub CLI is not authenticated. Run: gh auth login")
@@ -69,10 +63,14 @@ class GitHubPRFetcher:
         try:
             # Get PR details
             pr_cmd = [
-                "gh", "pr", "view", str(pr_number),
-                "--repo", f"{owner}/{repo}",
+                "gh",
+                "pr",
+                "view",
+                str(pr_number),
+                "--repo",
+                f"{owner}/{repo}",
                 "--json",
-                "title,body,number,additions,deletions,files,headRefName,baseRefName,url"
+                "title,body,number,additions,deletions,files,headRefName,baseRefName,url",
             ]
             pr_result = subprocess.run(
                 pr_cmd, capture_output=True, text=True, check=True
@@ -127,28 +125,27 @@ class GitHubPRFetcher:
 
     def format_pr_for_analysis(self, pr_data: dict[str, Any]) -> str:
         """Format PR data for LLM analysis."""
-        formatted = f"""# PR Analysis: {pr_data['title']}
+        formatted = f"""# PR Analysis: {pr_data["title"]}
 
-**Repository:** {pr_data['repo']}
-**PR Number:** #{pr_data['number']}
-**URL:** {pr_data['url']}
+**Repository:** {pr_data["repo"]}
+**PR Number:** #{pr_data["number"]}
+**URL:** {pr_data["url"]}
 
 **Description:**
-{pr_data['description']}
+{pr_data["description"]}
 
 **Changes Summary:**
-- Files changed: {len(pr_data['files_changed'])}
-- Additions: +{pr_data['additions']} lines
-- Deletions: -{pr_data['deletions']} lines
-- Branch: {pr_data['head_branch']} → {pr_data['base_branch']}
+- Files changed: {len(pr_data["files_changed"])}
+- Additions: +{pr_data["additions"]} lines
+- Deletions: -{pr_data["deletions"]} lines
+- Branch: {pr_data["head_branch"]} → {pr_data["base_branch"]}
 
 **Files Changed:**
-{', '.join(pr_data['files_changed'])}
+{", ".join(pr_data["files_changed"])}
 
 **Code Diff:**
 ```diff
-{pr_data['diff']}
+{pr_data["diff"]}
 ```
 """
         return formatted
-
