@@ -19,12 +19,28 @@ Mix expensive cloud models with free local models - use Claude for strategic ins
 
 ## Installation
 
-### For End Users
+### Option 1: Homebrew (macOS - Recommended)
 ```bash
-pip install llm-orchestra
+# Add the tap
+brew tap mrilikecoding/llm-orchestra
+
+# Install LLM Orchestra
+brew install llm-orchestra
+
+# Verify installation
+llm-orc --version
 ```
 
-### For Development
+### Option 2: pip (All Platforms)
+```bash
+# Install from PyPI
+pip install llm-orchestra
+
+# Verify installation
+llm-orc --version
+```
+
+### Option 3: Development Installation
 ```bash
 # Clone the repository
 git clone https://github.com/mrilikecoding/llm-orc.git
@@ -32,6 +48,18 @@ cd llm-orc
 
 # Install with development dependencies
 uv sync --dev
+
+# Verify installation
+uv run llm-orc --version
+```
+
+### Updates
+```bash
+# Homebrew users
+brew update && brew upgrade llm-orchestra
+
+# pip users
+pip install --upgrade llm-orchestra
 ```
 
 ## Quick Start
@@ -41,7 +69,7 @@ uv sync --dev
 Before using LLM Orchestra, configure authentication for your LLM providers:
 
 ```bash
-# Interactive setup wizard
+# Interactive setup wizard (recommended for first-time users)
 llm-orc auth setup
 
 # Or add providers individually
@@ -53,12 +81,18 @@ llm-orc auth list
 
 # Test authentication
 llm-orc auth test anthropic
+
+# Remove a provider if needed
+llm-orc auth remove anthropic
 ```
 
 **Security**: API keys are encrypted and stored securely in `~/.config/llm-orc/credentials.yaml`.
 
-### 2. Create an Ensemble Configuration
+### 2. Configuration Options
 
+LLM Orchestra supports both global and local configurations:
+
+#### Global Configuration
 Create `~/.config/llm-orc/ensembles/code-review.yaml`:
 
 ```yaml
@@ -84,20 +118,63 @@ coordinator:
   timeout_seconds: 90
 ```
 
-### 3. Invoke an Ensemble
+#### Local Project Configuration
+For project-specific ensembles, initialize local configuration:
 
 ```bash
-# Analyze code from a file
-cat mycode.py | llm-orc invoke code-review
+# Initialize local configuration in your project
+llm-orc config init
 
-# Or provide input directly
-llm-orc invoke code-review --input "Review this function: def add(a, b): return a + b"
+# This creates .llm-orc/ directory with:
+# - ensembles/   (project-specific ensembles)
+# - models/      (shared model configurations)
+# - scripts/     (project-specific scripts)
+# - config.yaml  (project configuration)
+```
 
-# JSON output for integration
-llm-orc invoke code-review --input "..." --output-format json
+#### View Current Configuration
+```bash
+# Show configuration paths and status
+llm-orc config show
+```
 
+### 3. Using LLM Orchestra
+
+#### Basic Usage
+```bash
 # List available ensembles
 llm-orc list-ensembles
+
+# Get help for any command
+llm-orc --help
+llm-orc invoke --help
+```
+
+#### Invoke Ensembles
+```bash
+# Analyze code from a file (pipe input)
+cat mycode.py | llm-orc invoke code-review
+
+# Provide input directly
+llm-orc invoke code-review --input "Review this function: def add(a, b): return a + b"
+
+# JSON output for integration with other tools
+llm-orc invoke code-review --input "..." --output-format json
+
+# Use specific configuration directory
+llm-orc invoke code-review --config-dir ./custom-config
+```
+
+#### Configuration Management
+```bash
+# Initialize local project configuration
+llm-orc config init --project-name my-project
+
+# Show current configuration status
+llm-orc config show
+
+# Migrate from old configuration location (if needed)
+llm-orc config migrate
 ```
 
 ## Use Cases
@@ -123,6 +200,7 @@ Systematic literature review, methodology evaluation, or multi-dimensional analy
 
 ## Configuration
 
+### Ensemble Configuration
 Ensemble configurations support:
 
 - **Agent specialization** with role-specific prompts
@@ -130,6 +208,18 @@ Ensemble configurations support:
 - **Model selection** with local and cloud options
 - **Synthesis strategies** for combining agent outputs
 - **Output formatting** (text, JSON) for integration
+
+### Configuration Hierarchy
+LLM Orchestra follows a configuration hierarchy:
+
+1. **Local project configuration** (`.llm-orc/` in current directory)
+2. **Global user configuration** (`~/.config/llm-orc/`)
+3. **Command-line options** (highest priority)
+
+### XDG Base Directory Support
+Configurations follow the XDG Base Directory specification:
+- Global config: `~/.config/llm-orc/` (or `$XDG_CONFIG_HOME/llm-orc/`)
+- Automatic migration from old `~/.llm-orc/` location
 
 ## Cost Optimization
 
