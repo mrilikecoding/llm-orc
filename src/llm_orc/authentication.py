@@ -1,7 +1,6 @@
 """Authentication system for LLM Orchestra supporting credential storage."""
 
 import os
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -21,7 +20,7 @@ class CredentialStorage:
         """
         self.config_manager = config_manager or ConfigurationManager()
         self.config_manager.ensure_global_config_dir()
-        
+
         self.credentials_file = self.config_manager.get_credentials_file()
         self._encryption_key = self._get_or_create_encryption_key()
 
@@ -133,7 +132,8 @@ class AuthenticationManager:
         """Initialize authentication manager.
 
         Args:
-            credential_storage: CredentialStorage instance to use for storing credentials
+            credential_storage: CredentialStorage instance to use for storing
+                credentials
         """
         self.credential_storage = credential_storage
         self._authenticated_clients: dict[str, Any] = {}

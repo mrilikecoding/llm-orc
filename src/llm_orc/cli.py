@@ -46,19 +46,22 @@ def invoke(
     """Invoke an ensemble of agents."""
     # Initialize configuration manager
     config_manager = ConfigurationManager()
-    
+
     # Handle migration if needed
     if config_manager.needs_migration():
         click.echo("Migrating configuration from ~/.llm-orc to new location...")
         config_manager.migrate_from_old_location()
         click.echo(f"Configuration migrated to: {config_manager.global_config_dir}")
-    
+
     # Determine ensemble directories
     if config_dir is None:
         # Use configuration manager to get ensemble directories
         ensemble_dirs = config_manager.get_ensembles_dirs()
         if not ensemble_dirs:
-            raise click.ClickException("No ensemble directories found. Run 'llm-orc config init' to set up local configuration.")
+            raise click.ClickException(
+                "No ensemble directories found. Run 'llm-orc config init' to set up "
+                "local configuration."
+            )
     else:
         # Use specified config directory
         ensemble_dirs = [Path(config_dir)]
@@ -75,7 +78,7 @@ def invoke(
     # Find ensemble in the directories
     loader = EnsembleLoader()
     ensemble_config = None
-    
+
     for ensemble_dir in ensemble_dirs:
         ensemble_config = loader.find_ensemble(str(ensemble_dir), ensemble_name)
         if ensemble_config is not None:
@@ -197,51 +200,56 @@ def config() -> None:
 def init(project_name: str) -> None:
     """Initialize local .llm-orc configuration for current project."""
     config_manager = ConfigurationManager()
-    
+
     try:
         config_manager.init_local_config(project_name)
         click.echo("Local configuration initialized successfully!")
-        click.echo(f"Created .llm-orc directory with:")
+        click.echo("Created .llm-orc directory with:")
         click.echo("  - ensembles/   (project-specific ensembles)")
         click.echo("  - models/      (shared model configurations)")
         click.echo("  - scripts/     (project-specific scripts)")
         click.echo("  - config.yaml  (project configuration)")
-        click.echo("\nYou can now create project-specific ensembles in .llm-orc/ensembles/")
+        click.echo(
+            "\nYou can now create project-specific ensembles in .llm-orc/ensembles/"
+        )
     except ValueError as e:
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @config.command()
 def migrate() -> None:
-    """Migrate configuration from old ~/.llm-orc location to new XDG-compliant location."""
+    """Migrate configuration from old ~/.llm-orc location to new XDG-compliant
+    location."""
     config_manager = ConfigurationManager()
-    
+
     if not config_manager.needs_migration():
-        click.echo("No migration needed. Configuration is already in the correct location.")
+        click.echo(
+            "No migration needed. Configuration is already in the correct location."
+        )
         return
-    
+
     try:
         config_manager.migrate_from_old_location()
         click.echo("Configuration migrated successfully!")
-        click.echo(f"Old location: ~/.llm-orc")
+        click.echo("Old location: ~/.llm-orc")
         click.echo(f"New location: {config_manager.global_config_dir}")
     except ValueError as e:
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
 
 @config.command()
 def show() -> None:
     """Show current configuration information."""
     config_manager = ConfigurationManager()
-    
+
     click.echo("Configuration Information:")
     click.echo(f"Global config directory: {config_manager.global_config_dir}")
-    
+
     if config_manager.local_config_dir:
         click.echo(f"Local config directory: {config_manager.local_config_dir}")
     else:
         click.echo("Local config directory: Not found")
-    
+
     click.echo("\nEnsemble directories (in search order):")
     ensemble_dirs = config_manager.get_ensembles_dirs()
     if ensemble_dirs:
@@ -249,18 +257,21 @@ def show() -> None:
             click.echo(f"  {i}. {dir_path}")
     else:
         click.echo("  None found")
-    
+
     if config_manager.needs_migration():
-        click.echo("\n⚠️  Migration available: Run 'llm-orc config migrate' to update configuration location")
-    
+        click.echo(
+            "\n⚠️  Migration available: Run 'llm-orc config migrate' to update "
+            "configuration location"
+        )
+
     # Show project config if available
     project_config = config_manager.load_project_config()
     if project_config:
         click.echo("\nProject Configuration:")
-        project_name = project_config.get('project', {}).get('name', 'Unknown')
+        project_name = project_config.get("project", {}).get("name", "Unknown")
         click.echo(f"  Project name: {project_name}")
-        
-        profiles = project_config.get('model_profiles', {})
+
+        profiles = project_config.get("model_profiles", {})
         if profiles:
             click.echo("  Model profiles:")
             for profile_name in profiles.keys():
