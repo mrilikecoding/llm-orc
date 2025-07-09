@@ -55,11 +55,11 @@ llm-orc auth list
 llm-orc auth test anthropic
 ```
 
-**Security**: API keys are encrypted and stored securely in `~/.llm-orc/credentials.yaml`.
+**Security**: API keys are encrypted and stored securely in `~/.config/llm-orc/credentials.yaml`.
 
 ### 2. Create an Ensemble Configuration
 
-Create `~/.llm-orc/ensembles/code-review.yaml`:
+Create `~/.config/llm-orc/ensembles/code-review.yaml`:
 
 ```yaml
 name: code-review
@@ -144,9 +144,9 @@ Ensemble configurations support:
 # Run tests
 uv run pytest
 
-# Run linting
+# Run linting and formatting
 uv run ruff check .
-uv run black --check .
+uv run ruff format --check .
 
 # Type checking
 uv run mypy src/llm_orc
