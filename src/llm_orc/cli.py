@@ -16,7 +16,7 @@ from llm_orc.ensemble_execution import EnsembleExecutor
 
 
 @click.group()
-@click.version_option()
+@click.version_option(package_name="llm-orchestra")
 def cli() -> None:
     """LLM Orchestra - Multi-agent LLM communication system."""
     pass
