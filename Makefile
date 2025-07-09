@@ -1,4 +1,4 @@
-.PHONY: test test-watch lint format lint-check setup clean install help push workflow-status watch-workflows status red green refactor roadmap
+.PHONY: test test-watch lint format lint-check setup clean install help push workflow-status watch-workflows status red green refactor pre-commit roadmap
 
 # Help target
 help:
@@ -6,10 +6,11 @@ help:
 	@echo "  setup           Setup development environment"
 	@echo "  test            Run tests"
 	@echo "  test-watch      Run tests in watch mode"
-	@echo "  lint            Run linting checks (mypy + ruff)"
+	@echo "  lint            Run linting checks (mypy + ruff + format check)"
 	@echo "  format          Format code with ruff"
 	@echo "  lint-check      Same as lint (compatibility)"
-	@echo "  push            Push changes with workflow monitoring"
+	@echo "  pre-commit      Run all CI checks locally before commit"
+	@echo "  push            Push changes with pre-commit checks and workflow monitoring"
 	@echo "  workflow-status Check CI workflow status"
 	@echo "  watch-workflows Watch active workflows"
 	@echo "  status          Show git status"
@@ -35,6 +36,7 @@ test-watch:
 lint:
 	uv run mypy src tests
 	uv run ruff check src tests
+	uv run ruff format --check src tests
 
 lint-check: lint
 
@@ -61,8 +63,17 @@ green:
 refactor:
 	uv run pytest --tb=short && make lint
 
+# Pre-commit checks (runs all CI checks locally)
+pre-commit:
+	@echo "Running pre-commit checks..."
+	make test
+	make lint
+	@echo "✅ All pre-commit checks passed"
+
 # Git operations with CI monitoring
 push:
+	@echo "Running pre-commit checks before push..."
+	@make pre-commit
 	@echo "Pushing changes with workflow monitoring..."
 	@git push && gh run list || echo "No workflows found or gh not available"
 
