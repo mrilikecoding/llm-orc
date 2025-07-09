@@ -38,9 +38,11 @@ class TestCLI:
         """Test basic ensemble invocation."""
         runner = CliRunner()
         result = runner.invoke(cli, ["invoke", "test_ensemble"])
-        # Should fail because ensemble doesn't exist, but with proper error message
+        # Should fail because ensemble doesn't exist
         assert result.exit_code != 0
-        assert "test_ensemble" in result.output
+        # Either no ensemble directories found or ensemble not found in existing directories
+        assert ("No ensemble directories found" in result.output 
+                or "test_ensemble" in result.output)
 
     def test_cli_invoke_with_config_option(self) -> None:
         """Test invoke command accepts config directory option."""
