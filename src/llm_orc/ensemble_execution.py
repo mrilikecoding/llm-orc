@@ -8,6 +8,7 @@ from llm_orc.ensemble_config import EnsembleConfig
 from llm_orc.models import ModelInterface, OllamaModel
 from llm_orc.orchestration import Agent
 from llm_orc.roles import RoleDefinition
+from llm_orc.script_agent import ScriptAgent
 
 
 class EnsembleExecutor:
@@ -30,19 +31,50 @@ class EnsembleExecutor:
         # Ensure results is properly typed
         results_dict: dict[str, Any] = result["results"]
 
-        # Execute all agents concurrently with timeout handling
+        # Execute agents in phases: script agents first, then LLM agents
+        has_errors = False
+        agent_usage: dict[str, Any] = {}
+        context_data = {}
+        
+        # Phase 1: Execute script agents to gather context
+        script_agents = [a for a in config.agents if a.get("type") == "script"]
+        for agent_config in script_agents:
+            try:
+                timeout = agent_config.get("timeout_seconds") or config.coordinator.get(
+                    "timeout_seconds"
+                )
+                agent_result, model_instance = await self._execute_agent_with_timeout(
+                    agent_config, input_data, timeout
+                )
+                results_dict[agent_config["name"]] = {
+                    "response": agent_result,
+                    "status": "success",
+                }
+                # Store script results as context for LLM agents
+                context_data[agent_config["name"]] = agent_result
+            except Exception as e:
+                results_dict[agent_config["name"]] = {"error": str(e), "status": "failed"}
+                has_errors = True
+        
+        # Phase 2: Execute LLM agents with context from script agents
+        llm_agents = [a for a in config.agents if a.get("type") != "script"]
+        
+        # Prepare enhanced input for LLM agents
+        enhanced_input = input_data
+        if context_data:
+            context_text = "\n\n".join([f"=== {name} ===\n{data}" for name, data in context_data.items()])
+            enhanced_input = f"{input_data}\n\n{context_text}"
+        
+        # Execute LLM agents concurrently with enhanced input
         agent_tasks = []
-        for agent_config in config.agents:
-            # Get timeout from agent config or coordinator config
+        for agent_config in llm_agents:
             timeout = agent_config.get("timeout_seconds") or config.coordinator.get(
                 "timeout_seconds"
             )
-            task = self._execute_agent_with_timeout(agent_config, input_data, timeout)
+            task = self._execute_agent_with_timeout(agent_config, enhanced_input, timeout)
             agent_tasks.append((agent_config["name"], task))
 
-        # Wait for all agents to complete and collect usage
-        has_errors = False
-        agent_usage: dict[str, Any] = {}
+        # Wait for all LLM agents to complete
         for agent_name, task in agent_tasks:
             try:
                 agent_result, model_instance = await task
@@ -50,10 +82,11 @@ class EnsembleExecutor:
                     "response": agent_result,
                     "status": "success",
                 }
-                # Collect usage metrics
-                usage = model_instance.get_last_usage()
-                if usage:
-                    agent_usage[agent_name] = usage
+                # Collect usage metrics (only for LLM agents)
+                if model_instance is not None:
+                    usage = model_instance.get_last_usage()
+                    if usage:
+                        agent_usage[agent_name] = usage
             except Exception as e:
                 results_dict[agent_name] = {"error": str(e), "status": "failed"}
                 has_errors = True
@@ -88,18 +121,27 @@ class EnsembleExecutor:
 
     async def _execute_agent(
         self, agent_config: dict[str, Any], input_data: str
-    ) -> tuple[str, ModelInterface]:
+    ) -> tuple[str, ModelInterface | None]:
         """Execute a single agent and return its response and model instance."""
-        # Load role and model for this agent
-        role = await self._load_role(agent_config["role"])
-        model = await self._load_model(agent_config["model"])
+        agent_type = agent_config.get("type", "llm")
 
-        # Create agent
-        agent = Agent(agent_config["name"], role, model)
+        if agent_type == "script":
+            # Execute script agent
+            script_agent = ScriptAgent(agent_config["name"], agent_config)
+            response = await script_agent.execute(input_data)
+            return response, None  # Script agents don't have model instances
+        else:
+            # Execute LLM agent
+            # Load role and model for this agent
+            role = await self._load_role(agent_config["role"])
+            model = await self._load_model(agent_config["model"])
 
-        # Generate response
-        response = await agent.respond_to_message(input_data)
-        return response, model
+            # Create agent
+            agent = Agent(agent_config["name"], role, model)
+
+            # Generate response
+            response = await agent.respond_to_message(input_data)
+            return response, model
 
     async def _load_role(self, role_name: str) -> RoleDefinition:
         """Load a role definition."""
@@ -198,7 +240,7 @@ class EnsembleExecutor:
 
     async def _execute_agent_with_timeout(
         self, agent_config: dict[str, Any], input_data: str, timeout_seconds: int | None
-    ) -> tuple[str, ModelInterface]:
+    ) -> tuple[str, ModelInterface | None]:
         """Execute an agent with optional timeout."""
         if timeout_seconds is None:
             # No timeout specified, execute normally

@@ -1,4 +1,4 @@
-.PHONY: test test-watch lint format lint-check setup clean install help push workflow-status watch-workflows status red green refactor
+.PHONY: test test-watch lint format lint-check setup clean install help push workflow-status watch-workflows status red green refactor roadmap
 
 # Help target
 help:
@@ -18,6 +18,7 @@ help:
 	@echo "  red             TDD: Run tests with short traceback"
 	@echo "  green           TDD: Run tests with short traceback"
 	@echo "  refactor        TDD: Run tests + lint"
+	@echo "  roadmap         Show current development roadmap"
 
 # Development commands
 setup:
@@ -76,3 +77,7 @@ watch-workflows:
 status:
 	@echo "Git status:"
 	@git status
+
+roadmap:
+	@echo "🗺️ Current Roadmap and Strategic Priorities:"
+	@gh issue view 9
