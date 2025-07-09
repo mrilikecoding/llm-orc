@@ -35,7 +35,7 @@ class EnsembleExecutor:
         has_errors = False
         agent_usage: dict[str, Any] = {}
         context_data = {}
-        
+
         # Phase 1: Execute script agents to gather context
         script_agents = [a for a in config.agents if a.get("type") == "script"]
         for agent_config in script_agents:
@@ -53,25 +53,33 @@ class EnsembleExecutor:
                 # Store script results as context for LLM agents
                 context_data[agent_config["name"]] = agent_result
             except Exception as e:
-                results_dict[agent_config["name"]] = {"error": str(e), "status": "failed"}
+                results_dict[agent_config["name"]] = {
+                    "error": str(e),
+                    "status": "failed"
+                }
                 has_errors = True
-        
+
         # Phase 2: Execute LLM agents with context from script agents
         llm_agents = [a for a in config.agents if a.get("type") != "script"]
-        
+
         # Prepare enhanced input for LLM agents
         enhanced_input = input_data
         if context_data:
-            context_text = "\n\n".join([f"=== {name} ===\n{data}" for name, data in context_data.items()])
+            context_text = "\n\n".join([
+                f"=== {name} ===\n{data}"
+                for name, data in context_data.items()
+            ])
             enhanced_input = f"{input_data}\n\n{context_text}"
-        
+
         # Execute LLM agents concurrently with enhanced input
         agent_tasks = []
         for agent_config in llm_agents:
             timeout = agent_config.get("timeout_seconds") or config.coordinator.get(
                 "timeout_seconds"
             )
-            task = self._execute_agent_with_timeout(agent_config, enhanced_input, timeout)
+            task = self._execute_agent_with_timeout(
+                agent_config, enhanced_input, timeout
+            )
             agent_tasks.append((agent_config["name"], task))
 
         # Wait for all LLM agents to complete
