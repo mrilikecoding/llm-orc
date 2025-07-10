@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-01-10
+
+### Added
+- **OAuth Provider Integration** - Complete OAuth authentication support for major LLM providers
+  - Google Gemini OAuth flow with `generative-language.retriever` scope
+  - Anthropic OAuth flow for MCP server integration
+  - Provider-specific OAuth flow factory pattern for extensibility
+  - New `llm-orc auth oauth` command for OAuth configuration
+  - Comprehensive test coverage using TDD methodology (Red → Green → Refactor)
+  - Real authorization URLs and token exchange endpoints
+  - Enhanced CLI authentication commands supporting both API keys and OAuth
+
+### Changed
+- **Authentication System** - Extended to support multiple authentication methods
+  - `llm-orc auth add` now accepts both `--api-key` and OAuth credentials
+  - `llm-orc auth list` shows authentication method (API key vs OAuth)
+  - `llm-orc auth test` validates both API keys and OAuth tokens with expiration checking
+  - `llm-orc auth setup` interactive wizard supports OAuth method selection
+
+### Technical
+- Added `GoogleGeminiOAuthFlow` class with Google-specific endpoints
+- Added `AnthropicOAuthFlow` class with Anthropic console integration  
+- Implemented `create_oauth_flow()` factory function for provider selection
+- Updated `AuthenticationManager` to use provider-specific OAuth flows
+- Added comprehensive OAuth provider integration test suite
+
 ## [0.2.2] - 2025-01-09
 
 ### Added
