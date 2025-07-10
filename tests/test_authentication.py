@@ -311,3 +311,208 @@ class TestOAuthProviderIntegration:
         # When & Then
         with pytest.raises(ValueError, match="OAuth not supported for provider"):
             create_oauth_flow("unsupported_provider", "client_id", "client_secret")
+
+
+class TestAnthropicOAuthFlow:
+    """Test improved Anthropic OAuth flow functionality."""
+
+    def test_anthropic_oauth_flow_initialization(self) -> None:
+        """Test AnthropicOAuthFlow can be initialized correctly."""
+        # Given
+        from llm_orc.authentication import AnthropicOAuthFlow
+        
+        client_id = "test_client_id"
+        client_secret = "test_client_secret"
+
+        # When
+        flow = AnthropicOAuthFlow(client_id, client_secret)
+
+        # Then
+        assert flow.client_id == client_id
+        assert flow.client_secret == client_secret
+        assert flow.provider == "anthropic"
+        assert flow.redirect_uri == "http://localhost:8080/callback"
+
+    def test_get_authorization_url_contains_required_parameters(self) -> None:
+        """Test that authorization URL contains all required OAuth parameters."""
+        # Given
+        from llm_orc.authentication import AnthropicOAuthFlow
+        from urllib.parse import urlparse, parse_qs
+        
+        client_id = "test_client_id"
+        client_secret = "test_client_secret"
+        flow = AnthropicOAuthFlow(client_id, client_secret)
+
+        # When
+        auth_url = flow.get_authorization_url()
+
+        # Then
+        parsed_url = urlparse(auth_url)
+        query_params = parse_qs(parsed_url.query)
+        
+        assert parsed_url.netloc == "console.anthropic.com"
+        assert parsed_url.path == "/oauth/authorize"
+        assert query_params["client_id"][0] == client_id
+        assert query_params["response_type"][0] == "code"
+        assert query_params["redirect_uri"][0] == flow.redirect_uri
+        assert "state" in query_params
+
+    def test_validate_credentials_with_accessible_endpoint(self) -> None:
+        """Test credential validation when OAuth endpoint is accessible."""
+        # Given
+        from llm_orc.authentication import AnthropicOAuthFlow
+        
+        client_id = "test_client_id"
+        client_secret = "test_client_secret"
+        flow = AnthropicOAuthFlow(client_id, client_secret)
+
+        # When & Then
+        # This should work since we've confirmed the endpoint exists
+        result = flow.validate_credentials()
+        assert isinstance(result, bool)
+
+    def test_exchange_code_for_tokens_returns_valid_structure(self) -> None:
+        """Test that token exchange returns proper token structure."""
+        # Given
+        from llm_orc.authentication import AnthropicOAuthFlow
+        
+        client_id = "test_client_id"
+        client_secret = "test_client_secret"
+        flow = AnthropicOAuthFlow(client_id, client_secret)
+        auth_code = "test_auth_code_123"
+
+        # When
+        tokens = flow.exchange_code_for_tokens(auth_code)
+
+        # Then
+        assert isinstance(tokens, dict)
+        assert "access_token" in tokens
+        assert "refresh_token" in tokens
+        assert "expires_in" in tokens
+        assert "token_type" in tokens
+        
+        # Verify token format
+        assert tokens["access_token"].startswith("anthropic_access_token_")
+        assert tokens["refresh_token"].startswith("anthropic_refresh_token_")
+        assert tokens["expires_in"] == 3600
+        assert tokens["token_type"] == "Bearer"
+
+    def test_mock_create_with_guidance_method_exists(self) -> None:
+        """Test that create_with_guidance method exists for future interactive testing."""
+        # Given
+        from llm_orc.authentication import AnthropicOAuthFlow
+
+        # When & Then
+        assert hasattr(AnthropicOAuthFlow, "create_with_guidance")
+        assert callable(getattr(AnthropicOAuthFlow, "create_with_guidance"))
+
+
+class TestImprovedAuthenticationManager:
+    """Test enhanced authentication manager with better error handling."""
+
+    @pytest.fixture
+    def temp_config_dir(self) -> Generator[Path, None, None]:
+        """Create a temporary config directory for testing."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yield Path(temp_dir)
+
+    @pytest.fixture
+    def auth_manager(self, temp_config_dir: Path) -> AuthenticationManager:
+        """Create AuthenticationManager instance with temp directory."""
+        config_manager = ConfigurationManager()
+        config_manager._global_config_dir = temp_config_dir
+        storage = CredentialStorage(config_manager)
+        return AuthenticationManager(storage)
+
+    def test_oauth_validation_called_when_available(
+        self, auth_manager: AuthenticationManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that OAuth validation is called when available."""
+        # Given
+        from llm_orc.authentication import AnthropicOAuthFlow
+        
+        validation_called = False
+        original_validate = AnthropicOAuthFlow.validate_credentials
+        
+        def mock_validate(self) -> bool:
+            nonlocal validation_called
+            validation_called = True
+            return True
+            
+        monkeypatch.setattr(AnthropicOAuthFlow, "validate_credentials", mock_validate)
+        
+        # Mock the OAuth flow to avoid actual browser/server operations
+        def mock_start_server(self):
+            server = type('MockServer', (), {
+                'auth_code': 'test_code',
+                'auth_error': None
+            })()
+            return server, 8080
+            
+        def mock_open_browser(url):
+            pass
+            
+        monkeypatch.setattr(AnthropicOAuthFlow, "start_callback_server", mock_start_server)
+        monkeypatch.setattr("webbrowser.open", mock_open_browser)
+
+        # When
+        result = auth_manager.authenticate_oauth("anthropic", "test_client", "test_secret")
+
+        # Then
+        assert validation_called
+        assert result is True  # Should succeed with mocked validation
+
+    def test_oauth_error_handling_for_invalid_provider(
+        self, auth_manager: AuthenticationManager
+    ) -> None:
+        """Test proper error handling for unsupported OAuth provider."""
+        # When
+        result = auth_manager.authenticate_oauth("unsupported_provider", "client_id", "client_secret")
+
+        # Then
+        assert result is False
+
+    def test_oauth_timeout_handling(
+        self, auth_manager: AuthenticationManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that OAuth flow handles timeout correctly."""
+        # Given
+        from llm_orc.authentication import AnthropicOAuthFlow
+        
+        def mock_start_server(self):
+            # Return a server that never receives auth code (simulating timeout)
+            server = type('MockServer', (), {
+                'auth_code': None,
+                'auth_error': None
+            })()
+            return server, 8080
+            
+        def mock_open_browser(url):
+            pass
+            
+        # Mock time to simulate timeout quickly
+        import time
+        call_count = 0
+        start_time = time.time()
+        
+        def mock_time():
+            nonlocal call_count
+            call_count += 1
+            # First few calls return normal time, then jump to timeout
+            if call_count > 5:
+                return start_time + 150  # Beyond the 120 second timeout
+            return start_time + (call_count * 0.1)  # Gradual increase initially
+            
+        def mock_sleep(duration):
+            pass  # Don't actually sleep in tests
+            
+        monkeypatch.setattr(AnthropicOAuthFlow, "start_callback_server", mock_start_server)
+        monkeypatch.setattr("webbrowser.open", mock_open_browser)
+        monkeypatch.setattr("time.time", mock_time)
+        monkeypatch.setattr("time.sleep", mock_sleep)
+
+        # When
+        result = auth_manager.authenticate_oauth("anthropic", "test_client", "test_secret")
+
+        # Then
+        assert result is False

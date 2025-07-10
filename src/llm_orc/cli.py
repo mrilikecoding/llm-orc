@@ -300,10 +300,32 @@ def auth_add(provider: str, api_key: str, client_id: str, client_secret: str) ->
     if api_key and (client_id or client_secret):
         raise click.ClickException("Cannot use both API key and OAuth credentials")
 
+    # Special handling for Anthropic OAuth
+    if provider.lower() == "anthropic" and not api_key and not (client_id and client_secret):
+        # Use the improved interactive flow for Anthropic
+        try:
+            from llm_orc.authentication import AnthropicOAuthFlow
+            oauth_flow = AnthropicOAuthFlow.create_with_guidance()
+            
+            click.echo("🔄 Starting OAuth flow...")
+            if auth_manager.authenticate_oauth(provider, oauth_flow.client_id, oauth_flow.client_secret):
+                click.echo("✅ Anthropic OAuth authentication completed successfully!")
+            else:
+                raise click.ClickException("OAuth authentication failed")
+        except Exception as e:
+            raise click.ClickException(f"Failed to set up Anthropic OAuth: {str(e)}") from e
+        return
+
     if not api_key and not (client_id and client_secret):
-        raise click.ClickException(
-            "Must provide either --api-key or both --client-id and --client-secret"
-        )
+        if provider.lower() == "anthropic":
+            raise click.ClickException(
+                "For Anthropic, use 'llm-orc auth add anthropic' for interactive OAuth setup, "
+                "or provide --api-key for API key authentication"
+            )
+        else:
+            raise click.ClickException(
+                "Must provide either --api-key or both --client-id and --client-secret"
+            )
 
     try:
         if api_key:
