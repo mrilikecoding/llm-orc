@@ -184,3 +184,130 @@ class TestAuthenticationManager:
 
         # Then
         assert client is None
+
+
+class TestOAuthProviderIntegration:
+    """Test OAuth provider-specific functionality."""
+
+    @pytest.fixture
+    def temp_config_dir(self) -> Generator[Path, None, None]:
+        """Create a temporary config directory for testing."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yield Path(temp_dir)
+
+    @pytest.fixture
+    def credential_storage(self, temp_config_dir: Path) -> CredentialStorage:
+        """Create CredentialStorage instance with temp directory."""
+        config_manager = ConfigurationManager()
+        config_manager._global_config_dir = temp_config_dir
+        return CredentialStorage(config_manager)
+
+    def test_google_gemini_oauth_authorization_url_generation(
+        self, credential_storage: CredentialStorage
+    ) -> None:
+        """Test that Google Gemini OAuth generates correct authorization URL."""
+        # Given
+        from llm_orc.authentication import GoogleGeminiOAuthFlow
+
+        client_id = "test_client_id"
+        client_secret = "test_client_secret"
+        oauth_flow = GoogleGeminiOAuthFlow(client_id, client_secret)
+
+        # When
+        auth_url = oauth_flow.get_authorization_url()
+
+        # Then
+        assert "accounts.google.com/o/oauth2/v2/auth" in auth_url
+        # Check for the scope parameter (URL encoded)
+        expected_scope = (
+            "scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2F"
+            "generative-language.retriever"
+        )
+        assert expected_scope in auth_url
+        assert f"client_id={client_id}" in auth_url
+        assert "response_type=code" in auth_url
+
+    def test_google_gemini_oauth_token_exchange(
+        self, credential_storage: CredentialStorage
+    ) -> None:
+        """Test that Google Gemini OAuth can exchange code for tokens."""
+        # Given
+        from llm_orc.authentication import GoogleGeminiOAuthFlow
+
+        client_id = "test_client_id"
+        client_secret = "test_client_secret"
+        oauth_flow = GoogleGeminiOAuthFlow(client_id, client_secret)
+        auth_code = "test_authorization_code"
+
+        # When
+        tokens = oauth_flow.exchange_code_for_tokens(auth_code)
+
+        # Then
+        assert "access_token" in tokens
+        assert "token_type" in tokens
+        assert tokens["token_type"] == "Bearer"
+
+    def test_anthropic_oauth_authorization_url_generation(
+        self, credential_storage: CredentialStorage
+    ) -> None:
+        """Test that Anthropic OAuth generates correct authorization URL."""
+        # Given
+        from llm_orc.authentication import AnthropicOAuthFlow
+
+        client_id = "test_client_id"
+        client_secret = "test_client_secret"
+        oauth_flow = AnthropicOAuthFlow(client_id, client_secret)
+
+        # When
+        auth_url = oauth_flow.get_authorization_url()
+
+        # Then
+        assert "anthropic.com" in auth_url or "console.anthropic.com" in auth_url
+        assert f"client_id={client_id}" in auth_url
+        assert "response_type=code" in auth_url
+
+    def test_anthropic_oauth_token_exchange(
+        self, credential_storage: CredentialStorage
+    ) -> None:
+        """Test that Anthropic OAuth can exchange code for tokens."""
+        # Given
+        from llm_orc.authentication import AnthropicOAuthFlow
+
+        client_id = "test_client_id"
+        client_secret = "test_client_secret"
+        oauth_flow = AnthropicOAuthFlow(client_id, client_secret)
+        auth_code = "test_authorization_code"
+
+        # When
+        tokens = oauth_flow.exchange_code_for_tokens(auth_code)
+
+        # Then
+        assert "access_token" in tokens
+        assert "token_type" in tokens
+        assert tokens["token_type"] == "Bearer"
+
+    def test_oauth_flow_factory_creates_correct_provider(
+        self, credential_storage: CredentialStorage
+    ) -> None:
+        """Test that OAuth flow factory creates the correct provider-specific flow."""
+        # Given
+        from llm_orc.authentication import create_oauth_flow
+
+        # When & Then - Google
+        google_flow = create_oauth_flow("google", "client_id", "client_secret")
+        assert google_flow.__class__.__name__ == "GoogleGeminiOAuthFlow"
+
+        # When & Then - Anthropic
+        anthropic_flow = create_oauth_flow("anthropic", "client_id", "client_secret")
+        assert anthropic_flow.__class__.__name__ == "AnthropicOAuthFlow"
+
+    def test_oauth_flow_factory_raises_for_unsupported_provider(
+        self, credential_storage: CredentialStorage
+    ) -> None:
+        """Test that OAuth flow factory raises error for unsupported provider."""
+        # Given
+        from llm_orc.authentication import create_oauth_flow
+
+        # When & Then
+        with pytest.raises(ValueError, match="OAuth not supported for provider"):
+            create_oauth_flow("unsupported_provider", "client_id", "client_secret")
