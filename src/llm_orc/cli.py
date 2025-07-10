@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -286,17 +287,41 @@ def auth() -> None:
 
 @auth.command("add")
 @click.argument("provider")
-@click.option("--api-key", required=True, help="API key for the provider")
-def auth_add(provider: str, api_key: str) -> None:
-    """Add API key authentication for a provider."""
+@click.option("--api-key", help="API key for the provider")
+@click.option("--client-id", help="OAuth client ID")
+@click.option("--client-secret", help="OAuth client secret")
+def auth_add(provider: str, api_key: str, client_id: str, client_secret: str) -> None:
+    """Add authentication for a provider (API key or OAuth)."""
     config_manager = ConfigurationManager()
     storage = CredentialStorage(config_manager)
+    auth_manager = AuthenticationManager(storage)
+
+    # Validate input
+    if api_key and (client_id or client_secret):
+        raise click.ClickException("Cannot use both API key and OAuth credentials")
+
+    if not api_key and not (client_id and client_secret):
+        raise click.ClickException(
+            "Must provide either --api-key or both --client-id and --client-secret"
+        )
 
     try:
-        storage.store_api_key(provider, api_key)
-        click.echo(f"API key for {provider} added successfully")
+        if api_key:
+            # API key authentication
+            storage.store_api_key(provider, api_key)
+            click.echo(f"API key for {provider} added successfully")
+        else:
+            # OAuth authentication
+            if auth_manager.authenticate_oauth(provider, client_id, client_secret):
+                click.echo(
+                    f"OAuth authentication for {provider} completed successfully"
+                )
+            else:
+                raise click.ClickException(
+                    f"OAuth authentication for {provider} failed"
+                )
     except Exception as e:
-        raise click.ClickException(f"Failed to store API key: {str(e)}") from e
+        raise click.ClickException(f"Failed to add authentication: {str(e)}") from e
 
 
 @auth.command("list")
@@ -312,7 +337,11 @@ def auth_list() -> None:
         else:
             click.echo("Configured providers:")
             for provider in providers:
-                click.echo(f"  {provider}: API key")
+                auth_method = storage.get_auth_method(provider)
+                if auth_method == "oauth":
+                    click.echo(f"  {provider}: OAuth")
+                else:
+                    click.echo(f"  {provider}: API key")
     except Exception as e:
         raise click.ClickException(f"Failed to list providers: {str(e)}") from e
 
@@ -346,18 +375,63 @@ def auth_test(provider: str) -> None:
     auth_manager = AuthenticationManager(storage)
 
     try:
-        api_key = storage.get_api_key(provider)
-        if not api_key:
+        auth_method = storage.get_auth_method(provider)
+        if not auth_method:
             raise click.ClickException(f"No authentication found for {provider}")
 
-        if auth_manager.authenticate(provider, api_key):
-            click.echo(f"Authentication for {provider} is working")
+        if auth_method == "api_key":
+            api_key = storage.get_api_key(provider)
+            if not api_key:
+                raise click.ClickException(f"No API key found for {provider}")
+
+            if auth_manager.authenticate(provider, api_key):
+                click.echo(f"API key authentication for {provider} is working")
+            else:
+                raise click.ClickException(
+                    f"API key authentication for {provider} failed"
+                )
+
+        elif auth_method == "oauth":
+            oauth_token = storage.get_oauth_token(provider)
+            if not oauth_token:
+                raise click.ClickException(f"No OAuth token found for {provider}")
+
+            # Check if token is expired
+            if "expires_at" in oauth_token:
+                if time.time() > oauth_token["expires_at"]:
+                    click.echo(f"OAuth token for {provider} has expired")
+                    return
+
+            click.echo(f"OAuth authentication for {provider} is working")
+
         else:
-            raise click.ClickException(f"Authentication for {provider} failed")
+            raise click.ClickException(f"Unknown authentication method: {auth_method}")
+
     except click.ClickException:
         raise
     except Exception as e:
         raise click.ClickException(f"Failed to test authentication: {str(e)}") from e
+
+
+@auth.command("oauth")
+@click.argument("provider")
+@click.option("--client-id", required=True, help="OAuth client ID")
+@click.option("--client-secret", required=True, help="OAuth client secret")
+def auth_oauth(provider: str, client_id: str, client_secret: str) -> None:
+    """Configure OAuth authentication for a provider."""
+    config_manager = ConfigurationManager()
+    storage = CredentialStorage(config_manager)
+    auth_manager = AuthenticationManager(storage)
+
+    try:
+        if auth_manager.authenticate_oauth(provider, client_id, client_secret):
+            click.echo(f"OAuth authentication for {provider} completed successfully")
+        else:
+            raise click.ClickException(f"OAuth authentication for {provider} failed")
+    except Exception as e:
+        raise click.ClickException(
+            f"Failed to complete OAuth authentication: {str(e)}"
+        ) from e
 
 
 @auth.command("setup")
@@ -372,13 +446,33 @@ def auth_setup() -> None:
 
     while True:
         provider = click.prompt("Provider name (e.g., anthropic, google, openai)")
-        api_key = click.prompt("API key", hide_input=True)
 
-        try:
-            storage.store_api_key(provider, api_key)
-            click.echo(f"✓ {provider} configured successfully")
-        except Exception as e:
-            click.echo(f"✗ Failed to configure {provider}: {str(e)}")
+        auth_method = click.prompt(
+            "Authentication method",
+            type=click.Choice(["api_key", "oauth"]),
+            default="api_key",
+        )
+
+        if auth_method == "api_key":
+            api_key = click.prompt("API key", hide_input=True)
+            try:
+                storage.store_api_key(provider, api_key)
+                click.echo(f"✓ {provider} configured successfully with API key")
+            except Exception as e:
+                click.echo(f"✗ Failed to configure {provider}: {str(e)}")
+
+        elif auth_method == "oauth":
+            client_id = click.prompt("OAuth client ID")
+            client_secret = click.prompt("OAuth client secret", hide_input=True)
+
+            try:
+                auth_manager = AuthenticationManager(storage)
+                if auth_manager.authenticate_oauth(provider, client_id, client_secret):
+                    click.echo(f"✓ {provider} configured successfully with OAuth")
+                else:
+                    click.echo(f"✗ OAuth authentication for {provider} failed")
+            except Exception as e:
+                click.echo(f"✗ Failed to configure {provider}: {str(e)}")
 
         if not click.confirm("Add another provider?"):
             break
