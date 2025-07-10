@@ -28,8 +28,8 @@ class TestMCPServer:
             "params": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {"name": "test-client", "version": "1.0.0"}
-            }
+                "clientInfo": {"name": "test-client", "version": "1.0.0"},
+            },
         }
 
         response = await server.handle_request(initialize_request)
@@ -45,11 +45,7 @@ class TestMCPServer:
         """Should return available tools (ensembles) when requested."""
         server = MCPServer("architecture_review")
 
-        tools_request = {
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "tools/list"
-        }
+        tools_request = {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
 
         response = await server.handle_request(tools_request)
 
@@ -61,7 +57,7 @@ class TestMCPServer:
         assert response["result"]["tools"][0]["name"] == "architecture_review"
 
     @pytest.mark.asyncio
-    @patch('llm_orc.mcp_server.MCPServer._load_ensemble_config')
+    @patch("llm_orc.mcp_server.MCPServer._load_ensemble_config")
     async def test_handle_tools_call_request(self, mock_load_config: AsyncMock) -> None:
         """Should execute ensemble when tool is called."""
         # Mock the ensemble executor
@@ -70,7 +66,7 @@ class TestMCPServer:
             "ensemble": "architecture_review",
             "status": "completed",
             "results": {"agent1": {"response": "Test response", "status": "success"}},
-            "synthesis": "Synthesized result"
+            "synthesis": "Synthesized result",
         }
 
         server = MCPServer("architecture_review")
@@ -87,10 +83,8 @@ class TestMCPServer:
             "method": "tools/call",
             "params": {
                 "name": "architecture_review",
-                "arguments": {
-                    "input": "Analyze this architecture design"
-                }
-            }
+                "arguments": {"input": "Analyze this architecture design"},
+            },
         }
 
         response = await server.handle_request(call_request)
@@ -108,11 +102,7 @@ class TestMCPServer:
         """Should return error for invalid methods."""
         server = MCPServer("test_ensemble")
 
-        invalid_request = {
-            "jsonrpc": "2.0",
-            "id": 4,
-            "method": "invalid/method"
-        }
+        invalid_request = {"jsonrpc": "2.0", "id": 4, "method": "invalid/method"}
 
         response = await server.handle_request(invalid_request)
 

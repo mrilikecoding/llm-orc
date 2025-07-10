@@ -13,7 +13,9 @@ class TestMCPServerIntegration:
     @pytest.mark.asyncio
     @patch("llm_orc.mcp_server.EnsembleLoader")
     @patch("llm_orc.mcp_server.ConfigurationManager")
-    async def test_load_ensemble_config_from_file(self, mock_config_manager_class: Mock, mock_loader_class: Mock) -> None:
+    async def test_load_ensemble_config_from_file(
+        self, mock_config_manager_class: Mock, mock_loader_class: Mock
+    ) -> None:
         """Should load ensemble configuration from file."""
         # Mock configuration manager
         mock_config_manager = Mock()
@@ -31,11 +33,15 @@ class TestMCPServerIntegration:
         config = await server._load_ensemble_config("architecture_review")
 
         assert config == mock_config
-        mock_loader.find_ensemble.assert_called_once_with("/test/ensembles", "architecture_review")
+        mock_loader.find_ensemble.assert_called_once_with(
+            "/test/ensembles", "architecture_review"
+        )
 
     @pytest.mark.asyncio
-    @patch('llm_orc.mcp_server.MCPServer._load_ensemble_config')
-    async def test_end_to_end_tools_call_with_mock_ensemble(self, mock_load_config: AsyncMock) -> None:
+    @patch("llm_orc.mcp_server.MCPServer._load_ensemble_config")
+    async def test_end_to_end_tools_call_with_mock_ensemble(
+        self, mock_load_config: AsyncMock
+    ) -> None:
         """Should execute complete tools/call flow with mocked ensemble."""
         server = MCPServer("test_ensemble")
 
@@ -49,10 +55,8 @@ class TestMCPServerIntegration:
         mock_executor.execute.return_value = {
             "ensemble": "test_ensemble",
             "status": "completed",
-            "results": {
-                "agent1": {"response": "Test response", "status": "success"}
-            },
-            "synthesis": "Test synthesis"
+            "results": {"agent1": {"response": "Test response", "status": "success"}},
+            "synthesis": "Test synthesis",
         }
         server.executor = mock_executor
 
@@ -60,12 +64,7 @@ class TestMCPServerIntegration:
             "jsonrpc": "2.0",
             "id": 1,
             "method": "tools/call",
-            "params": {
-                "name": "test_ensemble",
-                "arguments": {
-                    "input": "Test input"
-                }
-            }
+            "params": {"name": "test_ensemble", "arguments": {"input": "Test input"}},
         }
 
         response = await server.handle_request(request)

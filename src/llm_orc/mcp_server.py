@@ -42,14 +42,9 @@ class MCPServer:
             "id": request_id,
             "result": {
                 "protocolVersion": "2024-11-05",
-                "capabilities": {
-                    "tools": {}
-                },
-                "serverInfo": {
-                    "name": "llm-orc",
-                    "version": "0.3.0"
-                }
-            }
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "llm-orc", "version": "0.3.0"},
+            },
         }
 
     async def _handle_tools_list(self, request_id: int) -> dict[str, Any]:
@@ -67,14 +62,14 @@ class MCPServer:
                             "properties": {
                                 "input": {
                                     "type": "string",
-                                    "description": "Input data for the ensemble"
+                                    "description": "Input data for the ensemble",
                                 }
                             },
-                            "required": ["input"]
-                        }
+                            "required": ["input"],
+                        },
                     }
                 ]
-            }
+            },
         }
 
     async def _handle_tools_call(
@@ -104,14 +99,7 @@ class MCPServer:
         return {
             "jsonrpc": "2.0",
             "id": request_id,
-            "result": {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": content
-                    }
-                ]
-            }
+            "result": {"content": [{"type": "text", "text": content}]},
         }
 
     async def _load_ensemble_config(self, ensemble_name: str) -> EnsembleConfig | None:
@@ -137,16 +125,16 @@ class MCPServer:
         output += f"Status: {result.get('status', 'unknown')}\n\n"
 
         # Add agent results
-        results = result.get('results', {})
+        results = result.get("results", {})
         for agent_name, agent_result in results.items():
-            if agent_result.get('status') == 'success':
+            if agent_result.get("status") == "success":
                 output += f"{agent_name}: {agent_result.get('response', '')}\n\n"
             else:
-                error_msg = agent_result.get('error', 'Unknown error')
+                error_msg = agent_result.get("error", "Unknown error")
                 output += f"{agent_name}: [Error: {error_msg}]\n\n"
 
         # Add synthesis if available
-        synthesis = result.get('synthesis')
+        synthesis = result.get("synthesis")
         if synthesis:
             output += f"Synthesis: {synthesis}\n"
 
@@ -159,9 +147,5 @@ class MCPServer:
         return {
             "jsonrpc": "2.0",
             "id": request_id,
-            "error": {
-                "code": code,
-                "message": message
-            }
+            "error": {"code": code, "message": message},
         }
-
