@@ -65,20 +65,14 @@ class MCPServerRunner:
             error_response = {
                 "jsonrpc": "2.0",
                 "id": None,
-                "error": {
-                    "code": -32700,
-                    "message": "Parse error"
-                }
+                "error": {"code": -32700, "message": "Parse error"},
             }
             return web.json_response(error_response, status=400)
         except Exception as e:
             error_response = {
                 "jsonrpc": "2.0",
                 "id": None,
-                "error": {
-                    "code": -32603,
-                    "message": f"Internal error: {str(e)}"
-                }
+                "error": {"code": -32603, "message": f"Internal error: {str(e)}"},
             }
             return web.json_response(error_response, status=500)
 
@@ -115,10 +109,7 @@ class MCPStdioRunner:
                     error_response = {
                         "jsonrpc": "2.0",
                         "id": None,
-                        "error": {
-                            "code": -32700,
-                            "message": "Parse error"
-                        }
+                        "error": {"code": -32700, "message": "Parse error"},
                     }
                     print(json.dumps(error_response), flush=True)
                 except Exception as e:
@@ -127,10 +118,9 @@ class MCPStdioRunner:
                         "id": None,
                         "error": {
                             "code": -32603,
-                            "message": f"Internal error: {str(e)}"
-                        }
+                            "message": f"Internal error: {str(e)}",
+                        },
                     }
                     print(json.dumps(error_response), flush=True)
         except KeyboardInterrupt:
             pass
-
