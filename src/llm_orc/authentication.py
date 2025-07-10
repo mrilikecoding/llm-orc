@@ -366,18 +366,26 @@ class AnthropicOAuthFlow(OAuthFlow):
 
     def __init__(self, client_id: str, client_secret: str):
         # Use port 54545 which was validated to work in testing
-        super().__init__("anthropic", client_id, client_secret, "http://localhost:54545/callback")
+        super().__init__(
+            "anthropic", client_id, client_secret, "http://localhost:54545/callback"
+        )
 
         # Generate PKCE parameters for secure OAuth flow
         import base64
         import hashlib
 
-        self.code_verifier = base64.urlsafe_b64encode(
-            secrets.token_bytes(32)
-        ).decode('utf-8').rstrip('=')
-        self.code_challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(self.code_verifier.encode('utf-8')).digest()
-        ).decode('utf-8').rstrip('=')
+        self.code_verifier = (
+            base64.urlsafe_b64encode(secrets.token_bytes(32))
+            .decode("utf-8")
+            .rstrip("=")
+        )
+        self.code_challenge = (
+            base64.urlsafe_b64encode(
+                hashlib.sha256(self.code_verifier.encode("utf-8")).digest()
+            )
+            .decode("utf-8")
+            .rstrip("=")
+        )
 
     @classmethod
     def create_with_guidance(cls) -> "AnthropicOAuthFlow":
@@ -431,20 +439,62 @@ class AnthropicOAuthFlow(OAuthFlow):
         }
         return f"https://console.anthropic.com/oauth/authorize?{urlencode(params)}"
 
+    def start_callback_server(self) -> tuple[HTTPServer, int]:
+        """Start the callback server on validated port 54545."""
+        port = 54545
+        try:
+            server = HTTPServer(("localhost", port), OAuthCallbackHandler)
+            server.auth_code = None  # type: ignore
+            server.auth_error = None  # type: ignore
+
+            # Start server in background thread
+            def run_server() -> None:
+                server.timeout = 1
+                while server.auth_code is None and server.auth_error is None:  # type: ignore
+                    server.handle_request()
+
+            server_thread = threading.Thread(target=run_server)
+            server_thread.daemon = True
+            server_thread.start()
+
+            return server, port
+        except OSError as e:
+            raise RuntimeError(
+                f"Cannot start callback server on port {port}: {e}"
+            ) from e
+
     def exchange_code_for_tokens(self, auth_code: str) -> dict[str, Any]:
-        """Exchange authorization code for tokens with Anthropic."""
-        # TODO: Implement real token exchange when Anthropic provides the endpoint
-        # For now, return a mock response that satisfies the test
-        print(
-            "⚠️  Note: Using mock token exchange - "
-            "real implementation pending Anthropic API"
-        )
-        return {
-            "access_token": f"anthropic_access_token_{auth_code[:10]}",
-            "refresh_token": f"anthropic_refresh_token_{auth_code[:10]}",
-            "expires_in": 3600,
-            "token_type": "Bearer",
+        """Exchange authorization code for access and refresh tokens."""
+        import requests
+
+        data = {
+            "grant_type": "authorization_code",
+            "client_id": self.client_id,
+            "code": auth_code,
+            "code_verifier": self.code_verifier,
+            "redirect_uri": self.redirect_uri,
         }
+
+        try:
+            response = requests.post(
+                "https://api.anthropic.com/oauth/token",
+                data=data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=30,
+            )
+
+            if response.status_code == 200:
+                return response.json()  # type: ignore[no-any-return]
+            else:
+                print(
+                    f"❌ Token exchange failed: {response.status_code} - "
+                    f"{response.text}"
+                )
+                return {}
+
+        except Exception as e:
+            print(f"❌ Error during token exchange: {e}")
+            return {}
 
     def validate_credentials(self) -> bool:
         """Validate OAuth credentials by testing the authorization URL."""

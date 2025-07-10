@@ -272,6 +272,8 @@ class TestOAuthProviderIntegration:
     ) -> None:
         """Test that Anthropic OAuth can exchange code for tokens."""
         # Given
+        from unittest.mock import Mock, patch
+
         from llm_orc.authentication import AnthropicOAuthFlow
 
         client_id = "test_client_id"
@@ -279,8 +281,19 @@ class TestOAuthProviderIntegration:
         oauth_flow = AnthropicOAuthFlow(client_id, client_secret)
         auth_code = "test_authorization_code"
 
+        # Mock successful response
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "access_token": "sk-ant-oat01-test-token",
+            "refresh_token": "sk-ant-ort01-test-refresh",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+        }
+
         # When
-        tokens = oauth_flow.exchange_code_for_tokens(auth_code)
+        with patch("requests.post", return_value=mock_response):
+            tokens = oauth_flow.exchange_code_for_tokens(auth_code)
 
         # Then
         assert "access_token" in tokens
@@ -342,6 +355,52 @@ class TestAnthropicOAuthFlow:
         assert "code_challenge_method=S256" in auth_url
         assert "response_type=code" in auth_url
 
+    def test_token_exchange_uses_real_endpoint(self) -> None:
+        """Test that token exchange makes real API call to Anthropic OAuth endpoint."""
+        from unittest.mock import Mock, patch
+
+        from llm_orc.authentication import AnthropicOAuthFlow
+
+        client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        flow = AnthropicOAuthFlow(client_id, "")
+        auth_code = "test_auth_code_12345"
+
+        # Mock successful response
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "access_token": "sk-ant-oat01-test-token",
+            "refresh_token": "sk-ant-ort01-test-refresh",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+        }
+
+        with patch("requests.post", return_value=mock_response) as mock_post:
+            tokens = flow.exchange_code_for_tokens(auth_code)
+
+            # Should call the real Anthropic OAuth endpoint
+            mock_post.assert_called_once()
+            args, kwargs = mock_post.call_args
+
+            # Verify endpoint URL
+            assert args[0] == "https://api.anthropic.com/oauth/token"
+
+            # Verify request data includes all required fields
+            assert kwargs["data"]["grant_type"] == "authorization_code"
+            assert kwargs["data"]["client_id"] == client_id
+            assert kwargs["data"]["code"] == auth_code
+            assert kwargs["data"]["code_verifier"] == flow.code_verifier
+            assert kwargs["data"]["redirect_uri"] == flow.redirect_uri
+
+            # Verify headers
+            assert (
+                kwargs["headers"]["Content-Type"] == "application/x-www-form-urlencoded"
+            )
+
+            # Should return the tokens
+            assert tokens["access_token"] == "sk-ant-oat01-test-token"
+            assert tokens["refresh_token"] == "sk-ant-ort01-test-refresh"
+
     def test_anthropic_oauth_flow_initialization(self) -> None:
         """Test AnthropicOAuthFlow can be initialized correctly."""
         # Given
@@ -401,6 +460,8 @@ class TestAnthropicOAuthFlow:
     def test_exchange_code_for_tokens_returns_valid_structure(self) -> None:
         """Test that token exchange returns proper token structure."""
         # Given
+        from unittest.mock import Mock, patch
+
         from llm_orc.authentication import AnthropicOAuthFlow
 
         client_id = "test_client_id"
@@ -408,8 +469,19 @@ class TestAnthropicOAuthFlow:
         flow = AnthropicOAuthFlow(client_id, client_secret)
         auth_code = "test_auth_code_123"
 
+        # Mock successful response
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "access_token": "sk-ant-oat01-test-token",
+            "refresh_token": "sk-ant-ort01-test-refresh",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+        }
+
         # When
-        tokens = flow.exchange_code_for_tokens(auth_code)
+        with patch("requests.post", return_value=mock_response):
+            tokens = flow.exchange_code_for_tokens(auth_code)
 
         # Then
         assert isinstance(tokens, dict)
@@ -419,8 +491,8 @@ class TestAnthropicOAuthFlow:
         assert "token_type" in tokens
 
         # Verify token format
-        assert tokens["access_token"].startswith("anthropic_access_token_")
-        assert tokens["refresh_token"].startswith("anthropic_refresh_token_")
+        assert tokens["access_token"] == "sk-ant-oat01-test-token"
+        assert tokens["refresh_token"] == "sk-ant-ort01-test-refresh"
         assert tokens["expires_in"] == 3600
         assert tokens["token_type"] == "Bearer"
 
@@ -432,6 +504,64 @@ class TestAnthropicOAuthFlow:
         # When & Then
         assert hasattr(AnthropicOAuthFlow, "create_with_guidance")
         assert callable(AnthropicOAuthFlow.create_with_guidance)
+
+    def test_callback_server_uses_port_54545(self) -> None:
+        """Test that callback server starts on validated port 54545."""
+        from llm_orc.authentication import AnthropicOAuthFlow
+
+        client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        flow = AnthropicOAuthFlow(client_id, "")
+
+        # Start callback server
+        server, port = flow.start_callback_server()
+
+        # Should use the validated port
+        assert port == 54545
+        assert server is not None
+
+        # Server should be ready to handle requests
+        assert hasattr(server, "auth_code")
+        assert hasattr(server, "auth_error")
+        assert server.auth_code is None
+        assert server.auth_error is None
+
+        # Clean up server
+        server.server_close()
+
+    def test_callback_server_handles_authorization_code(self) -> None:
+        """Test that callback server can handle OAuth authorization code."""
+        import requests
+
+        from llm_orc.authentication import AnthropicOAuthFlow
+
+        client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        flow = AnthropicOAuthFlow(client_id, "")
+
+        # Start callback server
+        server, port = flow.start_callback_server()
+
+        try:
+            # Simulate OAuth callback request
+            test_code = "test_auth_code_12345"
+            test_state = "test_state_67890"
+            callback_url = (
+                f"http://localhost:{port}/callback?code={test_code}&state={test_state}"
+            )
+
+            # Make request to callback server
+            response = requests.get(callback_url, timeout=5)
+
+            # Should return success response
+            assert response.status_code == 200
+            assert "Authorization Successful" in response.text
+
+            # Server should have captured the authorization code
+            assert server.auth_code == test_code  # type: ignore
+            assert server.auth_error is None  # type: ignore
+
+        finally:
+            # Clean up server
+            server.server_close()
 
 
 class TestImprovedAuthenticationManager:
@@ -477,10 +607,21 @@ class TestImprovedAuthenticationManager:
         def mock_open_browser(url: str) -> None:
             pass
 
+        def mock_exchange_tokens(self: Any, auth_code: str) -> dict[str, Any]:
+            return {
+                "access_token": "sk-ant-oat01-test-token",
+                "refresh_token": "sk-ant-ort01-test-refresh",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+            }
+
         monkeypatch.setattr(
             AnthropicOAuthFlow, "start_callback_server", mock_start_server
         )
         monkeypatch.setattr("webbrowser.open", mock_open_browser)
+        monkeypatch.setattr(
+            AnthropicOAuthFlow, "exchange_code_for_tokens", mock_exchange_tokens
+        )
 
         # When
         result = auth_manager.authenticate_oauth(
