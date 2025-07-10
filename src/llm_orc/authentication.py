@@ -476,24 +476,43 @@ class AnthropicOAuthFlow(OAuthFlow):
         }
 
         try:
+            print("🔄 Making token exchange request...")
+            print("   Endpoint: https://console.anthropic.com/oauth/token")
+            print("   Method: POST")
+            print(f"   Data keys: {list(data.keys())}")
+
             response = requests.post(
-                "https://api.anthropic.com/oauth/token",
+                "https://console.anthropic.com/oauth/token",
                 data=data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=30,
             )
 
+            print(f"   Response status: {response.status_code}")
+            print(f"   Response headers: {dict(response.headers)}")
+
             if response.status_code == 200:
+                print("✅ Token exchange successful!")
                 return response.json()  # type: ignore[no-any-return]
             else:
                 print(
                     f"❌ Token exchange failed: {response.status_code} - "
                     f"{response.text}"
                 )
+                try:
+                    error_json = response.json()
+                    print(f"   Error details (JSON): {error_json}")
+                except Exception:
+                    print(f"   Error details (raw): {response.text}")
                 return {}
 
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Network error during token exchange: {e}")
+            print(f"   Exception type: {type(e).__name__}")
+            return {}
         except Exception as e:
-            print(f"❌ Error during token exchange: {e}")
+            print(f"❌ Unexpected error during token exchange: {e}")
+            print(f"   Exception type: {type(e).__name__}")
             return {}
 
     def validate_credentials(self) -> bool:
