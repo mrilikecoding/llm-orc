@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llm-orchestra"
-version = "0.2.2"
+version = "0.3.0"
 description = "Multi-agent LLM communication system with ensemble orchestration"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -25,7 +25,7 @@ classifiers = [
 ]
 dependencies = [
     "websockets",
-    "aiohttp", 
+    "aiohttp",
     "pydantic",
     "anthropic",
     "google-generativeai",
@@ -33,6 +33,7 @@ dependencies = [
     "click",
     "pyyaml",
     "cryptography",
+    "requests>=2.32.4",
 ]
 requires-python = ">=3.11"
 
