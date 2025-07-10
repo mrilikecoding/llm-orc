@@ -3,6 +3,7 @@
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -434,7 +435,7 @@ class TestImprovedAuthenticationManager:
 
         validation_called = False
 
-        def mock_validate(self) -> bool:
+        def mock_validate(self: Any) -> bool:
             nonlocal validation_called
             validation_called = True
             return True
@@ -442,13 +443,13 @@ class TestImprovedAuthenticationManager:
         monkeypatch.setattr(AnthropicOAuthFlow, "validate_credentials", mock_validate)
 
         # Mock the OAuth flow to avoid actual browser/server operations
-        def mock_start_server(self):
+        def mock_start_server(self: Any) -> tuple[Any, int]:
             server = type(
                 "MockServer", (), {"auth_code": "test_code", "auth_error": None}
             )()
             return server, 8080
 
-        def mock_open_browser(url):
+        def mock_open_browser(url: str) -> None:
             pass
 
         monkeypatch.setattr(
@@ -484,12 +485,12 @@ class TestImprovedAuthenticationManager:
         # Given
         from llm_orc.authentication import AnthropicOAuthFlow
 
-        def mock_start_server(self):
+        def mock_start_server(self: Any) -> tuple[Any, int]:
             # Return a server that never receives auth code (simulating timeout)
             server = type("MockServer", (), {"auth_code": None, "auth_error": None})()
             return server, 8080
 
-        def mock_open_browser(url):
+        def mock_open_browser(url: str) -> None:
             pass
 
         # Mock time to simulate timeout quickly
@@ -498,7 +499,7 @@ class TestImprovedAuthenticationManager:
         call_count = 0
         start_time = time.time()
 
-        def mock_time():
+        def mock_time() -> float:
             nonlocal call_count
             call_count += 1
             # First few calls return normal time, then jump to timeout
@@ -506,7 +507,7 @@ class TestImprovedAuthenticationManager:
                 return start_time + 150  # Beyond the 120 second timeout
             return start_time + (call_count * 0.1)  # Gradual increase initially
 
-        def mock_sleep(duration):
+        def mock_sleep(duration: float) -> None:
             pass  # Don't actually sleep in tests
 
         monkeypatch.setattr(
