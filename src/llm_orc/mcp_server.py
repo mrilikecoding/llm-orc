@@ -3,7 +3,7 @@
 from typing import Any
 
 from llm_orc.config import ConfigurationManager
-from llm_orc.ensemble_config import EnsembleLoader
+from llm_orc.ensemble_config import EnsembleConfig, EnsembleLoader
 from llm_orc.ensemble_execution import EnsembleExecutor
 
 
@@ -21,6 +21,10 @@ class MCPServer:
         """Handle incoming MCP request."""
         method = request.get("method")
         request_id = request.get("id")
+
+        # Handle missing request_id
+        if request_id is None:
+            return self._error_response(0, -32600, "Invalid request - missing id")
 
         if method == "initialize":
             return await self._handle_initialize(request_id)
@@ -87,6 +91,11 @@ class MCPServer:
 
         # Load ensemble config and execute
         config = await self._load_ensemble_config(self.ensemble_name)
+        if config is None:
+            return self._error_response(
+                request_id, -32602, f"Ensemble '{self.ensemble_name}' not found"
+            )
+
         result = await self.executor.execute(config, input_data)
 
         # Format result as MCP tool response
@@ -105,7 +114,7 @@ class MCPServer:
             }
         }
 
-    async def _load_ensemble_config(self, ensemble_name: str):
+    async def _load_ensemble_config(self, ensemble_name: str) -> EnsembleConfig | None:
         """Load ensemble configuration."""
         # Search in configured ensemble directories
         ensemble_dirs = self.config_manager.get_ensembles_dirs()

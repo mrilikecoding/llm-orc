@@ -1,4 +1,4 @@
-.PHONY: test test-watch lint format lint-check setup clean install help push workflow-status watch-workflows status red green refactor pre-commit roadmap
+.PHONY: test test-watch lint lint-fix format lint-check setup clean install help push workflow-status watch-workflows status red green refactor pre-commit roadmap
 
 # Help target
 help:
@@ -7,6 +7,7 @@ help:
 	@echo "  test            Run tests"
 	@echo "  test-watch      Run tests in watch mode"
 	@echo "  lint            Run linting checks (mypy + ruff + format check)"
+	@echo "  lint-fix        Run linting checks and auto-fix issues"
 	@echo "  format          Format code with ruff"
 	@echo "  lint-check      Same as lint (compatibility)"
 	@echo "  pre-commit      Run all CI checks locally before commit"
@@ -37,6 +38,11 @@ lint:
 	uv run mypy src tests
 	uv run ruff check src tests
 	uv run ruff format --check src tests
+
+lint-fix:
+	uv run mypy src tests
+	uv run ruff check --fix src tests
+	uv run ruff format src tests
 
 lint-check: lint
 

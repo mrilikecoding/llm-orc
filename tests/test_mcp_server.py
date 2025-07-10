@@ -1,7 +1,6 @@
 """Test suite for MCP server implementation."""
 
-import json
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -21,7 +20,7 @@ class TestMCPServer:
     async def test_handle_initialize_request(self) -> None:
         """Should handle MCP initialize request and return capabilities."""
         server = MCPServer("test_ensemble")
-        
+
         initialize_request = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -32,9 +31,9 @@ class TestMCPServer:
                 "clientInfo": {"name": "test-client", "version": "1.0.0"}
             }
         }
-        
+
         response = await server.handle_request(initialize_request)
-        
+
         assert response["jsonrpc"] == "2.0"
         assert response["id"] == 1
         assert "result" in response
@@ -45,15 +44,15 @@ class TestMCPServer:
     async def test_handle_tools_list_request(self) -> None:
         """Should return available tools (ensembles) when requested."""
         server = MCPServer("architecture_review")
-        
+
         tools_request = {
             "jsonrpc": "2.0",
             "id": 2,
             "method": "tools/list"
         }
-        
+
         response = await server.handle_request(tools_request)
-        
+
         assert response["jsonrpc"] == "2.0"
         assert response["id"] == 2
         assert "result" in response
@@ -62,7 +61,8 @@ class TestMCPServer:
         assert response["result"]["tools"][0]["name"] == "architecture_review"
 
     @pytest.mark.asyncio
-    async def test_handle_tools_call_request(self) -> None:
+    @patch('llm_orc.mcp_server.MCPServer._load_ensemble_config')
+    async def test_handle_tools_call_request(self, mock_load_config: AsyncMock) -> None:
         """Should execute ensemble when tool is called."""
         # Mock the ensemble executor
         mock_executor = AsyncMock()
@@ -72,15 +72,15 @@ class TestMCPServer:
             "results": {"agent1": {"response": "Test response", "status": "success"}},
             "synthesis": "Synthesized result"
         }
-        
+
         server = MCPServer("architecture_review")
         server.executor = mock_executor
-        
+
         # Mock ensemble loading
         mock_config = Mock()
         mock_config.name = "architecture_review"
-        server._load_ensemble_config = AsyncMock(return_value=mock_config)
-        
+        mock_load_config.return_value = mock_config
+
         call_request = {
             "jsonrpc": "2.0",
             "id": 3,
@@ -92,14 +92,14 @@ class TestMCPServer:
                 }
             }
         }
-        
+
         response = await server.handle_request(call_request)
-        
+
         assert response["jsonrpc"] == "2.0"
         assert response["id"] == 3
         assert "result" in response
         assert "content" in response["result"]
-        
+
         # Verify executor was called
         mock_executor.execute.assert_called_once()
 
@@ -107,15 +107,15 @@ class TestMCPServer:
     async def test_handle_invalid_method(self) -> None:
         """Should return error for invalid methods."""
         server = MCPServer("test_ensemble")
-        
+
         invalid_request = {
             "jsonrpc": "2.0",
             "id": 4,
             "method": "invalid/method"
         }
-        
+
         response = await server.handle_request(invalid_request)
-        
+
         assert response["jsonrpc"] == "2.0"
         assert response["id"] == 4
         assert "error" in response
