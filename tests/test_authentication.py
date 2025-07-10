@@ -443,10 +443,9 @@ class TestImprovedAuthenticationManager:
 
         # Mock the OAuth flow to avoid actual browser/server operations
         def mock_start_server(self):
-            server = type('MockServer', (), {
-                'auth_code': 'test_code',
-                'auth_error': None
-            })()
+            server = type(
+                "MockServer", (), {"auth_code": "test_code", "auth_error": None}
+            )()
             return server, 8080
 
         def mock_open_browser(url):
@@ -487,10 +486,7 @@ class TestImprovedAuthenticationManager:
 
         def mock_start_server(self):
             # Return a server that never receives auth code (simulating timeout)
-            server = type('MockServer', (), {
-                'auth_code': None,
-                'auth_error': None
-            })()
+            server = type("MockServer", (), {"auth_code": None, "auth_error": None})()
             return server, 8080
 
         def mock_open_browser(url):
@@ -498,6 +494,7 @@ class TestImprovedAuthenticationManager:
 
         # Mock time to simulate timeout quickly
         import time
+
         call_count = 0
         start_time = time.time()
 

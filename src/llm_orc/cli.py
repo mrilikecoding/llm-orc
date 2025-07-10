@@ -309,6 +309,7 @@ def auth_add(provider: str, api_key: str, client_id: str, client_secret: str) ->
         # Use the improved interactive flow for Anthropic
         try:
             from llm_orc.authentication import AnthropicOAuthFlow
+
             oauth_flow = AnthropicOAuthFlow.create_with_guidance()
 
             click.echo("🔄 Starting OAuth flow...")
