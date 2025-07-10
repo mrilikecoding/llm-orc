@@ -14,6 +14,7 @@ from llm_orc.authentication import AuthenticationManager, CredentialStorage
 from llm_orc.config import ConfigurationManager
 from llm_orc.ensemble_config import EnsembleLoader
 from llm_orc.ensemble_execution import EnsembleExecutor
+from llm_orc.mcp_server_runner import MCPServerRunner
 
 
 @click.group()
@@ -513,6 +514,15 @@ def auth_setup() -> None:
         "Setup complete! You can now use 'llm-orc auth list' to see your "
         "configured providers."
     )
+
+
+@cli.command()
+@click.argument("ensemble_name")
+@click.option("--port", default=3000, help="Port to serve MCP server on")
+def serve(ensemble_name: str, port: int) -> None:
+    """Serve an ensemble as an MCP server."""
+    runner = MCPServerRunner(ensemble_name, port)
+    runner.run()
 
 
 if __name__ == "__main__":
