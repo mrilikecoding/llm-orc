@@ -317,6 +317,31 @@ class TestOAuthProviderIntegration:
 class TestAnthropicOAuthFlow:
     """Test improved Anthropic OAuth flow functionality."""
 
+    def test_uses_validated_oauth_parameters(self) -> None:
+        """Test AnthropicOAuthFlow uses validated OAuth parameters from issue #32."""
+        from llm_orc.authentication import AnthropicOAuthFlow
+
+        # Create flow with the shared client ID discovered in testing
+        client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        flow = AnthropicOAuthFlow(client_id, "")  # No client secret needed for PKCE
+
+        # Test that authorization URL includes validated parameters
+        auth_url = flow.get_authorization_url()
+
+        # Should include the shared client ID
+        assert "client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e" in auth_url
+
+        # Should include all required scopes (URL-encoded - Python uses + for spaces)
+        assert "scope=org%3Acreate_api_key+user%3Aprofile+user%3Ainference" in auth_url
+
+        # Should use port 54545 for callback (validated working port)
+        assert "redirect_uri=http%3A%2F%2Flocalhost%3A54545%2Fcallback" in auth_url
+
+        # Should include PKCE parameters
+        assert "code_challenge=" in auth_url
+        assert "code_challenge_method=S256" in auth_url
+        assert "response_type=code" in auth_url
+
     def test_anthropic_oauth_flow_initialization(self) -> None:
         """Test AnthropicOAuthFlow can be initialized correctly."""
         # Given
@@ -332,7 +357,7 @@ class TestAnthropicOAuthFlow:
         assert flow.client_id == client_id
         assert flow.client_secret == client_secret
         assert flow.provider == "anthropic"
-        assert flow.redirect_uri == "http://localhost:8080/callback"
+        assert flow.redirect_uri == "http://localhost:54545/callback"
 
     def test_get_authorization_url_contains_required_parameters(self) -> None:
         """Test that authorization URL contains all required OAuth parameters."""

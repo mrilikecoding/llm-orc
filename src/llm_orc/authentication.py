@@ -365,7 +365,19 @@ class AnthropicOAuthFlow(OAuthFlow):
     """OAuth flow specific to Anthropic API with improved user guidance."""
 
     def __init__(self, client_id: str, client_secret: str):
-        super().__init__("anthropic", client_id, client_secret)
+        # Use port 54545 which was validated to work in testing
+        super().__init__("anthropic", client_id, client_secret, "http://localhost:54545/callback")
+
+        # Generate PKCE parameters for secure OAuth flow
+        import base64
+        import hashlib
+
+        self.code_verifier = base64.urlsafe_b64encode(
+            secrets.token_bytes(32)
+        ).decode('utf-8').rstrip('=')
+        self.code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(self.code_verifier.encode('utf-8')).digest()
+        ).decode('utf-8').rstrip('=')
 
     @classmethod
     def create_with_guidance(cls) -> "AnthropicOAuthFlow":
@@ -407,12 +419,15 @@ class AnthropicOAuthFlow(OAuthFlow):
         return cls(client_id, client_secret)
 
     def get_authorization_url(self) -> str:
-        """Get the authorization URL for Anthropic API."""
+        """Get the authorization URL for Anthropic API with validated parameters."""
         params = {
             "client_id": self.client_id,
             "redirect_uri": self.redirect_uri,
             "response_type": "code",
             "state": self.state,
+            "scope": "org:create_api_key user:profile user:inference",
+            "code_challenge": self.code_challenge,
+            "code_challenge_method": "S256",
         }
         return f"https://console.anthropic.com/oauth/authorize?{urlencode(params)}"
 
