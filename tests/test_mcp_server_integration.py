@@ -19,30 +19,31 @@ class TestMCPServerIntegration:
         mock_config_manager = Mock()
         mock_config_manager.get_ensembles_dirs.return_value = ["/test/ensembles"]
         mock_config_manager_class.return_value = mock_config_manager
-        
+
         # Mock ensemble loader
         mock_loader = Mock()
         mock_config = Mock()
         mock_config.name = "architecture_review"
         mock_loader.find_ensemble.return_value = mock_config
         mock_loader_class.return_value = mock_loader
-        
+
         server = MCPServer("architecture_review")
         config = await server._load_ensemble_config("architecture_review")
-        
+
         assert config == mock_config
         mock_loader.find_ensemble.assert_called_once_with("/test/ensembles", "architecture_review")
 
     @pytest.mark.asyncio
-    async def test_end_to_end_tools_call_with_mock_ensemble(self) -> None:
+    @patch('llm_orc.mcp_server.MCPServer._load_ensemble_config')
+    async def test_end_to_end_tools_call_with_mock_ensemble(self, mock_load_config: AsyncMock) -> None:
         """Should execute complete tools/call flow with mocked ensemble."""
         server = MCPServer("test_ensemble")
-        
+
         # Mock ensemble loading
         mock_config = Mock()
         mock_config.name = "test_ensemble"
-        server._load_ensemble_config = AsyncMock(return_value=mock_config)
-        
+        mock_load_config.return_value = mock_config
+
         # Mock executor
         mock_executor = AsyncMock()
         mock_executor.execute.return_value = {
@@ -54,7 +55,7 @@ class TestMCPServerIntegration:
             "synthesis": "Test synthesis"
         }
         server.executor = mock_executor
-        
+
         request = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -66,23 +67,23 @@ class TestMCPServerIntegration:
                 }
             }
         }
-        
+
         response = await server.handle_request(request)
-        
+
         assert response["jsonrpc"] == "2.0"
         assert response["id"] == 1
         assert "result" in response
         assert "content" in response["result"]
         assert len(response["result"]["content"]) == 1
         assert response["result"]["content"][0]["type"] == "text"
-        
+
         # Verify content contains expected information
         content = response["result"]["content"][0]["text"]
         assert "test_ensemble" in content
         assert "completed" in content
         assert "Test response" in content
         assert "Test synthesis" in content
-        
+
         # Verify calls
-        server._load_ensemble_config.assert_called_once_with("test_ensemble")
+        mock_load_config.assert_called_once_with("test_ensemble")
         mock_executor.execute.assert_called_once_with(mock_config, "Test input")

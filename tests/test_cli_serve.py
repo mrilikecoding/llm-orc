@@ -1,8 +1,7 @@
 """Test suite for CLI serve command."""
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
-import pytest
 from click.testing import CliRunner
 
 from llm_orc.cli import serve
@@ -23,10 +22,10 @@ class TestCLIServe:
         """Should start MCP server with specified ensemble."""
         mock_runner = Mock()
         mock_runner_class.return_value = mock_runner
-        
+
         runner = CliRunner()
         result = runner.invoke(serve, ["architecture_review"])
-        
+
         assert result.exit_code == 0
         mock_runner_class.assert_called_once_with("architecture_review", 3000)
         mock_runner.run.assert_called_once()
@@ -36,10 +35,10 @@ class TestCLIServe:
         """Should start MCP server with custom port."""
         mock_runner = Mock()
         mock_runner_class.return_value = mock_runner
-        
+
         runner = CliRunner()
         result = runner.invoke(serve, ["gesture_analysis", "--port", "8080"])
-        
+
         assert result.exit_code == 0
         mock_runner_class.assert_called_once_with("gesture_analysis", 8080)
         mock_runner.run.assert_called_once()
@@ -49,9 +48,9 @@ class TestCLIServe:
         """Should use default port 3000 when not specified."""
         mock_runner = Mock()
         mock_runner_class.return_value = mock_runner
-        
+
         runner = CliRunner()
         result = runner.invoke(serve, ["research_validation"])
-        
+
         assert result.exit_code == 0
         mock_runner_class.assert_called_once_with("research_validation", 3000)
