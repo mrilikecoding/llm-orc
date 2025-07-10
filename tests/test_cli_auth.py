@@ -238,7 +238,7 @@ class TestAuthCommandsNew:
 
             # Then
             assert result.exit_code == 0
-            assert f"Authentication for {provider} is working" in result.output
+            assert f"API key authentication for {provider} is working" in result.output
 
     def test_auth_test_command_fails_for_invalid_credentials(
         self, runner: CliRunner, temp_config_dir: Path
@@ -277,7 +277,7 @@ class TestAuthCommandsNew:
 
             # Then
             assert result.exit_code != 0
-            assert f"Authentication for {provider} failed" in result.output
+            assert f"API key authentication for {provider} failed" in result.output
 
     def test_auth_setup_command_interactive_wizard(
         self, runner: CliRunner, temp_config_dir: Path
@@ -285,7 +285,12 @@ class TestAuthCommandsNew:
         """Test that 'auth setup' command runs interactive wizard."""
         # Given
         # Mock user input
-        inputs = ["anthropic", "test_key_123", "n"]  # provider, api_key, no more
+        inputs = [
+            "anthropic",
+            "api_key",
+            "test_key_123",
+            "n",
+        ]  # provider, auth_method, api_key, no more
 
         # When
         with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager:
@@ -309,5 +314,5 @@ class TestAuthCommandsNew:
         # Then
         assert result.exit_code == 0
         assert "Welcome to LLM Orchestra setup!" in result.output
-        assert "✓ anthropic configured successfully" in result.output
+        assert "✓ anthropic configured successfully with API key" in result.output
         assert "Setup complete!" in result.output
