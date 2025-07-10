@@ -320,7 +320,7 @@ class TestAnthropicOAuthFlow:
         """Test AnthropicOAuthFlow can be initialized correctly."""
         # Given
         from llm_orc.authentication import AnthropicOAuthFlow
-        
+
         client_id = "test_client_id"
         client_secret = "test_client_secret"
 
@@ -336,9 +336,10 @@ class TestAnthropicOAuthFlow:
     def test_get_authorization_url_contains_required_parameters(self) -> None:
         """Test that authorization URL contains all required OAuth parameters."""
         # Given
+        from urllib.parse import parse_qs, urlparse
+
         from llm_orc.authentication import AnthropicOAuthFlow
-        from urllib.parse import urlparse, parse_qs
-        
+
         client_id = "test_client_id"
         client_secret = "test_client_secret"
         flow = AnthropicOAuthFlow(client_id, client_secret)
@@ -349,7 +350,7 @@ class TestAnthropicOAuthFlow:
         # Then
         parsed_url = urlparse(auth_url)
         query_params = parse_qs(parsed_url.query)
-        
+
         assert parsed_url.netloc == "console.anthropic.com"
         assert parsed_url.path == "/oauth/authorize"
         assert query_params["client_id"][0] == client_id
@@ -361,7 +362,7 @@ class TestAnthropicOAuthFlow:
         """Test credential validation when OAuth endpoint is accessible."""
         # Given
         from llm_orc.authentication import AnthropicOAuthFlow
-        
+
         client_id = "test_client_id"
         client_secret = "test_client_secret"
         flow = AnthropicOAuthFlow(client_id, client_secret)
@@ -375,7 +376,7 @@ class TestAnthropicOAuthFlow:
         """Test that token exchange returns proper token structure."""
         # Given
         from llm_orc.authentication import AnthropicOAuthFlow
-        
+
         client_id = "test_client_id"
         client_secret = "test_client_secret"
         flow = AnthropicOAuthFlow(client_id, client_secret)
@@ -390,7 +391,7 @@ class TestAnthropicOAuthFlow:
         assert "refresh_token" in tokens
         assert "expires_in" in tokens
         assert "token_type" in tokens
-        
+
         # Verify token format
         assert tokens["access_token"].startswith("anthropic_access_token_")
         assert tokens["refresh_token"].startswith("anthropic_refresh_token_")
@@ -398,13 +399,13 @@ class TestAnthropicOAuthFlow:
         assert tokens["token_type"] == "Bearer"
 
     def test_mock_create_with_guidance_method_exists(self) -> None:
-        """Test that create_with_guidance method exists for future interactive testing."""
+        """Test that create_with_guidance method exists for future testing."""
         # Given
         from llm_orc.authentication import AnthropicOAuthFlow
 
         # When & Then
         assert hasattr(AnthropicOAuthFlow, "create_with_guidance")
-        assert callable(getattr(AnthropicOAuthFlow, "create_with_guidance"))
+        assert callable(AnthropicOAuthFlow.create_with_guidance)
 
 
 class TestImprovedAuthenticationManager:
@@ -430,17 +431,16 @@ class TestImprovedAuthenticationManager:
         """Test that OAuth validation is called when available."""
         # Given
         from llm_orc.authentication import AnthropicOAuthFlow
-        
+
         validation_called = False
-        original_validate = AnthropicOAuthFlow.validate_credentials
-        
+
         def mock_validate(self) -> bool:
             nonlocal validation_called
             validation_called = True
             return True
-            
+
         monkeypatch.setattr(AnthropicOAuthFlow, "validate_credentials", mock_validate)
-        
+
         # Mock the OAuth flow to avoid actual browser/server operations
         def mock_start_server(self):
             server = type('MockServer', (), {
@@ -448,15 +448,19 @@ class TestImprovedAuthenticationManager:
                 'auth_error': None
             })()
             return server, 8080
-            
+
         def mock_open_browser(url):
             pass
-            
-        monkeypatch.setattr(AnthropicOAuthFlow, "start_callback_server", mock_start_server)
+
+        monkeypatch.setattr(
+            AnthropicOAuthFlow, "start_callback_server", mock_start_server
+        )
         monkeypatch.setattr("webbrowser.open", mock_open_browser)
 
         # When
-        result = auth_manager.authenticate_oauth("anthropic", "test_client", "test_secret")
+        result = auth_manager.authenticate_oauth(
+            "anthropic", "test_client", "test_secret"
+        )
 
         # Then
         assert validation_called
@@ -467,7 +471,9 @@ class TestImprovedAuthenticationManager:
     ) -> None:
         """Test proper error handling for unsupported OAuth provider."""
         # When
-        result = auth_manager.authenticate_oauth("unsupported_provider", "client_id", "client_secret")
+        result = auth_manager.authenticate_oauth(
+            "unsupported_provider", "client_id", "client_secret"
+        )
 
         # Then
         assert result is False
@@ -478,7 +484,7 @@ class TestImprovedAuthenticationManager:
         """Test that OAuth flow handles timeout correctly."""
         # Given
         from llm_orc.authentication import AnthropicOAuthFlow
-        
+
         def mock_start_server(self):
             # Return a server that never receives auth code (simulating timeout)
             server = type('MockServer', (), {
@@ -486,15 +492,15 @@ class TestImprovedAuthenticationManager:
                 'auth_error': None
             })()
             return server, 8080
-            
+
         def mock_open_browser(url):
             pass
-            
+
         # Mock time to simulate timeout quickly
         import time
         call_count = 0
         start_time = time.time()
-        
+
         def mock_time():
             nonlocal call_count
             call_count += 1
@@ -502,17 +508,21 @@ class TestImprovedAuthenticationManager:
             if call_count > 5:
                 return start_time + 150  # Beyond the 120 second timeout
             return start_time + (call_count * 0.1)  # Gradual increase initially
-            
+
         def mock_sleep(duration):
             pass  # Don't actually sleep in tests
-            
-        monkeypatch.setattr(AnthropicOAuthFlow, "start_callback_server", mock_start_server)
+
+        monkeypatch.setattr(
+            AnthropicOAuthFlow, "start_callback_server", mock_start_server
+        )
         monkeypatch.setattr("webbrowser.open", mock_open_browser)
         monkeypatch.setattr("time.time", mock_time)
         monkeypatch.setattr("time.sleep", mock_sleep)
 
         # When
-        result = auth_manager.authenticate_oauth("anthropic", "test_client", "test_secret")
+        result = auth_manager.authenticate_oauth(
+            "anthropic", "test_client", "test_secret"
+        )
 
         # Then
         assert result is False
