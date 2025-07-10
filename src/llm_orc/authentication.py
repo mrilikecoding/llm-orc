@@ -384,10 +384,12 @@ class AnthropicOAuthFlow(OAuthFlow):
         print()
 
         # Offer to open the console automatically
-        open_browser = input(
-            "Would you like to open the Anthropic Console now? (y/N): "
-        ).strip().lower()
-        if open_browser in ['y', 'yes']:
+        open_browser = (
+            input("Would you like to open the Anthropic Console now? (y/N): ")
+            .strip()
+            .lower()
+        )
+        if open_browser in ["y", "yes"]:
             webbrowser.open("https://console.anthropic.com")
             print("✅ Opened Anthropic Console in your browser")
             print()
@@ -435,6 +437,7 @@ class AnthropicOAuthFlow(OAuthFlow):
             auth_url = self.get_authorization_url()
             # Try to access the authorization URL to validate the client_id
             import urllib.request
+
             urllib.request.urlopen(auth_url, timeout=10)  # noqa: F841
             # A 200 response indicates the endpoint is accessible
             # A 403 might mean the endpoint exists but requires authentication
@@ -516,7 +519,7 @@ class AuthenticationManager:
             oauth_flow = create_oauth_flow(provider, client_id, client_secret)
 
             # Validate credentials if the provider supports it
-            if hasattr(oauth_flow, 'validate_credentials'):
+            if hasattr(oauth_flow, "validate_credentials"):
                 print("🔍 Validating OAuth credentials...")
                 if not oauth_flow.validate_credentials():
                     print("❌ OAuth credential validation failed")
