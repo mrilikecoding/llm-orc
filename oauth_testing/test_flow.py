@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Test the exact OpenCode OAuth flow for Claude Pro/Max authentication
+Test the OAuth flow for Claude Pro/Max authentication
 """
 
 import json
@@ -11,15 +11,6 @@ import hashlib
 import webbrowser
 from pathlib import Path
 from urllib.parse import urlencode, parse_qs, urlparse
-
-# Install brotli support if needed
-try:
-    import brotli
-except ImportError:
-    print("⚠️  brotli package not found. Installing...")
-    import subprocess
-
-    subprocess.check_call(["pip", "install", "brotli"])
 
 
 def generate_pkce_params():
@@ -40,11 +31,9 @@ def generate_pkce_params():
 
 
 def create_authorization_url():
-    """Create authorization URL exactly like OpenCode"""
-    print("🔧 Creating Authorization URL (OpenCode Style)")
+    print("🔧 Creating Authorization URL")
     print("=" * 50)
 
-    # OpenCode's exact parameters
     client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     redirect_uri = "https://console.anthropic.com/oauth/code/callback"
     scope = "org:create_api_key user:profile user:inference"
@@ -60,7 +49,7 @@ def create_authorization_url():
         "scope": scope,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
-        "state": code_verifier,  # OpenCode uses verifier as state
+        "state": code_verifier,
     }
 
     auth_url = f"https://claude.ai/oauth/authorize?{urlencode(params)}"
@@ -80,11 +69,9 @@ def create_authorization_url():
 
 
 def exchange_code_for_tokens(auth_code, code_verifier, client_id, redirect_uri):
-    """Exchange authorization code for tokens using OpenCode's exact endpoint"""
     print("🔄 Exchanging Authorization Code for Tokens")
     print("=" * 45)
 
-    # Split the authorization code at # (OpenCode's approach)
     splits = auth_code.split("#")
     if len(splits) != 2:
         print(f"❌ Invalid authorization code format - expected format: code#state")
@@ -109,10 +96,8 @@ def exchange_code_for_tokens(auth_code, code_verifier, client_id, redirect_uri):
         print(f"✅ State matches code verifier")
     print()
 
-    # OpenCode's exact token exchange endpoint
     token_url = "https://console.anthropic.com/v1/oauth/token"
 
-    # Request body (exactly like OpenCode's format and order)
     data = {
         "code": code_part,
         "state": state_part,
@@ -122,7 +107,6 @@ def exchange_code_for_tokens(auth_code, code_verifier, client_id, redirect_uri):
         "code_verifier": code_verifier,
     }
 
-    # Headers exactly like OpenCode - MINIMAL (only what OpenCode sends)
     headers = {"Content-Type": "application/json"}
 
     print(f"📤 POST to: {token_url}")
@@ -188,23 +172,23 @@ def test_tokens_with_api(tokens):
 
     access_token = tokens["access_token"]
 
-    # Test with the standard API
     headers = {
-        "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
+        "Authorization": f"Bearer {access_token}",
+        "anthropic-beta": "oauth-2025-04-20",
         "anthropic-version": "2023-06-01",
     }
 
     data = {
-        "model": "claude-3-haiku-20240307",
-        "max_tokens": 20,
-        "messages": [
-            {
-                "role": "user",
-                "content": "Hello! Just say 'Working!' if you can see this.",
-            }
-        ],
+        "model": "claude-3-5-sonnet-20241022",
+        "max_tokens": 4096,
+        "messages": [{"role": "user", "content": "Hello, how are you?"}],
     }
+
+    print("data:")
+    print(data)
+    print("headers:")
+    print(headers)
 
     try:
         print("📤 Testing with https://api.anthropic.com/v1/messages")
@@ -235,9 +219,8 @@ def test_tokens_with_api(tokens):
 
 def interactive_oauth_flow():
     """Run the complete interactive OAuth flow"""
-    print("🎯 OpenCode-Style OAuth Flow Test")
+    print("🎯 OAuth Flow Test")
     print("=" * 40)
-    print("Testing the exact OAuth flow that OpenCode uses\n")
 
     # Step 1: Create authorization URL
     auth_url, code_verifier, client_id, redirect_uri = create_authorization_url()
@@ -284,7 +267,6 @@ def interactive_oauth_flow():
         print("✅ Authorization: WORKED")
         print("✅ Token Exchange: WORKED")
         print("✅ API Calls: WORKED")
-        print("\n💡 This confirms the OpenCode flow works for llm-orc!")
         return True
     elif tokens:
         print("🔄 PARTIAL SUCCESS!")
