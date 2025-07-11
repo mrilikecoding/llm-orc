@@ -3,7 +3,7 @@
 import asyncio
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 import google.generativeai as genai
 import ollama
@@ -109,11 +109,11 @@ class OAuthClaudeModel(ModelInterface):
     """OAuth-enabled Claude model implementation."""
 
     def __init__(
-        self, 
-        access_token: str, 
-        refresh_token: Optional[str] = None,
-        client_id: Optional[str] = None,
-        model: str = "claude-3-5-sonnet-20241022"
+        self,
+        access_token: str,
+        refresh_token: str | None = None,
+        client_id: str | None = None,
+        model: str = "claude-3-5-sonnet-20241022",
     ) -> None:
         super().__init__()
         self.access_token = access_token
@@ -129,34 +129,34 @@ class OAuthClaudeModel(ModelInterface):
     async def generate_response(self, message: str, role_prompt: str) -> str:
         """Generate response using OAuth-authenticated Claude API."""
         start_time = time.time()
-        
+
         try:
             # Run in thread pool since our OAuth client is synchronous
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
-                None, 
+                None,
                 lambda: self.client.create_message(
                     model=self.model,
                     max_tokens=1000,
                     system=role_prompt,
                     messages=[{"role": "user", "content": message}],
-                )
+                ),
             )
-            
+
             duration_ms = int((time.time() - start_time) * 1000)
-            
+
             # Record usage metrics
             usage = response.get("usage", {})
             input_tokens = usage.get("input_tokens", 0)
             output_tokens = usage.get("output_tokens", 0)
-            
+
             # Estimate cost (simplified pricing for Claude)
             cost_per_input_token = 0.000003  # $3 per million input tokens
             cost_per_output_token = 0.000015  # $15 per million output tokens
             cost_usd = (input_tokens * cost_per_input_token) + (
                 output_tokens * cost_per_output_token
             )
-            
+
             self._record_usage(
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -164,14 +164,14 @@ class OAuthClaudeModel(ModelInterface):
                 cost_usd=cost_usd,
                 model_name=self.model,
             )
-            
+
             # Extract response content
             content = response.get("content", [])
             if content and len(content) > 0:
                 return str(content[0].get("text", ""))
             else:
                 return ""
-                
+
         except Exception as e:
             if "Token expired" in str(e) and self.refresh_token and self.client_id:
                 # Attempt token refresh
@@ -289,27 +289,24 @@ class ModelManager:
         self.models[key] = model
 
     def register_oauth_claude_model(
-        self, 
-        key: str, 
-        access_token: str, 
-        refresh_token: Optional[str] = None,
-        client_id: Optional[str] = None,
-        model: str = "claude-3-5-sonnet-20241022"
+        self,
+        key: str,
+        access_token: str,
+        refresh_token: str | None = None,
+        client_id: str | None = None,
+        model: str = "claude-3-5-sonnet-20241022",
     ) -> None:
         """Register an OAuth-authenticated Claude model."""
         oauth_model = OAuthClaudeModel(
             access_token=access_token,
             refresh_token=refresh_token,
             client_id=client_id,
-            model=model
+            model=model,
         )
         self.models[key] = oauth_model
 
     def register_claude_model(
-        self, 
-        key: str, 
-        api_key: str, 
-        model: str = "claude-3-5-sonnet-20241022"
+        self, key: str, api_key: str, model: str = "claude-3-5-sonnet-20241022"
     ) -> None:
         """Register an API key-authenticated Claude model."""
         claude_model = ClaudeModel(api_key=api_key, model=model)
@@ -328,13 +325,15 @@ class ModelManager:
     def get_oauth_models(self) -> dict[str, OAuthClaudeModel]:
         """Get all registered OAuth-authenticated models."""
         return {
-            key: model for key, model in self.models.items() 
+            key: model
+            for key, model in self.models.items()
             if isinstance(model, OAuthClaudeModel)
         }
 
     def get_api_key_models(self) -> dict[str, ClaudeModel]:
         """Get all registered API key-authenticated models."""
         return {
-            key: model for key, model in self.models.items() 
+            key: model
+            for key, model in self.models.items()
             if isinstance(model, ClaudeModel)
         }
