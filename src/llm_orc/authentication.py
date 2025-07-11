@@ -367,7 +367,10 @@ class AnthropicOAuthFlow(OAuthFlow):
     def __init__(self, client_id: str, client_secret: str):
         # Use Anthropic's own callback endpoint to avoid Cloudflare protection
         super().__init__(
-            "anthropic", client_id, client_secret, "https://console.anthropic.com/oauth/code/callback"
+            "anthropic",
+            client_id,
+            client_secret,
+            "https://console.anthropic.com/oauth/code/callback",
         )
 
         # Generate PKCE parameters for secure OAuth flow
@@ -399,7 +402,9 @@ class AnthropicOAuthFlow(OAuthFlow):
         print("1. Visit the Anthropic Console: https://console.anthropic.com")
         print("2. Navigate to your organization settings or developer tools")
         print("3. Create an OAuth application/client")
-        print("4. Set the redirect URI to: https://console.anthropic.com/oauth/code/callback")
+        print(
+            "4. Set the redirect URI to: https://console.anthropic.com/oauth/code/callback"
+        )
         print("5. Copy the client ID and client secret")
         print()
 
@@ -447,13 +452,17 @@ class AnthropicOAuthFlow(OAuthFlow):
         print("manually extract the authorization code from the redirect URL.")
         print()
         print("After completing OAuth authorization in your browser:")
-        print("1. You'll be redirected to: https://console.anthropic.com/oauth/code/callback")
+        print(
+            "1. You'll be redirected to: https://console.anthropic.com/oauth/code/callback"
+        )
         print("2. Look at the URL in your browser's address bar")
         print("3. Find the 'code' parameter in the URL")
         print("4. Copy the authorization code value")
         print()
         print("Example URL:")
-        print("https://console.anthropic.com/oauth/code/callback?code=ABC123...&state=xyz")
+        print(
+            "https://console.anthropic.com/oauth/code/callback?code=ABC123...&state=xyz"
+        )
         print("                                                    ^^^^^^")
         print("                                            (copy this code)")
         print()
@@ -512,9 +521,9 @@ class AnthropicOAuthFlow(OAuthFlow):
 
     def _fallback_to_browser_instructions(self, auth_code: str) -> dict[str, Any]:
         """Provide instructions for manual token extraction when API exchange fails"""
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("🔧 MANUAL TOKEN EXTRACTION REQUIRED")
-        print("="*60)
+        print("=" * 60)
         print("The OAuth token endpoint is protected by Cloudflare.")
         print("Please extract tokens manually using one of these methods:")
         print()
@@ -531,14 +540,14 @@ class AnthropicOAuthFlow(OAuthFlow):
         print("3. Use the API key instead of OAuth tokens")
         print()
         print(f"Your authorization code (for reference): {auth_code[:20]}...")
-        print("="*60)
+        print("=" * 60)
 
         # Return a structure indicating manual extraction is needed
         return {
             "requires_manual_extraction": True,
             "auth_code": auth_code,
             "instructions": "Manual token extraction required - see console output",
-            "alternative_url": "https://console.anthropic.com/settings/keys"
+            "alternative_url": "https://console.anthropic.com/settings/keys",
         }
 
     def validate_credentials(self) -> bool:
@@ -650,7 +659,7 @@ class AuthenticationManager:
 
             # Use manual callback flow to get authorization code
             try:
-                if hasattr(oauth_flow, 'start_manual_callback_flow'):
+                if hasattr(oauth_flow, "start_manual_callback_flow"):
                     auth_code = oauth_flow.start_manual_callback_flow()
                 else:
                     # Fallback for other OAuth flows
@@ -734,7 +743,7 @@ class AuthenticationManager:
         provider: str,
         access_token: str,
         refresh_token: str | None = None,
-        expires_in: int = 3600
+        expires_in: int = 3600,
     ) -> bool:
         """Store manually extracted OAuth tokens."""
         try:
