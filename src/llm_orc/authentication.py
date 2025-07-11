@@ -481,12 +481,12 @@ class AnthropicOAuthFlow(OAuthFlow):
 
         try:
             print("🔄 Attempting token exchange request...")
-            print("   Endpoint: https://console.anthropic.com/oauth/token")
+            print("   Endpoint: https://a-api.anthropic.com/oauth/token")
             print("   Method: POST")
             print(f"   Data keys: {list(data.keys())}")
 
             response = requests.post(
-                "https://console.anthropic.com/oauth/token",
+                "https://a-api.anthropic.com/oauth/token",
                 data=data,
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=30,
