@@ -665,8 +665,12 @@ class AuthenticationManager:
 
                 # Check if manual extraction is required
                 if tokens.get("requires_manual_extraction"):
-                    print("\n🔧 OAuth flow completed - manual token extraction required")
-                    print("   Authorization successful, token exchange needs manual steps")
+                    print(
+                        "\n🔧 OAuth flow completed - manual token extraction required"
+                    )
+                    print(
+                        "   Authorization successful, token exchange needs manual steps"
+                    )
                     print("   Follow the instructions above to extract tokens manually")
 
                     # For now, we'll return False since we don't have tokens yet
