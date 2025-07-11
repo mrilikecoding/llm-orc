@@ -126,9 +126,9 @@ class TestOAuthClaudeModel:
     def test_oauth_client_uses_dynamic_version(self) -> None:
         """Test that OAuth client uses dynamic version in User-Agent header."""
         model = OAuthClaudeModel(access_token="test_token")
-        
+
         headers = model.client._get_headers()
         expected_user_agent = f"LLM-Orchestra/Python {__version__}"
-        
+
         assert headers["User-Agent"] == expected_user_agent
         assert headers["X-Stainless-Package-Version"] == __version__
