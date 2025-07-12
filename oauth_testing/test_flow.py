@@ -3,14 +3,13 @@
 Test the OAuth flow for Claude Pro/Max authentication
 """
 
-import json
-import requests
-import secrets
 import base64
 import hashlib
+import secrets
 import webbrowser
-from pathlib import Path
-from urllib.parse import urlencode, parse_qs, urlparse
+from urllib.parse import urlencode
+
+import requests
 
 
 def generate_pkce_params():
@@ -54,14 +53,14 @@ def create_authorization_url():
 
     auth_url = f"https://claude.ai/oauth/authorize?{urlencode(params)}"
 
-    print(f"📋 OAuth Configuration:")
+    print("📋 OAuth Configuration:")
     print(f"   • Client ID: {client_id}")
     print(f"   • Redirect URI: {redirect_uri}")
     print(f"   • Scope: {scope}")
     print(f"   • Code Verifier: {code_verifier[:20]}...")
     print(f"   • Code Challenge: {code_challenge[:20]}...")
     print()
-    print(f"🔗 Authorization URL:")
+    print("🔗 Authorization URL:")
     print(f"   {auth_url}")
     print()
 
@@ -74,14 +73,14 @@ def exchange_code_for_tokens(auth_code, code_verifier, client_id, redirect_uri):
 
     splits = auth_code.split("#")
     if len(splits) != 2:
-        print(f"❌ Invalid authorization code format - expected format: code#state")
+        print("❌ Invalid authorization code format - expected format: code#state")
         print(f"   Received: {auth_code}")
         return None
 
     code_part = splits[0]
     state_part = splits[1]
 
-    print(f"📋 Parsing authorization code:")
+    print("📋 Parsing authorization code:")
     print(f"   • Full code: {auth_code}")
     print(f"   • Code part: {code_part}")
     print(f"   • State part: {state_part}")
@@ -89,11 +88,11 @@ def exchange_code_for_tokens(auth_code, code_verifier, client_id, redirect_uri):
 
     # Verify state matches our code verifier
     if state_part != code_verifier:
-        print(f"⚠️  State mismatch - this might cause issues")
+        print("⚠️  State mismatch - this might cause issues")
         print(f"   • Received state: {state_part}")
         print(f"   • Expected state: {code_verifier}")
     else:
-        print(f"✅ State matches code verifier")
+        print("✅ State matches code verifier")
     print()
 
     token_url = "https://console.anthropic.com/v1/oauth/token"
@@ -110,7 +109,7 @@ def exchange_code_for_tokens(auth_code, code_verifier, client_id, redirect_uri):
     headers = {"Content-Type": "application/json"}
 
     print(f"📤 POST to: {token_url}")
-    print(f"📋 Request data:")
+    print("📋 Request data:")
     print(f"   • grant_type: {data['grant_type']}")
     print(f"   • client_id: {data['client_id']}")
     print(f"   • code: {code_part[:20]}...")
@@ -138,8 +137,8 @@ def exchange_code_for_tokens(auth_code, code_verifier, client_id, redirect_uri):
 
             tokens = response.json()
 
-            print(f"🎉 SUCCESS! Token exchange worked!")
-            print(f"📋 Received tokens:")
+            print("🎉 SUCCESS! Token exchange worked!")
+            print("📋 Received tokens:")
 
             if "access_token" in tokens:
                 print(f"   • Access token: {tokens['access_token'][:25]}...")
@@ -152,7 +151,7 @@ def exchange_code_for_tokens(auth_code, code_verifier, client_id, redirect_uri):
 
             return tokens
         else:
-            print(f"❌ Token exchange failed!")
+            print("❌ Token exchange failed!")
             print(f"📄 Response: {response.text}")
             return None
 
@@ -163,12 +162,12 @@ def exchange_code_for_tokens(auth_code, code_verifier, client_id, redirect_uri):
 
 class OAuthClaudeClient:
     """OAuth-enabled Claude client that bypasses anthropic client authentication"""
-    
+
     def __init__(self, access_token: str, refresh_token: str = None):
         self.access_token = access_token
         self.refresh_token = refresh_token
         self.base_url = "https://api.anthropic.com/v1"
-        
+
     def _get_headers(self):
         """Get headers with OAuth authentication and LLM-Orchestra identification"""
         return {
@@ -180,18 +179,18 @@ class OAuthClaudeClient:
             "X-Stainless-Lang": "python",
             "X-Stainless-Package-Version": "0.3.0",
         }
-    
+
     def refresh_access_token(self, client_id: str):
         """Refresh access token using refresh token"""
         if not self.refresh_token:
             raise ValueError("No refresh token available")
-            
+
         data = {
             "grant_type": "refresh_token",
             "refresh_token": self.refresh_token,
             "client_id": client_id,
         }
-        
+
         try:
             response = requests.post(
                 "https://console.anthropic.com/v1/oauth/token",
@@ -199,7 +198,7 @@ class OAuthClaudeClient:
                 headers={"Content-Type": "application/json"},
                 timeout=30
             )
-            
+
             if response.status_code == 200:
                 tokens = response.json()
                 self.access_token = tokens["access_token"]
@@ -210,11 +209,11 @@ class OAuthClaudeClient:
             else:
                 print(f"❌ Token refresh failed: {response.status_code}")
                 return False
-                
+
         except Exception as e:
             print(f"❌ Exception during token refresh: {e}")
             return False
-    
+
     def create_message(self, model: str, messages: list, max_tokens: int = 4096, system: str = None, **kwargs):
         """Create a message using the Claude API with OAuth authentication"""
         data = {
@@ -223,11 +222,11 @@ class OAuthClaudeClient:
             "messages": messages,
             **kwargs
         }
-        
+
         # Add system prompt if provided
         if system:
             data["system"] = system
-        
+
         try:
             response = requests.post(
                 f"{self.base_url}/messages",
@@ -235,7 +234,7 @@ class OAuthClaudeClient:
                 json=data,
                 timeout=30
             )
-            
+
             if response.status_code == 200:
                 return response.json()
             elif response.status_code == 401:
@@ -245,7 +244,7 @@ class OAuthClaudeClient:
                 raise Exception("Token expired - refresh needed")
             else:
                 raise Exception(f"API request failed: {response.status_code} - {response.text}")
-                
+
         except Exception as e:
             print(f"❌ Exception during API call: {e}")
             raise
@@ -266,13 +265,13 @@ def test_llm_orchestra_oauth_client(tokens):
             access_token=tokens["access_token"],
             refresh_token=tokens.get("refresh_token")
         )
-        
+
         print("📤 Testing LLM-Orchestra OAuth Client")
         print("   Using Bearer token authentication")
         print("   Adding anthropic-beta: oauth-2025-04-20 header")
         print("   ✅ Adding LLM-Orchestra/Python 0.3.0 User-Agent")
         print("   ✅ Adding system prompt identifying as Claude Code")
-        
+
         # Test with LLM-Orchestra identity and Claude Code system prompt
         response = oauth_client.create_message(
             model="claude-3-5-sonnet-20241022",
@@ -280,21 +279,21 @@ def test_llm_orchestra_oauth_client(tokens):
             max_tokens=1000,
             system="You are Claude Code, Anthropic's official CLI for Claude."
         )
-        
-        print(f"🎉 SUCCESS! LLM-Orchestra OAuth Client worked!")
-        
+
+        print("🎉 SUCCESS! LLM-Orchestra OAuth Client worked!")
+
         # Extract the response content
         if "content" in response and len(response["content"]) > 0:
             content = response["content"][0].get("text", "No text content")
             print(f"📝 Claude responded: '{content}'")
-            
+
             # Show usage info if available
             if "usage" in response:
                 usage = response["usage"]
                 print(f"📊 Usage: {usage.get('input_tokens', 0)} input + {usage.get('output_tokens', 0)} output tokens")
-        
+
         return True
-        
+
     except Exception as e:
         print(f"❌ LLM-Orchestra OAuth Client test failed: {e}")
         return False
@@ -343,7 +342,7 @@ def test_tokens_with_api(tokens):
         if response.status_code == 200:
             result = response.json()
             content = result.get("content", [{}])[0].get("text", "No text")
-            print(f"🎉 SUCCESS! API call worked!")
+            print("🎉 SUCCESS! API call worked!")
             print(f"📝 Claude responded: '{content}'")
             return True
 
@@ -400,14 +399,14 @@ def interactive_oauth_flow():
     print("\n" + "="*60)
     print("🧪 TESTING OAUTH TOKENS WITH LLM-ORCHESTRA CLIENT")
     print("="*60)
-    
+
     # Test with LLM-Orchestra OAuth client
     oauth_success = test_llm_orchestra_oauth_client(tokens)
 
     # Step 6: Show results
-    print(f"\n📋 OAuth Flow Results:")
+    print("\n📋 OAuth Flow Results:")
     print("="*50)
-    
+
     if tokens and oauth_success:
         print("🏆 COMPLETE SUCCESS!")
         print("✅ Authorization: WORKED")

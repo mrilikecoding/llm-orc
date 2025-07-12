@@ -199,6 +199,78 @@ class OAuthClaudeModel(ModelInterface):
             raise e
 
 
+class ClaudeCLIModel(ModelInterface):
+    """Claude CLI model implementation that uses local claude command."""
+
+    def __init__(
+        self,
+        claude_path: str,
+        model: str = "claude-3-5-sonnet-20241022",
+    ) -> None:
+        super().__init__()
+        self.claude_path = claude_path
+        self.model = model
+
+    @property
+    def name(self) -> str:
+        return f"claude-cli-{self.model}"
+
+    async def generate_response(self, message: str, role_prompt: str) -> str:
+        """Generate response using local Claude CLI."""
+        import asyncio
+        import subprocess
+
+        start_time = time.time()
+
+        # Prepare input for Claude CLI
+        cli_input = f"{role_prompt}\n\nUser: {message}\nAssistant:"
+
+        try:
+            # Run claude command with --no-api-key flag to use local auth
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: subprocess.run(
+                    [self.claude_path, "--no-api-key"],
+                    input=cli_input,
+                    text=True,
+                    capture_output=True,
+                    timeout=30,
+                ),
+            )
+
+            if result.returncode != 0:
+                error_msg = result.stderr or "Unknown error"
+                raise Exception(
+                    f"Claude CLI error (code {result.returncode}): {error_msg}"
+                )
+
+            duration_ms = int((time.time() - start_time) * 1000)
+
+            # Estimate token usage (rough approximation)
+            estimated_input_tokens = len(cli_input) // 4
+            estimated_output_tokens = len(result.stdout) // 4
+
+            self._record_usage(
+                input_tokens=estimated_input_tokens,
+                output_tokens=estimated_output_tokens,
+                duration_ms=duration_ms,
+                cost_usd=0.0,  # Claude CLI uses user's existing auth
+                model_name=self.model,
+            )
+
+            return result.stdout.strip()
+
+        except subprocess.TimeoutExpired as e:
+            raise Exception(
+                "Claude CLI timeout - command took too long to respond"
+            ) from e
+        except Exception as e:
+            if "Claude CLI error" in str(e):
+                raise e
+            raise Exception(f"Claude CLI error: {str(e)}") from e
+
+
 class GeminiModel(ModelInterface):
     """Gemini model implementation."""
 
@@ -333,6 +405,13 @@ class ModelManager:
         """Register an API key-authenticated Claude model."""
         claude_model = ClaudeModel(api_key=api_key, model=model)
         self.models[key] = claude_model
+
+    def register_claude_cli_model(
+        self, key: str, claude_path: str, model: str = "claude-3-5-sonnet-20241022"
+    ) -> None:
+        """Register a Claude CLI model."""
+        claude_cli_model = ClaudeCLIModel(claude_path=claude_path, model=model)
+        self.models[key] = claude_cli_model
 
     def get_model(self, key: str) -> ModelInterface:
         """Retrieve a registered model."""

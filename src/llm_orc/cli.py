@@ -297,6 +297,16 @@ def auth_add(provider: str, api_key: str, client_id: str, client_secret: str) ->
     storage = CredentialStorage(config_manager)
     auth_manager = AuthenticationManager(storage)
 
+    # Special handling for claude-cli provider
+    if provider.lower() == "claude-cli":
+        try:
+            _handle_claude_cli_auth(storage)
+            return
+        except Exception as e:
+            raise click.ClickException(
+                f"Failed to set up Claude CLI authentication: {str(e)}"
+            ) from e
+
     # Special interactive flow for Anthropic
     is_anthropic_interactive = (
         provider.lower() == "anthropic"
@@ -389,6 +399,26 @@ def _setup_anthropic_oauth(
         provider_key, oauth_flow.client_id, oauth_flow.client_secret
     ):
         raise click.ClickException("OAuth authentication failed")
+
+
+def _handle_claude_cli_auth(storage: CredentialStorage) -> None:
+    """Handle Claude CLI authentication setup."""
+    import shutil
+
+    # Check if claude command is available
+    claude_path = shutil.which("claude")
+    if not claude_path:
+        raise click.ClickException(
+            "Claude CLI not found. Please install the Claude CLI from: "
+            "https://docs.anthropic.com/en/docs/claude-code"
+        )
+
+    # Store claude-cli as a special auth method
+    # We'll store the path to the claude executable
+    storage.store_api_key("claude-cli", claude_path)
+
+    click.echo("✅ Claude CLI authentication configured")
+    click.echo(f"Using local claude command at: {claude_path}")
 
 
 @auth.command("list")

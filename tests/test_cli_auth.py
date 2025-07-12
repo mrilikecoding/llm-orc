@@ -446,3 +446,55 @@ class TestAuthCommandsNew:
         assert "3. Both (set up multiple authentication methods)" in result.output
         assert "✅ API key configured as 'anthropic-api'" in result.output
         assert "✅ OAuth configured as 'anthropic-claude-pro-max'" in result.output
+
+    def test_auth_add_claude_cli_when_available(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test adding claude-cli authentication when claude command is available."""
+        # When - Claude CLI is available
+        with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+            mock_instance.ensure_global_config_dir.return_value = None
+            mock_instance.get_credentials_file.return_value = (
+                temp_config_dir / "credentials.yaml"
+            )
+            mock_instance.get_encryption_key_file.return_value = (
+                temp_config_dir / ".encryption_key"
+            )
+            mock_instance.needs_migration.return_value = False
+
+            # Mock claude command being available
+            with patch("shutil.which", return_value="/usr/local/bin/claude"):
+                result = runner.invoke(cli, ["auth", "add", "claude-cli"])
+
+        # Then
+        assert result.exit_code == 0
+        assert "✅ Claude CLI authentication configured" in result.output
+        assert "Using local claude command at: /usr/local/bin/claude" in result.output
+
+    def test_auth_add_claude_cli_when_not_available(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test adding claude-cli auth when claude command is not available."""
+        # When - Claude CLI is not available
+        with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+            mock_instance.ensure_global_config_dir.return_value = None
+            mock_instance.get_credentials_file.return_value = (
+                temp_config_dir / "credentials.yaml"
+            )
+            mock_instance.get_encryption_key_file.return_value = (
+                temp_config_dir / ".encryption_key"
+            )
+            mock_instance.needs_migration.return_value = False
+
+            # Mock claude command not available
+            with patch("shutil.which", return_value=None):
+                result = runner.invoke(cli, ["auth", "add", "claude-cli"])
+
+        # Then
+        assert result.exit_code != 0
+        assert "Claude CLI not found" in result.output
+        assert "Please install the Claude CLI" in result.output

@@ -8,7 +8,7 @@ import pytest
 
 from llm_orc.ensemble_config import EnsembleConfig
 from llm_orc.ensemble_execution import EnsembleExecutor
-from llm_orc.models import ModelInterface
+from llm_orc.models import ClaudeCLIModel, ClaudeModel, ModelInterface, OAuthClaudeModel
 from llm_orc.roles import RoleDefinition
 
 
@@ -612,3 +612,54 @@ class TestEnsembleExecutor:
             "synthesis failed" in result["synthesis"].lower()
             or "timeout" in result["synthesis"].lower()
         )
+
+    @pytest.mark.asyncio
+    async def test_load_model_with_authentication_configurations(self) -> None:
+        """Test _load_model resolves auth configurations to model instances."""
+        executor = EnsembleExecutor()
+
+        # Mock authentication system
+        with (
+            patch("llm_orc.ensemble_execution.ConfigurationManager"),
+            patch(
+                "llm_orc.ensemble_execution.CredentialStorage"
+            ) as mock_credential_storage,
+        ):
+            mock_storage_instance = mock_credential_storage.return_value
+
+            # Test 1: Load model for "anthropic-api" auth configuration
+            mock_storage_instance.get_auth_method.return_value = "api_key"
+            mock_storage_instance.get_api_key.return_value = "sk-ant-test123"
+
+            model = await executor._load_model("anthropic-api")
+
+            # Should create ClaudeModel with API key
+            assert isinstance(model, ClaudeModel)
+            assert model.api_key == "sk-ant-test123"
+
+            # Test 2: Load model for "anthropic-claude-pro-max" OAuth configuration
+            mock_storage_instance.get_auth_method.return_value = "oauth"
+            mock_storage_instance.get_oauth_token.return_value = {
+                "access_token": "oauth_access_token",
+                "refresh_token": "oauth_refresh_token",
+                "client_id": "oauth_client_id"
+            }
+
+            model = await executor._load_model("anthropic-claude-pro-max")
+
+            # Should create OAuthClaudeModel
+            assert isinstance(model, OAuthClaudeModel)
+            assert model.access_token == "oauth_access_token"
+            assert model.refresh_token == "oauth_refresh_token"
+            assert model.client_id == "oauth_client_id"
+
+            # Test 3: Load model for "claude-cli" configuration
+            # claude-cli stores path as "api_key"
+            mock_storage_instance.get_auth_method.return_value = "api_key"
+            mock_storage_instance.get_api_key.return_value = "/usr/local/bin/claude"
+
+            model = await executor._load_model("claude-cli")
+
+            # Should create ClaudeCLIModel
+            assert isinstance(model, ClaudeCLIModel)
+            assert model.claude_path == "/usr/local/bin/claude"

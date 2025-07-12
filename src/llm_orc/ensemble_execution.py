@@ -4,8 +4,16 @@ import asyncio
 import time
 from typing import Any
 
+from llm_orc.authentication import CredentialStorage
+from llm_orc.config import ConfigurationManager
 from llm_orc.ensemble_config import EnsembleConfig
-from llm_orc.models import ModelInterface, OllamaModel
+from llm_orc.models import (
+    ClaudeCLIModel,
+    ClaudeModel,
+    ModelInterface,
+    OAuthClaudeModel,
+    OllamaModel,
+)
 from llm_orc.orchestration import Agent
 from llm_orc.roles import RoleDefinition
 from llm_orc.script_agent import ScriptAgent
@@ -159,19 +167,60 @@ class EnsembleExecutor:
         )
 
     async def _load_model(self, model_name: str) -> ModelInterface:
-        """Load a model interface."""
-        # For now, just create a mock model for testing
-        # TODO: Implement proper model loading based on configuration
+        """Load a model interface based on authentication configuration."""
+        # Handle mock models for testing
         if model_name.startswith("mock"):
-            # Return a mock model that will be replaced in tests
             from unittest.mock import AsyncMock
 
             mock = AsyncMock(spec=ModelInterface)
             mock.generate_response.return_value = f"Response from {model_name}"
             return mock
-        else:
-            # Default to Ollama for now
-            return OllamaModel(model_name="llama3")
+
+        # Initialize configuration and credential storage
+        config_manager = ConfigurationManager()
+        storage = CredentialStorage(config_manager)
+
+        try:
+            # Get authentication method for the model configuration
+            auth_method = storage.get_auth_method(model_name)
+
+            if not auth_method:
+                # Fallback: treat as Ollama model if no authentication configured
+                return OllamaModel(model_name=model_name)
+
+            if auth_method == "api_key":
+                api_key = storage.get_api_key(model_name)
+                if not api_key:
+                    raise ValueError(f"No API key found for {model_name}")
+
+                # Check if this is a claude-cli configuration
+                # (stored as api_key but path-like)
+                if model_name == "claude-cli" or api_key.startswith("/"):
+                    return ClaudeCLIModel(claude_path=api_key)
+                else:
+                    # Assume it's an Anthropic API key for Claude
+                    return ClaudeModel(api_key=api_key)
+
+            elif auth_method == "oauth":
+                oauth_token = storage.get_oauth_token(model_name)
+                if not oauth_token:
+                    raise ValueError(f"No OAuth token found for {model_name}")
+
+                return OAuthClaudeModel(
+                    access_token=oauth_token["access_token"],
+                    refresh_token=oauth_token.get("refresh_token"),
+                    client_id=oauth_token.get("client_id"),
+                    credential_storage=storage,
+                    provider_key=model_name,
+                )
+
+            else:
+                raise ValueError(f"Unknown authentication method: {auth_method}")
+
+        except Exception:
+            # Fallback to Ollama on any error
+            # TODO: Add proper logging
+            return OllamaModel(model_name=model_name)
 
     async def _synthesize_results(
         self, config: EnsembleConfig, agent_results: dict[str, Any]
