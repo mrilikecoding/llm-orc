@@ -128,8 +128,7 @@ class TestClaudeCLIModel:
         from llm_orc.models import ClaudeCLIModel
 
         model = ClaudeCLIModel(
-            claude_path="/usr/local/bin/claude",
-            model="claude-3-5-sonnet-20241022"
+            claude_path="/usr/local/bin/claude", model="claude-3-5-sonnet-20241022"
         )
 
         assert model.claude_path == "/usr/local/bin/claude"

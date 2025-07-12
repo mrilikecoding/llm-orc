@@ -642,7 +642,7 @@ class TestEnsembleExecutor:
             mock_storage_instance.get_oauth_token.return_value = {
                 "access_token": "oauth_access_token",
                 "refresh_token": "oauth_refresh_token",
-                "client_id": "oauth_client_id"
+                "client_id": "oauth_client_id",
             }
 
             model = await executor._load_model("anthropic-claude-pro-max")
@@ -663,3 +663,103 @@ class TestEnsembleExecutor:
             # Should create ClaudeCLIModel
             assert isinstance(model, ClaudeCLIModel)
             assert model.claude_path == "/usr/local/bin/claude"
+
+    @pytest.mark.asyncio
+    async def test_load_model_prompts_for_auth_setup_when_not_configured(self) -> None:
+        """Test that _load_model prompts user to set up auth when not configured."""
+        executor = EnsembleExecutor()
+
+        # Mock authentication system - no auth method configured
+        with (
+            patch("llm_orc.ensemble_execution.ConfigurationManager"),
+            patch(
+                "llm_orc.ensemble_execution.CredentialStorage"
+            ) as mock_credential_storage,
+            patch(
+                "llm_orc.ensemble_execution._should_prompt_for_auth", return_value=True
+            ),
+            patch("llm_orc.ensemble_execution._prompt_auth_setup") as mock_prompt_setup,
+        ):
+            mock_storage_instance = mock_credential_storage.return_value
+
+            # Simulate no auth method configured
+            mock_storage_instance.get_auth_method.return_value = None
+
+            # Mock successful auth setup
+            mock_prompt_setup.return_value = True
+
+            # After setup, mock the configured auth method
+            # First call: None, second call: oauth
+            mock_storage_instance.get_auth_method.side_effect = [None, "oauth"]
+            mock_storage_instance.get_oauth_token.return_value = {
+                "access_token": "new_oauth_token",
+                "refresh_token": "new_refresh_token",
+                "client_id": "new_client_id"
+            }
+
+            model = await executor._load_model("anthropic-claude-pro-max")
+
+            # Should prompt for auth setup
+            mock_prompt_setup.assert_called_once_with(
+                "anthropic-claude-pro-max", mock_storage_instance
+            )
+
+            # Should create OAuthClaudeModel after setup
+            assert isinstance(model, OAuthClaudeModel)
+
+    @pytest.mark.asyncio
+    async def test_load_model_fallback_when_user_declines_auth_setup(self) -> None:
+        """Test that _load_model falls back to Ollama when user declines auth setup."""
+        executor = EnsembleExecutor()
+
+        # Mock authentication system - no auth method configured
+        with (
+            patch("llm_orc.ensemble_execution.ConfigurationManager"),
+            patch(
+                "llm_orc.ensemble_execution.CredentialStorage"
+            ) as mock_credential_storage,
+            patch(
+                "llm_orc.ensemble_execution._should_prompt_for_auth", return_value=True
+            ),
+            patch("llm_orc.ensemble_execution._prompt_auth_setup") as mock_prompt_setup,
+        ):
+            mock_storage_instance = mock_credential_storage.return_value
+
+            # Simulate no auth method configured
+            mock_storage_instance.get_auth_method.return_value = None
+
+            # User declines to set up authentication
+            mock_prompt_setup.return_value = False
+
+            model = await executor._load_model("anthropic-claude-pro-max")
+
+            # Should prompt user for auth setup
+            mock_prompt_setup.assert_called_once_with(
+                "anthropic-claude-pro-max", mock_storage_instance
+            )
+
+            # Should fall back to Ollama
+            from llm_orc.models import OllamaModel
+            assert isinstance(model, OllamaModel)
+
+    def test_should_prompt_for_auth_returns_true_for_known_configs(self) -> None:
+        """Test that _should_prompt_for_auth returns True for known auth configs."""
+        from llm_orc.ensemble_execution import _should_prompt_for_auth
+
+        # Should return True for known auth configurations
+        assert _should_prompt_for_auth("anthropic-api") is True
+        assert _should_prompt_for_auth("anthropic-claude-pro-max") is True
+        assert _should_prompt_for_auth("claude-cli") is True
+        assert _should_prompt_for_auth("openai-api") is True
+        assert _should_prompt_for_auth("google-api") is True
+
+    def test_should_prompt_for_auth_returns_false_for_mock_models(self) -> None:
+        """Test that _should_prompt_for_auth returns False for mock/local models."""
+        from llm_orc.ensemble_execution import _should_prompt_for_auth
+
+        # Should return False for mock models and local models
+        assert _should_prompt_for_auth("mock-model") is False
+        assert _should_prompt_for_auth("mock-claude") is False
+        assert _should_prompt_for_auth("llama3") is False
+        assert _should_prompt_for_auth("llama2") is False
+        assert _should_prompt_for_auth("unknown-model") is False
