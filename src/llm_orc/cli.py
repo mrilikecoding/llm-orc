@@ -618,9 +618,7 @@ def auth_logout(provider: str | None, logout_all: bool) -> None:
                     f"Provider may not exist or is not an OAuth provider."
                 )
         else:
-            raise click.ClickException(
-                "Must specify a provider name or use --all flag"
-            )
+            raise click.ClickException("Must specify a provider name or use --all flag")
 
     except Exception as e:
         raise click.ClickException(f"Failed to logout: {str(e)}") from e

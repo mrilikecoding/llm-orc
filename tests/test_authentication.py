@@ -348,8 +348,11 @@ class TestAnthropicOAuthFlow:
         # Should include all required scopes (URL-encoded - Python uses + for spaces)
         assert "scope=org%3Acreate_api_key+user%3Aprofile+user%3Ainference" in auth_url
 
-        # Should use port 54545 for callback (validated working port)
-        assert "redirect_uri=http%3A%2F%2Flocalhost%3A54545%2Fcallback" in auth_url
+        # Should use Anthropic's callback endpoint (working implementation)
+        expected_redirect = (
+            "redirect_uri=https%3A%2F%2Fconsole.anthropic.com%2Foauth%2Fcode%2Fcallback"
+        )
+        assert expected_redirect in auth_url
 
         # Should include PKCE parameters
         assert "code_challenge=" in auth_url
@@ -383,20 +386,18 @@ class TestAnthropicOAuthFlow:
             mock_post.assert_called_once()
             args, kwargs = mock_post.call_args
 
-            # Verify endpoint URL
-            assert args[0] == "https://api.anthropic.com/oauth/token"
+            # Verify endpoint URL matches working implementation
+            assert args[0] == "https://console.anthropic.com/v1/oauth/token"
 
             # Verify request data includes all required fields
-            assert kwargs["data"]["grant_type"] == "authorization_code"
-            assert kwargs["data"]["client_id"] == client_id
-            assert kwargs["data"]["code"] == auth_code
-            assert kwargs["data"]["code_verifier"] == flow.code_verifier
-            assert kwargs["data"]["redirect_uri"] == flow.redirect_uri
+            assert kwargs["json"]["grant_type"] == "authorization_code"
+            assert kwargs["json"]["client_id"] == client_id
+            assert kwargs["json"]["code"] == auth_code
+            assert kwargs["json"]["code_verifier"] == flow.code_verifier
+            assert kwargs["json"]["redirect_uri"] == flow.redirect_uri
 
             # Verify headers
-            assert (
-                kwargs["headers"]["Content-Type"] == "application/x-www-form-urlencoded"
-            )
+            assert kwargs["headers"]["Content-Type"] == "application/json"
 
             # Should return the tokens
             assert tokens["access_token"] == "sk-ant-oat01-test-token"
@@ -417,7 +418,7 @@ class TestAnthropicOAuthFlow:
         assert flow.client_id == client_id
         assert flow.client_secret == client_secret
         assert flow.provider == "anthropic"
-        assert flow.redirect_uri == "http://localhost:54545/callback"
+        assert flow.redirect_uri == "https://console.anthropic.com/oauth/code/callback"
 
     def test_get_authorization_url_contains_required_parameters(self) -> None:
         """Test that authorization URL contains all required OAuth parameters."""
@@ -437,7 +438,7 @@ class TestAnthropicOAuthFlow:
         parsed_url = urlparse(auth_url)
         query_params = parse_qs(parsed_url.query)
 
-        assert parsed_url.netloc == "console.anthropic.com"
+        assert parsed_url.netloc == "claude.ai"
         assert parsed_url.path == "/oauth/authorize"
         assert query_params["client_id"][0] == client_id
         assert query_params["response_type"][0] == "code"
@@ -506,28 +507,18 @@ class TestAnthropicOAuthFlow:
         assert hasattr(AnthropicOAuthFlow, "create_with_guidance")
         assert callable(AnthropicOAuthFlow.create_with_guidance)
 
-    def test_callback_server_uses_port_54545(self) -> None:
-        """Test that callback server starts on validated port 54545."""
+    def test_uses_manual_callback_flow(self) -> None:
+        """Test AnthropicOAuthFlow uses manual callback flow instead of local server."""
         from llm_orc.authentication import AnthropicOAuthFlow
 
         client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
         flow = AnthropicOAuthFlow(client_id, "")
 
-        # Start callback server
-        server, port = flow.start_callback_server()
+        # Should have manual callback flow method
+        assert hasattr(flow, "start_manual_callback_flow")
 
-        # Should use the validated port
-        assert port == 54545
-        assert server is not None
-
-        # Server should be ready to handle requests
-        assert hasattr(server, "auth_code")
-        assert hasattr(server, "auth_error")
-        assert server.auth_code is None
-        assert server.auth_error is None
-
-        # Clean up server
-        server.server_close()
+        # Should use Anthropic's callback endpoint
+        assert "console.anthropic.com" in flow.redirect_uri
 
     def test_callback_server_handles_authorization_code(self) -> None:
         """Test that callback server can handle OAuth authorization code."""
@@ -598,12 +589,9 @@ class TestImprovedAuthenticationManager:
 
         monkeypatch.setattr(AnthropicOAuthFlow, "validate_credentials", mock_validate)
 
-        # Mock the OAuth flow to avoid actual browser/server operations
-        def mock_start_server(self: Any) -> tuple[Any, int]:
-            server = type(
-                "MockServer", (), {"auth_code": "test_code", "auth_error": None}
-            )()
-            return server, 8080
+        # Mock the OAuth flow to avoid actual browser/manual input operations
+        def mock_manual_callback_flow(self: Any) -> str:
+            return "test_auth_code_from_manual_flow"
 
         def mock_open_browser(url: str) -> None:
             pass
@@ -617,7 +605,7 @@ class TestImprovedAuthenticationManager:
             }
 
         monkeypatch.setattr(
-            AnthropicOAuthFlow, "start_callback_server", mock_start_server
+            AnthropicOAuthFlow, "start_manual_callback_flow", mock_manual_callback_flow
         )
         monkeypatch.setattr("webbrowser.open", mock_open_browser)
         monkeypatch.setattr(

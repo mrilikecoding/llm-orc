@@ -442,7 +442,7 @@ class AnthropicOAuthFlow(OAuthFlow):
             "code_challenge": self.code_challenge,
             "code_challenge_method": "S256",
         }
-        return f"https://console.anthropic.com/oauth/authorize?{urlencode(params)}"
+        return f"https://claude.ai/oauth/authorize?{urlencode(params)}"
 
     def start_manual_callback_flow(self) -> str:
         """Start manual callback flow using Anthropic's own callback endpoint."""
@@ -490,14 +490,14 @@ class AnthropicOAuthFlow(OAuthFlow):
 
         try:
             print("🔄 Attempting token exchange request...")
-            print("   Endpoint: https://a-api.anthropic.com/oauth/token")
+            print("   Endpoint: https://console.anthropic.com/v1/oauth/token")
             print("   Method: POST")
             print(f"   Data keys: {list(data.keys())}")
 
             response = requests.post(
-                "https://a-api.anthropic.com/oauth/token",
-                data=data,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                "https://console.anthropic.com/v1/oauth/token",
+                json=data,
+                headers={"Content-Type": "application/json"},
                 timeout=30,
             )
 
