@@ -581,6 +581,51 @@ def auth_setup() -> None:
     )
 
 
+@auth.command("logout")
+@click.argument("provider", required=False)
+@click.option(
+    "--all", "logout_all", is_flag=True, help="Logout from all OAuth providers"
+)
+def auth_logout(provider: str | None, logout_all: bool) -> None:
+    """Logout from OAuth providers (revokes tokens and removes credentials)."""
+    config_manager = ConfigurationManager()
+    storage = CredentialStorage(config_manager)
+    auth_manager = AuthenticationManager(storage)
+
+    try:
+        if logout_all:
+            # Logout from all OAuth providers
+            results = auth_manager.logout_all_oauth_providers()
+
+            if not results:
+                click.echo("No OAuth providers found to logout")
+                return
+
+            success_count = sum(1 for success in results.values() if success)
+
+            click.echo(f"Logged out from {success_count} OAuth providers:")
+            for provider_name, success in results.items():
+                status = "✅" if success else "❌"
+                click.echo(f"  {provider_name}: {status}")
+
+        elif provider:
+            # Logout from specific provider
+            if auth_manager.logout_oauth_provider(provider):
+                click.echo(f"✅ Logged out from {provider}")
+            else:
+                raise click.ClickException(
+                    f"Failed to logout from {provider}. "
+                    f"Provider may not exist or is not an OAuth provider."
+                )
+        else:
+            raise click.ClickException(
+                "Must specify a provider name or use --all flag"
+            )
+
+    except Exception as e:
+        raise click.ClickException(f"Failed to logout: {str(e)}") from e
+
+
 @cli.command()
 @click.argument("ensemble_name")
 @click.option("--port", default=3000, help="Port to serve MCP server on")

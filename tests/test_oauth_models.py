@@ -182,3 +182,131 @@ class TestOAuthClaudeModel:
         import time
 
         assert call_args[1]["expires_at"] > time.time()
+
+    def test_oauth_client_revoke_access_token(self) -> None:
+        """Test OAuth client can revoke access token."""
+        model = OAuthClaudeModel(
+            access_token="test_token",
+            refresh_token="test_refresh",
+            client_id="test_client",
+        )
+
+        # Mock successful token revocation
+        with patch("requests.post") as mock_post:
+            mock_post.return_value.status_code = 200
+
+            result = model.client.revoke_token("test_client", "access_token")
+
+            assert result is True
+            mock_post.assert_called_once_with(
+                "https://console.anthropic.com/v1/oauth/revoke",
+                json={
+                    "token": "test_token",
+                    "token_type_hint": "access_token",
+                    "client_id": "test_client",
+                },
+                headers={"Content-Type": "application/json"},
+                timeout=30,
+            )
+
+    def test_oauth_client_revoke_refresh_token(self) -> None:
+        """Test OAuth client can revoke refresh token."""
+        model = OAuthClaudeModel(
+            access_token="test_token",
+            refresh_token="test_refresh",
+            client_id="test_client",
+        )
+
+        # Mock successful token revocation
+        with patch("requests.post") as mock_post:
+            mock_post.return_value.status_code = 200
+
+            result = model.client.revoke_token("test_client", "refresh_token")
+
+            assert result is True
+            mock_post.assert_called_once_with(
+                "https://console.anthropic.com/v1/oauth/revoke",
+                json={
+                    "token": "test_refresh",
+                    "token_type_hint": "refresh_token",
+                    "client_id": "test_client",
+                },
+                headers={"Content-Type": "application/json"},
+                timeout=30,
+            )
+
+    def test_oauth_client_revoke_token_handles_network_error(self) -> None:
+        """Test OAuth client handles network errors during token revocation."""
+        model = OAuthClaudeModel(
+            access_token="test_token",
+            client_id="test_client",
+        )
+
+        # Mock network error
+        with patch("requests.post", side_effect=Exception("Network error")):
+            result = model.client.revoke_token("test_client", "access_token")
+
+            assert result is False
+
+    def test_oauth_client_revoke_token_without_token(self) -> None:
+        """Test OAuth client returns False when trying to revoke non-existent token."""
+        model = OAuthClaudeModel(
+            access_token="test_token",
+            # No refresh_token provided
+            client_id="test_client",
+        )
+
+        # Should return False immediately without making a request
+        result = model.client.revoke_token("test_client", "refresh_token")
+
+        assert result is False
+
+    def test_oauth_client_revoke_all_tokens(self) -> None:
+        """Test OAuth client can revoke both access and refresh tokens."""
+        model = OAuthClaudeModel(
+            access_token="test_token",
+            refresh_token="test_refresh",
+            client_id="test_client",
+        )
+
+        # Mock successful token revocations
+        with patch("requests.post") as mock_post:
+            mock_post.return_value.status_code = 200
+
+            result = model.client.revoke_all_tokens("test_client")
+
+            assert result is True
+            assert mock_post.call_count == 2
+
+            # Check both tokens were revoked
+            calls = mock_post.call_args_list
+            access_call = calls[0]
+            refresh_call = calls[1]
+
+            assert access_call[1]["json"]["token"] == "test_token"
+            assert access_call[1]["json"]["token_type_hint"] == "access_token"
+
+            assert refresh_call[1]["json"]["token"] == "test_refresh"
+            assert refresh_call[1]["json"]["token_type_hint"] == "refresh_token"
+
+    def test_oauth_client_revoke_all_tokens_only_access_token(self) -> None:
+        """Test OAuth client can revoke only access token when no refresh token."""
+        model = OAuthClaudeModel(
+            access_token="test_token",
+            # No refresh_token provided
+            client_id="test_client",
+        )
+
+        # Mock successful access token revocation
+        with patch("requests.post") as mock_post:
+            mock_post.return_value.status_code = 200
+
+            result = model.client.revoke_all_tokens("test_client")
+
+            assert result is True
+            # Only one call should be made (for access token)
+            assert mock_post.call_count == 1
+
+            call_args = mock_post.call_args
+            assert call_args[1]["json"]["token"] == "test_token"
+            assert call_args[1]["json"]["token_type_hint"] == "access_token"

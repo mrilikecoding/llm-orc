@@ -794,3 +794,87 @@ class AuthenticationManager:
             Authenticated client if available, None otherwise
         """
         return self._authenticated_clients.get(provider)
+
+    def logout_oauth_provider(self, provider: str) -> bool:
+        """Logout an OAuth provider by revoking tokens and removing credentials.
+
+        Args:
+            provider: Provider name to logout
+
+        Returns:
+            True if logout successful, False otherwise
+        """
+        try:
+            # Check if provider exists and is OAuth
+            auth_method = self.credential_storage.get_auth_method(provider)
+            if not auth_method or auth_method != "oauth":
+                return False
+
+            # Get OAuth token information
+            oauth_info = self.credential_storage.get_oauth_token(provider)
+            if not oauth_info:
+                return False
+
+            # Get client_id from stored credentials
+            credentials = self.credential_storage._load_credentials()
+            provider_data = credentials.get(provider, {})
+            client_id = provider_data.get("client_id")
+
+            if not client_id:
+                # If no client_id, we can't revoke tokens via API
+                # but we can still remove local credentials
+                self.credential_storage.remove_provider(provider)
+                if provider in self._authenticated_clients:
+                    del self._authenticated_clients[provider]
+                return True
+
+            # Create OAuth client to revoke tokens
+            from .oauth_client import OAuthClaudeClient
+
+            oauth_client = OAuthClaudeClient(
+                access_token=oauth_info["access_token"],
+                refresh_token=oauth_info.get("refresh_token"),
+            )
+
+            try:
+                # Attempt to revoke tokens
+                oauth_client.revoke_all_tokens(client_id)
+            except Exception:
+                # Continue even if token revocation fails
+                # (tokens may already be expired or network issues)
+                pass
+
+            # Remove local credentials regardless of revocation success
+            self.credential_storage.remove_provider(provider)
+
+            # Remove from authenticated clients
+            if provider in self._authenticated_clients:
+                del self._authenticated_clients[provider]
+
+            return True
+
+        except Exception:
+            return False
+
+    def logout_all_oauth_providers(self) -> dict[str, bool]:
+        """Logout all OAuth providers.
+
+        Returns:
+            Dict mapping provider names to logout success status
+        """
+        results = {}
+
+        # Find all OAuth providers
+        providers = self.credential_storage.list_providers()
+        oauth_providers = []
+
+        for provider in providers:
+            auth_method = self.credential_storage.get_auth_method(provider)
+            if auth_method == "oauth":
+                oauth_providers.append(provider)
+
+        # Logout each OAuth provider
+        for provider in oauth_providers:
+            results[provider] = self.logout_oauth_provider(provider)
+
+        return results

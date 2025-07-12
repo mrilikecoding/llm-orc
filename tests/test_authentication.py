@@ -4,6 +4,7 @@ import tempfile
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -690,3 +691,141 @@ class TestImprovedAuthenticationManager:
 
         # Then
         assert result is False
+
+    def test_logout_oauth_provider_revokes_tokens(
+        self, auth_manager: AuthenticationManager
+    ) -> None:
+        """Test logging out OAuth provider revokes tokens and removes credentials."""
+        # Given - Store OAuth credentials first
+        provider = "anthropic-claude-pro-max"
+        access_token = "test_access_token"
+        refresh_token = "test_refresh_token"
+        client_id = "test_client_id"
+
+        credential_storage = auth_manager.credential_storage
+        credential_storage.store_oauth_token(provider, access_token, refresh_token)
+
+        # Store client_id in OAuth token data (simulating full OAuth setup)
+        credentials = credential_storage._load_credentials()
+        credentials[provider]["client_id"] = client_id
+        credential_storage._save_credentials(credentials)
+
+        # Mock successful token revocation
+        with patch("llm_orc.oauth_client.requests.post") as mock_post:
+            mock_post.return_value.status_code = 200
+
+            # When
+            result = auth_manager.logout_oauth_provider(provider)
+
+            # Then
+            assert result is True
+
+            # Verify tokens were revoked (two calls: access + refresh)
+            assert mock_post.call_count == 2
+
+            # Check the revocation calls
+            calls = mock_post.call_args_list
+            access_call = calls[0]
+            refresh_call = calls[1]
+
+            assert access_call[0][0] == "https://console.anthropic.com/v1/oauth/revoke"
+            assert access_call[1]["json"]["token"] == access_token
+            assert access_call[1]["json"]["token_type_hint"] == "access_token"
+
+            assert refresh_call[0][0] == "https://console.anthropic.com/v1/oauth/revoke"
+            assert refresh_call[1]["json"]["token"] == refresh_token
+            assert refresh_call[1]["json"]["token_type_hint"] == "refresh_token"
+
+            # Verify credentials were removed locally
+            assert provider not in credential_storage.list_providers()
+
+    def test_logout_oauth_provider_handles_missing_provider(
+        self, auth_manager: AuthenticationManager
+    ) -> None:
+        """Test that logging out non-existent OAuth provider returns False."""
+        # When
+        result = auth_manager.logout_oauth_provider("nonexistent-provider")
+
+        # Then
+        assert result is False
+
+    def test_logout_oauth_provider_handles_non_oauth_provider(
+        self, auth_manager: AuthenticationManager
+    ) -> None:
+        """Test that logging out non-OAuth provider returns False."""
+        # Given - Store API key credentials (not OAuth)
+        provider = "anthropic-api"
+        credential_storage = auth_manager.credential_storage
+        credential_storage.store_api_key(provider, "test_api_key")
+
+        # When
+        result = auth_manager.logout_oauth_provider(provider)
+
+        # Then
+        assert result is False
+
+    def test_logout_oauth_provider_continues_on_revocation_failure(
+        self, auth_manager: AuthenticationManager
+    ) -> None:
+        """Test that logout removes local credentials even if token revocation fails."""
+        # Given - Store OAuth credentials
+        provider = "anthropic-claude-pro-max"
+        credential_storage = auth_manager.credential_storage
+        credential_storage.store_oauth_token(provider, "test_token", "test_refresh")
+
+        # Store client_id
+        credentials = credential_storage._load_credentials()
+        credentials[provider]["client_id"] = "test_client"
+        credential_storage._save_credentials(credentials)
+
+        # Mock failed token revocation
+        with patch(
+            "llm_orc.oauth_client.requests.post", side_effect=Exception("Network error")
+        ):
+            # When
+            result = auth_manager.logout_oauth_provider(provider)
+
+            # Then - Should still succeed in removing local credentials
+            assert result is True
+            assert provider not in credential_storage.list_providers()
+
+    def test_logout_all_oauth_providers(
+        self, auth_manager: AuthenticationManager
+    ) -> None:
+        """Test that logout_all_oauth_providers logs out all OAuth providers."""
+        # Given - Store multiple OAuth providers
+        providers = ["anthropic-claude-pro-max", "google-oauth"]
+        credential_storage = auth_manager.credential_storage
+        for provider in providers:
+            credential_storage.store_oauth_token(
+                provider, f"token_{provider}", f"refresh_{provider}"
+            )
+            # Store client_id for each
+            credentials = credential_storage._load_credentials()
+            credentials[provider]["client_id"] = f"client_{provider}"
+            credential_storage._save_credentials(credentials)
+
+        # Also store a non-OAuth provider (should not be affected)
+        credential_storage.store_api_key("anthropic-api", "api_key")
+
+        # Mock successful token revocations
+        with patch("llm_orc.oauth_client.requests.post") as mock_post:
+            mock_post.return_value.status_code = 200
+
+            # When
+            results = auth_manager.logout_all_oauth_providers()
+
+            # Then
+            assert len(results) == 2
+            assert all(results.values())  # All should be True
+            assert "anthropic-claude-pro-max" in results
+            assert "google-oauth" in results
+
+            # Verify all OAuth providers removed but API key provider remains
+            remaining_providers = credential_storage.list_providers()
+            assert "anthropic-api" in remaining_providers
+            assert "anthropic-claude-pro-max" not in remaining_providers
+            assert "google-oauth" not in remaining_providers
+
+            # Verify revocation calls were made (2 per provider: access + refresh)
+            assert mock_post.call_count == 4

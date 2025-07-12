@@ -354,7 +354,7 @@ def _should_prompt_for_auth(model_name: str) -> bool:
         "anthropic-claude-pro-max",
         "claude-cli",
         "openai-api",
-        "google-api"
+        "google-api",
     ]
 
     return model_name in known_auth_configs

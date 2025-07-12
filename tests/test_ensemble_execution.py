@@ -694,7 +694,7 @@ class TestEnsembleExecutor:
             mock_storage_instance.get_oauth_token.return_value = {
                 "access_token": "new_oauth_token",
                 "refresh_token": "new_refresh_token",
-                "client_id": "new_client_id"
+                "client_id": "new_client_id",
             }
 
             model = await executor._load_model("anthropic-claude-pro-max")
@@ -740,6 +740,7 @@ class TestEnsembleExecutor:
 
             # Should fall back to Ollama
             from llm_orc.models import OllamaModel
+
             assert isinstance(model, OllamaModel)
 
     def test_should_prompt_for_auth_returns_true_for_known_configs(self) -> None:

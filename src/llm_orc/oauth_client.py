@@ -58,6 +58,61 @@ class OAuthClaudeClient:
         except Exception:
             return False
 
+    def revoke_token(self, client_id: str, token_type: str = "access_token") -> bool:
+        """Revoke the access or refresh token.
+
+        Args:
+            client_id: OAuth client ID
+            token_type: Type of token to revoke ("access_token" or "refresh_token")
+
+        Returns:
+            True if revocation successful, False otherwise
+        """
+        token = (
+            self.access_token if token_type == "access_token" else self.refresh_token
+        )
+
+        if not token:
+            return False
+
+        data = {
+            "token": token,
+            "token_type_hint": token_type,
+            "client_id": client_id,
+        }
+
+        try:
+            response = requests.post(
+                "https://console.anthropic.com/v1/oauth/revoke",
+                json=data,
+                headers={"Content-Type": "application/json"},
+                timeout=30,
+            )
+
+            # Token revocation typically returns 200 even for invalid tokens
+            # per OAuth 2.0 RFC 7009 for security reasons
+            return response.status_code == 200
+
+        except Exception:
+            return False
+
+    def revoke_all_tokens(self, client_id: str) -> bool:
+        """Revoke both access and refresh tokens.
+
+        Args:
+            client_id: OAuth client ID
+
+        Returns:
+            True if both revocations successful, False otherwise
+        """
+        access_revoked = self.revoke_token(client_id, "access_token")
+        refresh_revoked = True  # Default to True if no refresh token
+
+        if self.refresh_token:
+            refresh_revoked = self.revoke_token(client_id, "refresh_token")
+
+        return access_revoked and refresh_revoked
+
     def create_message(
         self,
         model: str,
