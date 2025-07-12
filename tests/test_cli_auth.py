@@ -316,3 +316,133 @@ class TestAuthCommandsNew:
         assert "Welcome to LLM Orchestra setup!" in result.output
         assert "✓ anthropic configured successfully with API key" in result.output
         assert "Setup complete!" in result.output
+
+    def test_auth_add_anthropic_interactive_api_key(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test interactive Anthropic auth setup choosing API key."""
+        # Given - user chooses API key option
+        inputs = [
+            "1",  # Choose API key option
+            "sk-ant-test123",  # API key input
+        ]
+
+        # When
+        with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+            mock_instance.ensure_global_config_dir.return_value = None
+            mock_instance.get_credentials_file.return_value = (
+                temp_config_dir / "credentials.yaml"
+            )
+            mock_instance.get_encryption_key_file.return_value = (
+                temp_config_dir / ".encryption_key"
+            )
+            mock_instance.needs_migration.return_value = False
+
+            result = runner.invoke(
+                cli,
+                ["auth", "add", "anthropic"],
+                input="\n".join(inputs),
+            )
+
+        # Then
+        assert result.exit_code == 0
+        assert "How would you like to authenticate with Anthropic?" in result.output
+        assert "1. API Key (for Anthropic API access)" in result.output
+        assert (
+            "2. Claude Pro/Max OAuth (for your existing Claude subscription)"
+            in result.output
+        )
+        assert "✅ API key configured as 'anthropic-api'" in result.output
+
+    def test_auth_add_anthropic_interactive_oauth(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test interactive Anthropic auth setup choosing OAuth."""
+        # Given - user chooses OAuth option
+        inputs = [
+            "2",  # Choose OAuth option
+            # OAuth flow would be mocked in real implementation
+        ]
+
+        # When
+        with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager:
+            with patch("llm_orc.authentication.AnthropicOAuthFlow") as mock_oauth:
+                mock_flow = mock_oauth.create_with_guidance.return_value
+                mock_flow.client_id = "test-client-id"
+                mock_flow.client_secret = "test-client-secret"
+
+                mock_instance = mock_config_manager.return_value
+                mock_instance._global_config_dir = temp_config_dir
+                mock_instance.ensure_global_config_dir.return_value = None
+                mock_instance.get_credentials_file.return_value = (
+                    temp_config_dir / "credentials.yaml"
+                )
+                mock_instance.get_encryption_key_file.return_value = (
+                    temp_config_dir / ".encryption_key"
+                )
+                mock_instance.needs_migration.return_value = False
+
+                # Mock successful OAuth flow
+                with patch("llm_orc.cli.AuthenticationManager") as mock_auth:
+                    mock_auth_manager = mock_auth.return_value
+                    mock_auth_manager.authenticate_oauth.return_value = True
+
+                    result = runner.invoke(
+                        cli,
+                        ["auth", "add", "anthropic"],
+                        input="\n".join(inputs),
+                    )
+
+        # Then
+        assert result.exit_code == 0
+        assert "How would you like to authenticate with Anthropic?" in result.output
+        assert "2. Claude Pro/Max OAuth" in result.output
+        assert "✅ OAuth configured as 'anthropic-claude-pro-max'" in result.output
+
+    def test_auth_add_anthropic_interactive_both(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test interactive Anthropic auth setup choosing both methods."""
+        # Given - user chooses both options
+        inputs = [
+            "3",  # Choose both option
+            "sk-ant-test123",  # API key input
+        ]
+
+        # When
+        with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager:
+            with patch("llm_orc.authentication.AnthropicOAuthFlow") as mock_oauth:
+                mock_flow = mock_oauth.create_with_guidance.return_value
+                mock_flow.client_id = "test-client-id"
+                mock_flow.client_secret = "test-client-secret"
+
+                mock_instance = mock_config_manager.return_value
+                mock_instance._global_config_dir = temp_config_dir
+                mock_instance.ensure_global_config_dir.return_value = None
+                mock_instance.get_credentials_file.return_value = (
+                    temp_config_dir / "credentials.yaml"
+                )
+                mock_instance.get_encryption_key_file.return_value = (
+                    temp_config_dir / ".encryption_key"
+                )
+                mock_instance.needs_migration.return_value = False
+
+                # Mock successful OAuth flow
+                with patch("llm_orc.cli.AuthenticationManager") as mock_auth:
+                    mock_auth_manager = mock_auth.return_value
+                    mock_auth_manager.authenticate_oauth.return_value = True
+
+                    result = runner.invoke(
+                        cli,
+                        ["auth", "add", "anthropic"],
+                        input="\n".join(inputs),
+                    )
+
+        # Then
+        assert result.exit_code == 0
+        assert "How would you like to authenticate with Anthropic?" in result.output
+        assert "3. Both (set up multiple authentication methods)" in result.output
+        assert "✅ API key configured as 'anthropic-api'" in result.output
+        assert "✅ OAuth configured as 'anthropic-claude-pro-max'" in result.output

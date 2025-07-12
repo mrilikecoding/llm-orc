@@ -132,3 +132,53 @@ class TestOAuthClaudeModel:
 
         assert headers["User-Agent"] == expected_user_agent
         assert headers["X-Stainless-Package-Version"] == __version__
+
+    @pytest.mark.asyncio
+    async def test_automatic_token_refresh_updates_stored_credentials(self) -> None:
+        """Test that automatic token refresh updates stored credentials."""
+        from llm_orc.authentication import CredentialStorage
+
+        # Create a model with a credential storage callback
+        model = OAuthClaudeModel(
+            access_token="old_token",
+            refresh_token="test_refresh",
+            client_id="test_client",
+        )
+
+        # Mock credential storage
+        mock_storage = Mock(spec=CredentialStorage)
+        model._credential_storage = mock_storage
+        model._provider_key = "anthropic-claude-pro-max"
+
+        # Mock OAuth client: first fail with expired token, then succeed with new tokens
+        mock_client = Mock()
+        mock_client.create_message.side_effect = [
+            Exception("Token expired - refresh needed"),
+            {
+                "content": [{"text": "Response with new token"}],
+                "usage": {"input_tokens": 5, "output_tokens": 10},
+            },
+        ]
+        mock_client.refresh_access_token.return_value = True
+        mock_client.access_token = "new_access_token"  # Simulates updated token
+        mock_client.refresh_token = "new_refresh_token"  # Updated refresh token
+        model.client = mock_client
+
+        result = await model.generate_response("Hello", "You are a helpful assistant")
+
+        # Verify successful response
+        assert result == "Response with new token"
+
+        # Verify token refresh was called
+        assert mock_client.refresh_access_token.called
+
+        # Verify credential storage was updated with new tokens
+        mock_storage.store_oauth_token.assert_called_once()
+        call_args = mock_storage.store_oauth_token.call_args
+        assert call_args[0][0] == "anthropic-claude-pro-max"  # provider
+        assert call_args[0][1] == "new_access_token"  # access_token
+        assert call_args[0][2] == "new_refresh_token"  # refresh_token
+        # expires_at should be a timestamp in the future
+        import time
+
+        assert call_args[1]["expires_at"] > time.time()

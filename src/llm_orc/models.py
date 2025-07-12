@@ -114,6 +114,8 @@ class OAuthClaudeModel(ModelInterface):
         refresh_token: str | None = None,
         client_id: str | None = None,
         model: str = "claude-3-5-sonnet-20241022",
+        credential_storage: Any = None,
+        provider_key: str | None = None,
     ) -> None:
         super().__init__()
         self.access_token = access_token
@@ -121,6 +123,8 @@ class OAuthClaudeModel(ModelInterface):
         self.client_id = client_id
         self.model = model
         self.client = OAuthClaudeClient(access_token, refresh_token)
+        self._credential_storage = credential_storage
+        self._provider_key = provider_key
 
     @property
     def name(self) -> str:
@@ -176,6 +180,20 @@ class OAuthClaudeModel(ModelInterface):
             if "Token expired" in str(e) and self.refresh_token and self.client_id:
                 # Attempt token refresh
                 if self.client.refresh_access_token(self.client_id):
+                    # Update stored credentials if credential storage is available
+                    if self._credential_storage and self._provider_key:
+                        expires_at = int(time.time()) + 3600  # Default 1 hour expiry
+                        self._credential_storage.store_oauth_token(
+                            self._provider_key,
+                            self.client.access_token,
+                            self.client.refresh_token,
+                            expires_at=expires_at,
+                        )
+
+                    # Update local token references
+                    self.access_token = self.client.access_token
+                    self.refresh_token = self.client.refresh_token
+
                     # Retry the request
                     return await self.generate_response(message, role_prompt)
             raise e
@@ -295,6 +313,8 @@ class ModelManager:
         refresh_token: str | None = None,
         client_id: str | None = None,
         model: str = "claude-3-5-sonnet-20241022",
+        credential_storage: Any = None,
+        provider_key: str | None = None,
     ) -> None:
         """Register an OAuth-authenticated Claude model."""
         oauth_model = OAuthClaudeModel(
@@ -302,6 +322,8 @@ class ModelManager:
             refresh_token=refresh_token,
             client_id=client_id,
             model=model,
+            credential_storage=credential_storage,
+            provider_key=provider_key,
         )
         self.models[key] = oauth_model
 

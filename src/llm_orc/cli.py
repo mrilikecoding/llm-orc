@@ -297,45 +297,29 @@ def auth_add(provider: str, api_key: str, client_id: str, client_secret: str) ->
     storage = CredentialStorage(config_manager)
     auth_manager = AuthenticationManager(storage)
 
-    # Validate input
-    if api_key and (client_id or client_secret):
-        raise click.ClickException("Cannot use both API key and OAuth credentials")
-
-    # Special handling for Anthropic OAuth
-    if (
+    # Special interactive flow for Anthropic
+    is_anthropic_interactive = (
         provider.lower() == "anthropic"
         and not api_key
         and not (client_id and client_secret)
-    ):
-        # Use the improved interactive flow for Anthropic
+    )
+    if is_anthropic_interactive:
         try:
-            from llm_orc.authentication import AnthropicOAuthFlow
-
-            oauth_flow = AnthropicOAuthFlow.create_with_guidance()
-
-            click.echo("🔄 Starting OAuth flow...")
-            if auth_manager.authenticate_oauth(
-                provider, oauth_flow.client_id, oauth_flow.client_secret
-            ):
-                click.echo("✅ Anthropic OAuth authentication completed successfully!")
-            else:
-                raise click.ClickException("OAuth authentication failed")
+            _handle_anthropic_interactive_auth(auth_manager, storage)
+            return
         except Exception as e:
             raise click.ClickException(
-                f"Failed to set up Anthropic OAuth: {str(e)}"
+                f"Failed to set up Anthropic authentication: {str(e)}"
             ) from e
-        return
+
+    # Validate input for non-interactive flow
+    if api_key and (client_id or client_secret):
+        raise click.ClickException("Cannot use both API key and OAuth credentials")
 
     if not api_key and not (client_id and client_secret):
-        if provider.lower() == "anthropic":
-            raise click.ClickException(
-                "For Anthropic, use 'llm-orc auth add anthropic' for interactive "
-                "OAuth setup, or provide --api-key for API key authentication"
-            )
-        else:
-            raise click.ClickException(
-                "Must provide either --api-key or both --client-id and --client-secret"
-            )
+        raise click.ClickException(
+            "Must provide either --api-key or both --client-id and --client-secret"
+        )
 
     try:
         if api_key:
@@ -354,6 +338,57 @@ def auth_add(provider: str, api_key: str, client_id: str, client_secret: str) ->
                 )
     except Exception as e:
         raise click.ClickException(f"Failed to add authentication: {str(e)}") from e
+
+
+def _handle_anthropic_interactive_auth(
+    auth_manager: AuthenticationManager, storage: CredentialStorage
+) -> None:
+    """Handle interactive Anthropic authentication setup."""
+    click.echo("How would you like to authenticate with Anthropic?")
+    click.echo("1. API Key (for Anthropic API access)")
+    click.echo("2. Claude Pro/Max OAuth (for your existing Claude subscription)")
+    click.echo("3. Both (set up multiple authentication methods)")
+    click.echo()
+
+    choice = click.prompt("Choice", type=click.Choice(["1", "2", "3"]), default="1")
+
+    if choice == "1":
+        # API Key only
+        api_key = click.prompt("Anthropic API key", hide_input=True)
+        storage.store_api_key("anthropic-api", api_key)
+        click.echo("✅ API key configured as 'anthropic-api'")
+
+    elif choice == "2":
+        # OAuth only
+        _setup_anthropic_oauth(auth_manager, "anthropic-claude-pro-max")
+        click.echo("✅ OAuth configured as 'anthropic-claude-pro-max'")
+
+    elif choice == "3":
+        # Both methods
+        click.echo()
+        click.echo("🔑 Setting up API key access...")
+        api_key = click.prompt("Anthropic API key", hide_input=True)
+        storage.store_api_key("anthropic-api", api_key)
+        click.echo("✅ API key configured as 'anthropic-api'")
+
+        click.echo()
+        click.echo("🔧 Setting up Claude Pro/Max OAuth...")
+        _setup_anthropic_oauth(auth_manager, "anthropic-claude-pro-max")
+        click.echo("✅ OAuth configured as 'anthropic-claude-pro-max'")
+
+
+def _setup_anthropic_oauth(
+    auth_manager: AuthenticationManager, provider_key: str
+) -> None:
+    """Set up Anthropic OAuth authentication."""
+    from llm_orc.authentication import AnthropicOAuthFlow
+
+    oauth_flow = AnthropicOAuthFlow.create_with_guidance()
+
+    if not auth_manager.authenticate_oauth(
+        provider_key, oauth_flow.client_id, oauth_flow.client_secret
+    ):
+        raise click.ClickException("OAuth authentication failed")
 
 
 @auth.command("list")
