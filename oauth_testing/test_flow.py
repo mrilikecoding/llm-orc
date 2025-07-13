@@ -134,7 +134,6 @@ def exchange_code_for_tokens(auth_code, code_verifier, client_id, redirect_uri):
         print(f"📄 Response text: {response.text}")
 
         if response.status_code == 200:
-
             tokens = response.json()
 
             print("🎉 SUCCESS! Token exchange worked!")
@@ -302,8 +301,8 @@ def test_llm_orchestra_oauth_client(tokens):
             # Show usage info if available
             if "usage" in response:
                 usage = response["usage"]
-                input_tokens = usage.get('input_tokens', 0)
-                output_tokens = usage.get('output_tokens', 0)
+                input_tokens = usage.get("input_tokens", 0)
+                output_tokens = usage.get("output_tokens", 0)
                 print(f"📊 Usage: {input_tokens} input + {output_tokens} output tokens")
 
         return True
