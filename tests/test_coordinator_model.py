@@ -51,14 +51,16 @@ class TestConfigurableCoordinator:
         )
 
     @pytest.mark.asyncio
-    async def test_get_synthesis_model_defaults_to_ollama(
+    async def test_get_synthesis_model_defaults_to_configured_fallback(
         self, executor: EnsembleExecutor, basic_config: EnsembleConfig
     ) -> None:
-        """Test that synthesis model defaults to Ollama when no model specified."""
+        """Test that synthesis model uses configured default when no model specified."""
         synthesis_model = await executor._get_synthesis_model(basic_config)
 
         assert isinstance(synthesis_model, OllamaModel)
-        assert synthesis_model.model_name == "llama3"
+        # Should use configured default (claude-3-5-sonnet) as Ollama model
+        # when no authentication is configured
+        assert synthesis_model.model_name == "claude-3-5-sonnet"
 
     @pytest.mark.asyncio
     async def test_get_synthesis_model_uses_configured_model(
