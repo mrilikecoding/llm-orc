@@ -135,6 +135,9 @@ class OAuthClaudeModel(ModelInterface):
         start_time = time.time()
 
         try:
+            # OAuth tokens require specific Claude Code system prompt for authorization
+            # Use role_prompt directly (should contain the required Claude Code prompt)
+
             # Run in thread pool since our OAuth client is synchronous
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(

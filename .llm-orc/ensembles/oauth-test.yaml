@@ -1,0 +1,37 @@
+name: OAuth Test Ensemble
+description: Test ensemble to validate OAuth authentication with Claude Pro/Max accounts
+
+# Mixed authentication ensemble demonstrating issue-32 functionality
+agents:
+  - name: "api_agent"
+    model: "anthropic-api"
+    role: "analyst"
+    system_prompt: "You are an API-authenticated Claude agent. Focus on technical analysis."
+  
+  - name: "oauth_agent"
+    model: "anthropic-claude-pro-max"
+    role: "reviewer"
+    system_prompt: "You are an OAuth-authenticated Claude Pro/Max agent. Focus on reviewing and providing feedback."
+  
+  - name: "local_agent"
+    model: "llama3"
+    role: "summarizer"
+    system_prompt: "You are a local Ollama agent. Focus on summarizing the conversation."
+
+orchestration:
+  type: sequential
+  communication:
+    - from: api_agent
+      to: oauth_agent
+      message: "Please review this analysis"
+    - from: oauth_agent
+      to: local_agent
+      message: "Please summarize our discussion"
+
+task: |
+  Test the OAuth authentication functionality by having different agents
+  with different authentication methods collaborate on a simple task:
+  
+  1. API agent: Analyze the benefits of OAuth authentication
+  2. OAuth agent: Review the analysis and add perspective
+  3. Local agent: Summarize the key points

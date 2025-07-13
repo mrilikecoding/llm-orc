@@ -73,12 +73,14 @@ class EnsembleExecutor:
         llm_agents = [a for a in config.agents if a.get("type") != "script"]
 
         # Prepare enhanced input for LLM agents
-        enhanced_input = input_data
+        # Use task from config if available, otherwise use input_data
+        task_input = config.task if config.task else input_data
+        enhanced_input = task_input
         if context_data:
             context_text = "\n\n".join(
                 [f"=== {name} ===\n{data}" for name, data in context_data.items()]
             )
-            enhanced_input = f"{input_data}\n\n{context_text}"
+            enhanced_input = f"{task_input}\n\n{context_text}"
 
         # Execute LLM agents concurrently with enhanced input
         agent_tasks = []
@@ -150,7 +152,7 @@ class EnsembleExecutor:
         else:
             # Execute LLM agent
             # Load role and model for this agent
-            role = await self._load_role(agent_config["role"])
+            role = await self._load_role_from_config(agent_config)
             model = await self._load_model(agent_config["model"])
 
             # Create agent
@@ -159,6 +161,20 @@ class EnsembleExecutor:
             # Generate response
             response = await agent.respond_to_message(input_data)
             return response, model
+
+    async def _load_role_from_config(
+        self, agent_config: dict[str, Any]
+    ) -> RoleDefinition:
+        """Load a role definition from agent configuration."""
+        role_name = agent_config["role"]
+
+        # Use system_prompt from config if available, otherwise use fallback
+        if "system_prompt" in agent_config:
+            prompt = agent_config["system_prompt"]
+        else:
+            prompt = f"You are a {role_name}. Provide helpful analysis."
+
+        return RoleDefinition(name=role_name, prompt=prompt)
 
     async def _load_role(self, role_name: str) -> RoleDefinition:
         """Load a role definition."""

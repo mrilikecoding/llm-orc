@@ -1,0 +1,22 @@
+project:
+  name: LLM Orchestra OAuth Test Project
+  default_models:
+    fast: llama3
+    production: claude-3-5-sonnet
+    oauth: claude-3-5-sonnet
+
+model_profiles:
+  development:
+  - cost_per_token: 0.0
+    model: llama3
+    provider: ollama
+  
+  production:
+  - cost_per_token: 3.0e-06
+    model: claude-3-5-sonnet
+    provider: anthropic
+  
+  oauth_test:
+  - cost_per_token: 3.0e-06
+    model: claude-3-5-sonnet
+    provider: anthropic-claude-pro-max

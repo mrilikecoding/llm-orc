@@ -307,6 +307,16 @@ def auth_add(provider: str, api_key: str, client_id: str, client_secret: str) ->
                 f"Failed to set up Claude CLI authentication: {str(e)}"
             ) from e
 
+    # Special handling for anthropic-claude-pro-max OAuth
+    if provider.lower() == "anthropic-claude-pro-max":
+        try:
+            _handle_claude_pro_max_oauth(auth_manager, storage)
+            return
+        except Exception as e:
+            raise click.ClickException(
+                f"Failed to set up Claude Pro/Max OAuth authentication: {str(e)}"
+            ) from e
+
     # Special interactive flow for Anthropic
     is_anthropic_interactive = (
         provider.lower() == "anthropic"
@@ -399,6 +409,142 @@ def _setup_anthropic_oauth(
         provider_key, oauth_flow.client_id, oauth_flow.client_secret
     ):
         raise click.ClickException("OAuth authentication failed")
+
+
+def _handle_claude_pro_max_oauth(
+    auth_manager: AuthenticationManager, storage: CredentialStorage
+) -> None:
+    """Handle Claude Pro/Max OAuth authentication setup using hardcoded client ID."""
+    import base64
+    import hashlib
+    import secrets
+    import time
+    import webbrowser
+    from urllib.parse import urlencode
+
+    click.echo("🔧 Setting up Claude Pro/Max OAuth Authentication")
+    click.echo("=" * 55)
+    click.echo("This will authenticate with your existing Claude Pro/Max subscription.")
+    click.echo()
+
+    # Hardcoded OAuth parameters from issue-32
+    client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+    redirect_uri = "https://console.anthropic.com/oauth/code/callback"
+    scope = "org:create_api_key user:profile user:inference"
+
+    # Generate PKCE parameters
+    code_verifier = (
+        base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("utf-8").rstrip("=")
+    )
+    code_challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode("utf-8")).digest())
+        .decode("utf-8")
+        .rstrip("=")
+    )
+
+    # Build authorization URL
+    params = {
+        "client_id": client_id,
+        "response_type": "code",
+        "redirect_uri": redirect_uri,
+        "scope": scope,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+        "state": code_verifier,
+    }
+
+    auth_url = f"https://claude.ai/oauth/authorize?{urlencode(params)}"
+
+    click.echo("📋 OAuth Flow Details:")
+    click.echo(f"   • Client ID: {client_id}")
+    click.echo(f"   • Scope: {scope}")
+    click.echo(f"   • Redirect URI: {redirect_uri}")
+    click.echo()
+
+    # Open browser and guide user
+    click.echo("🌐 Opening authorization URL in your browser...")
+    click.echo(f"   {auth_url}")
+    click.echo()
+
+    if click.confirm("Open browser automatically?", default=True):
+        webbrowser.open(auth_url)
+        click.echo("✅ Browser opened")
+    else:
+        click.echo("Please manually navigate to the URL above")
+
+    click.echo()
+    click.echo("📋 Instructions:")
+    click.echo("1. Sign in to your Claude Pro/Max account")
+    click.echo("2. Authorize the application")
+    click.echo("3. You'll be redirected to a callback page")
+    click.echo("4. Copy the full URL from the address bar")
+    click.echo("5. Extract the authorization code from the URL")
+    click.echo()
+
+    # Get authorization code from user
+    auth_code = click.prompt(
+        "Authorization code (format: code#state)", type=str
+    ).strip()
+
+    # Parse auth code
+    splits = auth_code.split("#")
+    if len(splits) != 2:
+        raise click.ClickException(
+            f"Invalid authorization code format. Expected 'code#state', "
+            f"got: {auth_code}"
+        )
+
+    code_part = splits[0]
+    state_part = splits[1]
+
+    # Verify state matches
+    if state_part != code_verifier:
+        click.echo("⚠️  Warning: State mismatch - proceeding anyway")
+
+    # Exchange code for tokens
+    click.echo("🔄 Exchanging authorization code for access tokens...")
+
+    import requests
+
+    token_url = "https://console.anthropic.com/v1/oauth/token"
+    data = {
+        "code": code_part,
+        "state": state_part,
+        "grant_type": "authorization_code",
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "code_verifier": code_verifier,
+    }
+
+    headers = {"Content-Type": "application/json"}
+
+    try:
+        response = requests.post(token_url, json=data, headers=headers, timeout=30)
+
+        if response.status_code == 200:
+            tokens = response.json()
+
+            # Store OAuth tokens
+            storage.store_oauth_token(
+                "anthropic-claude-pro-max",
+                tokens["access_token"],
+                tokens.get("refresh_token"),
+                int(time.time()) + tokens.get("expires_in", 3600),
+            )
+
+            click.echo("✅ OAuth authentication successful!")
+            click.echo("✅ Tokens stored as 'anthropic-claude-pro-max'")
+
+        else:
+            raise click.ClickException(
+                f"Token exchange failed. Status: {response.status_code}, "
+                f"Response: {response.text}"
+            )
+
+    except requests.exceptions.RequestException as e:
+        raise click.ClickException(
+            f"Network error during token exchange: {str(e)}"
+        ) from e
 
 
 def _handle_claude_cli_auth(storage: CredentialStorage) -> None:

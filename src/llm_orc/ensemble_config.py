@@ -15,6 +15,7 @@ class EnsembleConfig:
     description: str
     agents: list[dict[str, Any]]
     coordinator: dict[str, Any]
+    task: str | None = None
 
 
 class EnsembleLoader:
@@ -34,6 +35,7 @@ class EnsembleLoader:
             description=data["description"],
             agents=data["agents"],
             coordinator=data["coordinator"],
+            task=data.get("task"),
         )
 
     def list_ensembles(self, directory: str) -> list[EnsembleConfig]:

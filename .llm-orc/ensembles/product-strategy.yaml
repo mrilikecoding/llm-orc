@@ -1,0 +1,39 @@
+name: product-strategy
+description: Multi-perspective product strategy analysis for complex business decisions
+
+agents:
+  - name: market-analyst
+    role: market-analyst
+    model: anthropic-claude-pro-max
+    timeout_seconds: 90
+
+  - name: financial-analyst
+    role: financial-analyst  
+    model: llama3
+    timeout_seconds: 90
+
+  - name: competitive-analyst
+    role: competitive-analyst
+    model: llama3
+    timeout_seconds: 90
+
+  - name: user-experience-analyst
+    role: user-experience-analyst
+    model: llama3
+    timeout_seconds: 90
+
+coordinator:
+  synthesis_prompt: |
+    You are a Chief Product Officer making a critical product strategy decision. Synthesize insights from market, financial, competitive, and user experience analysts.
+    
+    Provide:
+    1. Strategic recommendation (GO/NO-GO/PIVOT) with rationale
+    2. Top 3 business risks and mitigation strategies  
+    3. Success metrics and timeline
+    4. Resource allocation and dependencies
+    5. Confidence level (1-10) in the recommendation
+    
+    Be decisive and actionable.
+  output_format: json
+  timeout_seconds: 120
+  synthesis_timeout_seconds: 90

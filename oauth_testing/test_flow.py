@@ -196,7 +196,7 @@ class OAuthClaudeClient:
                 "https://console.anthropic.com/v1/oauth/token",
                 json=data,
                 headers={"Content-Type": "application/json"},
-                timeout=30
+                timeout=30,
             )
 
             if response.status_code == 200:
@@ -214,13 +214,20 @@ class OAuthClaudeClient:
             print(f"❌ Exception during token refresh: {e}")
             return False
 
-    def create_message(self, model: str, messages: list, max_tokens: int = 4096, system: str = None, **kwargs):
+    def create_message(
+        self,
+        model: str,
+        messages: list,
+        max_tokens: int = 4096,
+        system: str = None,
+        **kwargs,
+    ):
         """Create a message using the Claude API with OAuth authentication"""
         data = {
             "model": model,
             "max_tokens": max_tokens,
             "messages": messages,
-            **kwargs
+            **kwargs,
         }
 
         # Add system prompt if provided
@@ -232,7 +239,7 @@ class OAuthClaudeClient:
                 f"{self.base_url}/messages",
                 headers=self._get_headers(),
                 json=data,
-                timeout=30
+                timeout=30,
             )
 
             if response.status_code == 200:
@@ -243,7 +250,9 @@ class OAuthClaudeClient:
                 # In a full implementation, we'd store client_id and auto-refresh
                 raise Exception("Token expired - refresh needed")
             else:
-                raise Exception(f"API request failed: {response.status_code} - {response.text}")
+                raise Exception(
+                    f"API request failed: {response.status_code} - {response.text}"
+                )
 
         except Exception as e:
             print(f"❌ Exception during API call: {e}")
@@ -263,7 +272,7 @@ def test_llm_orchestra_oauth_client(tokens):
         # Create OAuth client
         oauth_client = OAuthClaudeClient(
             access_token=tokens["access_token"],
-            refresh_token=tokens.get("refresh_token")
+            refresh_token=tokens.get("refresh_token"),
         )
 
         print("📤 Testing LLM-Orchestra OAuth Client")
@@ -273,11 +282,12 @@ def test_llm_orchestra_oauth_client(tokens):
         print("   ✅ Adding system prompt identifying as Claude Code")
 
         # Test with LLM-Orchestra identity and Claude Code system prompt
+        system = "You are Claude Code, Anthropic's official CLI for Claude."
         response = oauth_client.create_message(
             model="claude-3-5-sonnet-20241022",
             messages=[{"role": "user", "content": "Hello, how are you?"}],
             max_tokens=1000,
-            system="You are Claude Code, Anthropic's official CLI for Claude."
+            system=system,
         )
 
         print("🎉 SUCCESS! LLM-Orchestra OAuth Client worked!")
@@ -290,7 +300,9 @@ def test_llm_orchestra_oauth_client(tokens):
             # Show usage info if available
             if "usage" in response:
                 usage = response["usage"]
-                print(f"📊 Usage: {usage.get('input_tokens', 0)} input + {usage.get('output_tokens', 0)} output tokens")
+                print(
+                    f"📊 Usage: {usage.get('input_tokens', 0)} input + {usage.get('output_tokens', 0)} output tokens"
+                )
 
         return True
 
@@ -396,16 +408,16 @@ def interactive_oauth_flow():
         return False
 
     # Step 5: Test tokens with LLM-Orchestra OAuth client
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("🧪 TESTING OAUTH TOKENS WITH LLM-ORCHESTRA CLIENT")
-    print("="*60)
+    print("=" * 60)
 
     # Test with LLM-Orchestra OAuth client
     oauth_success = test_llm_orchestra_oauth_client(tokens)
 
     # Step 6: Show results
     print("\n📋 OAuth Flow Results:")
-    print("="*50)
+    print("=" * 50)
 
     if tokens and oauth_success:
         print("🏆 COMPLETE SUCCESS!")
