@@ -17,6 +17,7 @@ class ModelInterface(ABC):
 
     def __init__(self) -> None:
         self._last_usage: dict[str, Any] | None = None
+        self._conversation_history: list[dict[str, str]] = []
 
     @property
     @abstractmethod
@@ -28,6 +29,18 @@ class ModelInterface(ABC):
     async def generate_response(self, message: str, role_prompt: str) -> str:
         """Generate a response from the model."""
         pass
+
+    def get_conversation_history(self) -> list[dict[str, str]]:
+        """Get the conversation history."""
+        return self._conversation_history.copy()
+
+    def clear_conversation_history(self) -> None:
+        """Clear the conversation history."""
+        self._conversation_history.clear()
+
+    def add_to_conversation(self, role: str, content: str) -> None:
+        """Add a message to the conversation history."""
+        self._conversation_history.append({"role": role, "content": content})
 
     def get_last_usage(self) -> dict[str, Any] | None:
         """Get usage metrics from the last API call."""
@@ -138,6 +151,12 @@ class OAuthClaudeModel(ModelInterface):
             # OAuth tokens require specific Claude Code system prompt for authorization
             # Use role_prompt directly (should contain the required Claude Code prompt)
 
+            # Add current user message to conversation history
+            self.add_to_conversation("user", message)
+
+            # Prepare messages with conversation history
+            messages = self.get_conversation_history()
+
             # Run in thread pool since our OAuth client is synchronous
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
@@ -146,7 +165,7 @@ class OAuthClaudeModel(ModelInterface):
                     model=self.model,
                     max_tokens=1000,
                     system=role_prompt,
-                    messages=[{"role": "user", "content": message}],
+                    messages=messages,
                 ),
             )
 
@@ -175,8 +194,13 @@ class OAuthClaudeModel(ModelInterface):
             # Extract response content
             content = response.get("content", [])
             if content and len(content) > 0:
-                return str(content[0].get("text", ""))
+                assistant_response = str(content[0].get("text", ""))
+                # Add assistant response to conversation history
+                self.add_to_conversation("assistant", assistant_response)
+                return assistant_response
             else:
+                # Add empty response to conversation history
+                self.add_to_conversation("assistant", "")
                 return ""
 
         except Exception as e:
@@ -197,7 +221,12 @@ class OAuthClaudeModel(ModelInterface):
                     self.access_token = self.client.access_token
                     self.refresh_token = self.client.refresh_token
 
-                    # Retry the request
+                    # Retry request - remove last user message since we'll add it again
+                    if (
+                        self._conversation_history
+                        and self._conversation_history[-1]["role"] == "user"
+                    ):
+                        self._conversation_history.pop()
                     return await self.generate_response(message, role_prompt)
             raise e
 

@@ -1,0 +1,14 @@
+name: conversation-test
+description: Test conversation capabilities with OAuth Claude in ensemble context
+
+agents:
+  - name: conversational-claude
+    role: assistant
+    model: anthropic-claude-pro-max
+    system_prompt: "You are Claude Code, Anthropic's official CLI for Claude."
+
+coordinator:
+  synthesis_prompt: "No synthesis needed for single agent."
+  timeout_seconds: 30
+
+task: "Hello! I'm going to test your conversation memory. My name is Bob and I work as a data scientist. Please introduce yourself and ask me a question about my work."
