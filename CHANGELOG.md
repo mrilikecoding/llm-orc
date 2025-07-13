@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2025-07-13
+
+### Added
+- **MCP Server Integration** - Model Context Protocol server implementation
+  - Expose llm-orc ensembles as tools via standardized MCP protocol
+  - HTTP transport on configurable port (default 3000)
+  - Stdio transport for direct process communication
+  - New `llm-orc serve <ensemble> --port <port>` command
+  - Seamless integration with existing configuration system
+  - Enables external tools (Claude Code, VS Code extensions) to leverage domain-specific workflows
+
+- **Enhanced OAuth Authentication** - Complete Claude Pro/Max OAuth implementation
+  - Anthropic Claude Pro/Max OAuth support with subscription-based access
+  - Hardcoded client ID for seamless setup experience
+  - PKCE (Proof Key for Code Exchange) security implementation
+  - Manual token extraction flow with Cloudflare protection handling
+  - Interactive OAuth setup with browser automation
+  - Token refresh capabilities with automatic credential updates
+  - Role injection system for OAuth token compatibility
+
+- **Enhanced Ensemble Configuration** - CLI override and smart fallback system
+  - CLI input now overrides ensemble `default_task` when provided
+  - Renamed `task` to `default_task` for clearer semantics (backward compatible)
+  - Smart fallback system using user-configured defaults instead of hardcoded values
+  - Context-aware model fallbacks for coordinator vs general use
+  - Optional `cost_per_token` field for subscription-based pricing models
+  - Comprehensive user feedback and logging for fallback behavior
+
+### Changed
+- **Authentication Commands** - Enhanced CLI with OAuth-specific flows
+  - `llm-orc auth add anthropic` now provides interactive setup wizard
+  - Special handling for `anthropic-claude-pro-max` provider with guided OAuth
+  - Improved error handling and user guidance throughout OAuth flow
+  - Token storage includes client_id and refresh token management
+
+- **Model System** - OAuth model integration and conversation handling
+  - `OAuthClaudeModel` class with automatic token refresh
+  - Role injection system for seamless agent role establishment
+  - Conversation history management for OAuth token authentication
+  - Enhanced error handling with automatic retry on token expiration
+
+### Technical
+- Added `MCPServer` class with full MCP protocol implementation
+- Added `MCPServerRunner` for HTTP and stdio transport layers
+- Enhanced `AnthropicOAuthFlow` with manual callback flow and token extraction
+- Updated ensemble execution with CLI override logic and smart fallbacks
+- Added comprehensive test coverage for MCP server and OAuth enhancements
+- Pre-commit hooks with auto-fix capabilities for code quality
+
+### Fixed
+- Token expiration handling with automatic refresh and credential updates
+- Ensemble configuration backward compatibility while introducing clearer semantics
+- Linting and formatting issues resolved with ruff auto-fix integration
+
 ## [0.3.0] - 2025-01-10
 
 ### Added
