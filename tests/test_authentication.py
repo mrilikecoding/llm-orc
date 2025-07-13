@@ -4,6 +4,7 @@ import tempfile
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
@@ -272,6 +273,8 @@ class TestOAuthProviderIntegration:
     ) -> None:
         """Test that Anthropic OAuth can exchange code for tokens."""
         # Given
+        from unittest.mock import Mock, patch
+
         from llm_orc.authentication import AnthropicOAuthFlow
 
         client_id = "test_client_id"
@@ -279,8 +282,19 @@ class TestOAuthProviderIntegration:
         oauth_flow = AnthropicOAuthFlow(client_id, client_secret)
         auth_code = "test_authorization_code"
 
+        # Mock successful response
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "access_token": "sk-ant-oat01-test-token",
+            "refresh_token": "sk-ant-ort01-test-refresh",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+        }
+
         # When
-        tokens = oauth_flow.exchange_code_for_tokens(auth_code)
+        with patch("requests.post", return_value=mock_response):
+            tokens = oauth_flow.exchange_code_for_tokens(auth_code)
 
         # Then
         assert "access_token" in tokens
@@ -317,6 +331,78 @@ class TestOAuthProviderIntegration:
 class TestAnthropicOAuthFlow:
     """Test improved Anthropic OAuth flow functionality."""
 
+    def test_uses_validated_oauth_parameters(self) -> None:
+        """Test AnthropicOAuthFlow uses validated OAuth parameters from issue #32."""
+        from llm_orc.authentication import AnthropicOAuthFlow
+
+        # Create flow with the shared client ID discovered in testing
+        client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        flow = AnthropicOAuthFlow(client_id, "")  # No client secret needed for PKCE
+
+        # Test that authorization URL includes validated parameters
+        auth_url = flow.get_authorization_url()
+
+        # Should include the shared client ID
+        assert "client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e" in auth_url
+
+        # Should include all required scopes (URL-encoded - Python uses + for spaces)
+        assert "scope=org%3Acreate_api_key+user%3Aprofile+user%3Ainference" in auth_url
+
+        # Should use Anthropic's callback endpoint (working implementation)
+        expected_redirect = (
+            "redirect_uri=https%3A%2F%2Fconsole.anthropic.com%2Foauth%2Fcode%2Fcallback"
+        )
+        assert expected_redirect in auth_url
+
+        # Should include PKCE parameters
+        assert "code_challenge=" in auth_url
+        assert "code_challenge_method=S256" in auth_url
+        assert "response_type=code" in auth_url
+
+    def test_token_exchange_uses_real_endpoint(self) -> None:
+        """Test that token exchange makes real API call to Anthropic OAuth endpoint."""
+        from unittest.mock import Mock, patch
+
+        from llm_orc.authentication import AnthropicOAuthFlow
+
+        client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        flow = AnthropicOAuthFlow(client_id, "")
+        auth_code = "test_auth_code_12345"
+
+        # Mock successful response
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "access_token": "sk-ant-oat01-test-token",
+            "refresh_token": "sk-ant-ort01-test-refresh",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+        }
+
+        with patch("requests.post", return_value=mock_response) as mock_post:
+            tokens = flow.exchange_code_for_tokens(auth_code)
+
+            # Should call the real Anthropic OAuth endpoint
+            mock_post.assert_called_once()
+            args, kwargs = mock_post.call_args
+
+            # Verify endpoint URL matches working implementation
+            assert args[0] == "https://console.anthropic.com/v1/oauth/token"
+
+            # Verify request data includes all required fields
+            assert kwargs["json"]["grant_type"] == "authorization_code"
+            assert kwargs["json"]["client_id"] == client_id
+            assert kwargs["json"]["code"] == auth_code
+            assert kwargs["json"]["code_verifier"] == flow.code_verifier
+            assert kwargs["json"]["redirect_uri"] == flow.redirect_uri
+
+            # Verify headers
+            assert kwargs["headers"]["Content-Type"] == "application/json"
+
+            # Should return the tokens
+            assert tokens["access_token"] == "sk-ant-oat01-test-token"
+            assert tokens["refresh_token"] == "sk-ant-ort01-test-refresh"
+
     def test_anthropic_oauth_flow_initialization(self) -> None:
         """Test AnthropicOAuthFlow can be initialized correctly."""
         # Given
@@ -332,7 +418,7 @@ class TestAnthropicOAuthFlow:
         assert flow.client_id == client_id
         assert flow.client_secret == client_secret
         assert flow.provider == "anthropic"
-        assert flow.redirect_uri == "http://localhost:8080/callback"
+        assert flow.redirect_uri == "https://console.anthropic.com/oauth/code/callback"
 
     def test_get_authorization_url_contains_required_parameters(self) -> None:
         """Test that authorization URL contains all required OAuth parameters."""
@@ -352,7 +438,7 @@ class TestAnthropicOAuthFlow:
         parsed_url = urlparse(auth_url)
         query_params = parse_qs(parsed_url.query)
 
-        assert parsed_url.netloc == "console.anthropic.com"
+        assert parsed_url.netloc == "claude.ai"
         assert parsed_url.path == "/oauth/authorize"
         assert query_params["client_id"][0] == client_id
         assert query_params["response_type"][0] == "code"
@@ -376,6 +462,8 @@ class TestAnthropicOAuthFlow:
     def test_exchange_code_for_tokens_returns_valid_structure(self) -> None:
         """Test that token exchange returns proper token structure."""
         # Given
+        from unittest.mock import Mock, patch
+
         from llm_orc.authentication import AnthropicOAuthFlow
 
         client_id = "test_client_id"
@@ -383,8 +471,19 @@ class TestAnthropicOAuthFlow:
         flow = AnthropicOAuthFlow(client_id, client_secret)
         auth_code = "test_auth_code_123"
 
+        # Mock successful response
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "access_token": "sk-ant-oat01-test-token",
+            "refresh_token": "sk-ant-ort01-test-refresh",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+        }
+
         # When
-        tokens = flow.exchange_code_for_tokens(auth_code)
+        with patch("requests.post", return_value=mock_response):
+            tokens = flow.exchange_code_for_tokens(auth_code)
 
         # Then
         assert isinstance(tokens, dict)
@@ -394,8 +493,8 @@ class TestAnthropicOAuthFlow:
         assert "token_type" in tokens
 
         # Verify token format
-        assert tokens["access_token"].startswith("anthropic_access_token_")
-        assert tokens["refresh_token"].startswith("anthropic_refresh_token_")
+        assert tokens["access_token"] == "sk-ant-oat01-test-token"
+        assert tokens["refresh_token"] == "sk-ant-ort01-test-refresh"
         assert tokens["expires_in"] == 3600
         assert tokens["token_type"] == "Bearer"
 
@@ -407,6 +506,54 @@ class TestAnthropicOAuthFlow:
         # When & Then
         assert hasattr(AnthropicOAuthFlow, "create_with_guidance")
         assert callable(AnthropicOAuthFlow.create_with_guidance)
+
+    def test_uses_manual_callback_flow(self) -> None:
+        """Test AnthropicOAuthFlow uses manual callback flow instead of local server."""
+        from llm_orc.authentication import AnthropicOAuthFlow
+
+        client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        flow = AnthropicOAuthFlow(client_id, "")
+
+        # Should have manual callback flow method
+        assert hasattr(flow, "start_manual_callback_flow")
+
+        # Should use Anthropic's callback endpoint
+        assert "console.anthropic.com" in flow.redirect_uri
+
+    def test_callback_server_handles_authorization_code(self) -> None:
+        """Test that callback server can handle OAuth authorization code."""
+        import requests
+
+        from llm_orc.authentication import AnthropicOAuthFlow
+
+        client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        flow = AnthropicOAuthFlow(client_id, "")
+
+        # Start callback server
+        server, port = flow.start_callback_server()
+
+        try:
+            # Simulate OAuth callback request
+            test_code = "test_auth_code_12345"
+            test_state = "test_state_67890"
+            callback_url = (
+                f"http://localhost:{port}/callback?code={test_code}&state={test_state}"
+            )
+
+            # Make request to callback server
+            response = requests.get(callback_url, timeout=5)
+
+            # Should return success response
+            assert response.status_code == 200
+            assert "Authorization Successful" in response.text
+
+            # Server should have captured the authorization code
+            assert server.auth_code == test_code  # type: ignore
+            assert server.auth_error is None  # type: ignore
+
+        finally:
+            # Clean up server
+            server.server_close()
 
 
 class TestImprovedAuthenticationManager:
@@ -442,20 +589,28 @@ class TestImprovedAuthenticationManager:
 
         monkeypatch.setattr(AnthropicOAuthFlow, "validate_credentials", mock_validate)
 
-        # Mock the OAuth flow to avoid actual browser/server operations
-        def mock_start_server(self: Any) -> tuple[Any, int]:
-            server = type(
-                "MockServer", (), {"auth_code": "test_code", "auth_error": None}
-            )()
-            return server, 8080
+        # Mock the OAuth flow to avoid actual browser/manual input operations
+        def mock_manual_callback_flow(self: Any) -> str:
+            return "test_auth_code_from_manual_flow"
 
         def mock_open_browser(url: str) -> None:
             pass
 
+        def mock_exchange_tokens(self: Any, auth_code: str) -> dict[str, Any]:
+            return {
+                "access_token": "sk-ant-oat01-test-token",
+                "refresh_token": "sk-ant-ort01-test-refresh",
+                "expires_in": 3600,
+                "token_type": "Bearer",
+            }
+
         monkeypatch.setattr(
-            AnthropicOAuthFlow, "start_callback_server", mock_start_server
+            AnthropicOAuthFlow, "start_manual_callback_flow", mock_manual_callback_flow
         )
         monkeypatch.setattr("webbrowser.open", mock_open_browser)
+        monkeypatch.setattr(
+            AnthropicOAuthFlow, "exchange_code_for_tokens", mock_exchange_tokens
+        )
 
         # When
         result = auth_manager.authenticate_oauth(
@@ -524,3 +679,141 @@ class TestImprovedAuthenticationManager:
 
         # Then
         assert result is False
+
+    def test_logout_oauth_provider_revokes_tokens(
+        self, auth_manager: AuthenticationManager
+    ) -> None:
+        """Test logging out OAuth provider revokes tokens and removes credentials."""
+        # Given - Store OAuth credentials first
+        provider = "anthropic-claude-pro-max"
+        access_token = "test_access_token"
+        refresh_token = "test_refresh_token"
+        client_id = "test_client_id"
+
+        credential_storage = auth_manager.credential_storage
+        credential_storage.store_oauth_token(provider, access_token, refresh_token)
+
+        # Store client_id in OAuth token data (simulating full OAuth setup)
+        credentials = credential_storage._load_credentials()
+        credentials[provider]["client_id"] = client_id
+        credential_storage._save_credentials(credentials)
+
+        # Mock successful token revocation
+        with patch("llm_orc.oauth_client.requests.post") as mock_post:
+            mock_post.return_value.status_code = 200
+
+            # When
+            result = auth_manager.logout_oauth_provider(provider)
+
+            # Then
+            assert result is True
+
+            # Verify tokens were revoked (two calls: access + refresh)
+            assert mock_post.call_count == 2
+
+            # Check the revocation calls
+            calls = mock_post.call_args_list
+            access_call = calls[0]
+            refresh_call = calls[1]
+
+            assert access_call[0][0] == "https://console.anthropic.com/v1/oauth/revoke"
+            assert access_call[1]["json"]["token"] == access_token
+            assert access_call[1]["json"]["token_type_hint"] == "access_token"
+
+            assert refresh_call[0][0] == "https://console.anthropic.com/v1/oauth/revoke"
+            assert refresh_call[1]["json"]["token"] == refresh_token
+            assert refresh_call[1]["json"]["token_type_hint"] == "refresh_token"
+
+            # Verify credentials were removed locally
+            assert provider not in credential_storage.list_providers()
+
+    def test_logout_oauth_provider_handles_missing_provider(
+        self, auth_manager: AuthenticationManager
+    ) -> None:
+        """Test that logging out non-existent OAuth provider returns False."""
+        # When
+        result = auth_manager.logout_oauth_provider("nonexistent-provider")
+
+        # Then
+        assert result is False
+
+    def test_logout_oauth_provider_handles_non_oauth_provider(
+        self, auth_manager: AuthenticationManager
+    ) -> None:
+        """Test that logging out non-OAuth provider returns False."""
+        # Given - Store API key credentials (not OAuth)
+        provider = "anthropic-api"
+        credential_storage = auth_manager.credential_storage
+        credential_storage.store_api_key(provider, "test_api_key")
+
+        # When
+        result = auth_manager.logout_oauth_provider(provider)
+
+        # Then
+        assert result is False
+
+    def test_logout_oauth_provider_continues_on_revocation_failure(
+        self, auth_manager: AuthenticationManager
+    ) -> None:
+        """Test that logout removes local credentials even if token revocation fails."""
+        # Given - Store OAuth credentials
+        provider = "anthropic-claude-pro-max"
+        credential_storage = auth_manager.credential_storage
+        credential_storage.store_oauth_token(provider, "test_token", "test_refresh")
+
+        # Store client_id
+        credentials = credential_storage._load_credentials()
+        credentials[provider]["client_id"] = "test_client"
+        credential_storage._save_credentials(credentials)
+
+        # Mock failed token revocation
+        with patch(
+            "llm_orc.oauth_client.requests.post", side_effect=Exception("Network error")
+        ):
+            # When
+            result = auth_manager.logout_oauth_provider(provider)
+
+            # Then - Should still succeed in removing local credentials
+            assert result is True
+            assert provider not in credential_storage.list_providers()
+
+    def test_logout_all_oauth_providers(
+        self, auth_manager: AuthenticationManager
+    ) -> None:
+        """Test that logout_all_oauth_providers logs out all OAuth providers."""
+        # Given - Store multiple OAuth providers
+        providers = ["anthropic-claude-pro-max", "google-oauth"]
+        credential_storage = auth_manager.credential_storage
+        for provider in providers:
+            credential_storage.store_oauth_token(
+                provider, f"token_{provider}", f"refresh_{provider}"
+            )
+            # Store client_id for each
+            credentials = credential_storage._load_credentials()
+            credentials[provider]["client_id"] = f"client_{provider}"
+            credential_storage._save_credentials(credentials)
+
+        # Also store a non-OAuth provider (should not be affected)
+        credential_storage.store_api_key("anthropic-api", "api_key")
+
+        # Mock successful token revocations
+        with patch("llm_orc.oauth_client.requests.post") as mock_post:
+            mock_post.return_value.status_code = 200
+
+            # When
+            results = auth_manager.logout_all_oauth_providers()
+
+            # Then
+            assert len(results) == 2
+            assert all(results.values())  # All should be True
+            assert "anthropic-claude-pro-max" in results
+            assert "google-oauth" in results
+
+            # Verify all OAuth providers removed but API key provider remains
+            remaining_providers = credential_storage.list_providers()
+            assert "anthropic-api" in remaining_providers
+            assert "anthropic-claude-pro-max" not in remaining_providers
+            assert "google-oauth" not in remaining_providers
+
+            # Verify revocation calls were made (2 per provider: access + refresh)
+            assert mock_post.call_count == 4

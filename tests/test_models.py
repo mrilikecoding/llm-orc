@@ -118,3 +118,67 @@ class TestModelManager:
 
         with pytest.raises(KeyError):
             manager.get_model("nonexistent")
+
+
+class TestClaudeCLIModel:
+    """Test cases for ClaudeCLIModel."""
+
+    def test_initialization(self) -> None:
+        """Test ClaudeCLIModel initialization."""
+        from llm_orc.models import ClaudeCLIModel
+
+        model = ClaudeCLIModel(
+            claude_path="/usr/local/bin/claude", model="claude-3-5-sonnet-20241022"
+        )
+
+        assert model.claude_path == "/usr/local/bin/claude"
+        assert model.model == "claude-3-5-sonnet-20241022"
+        assert model.name == "claude-cli-claude-3-5-sonnet-20241022"
+
+    @pytest.mark.asyncio
+    async def test_generate_response_success(self) -> None:
+        """Test successful response generation using Claude CLI."""
+        from unittest.mock import Mock, patch
+
+        from llm_orc.models import ClaudeCLIModel
+
+        model = ClaudeCLIModel(claude_path="/usr/local/bin/claude")
+
+        # Mock subprocess call
+        mock_result = Mock()
+        mock_result.stdout = "Hello! How can I help you today?"
+        mock_result.returncode = 0
+
+        with patch("subprocess.run", return_value=mock_result) as mock_subprocess:
+            result = await model.generate_response(
+                "Hello", "You are a helpful assistant"
+            )
+
+            assert result == "Hello! How can I help you today?"
+
+            # Verify subprocess was called correctly
+            mock_subprocess.assert_called_once()
+            call_args = mock_subprocess.call_args
+
+            # Should call claude with proper arguments
+            assert call_args[0][0] == ["/usr/local/bin/claude", "--no-api-key"]
+            assert "You are a helpful assistant" in call_args[1]["input"]
+            assert "Hello" in call_args[1]["input"]
+
+    @pytest.mark.asyncio
+    async def test_generate_response_claude_cli_error(self) -> None:
+        """Test response generation when Claude CLI returns error."""
+        from unittest.mock import Mock, patch
+
+        from llm_orc.models import ClaudeCLIModel
+
+        model = ClaudeCLIModel(claude_path="/usr/local/bin/claude")
+
+        # Mock subprocess error
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stderr = "Authentication error: Please run 'claude auth login'"
+
+        with patch("subprocess.run", return_value=mock_result):
+            with pytest.raises(Exception, match="Claude CLI error"):
+                await model.generate_response("Hello", "You are a helpful assistant")

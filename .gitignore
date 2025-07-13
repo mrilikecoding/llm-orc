@@ -59,3 +59,20 @@ venv.bak/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# LLM Orchestra - Security Critical
+# Never commit credential files or encryption keys
+*.enc
+.key
+credentials.enc
+.llm-orc/credentials.enc
+.llm-orc/.key
+~/.llm-orc/
+
+# LLM Orchestra - Local Configuration
+# Local ensemble variations and personal configs
+.llm-orc/ensembles/*-local.yaml
+.llm-orc/ensembles/local-*.yaml
+
+# Uncomment to ignore project config variations per developer
+# .llm-orc/config.yaml
