@@ -15,7 +15,8 @@ class EnsembleConfig:
     description: str
     agents: list[dict[str, Any]]
     coordinator: dict[str, Any]
-    task: str | None = None
+    default_task: str | None = None
+    task: str | None = None  # Backward compatibility
 
 
 class EnsembleLoader:
@@ -30,12 +31,16 @@ class EnsembleLoader:
         with open(path) as f:
             data = yaml.safe_load(f)
 
+        # Support both default_task (preferred) and task (backward compatibility)
+        default_task = data.get("default_task") or data.get("task")
+        
         return EnsembleConfig(
             name=data["name"],
             description=data["description"],
             agents=data["agents"],
             coordinator=data["coordinator"],
-            task=data.get("task"),
+            default_task=default_task,
+            task=data.get("task"),  # Keep for backward compatibility
         )
 
     def list_ensembles(self, directory: str) -> list[EnsembleConfig]:

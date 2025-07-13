@@ -73,8 +73,14 @@ class EnsembleExecutor:
         llm_agents = [a for a in config.agents if a.get("type") != "script"]
 
         # Prepare enhanced input for LLM agents
-        # Use task from config if available, otherwise use input_data
-        task_input = config.task if config.task else input_data
+        # CLI input overrides config default_task when provided
+        # Fall back to config.default_task or config.task (backward compatibility)
+        if input_data and input_data.strip() and input_data != "Please analyze this.":
+            # Use CLI input when explicitly provided
+            task_input = input_data
+        else:
+            # Fall back to config default task (support both new and old field names)
+            task_input = getattr(config, 'default_task', None) or getattr(config, 'task', None) or input_data
         enhanced_input = task_input
         if context_data:
             context_text = "\n\n".join(
@@ -212,6 +218,7 @@ class EnsembleExecutor:
 
                 # Fallback: treat as Ollama model if no authentication configured
                 # or user declined to set up authentication
+                click.echo(f"ℹ️  No authentication configured for '{model_name}', treating as local Ollama model")
                 return OllamaModel(model_name=model_name)
 
             if auth_method == "api_key":
@@ -232,10 +239,15 @@ class EnsembleExecutor:
                 if not oauth_token:
                     raise ValueError(f"No OAuth token found for {model_name}")
 
+                # Use stored client_id or fallback for anthropic-claude-pro-max
+                client_id = oauth_token.get("client_id")
+                if not client_id and model_name == "anthropic-claude-pro-max":
+                    client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+
                 return OAuthClaudeModel(
                     access_token=oauth_token["access_token"],
                     refresh_token=oauth_token.get("refresh_token"),
-                    client_id=oauth_token.get("client_id"),
+                    client_id=client_id,
                     credential_storage=storage,
                     provider_key=model_name,
                 )
@@ -243,16 +255,22 @@ class EnsembleExecutor:
             else:
                 raise ValueError(f"Unknown authentication method: {auth_method}")
 
-        except Exception:
-            # Fallback to Ollama on any error
-            # TODO: Add proper logging
-            return OllamaModel(model_name=model_name)
+        except Exception as e:
+            # Fallback: use configured default model or treat as Ollama
+            click.echo(f"⚠️  Failed to load model '{model_name}': {str(e)}")
+            if model_name in ["llama3", "llama2"]:  # Known local models
+                click.echo(f"🔄 Treating '{model_name}' as local Ollama model")
+                return OllamaModel(model_name=model_name)
+            else:
+                # For unknown models, use configured fallback
+                click.echo(f"🔄 Using configured fallback instead of '{model_name}'")
+                return await self._get_fallback_model("general")
 
     async def _synthesize_results(
         self, config: EnsembleConfig, agent_results: dict[str, Any]
     ) -> tuple[str, ModelInterface]:
         """Synthesize results from all agents."""
-        synthesis_model = await self._get_synthesis_model()
+        synthesis_model = await self._get_synthesis_model(config)
 
         # Prepare synthesis prompt with agent results
         results_text = ""
@@ -262,22 +280,69 @@ class EnsembleExecutor:
             else:
                 results_text += f"\n{agent_name}: [Error: {result['error']}]\n"
 
-        synthesis_prompt = (
-            f"{config.coordinator['synthesis_prompt']}\n\nAgent Results:{results_text}"
-        )
+        # Prepare role and message for coordinator
+        coordinator_role = config.coordinator.get("system_prompt")
+        synthesis_instructions = config.coordinator["synthesis_prompt"]
+
+        # If no coordinator system_prompt, use synthesis_prompt as role
+        if coordinator_role:
+            role_prompt = coordinator_role
+            message = f"{synthesis_instructions}\n\nAgent Results:{results_text}"
+        else:
+            role_prompt = synthesis_instructions
+            message = (
+                f"Please synthesize these results:\n\nAgent Results:{results_text}"
+            )
 
         # Generate synthesis
         response = await synthesis_model.generate_response(
-            message="Please synthesize these results", role_prompt=synthesis_prompt
+            message=message, role_prompt=role_prompt
         )
 
         return response, synthesis_model
 
-    async def _get_synthesis_model(self) -> ModelInterface:
-        """Get model for synthesis."""
-        # For now, use Ollama
-        # TODO: Make this configurable
-        return OllamaModel(model_name="llama3")
+    async def _get_synthesis_model(self, config: EnsembleConfig) -> ModelInterface:
+        """Get model for synthesis based on coordinator configuration."""
+        # Check if coordinator specifies a model
+        coordinator_model = config.coordinator.get("model")
+
+        if coordinator_model:
+            try:
+                # Use the configured coordinator model
+                return await self._load_model(coordinator_model)
+            except Exception as e:
+                # Fallback to configured default model
+                click.echo(f"⚠️  Failed to load coordinator model '{coordinator_model}': {str(e)}")
+                return await self._get_fallback_model("coordinator")
+        else:
+            # Use configured default for backward compatibility
+            click.echo("ℹ️  No coordinator model specified, using configured default")
+            return await self._get_fallback_model("coordinator")
+
+    async def _get_fallback_model(self, context: str = "general") -> ModelInterface:
+        """Get a fallback model based on configured defaults."""
+        # Load project configuration to get default models
+        config_manager = ConfigurationManager()
+        project_config = config_manager.load_project_config()
+        
+        default_models = project_config.get("project", {}).get("default_models", {})
+        
+        # Choose fallback model based on context
+        if context == "coordinator":
+            # For coordinators, prefer production > fast > hardcoded fallback
+            fallback_model = default_models.get("production") or default_models.get("fast") or "llama3"
+        else:
+            # For general use, prefer fast > production > hardcoded fallback  
+            fallback_model = default_models.get("fast") or default_models.get("production") or "llama3"
+        
+        try:
+            click.echo(f"🔄 Using fallback model '{fallback_model}' (from configured defaults)")
+            return await self._load_model(fallback_model)
+        except Exception as e:
+            # Last resort: hardcoded Ollama fallback
+            click.echo(f"❌ Fallback model '{fallback_model}' failed to load: {str(e)}")
+            click.echo("🆘 Using hardcoded fallback: llama3 (consider configuring default_models)")
+            return OllamaModel(model_name="llama3")
 
     def _calculate_usage_summary(
         self, agent_usage: dict[str, Any], synthesis_usage: dict[str, Any] | None

@@ -98,6 +98,7 @@ class CredentialStorage:
         access_token: str,
         refresh_token: str | None = None,
         expires_at: int | None = None,
+        client_id: str | None = None,
     ) -> None:
         """Store OAuth tokens for a provider.
 
@@ -106,6 +107,7 @@ class CredentialStorage:
             access_token: OAuth access token
             refresh_token: OAuth refresh token (optional)
             expires_at: Token expiration timestamp (optional)
+            client_id: OAuth client ID (optional)
         """
         credentials = self._load_credentials()
 
@@ -118,6 +120,8 @@ class CredentialStorage:
             credentials[provider]["refresh_token"] = refresh_token
         if expires_at:
             credentials[provider]["expires_at"] = expires_at
+        if client_id:
+            credentials[provider]["client_id"] = client_id
 
         self._save_credentials(credentials)
 
@@ -160,6 +164,8 @@ class CredentialStorage:
                 token_info["refresh_token"] = credentials[provider]["refresh_token"]
             if "expires_at" in credentials[provider]:
                 token_info["expires_at"] = credentials[provider]["expires_at"]
+            if "client_id" in credentials[provider]:
+                token_info["client_id"] = credentials[provider]["client_id"]
             return token_info if token_info else None
 
         return None

@@ -152,13 +152,13 @@ class ConfigurationManager:
             },
             "model_profiles": {
                 "development": [
-                    {"model": "llama3", "provider": "ollama", "cost_per_token": 0.0}
+                    {"model": "llama3", "provider": "ollama"}
                 ],
                 "production": [
                     {
                         "model": "claude-3-5-sonnet",
                         "provider": "anthropic",
-                        "cost_per_token": 0.000003,
+                        "cost_per_token": 0.000003,  # Optional: for budgeting
                     }
                 ],
             },

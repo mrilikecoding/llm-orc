@@ -530,6 +530,7 @@ def _handle_claude_pro_max_oauth(
                 tokens["access_token"],
                 tokens.get("refresh_token"),
                 int(time.time()) + tokens.get("expires_in", 3600),
+                client_id,
             )
 
             click.echo("✅ OAuth authentication successful!")

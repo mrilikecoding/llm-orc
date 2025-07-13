@@ -17,6 +17,5 @@ model_profiles:
     provider: anthropic
   
   oauth_test:
-  - cost_per_token: 3.0e-06
-    model: claude-3-5-sonnet
+  - model: claude-3-5-sonnet
     provider: anthropic-claude-pro-max

@@ -222,6 +222,7 @@ class OAuthClaudeModel(ModelInterface):
                             self.client.access_token,
                             self.client.refresh_token,
                             expires_at=expires_at,
+                            client_id=self.client_id,
                         )
 
                     # Update local token references
