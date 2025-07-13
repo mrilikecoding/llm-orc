@@ -138,6 +138,8 @@ class OAuthClaudeModel(ModelInterface):
         self.client = OAuthClaudeClient(access_token, refresh_token)
         self._credential_storage = credential_storage
         self._provider_key = provider_key
+        self._role_established = False
+        self._current_role: str | None = None
 
     @property
     def name(self) -> str:
@@ -149,7 +151,12 @@ class OAuthClaudeModel(ModelInterface):
 
         try:
             # OAuth tokens require specific Claude Code system prompt for authorization
-            # Use role_prompt directly (should contain the required Claude Code prompt)
+            oauth_system_prompt = (
+                "You are Claude Code, Anthropic's official CLI for Claude."
+            )
+
+            # Handle role injection if needed
+            self._inject_role_if_needed(role_prompt)
 
             # Add current user message to conversation history
             self.add_to_conversation("user", message)
@@ -164,7 +171,7 @@ class OAuthClaudeModel(ModelInterface):
                 lambda: self.client.create_message(
                     model=self.model,
                     max_tokens=1000,
-                    system=role_prompt,
+                    system=oauth_system_prompt,
                     messages=messages,
                 ),
             )
@@ -229,6 +236,32 @@ class OAuthClaudeModel(ModelInterface):
                         self._conversation_history.pop()
                     return await self.generate_response(message, role_prompt)
             raise e
+
+    def _inject_role_if_needed(self, role_prompt: str) -> None:
+        """Inject role establishment into conversation if needed."""
+        oauth_system_prompt = (
+            "You are Claude Code, Anthropic's official CLI for Claude."
+        )
+
+        # Don't inject role if it's the OAuth system prompt itself
+        if role_prompt == oauth_system_prompt:
+            return
+
+        # Don't inject role if already established with the same role
+        if self._role_established and self._current_role == role_prompt:
+            return
+
+        # Inject role establishment
+        role_message = f"For this conversation, please act as: {role_prompt}"
+        self.add_to_conversation("user", role_message)
+
+        # Add assistant acknowledgment
+        acknowledgment = "Understood. I'll act in that role for our conversation."
+        self.add_to_conversation("assistant", acknowledgment)
+
+        # Mark role as established
+        self._role_established = True
+        self._current_role = role_prompt
 
 
 class ClaudeCLIModel(ModelInterface):
