@@ -246,8 +246,10 @@ class OAuthClaudeClient:
                 return response.json()
             elif response.status_code == 401:
                 print("🔄 Token expired, attempting refresh...")
-                # For now, we'll just return the error since we don't have client_id here
-                # In a full implementation, we'd store client_id and auto-refresh
+                # For now, we'll just return the error since we don't have
+                # client_id here
+                # In a full implementation, we'd store client_id and
+                # auto-refresh
                 raise Exception("Token expired - refresh needed")
             else:
                 raise Exception(
@@ -300,9 +302,9 @@ def test_llm_orchestra_oauth_client(tokens):
             # Show usage info if available
             if "usage" in response:
                 usage = response["usage"]
-                print(
-                    f"📊 Usage: {usage.get('input_tokens', 0)} input + {usage.get('output_tokens', 0)} output tokens"
-                )
+                input_tokens = usage.get('input_tokens', 0)
+                output_tokens = usage.get('output_tokens', 0)
+                print(f"📊 Usage: {input_tokens} input + {output_tokens} output tokens")
 
         return True
 
@@ -380,7 +382,7 @@ def interactive_oauth_flow():
     try:
         webbrowser.open(auth_url)
         print("✅ Browser opened successfully")
-    except:
+    except Exception:
         print("❌ Could not open browser automatically")
         print("Please copy and paste the URL above into your browser")
 
