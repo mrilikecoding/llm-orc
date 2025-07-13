@@ -33,7 +33,7 @@ class EnsembleLoader:
 
         # Support both default_task (preferred) and task (backward compatibility)
         default_task = data.get("default_task") or data.get("task")
-        
+
         return EnsembleConfig(
             name=data["name"],
             description=data["description"],

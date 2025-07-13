@@ -80,7 +80,11 @@ class EnsembleExecutor:
             task_input = input_data
         else:
             # Fall back to config default task (support both new and old field names)
-            task_input = getattr(config, 'default_task', None) or getattr(config, 'task', None) or input_data
+            task_input = (
+                getattr(config, "default_task", None)
+                or getattr(config, "task", None)
+                or input_data
+            )
         enhanced_input = task_input
         if context_data:
             context_text = "\n\n".join(
@@ -218,7 +222,10 @@ class EnsembleExecutor:
 
                 # Fallback: treat as Ollama model if no authentication configured
                 # or user declined to set up authentication
-                click.echo(f"ℹ️  No authentication configured for '{model_name}', treating as local Ollama model")
+                click.echo(
+                    f"ℹ️  No authentication configured for '{model_name}', "
+                    "treating as local Ollama model"
+                )
                 return OllamaModel(model_name=model_name)
 
             if auth_method == "api_key":
@@ -312,7 +319,10 @@ class EnsembleExecutor:
                 return await self._load_model(coordinator_model)
             except Exception as e:
                 # Fallback to configured default model
-                click.echo(f"⚠️  Failed to load coordinator model '{coordinator_model}': {str(e)}")
+                click.echo(
+                    f"⚠️  Failed to load coordinator model '{coordinator_model}': "
+                    f"{str(e)}"
+                )
                 return await self._get_fallback_model("coordinator")
         else:
             # Use configured default for backward compatibility
@@ -324,24 +334,37 @@ class EnsembleExecutor:
         # Load project configuration to get default models
         config_manager = ConfigurationManager()
         project_config = config_manager.load_project_config()
-        
+
         default_models = project_config.get("project", {}).get("default_models", {})
-        
+
         # Choose fallback model based on context
         if context == "coordinator":
             # For coordinators, prefer production > fast > hardcoded fallback
-            fallback_model = default_models.get("production") or default_models.get("fast") or "llama3"
+            fallback_model = (
+                default_models.get("production")
+                or default_models.get("fast")
+                or "llama3"
+            )
         else:
-            # For general use, prefer fast > production > hardcoded fallback  
-            fallback_model = default_models.get("fast") or default_models.get("production") or "llama3"
-        
+            # For general use, prefer fast > production > hardcoded fallback
+            fallback_model = (
+                default_models.get("fast")
+                or default_models.get("production")
+                or "llama3"
+            )
+
         try:
-            click.echo(f"🔄 Using fallback model '{fallback_model}' (from configured defaults)")
+            click.echo(
+                f"🔄 Using fallback model '{fallback_model}' (from configured defaults)"
+            )
             return await self._load_model(fallback_model)
         except Exception as e:
             # Last resort: hardcoded Ollama fallback
             click.echo(f"❌ Fallback model '{fallback_model}' failed to load: {str(e)}")
-            click.echo("🆘 Using hardcoded fallback: llama3 (consider configuring default_models)")
+            click.echo(
+                "🆘 Using hardcoded fallback: llama3 "
+                "(consider configuring default_models)"
+            )
             return OllamaModel(model_name="llama3")
 
     def _calculate_usage_summary(

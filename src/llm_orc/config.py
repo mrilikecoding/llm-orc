@@ -151,9 +151,7 @@ class ConfigurationManager:
                 "default_models": {"fast": "llama3", "production": "claude-3-5-sonnet"},
             },
             "model_profiles": {
-                "development": [
-                    {"model": "llama3", "provider": "ollama"}
-                ],
+                "development": [{"model": "llama3", "provider": "ollama"}],
                 "production": [
                     {
                         "model": "claude-3-5-sonnet",
