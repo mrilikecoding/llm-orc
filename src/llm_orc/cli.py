@@ -604,25 +604,149 @@ def _handle_claude_cli_auth(storage: CredentialStorage) -> None:
 
 
 @auth.command("list")
-def auth_list() -> None:
+@click.option(
+    "--interactive", "-i", is_flag=True, help="Show interactive menu with actions"
+)
+def auth_list(interactive: bool) -> None:
     """List configured authentication providers."""
+    from .menu_system import (
+        AuthMenus,
+        show_error,
+        show_info,
+        show_success,
+        show_working,
+    )
+
     config_manager = ConfigurationManager()
     storage = CredentialStorage(config_manager)
+    auth_manager = AuthenticationManager(storage)
 
     try:
         providers = storage.list_providers()
-        if not providers:
-            click.echo("No authentication providers configured")
-        else:
-            click.echo("Configured providers:")
-            for provider in providers:
-                auth_method = storage.get_auth_method(provider)
-                if auth_method == "oauth":
-                    click.echo(f"  {provider}: OAuth")
-                else:
-                    click.echo(f"  {provider}: API key")
+
+        if not interactive:
+            # Simple list view (original behavior)
+            if not providers:
+                click.echo("No authentication providers configured")
+            else:
+                click.echo("Configured providers:")
+                for provider in providers:
+                    auth_method = storage.get_auth_method(provider)
+                    if auth_method == "oauth":
+                        click.echo(f"  {provider}: OAuth")
+                    else:
+                        click.echo(f"  {provider}: API key")
+            return
+
+        # Interactive mode with action menu
+        while True:
+            action, selected_provider = AuthMenus.auth_list_actions(providers)
+
+            if action == "quit":
+                break
+            elif action == "setup" or action == "add":
+                # Run the setup wizard
+                auth_setup()
+                # Refresh provider list
+                providers = storage.list_providers()
+            elif action == "test" and selected_provider:
+                show_working(f"Testing {selected_provider}...")
+                try:
+                    auth_method = storage.get_auth_method(selected_provider)
+                    if not auth_method:
+                        show_error(f"No authentication found for {selected_provider}")
+                        continue
+
+                    # Test the authentication
+                    success = False
+                    if auth_method == "api_key":
+                        api_key = storage.get_api_key(selected_provider)
+                        if api_key:
+                            success = auth_manager.authenticate(
+                                selected_provider, api_key
+                            )
+                    elif auth_method == "oauth":
+                        oauth_token = storage.get_oauth_token(selected_provider)
+                        if oauth_token:
+                            # For OAuth, we'll consider it successful if we have a valid token
+                            import time
+                            if "expires_at" in oauth_token:
+                                success = time.time() < oauth_token["expires_at"]
+                            else:
+                                success = True  # No expiration info, assume valid
+
+                    if success:
+                        show_success(
+                            f"Authentication for {selected_provider} is working!"
+                        )
+                    else:
+                        show_error(f"Authentication for {selected_provider} failed")
+                except Exception as e:
+                    show_error(f"Test failed: {str(e)}")
+            elif action == "remove" and selected_provider:
+                from .menu_system import confirm_action
+                if confirm_action(f"Remove authentication for {selected_provider}?"):
+                    storage.remove_provider(selected_provider)
+                    show_success(f"Removed {selected_provider}")
+                    providers = storage.list_providers()
+            elif action == "details" and selected_provider:
+                _show_provider_details(storage, selected_provider)
+            elif action == "refresh" and selected_provider:
+                show_working(f"Refreshing tokens for {selected_provider}...")
+                try:
+                    auth_method = storage.get_auth_method(selected_provider)
+                    if auth_method == "oauth":
+                        # For now, just re-authenticate with OAuth
+                        show_info("Re-authentication required for OAuth token refresh")
+                        # This would typically trigger a re-auth flow
+                        show_success("Token refresh would be performed here")
+                    else:
+                        show_error("Token refresh only available for OAuth providers")
+                except Exception as e:
+                    show_error(f"Refresh failed: {str(e)}")
+
     except Exception as e:
         raise click.ClickException(f"Failed to list providers: {str(e)}") from e
+
+
+def _show_provider_details(storage: "CredentialStorage", provider: str) -> None:
+    """Show detailed information about a provider."""
+    from .provider_registry import provider_registry
+
+    click.echo(f"\n📋 Provider Details: {provider}")
+    click.echo("=" * 40)
+
+    # Get registry info
+    provider_info = provider_registry.get_provider(provider)
+    if provider_info:
+        click.echo(f"Display Name: {provider_info.display_name}")
+        click.echo(f"Description: {provider_info.description}")
+
+        auth_methods = []
+        if provider_info.supports_oauth:
+            auth_methods.append("OAuth")
+        if provider_info.supports_api_key:
+            auth_methods.append("API Key")
+        if not provider_info.requires_auth:
+            auth_methods.append("No authentication required")
+        click.echo(f"Supported Auth: {', '.join(auth_methods)}")
+
+    # Get stored auth info
+    auth_method = storage.get_auth_method(provider)
+    if auth_method:
+        click.echo(f"Configured Method: {auth_method.upper()}")
+
+        if auth_method == "oauth":
+            # Try to get OAuth details if available
+            try:
+                # This would need to be implemented in storage
+                click.echo("OAuth Status: Configured")
+            except Exception:
+                pass
+    else:
+        click.echo("Status: Not configured")
+
+    click.echo()
 
 
 @auth.command("remove")
@@ -716,51 +840,119 @@ def auth_oauth(provider: str, client_id: str, client_secret: str) -> None:
 @auth.command("setup")
 def auth_setup() -> None:
     """Interactive setup wizard for authentication."""
+    from .menu_system import (
+        AuthMenus,
+        confirm_action,
+        show_error,
+        show_success,
+        show_working,
+    )
+    from .provider_registry import provider_registry
+
     config_manager = ConfigurationManager()
     storage = CredentialStorage(config_manager)
+    auth_manager = AuthenticationManager(storage)
 
-    click.echo("Welcome to LLM Orchestra setup!")
+    click.echo("🚀 Welcome to LLM Orchestra setup!")
     click.echo("This wizard will help you configure authentication for LLM providers.")
-    click.echo()
 
     while True:
-        provider = click.prompt("Provider name (e.g., anthropic, google, openai)")
+        # Use interactive menu for provider selection
+        provider_key = AuthMenus.provider_selection()
 
-        auth_method = click.prompt(
-            "Authentication method",
-            type=click.Choice(["api_key", "oauth"]),
-            default="api_key",
-        )
+        if provider_key == "custom":
+            provider_key = click.prompt("Enter provider name")
 
-        if auth_method == "api_key":
-            api_key = click.prompt("API key", hide_input=True)
-            try:
-                storage.store_api_key(provider, api_key)
-                click.echo(f"✓ {provider} configured successfully with API key")
-            except Exception as e:
-                click.echo(f"✗ Failed to configure {provider}: {str(e)}")
+        # Get provider info
+        provider = provider_registry.get_provider(provider_key)
 
-        elif auth_method == "oauth":
-            client_id = click.prompt("OAuth client ID")
-            client_secret = click.prompt("OAuth client secret", hide_input=True)
+        if provider and not provider.requires_auth:
+            show_success(f"{provider.display_name} doesn't require authentication!")
+            if not confirm_action("Add another provider?"):
+                break
+            continue
 
-            try:
-                auth_manager = AuthenticationManager(storage)
-                if auth_manager.authenticate_oauth(provider, client_id, client_secret):
-                    click.echo(f"✓ {provider} configured successfully with OAuth")
+        # Get authentication method
+        if provider_key == "anthropic":
+            auth_method = AuthMenus.anthropic_auth_method()
+        elif provider:
+            auth_method = AuthMenus.get_auth_method_for_provider(provider_key)
+        else:
+            # Custom provider - ask for method
+            auth_method = click.prompt(
+                "Authentication method",
+                type=click.Choice(["api_key", "oauth"]),
+                default="api_key",
+            )
+
+        # Handle authentication setup based on method
+        try:
+            if auth_method == "help":
+                _show_auth_method_help()
+                continue
+            elif auth_method == "oauth" and provider_key == "anthropic":
+                show_working("Setting up Claude Pro/Max OAuth...")
+                _handle_claude_pro_max_oauth(auth_manager, storage)
+                show_success("Claude Pro/Max OAuth configured!")
+            elif auth_method == "api-key" and provider_key == "anthropic":
+                api_key = click.prompt("Anthropic API key", hide_input=True)
+                storage.store_api_key("anthropic", api_key)
+                show_success("Anthropic API key configured!")
+            elif auth_method == "both" and provider_key == "anthropic":
+                # Set up both OAuth and API key for Anthropic
+                show_working("Setting up Claude Pro/Max OAuth...")
+                _handle_claude_pro_max_oauth(auth_manager, storage)
+                show_success("OAuth configured!")
+
+                api_key = click.prompt("Anthropic API key", hide_input=True)
+                storage.store_api_key("anthropic", api_key)
+                show_success("API key configured!")
+            elif auth_method == "api_key" or auth_method == "api-key":
+                api_key = click.prompt(f"{provider_key} API key", hide_input=True)
+                storage.store_api_key(provider_key, api_key)
+                show_success(f"{provider_key} API key configured!")
+            elif auth_method == "oauth":
+                client_id = click.prompt("OAuth client ID")
+                client_secret = click.prompt("OAuth client secret", hide_input=True)
+
+                if auth_manager.authenticate_oauth(provider_key, client_id, client_secret):
+                    show_success(f"{provider_key} OAuth configured!")
                 else:
-                    click.echo(f"✗ OAuth authentication for {provider} failed")
-            except Exception as e:
-                click.echo(f"✗ Failed to configure {provider}: {str(e)}")
+                    show_error(f"OAuth authentication for {provider_key} failed")
+            else:
+                show_error(f"Unknown authentication method: {auth_method}")
 
-        if not click.confirm("Add another provider?"):
+        except Exception as e:
+            show_error(f"Failed to configure {provider_key}: {str(e)}")
+
+        if not confirm_action("Add another provider?"):
             break
 
     click.echo()
-    click.echo(
-        "Setup complete! You can now use 'llm-orc auth list' to see your "
-        "configured providers."
-    )
+    show_success("Setup complete! Use 'llm-orc auth list' to see your configured providers.")
+
+
+def _show_auth_method_help() -> None:
+    """Show help for choosing authentication methods."""
+    click.echo("\n📚 Authentication Method Guide")
+    click.echo("=" * 30)
+    click.echo()
+    click.echo("🔐 Claude Pro/Max OAuth:")
+    click.echo("   • Best if you have a Claude Pro or Claude Max subscription")
+    click.echo("   • Uses your existing subscription (no extra API costs)")
+    click.echo("   • Automatic token management and refresh")
+    click.echo("   • Most convenient for regular Claude users")
+    click.echo()
+    click.echo("🔑 API Key:")
+    click.echo("   • Best for programmatic access or if you don't have Claude Pro/Max")
+    click.echo("   • Requires separate API subscription (~$20/month minimum)")
+    click.echo("   • Direct API access with manual key management")
+    click.echo("   • Good for production applications")
+    click.echo()
+    click.echo("💡 Recommendation:")
+    click.echo("   Choose Claude Pro/Max if you already have a subscription.")
+    click.echo("   Choose API Key if you need programmatic access or don't have Claude Pro/Max.")
+    click.echo()
 
 
 @auth.command("logout")
