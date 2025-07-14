@@ -135,6 +135,7 @@ class ConfigurationManager:
                 "config": {
                     "name": "validate-anthropic-api",
                     "description": "Validate Anthropic API authentication",
+                    "default_task": "Verify that we can successfully make requests to this provider",
                     "agents": [
                         {
                             "name": "validator",
@@ -154,6 +155,7 @@ class ConfigurationManager:
                 "config": {
                     "name": "validate-anthropic-claude-pro-max",
                     "description": "Validate Claude Pro/Max OAuth authentication",
+                    "default_task": "Verify that we can successfully make requests to this provider",
                     "agents": [
                         {
                             "name": "validator",
@@ -173,6 +175,7 @@ class ConfigurationManager:
                 "config": {
                     "name": "validate-google-gemini",
                     "description": "Validate Google Gemini API authentication",
+                    "default_task": "Verify that we can successfully make requests to this provider",
                     "agents": [
                         {
                             "name": "validator",
@@ -192,6 +195,7 @@ class ConfigurationManager:
                 "config": {
                     "name": "validate-ollama",
                     "description": "Validate Ollama local model access",
+                    "default_task": "Verify that we can successfully make requests to this provider",
                     "agents": [
                         {
                             "name": "validator",
