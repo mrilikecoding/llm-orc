@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2025-07-14
+
+### Enhanced
+- **Ensemble List Command** - Enhanced `list` command to display ensembles from both local and global directories
+  - Updated to use ConfigurationManager for automatic directory discovery
+  - Shows ensembles from multiple configured directories with source indication
+  - Automatic migration handling from legacy `~/.llm-orc` location
+  - Improved user guidance for configuration setup when no ensembles found
+  - Better support for mixed local/global ensemble workflows
+
 ## [0.4.0] - 2025-07-13
 
 ### Added
