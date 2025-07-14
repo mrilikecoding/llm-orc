@@ -187,27 +187,46 @@ def list_ensembles(config_dir: str) -> None:
             click.echo("Run 'llm-orc config init' to set up local configuration.")
             return
 
-        # List ensembles from all directories in priority order
+        # List ensembles from all directories, grouped by location
         loader = EnsembleLoader()
-        all_ensembles = {}
+        local_ensembles = []
+        global_ensembles = []
 
         for dir_path in ensemble_dirs:
             ensembles = loader.list_ensembles(str(dir_path))
-            for ensemble in ensembles:
-                if ensemble.name not in all_ensembles:
-                    all_ensembles[ensemble.name] = (ensemble, str(dir_path))
+            is_local = config_manager.local_config_dir and str(dir_path).startswith(
+                str(config_manager.local_config_dir)
+            )
 
-        if not all_ensembles:
+            if is_local:
+                local_ensembles.extend(ensembles)
+            else:
+                global_ensembles.extend(ensembles)
+
+        # Check if we have any ensembles at all
+        if not local_ensembles and not global_ensembles:
             click.echo("No ensembles found in any configured directories:")
             for dir_path in ensemble_dirs:
                 click.echo(f"  {dir_path}")
             click.echo("  (Create .yaml files with ensemble configurations)")
-        else:
-            click.echo("Available ensembles:")
-            for _ensemble_name, (ensemble, source_dir) in sorted(all_ensembles.items()):
+            return
+
+        click.echo("Available ensembles:")
+
+        # Show local ensembles first
+        if local_ensembles:
+            click.echo("\n📁 Local Repo (.llm-orc/ensembles):")
+            for ensemble in sorted(local_ensembles, key=lambda e: e.name):
                 click.echo(f"  {ensemble.name}: {ensemble.description}")
-                if len(ensemble_dirs) > 1:
-                    click.echo(f"    Source: {source_dir}")
+
+        # Show global ensembles
+        if global_ensembles:
+            global_config_label = (
+                f"Global ({config_manager.global_config_dir}/ensembles)"
+            )
+            click.echo(f"\n🌐 {global_config_label}:")
+            for ensemble in sorted(global_ensembles, key=lambda e: e.name):
+                click.echo(f"  {ensemble.name}: {ensemble.description}")
     else:
         # Use specified config directory
         loader = EnsembleLoader()
@@ -668,8 +687,9 @@ def auth_list(interactive: bool) -> None:
                     elif auth_method == "oauth":
                         oauth_token = storage.get_oauth_token(selected_provider)
                         if oauth_token:
-                            # For OAuth, we'll consider it successful if we have a valid token
+                            # For OAuth, we'll consider it successful if we have a valid token  # noqa: E501
                             import time
+
                             if "expires_at" in oauth_token:
                                 success = time.time() < oauth_token["expires_at"]
                             else:
@@ -685,6 +705,7 @@ def auth_list(interactive: bool) -> None:
                     show_error(f"Test failed: {str(e)}")
             elif action == "remove" and selected_provider:
                 from .menu_system import confirm_action
+
                 if confirm_action(f"Remove authentication for {selected_provider}?"):
                     storage.remove_provider(selected_provider)
                     show_success(f"Removed {selected_provider}")
@@ -915,7 +936,9 @@ def auth_setup() -> None:
                 client_id = click.prompt("OAuth client ID")
                 client_secret = click.prompt("OAuth client secret", hide_input=True)
 
-                if auth_manager.authenticate_oauth(provider_key, client_id, client_secret):
+                if auth_manager.authenticate_oauth(
+                    provider_key, client_id, client_secret
+                ):
                     show_success(f"{provider_key} OAuth configured!")
                 else:
                     show_error(f"OAuth authentication for {provider_key} failed")
@@ -929,7 +952,9 @@ def auth_setup() -> None:
             break
 
     click.echo()
-    show_success("Setup complete! Use 'llm-orc auth list' to see your configured providers.")
+    show_success(
+        "Setup complete! Use 'llm-orc auth list' to see your configured providers."
+    )
 
 
 def _show_auth_method_help() -> None:
@@ -951,7 +976,10 @@ def _show_auth_method_help() -> None:
     click.echo()
     click.echo("💡 Recommendation:")
     click.echo("   Choose Claude Pro/Max if you already have a subscription.")
-    click.echo("   Choose API Key if you need programmatic access or don't have Claude Pro/Max.")
+    click.echo(
+        "   Choose API Key if you need programmatic access or don't have "
+        "Claude Pro/Max."
+    )
     click.echo()
 
 

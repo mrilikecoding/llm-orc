@@ -6,6 +6,7 @@ from enum import Enum
 
 class AuthMethod(Enum):
     """Supported authentication methods."""
+
     API_KEY = "api_key"
     OAUTH = "oauth"
     NONE = "none"
@@ -49,33 +50,39 @@ class ProviderRegistry:
     def _register_default_providers(self) -> None:
         """Register the default set of supported providers."""
         # Anthropic - supports both OAuth and API key
-        self.register(ProviderInfo(
-            key="anthropic",
-            display_name="Anthropic (Claude)",
-            description="Supports Claude Pro/Max + API Key",
-            auth_methods=[AuthMethod.OAUTH, AuthMethod.API_KEY],
-            emoji="🎯",
-            oauth_provider_key="anthropic-claude-pro-max",
-            requires_subscription=True
-        ))
+        self.register(
+            ProviderInfo(
+                key="anthropic",
+                display_name="Anthropic (Claude)",
+                description="Supports Claude Pro/Max + API Key",
+                auth_methods=[AuthMethod.OAUTH, AuthMethod.API_KEY],
+                emoji="🎯",
+                oauth_provider_key="anthropic-claude-pro-max",
+                requires_subscription=True,
+            )
+        )
 
         # Google - API key only
-        self.register(ProviderInfo(
-            key="google",
-            display_name="Google (Gemini)",
-            description="API Key only",
-            auth_methods=[AuthMethod.API_KEY],
-            emoji="🔍"
-        ))
+        self.register(
+            ProviderInfo(
+                key="google",
+                display_name="Google (Gemini)",
+                description="API Key only",
+                auth_methods=[AuthMethod.API_KEY],
+                emoji="🔍",
+            )
+        )
 
         # Ollama - no auth needed
-        self.register(ProviderInfo(
-            key="ollama",
-            display_name="Ollama (Local models)",
-            description="No authentication needed",
-            auth_methods=[AuthMethod.NONE],
-            emoji="🏠"
-        ))
+        self.register(
+            ProviderInfo(
+                key="ollama",
+                display_name="Ollama (Local models)",
+                description="No authentication needed",
+                auth_methods=[AuthMethod.NONE],
+                emoji="🏠",
+            )
+        )
 
     def register(self, provider_info: ProviderInfo) -> None:
         """Register a new provider."""

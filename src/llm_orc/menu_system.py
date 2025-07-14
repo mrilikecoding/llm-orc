@@ -10,7 +10,9 @@ from .provider_registry import provider_registry
 class MenuOption:
     """Represents a menu option with title, description, and value."""
 
-    def __init__(self, title: str, description: str = "", value: Any = None, emoji: str = ""):
+    def __init__(
+        self, title: str, description: str = "", value: Any = None, emoji: str = ""
+    ):
         self.title = title
         self.description = description
         self.value = value or title
@@ -49,7 +51,7 @@ class InteractiveMenu:
         choice = click.prompt(
             prompt_text,
             type=click.Choice(choices),
-            default=str(default) if default else None
+            default=str(default) if default else None,
         )
 
         return self.options[int(choice) - 1].value
@@ -65,20 +67,21 @@ class AuthMenus:
 
         options = []
         for provider in providers:
-            options.append(MenuOption(
-                provider.display_name,
-                provider.description,
-                provider.key,
-                provider.emoji
-            ))
+            options.append(
+                MenuOption(
+                    provider.display_name,
+                    provider.description,
+                    provider.key,
+                    provider.emoji,
+                )
+            )
 
         # Add custom provider option
-        options.append(MenuOption(
-            "Custom provider...",
-            "Enter your own provider name",
-            "custom",
-            "⚙️"
-        ))
+        options.append(
+            MenuOption(
+                "Custom provider...", "Enter your own provider name", "custom", "⚙️"
+            )
+        )
 
         menu = InteractiveMenu("🚀 Select a Provider to Configure", options)
         result = menu.show(default=1)
@@ -94,35 +97,54 @@ class AuthMenus:
         options = []
 
         if anthropic_provider.supports_oauth:
-            options.append(MenuOption(
-                "Claude Pro/Max - Recommended",
-                "• Use existing Claude subscription\n     • No additional API costs\n     • Automatic token management",
-                "oauth",
-                "🔐"
-            ))
+            options.append(
+                MenuOption(
+                    "Claude Pro/Max - Recommended",
+                    (
+                        "• Use existing Claude subscription\n"
+                        "     • No additional API costs\n"
+                        "     • Automatic token management"
+                    ),
+                    "oauth",
+                    "🔐",
+                )
+            )
 
         if anthropic_provider.supports_api_key:
-            options.append(MenuOption(
-                "API Key (Anthropic API)",
-                "• Direct API access\n     • Requires separate API subscription\n     • Manual key management",
-                "api-key",
-                "🔑"
-            ))
+            options.append(
+                MenuOption(
+                    "API Key (Anthropic API)",
+                    (
+                        "• Direct API access\n"
+                        "     • Requires separate API subscription\n"
+                        "     • Manual key management"
+                    ),
+                    "api-key",
+                    "🔑",
+                )
+            )
 
         if len(options) > 1:
-            options.append(MenuOption(
-                "Both methods",
-                "• Set up multiple authentication options\n     • Maximum flexibility",
-                "both",
-                "🔄"
-            ))
+            options.append(
+                MenuOption(
+                    "Both methods",
+                    (
+                        "• Set up multiple authentication options\n"
+                        "     • Maximum flexibility"
+                    ),
+                    "both",
+                    "🔄",
+                )
+            )
 
-        options.append(MenuOption(
-            "Help me choose",
-            "• Learn more about authentication methods",
-            "help",
-            "ℹ️"
-        ))
+        options.append(
+            MenuOption(
+                "Help me choose",
+                "• Learn more about authentication methods",
+                "help",
+                "ℹ️",
+            )
+        )
 
         menu = InteractiveMenu("🎯 Choose Authentication Method for Anthropic", options)
         result = menu.show(default=1)
@@ -143,35 +165,38 @@ class AuthMenus:
         if provider.supports_oauth:
             oauth_description = "• OAuth authentication"
             if provider.requires_subscription:
-                oauth_description += f"\n     • Requires {provider.display_name} subscription"
-            options.append(MenuOption(
-                "OAuth",
-                oauth_description,
-                "oauth",
-                "🔐"
-            ))
+                oauth_description += (
+                    f"\n     • Requires {provider.display_name} subscription"
+                )
+            options.append(MenuOption("OAuth", oauth_description, "oauth", "🔐"))
 
         if provider.supports_api_key:
-            options.append(MenuOption(
-                "API Key",
-                "• API key authentication\n     • Direct API access",
-                "api-key",
-                "🔑"
-            ))
+            options.append(
+                MenuOption(
+                    "API Key",
+                    "• API key authentication\n     • Direct API access",
+                    "api-key",
+                    "🔑",
+                )
+            )
 
         if len(options) == 1:
             # Only one method available, use it automatically
             return str(options[0].value)
 
         if len(options) > 1:
-            options.append(MenuOption(
-                "Both methods",
-                "• Set up multiple authentication options",
-                "both",
-                "🔄"
-            ))
+            options.append(
+                MenuOption(
+                    "Both methods",
+                    "• Set up multiple authentication options",
+                    "both",
+                    "🔄",
+                )
+            )
 
-        menu = InteractiveMenu(f"🎯 Choose Authentication Method for {provider.display_name}", options)
+        menu = InteractiveMenu(
+            f"🎯 Choose Authentication Method for {provider.display_name}", options
+        )
         result = menu.show(default=1)
         return str(result)
 
@@ -197,10 +222,18 @@ class AuthMenus:
 
         # Show action menu
         options = [
-            MenuOption("Test authentication", "Verify a provider is working", "test", "🧪"),
-            MenuOption("Add new provider", "Configure additional authentication", "add", "➕"),
-            MenuOption("Remove provider", "Delete authentication credentials", "remove", "🗑️"),
-            MenuOption("View details", "Show detailed provider information", "details", "📋"),
+            MenuOption(
+                "Test authentication", "Verify a provider is working", "test", "🧪"
+            ),
+            MenuOption(
+                "Add new provider", "Configure additional authentication", "add", "➕"
+            ),
+            MenuOption(
+                "Remove provider", "Delete authentication credentials", "remove", "🗑️"
+            ),
+            MenuOption(
+                "View details", "Show detailed provider information", "details", "📋"
+            ),
             MenuOption("Refresh tokens", "Update OAuth tokens", "refresh", "🔄"),
             MenuOption("Quit", "Exit authentication management", "quit", "🚪"),
         ]
@@ -214,13 +247,15 @@ class AuthMenus:
             for provider in providers:
                 provider_info = provider_registry.get_provider(provider)
                 display_name = provider_info.display_name if provider_info else provider
-                provider_options.append(MenuOption(
-                    display_name,
-                    f"Perform action on {display_name}",
-                    provider
-                ))
+                provider_options.append(
+                    MenuOption(
+                        display_name, f"Perform action on {display_name}", provider
+                    )
+                )
 
-            provider_menu = InteractiveMenu(f"Select Provider to {action.title()}", provider_options)
+            provider_menu = InteractiveMenu(
+                f"Select Provider to {action.title()}", provider_options
+            )
             selected_provider = provider_menu.show()
             return action, selected_provider
 
@@ -234,38 +269,33 @@ class AuthMenus:
                 "Authentication failed",
                 "Token expired or invalid credentials",
                 "auth-failed",
-                "❌"
+                "❌",
             ),
             MenuOption(
                 "Browser authentication not working",
                 "OAuth flow issues with browser",
                 "browser-issues",
-                "🌐"
+                "🌐",
             ),
             MenuOption(
                 "Token refresh problems",
                 "OAuth token refresh failures",
                 "token-refresh",
-                "🔄"
+                "🔄",
             ),
             MenuOption(
                 "Provider not found",
                 "No authentication configured",
                 "no-provider",
-                "🔍"
+                "🔍",
             ),
             MenuOption(
                 "Permission errors",
                 "File system or configuration issues",
                 "permissions",
-                "🔒"
+                "🔒",
             ),
-            MenuOption(
-                "Other issue",
-                "General troubleshooting guidance",
-                "other",
-                "🛠️"
-            ),
+            MenuOption("Other issue", "General troubleshooting guidance", "other", "🛠️"),
         ]
 
         menu = InteractiveMenu("🔧 What problem are you experiencing?", options)
