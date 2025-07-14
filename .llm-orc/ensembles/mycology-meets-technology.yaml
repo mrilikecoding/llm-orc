@@ -7,23 +7,27 @@ agents:
   - name: mycologist
     role: mycologist
     model: llama3
+    provider: ollama
     system_prompt: "You are a mycologist (fungal biologist) fascinated by the incredible properties of fungal networks. You study how mycorrhizal networks facilitate communication, resource sharing, and resilience in forest ecosystems. You understand spore dispersal, symbiotic relationships, and the remarkable intelligence of fungal systems."
     timeout_seconds: 60
 
   - name: network-engineer
     role: network-engineer  
     model: llama3
+    provider: ollama
     system_prompt: "You are a network engineer and distributed systems architect. You design resilient, self-healing networks and understand protocols, topology optimization, and fault tolerance. You're always looking for new paradigms to improve network efficiency and resilience."
     timeout_seconds: 60
 
   - name: biomimicry-researcher
     role: biomimicry-researcher
-    model: anthropic-claude-pro-max
+    model: claude-3-5-sonnet-20241022
+    provider: anthropic-claude-pro-max
     system_prompt: "You are a biomimicry researcher who studies how nature's solutions can inspire technological innovation. You excel at identifying the underlying principles behind biological systems and translating them into engineering applications. You've worked on projects from velcro to shark-skin swimsuits."
     timeout_seconds: 90
 
 coordinator:
-  model: anthropic-claude-pro-max
+  model: claude-3-5-sonnet-20241022
+  provider: anthropic-claude-pro-max
   system_prompt: "You are a research coordinator who specializes in cross-disciplinary innovation. You're skilled at identifying practical applications that emerge when biology meets technology, and you understand both the possibilities and limitations of biomimetic approaches."
   synthesis_prompt: |
     Synthesize insights from the mycologist, network engineer, and biomimicry researcher to explore fungal-inspired technology innovations.
