@@ -106,21 +106,21 @@ description: Multi-perspective code review ensemble
 agents:
   - name: security-reviewer
     role: security-analyst
-    model_profile: development  # Fast local analysis
+    model_profile: free-local     # Fast, free initial analysis
     timeout_seconds: 60
 
   - name: performance-reviewer
     role: performance-analyst  
-    model_profile: development  # Fast local analysis
+    model_profile: free-local     # Fast, free initial analysis
     timeout_seconds: 60
 
   - name: quality-reviewer
     role: code-quality-analyst
-    model_profile: production   # High-quality cloud analysis
+    model_profile: default-claude # High-quality cloud analysis
     timeout_seconds: 90
 
 coordinator:
-  model_profile: production     # Best quality for synthesis
+  model_profile: default-claude   # Best quality for synthesis
   synthesis_prompt: |
     You are a senior engineering lead. Synthesize the security, performance,
     and quality analysis into actionable recommendations.
@@ -220,24 +220,29 @@ Model profiles simplify ensemble configuration by providing named shortcuts for 
 ```yaml
 # In ~/.config/llm-orc/config.yaml or .llm-orc/config.yaml
 model_profiles:
-  development:
+  free-local:
     model: llama3
     provider: ollama
     cost_per_token: 0.0
 
-  production:
-    model: claude-3-5-sonnet-20241022
+  default-claude:
+    model: claude-sonnet-4-20250514
     provider: anthropic-claude-pro-max
     # No cost_per_token: subscription-based
 
-  claude-api:
+  high-context:
     model: claude-3-5-sonnet-20241022
     provider: anthropic-api
     cost_per_token: 3.0e-06
+
+  small:
+    model: claude-3-haiku-20240307
+    provider: anthropic-api
+    cost_per_token: 1.0e-06
 ```
 
 **Profile Benefits:**
-- **Simplified Configuration**: Use `model_profile: production` instead of explicit model + provider
+- **Simplified Configuration**: Use `model_profile: default-claude` instead of explicit model + provider
 - **Consistency**: Same profile names work across all ensembles
 - **Cost Tracking**: Built-in cost information for budgeting
 - **Flexibility**: Local profiles override global ones
@@ -245,10 +250,12 @@ model_profiles:
 **Usage in Ensembles:**
 ```yaml
 agents:
-  - name: researcher
-    model_profile: development    # Fast, free local model
-  - name: expert
-    model_profile: production     # High-quality cloud model
+  - name: bulk-analyzer
+    model_profile: free-local     # Fast, free bulk analysis
+  - name: expert-reviewer
+    model_profile: default-claude # High-quality cloud analysis
+  - name: document-processor
+    model_profile: high-context   # Large context processing
 ```
 
 ### Ensemble Configuration

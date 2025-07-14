@@ -34,34 +34,35 @@ project:
     production: claude-4-sonnet # High-quality cloud model
 
 model_profiles:
-  # Local development models (fast, free)
-  development:
+  # Fast, free local models
+  free-local:
     model: llama3
     provider: ollama
-    cost_per_token: 0.0  # Optional: for budgeting reference
+    cost_per_token: 0.0
 
   # High-quality cloud models (subscription-based)
-  production:
-    model: claude-3-5-sonnet-20241022
+  default-claude:
+    model: claude-sonnet-4-20250514
     provider: anthropic-claude-pro-max
     # No cost_per_token: subscription-based pricing
 
-  # API-based models (pay-per-use)
-  claude-api:
-    model: claude-3-5-sonnet-20241022
-    provider: anthropic-api
-    cost_per_token: 3.0e-06  # $3 per million tokens
-
-  # Alternative models
-  gemini-2.5-flash:
+  # Alternative cloud models
+  default-gemini:
     model: gemini-2.5-flash
     provider: google-gemini
     cost_per_token: 1.0e-06
 
-  llama3:
-    model: llama3
-    provider: ollama
-    cost_per_token: 0.0
+  # High-context API models (pay-per-use)
+  high-context:
+    model: claude-3-5-sonnet-20241022
+    provider: anthropic-api
+    cost_per_token: 3.0e-06
+
+  # Small, fast API models
+  small:
+    model: claude-3-haiku-20240307
+    provider: anthropic-api
+    cost_per_token: 1.0e-06
 ```
 
 #### Configuration Options
@@ -90,9 +91,9 @@ Model profiles are named shortcuts that combine a model + provider + cost inform
 
 **Profile Types:**
 
-- **Local Development**: `development`, `llama3` - free local models via Ollama
-- **Cloud Subscription**: `production`, `claude-4-sonnet` - OAuth models using existing subscriptions ($0 cost)
-- **API Pay-per-use**: `claude-api`, `gemini-2.5-flash` - API models with token costs
+- **Free Local**: `free-local` - fast, free local models via Ollama
+- **Cloud Subscription**: `default-claude`, `default-gemini` - OAuth models using existing subscriptions ($0 cost)  
+- **API Pay-per-use**: `high-context`, `small` - API models with token costs for specific capabilities
 
 **Note:** `cost_per_token` is purely for documentation/budgeting purposes. Actual cost calculations use hardcoded values in the model implementations. For OAuth models (subscription-based), omit `cost_per_token` entirely.
 
@@ -270,26 +271,26 @@ description: Brief description of what this ensemble does
 default_task: "Optional default task when no CLI input provided"
 
 agents:
-  - name: local-analyst
+  - name: initial-researcher
     role: quick-researcher
-    model_profile: development  # Fast local analysis
+    model_profile: free-local     # Fast, free bulk analysis
     system_prompt: "You are a quick researcher for initial analysis..."
     timeout_seconds: 60
 
   - name: expert-reviewer
     role: senior-expert
-    model_profile: production   # High-quality cloud analysis
+    model_profile: default-claude # High-quality cloud analysis
     system_prompt: "You are a senior expert providing final analysis..."
     timeout_seconds: 90
 
-  - name: cost-optimizer
-    role: efficiency-expert
-    model_profile: claude-api   # Pay-per-use for specialized tasks
-    system_prompt: "You optimize for cost-effectiveness and efficiency..."
-    timeout_seconds: 60
+  - name: document-analyzer
+    role: document-specialist
+    model_profile: high-context   # Large context for document analysis
+    system_prompt: "You analyze large documents and extract key insights..."
+    timeout_seconds: 120
 
 coordinator:
-  model_profile: production     # Use high-quality model for synthesis
+  model_profile: default-claude   # Use high-quality model for synthesis
   system_prompt: "You are an executive coordinator..." # Optional: role injection
   synthesis_prompt: |
     Synthesize the research and expert analysis into actionable insights.
@@ -320,21 +321,26 @@ Example output:
 Available model profiles:
 
 📁 Local Repo (.llm-orc/config.yaml):
-  development:
+  free-local:
     Model: llama3
     Provider: ollama
     Cost per token: 0.0
 
 🌐 Global (~/.config/llm-orc/config.yaml):
-  production:
-    Model: claude-3-5-sonnet-20241022
+  default-claude:
+    Model: claude-sonnet-4-20250514
     Provider: anthropic-claude-pro-max
     Cost per token: Not specified
 
-  claude-api:
+  high-context:
     Model: claude-3-5-sonnet-20241022
     Provider: anthropic-api
     Cost per token: 3.0e-06
+
+  small:
+    Model: claude-3-haiku-20240307
+    Provider: anthropic-api
+    Cost per token: 1.0e-06
 ```
 
 #### Profile Override Hierarchy
@@ -381,60 +387,61 @@ coordinator:
 
 ### Profile Types and Use Cases
 
-#### Development Profiles (`development`, `llama3`)
+#### Free Local Profiles (`free-local`)
 **Best for:**
-- **Experimentation and iteration**
+- **Bulk initial analysis**
 - **Privacy-sensitive content**
-- **High-volume/low-stakes analysis**
+- **High-volume/low-stakes tasks**
 - **Cost-conscious projects**
 - **Offline environments**
-- **Quick prototyping**
+- **Quick experimentation**
 
-#### Production Profiles (`production`, `claude-4-sonnet`)
+#### Cloud Subscription Profiles (`default-claude`, `default-gemini`)
 **Best for:**
 - **High-stakes decisions**
 - **Complex reasoning tasks**
-- **Professional/business analysis**
 - **Final synthesis and coordination**
-- **When you have existing Claude Pro/Max subscription**
+- **Professional/business analysis**
+- **When you have existing subscriptions**
 
-#### API Profiles (`claude-api`, `gemini-2.5-flash`)
+#### Specialized API Profiles (`high-context`, `small`)
 **Best for:**
-- **Production systems with budget**
-- **Specific model requirements**
-- **When you need guaranteed availability**
-- **Integration with other services**
-- **Specialized tasks requiring specific models**
+- **Large document analysis** (`high-context`)
+- **Quick, simple tasks** (`small`)
+- **Specific capability requirements**
+- **Production systems with API budget**
+- **When guaranteed availability is needed**
 
 ### Profile Selection Strategy
 
 **For Mixed Ensembles:**
-- Use `development` profiles for initial analysis and research
-- Use `production` profiles for synthesis and final coordination
-- Use `claude-api` profiles for specialized tasks requiring specific capabilities
+- Use `free-local` for bulk initial analysis and research
+- Use `default-claude`/`default-gemini` for synthesis and high-quality analysis
+- Use `high-context` for large document processing
+- Use `small` for quick, simple tasks
 
 **Example Mixed Configuration:**
 ```yaml
 agents:
-  - name: researcher
-    model_profile: development    # Fast, free research
-  - name: expert
-    model_profile: production     # High-quality analysis
-  - name: specialist
-    model_profile: claude-api     # Specific model capabilities
+  - name: bulk-researcher
+    model_profile: free-local     # Fast, free bulk analysis
+  - name: expert-analyst
+    model_profile: default-claude # High-quality analysis
+  - name: document-processor
+    model_profile: high-context   # Large context processing
 
 coordinator:
-  model_profile: production       # Best quality for synthesis
+  model_profile: default-claude   # Best quality for synthesis
 ```
 
 ## Best Practices
 
 ### Ensemble Design with Model Profiles
 
-1. **Mix profile types** based on task complexity and cost considerations
-2. **Use development profiles** for exploration and iteration
-3. **Use production profiles** for synthesis and high-stakes decisions
-4. **Use API profiles** for specialized capabilities when budget allows
+1. **Mix profile types** based on task characteristics and cost considerations
+2. **Use free-local profiles** for bulk analysis and exploration
+3. **Use default-claude/gemini profiles** for synthesis and high-stakes decisions
+4. **Use specialized API profiles** for specific capabilities (context, speed)
 5. **Diverse perspectives** - avoid redundant roles
 6. **Clear role definitions** for better agent performance
 
@@ -442,15 +449,15 @@ coordinator:
 
 - **Define global profiles** for system-wide consistency
 - **Override with local profiles** for project-specific needs  
-- **Use descriptive profile names** (`development`, `production` vs `profile1`, `profile2`)
+- **Use descriptive profile names** (`free-local`, `default-claude` vs `profile1`, `profile2`)
 - **Document profile purposes** in comments
 - **Test profiles** with validation ensembles
 
 ### Cost Optimization with Profiles
 
-- **Start with development profiles** for iteration and experimentation
-- **Use production profiles** for subscription-based models (no additional cost)
-- **Reserve API profiles** for specialized tasks requiring specific models
+- **Start with free-local profiles** for iteration and experimentation
+- **Use default-claude/gemini profiles** for subscription-based models (no additional cost)
+- **Reserve specialized API profiles** for tasks requiring specific capabilities
 - **Monitor usage** through ensemble reports and profile cost tracking
 
 ## Security and Privacy
