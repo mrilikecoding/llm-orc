@@ -49,25 +49,35 @@ class ProviderRegistry:
 
     def _register_default_providers(self) -> None:
         """Register the default set of supported providers."""
-        # Anthropic - supports both OAuth and API key
+        # Anthropic API - API key only
         self.register(
             ProviderInfo(
-                key="anthropic",
-                display_name="Anthropic (Claude)",
-                description="Supports Claude Pro/Max + API Key",
-                auth_methods=[AuthMethod.OAUTH, AuthMethod.API_KEY],
+                key="anthropic-api",
+                display_name="Anthropic API",
+                description="Direct API access with Claude models",
+                auth_methods=[AuthMethod.API_KEY],
                 emoji="🎯",
-                oauth_provider_key="anthropic-claude-pro-max",
+            )
+        )
+
+        # Anthropic Claude Pro/Max - OAuth only
+        self.register(
+            ProviderInfo(
+                key="anthropic-claude-pro-max",
+                display_name="Claude Pro/Max",
+                description="Use existing Claude Pro/Max subscription",
+                auth_methods=[AuthMethod.OAUTH],
+                emoji="🔐",
                 requires_subscription=True,
             )
         )
 
-        # Google - API key only
+        # Google Gemini - API key only
         self.register(
             ProviderInfo(
-                key="google",
-                display_name="Google (Gemini)",
-                description="API Key only",
+                key="google-gemini",
+                display_name="Google Gemini",
+                description="Google's Gemini models via API",
                 auth_methods=[AuthMethod.API_KEY],
                 emoji="🔍",
             )
@@ -77,8 +87,8 @@ class ProviderRegistry:
         self.register(
             ProviderInfo(
                 key="ollama",
-                display_name="Ollama (Local models)",
-                description="No authentication needed",
+                display_name="Ollama (Local)",
+                description="Local models, no authentication needed",
                 auth_methods=[AuthMethod.NONE],
                 emoji="🏠",
             )

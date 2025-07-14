@@ -193,3 +193,21 @@ class TestCLI:
                     local_index = result.output.find("📁 Local Repo")
                     global_index = result.output.find("🌐 Global")
                     assert local_index < global_index
+
+    def test_auth_setup_provider_selection(self) -> None:
+        """Test that auth setup shows only supported providers."""
+        from llm_orc.provider_registry import provider_registry
+
+        # Test that we have the expected providers
+        providers = provider_registry.list_providers()
+        provider_keys = [p.key for p in providers]
+
+        # Should include the specific provider keys
+        assert "anthropic-api" in provider_keys
+        assert "anthropic-claude-pro-max" in provider_keys
+        assert "google-gemini" in provider_keys
+        assert "ollama" in provider_keys
+
+        # Should not include generic "anthropic" or "google"
+        assert "anthropic" not in provider_keys
+        assert "google" not in provider_keys

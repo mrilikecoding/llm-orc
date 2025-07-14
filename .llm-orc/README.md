@@ -272,19 +272,16 @@ default_task: "Optional default task when no CLI input provided"
 
 agents:
   - name: initial-researcher
-    role: quick-researcher
     model_profile: free-local     # Fast, free bulk analysis
     system_prompt: "You are a quick researcher for initial analysis..."
     timeout_seconds: 60
 
   - name: expert-reviewer
-    role: senior-expert
     model_profile: default-claude # High-quality cloud analysis
     system_prompt: "You are a senior expert providing final analysis..."
     timeout_seconds: 90
 
   - name: document-analyzer
-    role: document-specialist
     model_profile: high-context   # Large context for document analysis
     system_prompt: "You analyze large documents and extract key insights..."
     timeout_seconds: 120

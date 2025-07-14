@@ -401,3 +401,234 @@ class TestConfigurationManager:
                     ValueError, match="Local .llm-orc directory already exists"
                 ):
                     config_manager.init_local_config()
+
+    def test_ensure_global_config_dir_creates_default_validation_ensembles(
+        self,
+    ) -> None:
+        """Test that ensuring global config creates default validation ensembles."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            global_config_dir = Path(temp_dir)
+
+            # Create ConfigurationManager with mocked global config dir
+            with patch.object(
+                ConfigurationManager,
+                "_get_global_config_dir",
+                return_value=global_config_dir,
+            ):
+                config_manager = ConfigurationManager()
+                config_manager.ensure_global_config_dir()
+
+                # Check that ensembles directory was created
+                ensembles_dir = global_config_dir / "ensembles"
+                assert ensembles_dir.exists()
+
+                # Check that validation ensembles were created for each provider
+                expected_ensembles = [
+                    "validate-anthropic-api.yaml",
+                    "validate-anthropic-claude-pro-max.yaml",
+                    "validate-google-gemini.yaml",
+                    "validate-ollama.yaml",
+                ]
+
+                for ensemble_file in expected_ensembles:
+                    ensemble_path = ensembles_dir / ensemble_file
+                    assert ensemble_path.exists(), (
+                        f"Missing validation ensemble: {ensemble_file}"
+                    )
+
+                    # Verify the file contains valid YAML
+                    with open(ensemble_path) as f:
+                        ensemble_config = yaml.safe_load(f)
+                        assert ensemble_config is not None
+                        assert "name" in ensemble_config
+                        assert "description" in ensemble_config
+                        assert "agents" in ensemble_config
+
+
+class TestModelProfiles:
+    """Test model profile loading and resolution."""
+
+    def test_load_model_profiles_from_global_config(self) -> None:
+        """Test loading model profiles from global config.yaml."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            global_dir = temp_path / "global"
+            global_dir.mkdir()
+
+            # Create global config with model profiles
+            config_data = {
+                "model_profiles": {
+                    "claude-4-sonnet": {
+                        "model": "claude-3-5-sonnet-20241022",
+                        "provider": "anthropic-claude-pro-max",
+                    },
+                    "llama3": {
+                        "model": "llama3",
+                        "provider": "ollama",
+                    },
+                }
+            }
+
+            config_file = global_dir / "config.yaml"
+            with open(config_file, "w") as f:
+                yaml.dump(config_data, f)
+
+            # Mock to use our test global config
+            with patch.object(
+                ConfigurationManager, "_get_global_config_dir", return_value=global_dir
+            ):
+                with patch("pathlib.Path.cwd", return_value=temp_path):
+                    config_manager = ConfigurationManager()
+                    profiles = config_manager.get_model_profiles()
+
+                    assert "claude-4-sonnet" in profiles
+                    assert (
+                        profiles["claude-4-sonnet"]["model"] == "claude-3-5-sonnet-20241022"
+                    )
+                    assert (
+                        profiles["claude-4-sonnet"]["provider"] == "anthropic-claude-pro-max"
+                    )
+                    assert "llama3" in profiles
+                    assert profiles["llama3"]["model"] == "llama3"
+                    assert profiles["llama3"]["provider"] == "ollama"
+
+    def test_load_model_profiles_from_local_config(self) -> None:
+        """Test loading model profiles from local .llm-orc/config.yaml."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create local config directory
+            local_dir = temp_path / ".llm-orc"
+            local_dir.mkdir()
+
+            # Create local config with model profiles
+            config_data = {
+                "model_profiles": {
+                    "local-llama": {
+                        "model": "llama3.1",
+                        "provider": "ollama",
+                    },
+                }
+            }
+
+            config_file = local_dir / "config.yaml"
+            with open(config_file, "w") as f:
+                yaml.dump(config_data, f)
+
+            # Mock cwd to find local config
+            with patch("pathlib.Path.cwd", return_value=temp_path):
+                config_manager = ConfigurationManager()
+                profiles = config_manager.get_model_profiles()
+
+                assert "local-llama" in profiles
+                assert profiles["local-llama"]["model"] == "llama3.1"
+                assert profiles["local-llama"]["provider"] == "ollama"
+
+    def test_local_model_profiles_override_global(self) -> None:
+        """Test that local model profiles override global ones."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create global config
+            global_dir = temp_path / "global"
+            global_dir.mkdir()
+            global_config = {
+                "model_profiles": {
+                    "claude-4-sonnet": {
+                        "model": "claude-3-5-sonnet-20241022",
+                        "provider": "anthropic-claude-pro-max",
+                    },
+                    "shared-profile": {
+                        "model": "claude-3-5-sonnet-20241022",
+                        "provider": "anthropic-api",
+                    },
+                }
+            }
+            with open(global_dir / "config.yaml", "w") as f:
+                yaml.dump(global_config, f)
+
+            # Create local config that overrides one profile
+            local_dir = temp_path / ".llm-orc"
+            local_dir.mkdir()
+            local_config = {
+                "model_profiles": {
+                    "shared-profile": {
+                        "model": "claude-3-5-sonnet-20241022",
+                        "provider": "anthropic-claude-pro-max",  # Override to use OAuth
+                    },
+                    "local-only": {
+                        "model": "llama3",
+                        "provider": "ollama",
+                    },
+                }
+            }
+            with open(local_dir / "config.yaml", "w") as f:
+                yaml.dump(local_config, f)
+
+            # Mock to use our test configs
+            with patch.object(
+                ConfigurationManager, "_get_global_config_dir", return_value=global_dir
+            ):
+                with patch("pathlib.Path.cwd", return_value=temp_path):
+                    config_manager = ConfigurationManager()
+                    profiles = config_manager.get_model_profiles()
+
+                    # Global profile should be present
+                    assert "claude-4-sonnet" in profiles
+                    assert (
+                        profiles["claude-4-sonnet"]["provider"] == "anthropic-claude-pro-max"
+                    )
+
+                    # Local override should take precedence
+                    assert "shared-profile" in profiles
+                    assert (
+                        profiles["shared-profile"]["provider"] == "anthropic-claude-pro-max"
+                    )
+
+                    # Local-only profile should be present
+                    assert "local-only" in profiles
+                    assert profiles["local-only"]["model"] == "llama3"
+
+    def test_resolve_model_profile_success(self) -> None:
+        """Test successful model profile resolution."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            global_dir = temp_path / "global"
+            global_dir.mkdir()
+
+            # Create config with model profiles
+            config_data = {
+                "model_profiles": {
+                    "claude-4-sonnet": {
+                        "model": "claude-3-5-sonnet-20241022",
+                        "provider": "anthropic-claude-pro-max",
+                    },
+                }
+            }
+            with open(global_dir / "config.yaml", "w") as f:
+                yaml.dump(config_data, f)
+
+            with patch.object(
+                ConfigurationManager, "_get_global_config_dir", return_value=global_dir
+            ):
+                with patch("pathlib.Path.cwd", return_value=temp_path):
+                    config_manager = ConfigurationManager()
+                    model, provider = config_manager.resolve_model_profile(
+                        "claude-4-sonnet"
+                    )
+
+                    assert model == "claude-3-5-sonnet-20241022"
+                    assert provider == "anthropic-claude-pro-max"
+
+    def test_resolve_model_profile_not_found(self) -> None:
+        """Test model profile resolution when profile doesn't exist."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            with patch("pathlib.Path.cwd", return_value=temp_path):
+                config_manager = ConfigurationManager()
+
+                with pytest.raises(
+                    ValueError, match="Model profile 'nonexistent' not found"
+                ):
+                    config_manager.resolve_model_profile("nonexistent")

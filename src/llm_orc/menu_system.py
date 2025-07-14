@@ -72,83 +72,18 @@ class AuthMenus:
                     provider.display_name,
                     provider.description,
                     provider.key,
-                    provider.emoji,
+                    "✨",
                 )
             )
 
-        # Add custom provider option
-        options.append(
-            MenuOption(
-                "Custom provider...", "Enter your own provider name", "custom", "⚙️"
-            )
-        )
+        # Note: Custom provider option removed - only show supported providers
 
         menu = InteractiveMenu("🚀 Select a Provider to Configure", options)
         result = menu.show(default=1)
         return str(result)
 
-    @staticmethod
-    def anthropic_auth_method() -> str:
-        """Show Anthropic authentication method selection."""
-        anthropic_provider = provider_registry.get_provider("anthropic")
-        if not anthropic_provider:
-            raise ValueError("Anthropic provider not found in registry")
-
-        options = []
-
-        if anthropic_provider.supports_oauth:
-            options.append(
-                MenuOption(
-                    "Claude Pro/Max - Recommended",
-                    (
-                        "• Use existing Claude subscription\n"
-                        "     • No additional API costs\n"
-                        "     • Automatic token management"
-                    ),
-                    "oauth",
-                    "🔐",
-                )
-            )
-
-        if anthropic_provider.supports_api_key:
-            options.append(
-                MenuOption(
-                    "API Key (Anthropic API)",
-                    (
-                        "• Direct API access\n"
-                        "     • Requires separate API subscription\n"
-                        "     • Manual key management"
-                    ),
-                    "api-key",
-                    "🔑",
-                )
-            )
-
-        if len(options) > 1:
-            options.append(
-                MenuOption(
-                    "Both methods",
-                    (
-                        "• Set up multiple authentication options\n"
-                        "     • Maximum flexibility"
-                    ),
-                    "both",
-                    "🔄",
-                )
-            )
-
-        options.append(
-            MenuOption(
-                "Help me choose",
-                "• Learn more about authentication methods",
-                "help",
-                "ℹ️",
-            )
-        )
-
-        menu = InteractiveMenu("🎯 Choose Authentication Method for Anthropic", options)
-        result = menu.show(default=1)
-        return str(result)
+    # Note: anthropic_auth_method removed - now handled by specific provider keys
+    # (anthropic-api and anthropic-claude-pro-max)
 
     @staticmethod
     def get_auth_method_for_provider(provider_key: str) -> str:

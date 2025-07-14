@@ -241,6 +241,81 @@ def list_ensembles(config_dir: str) -> None:
                 click.echo(f"  {ensemble.name}: {ensemble.description}")
 
 
+@cli.command("list-profiles")
+def list_profiles() -> None:
+    """List available model profiles with their provider/model details."""
+    # Initialize configuration manager
+    config_manager = ConfigurationManager()
+
+    # Handle migration if needed
+    if config_manager.needs_migration():
+        click.echo("Migrating configuration from ~/.llm-orc to new location...")
+        config_manager.migrate_from_old_location()
+        click.echo(f"Configuration migrated to: {config_manager.global_config_dir}")
+
+    # Get all model profiles (merged global + local)
+    all_profiles = config_manager.get_model_profiles()
+
+    if not all_profiles:
+        click.echo("No model profiles found.")
+        click.echo("Run 'llm-orc config init' to create default profiles.")
+        return
+
+    # Get separate global and local profiles for grouping
+    global_profiles = {}
+    global_config_file = config_manager.global_config_dir / "config.yaml"
+    if global_config_file.exists():
+        import yaml
+        with open(global_config_file) as f:
+            global_config = yaml.safe_load(f) or {}
+            global_profiles = global_config.get("model_profiles", {})
+
+    local_profiles = {}
+    if config_manager.local_config_dir:
+        local_config_file = config_manager.local_config_dir / "config.yaml"
+        if local_config_file.exists():
+            import yaml
+            with open(local_config_file) as f:
+                local_config = yaml.safe_load(f) or {}
+                local_profiles = local_config.get("model_profiles", {})
+
+    click.echo("Available model profiles:")
+
+    # Show local profiles first (if any)
+    if local_profiles:
+        click.echo("\n📁 Local Repo (.llm-orc/config.yaml):")
+        for profile_name in sorted(local_profiles.keys()):
+            profile = local_profiles[profile_name]
+            model = profile.get("model", "Unknown")
+            provider = profile.get("provider", "Unknown")
+            cost = profile.get("cost_per_token", "Not specified")
+
+            click.echo(f"  {profile_name}:")
+            click.echo(f"    Model: {model}")
+            click.echo(f"    Provider: {provider}")
+            click.echo(f"    Cost per token: {cost}")
+
+    # Show global profiles
+    if global_profiles:
+        global_config_label = f"Global ({config_manager.global_config_dir}/config.yaml)"
+        click.echo(f"\n🌐 {global_config_label}:")
+        for profile_name in sorted(global_profiles.keys()):
+            # Skip if this profile is overridden by local
+            if profile_name in local_profiles:
+                click.echo(f"  {profile_name}: (overridden by local)")
+                continue
+
+            profile = global_profiles[profile_name]
+            model = profile.get("model", "Unknown")
+            provider = profile.get("provider", "Unknown")
+            cost = profile.get("cost_per_token", "Not specified")
+
+            click.echo(f"  {profile_name}:")
+            click.echo(f"    Model: {model}")
+            click.echo(f"    Provider: {provider}")
+            click.echo(f"    Cost per token: {cost}")
+
+
 @cli.group()
 def config() -> None:
     """Configuration management commands."""
@@ -881,72 +956,72 @@ def auth_setup() -> None:
         # Use interactive menu for provider selection
         provider_key = AuthMenus.provider_selection()
 
-        if provider_key == "custom":
-            provider_key = click.prompt("Enter provider name")
-
         # Get provider info
         provider = provider_registry.get_provider(provider_key)
 
-        if provider and not provider.requires_auth:
+        if not provider:
+            show_error(f"Provider '{provider_key}' not found in registry")
+            continue
+
+        if not provider.requires_auth:
             show_success(f"{provider.display_name} doesn't require authentication!")
             if not confirm_action("Add another provider?"):
                 break
             continue
 
-        # Get authentication method
-        if provider_key == "anthropic":
-            auth_method = AuthMenus.anthropic_auth_method()
-        elif provider:
-            auth_method = AuthMenus.get_auth_method_for_provider(provider_key)
+        # Get authentication method based on provider
+        if provider_key == "anthropic-claude-pro-max":
+            auth_method = "oauth"  # Claude Pro/Max only supports OAuth
+        elif provider_key == "anthropic-api":
+            auth_method = "api_key"  # Anthropic API only supports API key
+        elif provider_key == "google-gemini":
+            auth_method = "api_key"  # Google Gemini only supports API key
         else:
-            # Custom provider - ask for method
-            auth_method = click.prompt(
-                "Authentication method",
-                type=click.Choice(["api_key", "oauth"]),
-                default="api_key",
-            )
+            # For other providers, use the menu system
+            auth_method = AuthMenus.get_auth_method_for_provider(provider_key)
 
         # Handle authentication setup based on method
         try:
             if auth_method == "help":
                 _show_auth_method_help()
                 continue
-            elif auth_method == "oauth" and provider_key == "anthropic":
+            elif auth_method == "oauth" and provider_key == "anthropic-claude-pro-max":
                 show_working("Setting up Claude Pro/Max OAuth...")
                 _handle_claude_pro_max_oauth(auth_manager, storage)
                 show_success("Claude Pro/Max OAuth configured!")
-            elif auth_method == "api-key" and provider_key == "anthropic":
+            elif auth_method == "api_key" and provider_key == "anthropic-api":
                 api_key = click.prompt("Anthropic API key", hide_input=True)
-                storage.store_api_key("anthropic", api_key)
+                storage.store_api_key("anthropic-api", api_key)
                 show_success("Anthropic API key configured!")
-            elif auth_method == "both" and provider_key == "anthropic":
-                # Set up both OAuth and API key for Anthropic
-                show_working("Setting up Claude Pro/Max OAuth...")
-                _handle_claude_pro_max_oauth(auth_manager, storage)
-                show_success("OAuth configured!")
-
-                api_key = click.prompt("Anthropic API key", hide_input=True)
-                storage.store_api_key("anthropic", api_key)
-                show_success("API key configured!")
+            elif auth_method == "api_key" and provider_key == "google-gemini":
+                api_key = click.prompt("Google Gemini API key", hide_input=True)
+                storage.store_api_key("google-gemini", api_key)
+                show_success("Google Gemini API key configured!")
             elif auth_method == "api_key" or auth_method == "api-key":
-                api_key = click.prompt(f"{provider_key} API key", hide_input=True)
+                # Generic API key setup for other providers
+                api_key = click.prompt(
+                    f"{provider.display_name} API key", hide_input=True
+                )
                 storage.store_api_key(provider_key, api_key)
-                show_success(f"{provider_key} API key configured!")
+                show_success(f"{provider.display_name} API key configured!")
             elif auth_method == "oauth":
+                # Generic OAuth setup for other providers
                 client_id = click.prompt("OAuth client ID")
                 client_secret = click.prompt("OAuth client secret", hide_input=True)
 
                 if auth_manager.authenticate_oauth(
                     provider_key, client_id, client_secret
                 ):
-                    show_success(f"{provider_key} OAuth configured!")
+                    show_success(f"{provider.display_name} OAuth configured!")
                 else:
-                    show_error(f"OAuth authentication for {provider_key} failed")
+                    show_error(
+                        f"OAuth authentication for {provider.display_name} failed"
+                    )
             else:
                 show_error(f"Unknown authentication method: {auth_method}")
 
         except Exception as e:
-            show_error(f"Failed to configure {provider_key}: {str(e)}")
+            show_error(f"Failed to configure {provider.display_name}: {str(e)}")
 
         if not confirm_action("Add another provider?"):
             break

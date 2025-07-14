@@ -105,18 +105,18 @@ description: Multi-perspective code review ensemble
 
 agents:
   - name: security-reviewer
-    role: security-analyst
     model_profile: free-local     # Fast, free initial analysis
+    system_prompt: "You are a security analyst. Focus on identifying security vulnerabilities, authentication issues, and potential attack vectors."
     timeout_seconds: 60
 
   - name: performance-reviewer
-    role: performance-analyst  
     model_profile: free-local     # Fast, free initial analysis
+    system_prompt: "You are a performance analyst. Focus on identifying bottlenecks, inefficient algorithms, and scalability issues."
     timeout_seconds: 60
 
   - name: quality-reviewer
-    role: code-quality-analyst
     model_profile: default-claude # High-quality cloud analysis
+    system_prompt: "You are a code quality analyst. Focus on maintainability, readability, and best practices."
     timeout_seconds: 90
 
 coordinator:

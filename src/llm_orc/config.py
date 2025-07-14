@@ -139,7 +139,7 @@ class ConfigurationManager:
                         {
                             "name": "validator",
                             "model_profile": "validate-anthropic-api",
-                            "role": "Respond with 'Authentication working'",
+                            "system_prompt": "Respond with 'Authentication working'",
                         }
                     ],
                     "coordinator": {
@@ -158,7 +158,7 @@ class ConfigurationManager:
                         {
                             "name": "validator",
                             "model_profile": "validate-claude-pro-max",
-                            "role": "Respond with 'Authentication working'",
+                            "system_prompt": "Respond with 'Authentication working'",
                         }
                     ],
                     "coordinator": {
@@ -177,7 +177,7 @@ class ConfigurationManager:
                         {
                             "name": "validator",
                             "model_profile": "validate-google-gemini",
-                            "role": "Respond with 'Authentication working'",
+                            "system_prompt": "Respond with 'Authentication working'",
                         }
                     ],
                     "coordinator": {
@@ -196,7 +196,7 @@ class ConfigurationManager:
                         {
                             "name": "validator",
                             "model_profile": "validate-ollama",
-                            "role": "Respond with 'Authentication working'",
+                            "system_prompt": "Respond with 'Authentication working'",
                         }
                     ],
                     "coordinator": {

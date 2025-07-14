@@ -284,13 +284,12 @@ class TestAuthCommandsNew:
     ) -> None:
         """Test that 'auth setup' command runs interactive wizard."""
         # Given
-        # Mock user input
+        # Mock user input - select anthropic-api provider directly
         inputs = [
-            "anthropic",
-            "api_key",
-            "test_key_123",
-            "n",
-        ]  # provider, auth_method, api_key, no more
+            "1",  # Select first provider (anthropic-api)
+            "test_key_123",  # API key
+            "n",  # No more providers
+        ]  # provider selection, api_key, no more
 
         # When
         with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager:
@@ -314,7 +313,7 @@ class TestAuthCommandsNew:
         # Then
         assert result.exit_code == 0
         assert "Welcome to LLM Orchestra setup!" in result.output
-        assert "✓ anthropic configured successfully with API key" in result.output
+        assert "Anthropic API key configured!" in result.output
         assert "Setup complete!" in result.output
 
     def test_auth_add_anthropic_interactive_api_key(
