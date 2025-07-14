@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import os
 import sys
 import time
 from pathlib import Path
@@ -171,20 +170,56 @@ def invoke(
 )
 def list_ensembles(config_dir: str) -> None:
     """List available ensembles."""
+    # Initialize configuration manager
+    config_manager = ConfigurationManager()
+
+    # Handle migration if needed
+    if config_manager.needs_migration():
+        click.echo("Migrating configuration from ~/.llm-orc to new location...")
+        config_manager.migrate_from_old_location()
+        click.echo(f"Configuration migrated to: {config_manager.global_config_dir}")
+
     if config_dir is None:
-        # Default to ~/.llm-orc/ensembles if no config dir specified
-        config_dir = os.path.expanduser("~/.llm-orc/ensembles")
+        # Use configuration manager to get ensemble directories
+        ensemble_dirs = config_manager.get_ensembles_dirs()
+        if not ensemble_dirs:
+            click.echo("No ensemble directories found.")
+            click.echo("Run 'llm-orc config init' to set up local configuration.")
+            return
 
-    loader = EnsembleLoader()
-    ensembles = loader.list_ensembles(config_dir)
+        # List ensembles from all directories in priority order
+        loader = EnsembleLoader()
+        all_ensembles = {}
 
-    if not ensembles:
-        click.echo(f"No ensembles found in {config_dir}")
-        click.echo("  (Create .yaml files with ensemble configurations)")
+        for dir_path in ensemble_dirs:
+            ensembles = loader.list_ensembles(str(dir_path))
+            for ensemble in ensembles:
+                if ensemble.name not in all_ensembles:
+                    all_ensembles[ensemble.name] = (ensemble, str(dir_path))
+
+        if not all_ensembles:
+            click.echo("No ensembles found in any configured directories:")
+            for dir_path in ensemble_dirs:
+                click.echo(f"  {dir_path}")
+            click.echo("  (Create .yaml files with ensemble configurations)")
+        else:
+            click.echo("Available ensembles:")
+            for _ensemble_name, (ensemble, source_dir) in sorted(all_ensembles.items()):
+                click.echo(f"  {ensemble.name}: {ensemble.description}")
+                if len(ensemble_dirs) > 1:
+                    click.echo(f"    Source: {source_dir}")
     else:
-        click.echo(f"Available ensembles in {config_dir}:")
-        for ensemble in ensembles:
-            click.echo(f"  {ensemble.name}: {ensemble.description}")
+        # Use specified config directory
+        loader = EnsembleLoader()
+        ensembles = loader.list_ensembles(config_dir)
+
+        if not ensembles:
+            click.echo(f"No ensembles found in {config_dir}")
+            click.echo("  (Create .yaml files with ensemble configurations)")
+        else:
+            click.echo(f"Available ensembles in {config_dir}:")
+            for ensemble in ensembles:
+                click.echo(f"  {ensemble.name}: {ensemble.description}")
 
 
 @cli.group()
