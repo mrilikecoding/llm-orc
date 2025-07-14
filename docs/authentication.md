@@ -1,15 +1,18 @@
 # Authentication System
 
-LLM Orchestra provides a secure authentication system for managing API keys across multiple LLM providers.
+LLM Orchestra provides a secure authentication system supporting both OAuth and API key authentication across multiple LLM providers.
 
 ## Overview
 
 The authentication system provides:
+- **OAuth 2.0 authentication** for Claude Pro/Max accounts
+- **API key authentication** for direct provider access
 - **Encrypted credential storage** using Fernet encryption
 - **Multiple provider support** (Anthropic, Google, OpenAI, etc.)
 - **CLI management commands** for easy credential administration
 - **Secure file permissions** on all credential files
-- **Test functionality** to verify API key validity
+- **Automatic token refresh** for OAuth authentication
+- **Test functionality** to verify authentication validity
 
 ## Quick Setup
 
@@ -42,6 +45,47 @@ llm-orc auth test anthropic
 
 # Remove a provider's credentials
 llm-orc auth remove anthropic
+```
+
+## OAuth Authentication (Claude Pro/Max)
+
+### Requirements
+
+- Claude Pro or Claude Max subscription
+
+### Setup
+
+```bash
+# Set up OAuth
+llm-orc auth add anthropic-claude-pro-max
+
+# Test authentication
+llm-orc auth test anthropic-claude-pro-max
+```
+
+Browser will open for authentication with your Claude account.
+
+### Using OAuth in Ensembles
+
+```yaml
+name: my-ensemble
+agents:
+  - name: analyst
+    model: anthropic-claude-pro-max
+    system_prompt: "You are a financial analyst."
+```
+
+### Troubleshooting
+
+**Authentication failed:**
+```bash
+llm-orc auth refresh anthropic-claude-pro-max
+```
+
+**Re-authenticate:**
+```bash
+llm-orc auth remove anthropic-claude-pro-max
+llm-orc auth add anthropic-claude-pro-max
 ```
 
 ## Security Features

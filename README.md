@@ -76,6 +76,9 @@ llm-orc auth setup
 llm-orc auth add anthropic --api-key YOUR_ANTHROPIC_KEY
 llm-orc auth add google --api-key YOUR_GOOGLE_KEY
 
+# OAuth for Claude Pro/Max users
+llm-orc auth add anthropic-claude-pro-max
+
 # List configured providers
 llm-orc auth list
 
