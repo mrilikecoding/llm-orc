@@ -11,6 +11,7 @@ Mix expensive cloud models with free local models - use Claude for strategic ins
 ## Key Features
 
 - **Multi-Agent Ensembles**: Coordinate specialized agents for different aspects of analysis
+- **Model Profiles**: Simplified configuration with named shortcuts for model + provider combinations
 - **Cost Optimization**: Mix expensive and free models based on what each task needs
 - **CLI Interface**: Simple commands with piping support (`cat code.py | llm-orc invoke code-review`)
 - **Secure Authentication**: Encrypted API key storage with easy credential management
@@ -105,18 +106,24 @@ description: Multi-perspective code review ensemble
 agents:
   - name: security-reviewer
     role: security-analyst
-    model: llama3
+    model_profile: development  # Fast local analysis
     timeout_seconds: 60
 
   - name: performance-reviewer
     role: performance-analyst  
-    model: llama3
+    model_profile: development  # Fast local analysis
     timeout_seconds: 60
 
+  - name: quality-reviewer
+    role: code-quality-analyst
+    model_profile: production   # High-quality cloud analysis
+    timeout_seconds: 90
+
 coordinator:
+  model_profile: production     # Best quality for synthesis
   synthesis_prompt: |
-    You are a senior engineering lead. Synthesize the security and performance 
-    analysis into actionable recommendations.
+    You are a senior engineering lead. Synthesize the security, performance,
+    and quality analysis into actionable recommendations.
   output_format: json
   timeout_seconds: 90
 ```
@@ -147,6 +154,9 @@ llm-orc config show
 ```bash
 # List available ensembles
 llm-orc list-ensembles
+
+# List available model profiles
+llm-orc list-profiles
 
 # Get help for any command
 llm-orc --help
@@ -203,12 +213,51 @@ Systematic literature review, methodology evaluation, or multi-dimensional analy
 
 ## Configuration
 
+### Model Profiles
+
+Model profiles simplify ensemble configuration by providing named shortcuts for common model + provider combinations:
+
+```yaml
+# In ~/.config/llm-orc/config.yaml or .llm-orc/config.yaml
+model_profiles:
+  development:
+    model: llama3
+    provider: ollama
+    cost_per_token: 0.0
+
+  production:
+    model: claude-3-5-sonnet-20241022
+    provider: anthropic-claude-pro-max
+    # No cost_per_token: subscription-based
+
+  claude-api:
+    model: claude-3-5-sonnet-20241022
+    provider: anthropic-api
+    cost_per_token: 3.0e-06
+```
+
+**Profile Benefits:**
+- **Simplified Configuration**: Use `model_profile: production` instead of explicit model + provider
+- **Consistency**: Same profile names work across all ensembles
+- **Cost Tracking**: Built-in cost information for budgeting
+- **Flexibility**: Local profiles override global ones
+
+**Usage in Ensembles:**
+```yaml
+agents:
+  - name: researcher
+    model_profile: development    # Fast, free local model
+  - name: expert
+    model_profile: production     # High-quality cloud model
+```
+
 ### Ensemble Configuration
 Ensemble configurations support:
 
+- **Model profiles** for simplified, consistent model selection
 - **Agent specialization** with role-specific prompts
 - **Timeout management** per agent and coordinator
-- **Model selection** with local and cloud options
+- **Mixed model strategies** combining local and cloud models
 - **Synthesis strategies** for combining agent outputs
 - **Output formatting** (text, JSON) for integration
 
