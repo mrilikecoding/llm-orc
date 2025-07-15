@@ -767,7 +767,10 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_ensemble_execution_with_model_profile(self) -> None:
-        """Test ensemble execution using model_profile instead of explicit model+provider."""
+        """Test ensemble execution using model_profile.
+
+        Uses model_profile instead of explicit model+provider.
+        """
         from pathlib import Path
         from tempfile import TemporaryDirectory
 
@@ -791,75 +794,64 @@ class TestEnsembleExecutor:
             with open(config_file, "w") as f:
                 yaml.dump(config_data, f)
 
-            # Create ensemble config using model_profile
-            config = EnsembleConfig(
-                name="test_ensemble",
-                description="Test ensemble with model profile",
-                agents=[
-                    {"name": "agent1", "role": "tester", "model_profile": "test-profile"},
-                ],
-                coordinator={
-                    "synthesis_prompt": "Return the agent response",
-                    "output_format": "text",
-                },
-            )
-
             executor = EnsembleExecutor()
 
             # Test the _load_model_from_agent_config method directly
-            with patch("llm_orc.ensemble_execution.ConfigurationManager") as mock_config_manager_class:
+            with patch(
+                "llm_orc.ensemble_execution.ConfigurationManager"
+            ) as mock_config_manager_class:
                 mock_config_manager = mock_config_manager_class.return_value
                 mock_config_manager.resolve_model_profile.return_value = (
                     "claude-3-5-sonnet-20241022",
-                    "anthropic-claude-pro-max"
+                    "anthropic-claude-pro-max",
                 )
 
-                with patch("llm_orc.ensemble_execution.CredentialStorage") as mock_credential_storage:
+                with patch(
+                    "llm_orc.ensemble_execution.CredentialStorage"
+                ) as mock_credential_storage:
                     mock_storage_instance = mock_credential_storage.return_value
                     mock_storage_instance.get_auth_method.return_value = None
 
-                    # This should call resolve_model_profile and use the resolved model+provider
-                    # Note: The method may not raise an error due to fallback logic, but should call resolve_model_profile
-                    await executor._load_model_from_agent_config({"name": "agent1", "model_profile": "test-profile"})
+                    # This should call resolve_model_profile and use the resolved
+                    # model+provider
+                    # Note: The method may not raise an error due to fallback logic,
+                    # but should call resolve_model_profile
+                    await executor._load_model_from_agent_config(
+                        {"name": "agent1", "model_profile": "test-profile"}
+                    )
 
                     # Verify that resolve_model_profile was called
-                    mock_config_manager.resolve_model_profile.assert_called_once_with("test-profile")
+                    mock_config_manager.resolve_model_profile.assert_called_once_with(
+                        "test-profile"
+                    )
 
     @pytest.mark.asyncio
-    async def test_ensemble_execution_fallback_to_explicit_model_provider(self) -> None:
-        """Test ensemble execution falls back to explicit model+provider when no model_profile."""
-        config = EnsembleConfig(
-            name="test_ensemble",
-            description="Test ensemble with explicit model+provider",
-            agents=[
-                {
-                    "name": "agent1",
-                    "role": "tester",
-                    "model": "claude-3-5-sonnet-20241022",
-                    "provider": "anthropic-claude-pro-max"
-                },
-            ],
-            coordinator={
-                "synthesis_prompt": "Return the agent response",
-                "output_format": "text",
-            },
-        )
-
+    async def test_ensemble_execution_fallback_to_explicit_model_provider(
+        self,
+    ) -> None:
+        """Test fallback to explicit model+provider when no model_profile."""
         executor = EnsembleExecutor()
 
-        with patch("llm_orc.ensemble_execution.ConfigurationManager") as mock_config_manager_class:
+        with patch(
+            "llm_orc.ensemble_execution.ConfigurationManager"
+        ) as mock_config_manager_class:
             mock_config_manager = mock_config_manager_class.return_value
 
-            with patch("llm_orc.ensemble_execution.CredentialStorage") as mock_credential_storage:
+            with patch(
+                "llm_orc.ensemble_execution.CredentialStorage"
+            ) as mock_credential_storage:
                 mock_storage_instance = mock_credential_storage.return_value
                 mock_storage_instance.get_auth_method.return_value = None
 
-                # This should use explicit model+provider, not call resolve_model_profile
-                await executor._load_model_from_agent_config({
-                    "name": "agent1",
-                    "model": "claude-3-5-sonnet-20241022",
-                    "provider": "anthropic-claude-pro-max"
-                })
+                # This should use explicit model+provider, not call
+                # resolve_model_profile
+                await executor._load_model_from_agent_config(
+                    {
+                        "name": "agent1",
+                        "model": "claude-3-5-sonnet-20241022",
+                        "provider": "anthropic-claude-pro-max",
+                    }
+                )
 
                 # Verify that resolve_model_profile was NOT called
                 mock_config_manager.resolve_model_profile.assert_not_called()

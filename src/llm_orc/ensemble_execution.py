@@ -197,7 +197,10 @@ class EnsembleExecutor:
     async def _load_model_from_agent_config(
         self, agent_config: dict[str, Any]
     ) -> ModelInterface:
-        """Load a model based on agent configuration (model_profile or model+provider)."""
+        """Load a model based on agent configuration.
+
+        Configuration can specify model_profile or model+provider.
+        """
         config_manager = ConfigurationManager()
 
         # Check if model_profile is specified (takes precedence)
@@ -360,10 +363,7 @@ class EnsembleExecutor:
                 return await self._load_model_from_agent_config(config.coordinator)
             except Exception as e:
                 # Fallback to configured default model
-                click.echo(
-                    f"⚠️  Failed to load coordinator model: "
-                    f"{str(e)}"
-                )
+                click.echo(f"⚠️  Failed to load coordinator model: {str(e)}")
                 return await self._get_fallback_model("coordinator")
         else:
             # Use configured default for backward compatibility

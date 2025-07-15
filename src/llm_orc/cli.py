@@ -48,12 +48,6 @@ def invoke(
     # Initialize configuration manager
     config_manager = ConfigurationManager()
 
-    # Handle migration if needed
-    if config_manager.needs_migration():
-        click.echo("Migrating configuration from ~/.llm-orc to new location...")
-        config_manager.migrate_from_old_location()
-        click.echo(f"Configuration migrated to: {config_manager.global_config_dir}")
-
     # Determine ensemble directories
     if config_dir is None:
         # Use configuration manager to get ensemble directories
@@ -173,12 +167,6 @@ def list_ensembles(config_dir: str) -> None:
     # Initialize configuration manager
     config_manager = ConfigurationManager()
 
-    # Handle migration if needed
-    if config_manager.needs_migration():
-        click.echo("Migrating configuration from ~/.llm-orc to new location...")
-        config_manager.migrate_from_old_location()
-        click.echo(f"Configuration migrated to: {config_manager.global_config_dir}")
-
     if config_dir is None:
         # Use configuration manager to get ensemble directories
         ensemble_dirs = config_manager.get_ensembles_dirs()
@@ -247,12 +235,6 @@ def list_profiles() -> None:
     # Initialize configuration manager
     config_manager = ConfigurationManager()
 
-    # Handle migration if needed
-    if config_manager.needs_migration():
-        click.echo("Migrating configuration from ~/.llm-orc to new location...")
-        config_manager.migrate_from_old_location()
-        click.echo(f"Configuration migrated to: {config_manager.global_config_dir}")
-
     # Get all model profiles (merged global + local)
     all_profiles = config_manager.get_model_profiles()
 
@@ -266,6 +248,7 @@ def list_profiles() -> None:
     global_config_file = config_manager.global_config_dir / "config.yaml"
     if global_config_file.exists():
         import yaml
+
         with open(global_config_file) as f:
             global_config = yaml.safe_load(f) or {}
             global_profiles = global_config.get("model_profiles", {})
@@ -275,6 +258,7 @@ def list_profiles() -> None:
         local_config_file = config_manager.local_config_dir / "config.yaml"
         if local_config_file.exists():
             import yaml
+
             with open(local_config_file) as f:
                 local_config = yaml.safe_load(f) or {}
                 local_profiles = local_config.get("model_profiles", {})
@@ -347,25 +331,6 @@ def init(project_name: str) -> None:
         raise click.ClickException(str(e)) from e
 
 
-@config.command()
-def migrate() -> None:
-    """Migrate configuration from old ~/.llm-orc location to new XDG-compliant
-    location."""
-    config_manager = ConfigurationManager()
-
-    if not config_manager.needs_migration():
-        click.echo(
-            "No migration needed. Configuration is already in the correct location."
-        )
-        return
-
-    try:
-        config_manager.migrate_from_old_location()
-        click.echo("Configuration migrated successfully!")
-        click.echo("Old location: ~/.llm-orc")
-        click.echo(f"New location: {config_manager.global_config_dir}")
-    except ValueError as e:
-        raise click.ClickException(str(e)) from e
 
 
 @config.command()
@@ -389,11 +354,6 @@ def show() -> None:
     else:
         click.echo("  None found")
 
-    if config_manager.needs_migration():
-        click.echo(
-            "\n⚠️  Migration available: Run 'llm-orc config migrate' to update "
-            "configuration location"
-        )
 
     # Show project config if available
     project_config = config_manager.load_project_config()
@@ -865,72 +825,7 @@ def auth_remove(provider: str) -> None:
         raise click.ClickException(f"Failed to remove provider: {str(e)}") from e
 
 
-@auth.command("test")
-@click.argument("provider")
-def auth_test(provider: str) -> None:
-    """Test authentication for a provider."""
-    config_manager = ConfigurationManager()
-    storage = CredentialStorage(config_manager)
-    auth_manager = AuthenticationManager(storage)
 
-    try:
-        auth_method = storage.get_auth_method(provider)
-        if not auth_method:
-            raise click.ClickException(f"No authentication found for {provider}")
-
-        if auth_method == "api_key":
-            api_key = storage.get_api_key(provider)
-            if not api_key:
-                raise click.ClickException(f"No API key found for {provider}")
-
-            if auth_manager.authenticate(provider, api_key):
-                click.echo(f"API key authentication for {provider} is working")
-            else:
-                raise click.ClickException(
-                    f"API key authentication for {provider} failed"
-                )
-
-        elif auth_method == "oauth":
-            oauth_token = storage.get_oauth_token(provider)
-            if not oauth_token:
-                raise click.ClickException(f"No OAuth token found for {provider}")
-
-            # Check if token is expired
-            if "expires_at" in oauth_token:
-                if time.time() > oauth_token["expires_at"]:
-                    click.echo(f"OAuth token for {provider} has expired")
-                    return
-
-            click.echo(f"OAuth authentication for {provider} is working")
-
-        else:
-            raise click.ClickException(f"Unknown authentication method: {auth_method}")
-
-    except click.ClickException:
-        raise
-    except Exception as e:
-        raise click.ClickException(f"Failed to test authentication: {str(e)}") from e
-
-
-@auth.command("oauth")
-@click.argument("provider")
-@click.option("--client-id", required=True, help="OAuth client ID")
-@click.option("--client-secret", required=True, help="OAuth client secret")
-def auth_oauth(provider: str, client_id: str, client_secret: str) -> None:
-    """Configure OAuth authentication for a provider."""
-    config_manager = ConfigurationManager()
-    storage = CredentialStorage(config_manager)
-    auth_manager = AuthenticationManager(storage)
-
-    try:
-        if auth_manager.authenticate_oauth(provider, client_id, client_secret):
-            click.echo(f"OAuth authentication for {provider} completed successfully")
-        else:
-            raise click.ClickException(f"OAuth authentication for {provider} failed")
-    except Exception as e:
-        raise click.ClickException(
-            f"Failed to complete OAuth authentication: {str(e)}"
-        ) from e
 
 
 @auth.command("setup")

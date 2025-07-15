@@ -1,7 +1,6 @@
 """Configuration management system for llm-orc."""
 
 import os
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -16,11 +15,10 @@ class ConfigurationManager:
         self._global_config_dir = self._get_global_config_dir()
         self._local_config_dir = self._discover_local_config()
 
-        # Only create global config directory if migration is not needed
-        if not self.needs_migration():
-            self._global_config_dir.mkdir(parents=True, exist_ok=True)
-            self._setup_default_config()
-            self._setup_default_ensembles()
+        # Create global config directory and setup defaults
+        self._global_config_dir.mkdir(parents=True, exist_ok=True)
+        self._setup_default_config()
+        self._setup_default_ensembles()
 
     def _get_global_config_dir(self) -> Path:
         """Get the global configuration directory following XDG spec."""
@@ -96,7 +94,6 @@ class ConfigurationManager:
                     "provider": "anthropic-api",
                     "cost_per_token": 1.0e-06,
                 },
-                
                 # Validation profiles for testing authentication
                 "validate-anthropic-api": {
                     "model": "claude-3-5-sonnet-20241022",
@@ -135,7 +132,9 @@ class ConfigurationManager:
                 "config": {
                     "name": "validate-anthropic-api",
                     "description": "Validate Anthropic API authentication",
-                    "default_task": "Verify that we can successfully make requests to this provider",
+                    "default_task": (
+                        "Verify that we can successfully make requests to this provider"
+                    ),
                     "agents": [
                         {
                             "name": "validator",
@@ -155,7 +154,9 @@ class ConfigurationManager:
                 "config": {
                     "name": "validate-anthropic-claude-pro-max",
                     "description": "Validate Claude Pro/Max OAuth authentication",
-                    "default_task": "Verify that we can successfully make requests to this provider",
+                    "default_task": (
+                        "Verify that we can successfully make requests to this provider"
+                    ),
                     "agents": [
                         {
                             "name": "validator",
@@ -175,7 +176,9 @@ class ConfigurationManager:
                 "config": {
                     "name": "validate-google-gemini",
                     "description": "Validate Google Gemini API authentication",
-                    "default_task": "Verify that we can successfully make requests to this provider",
+                    "default_task": (
+                        "Verify that we can successfully make requests to this provider"
+                    ),
                     "agents": [
                         {
                             "name": "validator",
@@ -195,7 +198,9 @@ class ConfigurationManager:
                 "config": {
                     "name": "validate-ollama",
                     "description": "Validate Ollama local model access",
-                    "default_task": "Verify that we can successfully make requests to this provider",
+                    "default_task": (
+                        "Verify that we can successfully make requests to this provider"
+                    ),
                     "agents": [
                         {
                             "name": "validator",
@@ -250,35 +255,6 @@ class ConfigurationManager:
         """Get the encryption key file path (always in global config)."""
         return self._global_config_dir / ".encryption_key"
 
-    def needs_migration(self) -> bool:
-        """Check if migration from old ~/.llm-orc location is needed."""
-        old_config_dir = Path.home() / ".llm-orc"
-        return (
-            old_config_dir.exists()
-            and old_config_dir.is_dir()
-            and not self._global_config_dir.exists()
-        )
-
-    def migrate_from_old_location(self) -> None:
-        """Migrate configuration from old ~/.llm-orc to new location."""
-        old_config_dir = Path.home() / ".llm-orc"
-
-        if not old_config_dir.exists():
-            return
-
-        if self._global_config_dir.exists():
-            raise ValueError("New configuration directory already exists")
-
-        # Create parent directories
-        self._global_config_dir.parent.mkdir(parents=True, exist_ok=True)
-
-        # Move the entire directory
-        shutil.move(str(old_config_dir), str(self._global_config_dir))
-
-        # Leave a breadcrumb file in the old location
-        breadcrumb_file = old_config_dir.parent / ".llm-orc-migrated"
-        with open(breadcrumb_file, "w") as f:
-            f.write(f"llm-orc configuration migrated to: {self._global_config_dir}\n")
 
     def load_project_config(self) -> dict[str, Any]:
         """Load project-specific configuration if available."""
@@ -312,7 +288,10 @@ class ConfigurationManager:
         config_data = {
             "project": {
                 "name": project_name or Path.cwd().name,
-                "default_models": {"fast": "free-local", "production": "default-claude"},
+                "default_models": {
+                    "fast": "free-local",
+                    "production": "default-claude",
+                },
             },
             "model_profiles": {
                 "free-local": {

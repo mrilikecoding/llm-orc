@@ -83,9 +83,6 @@ llm-orc auth add anthropic-claude-pro-max
 # List configured providers
 llm-orc auth list
 
-# Test authentication
-llm-orc auth test anthropic
-
 # Remove a provider if needed
 llm-orc auth remove anthropic
 ```
@@ -186,8 +183,6 @@ llm-orc config init --project-name my-project
 # Show current configuration status
 llm-orc config show
 
-# Migrate from old configuration location (if needed)
-llm-orc config migrate
 ```
 
 ## Use Cases
