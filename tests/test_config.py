@@ -87,7 +87,7 @@ class TestConfigurationManager:
                     "validate-anthropic-api.yaml",
                     "validate-anthropic-claude-pro-max.yaml",
                     "validate-google-gemini.yaml",
-                    "validate-ollama.yaml"
+                    "validate-ollama.yaml",
                 ]
 
                 for filename in expected_files:

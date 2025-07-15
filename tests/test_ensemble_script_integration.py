@@ -20,7 +20,7 @@ class TestEnsembleScriptIntegration:
                     "name": "echo_agent",
                     "type": "script",
                     "command": 'echo "Script output: $INPUT_DATA"',
-                    "timeout_seconds": 10,
+                    "timeout_seconds": 1,
                 }
             ],
             coordinator={
@@ -49,6 +49,7 @@ class TestEnsembleScriptIntegration:
                     "name": "data_fetcher",
                     "type": "script",
                     "script": 'echo "Data: $INPUT_DATA"',
+                    "timeout_seconds": 1,
                 },
                 {
                     "name": "llm_analyzer",
@@ -56,11 +57,13 @@ class TestEnsembleScriptIntegration:
                     "role": "analyst",
                     "model": "claude-3-sonnet",
                     "prompt": "Analyze the provided data",
+                    "timeout_seconds": 2,
                 },
             ],
             coordinator={
                 "synthesis_prompt": "Combine script and LLM outputs",
                 "output_format": "json",
+                "synthesis_timeout_seconds": 2,
             },
         )
 

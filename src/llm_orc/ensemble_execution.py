@@ -382,16 +382,12 @@ class EnsembleExecutor:
         if context == "coordinator":
             # For coordinators, prefer quality > test > hardcoded fallback
             fallback_model = (
-                default_models.get("quality")
-                or default_models.get("test")
-                or "llama3"
+                default_models.get("quality") or default_models.get("test") or "llama3"
             )
         else:
             # For general use, prefer test > quality > hardcoded fallback
             fallback_model = (
-                default_models.get("test")
-                or default_models.get("quality")
-                or "llama3"
+                default_models.get("test") or default_models.get("quality") or "llama3"
             )
 
         try:
