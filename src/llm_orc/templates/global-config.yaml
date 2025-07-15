@@ -1,37 +1,69 @@
+# Global configuration for LLM Orchestra
+# This file provides default model profiles available across all projects
+
+# Model profiles define complete agent configurations
+# Each profile includes: model, provider, system_prompt, timeout_seconds, and cost_per_token
+# Enhanced model profiles support override behavior: explicit agent config takes precedence
 model_profiles:
   # Core usage profiles based on model characteristics
   free-local:
     model: llama3
     provider: ollama
     cost_per_token: 0.0
+    system_prompt: You are a helpful assistant that provides concise, accurate responses for local development and testing.
+    timeout_seconds: 30
+    
   default-claude:
     model: claude-sonnet-4-20250514
     provider: anthropic-claude-pro-max
+    system_prompt: You are an expert assistant that provides high-quality, detailed analysis and solutions.
+    timeout_seconds: 60
+    
   default-gemini:
     model: gemini-2.5-flash
     provider: google-gemini
     cost_per_token: 1.0e-06
+    system_prompt: You are a fast, efficient assistant that provides clear and helpful responses.
+    timeout_seconds: 45
+    
   high-context:
     model: claude-3-5-sonnet-20241022
     provider: anthropic-api
     cost_per_token: 3.0e-06
+    system_prompt: You are an expert assistant capable of handling complex, multi-faceted problems with detailed analysis.
+    timeout_seconds: 120
+    
   small:
     model: claude-3-haiku-20240307
     provider: anthropic-api
     cost_per_token: 1.0e-06
+    system_prompt: You are a quick, efficient assistant that provides concise and accurate responses.
+    timeout_seconds: 30
   # Validation profiles for testing authentication
+  # These profiles are used by validation ensembles to test provider connectivity
   validate-anthropic-api:
     model: claude-3-5-sonnet-20241022
     provider: anthropic-api
     cost_per_token: 3.0e-06
+    system_prompt: Respond with 'Authentication working' to confirm API access.
+    timeout_seconds: 30
+    
   validate-claude-pro-max:
     model: claude-sonnet-4-20250514
     provider: anthropic-claude-pro-max
+    system_prompt: Respond with 'Authentication working' to confirm API access.
+    timeout_seconds: 30
+    
   validate-google-gemini:
     model: gemini-2.5-flash
     provider: google-gemini
     cost_per_token: 1.0e-06
+    system_prompt: Respond with 'Authentication working' to confirm API access.
+    timeout_seconds: 30
+    
   validate-ollama:
     model: llama3
     provider: ollama
     cost_per_token: 0.0
+    system_prompt: Respond with 'Authentication working' to confirm local model access.
+    timeout_seconds: 30

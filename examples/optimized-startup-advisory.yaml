@@ -1,18 +1,18 @@
-name: startup-advisory-board
-description: Multi-expert advisory board simulation using OAuth Claude Pro/Max agents with role injection
+name: startup-advisory-board-optimized
+description: Optimized startup advisory board using enhanced model profiles - clean and concise!
 
 agents:
   - name: venture-capitalist
-    model_profile: venture-capitalist
+    model_profile: venture-capitalist   # Uses specialized VC profile with expert prompt and 90s timeout
 
   - name: technical-architect
-    model_profile: technical-architect
+    model_profile: technical-architect  # Uses specialized architect profile with CTO prompt and 90s timeout
 
   - name: growth-strategist
-    model_profile: growth-strategist
+    model_profile: growth-strategist    # Uses specialized growth profile with marketing prompt and 90s timeout
 
 coordinator:
-  model_profile: ceo-facilitator
+  model_profile: ceo-facilitator        # Uses specialized CEO profile with facilitation prompt and 120s timeout
   synthesis_prompt: |
     You are the CEO facilitating this advisory board meeting. Three experts have provided their perspectives on this startup situation.
     
@@ -45,7 +45,6 @@ coordinator:
     Provide a decisive, actionable advisory board conclusion that balances opportunity with risk.
   
   output_format: text
-  timeout_seconds: 120
 
 default_task: |
   A B2B AI-powered sales analytics startup (18 months old) is seeking Series A funding. Here's their situation:

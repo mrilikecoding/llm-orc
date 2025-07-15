@@ -50,8 +50,12 @@ class EnsembleExecutor:
         script_agents = [a for a in config.agents if a.get("type") == "script"]
         for agent_config in script_agents:
             try:
-                timeout = agent_config.get("timeout_seconds") or config.coordinator.get(
-                    "timeout_seconds"
+                # Resolve model profile to get enhanced configuration
+                enhanced_config = await self._resolve_model_profile_to_config(
+                    agent_config
+                )
+                timeout = enhanced_config.get("timeout_seconds") or (
+                    config.coordinator.get("timeout_seconds")
                 )
                 agent_result, model_instance = await self._execute_agent_with_timeout(
                     agent_config, input_data, timeout
@@ -95,8 +99,10 @@ class EnsembleExecutor:
         # Execute LLM agents concurrently with enhanced input
         agent_tasks = []
         for agent_config in llm_agents:
-            timeout = agent_config.get("timeout_seconds") or config.coordinator.get(
-                "timeout_seconds"
+            # Resolve model profile to get enhanced configuration
+            enhanced_config = await self._resolve_model_profile_to_config(agent_config)
+            timeout = enhanced_config.get("timeout_seconds") or (
+                config.coordinator.get("timeout_seconds")
             )
             task = self._execute_agent_with_timeout(
                 agent_config, enhanced_input, timeout
@@ -178,13 +184,39 @@ class EnsembleExecutor:
         """Load a role definition from agent configuration."""
         agent_name = agent_config["name"]
 
-        # Use system_prompt from config if available, otherwise use fallback
-        if "system_prompt" in agent_config:
-            prompt = agent_config["system_prompt"]
+        # Resolve model profile to get enhanced configuration
+        enhanced_config = await self._resolve_model_profile_to_config(agent_config)
+
+        # Use system_prompt from enhanced config if available, otherwise use fallback
+        if "system_prompt" in enhanced_config:
+            prompt = enhanced_config["system_prompt"]
         else:
             prompt = f"You are a {agent_name}. Provide helpful analysis."
 
         return RoleDefinition(name=agent_name, prompt=prompt)
+
+    async def _resolve_model_profile_to_config(
+        self, agent_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Resolve model profile and merge with agent config.
+
+        Agent config takes precedence over model profile defaults.
+        """
+        enhanced_config = agent_config.copy()
+
+        # If model_profile is specified, get its configuration
+        if "model_profile" in agent_config:
+            config_manager = ConfigurationManager()
+            profiles = config_manager.get_model_profiles()
+
+            profile_name = agent_config["model_profile"]
+            if profile_name in profiles:
+                profile_config = profiles[profile_name]
+                # Merge profile defaults with agent config
+                # (agent config takes precedence)
+                enhanced_config = {**profile_config, **agent_config}
+
+        return enhanced_config
 
     async def _load_role(self, role_name: str) -> RoleDefinition:
         """Load a role definition."""
