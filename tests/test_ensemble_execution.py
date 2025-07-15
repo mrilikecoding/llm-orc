@@ -211,6 +211,19 @@ class TestEnsembleExecutor:
 
         executor = EnsembleExecutor()
 
+        # Mock synthesis model
+        mock_synthesis_model = AsyncMock(spec=ModelInterface)
+        mock_synthesis_model.generate_response.return_value = (
+            "Synthesis of available results"
+        )
+        mock_synthesis_model.get_last_usage.return_value = {
+            "total_tokens": 30,
+            "input_tokens": 20,
+            "output_tokens": 10,
+            "cost_usd": 0.005,
+            "duration_ms": 50,
+        }
+
         # Mock the role and model loading methods
         with (
             patch.object(
@@ -219,9 +232,13 @@ class TestEnsembleExecutor:
             patch.object(
                 executor, "_load_model", new_callable=AsyncMock
             ) as mock_load_model,
+            patch.object(
+                executor, "_get_synthesis_model", new_callable=AsyncMock
+            ) as mock_get_synthesis_model,
         ):
             mock_load_role.return_value = role
             mock_load_model.side_effect = [working_model, failing_model]
+            mock_get_synthesis_model.return_value = mock_synthesis_model
 
             result = await executor.execute(config, input_data="Test input")
 
@@ -408,7 +425,7 @@ class TestEnsembleExecutor:
             coordinator={
                 "synthesis_prompt": "Summarize results",
                 "output_format": "json",
-                "timeout_seconds": 5,  # 5 second timeout
+                "timeout_seconds": 0.1,  # 100ms timeout
             },
         )
 
@@ -416,7 +433,7 @@ class TestEnsembleExecutor:
         slow_model = AsyncMock(spec=ModelInterface)
 
         async def slow_response(*args: Any, **kwargs: Any) -> str:
-            await asyncio.sleep(10)  # Takes 10 seconds, longer than 5 second timeout
+            await asyncio.sleep(0.2)  # Takes 200ms, longer than 100ms timeout
             return "This should timeout"
 
         slow_model.generate_response = slow_response
@@ -425,7 +442,7 @@ class TestEnsembleExecutor:
             "output_tokens": 100,
             "total_tokens": 150,
             "cost_usd": 0.001,
-            "duration_ms": 10000,
+            "duration_ms": 200,
             "model": "slow-model",
         }
 
@@ -465,13 +482,13 @@ class TestEnsembleExecutor:
                     "name": "fast_agent",
                     "role": "analyst",
                     "model": "fast-model",
-                    "timeout_seconds": 10,
+                    "timeout_seconds": 1.0,
                 },
                 {
                     "name": "slow_agent",
                     "role": "reviewer",
                     "model": "slow-model",
-                    "timeout_seconds": 2,
+                    "timeout_seconds": 0.05,  # 50ms timeout
                 },
             ],
             coordinator={
@@ -496,7 +513,7 @@ class TestEnsembleExecutor:
         slow_model = AsyncMock(spec=ModelInterface)
 
         async def slow_response(*args: Any, **kwargs: Any) -> str:
-            await asyncio.sleep(5)  # Takes 5 seconds, longer than 2 second timeout
+            await asyncio.sleep(0.1)  # Takes 100ms, longer than 50ms timeout
             return "This should timeout"
 
         slow_model.generate_response = slow_response
@@ -505,7 +522,7 @@ class TestEnsembleExecutor:
             "output_tokens": 40,
             "total_tokens": 70,
             "cost_usd": 0.002,
-            "duration_ms": 5000,
+            "duration_ms": 100,
             "model": "slow-model",
         }
 
@@ -550,7 +567,7 @@ class TestEnsembleExecutor:
             coordinator={
                 "synthesis_prompt": "Synthesize results",
                 "output_format": "json",
-                "synthesis_timeout_seconds": 3,
+                "synthesis_timeout_seconds": 0.05,  # 50ms timeout
             },
         )
 
@@ -570,7 +587,7 @@ class TestEnsembleExecutor:
         slow_synthesis_model = AsyncMock(spec=ModelInterface)
 
         async def slow_synthesis(*args: Any, **kwargs: Any) -> str:
-            await asyncio.sleep(5)  # Takes 5 seconds, longer than 3 second timeout
+            await asyncio.sleep(0.1)  # Takes 100ms, longer than 50ms timeout
             return "This should timeout"
 
         slow_synthesis_model.generate_response = slow_synthesis
@@ -579,7 +596,7 @@ class TestEnsembleExecutor:
             "output_tokens": 50,
             "total_tokens": 150,
             "cost_usd": 0.003,
-            "duration_ms": 5000,
+            "duration_ms": 100,
             "model": "synthesis-model",
         }
 

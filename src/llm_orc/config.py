@@ -186,7 +186,7 @@ class ConfigurationManager:
             # Fallback to minimal config if template not found
             config_data = {
                 "project": {"name": project_name or Path.cwd().name},
-                "model_profiles": {}
+                "model_profiles": {},
             }
             with open(config_file, "w") as f:
                 yaml.dump(config_data, f, default_flow_style=False, indent=2)
