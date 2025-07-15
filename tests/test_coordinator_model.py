@@ -58,9 +58,9 @@ class TestConfigurableCoordinator:
         synthesis_model = await executor._get_synthesis_model(basic_config)
 
         assert isinstance(synthesis_model, OllamaModel)
-        # Should use configured default (claude-3-5-sonnet) as Ollama model
-        # when no authentication is configured
-        assert synthesis_model.model_name == "claude-3-5-sonnet"
+        # Should use hardcoded fallback (llama3) as Ollama model
+        # when no project config or authentication is configured
+        assert synthesis_model.model_name == "llama3"
 
     @pytest.mark.asyncio
     async def test_get_synthesis_model_uses_configured_model(
