@@ -240,9 +240,9 @@ class EnsembleExecutor:
 
         try:
             # Get authentication method for the provider configuration
-            auth_method = None
-            if provider:
-                auth_method = storage.get_auth_method(provider)
+            # Use provider if specified, otherwise use model_name as lookup key
+            lookup_key = provider if provider else model_name
+            auth_method = storage.get_auth_method(lookup_key)
 
             if not auth_method:
                 # Prompt user to set up authentication if not configured
@@ -293,7 +293,7 @@ class EnsembleExecutor:
 
                 # Use stored client_id or fallback for anthropic-claude-pro-max
                 client_id = oauth_token.get("client_id")
-                if not client_id and provider == "anthropic-claude-pro-max":
+                if not client_id and lookup_key == "anthropic-claude-pro-max":
                     client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
                 return OAuthClaudeModel(
