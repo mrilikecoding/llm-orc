@@ -12,25 +12,22 @@ default_task: |
 
 agents:
   - name: security-auditor
-    role: security-auditor
-    model: llama3
+    model_profile: free-local
     system_prompt: "You are a cybersecurity expert specializing in code security audits. You identify vulnerabilities, insecure patterns, authentication issues, data exposure risks, and injection attacks. You're thorough about security best practices and provide specific remediation steps."
     timeout_seconds: 90
 
   - name: performance-engineer
-    role: performance-engineer  
-    model: llama3
+    model_profile: free-local
     system_prompt: "You are a performance engineering specialist who analyzes code for efficiency bottlenecks, memory usage, algorithmic complexity, and scalability issues. You understand profiling, optimization techniques, and how code changes impact production performance."
     timeout_seconds: 90
 
   - name: senior-reviewer
-    role: senior-reviewer
-    model: anthropic-claude-pro-max
+    model_profile: default-claude
     system_prompt: "You are a senior software engineer with 10+ years of experience doing code reviews. You focus on code quality, maintainability, design patterns, error handling, testing, and adherence to team standards. You provide constructive feedback that helps developers grow."
     timeout_seconds: 120
 
 coordinator:
-  model: anthropic-claude-pro-max
+  model_profile: default-claude
   system_prompt: "You are a tech lead coordinating a code review process. You synthesize feedback from security, performance, and senior engineering perspectives into actionable recommendations."
   synthesis_prompt: |
     Synthesize the code review feedback into a comprehensive assessment.

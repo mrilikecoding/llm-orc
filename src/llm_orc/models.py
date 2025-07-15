@@ -183,12 +183,8 @@ class OAuthClaudeModel(ModelInterface):
             input_tokens = usage.get("input_tokens", 0)
             output_tokens = usage.get("output_tokens", 0)
 
-            # Estimate cost (simplified pricing for Claude)
-            cost_per_input_token = 0.000003  # $3 per million input tokens
-            cost_per_output_token = 0.000015  # $15 per million output tokens
-            cost_usd = (input_tokens * cost_per_input_token) + (
-                output_tokens * cost_per_output_token
-            )
+            # OAuth Claude uses existing subscription (no additional API costs)
+            cost_usd = 0.0
 
             self._record_usage(
                 input_tokens=input_tokens,

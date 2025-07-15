@@ -22,7 +22,7 @@ This directory contains your LLM Orchestra project configuration, including ense
 
 ### config.yaml
 
-The main project configuration file that defines default models, cost profiles, and project settings.
+The main project configuration file that defines model profiles and project settings. Model profiles simplify ensemble configuration by providing named shortcuts for common model + provider combinations.
 
 #### Structure
 
@@ -31,24 +31,38 @@ project:
   name: "Your Project Name"
   default_models:
     fast: llama3 # Local/fast model for quick tasks
-    production: claude-3-5-sonnet # High-quality cloud model
-    oauth: claude-3-5-sonnet # OAuth-authenticated model
+    production: claude-4-sonnet # High-quality cloud model
 
 model_profiles:
-  development:
-    - model: llama3
-      provider: ollama
-      cost_per_token: 0.0  # Optional: for budgeting reference
+  # Fast, free local models
+  free-local:
+    model: llama3
+    provider: ollama
+    cost_per_token: 0.0
 
-  production:
-    - model: claude-3-5-sonnet
-      provider: anthropic
-      cost_per_token: 3.0e-06  # Optional: $3 per million tokens
+  # High-quality cloud models (subscription-based)
+  default-claude:
+    model: claude-sonnet-4-20250514
+    provider: anthropic-claude-pro-max
+    # No cost_per_token: subscription-based pricing
 
-  oauth_test:
-    - model: claude-3-5-sonnet
-      provider: anthropic-claude-pro-max
-      # No cost_per_token: subscription-based pricing
+  # Alternative cloud models
+  default-gemini:
+    model: gemini-2.5-flash
+    provider: google-gemini
+    cost_per_token: 1.0e-06
+
+  # High-context API models (pay-per-use)
+  high-context:
+    model: claude-3-5-sonnet-20241022
+    provider: anthropic-api
+    cost_per_token: 3.0e-06
+
+  # Small, fast API models
+  small:
+    model: claude-3-haiku-20240307
+    provider: anthropic-api
+    cost_per_token: 1.0e-06
 ```
 
 #### Configuration Options
@@ -56,19 +70,30 @@ model_profiles:
 **Project Settings:**
 
 - `name`: Display name for your project
-- `default_models`: Quick references for common model types
+- `default_models`: Quick references for common model types (used by fallback logic)
 
 **Model Profiles:**
 
-- `development`: Cost-efficient models for experimentation
-- `production`: High-quality models for important tasks
-- `oauth_test`: OAuth-authenticated models using subscriptions
+Model profiles are named shortcuts that combine a model + provider + cost information. They simplify ensemble configuration and provide consistency across your project.
 
-**Model Definition Fields:**
+**Profile Benefits:**
 
-- `model`: Model identifier (required)
-- `provider`: Authentication provider key (required)
+- **Simplified Configuration**: Use `model_profile: production` instead of `model: claude-3-5-sonnet-20241022` + `provider: anthropic-claude-pro-max`
+- **Consistency**: Same profile name works across all ensembles
+- **Flexibility**: Override global profiles with local project-specific ones
+- **Cost Tracking**: Built-in cost information for budgeting
+
+**Profile Fields:**
+
+- `model`: Model identifier (required) - the actual model name from the provider
+- `provider`: Authentication provider key (required) - determines how to authenticate
 - `cost_per_token`: USD cost per token (optional, for budgeting reference only)
+
+**Profile Types:**
+
+- **Free Local**: `free-local` - fast, free local models via Ollama
+- **Cloud Subscription**: `default-claude`, `default-gemini` - OAuth models using existing subscriptions ($0 cost)  
+- **API Pay-per-use**: `high-context`, `small` - API models with token costs for specific capabilities
 
 **Note:** `cost_per_token` is purely for documentation/budgeting purposes. Actual cost calculations use hardcoded values in the model implementations. For OAuth models (subscription-based), omit `cost_per_token` entirely.
 
@@ -235,8 +260,9 @@ llm-orc invoke mycology-meets-technology
 # Uses: "Analyze how mycorrhizal networks..." (from config default_task)
 ```
 
-#### Shared Ensembles (Committed to Git)
-Regular ensemble files are shared with your team:
+#### Ensemble Configuration with Model Profiles
+
+Create ensembles using model profiles for simplified, consistent configuration:
 
 ```yaml
 name: my-custom-ensemble
@@ -245,30 +271,81 @@ description: Brief description of what this ensemble does
 default_task: "Optional default task when no CLI input provided"
 
 agents:
-  - name: agent-1
-    role: descriptive-role-name
-    model: llama3 # Local model
-    system_prompt: "Detailed role description..."
+  - name: initial-researcher
+    model_profile: free-local     # Fast, free bulk analysis
+    system_prompt: "You are a quick researcher for initial analysis..."
     timeout_seconds: 60
 
-  - name: agent-2
-    role: another-role
-    model: anthropic-claude-pro-max # OAuth model
-    system_prompt: "Another role description..."
+  - name: expert-reviewer
+    model_profile: default-claude # High-quality cloud analysis
+    system_prompt: "You are a senior expert providing final analysis..."
     timeout_seconds: 90
 
+  - name: document-analyzer
+    model_profile: high-context   # Large context for document analysis
+    system_prompt: "You analyze large documents and extract key insights..."
+    timeout_seconds: 120
+
 coordinator:
-  model: llama3 # Can be any model
-  system_prompt: "Coordinator role..." # Optional: role injection
+  model_profile: default-claude   # Use high-quality model for synthesis
+  system_prompt: "You are an executive coordinator..." # Optional: role injection
   synthesis_prompt: |
-    Instructions for synthesizing agent responses.
+    Synthesize the research and expert analysis into actionable insights.
 
     Provide:
-    1. Key insights
-    2. Recommendations
-    3. Next steps
+    1. Key findings from all perspectives
+    2. Strategic recommendations
+    3. Implementation next steps
   timeout_seconds: 120
 ```
+
+### Managing Model Profiles
+
+#### Viewing Available Profiles
+
+Use the `list-profiles` command to see all available model profiles:
+
+```bash
+llm-orc list-profiles
+```
+
+This shows profiles organized by location:
+- **📁 Local Repo**: Profiles defined in `.llm-orc/config.yaml` (project-specific)
+- **🌐 Global**: Profiles defined in `~/.config/llm-orc/config.yaml` (system-wide)
+
+Example output:
+```
+Available model profiles:
+
+📁 Local Repo (.llm-orc/config.yaml):
+  free-local:
+    Model: llama3
+    Provider: ollama
+    Cost per token: 0.0
+
+🌐 Global (~/.config/llm-orc/config.yaml):
+  default-claude:
+    Model: claude-sonnet-4-20250514
+    Provider: anthropic-claude-pro-max
+    Cost per token: Not specified
+
+  high-context:
+    Model: claude-3-5-sonnet-20241022
+    Provider: anthropic-api
+    Cost per token: 3.0e-06
+
+  small:
+    Model: claude-3-haiku-20240307
+    Provider: anthropic-api
+    Cost per token: 1.0e-06
+```
+
+#### Profile Override Hierarchy
+
+- **Local profiles** (`.llm-orc/config.yaml`) override global profiles with the same name
+- **Global profiles** (`~/.config/llm-orc/config.yaml`) provide system-wide defaults
+- Use local profiles for project-specific model preferences
+- Use global profiles for consistent defaults across all projects
 
 #### Local Ensembles (Personal/Private)
 Use special naming patterns for personal experiments that won't be committed:
@@ -303,54 +380,82 @@ coordinator:
 - ⚙️ **Personal productivity** ensembles
 - 🔑 **OAuth testing** without exposing credentials
 
-## Model Selection Guidelines
+## Model Profile Selection Guidelines
 
-### When to Use Local Models (Ollama)
+### Profile Types and Use Cases
 
-- **Experimentation and iteration**
+#### Free Local Profiles (`free-local`)
+**Best for:**
+- **Bulk initial analysis**
 - **Privacy-sensitive content**
-- **High-volume/low-stakes analysis**
+- **High-volume/low-stakes tasks**
 - **Cost-conscious projects**
 - **Offline environments**
+- **Quick experimentation**
 
-### When to Use OAuth Models (Claude Pro/Max)
-
+#### Cloud Subscription Profiles (`default-claude`, `default-gemini`)
+**Best for:**
 - **High-stakes decisions**
 - **Complex reasoning tasks**
-- **Professional/business analysis**
-- **When you have existing subscription**
 - **Final synthesis and coordination**
+- **Professional/business analysis**
+- **When you have existing subscriptions**
 
-### When to Use API Models
+#### Specialized API Profiles (`high-context`, `small`)
+**Best for:**
+- **Large document analysis** (`high-context`)
+- **Quick, simple tasks** (`small`)
+- **Specific capability requirements**
+- **Production systems with API budget**
+- **When guaranteed availability is needed**
 
-- **Production systems**
-- **Specific model requirements**
-- **When you need guaranteed availability**
-- **Integration with other services**
+### Profile Selection Strategy
+
+**For Mixed Ensembles:**
+- Use `free-local` for bulk initial analysis and research
+- Use `default-claude`/`default-gemini` for synthesis and high-quality analysis
+- Use `high-context` for large document processing
+- Use `small` for quick, simple tasks
+
+**Example Mixed Configuration:**
+```yaml
+agents:
+  - name: bulk-researcher
+    model_profile: free-local     # Fast, free bulk analysis
+  - name: expert-analyst
+    model_profile: default-claude # High-quality analysis
+  - name: document-processor
+    model_profile: high-context   # Large context processing
+
+coordinator:
+  model_profile: default-claude   # Best quality for synthesis
+```
 
 ## Best Practices
 
-### Ensemble Design
+### Ensemble Design with Model Profiles
 
-1. **Mix model types** based on task complexity
-2. **Use OAuth for coordination** when you have subscription
-3. **Local models for exploration**, cloud for synthesis
-4. **Diverse perspectives** - avoid redundant roles
-5. **Clear role definitions** for better agent performance
+1. **Mix profile types** based on task characteristics and cost considerations
+2. **Use free-local profiles** for bulk analysis and exploration
+3. **Use default-claude/gemini profiles** for synthesis and high-stakes decisions
+4. **Use specialized API profiles** for specific capabilities (context, speed)
+5. **Diverse perspectives** - avoid redundant roles
+6. **Clear role definitions** for better agent performance
 
-### Authentication Management
+### Model Profile Management
 
-- **OAuth for subscriptions** - no per-token costs
-- **API keys for production** - predictable billing
-- **Local models for development** - zero cost
-- **Test authentication** before important runs
+- **Define global profiles** for system-wide consistency
+- **Override with local profiles** for project-specific needs  
+- **Use descriptive profile names** (`free-local`, `default-claude` vs `profile1`, `profile2`)
+- **Document profile purposes** in comments
+- **Test profiles** with validation ensembles
 
-### Cost Optimization
+### Cost Optimization with Profiles
 
-- **Start with local models** for iteration
-- **Use OAuth when available** (subscription-based)
-- **Reserve API calls** for final results
-- **Monitor usage** through ensemble reports
+- **Start with free-local profiles** for iteration and experimentation
+- **Use default-claude/gemini profiles** for subscription-based models (no additional cost)
+- **Reserve specialized API profiles** for tasks requiring specific capabilities
+- **Monitor usage** through ensemble reports and profile cost tracking
 
 ## Security and Privacy
 
@@ -489,7 +594,18 @@ project:
 
 ```bash
 # Check available ensembles
-llm-orc list
+llm-orc list-ensembles
+```
+
+**Model profile issues:**
+
+```bash
+# Check available model profiles
+llm-orc list-profiles
+
+# Verify profile configuration
+cat .llm-orc/config.yaml
+cat ~/.config/llm-orc/config.yaml
 ```
 
 **Authentication issues:**

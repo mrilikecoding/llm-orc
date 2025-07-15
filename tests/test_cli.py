@@ -111,3 +111,103 @@ class TestCLI:
             assert "working_ensemble" in result.output
             # Should see some execution output or JSON structure
             assert result.exit_code == 0 or "execution" in result.output.lower()
+
+    def test_cli_list_ensembles_grouped_output(self) -> None:
+        """Test that list-ensembles groups ensembles by location."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temp_global_dir:
+            with tempfile.TemporaryDirectory() as temp_local_dir:
+                # Create mock global config
+                global_config_path = Path(temp_global_dir)
+                global_ensembles_path = global_config_path / "ensembles"
+                global_ensembles_path.mkdir(parents=True)
+
+                # Create mock local config
+                local_config_path = Path(temp_local_dir)
+                local_ensembles_path = local_config_path / "ensembles"
+                local_ensembles_path.mkdir(parents=True)
+
+                # Create global ensemble
+                global_ensemble = {
+                    "name": "global_ensemble",
+                    "description": "Global ensemble for testing",
+                    "agents": [
+                        {"name": "agent1", "role": "tester", "model": "claude-3-sonnet"}
+                    ],
+                    "coordinator": {
+                        "synthesis_prompt": "Test",
+                        "output_format": "json",
+                    },
+                }
+                with open(global_ensembles_path / "global_ensemble.yaml", "w") as f:
+                    yaml.dump(global_ensemble, f)
+
+                # Create local ensemble
+                local_ensemble = {
+                    "name": "local_ensemble",
+                    "description": "Local ensemble for testing",
+                    "agents": [
+                        {"name": "agent1", "role": "tester", "model": "claude-3-sonnet"}
+                    ],
+                    "coordinator": {
+                        "synthesis_prompt": "Test",
+                        "output_format": "json",
+                    },
+                }
+                with open(local_ensembles_path / "local_ensemble.yaml", "w") as f:
+                    yaml.dump(local_ensemble, f)
+
+                # Mock ConfigurationManager to return our test directories
+                with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager:
+                    mock_instance = mock_config_manager.return_value
+                    mock_instance.global_config_dir = global_config_path
+                    mock_instance.local_config_dir = local_config_path
+                    mock_instance.get_ensembles_dirs.return_value = [
+                        local_ensembles_path,
+                        global_ensembles_path,
+                    ]
+                    mock_instance.needs_migration.return_value = False
+
+                    runner = CliRunner()
+                    result = runner.invoke(cli, ["list-ensembles"])
+
+                    assert result.exit_code == 0
+
+                    # Check that both ensembles are listed
+                    assert "local_ensemble" in result.output
+                    assert "global_ensemble" in result.output
+                    assert "Local ensemble for testing" in result.output
+                    assert "Global ensemble for testing" in result.output
+
+                    # Check that they are grouped by location
+                    assert "📁 Local Repo (.llm-orc/ensembles):" in result.output
+                    expected_global_label = (
+                        f"🌐 Global ({global_config_path}/ensembles):"
+                    )
+                    assert expected_global_label in result.output
+
+                    # Check that local appears before global in output
+                    local_index = result.output.find("📁 Local Repo")
+                    global_index = result.output.find("🌐 Global")
+                    assert local_index < global_index
+
+    def test_auth_setup_provider_selection(self) -> None:
+        """Test that auth setup shows only supported providers."""
+        from llm_orc.provider_registry import provider_registry
+
+        # Test that we have the expected providers
+        providers = provider_registry.list_providers()
+        provider_keys = [p.key for p in providers]
+
+        # Should include the specific provider keys
+        assert "anthropic-api" in provider_keys
+        assert "anthropic-claude-pro-max" in provider_keys
+        assert "google-gemini" in provider_keys
+        assert "ollama" in provider_keys
+
+        # Should not include generic "anthropic" or "google"
+        assert "anthropic" not in provider_keys
+        assert "google" not in provider_keys
