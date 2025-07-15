@@ -25,7 +25,7 @@ classifiers = [
 ]
 dependencies = [
     "websockets",
-    "aiohttp",
+    "aiohttp>=3.12.14",
     "pydantic",
     "anthropic",
     "google-generativeai",
