@@ -201,7 +201,6 @@ class TestAuthCommandsNew:
         assert result.exit_code != 0
         assert f"No authentication found for {provider}" in result.output
 
-
     def test_auth_setup_command_interactive_wizard(
         self, runner: CliRunner, temp_config_dir: Path
     ) -> None:

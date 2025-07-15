@@ -331,8 +331,6 @@ def init(project_name: str) -> None:
         raise click.ClickException(str(e)) from e
 
 
-
-
 @config.command()
 def show() -> None:
     """Show current configuration information."""
@@ -353,7 +351,6 @@ def show() -> None:
             click.echo(f"  {i}. {dir_path}")
     else:
         click.echo("  None found")
-
 
     # Show project config if available
     project_config = config_manager.load_project_config()
@@ -507,7 +504,6 @@ def _handle_claude_pro_max_oauth(
     import base64
     import hashlib
     import secrets
-    import time
     import webbrowser
     from urllib.parse import urlencode
 
@@ -823,9 +819,6 @@ def auth_remove(provider: str) -> None:
         raise
     except Exception as e:
         raise click.ClickException(f"Failed to remove provider: {str(e)}") from e
-
-
-
 
 
 @auth.command("setup")

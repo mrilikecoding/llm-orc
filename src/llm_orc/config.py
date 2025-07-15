@@ -255,7 +255,6 @@ class ConfigurationManager:
         """Get the encryption key file path (always in global config)."""
         return self._global_config_dir / ".encryption_key"
 
-
     def load_project_config(self) -> dict[str, Any]:
         """Load project-specific configuration if available."""
         if not self._local_config_dir:
