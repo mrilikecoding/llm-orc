@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2025-07-15
+
+### Fixed
+- **Security Vulnerability** - Updated aiohttp dependency to >=3.12.14 to address GHSA-9548-qrrj-x5pj
+- **Authentication System** - Fixed lookup logic in ensemble execution model loading
+  - Corrected authentication provider lookup to use model_name as fallback when provider not specified
+  - Fixed 4 failing authentication tests by improving lookup_key handling in _load_model method
+  - Enhanced OAuth model creation for anthropic-claude-pro-max provider
+
+### Changed
+- **CLI Commands** - Simplified OAuth UX by removing redundant commands (issue #35)
+  - Removed `llm-orc auth test` command (functionality integrated into auth list --interactive)
+  - Removed `llm-orc auth oauth` command (functionality moved to auth add)
+  - Removed `llm-orc config migrate` command (automatic migration already handles this)
+  - Streamlined authentication workflow with fewer, more focused commands
+
 ## [0.4.1] - 2025-07-14
 
 ### Enhanced
