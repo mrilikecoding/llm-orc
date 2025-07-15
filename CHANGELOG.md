@@ -76,7 +76,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Google Gemini OAuth flow with `generative-language.retriever` scope
   - Anthropic OAuth flow for MCP server integration
   - Provider-specific OAuth flow factory pattern for extensibility
-  - New `llm-orc auth oauth` command for OAuth configuration
   - Comprehensive test coverage using TDD methodology (Red → Green → Refactor)
   - Real authorization URLs and token exchange endpoints
   - Enhanced CLI authentication commands supporting both API keys and OAuth
@@ -85,7 +84,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Authentication System** - Extended to support multiple authentication methods
   - `llm-orc auth add` now accepts both `--api-key` and OAuth credentials
   - `llm-orc auth list` shows authentication method (API key vs OAuth)
-  - `llm-orc auth test` validates both API keys and OAuth tokens with expiration checking
   - `llm-orc auth setup` interactive wizard supports OAuth method selection
 
 ### Technical
@@ -135,7 +133,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **New CLI commands**
   - `llm-orc config init` - Initialize local project configuration
-  - `llm-orc config migrate` - Manually migrate from old configuration location
   - `llm-orc config show` - Display current configuration information and paths
 
 ### Changed

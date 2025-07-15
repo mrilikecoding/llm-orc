@@ -7,15 +7,11 @@ project:
 
 model_profiles:
   development:
-  - cost_per_token: 0.0
     model: llama3
     provider: ollama
+    cost_per_token: 0.0
   
   production:
-  - cost_per_token: 3.0e-06
-    model: claude-3-5-sonnet
-    provider: anthropic
-  
-  oauth_test:
-  - model: claude-3-5-sonnet
+    model: claude-sonnet-4-20250514
     provider: anthropic-claude-pro-max
+    cost_per_token: 3.0e-06

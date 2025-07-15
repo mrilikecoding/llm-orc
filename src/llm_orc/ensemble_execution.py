@@ -163,7 +163,7 @@ class EnsembleExecutor:
             # Execute LLM agent
             # Load role and model for this agent
             role = await self._load_role_from_config(agent_config)
-            model = await self._load_model(agent_config["model"])
+            model = await self._load_model_from_agent_config(agent_config)
 
             # Create agent
             agent = Agent(agent_config["name"], role, model)
@@ -176,15 +176,15 @@ class EnsembleExecutor:
         self, agent_config: dict[str, Any]
     ) -> RoleDefinition:
         """Load a role definition from agent configuration."""
-        role_name = agent_config["role"]
+        agent_name = agent_config["name"]
 
         # Use system_prompt from config if available, otherwise use fallback
         if "system_prompt" in agent_config:
             prompt = agent_config["system_prompt"]
         else:
-            prompt = f"You are a {role_name}. Provide helpful analysis."
+            prompt = f"You are a {agent_name}. Provide helpful analysis."
 
-        return RoleDefinition(name=role_name, prompt=prompt)
+        return RoleDefinition(name=agent_name, prompt=prompt)
 
     async def _load_role(self, role_name: str) -> RoleDefinition:
         """Load a role definition."""
@@ -194,7 +194,37 @@ class EnsembleExecutor:
             name=role_name, prompt=f"You are a {role_name}. Provide helpful analysis."
         )
 
-    async def _load_model(self, model_name: str) -> ModelInterface:
+    async def _load_model_from_agent_config(
+        self, agent_config: dict[str, Any]
+    ) -> ModelInterface:
+        """Load a model based on agent configuration.
+
+        Configuration can specify model_profile or model+provider.
+        """
+        config_manager = ConfigurationManager()
+
+        # Check if model_profile is specified (takes precedence)
+        if "model_profile" in agent_config:
+            profile_name = agent_config["model_profile"]
+            resolved_model, resolved_provider = config_manager.resolve_model_profile(
+                profile_name
+            )
+            return await self._load_model(resolved_model, resolved_provider)
+
+        # Fall back to explicit model+provider
+        model: str | None = agent_config.get("model")
+        provider: str | None = agent_config.get("provider")
+
+        if not model:
+            raise ValueError(
+                "Agent configuration must specify either 'model_profile' or 'model'"
+            )
+
+        return await self._load_model(model, provider)
+
+    async def _load_model(
+        self, model_name: str, provider: str | None = None
+    ) -> ModelInterface:
         """Load a model interface based on authentication configuration."""
         # Handle mock models for testing
         if model_name.startswith("mock"):
@@ -209,8 +239,10 @@ class EnsembleExecutor:
         storage = CredentialStorage(config_manager)
 
         try:
-            # Get authentication method for the model configuration
-            auth_method = storage.get_auth_method(model_name)
+            # Get authentication method for the provider configuration
+            # Use provider if specified, otherwise use model_name as lookup key
+            lookup_key = provider if provider else model_name
+            auth_method = storage.get_auth_method(lookup_key)
 
             if not auth_method:
                 # Prompt user to set up authentication if not configured
@@ -218,20 +250,32 @@ class EnsembleExecutor:
                     auth_configured = _prompt_auth_setup(model_name, storage)
                     if auth_configured:
                         # Retry model loading after auth setup
-                        return await self._load_model(model_name)
+                        return await self._load_model(model_name, provider)
 
-                # Fallback: treat as Ollama model if no authentication configured
-                # or user declined to set up authentication
-                click.echo(
-                    f"ℹ️  No authentication configured for '{model_name}', "
-                    "treating as local Ollama model"
-                )
-                return OllamaModel(model_name=model_name)
+                # Handle based on provider
+                if provider == "ollama":
+                    # Expected behavior for Ollama - no auth needed
+                    return OllamaModel(model_name=model_name)
+                elif provider:
+                    # Other providers require authentication
+                    raise ValueError(
+                        f"No authentication configured for provider '{provider}' "
+                        f"with model '{model_name}'. "
+                        f"Run 'llm-orc auth setup' to configure authentication."
+                    )
+                else:
+                    # No provider specified, fallback to Ollama
+                    click.echo(
+                        f"ℹ️  No provider specified for '{model_name}', "
+                        f"treating as local Ollama model"
+                    )
+                    return OllamaModel(model_name=model_name)
 
             if auth_method == "api_key":
-                api_key = storage.get_api_key(model_name)
+                lookup_key = provider if provider else model_name
+                api_key = storage.get_api_key(lookup_key)
                 if not api_key:
-                    raise ValueError(f"No API key found for {model_name}")
+                    raise ValueError(f"No API key found for {lookup_key}")
 
                 # Check if this is a claude-cli configuration
                 # (stored as api_key but path-like)
@@ -242,13 +286,14 @@ class EnsembleExecutor:
                     return ClaudeModel(api_key=api_key)
 
             elif auth_method == "oauth":
-                oauth_token = storage.get_oauth_token(model_name)
+                lookup_key = provider if provider else model_name
+                oauth_token = storage.get_oauth_token(lookup_key)
                 if not oauth_token:
-                    raise ValueError(f"No OAuth token found for {model_name}")
+                    raise ValueError(f"No OAuth token found for {lookup_key}")
 
                 # Use stored client_id or fallback for anthropic-claude-pro-max
                 client_id = oauth_token.get("client_id")
-                if not client_id and model_name == "anthropic-claude-pro-max":
+                if not client_id and lookup_key == "anthropic-claude-pro-max":
                     client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
                 return OAuthClaudeModel(
@@ -310,19 +355,15 @@ class EnsembleExecutor:
 
     async def _get_synthesis_model(self, config: EnsembleConfig) -> ModelInterface:
         """Get model for synthesis based on coordinator configuration."""
-        # Check if coordinator specifies a model
-        coordinator_model = config.coordinator.get("model")
-
-        if coordinator_model:
+        # Check if coordinator specifies a model_profile or model
+        if config.coordinator.get("model_profile") or config.coordinator.get("model"):
             try:
                 # Use the configured coordinator model
-                return await self._load_model(coordinator_model)
+                # (supports both model_profile and explicit model+provider)
+                return await self._load_model_from_agent_config(config.coordinator)
             except Exception as e:
                 # Fallback to configured default model
-                click.echo(
-                    f"⚠️  Failed to load coordinator model '{coordinator_model}': "
-                    f"{str(e)}"
-                )
+                click.echo(f"⚠️  Failed to load coordinator model: {str(e)}")
                 return await self._get_fallback_model("coordinator")
         else:
             # Use configured default for backward compatibility
@@ -357,7 +398,7 @@ class EnsembleExecutor:
             click.echo(
                 f"🔄 Using fallback model '{fallback_model}' (from configured defaults)"
             )
-            return await self._load_model(fallback_model)
+            return await self._load_model(fallback_model, "ollama")
         except Exception as e:
             # Last resort: hardcoded Ollama fallback
             click.echo(f"❌ Fallback model '{fallback_model}' failed to load: {str(e)}")

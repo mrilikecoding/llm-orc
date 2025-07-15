@@ -40,9 +40,6 @@ llm-orc auth add anthropic --api-key YOUR_API_KEY
 # List all configured providers
 llm-orc auth list
 
-# Test authentication for a provider
-llm-orc auth test anthropic
-
 # Remove a provider's credentials
 llm-orc auth remove anthropic
 ```
@@ -58,9 +55,6 @@ llm-orc auth remove anthropic
 ```bash
 # Set up OAuth
 llm-orc auth add anthropic-claude-pro-max
-
-# Test authentication
-llm-orc auth test anthropic-claude-pro-max
 ```
 
 Browser will open for authentication with your Claude account.
@@ -159,18 +153,6 @@ Remove authentication credentials for a provider.
 llm-orc auth remove anthropic
 ```
 
-### `llm-orc auth test <provider>`
-
-Test authentication for a provider by attempting to use the stored API key.
-
-**Options:**
-- `--config-dir`: Custom config directory
-
-**Example:**
-```bash
-llm-orc auth test anthropic
-# Output: Authentication for anthropic is working
-```
 
 ### `llm-orc auth setup`
 
@@ -233,11 +215,6 @@ If authentication tests fail, verify:
 1. API key is correct and hasn't expired
 2. Network connectivity to the provider
 3. Provider service status
-
-```bash
-# Test and see detailed error
-llm-orc auth test anthropic -v
-```
 
 ## Integration with Ensembles
 

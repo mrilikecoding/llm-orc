@@ -1,0 +1,33 @@
+name: my-experiments-local
+description: Personal local ensemble for testing - not committed to git
+
+# This file demonstrates the local ensemble feature
+# Files matching *-local.yaml or local-*.yaml patterns are automatically gitignored
+# Use these for personal experiments, sensitive configurations, or work-in-progress
+
+agents:
+  - name: creative-explorer
+    role: creative-explorer
+    model_profile: development
+    
+    system_prompt: "You are a creative explorer who loves experimenting with unusual ideas and making unexpected connections."
+    timeout_seconds: 45
+
+  - name: practical-evaluator
+    role: practical-evaluator
+    model_profile: development
+    
+    system_prompt: "You are a practical evaluator who assesses the feasibility and real-world implications of creative ideas."
+    timeout_seconds: 45
+
+coordinator:
+  model_profile: development
+  
+  synthesis_prompt: |
+    Synthesize the creative exploration with practical evaluation.
+    
+    Focus on:
+    1. The most interesting creative insights
+    2. Practical next steps for exploration
+    3. Potential challenges and how to address them
+  timeout_seconds: 60

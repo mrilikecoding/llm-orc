@@ -48,12 +48,6 @@ def invoke(
     # Initialize configuration manager
     config_manager = ConfigurationManager()
 
-    # Handle migration if needed
-    if config_manager.needs_migration():
-        click.echo("Migrating configuration from ~/.llm-orc to new location...")
-        config_manager.migrate_from_old_location()
-        click.echo(f"Configuration migrated to: {config_manager.global_config_dir}")
-
     # Determine ensemble directories
     if config_dir is None:
         # Use configuration manager to get ensemble directories
@@ -173,12 +167,6 @@ def list_ensembles(config_dir: str) -> None:
     # Initialize configuration manager
     config_manager = ConfigurationManager()
 
-    # Handle migration if needed
-    if config_manager.needs_migration():
-        click.echo("Migrating configuration from ~/.llm-orc to new location...")
-        config_manager.migrate_from_old_location()
-        click.echo(f"Configuration migrated to: {config_manager.global_config_dir}")
-
     if config_dir is None:
         # Use configuration manager to get ensemble directories
         ensemble_dirs = config_manager.get_ensembles_dirs()
@@ -187,27 +175,46 @@ def list_ensembles(config_dir: str) -> None:
             click.echo("Run 'llm-orc config init' to set up local configuration.")
             return
 
-        # List ensembles from all directories in priority order
+        # List ensembles from all directories, grouped by location
         loader = EnsembleLoader()
-        all_ensembles = {}
+        local_ensembles = []
+        global_ensembles = []
 
         for dir_path in ensemble_dirs:
             ensembles = loader.list_ensembles(str(dir_path))
-            for ensemble in ensembles:
-                if ensemble.name not in all_ensembles:
-                    all_ensembles[ensemble.name] = (ensemble, str(dir_path))
+            is_local = config_manager.local_config_dir and str(dir_path).startswith(
+                str(config_manager.local_config_dir)
+            )
 
-        if not all_ensembles:
+            if is_local:
+                local_ensembles.extend(ensembles)
+            else:
+                global_ensembles.extend(ensembles)
+
+        # Check if we have any ensembles at all
+        if not local_ensembles and not global_ensembles:
             click.echo("No ensembles found in any configured directories:")
             for dir_path in ensemble_dirs:
                 click.echo(f"  {dir_path}")
             click.echo("  (Create .yaml files with ensemble configurations)")
-        else:
-            click.echo("Available ensembles:")
-            for _ensemble_name, (ensemble, source_dir) in sorted(all_ensembles.items()):
+            return
+
+        click.echo("Available ensembles:")
+
+        # Show local ensembles first
+        if local_ensembles:
+            click.echo("\n📁 Local Repo (.llm-orc/ensembles):")
+            for ensemble in sorted(local_ensembles, key=lambda e: e.name):
                 click.echo(f"  {ensemble.name}: {ensemble.description}")
-                if len(ensemble_dirs) > 1:
-                    click.echo(f"    Source: {source_dir}")
+
+        # Show global ensembles
+        if global_ensembles:
+            global_config_label = (
+                f"Global ({config_manager.global_config_dir}/ensembles)"
+            )
+            click.echo(f"\n🌐 {global_config_label}:")
+            for ensemble in sorted(global_ensembles, key=lambda e: e.name):
+                click.echo(f"  {ensemble.name}: {ensemble.description}")
     else:
         # Use specified config directory
         loader = EnsembleLoader()
@@ -220,6 +227,77 @@ def list_ensembles(config_dir: str) -> None:
             click.echo(f"Available ensembles in {config_dir}:")
             for ensemble in ensembles:
                 click.echo(f"  {ensemble.name}: {ensemble.description}")
+
+
+@cli.command("list-profiles")
+def list_profiles() -> None:
+    """List available model profiles with their provider/model details."""
+    # Initialize configuration manager
+    config_manager = ConfigurationManager()
+
+    # Get all model profiles (merged global + local)
+    all_profiles = config_manager.get_model_profiles()
+
+    if not all_profiles:
+        click.echo("No model profiles found.")
+        click.echo("Run 'llm-orc config init' to create default profiles.")
+        return
+
+    # Get separate global and local profiles for grouping
+    global_profiles = {}
+    global_config_file = config_manager.global_config_dir / "config.yaml"
+    if global_config_file.exists():
+        import yaml
+
+        with open(global_config_file) as f:
+            global_config = yaml.safe_load(f) or {}
+            global_profiles = global_config.get("model_profiles", {})
+
+    local_profiles = {}
+    if config_manager.local_config_dir:
+        local_config_file = config_manager.local_config_dir / "config.yaml"
+        if local_config_file.exists():
+            import yaml
+
+            with open(local_config_file) as f:
+                local_config = yaml.safe_load(f) or {}
+                local_profiles = local_config.get("model_profiles", {})
+
+    click.echo("Available model profiles:")
+
+    # Show local profiles first (if any)
+    if local_profiles:
+        click.echo("\n📁 Local Repo (.llm-orc/config.yaml):")
+        for profile_name in sorted(local_profiles.keys()):
+            profile = local_profiles[profile_name]
+            model = profile.get("model", "Unknown")
+            provider = profile.get("provider", "Unknown")
+            cost = profile.get("cost_per_token", "Not specified")
+
+            click.echo(f"  {profile_name}:")
+            click.echo(f"    Model: {model}")
+            click.echo(f"    Provider: {provider}")
+            click.echo(f"    Cost per token: {cost}")
+
+    # Show global profiles
+    if global_profiles:
+        global_config_label = f"Global ({config_manager.global_config_dir}/config.yaml)"
+        click.echo(f"\n🌐 {global_config_label}:")
+        for profile_name in sorted(global_profiles.keys()):
+            # Skip if this profile is overridden by local
+            if profile_name in local_profiles:
+                click.echo(f"  {profile_name}: (overridden by local)")
+                continue
+
+            profile = global_profiles[profile_name]
+            model = profile.get("model", "Unknown")
+            provider = profile.get("provider", "Unknown")
+            cost = profile.get("cost_per_token", "Not specified")
+
+            click.echo(f"  {profile_name}:")
+            click.echo(f"    Model: {model}")
+            click.echo(f"    Provider: {provider}")
+            click.echo(f"    Cost per token: {cost}")
 
 
 @cli.group()
@@ -254,27 +332,6 @@ def init(project_name: str) -> None:
 
 
 @config.command()
-def migrate() -> None:
-    """Migrate configuration from old ~/.llm-orc location to new XDG-compliant
-    location."""
-    config_manager = ConfigurationManager()
-
-    if not config_manager.needs_migration():
-        click.echo(
-            "No migration needed. Configuration is already in the correct location."
-        )
-        return
-
-    try:
-        config_manager.migrate_from_old_location()
-        click.echo("Configuration migrated successfully!")
-        click.echo("Old location: ~/.llm-orc")
-        click.echo(f"New location: {config_manager.global_config_dir}")
-    except ValueError as e:
-        raise click.ClickException(str(e)) from e
-
-
-@config.command()
 def show() -> None:
     """Show current configuration information."""
     config_manager = ConfigurationManager()
@@ -294,12 +351,6 @@ def show() -> None:
             click.echo(f"  {i}. {dir_path}")
     else:
         click.echo("  None found")
-
-    if config_manager.needs_migration():
-        click.echo(
-            "\n⚠️  Migration available: Run 'llm-orc config migrate' to update "
-            "configuration location"
-        )
 
     # Show project config if available
     project_config = config_manager.load_project_config()
@@ -453,7 +504,6 @@ def _handle_claude_pro_max_oauth(
     import base64
     import hashlib
     import secrets
-    import time
     import webbrowser
     from urllib.parse import urlencode
 
@@ -604,25 +654,151 @@ def _handle_claude_cli_auth(storage: CredentialStorage) -> None:
 
 
 @auth.command("list")
-def auth_list() -> None:
+@click.option(
+    "--interactive", "-i", is_flag=True, help="Show interactive menu with actions"
+)
+def auth_list(interactive: bool) -> None:
     """List configured authentication providers."""
+    from .menu_system import (
+        AuthMenus,
+        show_error,
+        show_info,
+        show_success,
+        show_working,
+    )
+
     config_manager = ConfigurationManager()
     storage = CredentialStorage(config_manager)
+    auth_manager = AuthenticationManager(storage)
 
     try:
         providers = storage.list_providers()
-        if not providers:
-            click.echo("No authentication providers configured")
-        else:
-            click.echo("Configured providers:")
-            for provider in providers:
-                auth_method = storage.get_auth_method(provider)
-                if auth_method == "oauth":
-                    click.echo(f"  {provider}: OAuth")
-                else:
-                    click.echo(f"  {provider}: API key")
+
+        if not interactive:
+            # Simple list view (original behavior)
+            if not providers:
+                click.echo("No authentication providers configured")
+            else:
+                click.echo("Configured providers:")
+                for provider in providers:
+                    auth_method = storage.get_auth_method(provider)
+                    if auth_method == "oauth":
+                        click.echo(f"  {provider}: OAuth")
+                    else:
+                        click.echo(f"  {provider}: API key")
+            return
+
+        # Interactive mode with action menu
+        while True:
+            action, selected_provider = AuthMenus.auth_list_actions(providers)
+
+            if action == "quit":
+                break
+            elif action == "setup" or action == "add":
+                # Run the setup wizard
+                auth_setup()
+                # Refresh provider list
+                providers = storage.list_providers()
+            elif action == "test" and selected_provider:
+                show_working(f"Testing {selected_provider}...")
+                try:
+                    auth_method = storage.get_auth_method(selected_provider)
+                    if not auth_method:
+                        show_error(f"No authentication found for {selected_provider}")
+                        continue
+
+                    # Test the authentication
+                    success = False
+                    if auth_method == "api_key":
+                        api_key = storage.get_api_key(selected_provider)
+                        if api_key:
+                            success = auth_manager.authenticate(
+                                selected_provider, api_key
+                            )
+                    elif auth_method == "oauth":
+                        oauth_token = storage.get_oauth_token(selected_provider)
+                        if oauth_token:
+                            # For OAuth, we'll consider it successful if we have a valid token  # noqa: E501
+                            import time
+
+                            if "expires_at" in oauth_token:
+                                success = time.time() < oauth_token["expires_at"]
+                            else:
+                                success = True  # No expiration info, assume valid
+
+                    if success:
+                        show_success(
+                            f"Authentication for {selected_provider} is working!"
+                        )
+                    else:
+                        show_error(f"Authentication for {selected_provider} failed")
+                except Exception as e:
+                    show_error(f"Test failed: {str(e)}")
+            elif action == "remove" and selected_provider:
+                from .menu_system import confirm_action
+
+                if confirm_action(f"Remove authentication for {selected_provider}?"):
+                    storage.remove_provider(selected_provider)
+                    show_success(f"Removed {selected_provider}")
+                    providers = storage.list_providers()
+            elif action == "details" and selected_provider:
+                _show_provider_details(storage, selected_provider)
+            elif action == "refresh" and selected_provider:
+                show_working(f"Refreshing tokens for {selected_provider}...")
+                try:
+                    auth_method = storage.get_auth_method(selected_provider)
+                    if auth_method == "oauth":
+                        # For now, just re-authenticate with OAuth
+                        show_info("Re-authentication required for OAuth token refresh")
+                        # This would typically trigger a re-auth flow
+                        show_success("Token refresh would be performed here")
+                    else:
+                        show_error("Token refresh only available for OAuth providers")
+                except Exception as e:
+                    show_error(f"Refresh failed: {str(e)}")
+
     except Exception as e:
         raise click.ClickException(f"Failed to list providers: {str(e)}") from e
+
+
+def _show_provider_details(storage: "CredentialStorage", provider: str) -> None:
+    """Show detailed information about a provider."""
+    from .provider_registry import provider_registry
+
+    click.echo(f"\n📋 Provider Details: {provider}")
+    click.echo("=" * 40)
+
+    # Get registry info
+    provider_info = provider_registry.get_provider(provider)
+    if provider_info:
+        click.echo(f"Display Name: {provider_info.display_name}")
+        click.echo(f"Description: {provider_info.description}")
+
+        auth_methods = []
+        if provider_info.supports_oauth:
+            auth_methods.append("OAuth")
+        if provider_info.supports_api_key:
+            auth_methods.append("API Key")
+        if not provider_info.requires_auth:
+            auth_methods.append("No authentication required")
+        click.echo(f"Supported Auth: {', '.join(auth_methods)}")
+
+    # Get stored auth info
+    auth_method = storage.get_auth_method(provider)
+    if auth_method:
+        click.echo(f"Configured Method: {auth_method.upper()}")
+
+        if auth_method == "oauth":
+            # Try to get OAuth details if available
+            try:
+                # This would need to be implemented in storage
+                click.echo("OAuth Status: Configured")
+            except Exception:
+                pass
+    else:
+        click.echo("Status: Not configured")
+
+    click.echo()
 
 
 @auth.command("remove")
@@ -645,122 +821,129 @@ def auth_remove(provider: str) -> None:
         raise click.ClickException(f"Failed to remove provider: {str(e)}") from e
 
 
-@auth.command("test")
-@click.argument("provider")
-def auth_test(provider: str) -> None:
-    """Test authentication for a provider."""
-    config_manager = ConfigurationManager()
-    storage = CredentialStorage(config_manager)
-    auth_manager = AuthenticationManager(storage)
-
-    try:
-        auth_method = storage.get_auth_method(provider)
-        if not auth_method:
-            raise click.ClickException(f"No authentication found for {provider}")
-
-        if auth_method == "api_key":
-            api_key = storage.get_api_key(provider)
-            if not api_key:
-                raise click.ClickException(f"No API key found for {provider}")
-
-            if auth_manager.authenticate(provider, api_key):
-                click.echo(f"API key authentication for {provider} is working")
-            else:
-                raise click.ClickException(
-                    f"API key authentication for {provider} failed"
-                )
-
-        elif auth_method == "oauth":
-            oauth_token = storage.get_oauth_token(provider)
-            if not oauth_token:
-                raise click.ClickException(f"No OAuth token found for {provider}")
-
-            # Check if token is expired
-            if "expires_at" in oauth_token:
-                if time.time() > oauth_token["expires_at"]:
-                    click.echo(f"OAuth token for {provider} has expired")
-                    return
-
-            click.echo(f"OAuth authentication for {provider} is working")
-
-        else:
-            raise click.ClickException(f"Unknown authentication method: {auth_method}")
-
-    except click.ClickException:
-        raise
-    except Exception as e:
-        raise click.ClickException(f"Failed to test authentication: {str(e)}") from e
-
-
-@auth.command("oauth")
-@click.argument("provider")
-@click.option("--client-id", required=True, help="OAuth client ID")
-@click.option("--client-secret", required=True, help="OAuth client secret")
-def auth_oauth(provider: str, client_id: str, client_secret: str) -> None:
-    """Configure OAuth authentication for a provider."""
-    config_manager = ConfigurationManager()
-    storage = CredentialStorage(config_manager)
-    auth_manager = AuthenticationManager(storage)
-
-    try:
-        if auth_manager.authenticate_oauth(provider, client_id, client_secret):
-            click.echo(f"OAuth authentication for {provider} completed successfully")
-        else:
-            raise click.ClickException(f"OAuth authentication for {provider} failed")
-    except Exception as e:
-        raise click.ClickException(
-            f"Failed to complete OAuth authentication: {str(e)}"
-        ) from e
-
-
 @auth.command("setup")
 def auth_setup() -> None:
     """Interactive setup wizard for authentication."""
+    from .menu_system import (
+        AuthMenus,
+        confirm_action,
+        show_error,
+        show_success,
+        show_working,
+    )
+    from .provider_registry import provider_registry
+
     config_manager = ConfigurationManager()
     storage = CredentialStorage(config_manager)
+    auth_manager = AuthenticationManager(storage)
 
-    click.echo("Welcome to LLM Orchestra setup!")
+    click.echo("🚀 Welcome to LLM Orchestra setup!")
     click.echo("This wizard will help you configure authentication for LLM providers.")
-    click.echo()
 
     while True:
-        provider = click.prompt("Provider name (e.g., anthropic, google, openai)")
+        # Use interactive menu for provider selection
+        provider_key = AuthMenus.provider_selection()
 
-        auth_method = click.prompt(
-            "Authentication method",
-            type=click.Choice(["api_key", "oauth"]),
-            default="api_key",
-        )
+        # Get provider info
+        provider = provider_registry.get_provider(provider_key)
 
-        if auth_method == "api_key":
-            api_key = click.prompt("API key", hide_input=True)
-            try:
-                storage.store_api_key(provider, api_key)
-                click.echo(f"✓ {provider} configured successfully with API key")
-            except Exception as e:
-                click.echo(f"✗ Failed to configure {provider}: {str(e)}")
+        if not provider:
+            show_error(f"Provider '{provider_key}' not found in registry")
+            continue
 
-        elif auth_method == "oauth":
-            client_id = click.prompt("OAuth client ID")
-            client_secret = click.prompt("OAuth client secret", hide_input=True)
+        if not provider.requires_auth:
+            show_success(f"{provider.display_name} doesn't require authentication!")
+            if not confirm_action("Add another provider?"):
+                break
+            continue
 
-            try:
-                auth_manager = AuthenticationManager(storage)
-                if auth_manager.authenticate_oauth(provider, client_id, client_secret):
-                    click.echo(f"✓ {provider} configured successfully with OAuth")
+        # Get authentication method based on provider
+        if provider_key == "anthropic-claude-pro-max":
+            auth_method = "oauth"  # Claude Pro/Max only supports OAuth
+        elif provider_key == "anthropic-api":
+            auth_method = "api_key"  # Anthropic API only supports API key
+        elif provider_key == "google-gemini":
+            auth_method = "api_key"  # Google Gemini only supports API key
+        else:
+            # For other providers, use the menu system
+            auth_method = AuthMenus.get_auth_method_for_provider(provider_key)
+
+        # Handle authentication setup based on method
+        try:
+            if auth_method == "help":
+                _show_auth_method_help()
+                continue
+            elif auth_method == "oauth" and provider_key == "anthropic-claude-pro-max":
+                show_working("Setting up Claude Pro/Max OAuth...")
+                _handle_claude_pro_max_oauth(auth_manager, storage)
+                show_success("Claude Pro/Max OAuth configured!")
+            elif auth_method == "api_key" and provider_key == "anthropic-api":
+                api_key = click.prompt("Anthropic API key", hide_input=True)
+                storage.store_api_key("anthropic-api", api_key)
+                show_success("Anthropic API key configured!")
+            elif auth_method == "api_key" and provider_key == "google-gemini":
+                api_key = click.prompt("Google Gemini API key", hide_input=True)
+                storage.store_api_key("google-gemini", api_key)
+                show_success("Google Gemini API key configured!")
+            elif auth_method == "api_key" or auth_method == "api-key":
+                # Generic API key setup for other providers
+                api_key = click.prompt(
+                    f"{provider.display_name} API key", hide_input=True
+                )
+                storage.store_api_key(provider_key, api_key)
+                show_success(f"{provider.display_name} API key configured!")
+            elif auth_method == "oauth":
+                # Generic OAuth setup for other providers
+                client_id = click.prompt("OAuth client ID")
+                client_secret = click.prompt("OAuth client secret", hide_input=True)
+
+                if auth_manager.authenticate_oauth(
+                    provider_key, client_id, client_secret
+                ):
+                    show_success(f"{provider.display_name} OAuth configured!")
                 else:
-                    click.echo(f"✗ OAuth authentication for {provider} failed")
-            except Exception as e:
-                click.echo(f"✗ Failed to configure {provider}: {str(e)}")
+                    show_error(
+                        f"OAuth authentication for {provider.display_name} failed"
+                    )
+            else:
+                show_error(f"Unknown authentication method: {auth_method}")
 
-        if not click.confirm("Add another provider?"):
+        except Exception as e:
+            show_error(f"Failed to configure {provider.display_name}: {str(e)}")
+
+        if not confirm_action("Add another provider?"):
             break
 
     click.echo()
-    click.echo(
-        "Setup complete! You can now use 'llm-orc auth list' to see your "
-        "configured providers."
+    show_success(
+        "Setup complete! Use 'llm-orc auth list' to see your configured providers."
     )
+
+
+def _show_auth_method_help() -> None:
+    """Show help for choosing authentication methods."""
+    click.echo("\n📚 Authentication Method Guide")
+    click.echo("=" * 30)
+    click.echo()
+    click.echo("🔐 Claude Pro/Max OAuth:")
+    click.echo("   • Best if you have a Claude Pro or Claude Max subscription")
+    click.echo("   • Uses your existing subscription (no extra API costs)")
+    click.echo("   • Automatic token management and refresh")
+    click.echo("   • Most convenient for regular Claude users")
+    click.echo()
+    click.echo("🔑 API Key:")
+    click.echo("   • Best for programmatic access or if you don't have Claude Pro/Max")
+    click.echo("   • Requires separate API subscription (~$20/month minimum)")
+    click.echo("   • Direct API access with manual key management")
+    click.echo("   • Good for production applications")
+    click.echo()
+    click.echo("💡 Recommendation:")
+    click.echo("   Choose Claude Pro/Max if you already have a subscription.")
+    click.echo(
+        "   Choose API Key if you need programmatic access or don't have "
+        "Claude Pro/Max."
+    )
+    click.echo()
 
 
 @auth.command("logout")

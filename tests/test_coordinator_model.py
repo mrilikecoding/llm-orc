@@ -77,8 +77,8 @@ class TestConfigurableCoordinator:
 
         synthesis_model = await executor._get_synthesis_model(oauth_coordinator_config)
 
-        # Should call _load_model with the coordinator model
-        mock_load_model.assert_called_once_with("anthropic-claude-pro-max")
+        # Should call _load_model with the coordinator model (as provider)
+        mock_load_model.assert_called_once_with("anthropic-claude-pro-max", None)
         assert synthesis_model == mock_oauth_model
 
     @pytest.mark.asyncio

@@ -11,6 +11,7 @@ Mix expensive cloud models with free local models - use Claude for strategic ins
 ## Key Features
 
 - **Multi-Agent Ensembles**: Coordinate specialized agents for different aspects of analysis
+- **Model Profiles**: Simplified configuration with named shortcuts for model + provider combinations
 - **Cost Optimization**: Mix expensive and free models based on what each task needs
 - **CLI Interface**: Simple commands with piping support (`cat code.py | llm-orc invoke code-review`)
 - **Secure Authentication**: Encrypted API key storage with easy credential management
@@ -82,9 +83,6 @@ llm-orc auth add anthropic-claude-pro-max
 # List configured providers
 llm-orc auth list
 
-# Test authentication
-llm-orc auth test anthropic
-
 # Remove a provider if needed
 llm-orc auth remove anthropic
 ```
@@ -104,19 +102,25 @@ description: Multi-perspective code review ensemble
 
 agents:
   - name: security-reviewer
-    role: security-analyst
-    model: llama3
+    model_profile: free-local     # Fast, free initial analysis
+    system_prompt: "You are a security analyst. Focus on identifying security vulnerabilities, authentication issues, and potential attack vectors."
     timeout_seconds: 60
 
   - name: performance-reviewer
-    role: performance-analyst  
-    model: llama3
+    model_profile: free-local     # Fast, free initial analysis
+    system_prompt: "You are a performance analyst. Focus on identifying bottlenecks, inefficient algorithms, and scalability issues."
     timeout_seconds: 60
 
+  - name: quality-reviewer
+    model_profile: default-claude # High-quality cloud analysis
+    system_prompt: "You are a code quality analyst. Focus on maintainability, readability, and best practices."
+    timeout_seconds: 90
+
 coordinator:
+  model_profile: default-claude   # Best quality for synthesis
   synthesis_prompt: |
-    You are a senior engineering lead. Synthesize the security and performance 
-    analysis into actionable recommendations.
+    You are a senior engineering lead. Synthesize the security, performance,
+    and quality analysis into actionable recommendations.
   output_format: json
   timeout_seconds: 90
 ```
@@ -148,6 +152,9 @@ llm-orc config show
 # List available ensembles
 llm-orc list-ensembles
 
+# List available model profiles
+llm-orc list-profiles
+
 # Get help for any command
 llm-orc --help
 llm-orc invoke --help
@@ -176,8 +183,6 @@ llm-orc config init --project-name my-project
 # Show current configuration status
 llm-orc config show
 
-# Migrate from old configuration location (if needed)
-llm-orc config migrate
 ```
 
 ## Use Cases
@@ -203,12 +208,58 @@ Systematic literature review, methodology evaluation, or multi-dimensional analy
 
 ## Configuration
 
+### Model Profiles
+
+Model profiles simplify ensemble configuration by providing named shortcuts for common model + provider combinations:
+
+```yaml
+# In ~/.config/llm-orc/config.yaml or .llm-orc/config.yaml
+model_profiles:
+  free-local:
+    model: llama3
+    provider: ollama
+    cost_per_token: 0.0
+
+  default-claude:
+    model: claude-sonnet-4-20250514
+    provider: anthropic-claude-pro-max
+    # No cost_per_token: subscription-based
+
+  high-context:
+    model: claude-3-5-sonnet-20241022
+    provider: anthropic-api
+    cost_per_token: 3.0e-06
+
+  small:
+    model: claude-3-haiku-20240307
+    provider: anthropic-api
+    cost_per_token: 1.0e-06
+```
+
+**Profile Benefits:**
+- **Simplified Configuration**: Use `model_profile: default-claude` instead of explicit model + provider
+- **Consistency**: Same profile names work across all ensembles
+- **Cost Tracking**: Built-in cost information for budgeting
+- **Flexibility**: Local profiles override global ones
+
+**Usage in Ensembles:**
+```yaml
+agents:
+  - name: bulk-analyzer
+    model_profile: free-local     # Fast, free bulk analysis
+  - name: expert-reviewer
+    model_profile: default-claude # High-quality cloud analysis
+  - name: document-processor
+    model_profile: high-context   # Large context processing
+```
+
 ### Ensemble Configuration
 Ensemble configurations support:
 
+- **Model profiles** for simplified, consistent model selection
 - **Agent specialization** with role-specific prompts
 - **Timeout management** per agent and coordinator
-- **Model selection** with local and cloud options
+- **Mixed model strategies** combining local and cloud models
 - **Synthesis strategies** for combining agent outputs
 - **Output formatting** (text, JSON) for integration
 

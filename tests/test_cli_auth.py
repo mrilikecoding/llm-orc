@@ -201,96 +201,17 @@ class TestAuthCommandsNew:
         assert result.exit_code != 0
         assert f"No authentication found for {provider}" in result.output
 
-    def test_auth_test_command_validates_credentials(
-        self, runner: CliRunner, temp_config_dir: Path
-    ) -> None:
-        """Test that 'auth test' command validates credentials."""
-        # Given
-        provider = "anthropic"
-        api_key = "test_key_123"
-
-        with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
-            mock_instance.get_credentials_file.return_value = (
-                temp_config_dir / "credentials.yaml"
-            )
-            mock_instance.get_encryption_key_file.return_value = (
-                temp_config_dir / ".encryption_key"
-            )
-            mock_instance.needs_migration.return_value = False
-
-            # Add provider first
-            runner.invoke(
-                cli,
-                [
-                    "auth",
-                    "add",
-                    provider,
-                    "--api-key",
-                    api_key,
-                ],
-            )
-
-            # When
-            result = runner.invoke(cli, ["auth", "test", provider])
-
-            # Then
-            assert result.exit_code == 0
-            assert f"API key authentication for {provider} is working" in result.output
-
-    def test_auth_test_command_fails_for_invalid_credentials(
-        self, runner: CliRunner, temp_config_dir: Path
-    ) -> None:
-        """Test that 'auth test' command fails for invalid credentials."""
-        # Given
-        provider = "anthropic"
-        invalid_key = "invalid_key"
-
-        with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
-            mock_instance.get_credentials_file.return_value = (
-                temp_config_dir / "credentials.yaml"
-            )
-            mock_instance.get_encryption_key_file.return_value = (
-                temp_config_dir / ".encryption_key"
-            )
-            mock_instance.needs_migration.return_value = False
-
-            # Add provider with invalid key
-            runner.invoke(
-                cli,
-                [
-                    "auth",
-                    "add",
-                    provider,
-                    "--api-key",
-                    invalid_key,
-                ],
-            )
-
-            # When
-            result = runner.invoke(cli, ["auth", "test", provider])
-
-            # Then
-            assert result.exit_code != 0
-            assert f"API key authentication for {provider} failed" in result.output
-
     def test_auth_setup_command_interactive_wizard(
         self, runner: CliRunner, temp_config_dir: Path
     ) -> None:
         """Test that 'auth setup' command runs interactive wizard."""
         # Given
-        # Mock user input
+        # Mock user input - select anthropic-api provider directly
         inputs = [
-            "anthropic",
-            "api_key",
-            "test_key_123",
-            "n",
-        ]  # provider, auth_method, api_key, no more
+            "1",  # Select first provider (anthropic-api)
+            "test_key_123",  # API key
+            "n",  # No more providers
+        ]  # provider selection, api_key, no more
 
         # When
         with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager:
@@ -314,7 +235,7 @@ class TestAuthCommandsNew:
         # Then
         assert result.exit_code == 0
         assert "Welcome to LLM Orchestra setup!" in result.output
-        assert "✓ anthropic configured successfully with API key" in result.output
+        assert "Anthropic API key configured!" in result.output
         assert "Setup complete!" in result.output
 
     def test_auth_add_anthropic_interactive_api_key(
