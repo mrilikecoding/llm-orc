@@ -1,6 +1,7 @@
 """Configuration management system for llm-orc."""
 
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -59,171 +60,52 @@ class ConfigurationManager:
         self._setup_default_ensembles()
 
     def _setup_default_config(self) -> None:
-        """Set up default global config.yaml with model profiles."""
+        """Set up default global config.yaml by copying template file."""
         config_file = self._global_config_dir / "config.yaml"
 
         # Only create if doesn't exist (don't overwrite user configurations)
         if config_file.exists():
             return
 
-        # Create default configuration with characteristic-based model profiles
-        default_config = {
-            "model_profiles": {
-                # Core usage profiles based on model characteristics
-                "free-local": {
-                    "model": "llama3",
-                    "provider": "ollama",
-                    "cost_per_token": 0.0,
-                },
-                "default-claude": {
-                    "model": "claude-sonnet-4-20250514",
-                    "provider": "anthropic-claude-pro-max",
-                },
-                "default-gemini": {
-                    "model": "gemini-2.5-flash",
-                    "provider": "google-gemini",
-                    "cost_per_token": 1.0e-06,
-                },
-                "high-context": {
-                    "model": "claude-3-5-sonnet-20241022",
-                    "provider": "anthropic-api",
-                    "cost_per_token": 3.0e-06,
-                },
-                "small": {
-                    "model": "claude-3-haiku-20240307",
-                    "provider": "anthropic-api",
-                    "cost_per_token": 1.0e-06,
-                },
-                # Validation profiles for testing authentication
-                "validate-anthropic-api": {
-                    "model": "claude-3-5-sonnet-20241022",
-                    "provider": "anthropic-api",
-                    "cost_per_token": 3.0e-06,
-                },
-                "validate-claude-pro-max": {
-                    "model": "claude-sonnet-4-20250514",
-                    "provider": "anthropic-claude-pro-max",
-                },
-                "validate-google-gemini": {
-                    "model": "gemini-2.5-flash",
-                    "provider": "google-gemini",
-                    "cost_per_token": 1.0e-06,
-                },
-                "validate-ollama": {
-                    "model": "llama3",
-                    "provider": "ollama",
-                    "cost_per_token": 0.0,
-                },
-            }
-        }
+        # Get the template config file
+        template_file = self._get_template_config_file("global-config.yaml")
 
-        with open(config_file, "w") as f:
-            yaml.dump(default_config, f, default_flow_style=False, indent=2)
+        if template_file.exists():
+            shutil.copy2(template_file, config_file)
+        else:
+            # Fallback to empty config if template not found
+            with open(config_file, "w") as f:
+                yaml.dump({"model_profiles": {}}, f, default_flow_style=False, indent=2)
 
     def _setup_default_ensembles(self) -> None:
-        """Set up default validation ensembles in the global config."""
+        """Set up default validation ensembles by copying template files."""
         ensembles_dir = self._global_config_dir / "ensembles"
         ensembles_dir.mkdir(exist_ok=True)
 
-        # Create validation ensembles for each provider
-        validation_ensembles = [
-            {
-                "filename": "validate-anthropic-api.yaml",
-                "config": {
-                    "name": "validate-anthropic-api",
-                    "description": "Validate Anthropic API authentication",
-                    "default_task": (
-                        "Verify that we can successfully make requests to this provider"
-                    ),
-                    "agents": [
-                        {
-                            "name": "validator",
-                            "model_profile": "validate-anthropic-api",
-                            "system_prompt": "Respond with 'Authentication working'",
-                        }
-                    ],
-                    "coordinator": {
-                        "model_profile": "validate-anthropic-api",
-                        "synthesis_prompt": "Return the response from the validator.",
-                        "output_format": "text",
-                    },
-                },
-            },
-            {
-                "filename": "validate-anthropic-claude-pro-max.yaml",
-                "config": {
-                    "name": "validate-anthropic-claude-pro-max",
-                    "description": "Validate Claude Pro/Max OAuth authentication",
-                    "default_task": (
-                        "Verify that we can successfully make requests to this provider"
-                    ),
-                    "agents": [
-                        {
-                            "name": "validator",
-                            "model_profile": "validate-claude-pro-max",
-                            "system_prompt": "Respond with 'Authentication working'",
-                        }
-                    ],
-                    "coordinator": {
-                        "model_profile": "validate-claude-pro-max",
-                        "synthesis_prompt": "Return the response from the validator.",
-                        "output_format": "text",
-                    },
-                },
-            },
-            {
-                "filename": "validate-google-gemini.yaml",
-                "config": {
-                    "name": "validate-google-gemini",
-                    "description": "Validate Google Gemini API authentication",
-                    "default_task": (
-                        "Verify that we can successfully make requests to this provider"
-                    ),
-                    "agents": [
-                        {
-                            "name": "validator",
-                            "model_profile": "validate-google-gemini",
-                            "system_prompt": "Respond with 'Authentication working'",
-                        }
-                    ],
-                    "coordinator": {
-                        "model_profile": "validate-google-gemini",
-                        "synthesis_prompt": "Return the response from the validator.",
-                        "output_format": "text",
-                    },
-                },
-            },
-            {
-                "filename": "validate-ollama.yaml",
-                "config": {
-                    "name": "validate-ollama",
-                    "description": "Validate Ollama local model access",
-                    "default_task": (
-                        "Verify that we can successfully make requests to this provider"
-                    ),
-                    "agents": [
-                        {
-                            "name": "validator",
-                            "model_profile": "validate-ollama",
-                            "system_prompt": "Respond with 'Authentication working'",
-                        }
-                    ],
-                    "coordinator": {
-                        "model_profile": "validate-ollama",
-                        "synthesis_prompt": "Return the response from the validator.",
-                        "output_format": "text",
-                    },
-                },
-            },
-        ]
+        # Get the template ensembles directory
+        template_dir = self._get_template_ensembles_dir()
 
-        for ensemble_info in validation_ensembles:
-            filename = ensemble_info["filename"]
-            assert isinstance(filename, str)
-            ensemble_file = ensembles_dir / filename
-            if not ensemble_file.exists():
-                with open(ensemble_file, "w") as f:
-                    yaml.dump(ensemble_info["config"], f, default_flow_style=False)
+        if not template_dir.exists():
+            # Fallback to empty directory if templates not found
+            return
+
+        # Copy each template file to the ensembles directory if it doesn't exist
+        for template_file in template_dir.glob("*.yaml"):
+            target_file = ensembles_dir / template_file.name
+            if not target_file.exists():
+                shutil.copy2(template_file, target_file)
+
+    def _get_template_ensembles_dir(self) -> Path:
+        """Get the template ensembles directory path."""
+        # Get the directory containing this module
+        module_dir = Path(__file__).parent
+        return module_dir / "templates" / "ensembles"
+
+    def _get_template_config_file(self, filename: str) -> Path:
+        """Get the template config file path."""
+        # Get the directory containing this module
+        module_dir = Path(__file__).parent
+        return module_dir / "templates" / filename
 
     @property
     def local_config_dir(self) -> Path | None:
@@ -283,31 +165,40 @@ class ConfigurationManager:
         (local_dir / "models").mkdir()
         (local_dir / "scripts").mkdir()
 
-        # Create basic config file
-        config_data = {
-            "project": {
-                "name": project_name or Path.cwd().name,
-                "default_models": {
-                    "fast": "free-local",
-                    "production": "default-claude",
-                },
-            },
-            "model_profiles": {
-                "free-local": {
-                    "model": "llama3",
-                    "provider": "ollama",
-                    "cost_per_token": 0.0,
-                },
-                "default-claude": {
-                    "model": "claude-sonnet-4-20250514",
-                    "provider": "anthropic-claude-pro-max",
-                },
-            },
-        }
-
+        # Create config file from template
+        template_file = self._get_template_config_file("local-config.yaml")
         config_file = local_dir / "config.yaml"
-        with open(config_file, "w") as f:
-            yaml.dump(config_data, f, default_flow_style=False, indent=2)
+
+        if template_file.exists():
+            # Read template and substitute project name
+            with open(template_file) as f:
+                template_content = f.read()
+
+            # Replace placeholder with actual project name
+            actual_project_name = project_name or Path.cwd().name
+            config_content = template_content.replace(
+                "{project_name}", actual_project_name
+            )
+
+            with open(config_file, "w") as f:
+                f.write(config_content)
+        else:
+            # Fallback to minimal config if template not found
+            config_data = {
+                "project": {"name": project_name or Path.cwd().name},
+                "model_profiles": {}
+            }
+            with open(config_file, "w") as f:
+                yaml.dump(config_data, f, default_flow_style=False, indent=2)
+
+        # Copy example ensemble template to local ensembles directory
+        template_ensemble_dir = self._get_template_ensembles_dir()
+        example_template = template_ensemble_dir / "example-local-ensemble.yaml"
+        if example_template.exists():
+            local_ensemble_file = (
+                local_dir / "ensembles" / "example-local-ensemble.yaml"
+            )
+            shutil.copy2(example_template, local_ensemble_file)
 
         # Create .gitignore for credentials if they are stored locally
         gitignore_file = local_dir / ".gitignore"

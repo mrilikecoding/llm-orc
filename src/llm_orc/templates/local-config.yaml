@@ -1,0 +1,13 @@
+project:
+  name: "{project_name}"
+  default_models:
+    test: free-local
+    quality: default-claude
+model_profiles:
+  free-local:
+    model: llama3
+    provider: ollama
+    cost_per_token: 0.0
+  default-claude:
+    model: claude-sonnet-4-20250514
+    provider: anthropic-claude-pro-max

@@ -1,0 +1,11 @@
+name: validate-anthropic-api
+description: Validate Anthropic API authentication
+default_task: Verify that we can successfully make requests to this provider
+agents:
+  - name: validator
+    model_profile: validate-anthropic-api
+    system_prompt: Respond with 'Authentication working'
+coordinator:
+  model_profile: validate-anthropic-api
+  synthesis_prompt: Return the response from the validator.
+  output_format: text

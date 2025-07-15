@@ -380,17 +380,17 @@ class EnsembleExecutor:
 
         # Choose fallback model based on context
         if context == "coordinator":
-            # For coordinators, prefer production > fast > hardcoded fallback
+            # For coordinators, prefer quality > test > hardcoded fallback
             fallback_model = (
-                default_models.get("production")
-                or default_models.get("fast")
+                default_models.get("quality")
+                or default_models.get("test")
                 or "llama3"
             )
         else:
-            # For general use, prefer fast > production > hardcoded fallback
+            # For general use, prefer test > quality > hardcoded fallback
             fallback_model = (
-                default_models.get("fast")
-                or default_models.get("production")
+                default_models.get("test")
+                or default_models.get("quality")
                 or "llama3"
             )
 
@@ -404,7 +404,7 @@ class EnsembleExecutor:
             click.echo(f"❌ Fallback model '{fallback_model}' failed to load: {str(e)}")
             click.echo(
                 "🆘 Using hardcoded fallback: llama3 "
-                "(consider configuring default_models)"
+                "(consider configuring default_models: test/quality)"
             )
             return OllamaModel(model_name="llama3")
 

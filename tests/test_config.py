@@ -66,3 +66,137 @@ class TestConfigurationManager:
                 loaded_config = config_manager.load_project_config()
 
                 assert loaded_config == {}
+
+    def test_setup_default_ensembles_from_templates(self) -> None:
+        """Test that default ensembles are created from template files."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Mock global config directory
+            with patch.object(
+                ConfigurationManager, "_get_global_config_dir", return_value=temp_path
+            ):
+                ConfigurationManager()
+
+                # Check that ensembles directory was created
+                ensembles_dir = temp_path / "ensembles"
+                assert ensembles_dir.exists()
+
+                # Check that template files were copied
+                expected_files = [
+                    "validate-anthropic-api.yaml",
+                    "validate-anthropic-claude-pro-max.yaml",
+                    "validate-google-gemini.yaml",
+                    "validate-ollama.yaml"
+                ]
+
+                for filename in expected_files:
+                    ensemble_file = ensembles_dir / filename
+                    assert ensemble_file.exists()
+
+                    # Verify the file contains valid YAML
+                    with open(ensemble_file) as f:
+                        ensemble_config = yaml.safe_load(f)
+                        assert "name" in ensemble_config
+                        assert "description" in ensemble_config
+                        assert "agents" in ensemble_config
+                        assert "coordinator" in ensemble_config
+
+    def test_setup_default_ensembles_no_templates(self) -> None:
+        """Test that setup gracefully handles missing template directory."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Mock global config directory and template directory to not exist
+            with patch.object(
+                ConfigurationManager, "_get_global_config_dir", return_value=temp_path
+            ):
+                with patch.object(
+                    ConfigurationManager,
+                    "_get_template_ensembles_dir",
+                    return_value=temp_path / "missing",
+                ):
+                    ConfigurationManager()
+
+                    # Should create ensembles directory but not fail
+                    ensembles_dir = temp_path / "ensembles"
+                    assert ensembles_dir.exists()
+
+                    # Should be empty since no templates exist
+                    assert list(ensembles_dir.glob("*.yaml")) == []
+
+    def test_setup_default_config_from_template(self) -> None:
+        """Test that global config is created from template file."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Mock global config directory
+            with patch.object(
+                ConfigurationManager, "_get_global_config_dir", return_value=temp_path
+            ):
+                ConfigurationManager()
+
+                # Check that config.yaml was created
+                config_file = temp_path / "config.yaml"
+                assert config_file.exists()
+
+                # Verify the file contains valid YAML with model profiles
+                with open(config_file) as f:
+                    config_data = yaml.safe_load(f)
+                    assert "model_profiles" in config_data
+                    assert "free-local" in config_data["model_profiles"]
+                    assert "default-claude" in config_data["model_profiles"]
+                    assert "validate-anthropic-api" in config_data["model_profiles"]
+
+    def test_init_local_config_from_templates(self) -> None:
+        """Test that local config initialization uses templates."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Mock cwd to temp directory
+            with patch("pathlib.Path.cwd", return_value=temp_path):
+                config_manager = ConfigurationManager()
+                config_manager.init_local_config("test-project")
+
+                # Check directory structure was created
+                local_dir = temp_path / ".llm-orc"
+                assert local_dir.exists()
+                assert (local_dir / "ensembles").exists()
+                assert (local_dir / "models").exists()
+                assert (local_dir / "scripts").exists()
+
+                # Check config file was created with project name
+                config_file = local_dir / "config.yaml"
+                assert config_file.exists()
+
+                with open(config_file) as f:
+                    config_data = yaml.safe_load(f)
+                    assert config_data["project"]["name"] == "test-project"
+                    assert "test" in config_data["project"]["default_models"]
+                    assert "quality" in config_data["project"]["default_models"]
+                    assert (
+                        config_data["project"]["default_models"]["test"] == "free-local"
+                    )
+                    assert (
+                        config_data["project"]["default_models"]["quality"]
+                        == "default-claude"
+                    )
+
+                # Check example ensemble was copied
+                example_ensemble = (
+                    local_dir / "ensembles" / "example-local-ensemble.yaml"
+                )
+                assert example_ensemble.exists()
+
+                with open(example_ensemble) as f:
+                    ensemble_data = yaml.safe_load(f)
+                    assert ensemble_data["name"] == "example-local-ensemble"
+                    assert "coordinator" in ensemble_data
+                    assert (
+                        ensemble_data["coordinator"]["model_profile"]
+                        == "default-claude"
+                    )
+
+                # Check gitignore was created
+                gitignore_file = local_dir / ".gitignore"
+                assert gitignore_file.exists()
