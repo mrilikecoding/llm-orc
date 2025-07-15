@@ -137,8 +137,8 @@ llm-orc config init
 
 #### View Current Configuration
 ```bash
-# Show configuration paths and status
-llm-orc config show
+# Check configuration status with visual indicators
+llm-orc config check
 ```
 
 ### 3. Using LLM Orchestra
@@ -176,13 +176,18 @@ llm-orc invoke code-review --config-dir ./custom-config
 # Initialize local project configuration
 llm-orc config init --project-name my-project
 
-# Show current configuration status
-llm-orc config show
-
 # Check configuration status with visual indicators
 llm-orc config check                # Global + local status with legend
 llm-orc config check-global        # Global configuration only  
 llm-orc config check-local         # Local project configuration only
+
+# Reset configurations with safety options
+llm-orc config reset-global        # Reset global config (backup + preserve auth by default)
+llm-orc config reset-local         # Reset local config (backup + preserve ensembles by default)
+
+# Advanced reset options
+llm-orc config reset-global --no-backup --reset-auth       # Complete reset including auth
+llm-orc config reset-local --reset-ensembles --no-backup   # Reset including ensembles
 
 ```
 
@@ -319,6 +324,40 @@ Configuration Status Legend:
 🟢 security-auditor (llama3 via ollama)
 🟢 senior-reviewer (claude-sonnet-4 via anthropic-claude-pro-max)
 ```
+
+### Configuration Reset Commands
+
+LLM Orchestra provides safe configuration reset with backup and selective retention options:
+
+```bash
+# Reset global configuration (safe defaults)
+llm-orc config reset-global        # Creates backup, preserves authentication
+
+# Reset local configuration (safe defaults)  
+llm-orc config reset-local         # Creates backup, preserves ensembles
+
+# Advanced reset options
+llm-orc config reset-global --no-backup --reset-auth           # Complete global reset
+llm-orc config reset-local --reset-ensembles --no-backup       # Complete local reset
+llm-orc config reset-local --project-name "My Project"         # Set project name
+```
+
+**Safety Features:**
+- **Automatic backups** - Creates timestamped `.backup` directories by default
+- **Authentication preservation** - Keeps API keys and credentials safe by default
+- **Ensemble retention** - Preserves local ensembles by default
+- **Confirmation prompts** - Prevents accidental data loss
+
+**Available Options:**
+
+*Global Reset:*
+- `--backup/--no-backup` - Create backup before reset (default: backup)
+- `--preserve-auth/--reset-auth` - Keep authentication (default: preserve)
+
+*Local Reset:*
+- `--backup/--no-backup` - Create backup before reset (default: backup)
+- `--preserve-ensembles/--reset-ensembles` - Keep ensembles (default: preserve)
+- `--project-name` - Set project name (defaults to directory name)
 
 ### Configuration Hierarchy
 LLM Orchestra follows a configuration hierarchy:

@@ -384,40 +384,6 @@ def init(project_name: str) -> None:
         raise click.ClickException(str(e)) from e
 
 
-@config.command()
-def show() -> None:
-    """Show current configuration information."""
-    config_manager = ConfigurationManager()
-
-    click.echo("Configuration Information:")
-    click.echo(f"Global config directory: {config_manager.global_config_dir}")
-
-    if config_manager.local_config_dir:
-        click.echo(f"Local config directory: {config_manager.local_config_dir}")
-    else:
-        click.echo("Local config directory: Not found")
-
-    click.echo("\nEnsemble directories (in search order):")
-    ensemble_dirs = config_manager.get_ensembles_dirs()
-    if ensemble_dirs:
-        for i, dir_path in enumerate(ensemble_dirs, 1):
-            click.echo(f"  {i}. {dir_path}")
-    else:
-        click.echo("  None found")
-
-    # Show project config if available
-    project_config = config_manager.load_project_config()
-    if project_config:
-        click.echo("\nProject Configuration:")
-        project_name = project_config.get("project", {}).get("name", "Unknown")
-        click.echo(f"  Project name: {project_name}")
-
-        profiles = project_config.get("model_profiles", {})
-        if profiles:
-            click.echo("  Model profiles:")
-            for profile_name in profiles.keys():
-                click.echo(f"    - {profile_name}")
-
 
 @config.command("reset-global")
 @click.option(
