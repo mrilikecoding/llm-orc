@@ -270,6 +270,15 @@ def list_profiles() -> None:
         click.echo("\n📁 Local Repo (.llm-orc/config.yaml):")
         for profile_name in sorted(local_profiles.keys()):
             profile = local_profiles[profile_name]
+
+            # Handle case where profile is not a dict (malformed YAML)
+            if not isinstance(profile, dict):
+                click.echo(
+                    f"  {profile_name}: [Invalid profile format - "
+                    f"expected dict, got {type(profile).__name__}]"
+                )
+                continue
+
             model = profile.get("model", "Unknown")
             provider = profile.get("provider", "Unknown")
             cost = profile.get("cost_per_token", "Not specified")
@@ -290,6 +299,15 @@ def list_profiles() -> None:
                 continue
 
             profile = global_profiles[profile_name]
+
+            # Handle case where profile is not a dict (malformed YAML)
+            if not isinstance(profile, dict):
+                click.echo(
+                    f"  {profile_name}: [Invalid profile format - "
+                    f"expected dict, got {type(profile).__name__}]"
+                )
+                continue
+
             model = profile.get("model", "Unknown")
             provider = profile.get("provider", "Unknown")
             cost = profile.get("cost_per_token", "Not specified")
