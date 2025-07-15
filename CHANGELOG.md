@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2025-07-15
+
+### Changed
+- **Template-based Configuration** - Refactored configuration system to use template files
+  - Replaced hardcoded default ensembles with template-based approach for better maintainability
+  - Added `src/llm_orc/templates/` directory with configurable templates
+  - Updated model naming from "fast/production" to "test/quality" for better clarity
+  - Enhanced `init_local_config()` to use templates with project name substitution
+
+### Fixed
+- **CLI Profile Listing** - Fixed AttributeError in `llm-orc list-profiles` command
+  - Added defensive error handling for malformed YAML configurations
+  - Improved error messages when profile format is invalid
+  - Better handling of legacy config formats
+
+### Performance
+- **Test Suite Optimization** - Improved test performance by 25% (11.86s → 8.92s)
+  - Fixed synthesis model mocking in ensemble execution tests (140x faster)
+  - Reduced script agent timeouts in integration tests
+  - Added timeout configurations to prevent slow API calls during testing
+
 ## [0.4.2] - 2025-07-15
 
 ### Fixed
