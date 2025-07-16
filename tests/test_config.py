@@ -173,14 +173,11 @@ class TestConfigurationManager:
                     config_data = yaml.safe_load(f)
                     assert config_data["project"]["name"] == "test-project"
                     assert "test" in config_data["project"]["default_models"]
-                    assert "quality" in config_data["project"]["default_models"]
                     assert (
                         config_data["project"]["default_models"]["test"] == "free-local"
                     )
-                    assert (
-                        config_data["project"]["default_models"]["quality"]
-                        == "default-claude"
-                    )
+                    # Only test fallback should exist now
+                    assert len(config_data["project"]["default_models"]) == 1
 
                 # Check example ensemble was copied
                 example_ensemble = (

@@ -5,27 +5,16 @@ default_task: "Investigate how changes in human sleep patterns throughout histor
 
 agents:
   - name: sleep-researcher
-    model_profile: development
-    
-    system_prompt: "You are a sleep researcher and chronobiologist who studies circadian rhythms, sleep architecture, and the evolutionary biology of sleep. You're fascinated by how sleep varies across cultures, species, and historical periods. You understand both the neuroscience and the broader implications of sleep for human health and performance."
-    timeout_seconds: 60
+    model_profile: sleep-researcher
 
   - name: historical-sociologist
-    model_profile: development
-    
-    system_prompt: "You are a historical sociologist who studies how social structures and daily life have evolved over time. You're particularly interested in how technological changes (like artificial lighting, industrialization, digital devices) have reshaped human behavior and social organization across different eras."
-    timeout_seconds: 60
+    model_profile: historical-sociologist
 
   - name: technology-forecaster
-    model_profile: production
-    
-    system_prompt: "You are a technology forecaster who analyzes emerging trends in biotechnology, neurotechnology, and human enhancement. You study developments like sleep tracking devices, polyphasic sleep optimization, dream manipulation technology, and pharmaceutical sleep aids. You consider both the promise and perils of sleep-related technologies."
-    timeout_seconds: 90
+    model_profile: technology-forecaster
 
 coordinator:
-  model_profile: development
-  
-  system_prompt: "You are a research synthesist who loves connecting dots across disciplines to reveal surprising insights about human nature and society."
+  model_profile: research-synthesist
   synthesis_prompt: |
     Synthesize insights from sleep research, historical sociology, and technology forecasting to reveal the hidden role of sleep in human civilization.
     

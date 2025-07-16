@@ -16,6 +16,116 @@ from llm_orc.ensemble_execution import EnsembleExecutor
 from llm_orc.mcp_server_runner import MCPServerRunner
 
 
+def _get_available_providers(config_manager: ConfigurationManager) -> set[str]:
+    """Get set of available providers (authenticated + local services)."""
+    available_providers = set()
+
+    # Check for authentication files
+    global_config_dir = Path(config_manager.global_config_dir)
+    auth_files = [
+        global_config_dir / "credentials.yaml",
+        global_config_dir / ".encryption_key",
+        global_config_dir / ".credentials.yaml",
+    ]
+    auth_found = any(auth_file.exists() for auth_file in auth_files)
+
+    # Get authenticated providers
+    if auth_found:
+        try:
+            storage = CredentialStorage(config_manager)
+            auth_providers = storage.list_providers()
+            available_providers.update(auth_providers)
+        except Exception:
+            pass  # Ignore errors for availability check
+
+    # Check ollama availability
+    try:
+        import requests
+
+        response = requests.get("http://localhost:11434/api/tags", timeout=2)
+        if response.status_code == 200:
+            available_providers.add("ollama")
+    except Exception:
+        pass  # Ignore errors for availability check
+
+    return available_providers
+
+
+def _check_ensemble_availability(
+    ensembles_dir: Path,
+    available_providers: set[str],
+    config_manager: ConfigurationManager,
+) -> None:
+    """Check and display ensemble availability status."""
+    if not ensembles_dir.exists():
+        click.echo(f"\nEnsembles directory not found: {ensembles_dir}")
+        return
+
+    ensemble_files = list(ensembles_dir.glob("*.yaml"))
+    if not ensemble_files:
+        click.echo(f"\nNo ensembles found in: {ensembles_dir}")
+        return
+
+    click.echo(f"\n📁 Ensembles ({len(ensemble_files)} found):")
+
+    import yaml
+
+    for ensemble_file in sorted(ensemble_files):
+        try:
+            with open(ensemble_file) as f:
+                ensemble_data = yaml.safe_load(f) or {}
+
+            ensemble_name = ensemble_data.get("name", ensemble_file.stem)
+            agents = ensemble_data.get("agents", [])
+            coordinator = ensemble_data.get("coordinator", {})
+
+            # Check all required providers for this ensemble
+            required_providers = set()
+            missing_profiles: list[str] = []
+            missing_providers: list[str] = []
+
+            # Check agent requirements
+            for agent in agents:
+                if "model_profile" in agent:
+                    profile_name = agent["model_profile"]
+                    try:
+                        _, provider = config_manager.resolve_model_profile(profile_name)
+                        required_providers.add(provider)
+                    except (ValueError, KeyError):
+                        missing_profiles.append(profile_name)
+                elif "provider" in agent:
+                    required_providers.add(agent["provider"])
+
+            # Check coordinator requirements
+            if "model_profile" in coordinator:
+                profile_name = coordinator["model_profile"]
+                try:
+                    _, provider = config_manager.resolve_model_profile(profile_name)
+                    required_providers.add(provider)
+                except (ValueError, KeyError):
+                    missing_profiles.append(profile_name)
+            elif "provider" in coordinator:
+                required_providers.add(coordinator["provider"])
+
+            # Determine availability
+            missing_providers_set = required_providers - available_providers
+            missing_providers = list(missing_providers_set)
+            is_available = not missing_providers and not missing_profiles
+
+            status_symbol = "🟢" if is_available else "🟥"
+            click.echo(f"  {status_symbol} {ensemble_name}")
+
+            # Show details for unavailable ensembles
+            if not is_available:
+                if missing_profiles:
+                    click.echo(f"    Missing profiles: {', '.join(missing_profiles)}")
+                if missing_providers:
+                    click.echo(f"    Missing providers: {', '.join(missing_providers)}")
+
+        except Exception as e:
+            click.echo(f"  🟥 {ensemble_file.stem} (error reading: {e})")
+
+
 @click.group()
 @click.version_option(package_name="llm-orchestra")
 def cli() -> None:
@@ -349,39 +459,401 @@ def init(project_name: str) -> None:
         raise click.ClickException(str(e)) from e
 
 
-@config.command()
-def show() -> None:
-    """Show current configuration information."""
+@config.command("reset-global")
+@click.option(
+    "--backup/--no-backup",
+    default=True,
+    help="Create backup of existing global config (default: True)",
+)
+@click.option(
+    "--preserve-auth/--reset-auth",
+    default=True,
+    help="Preserve existing authentication credentials (default: True)",
+)
+@click.confirmation_option(
+    prompt="This will reset your global LLM Orchestra configuration. Continue?"
+)
+def reset_global(backup: bool, preserve_auth: bool) -> None:
+    """Reset global configuration to template defaults."""
+    import shutil
+    from pathlib import Path
+
     config_manager = ConfigurationManager()
+    global_config_dir = Path(config_manager.global_config_dir)
 
-    click.echo("Configuration Information:")
-    click.echo(f"Global config directory: {config_manager.global_config_dir}")
+    # Create backup if requested and config exists
+    if backup and global_config_dir.exists():
+        backup_path = global_config_dir.with_suffix(".backup")
+        if backup_path.exists():
+            shutil.rmtree(backup_path)
+        shutil.copytree(global_config_dir, backup_path)
+        click.echo(f"📦 Backed up existing config to {backup_path}")
 
-    if config_manager.local_config_dir:
-        click.echo(f"Local config directory: {config_manager.local_config_dir}")
+    # Preserve authentication files if requested
+    auth_files = []
+    if preserve_auth and global_config_dir.exists():
+        potential_auth_files = [
+            "credentials.yaml",
+            ".encryption_key",
+            ".credentials.yaml",  # legacy
+        ]
+        for auth_file in potential_auth_files:
+            auth_path = global_config_dir / auth_file
+            if auth_path.exists():
+                # Save auth file content
+                auth_files.append((auth_file, auth_path.read_bytes()))
+                click.echo(f"🔐 Preserving authentication file: {auth_file}")
+
+    # Remove existing config directory
+    if global_config_dir.exists():
+        shutil.rmtree(global_config_dir)
+
+    # Create fresh config directory
+    global_config_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy template to global config
+    template_path = Path(__file__).parent / "templates" / "global-config.yaml"
+    global_config_path = global_config_dir / "config.yaml"
+
+    if template_path.exists():
+        shutil.copy(template_path, global_config_path)
+        click.echo("📋 Installed fresh global config from template")
+
+        # Restore authentication files
+        if auth_files:
+            for auth_file, auth_content in auth_files:
+                auth_path = global_config_dir / auth_file
+                auth_path.write_bytes(auth_content)
+                click.echo(f"🔐 Restored authentication file: {auth_file}")
+
+        click.echo(f"✅ Global config reset complete at {global_config_dir}")
+
+        if preserve_auth and auth_files:
+            click.echo("🔐 Authentication credentials preserved")
+        elif not preserve_auth:
+            click.echo(
+                "💡 Note: You may need to reconfigure authentication "
+                "with 'llm-orc auth setup'"
+            )
     else:
-        click.echo("Local config directory: Not found")
+        raise click.ClickException(f"Template not found at {template_path}")
 
-    click.echo("\nEnsemble directories (in search order):")
-    ensemble_dirs = config_manager.get_ensembles_dirs()
-    if ensemble_dirs:
-        for i, dir_path in enumerate(ensemble_dirs, 1):
-            click.echo(f"  {i}. {dir_path}")
+
+@config.command("check-global")
+def check_global() -> None:
+    """Check global configuration status."""
+    config_manager = ConfigurationManager()
+    global_config_dir = Path(config_manager.global_config_dir)
+    global_config_path = global_config_dir / "config.yaml"
+
+    click.echo("Global Configuration Status:")
+    click.echo(f"Directory: {global_config_dir}")
+
+    if global_config_path.exists():
+        click.echo("Status: configured")
+
+        # Show basic info about the config
+        try:
+            # Get available providers first
+            available_providers = _get_available_providers(config_manager)
+
+            # Show providers FIRST, right after status
+            # Check for authentication status and configured providers
+            auth_files = [
+                global_config_dir / "credentials.yaml",
+                global_config_dir / ".encryption_key",
+                global_config_dir / ".credentials.yaml",
+            ]
+            auth_found = any(auth_file.exists() for auth_file in auth_files)
+
+            # Build provider display with detailed status
+            provider_display = []
+            if auth_found:
+                from llm_orc.authentication import CredentialStorage
+
+                try:
+                    storage = CredentialStorage(config_manager)
+                    auth_providers = storage.list_providers()
+                    for provider in auth_providers:
+                        provider_display.append(f"{provider} (authenticated)")
+                except Exception as e:
+                    provider_display.append(f"Error reading auth providers: {e}")
+
+            # Check ollama availability with detailed status
+            try:
+                import requests
+
+                response = requests.get("http://localhost:11434/api/tags", timeout=2)
+                if response.status_code == 200:
+                    provider_display.append("ollama (available)")
+                else:
+                    provider_display.append("ollama (service running but API error)")
+            except requests.exceptions.ConnectionError:
+                provider_display.append("ollama (not running)")
+            except requests.exceptions.Timeout:
+                provider_display.append("ollama (timeout - may be starting)")
+            except Exception as e:
+                provider_display.append(f"ollama (error: {e})")
+
+            # Display all providers
+            if provider_display:
+                click.echo(f"\nProviders: {len(available_providers)} available")
+                for provider in sorted(provider_display):
+                    click.echo(f"  - {provider}")
+            else:
+                click.echo("\nProviders: none configured")
+
+            # Read ONLY global config file, not merged profiles
+            import yaml
+
+            with open(global_config_path) as f:
+                global_config = yaml.safe_load(f) or {}
+
+            # Show default model profiles configuration
+            project_config = config_manager.load_project_config()
+            if project_config:
+                default_models = project_config.get("project", {}).get(
+                    "default_models", {}
+                )
+                if default_models:
+                    click.echo(
+                        f"\n⚙️ Default model profiles ({len(default_models)} found):"
+                    )
+                    for purpose, profile in default_models.items():
+                        # Resolve profile to show actual model and provider
+                        try:
+                            (
+                                resolved_model,
+                                resolved_provider,
+                            ) = config_manager.resolve_model_profile(profile)
+                            # Check if provider is available for status indicator
+                            provider_available = (
+                                resolved_provider in available_providers
+                            )
+                            status_symbol = "🟢" if provider_available else "🟥"
+                            click.echo(
+                                f"  {status_symbol} {purpose}: {profile} → "
+                                f"{resolved_model} ({resolved_provider})"
+                            )
+                            click.echo("    Purpose: fallback model for reliability")
+                        except (ValueError, KeyError):
+                            click.echo(f"  🟥 {purpose}: {profile} → profile not found")
+                            click.echo("    Purpose: fallback model for reliability")
+                else:
+                    click.echo("\n⚙️ Default model profiles: none configured")
+
+            global_profiles = global_config.get("model_profiles", {})
+
+            # Check global ensembles SECOND
+            global_ensembles_dir = global_config_dir / "ensembles"
+            _check_ensemble_availability(
+                global_ensembles_dir, available_providers, config_manager
+            )
+
+            if global_profiles:
+                click.echo(f"\n🌐 Global profiles ({len(global_profiles)} found):")
+                for profile_name in sorted(global_profiles.keys()):
+                    profile = global_profiles[profile_name]
+                    model = profile.get("model", "unknown")
+                    provider = profile.get("provider", "unknown")
+                    cost = profile.get("cost_per_token", "not specified")
+                    timeout = profile.get("timeout_seconds", "not specified")
+                    has_system_prompt = "system_prompt" in profile
+
+                    # Check if provider is available
+                    provider_available = provider in available_providers
+                    status_symbol = "🟢" if provider_available else "🟥"
+
+                    timeout_display = (
+                        f"{timeout}s" if timeout != "not specified" else timeout
+                    )
+                    click.echo(
+                        f"  {status_symbol} {profile_name}: {model} ({provider})"
+                    )
+                    system_prompt_indicator = "✓" if has_system_prompt else "✗"
+                    click.echo(
+                        f"    Cost: {cost}, Timeout: {timeout_display}, "
+                        f"System prompt: {system_prompt_indicator}"
+                    )
+
+        except Exception as e:
+            click.echo(f"Error reading config: {e}")
     else:
-        click.echo("  None found")
+        click.echo("Status: missing")
+        click.echo("Run 'llm-orc config init' to create it")
 
-    # Show project config if available
-    project_config = config_manager.load_project_config()
-    if project_config:
-        click.echo("\nProject Configuration:")
-        project_name = project_config.get("project", {}).get("name", "Unknown")
-        click.echo(f"  Project name: {project_name}")
 
-        profiles = project_config.get("model_profiles", {})
-        if profiles:
-            click.echo("  Model profiles:")
-            for profile_name in profiles.keys():
-                click.echo(f"    - {profile_name}")
+@config.command("reset-local")
+@click.option(
+    "--backup/--no-backup",
+    default=True,
+    help="Create backup of existing local config (default: True)",
+)
+@click.option(
+    "--preserve-ensembles/--reset-ensembles",
+    default=True,
+    help="Preserve existing ensembles directory (default: True)",
+)
+@click.option(
+    "--project-name",
+    default=None,
+    help="Name for the project (defaults to directory name)",
+)
+@click.confirmation_option(
+    prompt="This will reset your local .llm-orc configuration. Continue?"
+)
+def reset_local(backup: bool, preserve_ensembles: bool, project_name: str) -> None:
+    """Reset local .llm-orc configuration to template defaults."""
+    import shutil
+    from pathlib import Path
+
+    config_manager = ConfigurationManager()
+    local_config_dir = Path(".llm-orc")
+
+    if not local_config_dir.exists():
+        click.echo("❌ No local .llm-orc directory found")
+        click.echo("💡 Run 'llm-orc config init' to create initial local config")
+        return
+
+    # Create backup if requested
+    if backup:
+        backup_path = Path(".llm-orc.backup")
+        if backup_path.exists():
+            shutil.rmtree(backup_path)
+        shutil.copytree(local_config_dir, backup_path)
+        click.echo(f"📦 Backed up existing local config to {backup_path}")
+
+    # Preserve ensembles if requested
+    ensembles_backup = None
+    if preserve_ensembles:
+        ensembles_dir = local_config_dir / "ensembles"
+        if ensembles_dir.exists():
+            # Save ensembles directory content
+            ensembles_backup = {}
+            for ensemble_file in ensembles_dir.glob("*.yaml"):
+                ensembles_backup[ensemble_file.name] = ensemble_file.read_text()
+            click.echo(f"🎭 Preserving {len(ensembles_backup)} ensemble(s)")
+
+    # Remove existing local config
+    shutil.rmtree(local_config_dir)
+
+    # Initialize fresh local config
+    try:
+        config_manager.init_local_config(project_name)
+        click.echo("📋 Created fresh local config from template")
+
+        # Restore ensembles if preserved
+        if ensembles_backup:
+            ensembles_dir = local_config_dir / "ensembles"
+            for ensemble_name, ensemble_content in ensembles_backup.items():
+                ensemble_path = ensembles_dir / ensemble_name
+                ensemble_path.write_text(ensemble_content)
+                click.echo(f"🎭 Restored ensemble: {ensemble_name}")
+
+        click.echo(f"✅ Local config reset complete at {local_config_dir}")
+
+        if preserve_ensembles and ensembles_backup:
+            click.echo("🎭 Existing ensembles preserved")
+        elif not preserve_ensembles:
+            click.echo("💡 Note: All ensembles were reset to template defaults")
+
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+
+
+@config.command("check")
+def check() -> None:
+    """Check both global and local configuration status."""
+    # Show legend at the top
+    click.echo("Configuration Status Legend:")
+    click.echo("🟢 Ready to use (provider authenticated/available)")
+    click.echo("🟥 Needs setup (provider not authenticated/available)")
+    click.echo("=" * 50)
+
+    # Show global config first
+    check_global.callback()  # type: ignore[misc]
+
+    # Add separator
+    click.echo("\n" + "=" * 50)
+
+    # Show local config
+    check_local.callback()  # type: ignore[misc]
+    click.echo("=" * 50)
+
+
+@config.command("check-local")
+def check_local() -> None:
+    """Check local .llm-orc configuration status."""
+    from pathlib import Path
+
+    local_config_dir = Path(".llm-orc")
+    local_config_path = local_config_dir / "config.yaml"
+
+    if local_config_path.exists():
+        # Show basic info about the config
+        try:
+            config_manager = ConfigurationManager()
+
+            # Check project config first to get project name
+            project_config = config_manager.load_project_config()
+            if project_config:
+                project_name = project_config.get("project", {}).get("name", "Unknown")
+                click.echo(f"Local Configuration Status: {project_name}")
+                click.echo(f"Directory: {local_config_dir.absolute()}")
+                click.echo("Status: configured")
+
+                # Get available providers for ensemble checking
+                available_providers = _get_available_providers(config_manager)
+
+                # Check local ensembles with availability indicators
+                ensembles_dir = local_config_dir / "ensembles"
+                _check_ensemble_availability(
+                    ensembles_dir, available_providers, config_manager
+                )
+
+                # Show local model profiles
+                local_profiles = project_config.get("model_profiles", {})
+                if local_profiles:
+                    click.echo(
+                        f"\n💻 Local model profiles ({len(local_profiles)} found):"
+                    )
+                    for profile_name in sorted(local_profiles.keys()):
+                        profile = local_profiles[profile_name]
+                        model = profile.get("model", "unknown")
+                        provider = profile.get("provider", "unknown")
+                        cost = profile.get("cost_per_token", "not specified")
+                        timeout = profile.get("timeout_seconds", "not specified")
+                        has_system_prompt = "system_prompt" in profile
+
+                        # Check if provider is available
+                        provider_available = provider in available_providers
+                        status_symbol = "🟢" if provider_available else "🟥"
+
+                        timeout_display = (
+                            f"{timeout}s" if timeout != "not specified" else timeout
+                        )
+                        click.echo(
+                            f"  {status_symbol} {profile_name}: {model} ({provider})"
+                        )
+                        system_prompt_indicator = "✓" if has_system_prompt else "✗"
+                        click.echo(
+                            f"    Cost: {cost}, Timeout: {timeout_display}, "
+                            f"System prompt: {system_prompt_indicator}"
+                        )
+            else:
+                click.echo("Local Configuration Status:")
+                click.echo(f"Directory: {local_config_dir.absolute()}")
+                click.echo("Status: configured but no project config found")
+
+        except Exception as e:
+            click.echo("Local Configuration Status:")
+            click.echo(f"Directory: {local_config_dir.absolute()}")
+            click.echo(f"Error reading local config: {e}")
+    else:
+        click.echo("Local Configuration Status:")
+        click.echo(f"Directory: {local_config_dir.absolute()}")
+        click.echo("Status: missing")
+        click.echo("Run 'llm-orc config init' to create it")
 
 
 @cli.group()
