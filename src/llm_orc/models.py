@@ -5,9 +5,9 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any
 
-import google.generativeai as genai
 import ollama
 from anthropic import AsyncAnthropic
+from google import genai
 
 from .oauth_client import OAuthClaudeClient
 
@@ -336,12 +336,11 @@ class ClaudeCLIModel(ModelInterface):
 class GeminiModel(ModelInterface):
     """Gemini model implementation."""
 
-    def __init__(self, api_key: str, model: str = "gemini-pro") -> None:
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash") -> None:
         super().__init__()
         self.api_key = api_key
         self.model_name = model
-        genai.configure(api_key=api_key)  # type: ignore[attr-defined]
-        self.client = genai.GenerativeModel(model)  # type: ignore[attr-defined]
+        self.client = genai.Client(api_key=api_key)
 
     @property
     def name(self) -> str:
@@ -355,14 +354,18 @@ class GeminiModel(ModelInterface):
         # Run in thread pool since Gemini doesn't have async support
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
-            None, lambda: self.client.generate_content(prompt)
+            None,
+            lambda: self.client.models.generate_content(
+                model=self.model_name, contents=prompt
+            ),
         )
 
         duration_ms = int((time.time() - start_time) * 1000)
 
         # Estimate token usage for Gemini (rough approximation)
         estimated_input_tokens = len(prompt) // 4
-        estimated_output_tokens = len(response.text) // 4
+        response_text = response.text or ""
+        estimated_output_tokens = len(response_text) // 4
 
         # Estimate cost (simplified Gemini pricing)
         cost_per_input_token = 0.0000005  # $0.50 per million input tokens
@@ -379,7 +382,7 @@ class GeminiModel(ModelInterface):
             model_name=self.model_name,
         )
 
-        return str(response.text)
+        return response_text
 
 
 class OllamaModel(ModelInterface):

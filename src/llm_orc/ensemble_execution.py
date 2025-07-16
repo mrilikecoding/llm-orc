@@ -313,6 +313,10 @@ class EnsembleExecutor:
                 # (stored as api_key but path-like)
                 if model_name == "claude-cli" or api_key.startswith("/"):
                     return ClaudeCLIModel(claude_path=api_key)
+                elif provider == "google-gemini":
+                    from .models import GeminiModel
+
+                    return GeminiModel(api_key=api_key, model=model_name)
                 else:
                     # Assume it's an Anthropic API key for Claude
                     return ClaudeModel(api_key=api_key)
