@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2025-07-16
+
+### Fixed
+- **Gemini Authentication** - Updated to use latest Google AI library
+  - Replace deprecated `google-generativeai` with `google-genai` library
+  - Update GeminiModel to use new `client.models.generate_content` API
+  - Add provider-specific model instantiation in ensemble execution
+  - Fix type safety for response.text handling
+  - Update tests to match new API structure
+  - Default to `gemini-2.5-flash` model for better performance
+  - Resolves authentication failures with Google Gemini API integration
+
 ## [0.5.0] - 2025-07-16
 
 ### Added
