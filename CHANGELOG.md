@@ -5,6 +5,77 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2025-07-16
+
+### Added
+- **Enhanced Model Profiles** - Complete agent configuration management
+  - Added `system_prompt` and `timeout_seconds` fields to model profiles for complete agent configuration
+  - Profiles now support complete agent defaults: model, provider, prompts, timeouts, and costs
+  - Reduced configuration duplication across ensembles with centralized profile management
+  - Backward compatibility maintained - explicit agent configs still override profile defaults
+
+- **Visual Configuration Status Checking** - Real-time configuration health monitoring
+  - New `llm-orc config check` command with unified status display and accessibility legend
+  - New `llm-orc config check-global` command for global configuration status only
+  - New `llm-orc config check-local` command for local project configuration status only
+  - Visual availability indicators: 🟢 Ready to use, 🟥 Needs setup
+  - Real-time provider availability detection for authenticated providers and Ollama service
+  - Ensemble availability checking with dependency analysis against available providers
+
+- **Configuration Reset Commands** - Safe configuration management with data protection
+  - New `llm-orc config reset-global` command for global configuration reset
+  - New `llm-orc config reset-local` command for local project configuration reset
+  - Automatic backup creation with timestamped `.bak` files (default: enabled)
+  - Authentication retention during reset operations (default: enabled)
+  - Confirmation prompts and `--force` option for safe operation
+
+- **Enhanced Templates and Examples**
+  - Updated all validation ensembles to use proper model profiles
+  - New optimized example ensembles demonstrating enhanced profile usage
+  - Template consistency improvements across global and local configurations
+  - Comprehensive specialist profiles for code review, startup advisory, and research scenarios
+
+### Changed
+- **Improved Fallback Model Logic** - Enhanced reliability for ensemble execution
+  - Fallback models now prioritize free local models for testing reliability
+  - Enhanced logging when fallback models are used
+  - Error handling improvements when fallback models are unavailable
+  - Simplified default model configuration to single "test" fallback for clarity
+
+- **Configuration Display Enhancements** - Better user experience and accessibility
+  - Provider availability shown with consistent emoji-based visual hierarchy
+  - Default model profiles section with complete resolution chain display
+  - Ensemble availability indicators with dependency analysis
+  - Consistent formatting across all configuration sections with improved ordering
+
+### Deprecated
+- **`llm-orc config show`** - Replaced by comprehensive `config check` commands
+  - Functionality preserved but command deprecated in favor of enhanced alternatives
+  - Users should migrate to `config check`, `config check-global`, or `config check-local`
+
+### Fixed
+- **Model Profile Resolution** - Improved profile loading and error handling
+  - Fixed fallback model logic to avoid mock object issues in test environments
+  - Enhanced type checking for profile resolution to prevent runtime errors
+  - Improved error messages for missing profiles and provider availability
+
+- **Code Quality and Compliance** - Complete linting and formatting compliance
+  - Fixed all MyPy type annotation issues for enhanced model profiles
+  - Resolved Ruff formatting violations and line length compliance
+  - Enhanced test coverage with 13 new comprehensive tests
+
+### Performance
+- **Provider Availability Detection** - Efficient real-time status checking
+  - Optimized authentication provider detection with error handling
+  - Fast Ollama service availability checking with timeout controls
+  - Efficient ensemble dependency analysis for large configuration sets
+
+### Security
+- **Authentication Preservation** - Safe configuration reset with credential protection
+  - Reset commands preserve API keys and OAuth tokens by default
+  - Selective authentication retention with `--retain-auth` flag
+  - Backup creation before reset operations for data recovery
+
 ## [0.4.3] - 2025-07-15
 
 ### Changed
