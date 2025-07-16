@@ -814,7 +814,6 @@ def check_local() -> None:
                 # Show local model profiles
                 local_profiles = project_config.get("model_profiles", {})
                 if local_profiles:
-
                     click.echo(
                         f"\n💻 Local model profiles ({len(local_profiles)} found):"
                     )
