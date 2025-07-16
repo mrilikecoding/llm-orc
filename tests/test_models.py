@@ -57,14 +57,15 @@ class TestGeminiModel:
         mock_response = Mock()
         mock_response.text = "Hello from Gemini!"
         model.client = Mock()
-        model.client.generate_content = Mock(return_value=mock_response)
+        model.client.models = Mock()
+        model.client.models.generate_content = Mock(return_value=mock_response)
 
         response = await model.generate_response(
             "Hello", role_prompt="You are helpful."
         )
 
         assert response == "Hello from Gemini!"
-        model.client.generate_content.assert_called_once()
+        model.client.models.generate_content.assert_called_once()
 
 
 class TestOllamaModel:

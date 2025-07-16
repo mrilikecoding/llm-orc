@@ -28,7 +28,7 @@ dependencies = [
     "aiohttp>=3.12.14",
     "pydantic",
     "anthropic",
-    "google-generativeai",
+    "google-genai",
     "ollama",
     "click",
     "pyyaml",
