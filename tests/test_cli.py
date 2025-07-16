@@ -385,6 +385,8 @@ class TestCLI:
             with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager_class:
                 mock_config_manager = Mock()
                 mock_config_manager.global_config_dir = global_config_dir
+                # Mock load_project_config to return empty config for this test
+                mock_config_manager.load_project_config.return_value = {}
                 mock_config_manager_class.return_value = mock_config_manager
 
                 # Mock available providers (only test-provider available)

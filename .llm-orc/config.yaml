@@ -1,8 +1,7 @@
 project:
   name: LLM Orchestra Test Project
   default_models:
-    test: local-free    # Fast, free model for general use and testing
-    quality: quality    # High-quality model for important tasks and coordination
+    test: local-free    # Fallback model for reliability and testing
 
 model_profiles:
   local-free:

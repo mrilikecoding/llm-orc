@@ -4,11 +4,10 @@
 project:
   name: "{project_name}"
   
-  # Default models used as fallbacks when model loading fails
-  # These should reference profile names, not raw model names
+  # Default fallback model used when model loading fails
+  # Should reference a reliable, free local profile name
   default_models:
-    test: free-local      # Fast, free model for general use and testing
-    quality: default-claude # High-quality model for important tasks and coordination
+    test: free-local      # Fallback model for reliability and testing
 
 # Model profiles define complete agent configurations
 # Each profile includes: model, provider, system_prompt, timeout_seconds, and cost_per_token
