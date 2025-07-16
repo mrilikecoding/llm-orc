@@ -1,11 +1,13 @@
 """Tests for CLI interface."""
 
 import tempfile
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 import yaml
 from click.testing import CliRunner
 
-from llm_orc.cli import cli
+from llm_orc.cli import _get_available_providers, cli
 
 
 class TestCLI:
@@ -211,3 +213,239 @@ class TestCLI:
         # Should not include generic "anthropic" or "google"
         assert "anthropic" not in provider_keys
         assert "google" not in provider_keys
+
+    def test_get_available_providers_with_auth_and_ollama(self) -> None:
+        """Test _get_available_providers function with authentication and ollama."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            global_config_dir = Path(temp_dir)
+
+            # Create mock config manager
+            mock_config_manager = Mock()
+            mock_config_manager.global_config_dir = global_config_dir
+
+            # Create auth files
+            (global_config_dir / "credentials.yaml").touch()
+            (global_config_dir / ".encryption_key").touch()
+
+            # Mock CredentialStorage to return test providers
+            with patch("llm_orc.cli.CredentialStorage") as mock_storage_class:
+                mock_storage = Mock()
+                mock_storage.list_providers.return_value = [
+                    "anthropic-api",
+                    "google-gemini",
+                ]
+                mock_storage_class.return_value = mock_storage
+
+                # Mock ollama availability
+                with patch("requests.get") as mock_requests_get:
+                    mock_response = Mock()
+                    mock_response.status_code = 200
+                    mock_requests_get.return_value = mock_response
+
+                    # Test the function
+                    providers = _get_available_providers(mock_config_manager)
+
+                    # Should include authenticated providers + ollama
+                    assert "anthropic-api" in providers
+                    assert "google-gemini" in providers
+                    assert "ollama" in providers
+                    assert len(providers) == 3
+
+    def test_get_available_providers_no_auth_no_ollama(self) -> None:
+        """Test _get_available_providers with no authentication and no ollama."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            global_config_dir = Path(temp_dir)
+
+            # Create mock config manager (no auth files)
+            mock_config_manager = Mock()
+            mock_config_manager.global_config_dir = global_config_dir
+
+            # Mock ollama not available
+            with patch("requests.get") as mock_requests_get:
+                mock_requests_get.side_effect = Exception("Connection refused")
+
+                # Test the function
+                providers = _get_available_providers(mock_config_manager)
+
+                # Should be empty
+                assert len(providers) == 0
+
+    def test_get_available_providers_auth_only(self) -> None:
+        """Test _get_available_providers with only authentication."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            global_config_dir = Path(temp_dir)
+
+            # Create mock config manager
+            mock_config_manager = Mock()
+            mock_config_manager.global_config_dir = global_config_dir
+
+            # Create auth files
+            (global_config_dir / "credentials.yaml").touch()
+
+            # Mock CredentialStorage
+            with patch("llm_orc.cli.CredentialStorage") as mock_storage_class:
+                mock_storage = Mock()
+                mock_storage.list_providers.return_value = ["anthropic-claude-pro-max"]
+                mock_storage_class.return_value = mock_storage
+
+                # Mock ollama not available
+                with patch("requests.get") as mock_requests_get:
+                    mock_requests_get.side_effect = Exception("Connection refused")
+
+                    # Test the function
+                    providers = _get_available_providers(mock_config_manager)
+
+                    # Should only include authenticated provider
+                    assert "anthropic-claude-pro-max" in providers
+                    assert "ollama" not in providers
+                    assert len(providers) == 1
+
+    def test_config_check_global_command_exists(self) -> None:
+        """Test that config check-global command exists."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["config", "check-global", "--help"])
+        assert result.exit_code == 0
+        assert "global" in result.output.lower()
+
+    def test_config_check_local_command_exists(self) -> None:
+        """Test that config check-local command exists."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["config", "check-local", "--help"])
+        assert result.exit_code == 0
+        assert "local" in result.output.lower()
+
+    def test_config_check_unified_command_exists(self) -> None:
+        """Test that unified config check command exists."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["config", "check", "--help"])
+        assert result.exit_code == 0
+        assert "configuration" in result.output.lower()
+
+    def test_config_check_unified_shows_legend(self) -> None:
+        """Test that unified config check shows accessibility legend."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            global_config_dir = Path(temp_dir)
+
+            # Create minimal config structure
+            config_file = global_config_dir / "config.yaml"
+            config_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(config_file, "w") as f:
+                yaml.dump({"model_profiles": {}}, f)
+
+            # Mock configuration manager
+            with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager_class:
+                mock_config_manager = Mock()
+                mock_config_manager.global_config_dir = global_config_dir
+                mock_config_manager.local_config_dir = None
+                mock_config_manager.load_project_config.return_value = None
+                mock_config_manager_class.return_value = mock_config_manager
+
+                # Mock _get_available_providers
+                with patch(
+                    "llm_orc.cli._get_available_providers"
+                ) as mock_get_providers:
+                    mock_get_providers.return_value = set()
+
+                    runner = CliRunner()
+                    result = runner.invoke(cli, ["config", "check"])
+
+                    # Should show legend with accessibility symbols
+                    assert "Configuration Status Legend:" in result.output
+                    assert "🟢 Ready to use" in result.output
+                    assert "🟥 Needs setup" in result.output
+
+    def test_config_check_global_shows_availability_indicators(self) -> None:
+        """Test that global config check shows availability indicators."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            global_config_dir = Path(temp_dir)
+
+            # Create config with test profiles
+            config_file = global_config_dir / "config.yaml"
+            config_file.parent.mkdir(parents=True, exist_ok=True)
+            config_data = {
+                "model_profiles": {
+                    "available-profile": {
+                        "model": "test-model",
+                        "provider": "test-provider",
+                        "system_prompt": "Test prompt",
+                        "timeout_seconds": 30,
+                    },
+                    "unavailable-profile": {
+                        "model": "test-model-2",
+                        "provider": "missing-provider",
+                        "system_prompt": "Test prompt 2",
+                        "timeout_seconds": 60,
+                    },
+                }
+            }
+            with open(config_file, "w") as f:
+                yaml.dump(config_data, f)
+
+            # Mock configuration manager
+            with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager_class:
+                mock_config_manager = Mock()
+                mock_config_manager.global_config_dir = global_config_dir
+                # Mock load_project_config to return empty config for this test
+                mock_config_manager.load_project_config.return_value = {}
+                mock_config_manager_class.return_value = mock_config_manager
+
+                # Mock available providers (only test-provider available)
+                with patch(
+                    "llm_orc.cli._get_available_providers"
+                ) as mock_get_providers:
+                    mock_get_providers.return_value = {"test-provider"}
+
+                    runner = CliRunner()
+                    result = runner.invoke(cli, ["config", "check-global"])
+
+                    # Should show green for available, red for unavailable
+                    assert "🟢 available-profile" in result.output
+                    assert "🟥 unavailable-profile" in result.output
+                    assert "test-provider" in result.output
+                    assert "missing-provider" in result.output
+
+    def test_config_check_local_shows_project_name_first(self) -> None:
+        """Test that local config check shows project name at the top."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            local_config_dir = Path(temp_dir) / ".llm-orc"
+            local_config_dir.mkdir(parents=True)
+
+            # Create local config with project name
+            config_file = local_config_dir / "config.yaml"
+            config_data = {
+                "project": {"name": "Test Project Name"},
+                "model_profiles": {},
+            }
+            with open(config_file, "w") as f:
+                yaml.dump(config_data, f)
+
+            # Mock configuration manager
+            with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager_class:
+                mock_config_manager = Mock()
+                mock_config_manager.load_project_config.return_value = config_data
+                mock_config_manager_class.return_value = mock_config_manager
+
+                # Mock available providers
+                with patch(
+                    "llm_orc.cli._get_available_providers"
+                ) as mock_get_providers:
+                    mock_get_providers.return_value = set()
+
+                    # Change to temp directory to simulate being in a project
+                    import os
+
+                    original_cwd = os.getcwd()
+                    try:
+                        os.chdir(temp_dir)
+
+                        runner = CliRunner()
+                        result = runner.invoke(cli, ["config", "check-local"])
+
+                        # Should show project name in the header
+                        assert (
+                            "Local Configuration Status: Test Project Name"
+                            in result.output
+                        )
+
+                    finally:
+                        os.chdir(original_cwd)

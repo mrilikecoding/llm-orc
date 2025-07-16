@@ -50,8 +50,12 @@ class EnsembleExecutor:
         script_agents = [a for a in config.agents if a.get("type") == "script"]
         for agent_config in script_agents:
             try:
-                timeout = agent_config.get("timeout_seconds") or config.coordinator.get(
-                    "timeout_seconds"
+                # Resolve model profile to get enhanced configuration
+                enhanced_config = await self._resolve_model_profile_to_config(
+                    agent_config
+                )
+                timeout = enhanced_config.get("timeout_seconds") or (
+                    config.coordinator.get("timeout_seconds")
                 )
                 agent_result, model_instance = await self._execute_agent_with_timeout(
                     agent_config, input_data, timeout
@@ -95,8 +99,10 @@ class EnsembleExecutor:
         # Execute LLM agents concurrently with enhanced input
         agent_tasks = []
         for agent_config in llm_agents:
-            timeout = agent_config.get("timeout_seconds") or config.coordinator.get(
-                "timeout_seconds"
+            # Resolve model profile to get enhanced configuration
+            enhanced_config = await self._resolve_model_profile_to_config(agent_config)
+            timeout = enhanced_config.get("timeout_seconds") or (
+                config.coordinator.get("timeout_seconds")
             )
             task = self._execute_agent_with_timeout(
                 agent_config, enhanced_input, timeout
@@ -178,13 +184,39 @@ class EnsembleExecutor:
         """Load a role definition from agent configuration."""
         agent_name = agent_config["name"]
 
-        # Use system_prompt from config if available, otherwise use fallback
-        if "system_prompt" in agent_config:
-            prompt = agent_config["system_prompt"]
+        # Resolve model profile to get enhanced configuration
+        enhanced_config = await self._resolve_model_profile_to_config(agent_config)
+
+        # Use system_prompt from enhanced config if available, otherwise use fallback
+        if "system_prompt" in enhanced_config:
+            prompt = enhanced_config["system_prompt"]
         else:
             prompt = f"You are a {agent_name}. Provide helpful analysis."
 
         return RoleDefinition(name=agent_name, prompt=prompt)
+
+    async def _resolve_model_profile_to_config(
+        self, agent_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Resolve model profile and merge with agent config.
+
+        Agent config takes precedence over model profile defaults.
+        """
+        enhanced_config = agent_config.copy()
+
+        # If model_profile is specified, get its configuration
+        if "model_profile" in agent_config:
+            config_manager = ConfigurationManager()
+            profiles = config_manager.get_model_profiles()
+
+            profile_name = agent_config["model_profile"]
+            if profile_name in profiles:
+                profile_config = profiles[profile_name]
+                # Merge profile defaults with agent config
+                # (agent config takes precedence)
+                enhanced_config = {**profile_config, **agent_config}
+
+        return enhanced_config
 
     async def _load_role(self, role_name: str) -> RoleDefinition:
         """Load a role definition."""
@@ -371,37 +403,61 @@ class EnsembleExecutor:
             return await self._get_fallback_model("coordinator")
 
     async def _get_fallback_model(self, context: str = "general") -> ModelInterface:
-        """Get a fallback model based on configured defaults."""
+        """Get a fallback model - always use free local model for reliability."""
+        import click
+
         # Load project configuration to get default models
         config_manager = ConfigurationManager()
         project_config = config_manager.load_project_config()
 
         default_models = project_config.get("project", {}).get("default_models", {})
 
-        # Choose fallback model based on context
-        if context == "coordinator":
-            # For coordinators, prefer quality > test > hardcoded fallback
-            fallback_model = (
-                default_models.get("quality") or default_models.get("test") or "llama3"
-            )
-        else:
-            # For general use, prefer test > quality > hardcoded fallback
-            fallback_model = (
-                default_models.get("test") or default_models.get("quality") or "llama3"
-            )
+        # Log that we're falling back
+        click.echo(f"⚠️  Falling back to free local model for {context}")
 
+        # Always prefer free local models for fallback reliability
+        # Look for a "test" profile first (typically free/local)
+        fallback_profile = default_models.get("test")
+
+        if fallback_profile and isinstance(fallback_profile, str):
+            try:
+                # Try to resolve the test profile to get a free local model
+                resolved_model, resolved_provider = (
+                    config_manager.resolve_model_profile(fallback_profile)
+                )
+                # Only use if it's a local/free provider (ollama)
+                if resolved_provider == "ollama":
+                    click.echo(
+                        f"🔄 Using configured free local model '{fallback_profile}' "
+                        f"→ {resolved_model}"
+                    )
+                    try:
+                        return await self._load_model(resolved_model, resolved_provider)
+                    except Exception as e:
+                        click.echo(
+                            f"❌ Failed to load configured fallback "
+                            f"'{fallback_profile}': {e}"
+                        )
+                        # Don't raise immediately, try hardcoded fallback first
+                else:
+                    click.echo(
+                        f"⚠️  Configured test profile '{fallback_profile}' uses "
+                        f"{resolved_provider}, not ollama"
+                    )
+            except (ValueError, KeyError) as e:
+                click.echo(
+                    f"⚠️  Configured test profile '{fallback_profile}' not found: {e}"
+                )
+
+        # Last resort: hardcoded free local fallback
+        click.echo("🔄 Using hardcoded fallback: llama3 via ollama")
         try:
-            click.echo(
-                f"🔄 Using fallback model '{fallback_model}' (from configured defaults)"
-            )
-            return await self._load_model(fallback_model, "ollama")
+            return await self._load_model("llama3", "ollama")
         except Exception as e:
-            # Last resort: hardcoded Ollama fallback
-            click.echo(f"❌ Fallback model '{fallback_model}' failed to load: {str(e)}")
-            click.echo(
-                "🆘 Using hardcoded fallback: llama3 "
-                "(consider configuring default_models: test/quality)"
-            )
+            click.echo(f"❌ Hardcoded fallback model 'llama3' failed: {e}")
+            # For tests and when Ollama is not available, return basic model
+            # In production, this would indicate a serious configuration issue
+            click.echo("🆘 Creating basic Ollama model as last resort")
             return OllamaModel(model_name="llama3")
 
     def _calculate_usage_summary(
