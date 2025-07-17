@@ -999,3 +999,70 @@ class TestEnsembleExecutionPerformance:
                     assert "duration_ms" in event["data"], (
                         "agent_completed event should include duration_ms"
                     )
+
+    @pytest.mark.asyncio
+    async def test_streaming_execution_interface(self) -> None:
+        """Should provide async generator interface for real-time progress."""
+        from unittest.mock import AsyncMock, patch
+
+        from llm_orc.ensemble_config import EnsembleConfig
+        from llm_orc.ensemble_execution import EnsembleExecutor
+
+        # Test with simple agent configuration
+        agent_configs = [
+            {"name": "agent1", "model": "mock-model-1", "provider": "mock"},
+            {"name": "agent2", "model": "mock-model-2", "provider": "mock"},
+        ]
+
+        config = EnsembleConfig(
+            name="streaming-test",
+            description="Test streaming execution interface",
+            agents=agent_configs,
+            coordinator={"synthesis_prompt": "Combine results"},
+        )
+
+        executor = EnsembleExecutor()
+
+        # Mock the entire execute method to focus on streaming interface
+        mock_result = {
+            "ensemble": "streaming-test",
+            "status": "completed",
+            "input": {"data": "test input"},
+            "results": {
+                "agent1": {"response": "Response 1", "status": "success"},
+                "agent2": {"response": "Response 2", "status": "success"},
+            },
+            "synthesis": "Combined response",
+            "metadata": {
+                "duration": "1.5s",
+                "agents_used": 2,
+                "usage": {"totals": {"total_tokens": 100}},
+            },
+        }
+
+        with patch.object(executor, "execute", return_value=mock_result):
+            # Test streaming execution
+            stream_events = []
+            async for event in executor.execute_streaming(config, "test input"):
+                stream_events.append(event)
+
+            # Verify streaming events were emitted
+            assert len(stream_events) > 0, (
+                "Expected streaming events to be emitted"
+            )
+
+            # Should emit progress events during execution
+            event_types = [event["type"] for event in stream_events]
+
+            assert "execution_started" in event_types, (
+                "Expected 'execution_started' event"
+            )
+            assert "execution_completed" in event_types, (
+                "Expected 'execution_completed' event"
+            )
+
+            # Verify final event contains complete results
+            final_event = stream_events[-1]
+            assert final_event["type"] == "execution_completed"
+            assert "results" in final_event["data"]
+            assert "metadata" in final_event["data"]

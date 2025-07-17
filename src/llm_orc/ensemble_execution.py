@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 import click
@@ -49,6 +49,91 @@ class EnsembleExecutor:
             except Exception:
                 # Silently ignore hook failures to avoid breaking execution
                 pass
+
+    async def execute_streaming(
+        self, config: EnsembleConfig, input_data: str
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Execute ensemble with streaming progress updates.
+
+        Yields progress events during execution for real-time monitoring.
+        Events include: execution_started, agent_progress, execution_completed.
+        """
+        start_time = time.time()
+
+        # Emit execution started event
+        yield {
+            "type": "execution_started",
+            "data": {
+                "ensemble": config.name,
+                "timestamp": start_time,
+                "total_agents": len(config.agents),
+            }
+        }
+
+        # Set up progress tracking
+        progress_events: list[dict[str, Any]] = []
+
+        # Register a progress hook to capture streaming events
+        def progress_hook(event_type: str, data: dict[str, Any]) -> None:
+            progress_events.append({"type": event_type, "data": data})
+
+        # Register our progress hook
+        self.register_performance_hook(progress_hook)
+
+        # Execute the ensemble using the existing execute method
+        try:
+            # Create task for execution
+            execution_task = asyncio.create_task(
+                self.execute(config, input_data)
+            )
+
+            # Monitor progress while execution runs
+            last_progress_count = 0
+            while not execution_task.done():
+                # Check for new progress events
+                completed_count = len([
+                    e for e in progress_events
+                    if e["type"] == "agent_completed"
+                ])
+
+                # Emit progress update if we have new completions
+                if completed_count > last_progress_count:
+                    yield {
+                        "type": "agent_progress",
+                        "data": {
+                            "completed_agents": completed_count,
+                            "total_agents": len(config.agents),
+                            "progress_percentage": (
+                                completed_count / len(config.agents)
+                            ) * 100,
+                            "timestamp": time.time(),
+                        }
+                    }
+                    last_progress_count = completed_count
+
+                # Small delay to avoid busy waiting
+                await asyncio.sleep(0.05)
+
+            # Get final results
+            final_result = await execution_task
+
+            # Emit execution completed event with full results
+            yield {
+                "type": "execution_completed",
+                "data": {
+                    "ensemble": config.name,
+                    "timestamp": time.time(),
+                    "duration": time.time() - start_time,
+                    "results": final_result["results"],
+                    "metadata": final_result["metadata"],
+                    "status": final_result["status"],
+                }
+            }
+
+        finally:
+            # Clean up the progress hook
+            if progress_hook in self._performance_hooks:
+                self._performance_hooks.remove(progress_hook)
 
     async def execute(self, config: EnsembleConfig, input_data: str) -> dict[str, Any]:
         """Execute an ensemble and return structured results."""
@@ -607,10 +692,10 @@ class EnsembleExecutor:
                 agent_start_time = time.time()
 
                 # Emit agent started event
-                self._emit_performance_event("agent_started", {
-                    "agent_name": agent_name,
-                    "timestamp": agent_start_time
-                })
+                self._emit_performance_event(
+                    "agent_started",
+                    {"agent_name": agent_name, "timestamp": agent_start_time},
+                )
 
                 try:
                     # Resolve config and execute - all happening in parallel per agent
@@ -627,23 +712,29 @@ class EnsembleExecutor:
                     # Emit agent completed event with duration
                     agent_end_time = time.time()
                     duration_ms = int((agent_end_time - agent_start_time) * 1000)
-                    self._emit_performance_event("agent_completed", {
-                        "agent_name": agent_name,
-                        "timestamp": agent_end_time,
-                        "duration_ms": duration_ms
-                    })
+                    self._emit_performance_event(
+                        "agent_completed",
+                        {
+                            "agent_name": agent_name,
+                            "timestamp": agent_end_time,
+                            "duration_ms": duration_ms,
+                        },
+                    )
 
                     return agent_name, result
                 except Exception as e:
                     # Emit agent completed event with error
                     agent_end_time = time.time()
                     duration_ms = int((agent_end_time - agent_start_time) * 1000)
-                    self._emit_performance_event("agent_completed", {
-                        "agent_name": agent_name,
-                        "timestamp": agent_end_time,
-                        "duration_ms": duration_ms,
-                        "error": str(e)
-                    })
+                    self._emit_performance_event(
+                        "agent_completed",
+                        {
+                            "agent_name": agent_name,
+                            "timestamp": agent_end_time,
+                            "duration_ms": duration_ms,
+                            "error": str(e),
+                        },
+                    )
 
                     # Record error in results dict and return error indicator
                     results_dict[agent_name] = {
