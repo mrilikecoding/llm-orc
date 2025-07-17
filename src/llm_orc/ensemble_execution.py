@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 import click
@@ -23,6 +24,117 @@ from llm_orc.script_agent import ScriptAgent
 
 class EnsembleExecutor:
     """Executes ensembles of agents and coordinates their responses."""
+
+    def __init__(self) -> None:
+        """Initialize the ensemble executor with shared infrastructure."""
+        # Share configuration and credential infrastructure across model loads
+        # but keep model instances separate for independent contexts
+        self._config_manager = ConfigurationManager()
+        self._credential_storage = CredentialStorage(self._config_manager)
+
+        # Load performance configuration
+        self._performance_config = self._config_manager.load_performance_config()
+
+        # Performance monitoring hooks for Issue #27 visualization integration
+        self._performance_hooks: list[Callable[[str, dict[str, Any]], None]] = []
+
+    def register_performance_hook(
+        self, hook: Callable[[str, dict[str, Any]], None]
+    ) -> None:
+        """Register a performance monitoring hook for Issue #27 visualization."""
+        self._performance_hooks.append(hook)
+
+    def _emit_performance_event(self, event_type: str, data: dict[str, Any]) -> None:
+        """Emit performance monitoring events to registered hooks."""
+        for hook in self._performance_hooks:
+            try:
+                hook(event_type, data)
+            except Exception:
+                # Silently ignore hook failures to avoid breaking execution
+                pass
+
+    async def execute_streaming(
+        self, config: EnsembleConfig, input_data: str
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Execute ensemble with streaming progress updates.
+
+        Yields progress events during execution for real-time monitoring.
+        Events include: execution_started, agent_progress, execution_completed.
+        """
+        start_time = time.time()
+
+        # Emit execution started event
+        yield {
+            "type": "execution_started",
+            "data": {
+                "ensemble": config.name,
+                "timestamp": start_time,
+                "total_agents": len(config.agents),
+            },
+        }
+
+        # Set up progress tracking
+        progress_events: list[dict[str, Any]] = []
+
+        # Register a progress hook to capture streaming events
+        def progress_hook(event_type: str, data: dict[str, Any]) -> None:
+            progress_events.append({"type": event_type, "data": data})
+
+        # Register our progress hook
+        self.register_performance_hook(progress_hook)
+
+        # Execute the ensemble using the existing execute method
+        try:
+            # Create task for execution
+            execution_task = asyncio.create_task(self.execute(config, input_data))
+
+            # Monitor progress while execution runs
+            last_progress_count = 0
+            while not execution_task.done():
+                # Check for new progress events
+                completed_count = len(
+                    [e for e in progress_events if e["type"] == "agent_completed"]
+                )
+
+                # Emit progress update if we have new completions
+                if completed_count > last_progress_count:
+                    yield {
+                        "type": "agent_progress",
+                        "data": {
+                            "completed_agents": completed_count,
+                            "total_agents": len(config.agents),
+                            "progress_percentage": (
+                                completed_count / len(config.agents)
+                            )
+                            * 100,
+                            "timestamp": time.time(),
+                        },
+                    }
+                    last_progress_count = completed_count
+
+                # Small delay to avoid busy waiting
+                await asyncio.sleep(0.05)
+
+            # Get final results
+            final_result = await execution_task
+
+            # Emit execution completed event with full results
+            yield {
+                "type": "execution_completed",
+                "data": {
+                    "ensemble": config.name,
+                    "timestamp": time.time(),
+                    "duration": time.time() - start_time,
+                    "results": final_result["results"],
+                    "metadata": final_result["metadata"],
+                    "status": final_result["status"],
+                },
+            }
+
+        finally:
+            # Clean up the progress hook
+            if progress_hook in self._performance_hooks:
+                self._performance_hooks.remove(progress_hook)
 
     async def execute(self, config: EnsembleConfig, input_data: str) -> dict[str, Any]:
         """Execute an ensemble and return structured results."""
@@ -55,7 +167,9 @@ class EnsembleExecutor:
                     agent_config
                 )
                 timeout = enhanced_config.get("timeout_seconds") or (
-                    config.coordinator.get("timeout_seconds")
+                    self._performance_config.get("execution", {}).get(
+                        "default_timeout", 60
+                    )
                 )
                 agent_result, model_instance = await self._execute_agent_with_timeout(
                     agent_config, input_data, timeout
@@ -73,7 +187,7 @@ class EnsembleExecutor:
                 }
                 has_errors = True
 
-        # Phase 2: Execute LLM agents with context from script agents
+        # Phase 2: Execute LLM agents with dependency-aware phasing
         llm_agents = [a for a in config.agents if a.get("type") != "script"]
 
         # Prepare enhanced input for LLM agents
@@ -96,53 +210,40 @@ class EnsembleExecutor:
             )
             enhanced_input = f"{task_input}\n\n{context_text}"
 
-        # Execute LLM agents concurrently with enhanced input
-        agent_tasks = []
-        for agent_config in llm_agents:
-            # Resolve model profile to get enhanced configuration
-            enhanced_config = await self._resolve_model_profile_to_config(agent_config)
-            timeout = enhanced_config.get("timeout_seconds") or (
-                config.coordinator.get("timeout_seconds")
-            )
-            task = self._execute_agent_with_timeout(
-                agent_config, enhanced_input, timeout
-            )
-            agent_tasks.append((agent_config["name"], task))
+        # Analyze dependencies to determine execution phases
+        independent_agents, dependent_agents = self._analyze_dependencies(llm_agents)
 
-        # Wait for all LLM agents to complete
-        for agent_name, task in agent_tasks:
-            try:
-                agent_result, model_instance = await task
-                results_dict[agent_name] = {
-                    "response": agent_result,
-                    "status": "success",
-                }
-                # Collect usage metrics (only for LLM agents)
-                if model_instance is not None:
-                    usage = model_instance.get_last_usage()
-                    if usage:
-                        agent_usage[agent_name] = usage
-            except Exception as e:
-                results_dict[agent_name] = {"error": str(e), "status": "failed"}
+        # Phase 2.1: Execute independent LLM agents in parallel
+        if independent_agents:
+            await self._execute_agents_parallel(
+                independent_agents, enhanced_input, config, results_dict, agent_usage
+            )
+            if any(
+                result.get("status") == "failed" for result in results_dict.values()
+            ):
                 has_errors = True
 
-        # Synthesize results if coordinator is configured
-        synthesis_usage = None
-        if config.coordinator.get("synthesis_prompt"):
-            try:
-                synthesis_timeout = config.coordinator.get("synthesis_timeout_seconds")
-                synthesis_result = await self._synthesize_results_with_timeout(
-                    config, results_dict, synthesis_timeout
-                )
-                synthesis, synthesis_model = synthesis_result
-                result["synthesis"] = synthesis
-                synthesis_usage = synthesis_model.get_last_usage()
-            except Exception as e:
-                result["synthesis"] = f"Synthesis failed: {str(e)}"
+        # Phase 2.2: Execute dependent agents with results from independent agents
+        if dependent_agents:
+            # Enhance input with results from independent agents
+            enhanced_input_with_deps = self._enhance_input_with_dependencies(
+                enhanced_input, dependent_agents, results_dict
+            )
+
+            await self._execute_agents_parallel(
+                dependent_agents,
+                enhanced_input_with_deps,
+                config,
+                results_dict,
+                agent_usage,
+            )
+            if any(
+                result.get("status") == "failed" for result in results_dict.values()
+            ):
                 has_errors = True
 
-        # Calculate usage totals
-        usage_summary = self._calculate_usage_summary(agent_usage, synthesis_usage)
+        # Calculate usage totals (no coordinator synthesis in dependency-based model)
+        usage_summary = self._calculate_usage_summary(agent_usage, None)
 
         # Finalize result
         end_time = time.time()
@@ -206,8 +307,7 @@ class EnsembleExecutor:
 
         # If model_profile is specified, get its configuration
         if "model_profile" in agent_config:
-            config_manager = ConfigurationManager()
-            profiles = config_manager.get_model_profiles()
+            profiles = self._config_manager.get_model_profiles()
 
             profile_name = agent_config["model_profile"]
             if profile_name in profiles:
@@ -233,13 +333,11 @@ class EnsembleExecutor:
 
         Configuration can specify model_profile or model+provider.
         """
-        config_manager = ConfigurationManager()
-
         # Check if model_profile is specified (takes precedence)
         if "model_profile" in agent_config:
             profile_name = agent_config["model_profile"]
-            resolved_model, resolved_provider = config_manager.resolve_model_profile(
-                profile_name
+            resolved_model, resolved_provider = (
+                self._config_manager.resolve_model_profile(profile_name)
             )
             return await self._load_model(resolved_model, resolved_provider)
 
@@ -266,9 +364,9 @@ class EnsembleExecutor:
             mock.generate_response.return_value = f"Response from {model_name}"
             return mock
 
-        # Initialize configuration and credential storage
-        config_manager = ConfigurationManager()
-        storage = CredentialStorage(config_manager)
+        # Use shared configuration and credential storage for efficiency
+        # Each model instance remains independent for separate contexts
+        storage = self._credential_storage
 
         try:
             # Get authentication method for the provider configuration
@@ -353,58 +451,6 @@ class EnsembleExecutor:
                 # For unknown models, use configured fallback
                 click.echo(f"🔄 Using configured fallback instead of '{model_name}'")
                 return await self._get_fallback_model("general")
-
-    async def _synthesize_results(
-        self, config: EnsembleConfig, agent_results: dict[str, Any]
-    ) -> tuple[str, ModelInterface]:
-        """Synthesize results from all agents."""
-        synthesis_model = await self._get_synthesis_model(config)
-
-        # Prepare synthesis prompt with agent results
-        results_text = ""
-        for agent_name, result in agent_results.items():
-            if result["status"] == "success":
-                results_text += f"\n{agent_name}: {result['response']}\n"
-            else:
-                results_text += f"\n{agent_name}: [Error: {result['error']}]\n"
-
-        # Prepare role and message for coordinator
-        coordinator_role = config.coordinator.get("system_prompt")
-        synthesis_instructions = config.coordinator["synthesis_prompt"]
-
-        # If no coordinator system_prompt, use synthesis_prompt as role
-        if coordinator_role:
-            role_prompt = coordinator_role
-            message = f"{synthesis_instructions}\n\nAgent Results:{results_text}"
-        else:
-            role_prompt = synthesis_instructions
-            message = (
-                f"Please synthesize these results:\n\nAgent Results:{results_text}"
-            )
-
-        # Generate synthesis
-        response = await synthesis_model.generate_response(
-            message=message, role_prompt=role_prompt
-        )
-
-        return response, synthesis_model
-
-    async def _get_synthesis_model(self, config: EnsembleConfig) -> ModelInterface:
-        """Get model for synthesis based on coordinator configuration."""
-        # Check if coordinator specifies a model_profile or model
-        if config.coordinator.get("model_profile") or config.coordinator.get("model"):
-            try:
-                # Use the configured coordinator model
-                # (supports both model_profile and explicit model+provider)
-                return await self._load_model_from_agent_config(config.coordinator)
-            except Exception as e:
-                # Fallback to configured default model
-                click.echo(f"⚠️  Failed to load coordinator model: {str(e)}")
-                return await self._get_fallback_model("coordinator")
-        else:
-            # Use configured default for backward compatibility
-            click.echo("ℹ️  No coordinator model specified, using configured default")
-            return await self._get_fallback_model("coordinator")
 
     async def _get_fallback_model(self, context: str = "general") -> ModelInterface:
         """Get a fallback model - always use free local model for reliability."""
@@ -522,25 +568,378 @@ class EnsembleExecutor:
                 f"Agent execution timed out after {timeout_seconds} seconds"
             ) from e
 
-    async def _synthesize_results_with_timeout(
+    def _analyze_dependencies(
+        self, llm_agents: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Analyze agent dependencies and return independent and dependent agents."""
+        independent_agents = []
+        dependent_agents = []
+
+        for agent_config in llm_agents:
+            dependencies = agent_config.get("depends_on", [])
+            if dependencies and len(dependencies) > 0:
+                dependent_agents.append(agent_config)
+            else:
+                independent_agents.append(agent_config)
+
+        return independent_agents, dependent_agents
+
+    async def _execute_agents_parallel(
         self,
+        agents: list[dict[str, Any]],
+        input_data: str,
         config: EnsembleConfig,
-        agent_results: dict[str, Any],
-        timeout_seconds: int | None,
-    ) -> tuple[str, ModelInterface]:
-        """Synthesize results with optional timeout."""
-        if timeout_seconds is None:
-            # No timeout specified, execute normally
-            return await self._synthesize_results(config, agent_results)
+        results_dict: dict[str, Any],
+        agent_usage: dict[str, Any],
+    ) -> None:
+        """Execute a list of agents in parallel with resource management."""
+        if not agents:
+            return
+
+        # Get concurrency limit from performance config or use sensible default
+        max_concurrent = self._get_effective_concurrency_limit(len(agents))
+
+        # For small ensembles, run all in parallel
+        # For large ensembles, use semaphore to limit concurrent execution
+        if len(agents) <= max_concurrent:
+            await self._execute_agents_unlimited(
+                agents, input_data, config, results_dict, agent_usage
+            )
+        else:
+            await self._execute_agents_with_semaphore(
+                agents, input_data, config, results_dict, agent_usage, max_concurrent
+            )
+
+    def _get_effective_concurrency_limit(self, agent_count: int) -> int:
+        """Get effective concurrency limit based on configuration and agent count."""
+        # Check performance configuration first
+        configured_limit = self._performance_config.get("concurrency", {}).get(
+            "max_concurrent_agents", 0
+        )
+
+        # If explicitly configured and > 0, use it
+        if isinstance(configured_limit, int) and configured_limit > 0:
+            return configured_limit
+
+        # Otherwise use smart defaults based on agent count and system resources
+        if agent_count <= 3:
+            return agent_count  # Small ensembles: run all in parallel
+        elif agent_count <= 10:
+            return 5  # Medium ensembles: limit to 5 concurrent
+        elif agent_count <= 20:
+            return 8  # Large ensembles: limit to 8 concurrent
+        else:
+            return 10  # Very large ensembles: cap at 10 concurrent
+
+    async def _execute_agents_unlimited(
+        self,
+        agents: list[dict[str, Any]],
+        input_data: str,
+        config: EnsembleConfig,
+        results_dict: dict[str, Any],
+        agent_usage: dict[str, Any],
+    ) -> None:
+        """Execute agents without concurrency limits (for small ensembles)."""
+        try:
+
+            async def execute_agent_task(
+                agent_config: dict[str, Any],
+            ) -> tuple[str, Any]:
+                """Execute a single agent task."""
+                agent_name = agent_config["name"]
+                agent_start_time = time.time()
+
+                # Emit agent started event
+                self._emit_performance_event(
+                    "agent_started",
+                    {"agent_name": agent_name, "timestamp": agent_start_time},
+                )
+
+                try:
+                    # Resolve config and execute - all happening in parallel per agent
+                    enhanced_config = await self._resolve_model_profile_to_config(
+                        agent_config
+                    )
+                    timeout = enhanced_config.get("timeout_seconds") or (
+                        self._performance_config.get("execution", {}).get(
+                            "default_timeout", 60
+                        )
+                    )
+                    result = await self._execute_agent_with_timeout(
+                        agent_config, input_data, timeout
+                    )
+
+                    # Emit agent completed event with duration
+                    agent_end_time = time.time()
+                    duration_ms = int((agent_end_time - agent_start_time) * 1000)
+                    self._emit_performance_event(
+                        "agent_completed",
+                        {
+                            "agent_name": agent_name,
+                            "timestamp": agent_end_time,
+                            "duration_ms": duration_ms,
+                        },
+                    )
+
+                    return agent_name, result
+                except Exception as e:
+                    # Emit agent completed event with error
+                    agent_end_time = time.time()
+                    duration_ms = int((agent_end_time - agent_start_time) * 1000)
+                    self._emit_performance_event(
+                        "agent_completed",
+                        {
+                            "agent_name": agent_name,
+                            "timestamp": agent_end_time,
+                            "duration_ms": duration_ms,
+                            "error": str(e),
+                        },
+                    )
+
+                    # Record error in results dict and return error indicator
+                    results_dict[agent_name] = {
+                        "error": str(e),
+                        "status": "failed",
+                    }
+                    return agent_name, None
+
+            # Create tasks using create_task to ensure they start immediately
+            tasks = [
+                asyncio.create_task(execute_agent_task(agent_config))
+                for agent_config in agents
+            ]
+
+            # Wait for all tasks to complete
+            agent_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            self._process_agent_results(agent_results, results_dict, agent_usage)
+
+        except Exception as e:
+            # Fallback: if gather fails, mark all agents as failed
+            for agent_config in agents:
+                agent_name = agent_config["name"]
+                results_dict[agent_name] = {"error": str(e), "status": "failed"}
+
+    async def _execute_agents_with_semaphore(
+        self,
+        agents: list[dict[str, Any]],
+        input_data: str,
+        config: EnsembleConfig,
+        results_dict: dict[str, Any],
+        agent_usage: dict[str, Any],
+        max_concurrent: int,
+    ) -> None:
+        """Execute agents with semaphore-based concurrency control."""
+        # Create semaphore to limit concurrent execution
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def execute_agent_with_semaphore(
+            agent_config: dict[str, Any],
+        ) -> tuple[str, Any]:
+            """Execute agent with semaphore control."""
+            async with semaphore:
+                agent_name = agent_config["name"]
+                agent_start_time = time.time()
+
+                # Emit agent started event
+                self._emit_performance_event(
+                    "agent_started",
+                    {"agent_name": agent_name, "timestamp": agent_start_time},
+                )
+
+                try:
+                    # Resolve config and execute
+                    enhanced_config = await self._resolve_model_profile_to_config(
+                        agent_config
+                    )
+                    timeout = enhanced_config.get("timeout_seconds") or (
+                        self._performance_config.get("execution", {}).get(
+                            "default_timeout", 60
+                        )
+                    )
+                    result = await self._execute_agent_with_timeout(
+                        agent_config, input_data, timeout
+                    )
+
+                    # Emit agent completed event with duration
+                    agent_end_time = time.time()
+                    duration_ms = int((agent_end_time - agent_start_time) * 1000)
+                    self._emit_performance_event(
+                        "agent_completed",
+                        {
+                            "agent_name": agent_name,
+                            "timestamp": agent_end_time,
+                            "duration_ms": duration_ms,
+                        },
+                    )
+
+                    return agent_name, result
+                except Exception as e:
+                    # Emit agent completed event with error
+                    agent_end_time = time.time()
+                    duration_ms = int((agent_end_time - agent_start_time) * 1000)
+                    self._emit_performance_event(
+                        "agent_completed",
+                        {
+                            "agent_name": agent_name,
+                            "timestamp": agent_end_time,
+                            "duration_ms": duration_ms,
+                            "error": str(e),
+                        },
+                    )
+
+                    # Record error in results dict and return error indicator
+                    results_dict[agent_name] = {
+                        "error": str(e),
+                        "status": "failed",
+                    }
+                    return agent_name, None
 
         try:
-            return await asyncio.wait_for(
-                self._synthesize_results(config, agent_results), timeout=timeout_seconds
-            )
-        except TimeoutError as e:
-            raise Exception(
-                f"Synthesis timed out after {timeout_seconds} seconds"
-            ) from e
+            # Create tasks with semaphore control
+            tasks = [
+                asyncio.create_task(execute_agent_with_semaphore(agent_config))
+                for agent_config in agents
+            ]
+
+            # Wait for all tasks to complete
+            agent_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            self._process_agent_results(agent_results, results_dict, agent_usage)
+
+        except Exception as e:
+            # Fallback: if gather fails, mark all agents as failed
+            for agent_config in agents:
+                agent_name = agent_config["name"]
+                results_dict[agent_name] = {"error": str(e), "status": "failed"}
+
+    def _process_agent_results(
+        self,
+        agent_results: list[Any],
+        results_dict: dict[str, Any],
+        agent_usage: dict[str, Any],
+    ) -> None:
+        """Process results from agent execution."""
+        for execution_result in agent_results:
+            if isinstance(execution_result, Exception):
+                # If we can't determine agent name from exception, skip this result
+                # The agent task should handle its own error recording
+                continue
+            else:
+                # execution_result is tuple[str, Any]
+                agent_name, result = execution_result
+                if result is None:
+                    # Error was already recorded in execute_agent_task
+                    continue
+
+                # result is tuple[str, ModelInterface | None]
+                response, model_instance = result
+                results_dict[agent_name] = {
+                    "response": response,
+                    "status": "success",
+                }
+                # Collect usage metrics (only for LLM agents)
+                if model_instance is not None:
+                    usage = model_instance.get_last_usage()
+                    if usage:
+                        agent_usage[agent_name] = usage
+
+    def _enhance_input_with_dependencies(
+        self,
+        base_input: str,
+        dependent_agents: list[dict[str, Any]],
+        results_dict: dict[str, Any],
+    ) -> str:
+        """Enhance input with dependency results for dependent agents."""
+        # For now, use the same enhanced input for all dependent agents
+        # In future iterations, we could customize input per agent based on dependencies
+        dependency_results = []
+
+        for agent_config in dependent_agents:
+            dependencies = agent_config.get("dependencies", [])
+            for dep_name in dependencies:
+                if (
+                    dep_name in results_dict
+                    and results_dict[dep_name].get("status") == "success"
+                ):
+                    response = results_dict[dep_name]["response"]
+                    dependency_results.append(f"=== {dep_name} ===\n{response}")
+
+        if dependency_results:
+            deps_text = "\n\n".join(dependency_results)
+            return f"{base_input}\n\nDependency Results:\n{deps_text}"
+
+        return base_input
+
+    def _analyze_enhanced_dependency_graph(
+        self, agent_configs: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Analyze agent dependencies and organize into execution phases.
+
+        Uses topological sort to determine optimal execution order for agents
+        with dependencies. Agents with no dependencies can run in parallel.
+
+        Args:
+            agent_configs: List of agent configurations with optional dependencies
+
+        Returns:
+            Dictionary containing:
+            - phases: List of agent lists, each phase can run in parallel
+            - dependency_map: Mapping of agent names to their dependencies
+            - total_phases: Number of execution phases
+
+        Raises:
+            ValueError: If circular dependencies are detected
+        """
+        # Build dependency map for efficient lookup
+        dependency_map = {
+            agent_config["name"]: agent_config.get("dependencies", [])
+            for agent_config in agent_configs
+        }
+
+        # Topological sort to determine execution phases
+        phases = []
+        remaining_agents = agent_configs.copy()
+        processed_agents: set[str] = set()
+
+        while remaining_agents:
+            current_phase = []
+            agents_to_remove = []
+
+            # Find agents whose dependencies have been processed
+            for agent_config in remaining_agents:
+                agent_name = agent_config["name"]
+                dependencies = dependency_map[agent_name]
+
+                # Agent is ready if it has no dependencies or all are processed
+                if self._agent_dependencies_satisfied(dependencies, processed_agents):
+                    current_phase.append(agent_config)
+                    agents_to_remove.append(agent_config)
+
+            # Update processed agents and remove from remaining
+            for agent_config in agents_to_remove:
+                processed_agents.add(agent_config["name"])
+                remaining_agents.remove(agent_config)
+
+            # Detect circular dependencies
+            if not current_phase:
+                raise ValueError("Circular dependency detected in agent configuration")
+
+            phases.append(current_phase)
+
+        return {
+            "phases": phases,
+            "dependency_map": dependency_map,
+            "total_phases": len(phases),
+        }
+
+    def _agent_dependencies_satisfied(
+        self, dependencies: list[str], processed_agents: set[str]
+    ) -> bool:
+        """Check if an agent's dependencies have been processed."""
+        return len(dependencies) == 0 or all(
+            dep in processed_agents for dep in dependencies
+        )
 
 
 def _should_prompt_for_auth(model_name: str) -> bool:

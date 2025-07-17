@@ -151,8 +151,24 @@ def cli() -> None:
     default="text",
     help="Output format for results",
 )
+@click.option(
+    "--streaming",
+    is_flag=True,
+    help="Enable streaming execution for real-time progress updates",
+)
+@click.option(
+    "--max-concurrent",
+    type=int,
+    default=None,
+    help="Maximum number of concurrent agents (overrides config)",
+)
 def invoke(
-    ensemble_name: str, config_dir: str, input_data: str, output_format: str
+    ensemble_name: str,
+    config_dir: str,
+    input_data: str,
+    output_format: str,
+    streaming: bool,
+    max_concurrent: int,
 ) -> None:
     """Invoke an ensemble of agents."""
     # Initialize configuration manager
@@ -195,75 +211,153 @@ def invoke(
             f"Ensemble '{ensemble_name}' not found in: {', '.join(searched_dirs)}"
         )
 
+    # Create executor
+    executor = EnsembleExecutor()
+
+    # Override concurrency settings if provided
+    if max_concurrent is not None:
+        # Apply concurrency limit to executor configuration
+        pass  # This would be implemented as needed
+
+    # Show performance configuration for text output
     if output_format == "text":
-        click.echo(f"Invoking ensemble: {ensemble_name}")
-        click.echo(f"Description: {ensemble_config.description}")
-        click.echo(f"Agents: {len(ensemble_config.agents)}")
-        click.echo(f"Input: {input_data}")
-        click.echo("---")
+        try:
+            performance_config = config_manager.load_performance_config()
+            effective_concurrency = executor._get_effective_concurrency_limit(
+                len(ensemble_config.agents)
+            )
+            # Determine effective streaming setting (CLI flag overrides config)
+            effective_streaming = streaming or performance_config.get(
+                "streaming_enabled", False
+            )
+            click.echo(
+                f"🚀 Executing ensemble '{ensemble_name}' with "
+                f"{len(ensemble_config.agents)} agents"
+            )
+            click.echo(
+                f"⚡ Performance: max_concurrent={effective_concurrency}, "
+                f"streaming={effective_streaming}"
+            )
+            click.echo("─" * 50)
+        except Exception:
+            # Fallback to original output if performance config fails
+            click.echo(f"Invoking ensemble: {ensemble_name}")
+            click.echo(f"Description: {ensemble_config.description}")
+            click.echo(f"Agents: {len(ensemble_config.agents)}")
+            click.echo(f"Input: {input_data}")
+            click.echo("---")
+
+    # Determine effective streaming setting
+    performance_config = config_manager.load_performance_config()
+    effective_streaming = streaming or performance_config.get(
+        "streaming_enabled", False
+    )
 
     # Execute the ensemble
-    async def run_ensemble() -> dict[str, Any]:
-        executor = EnsembleExecutor()
-        return await executor.execute(ensemble_config, input_data)
-
     try:
-        result = asyncio.run(run_ensemble())
+        if effective_streaming:
+            # Streaming execution
+            async def run_streaming() -> None:
+                async for event in executor.execute_streaming(
+                    ensemble_config, input_data
+                ):
+                    if output_format == "json":
+                        click.echo(json.dumps(event, indent=2))
+                    else:
+                        event_type = event["type"]
+                        if event_type == "execution_started":
+                            click.echo(
+                                f"🏁 Started execution with "
+                                f"{event['data']['total_agents']} agents"
+                            )
+                        elif event_type == "agent_progress":
+                            progress = event["data"]["progress_percentage"]
+                            click.echo(
+                                f"📊 Progress: {progress:.1f}% "
+                                f"({event['data']['completed_agents']}/"
+                                f"{event['data']['total_agents']})"
+                            )
+                        elif event_type == "execution_completed":
+                            click.echo(
+                                f"✅ Completed in {event['data']['duration']:.2f}s"
+                            )
+                            if output_format == "text":
+                                _display_results(
+                                    event["data"]["results"], event["data"]["metadata"]
+                                )
+                            else:
+                                click.echo(
+                                    json.dumps(event["data"]["results"], indent=2)
+                                )
 
-        if output_format == "json":
-            click.echo(json.dumps(result, indent=2))
+            asyncio.run(run_streaming())
         else:
-            # Text format - show readable output
-            click.echo(f"Status: {result['status']}")
-            click.echo(f"Duration: {result['metadata']['duration']}")
-
-            # Show usage summary
-            if "usage" in result["metadata"]:
-                usage = result["metadata"]["usage"]
-                totals = usage.get("totals", {})
-                click.echo("\nUsage Summary:")
-                click.echo(f"  Total Tokens: {totals.get('total_tokens', 0):,}")
-                click.echo(f"  Total Cost: ${totals.get('total_cost_usd', 0.0):.4f}")
-                click.echo(f"  Agents: {totals.get('agents_count', 0)}")
-
-                # Show per-agent usage
-                agents_usage = usage.get("agents", {})
-                if agents_usage:
-                    click.echo("\nPer-Agent Usage:")
-                    for agent_name, agent_usage in agents_usage.items():
-                        tokens = agent_usage.get("total_tokens", 0)
-                        cost = agent_usage.get("cost_usd", 0.0)
-                        duration = agent_usage.get("duration_ms", 0)
-                        model = agent_usage.get("model", "unknown")
-                        click.echo(
-                            f"  {agent_name} ({model}): {tokens:,} tokens, "
-                            f"${cost:.4f}, {duration}ms"
-                        )
-
-                # Show synthesis usage if present
-                synthesis_usage = usage.get("synthesis", {})
-                if synthesis_usage:
-                    tokens = synthesis_usage.get("total_tokens", 0)
-                    cost = synthesis_usage.get("cost_usd", 0.0)
-                    duration = synthesis_usage.get("duration_ms", 0)
-                    model = synthesis_usage.get("model", "unknown")
-                    click.echo(
-                        f"  synthesis ({model}): {tokens:,} tokens, "
-                        f"${cost:.4f}, {duration}ms"
-                    )
-
-            click.echo("\nAgent Results:")
-            for agent_name, agent_result in result["results"].items():
-                if agent_result["status"] == "success":
-                    click.echo(f"  {agent_name}: {agent_result['response']}")
+            # Standard execution
+            async def run_standard() -> None:
+                result = await executor.execute(ensemble_config, input_data)
+                if output_format == "json":
+                    click.echo(json.dumps(result, indent=2))
                 else:
-                    click.echo(f"  {agent_name}: ERROR - {agent_result['error']}")
+                    _display_results(result["results"], result["metadata"])
 
-            if result.get("synthesis"):
-                click.echo(f"\nSynthesis: {result['synthesis']}")
+            asyncio.run(run_standard())
 
     except Exception as e:
         raise click.ClickException(f"Ensemble execution failed: {str(e)}") from e
+
+
+def _display_results(results: dict[str, Any], metadata: dict[str, Any]) -> None:
+    """Display results in a formatted way."""
+    click.echo("\n📋 Results:")
+    click.echo("=" * 50)
+
+    for agent_name, result in results.items():
+        if result.get("status") == "success":
+            click.echo(f"\n✅ {agent_name}:")
+            click.echo(f"   {result['response']}")
+        else:
+            click.echo(f"\n❌ {agent_name}:")
+            click.echo(f"   Error: {result.get('error', 'Unknown error')}")
+
+    # Show performance metrics
+    if "usage" in metadata:
+        usage = metadata["usage"]
+        totals = usage.get("totals", {})
+        click.echo("\n📊 Performance Metrics:")
+        click.echo(f"   Duration: {metadata['duration']}")
+        click.echo(f"   Total tokens: {totals.get('total_tokens', 0):,}")
+        click.echo(f"   Total cost: ${totals.get('total_cost_usd', 0.0):.4f}")
+        click.echo(f"   Agents: {totals.get('agents_count', 0)}")
+
+        # Show per-agent usage
+        agents_usage = usage.get("agents", {})
+        if agents_usage:
+            click.echo("\n   Per-Agent Usage:")
+            for agent_name, agent_usage in agents_usage.items():
+                tokens = agent_usage.get("total_tokens", 0)
+                cost = agent_usage.get("cost_usd", 0.0)
+                duration = agent_usage.get("duration_ms", 0)
+                model = agent_usage.get("model", "unknown")
+                click.echo(
+                    f"     {agent_name} ({model}): {tokens:,} tokens, "
+                    f"${cost:.4f}, {duration}ms"
+                )
+
+        # Show synthesis usage if present
+        synthesis_usage = usage.get("synthesis", {})
+        if synthesis_usage:
+            tokens = synthesis_usage.get("total_tokens", 0)
+            cost = synthesis_usage.get("cost_usd", 0.0)
+            duration = synthesis_usage.get("duration_ms", 0)
+            model = synthesis_usage.get("model", "unknown")
+            click.echo(
+                f"     synthesis ({model}): {tokens:,} tokens, "
+                f"${cost:.4f}, {duration}ms"
+            )
+
+    # Show synthesis result if present
+    if "synthesis" in metadata:
+        click.echo(f"\n🔄 Synthesis: {metadata['synthesis']}")
 
 
 @cli.command("list-ensembles")

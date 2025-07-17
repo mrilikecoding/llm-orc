@@ -10,9 +10,11 @@ Mix expensive cloud models with free local models - use Claude for strategic ins
 
 ## Key Features
 
-- **Multi-Agent Ensembles**: Coordinate specialized agents for different aspects of analysis
+- **Multi-Agent Ensembles**: Coordinate specialized agents with flexible dependency graphs
+- **Agent Dependencies**: Define which agents depend on others for sophisticated orchestration patterns
 - **Model Profiles**: Simplified configuration with named shortcuts for model + provider combinations
 - **Cost Optimization**: Mix expensive and free models based on what each task needs
+- **Streaming Output**: Real-time progress updates during ensemble execution
 - **CLI Interface**: Simple commands with piping support (`cat code.py | llm-orc invoke code-review`)
 - **Secure Authentication**: Encrypted API key storage with easy credential management
 - **YAML Configuration**: Easy ensemble setup with readable config files
@@ -102,23 +104,24 @@ description: Multi-perspective code review ensemble
 
 agents:
   - name: security-reviewer
-    model_profile: free-local     # Uses profile's system_prompt and timeout
-    system_prompt: "You are a security analyst. Focus on identifying security vulnerabilities, authentication issues, and potential attack vectors."  # Override profile default
+    model_profile: free-local
+    system_prompt: "You are a security analyst. Focus on identifying security vulnerabilities, authentication issues, and potential attack vectors."
 
   - name: performance-reviewer
-    model_profile: free-local     # Uses profile's system_prompt and timeout
-    system_prompt: "You are a performance analyst. Focus on identifying bottlenecks, inefficient algorithms, and scalability issues."  # Override profile default
+    model_profile: free-local
+    system_prompt: "You are a performance analyst. Focus on identifying bottlenecks, inefficient algorithms, and scalability issues."
 
   - name: quality-reviewer
-    model_profile: default-claude # Uses profile's system_prompt and timeout (high-quality analysis)
-    system_prompt: "You are a code quality analyst. Focus on maintainability, readability, and best practices."  # Override profile default
+    model_profile: free-local
+    system_prompt: "You are a code quality analyst. Focus on maintainability, readability, and best practices."
 
-coordinator:
-  model_profile: default-claude   # Uses profile's system_prompt and timeout
-  synthesis_prompt: |
-    You are a senior engineering lead. Synthesize the security, performance,
-    and quality analysis into actionable recommendations.
-  output_format: json
+  - name: senior-reviewer
+    model_profile: default-claude
+    depends_on: [security-reviewer, performance-reviewer, quality-reviewer]
+    system_prompt: |
+      You are a senior engineering lead. Synthesize the security, performance,
+      and quality analysis into actionable recommendations.
+    output_format: json
 ```
 
 #### Local Project Configuration
@@ -169,6 +172,9 @@ llm-orc invoke code-review --input "..." --output-format json
 
 # Use specific configuration directory
 llm-orc invoke code-review --config-dir ./custom-config
+
+# Enable streaming for real-time progress (enabled by default)
+llm-orc invoke code-review --streaming
 ```
 
 #### Configuration Management
@@ -283,10 +289,40 @@ Ensemble configurations support:
 
 - **Model profiles** for simplified, consistent model selection
 - **Agent specialization** with role-specific prompts
-- **Timeout management** per agent and coordinator
+- **Agent dependencies** using `depends_on` for sophisticated orchestration
+- **Dependency validation** with automatic cycle detection and missing dependency checks
+- **Timeout management** per agent with performance configuration
 - **Mixed model strategies** combining local and cloud models
-- **Synthesis strategies** for combining agent outputs
 - **Output formatting** (text, JSON) for integration
+- **Streaming execution** with real-time progress updates
+
+#### Agent Dependencies
+
+The new dependency-based architecture allows agents to depend on other agents, enabling sophisticated orchestration patterns:
+
+```yaml
+agents:
+  # Independent agents execute in parallel
+  - name: security-reviewer
+    model_profile: free-local
+    system_prompt: "Focus on security vulnerabilities..."
+
+  - name: performance-reviewer  
+    model_profile: free-local
+    system_prompt: "Focus on performance issues..."
+
+  # Dependent agent waits for dependencies to complete
+  - name: senior-reviewer
+    model_profile: default-claude
+    depends_on: [security-reviewer, performance-reviewer]
+    system_prompt: "Synthesize the security and performance analysis..."
+```
+
+**Benefits:**
+- **Flexible orchestration**: Create complex dependency graphs beyond simple coordinator patterns
+- **Parallel execution**: Independent agents run concurrently for better performance  
+- **Automatic validation**: Circular dependencies and missing dependencies are detected at load time
+- **Better maintainability**: Clear, explicit dependencies instead of implicit coordinator relationships
 
 ### Configuration Status Checking
 
