@@ -250,3 +250,54 @@ class TestPRReviewPerformance:
         # Verify all reviewers were called
         for reviewer in reviewers:
             assert len(reviewer.conversation_history) == 1
+
+
+class TestEnsembleExecutionPerformance:
+    """Test ensemble execution performance requirements."""
+
+    @pytest.mark.asyncio
+    async def test_parallel_execution_performance_improvement(self) -> None:
+        """Should execute independent agents in parallel for significant speedup."""
+        from llm_orc.ensemble_config import EnsembleConfig
+        from llm_orc.ensemble_execution import EnsembleExecutor
+
+        # Arrange - Create ensemble with 3 independent agents (no dependencies)
+        agent_configs: list[dict[str, str]] = []
+
+        for i in range(3):
+            agent_config = {
+                "name": f"agent_{i}",
+                "model": f"mock-model-{i}",
+                "provider": "mock"
+            }
+            agent_configs.append(agent_config)
+
+        config = EnsembleConfig(
+            name="parallel-test-ensemble",
+            description="Test parallel execution performance",
+            agents=agent_configs,
+            coordinator={"synthesis_prompt": "Combine all results"}
+        )
+
+        executor = EnsembleExecutor()
+
+        # Act - Measure execution time for parallel-capable ensemble
+        start_time = time.perf_counter()
+
+        result = await executor.execute(config, "Test input for parallel execution")
+
+        end_time = time.perf_counter()
+        execution_time_ms = (end_time - start_time) * 1000
+
+        # Assert - Should complete in reasonable time with mock models
+        # This test will initially fail because current implementation is sequential
+        assert result["status"] in ["completed", "completed_with_errors"]
+        assert execution_time_ms < 100.0, (
+            f"Parallel ensemble execution took {execution_time_ms:.2f}ms, "
+            f"should be under 100ms with mock models"
+        )
+
+        # Verify all agents executed
+        assert len(result["results"]) == 3
+        for i in range(3):
+            assert f"agent_{i}" in result["results"]
