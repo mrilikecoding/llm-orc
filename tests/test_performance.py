@@ -644,8 +644,9 @@ class TestEnsembleExecutionPerformance:
 
         # Mock the model loading to use our tracked version
         with patch.object(
-            executor, "_load_model_from_agent_config", 
-            side_effect=mock_load_model_with_delay
+            executor,
+            "_load_model_from_agent_config",
+            side_effect=mock_load_model_with_delay,
         ):
             # Mock role loading (not relevant for this test)
             with patch.object(executor, "_load_role_from_config"):
@@ -669,19 +670,25 @@ class TestEnsembleExecutionPerformance:
                 # For sequential model loading, total time would be closer to 0.15s
                 # Current implementation likely shows sequential behavior
 
-                # Test assertion: If models load in parallel, total time should be < 0.08s
+                # Test assertion: If models load in parallel, total time should be
+                # < 0.08s
                 # If models load sequentially, total time will be > 0.12s
                 if total_execution_time < 0.08:
                     print("✅ SUCCESS: Models are loading in parallel!")
                 else:
                     print("❌ BOTTLENECK: Models are loading sequentially")
-                    print(f"   Current time: {total_execution_time:.3f}s indicates sequential loading")
+                    print(
+                        f"   Current time: {total_execution_time:.3f}s indicates "
+                        f"sequential loading"
+                    )
 
-                # For now, document the current behavior - this test should FAIL initially
+                # For now, document the current behavior - this test should FAIL
+                # initially
                 # to demonstrate the bottleneck, then PASS after we fix it
                 assert total_execution_time < 0.12, (
                     f"Model loading took {total_execution_time:.3f}s, which indicates "
-                    f"sequential loading bottleneck. Should be closer to 0.05s for parallel loading."
+                    f"sequential loading bottleneck. Should be closer to 0.05s for "
+                    f"parallel loading."
                 )
 
     @pytest.mark.asyncio
@@ -695,7 +702,9 @@ class TestEnsembleExecutionPerformance:
         # Track model loading calls
         model_load_calls = []
 
-        async def mock_load_model_tracking(model_name: str, provider: str | None = None) -> AsyncMock:
+        async def mock_load_model_tracking(
+            model_name: str, provider: str | None = None
+        ) -> AsyncMock:
             """Track model loading calls to identify reuse opportunities."""
             model_load_calls.append((model_name, provider))
 
@@ -731,7 +740,9 @@ class TestEnsembleExecutionPerformance:
         executor = EnsembleExecutor()
 
         # Mock the model loading to track calls
-        with patch.object(executor, "_load_model", side_effect=mock_load_model_tracking):
+        with patch.object(
+            executor, "_load_model", side_effect=mock_load_model_tracking
+        ):
             # Mock role loading (not relevant for this test)
             with patch.object(executor, "_load_role_from_config"):
                 # Execute the test
@@ -746,23 +757,38 @@ class TestEnsembleExecutionPerformance:
 
                 # Currently, each agent loads its model independently
                 # This should be optimized to reuse model instances
-                shared_model_calls = [call for call in model_load_calls if call[0] == "shared-model"]
-                different_model_calls = [call for call in model_load_calls if call[0] == "different-model"]
+                shared_model_calls = [
+                    call for call in model_load_calls if call[0] == "shared-model"
+                ]
+                different_model_calls = [
+                    call for call in model_load_calls if call[0] == "different-model"
+                ]
 
-                print(f"Shared model calls: {len(shared_model_calls)} (should be 1 for optimal)")
-                print(f"Different model calls: {len(different_model_calls)} (should be 1)")
+                print(
+                    f"Shared model calls: {len(shared_model_calls)} "
+                    f"(should be 1 for optimal)"
+                )
+                print(
+                    f"Different model calls: {len(different_model_calls)} (should be 1)"
+                )
 
                 # Current implementation: Each agent loads model independently
                 # Optimized implementation: Models should be cached/reused
                 assert len(model_load_calls) == 4, (
-                    f"Expected 4 model load calls for 4 agents, got {len(model_load_calls)}"
+                    f"Expected 4 model load calls for 4 agents, "
+                    f"got {len(model_load_calls)}"
                 )
 
                 # Document the current inefficiency
                 if len(shared_model_calls) > 1:
                     print("⚠️  INEFFICIENCY: Same model loaded multiple times")
-                    print(f"   {len(shared_model_calls)} calls for 'shared-model' indicates no model reuse")
-                    print("   Optimization opportunity: Cache and reuse model instances")
+                    print(
+                        f"   {len(shared_model_calls)} calls for 'shared-model' "
+                        f"indicates no model reuse"
+                    )
+                    print(
+                        "   Optimization opportunity: Cache and reuse model instances"
+                    )
                 else:
                     print("✅ OPTIMIZED: Model instances are being reused")
 
@@ -771,7 +797,8 @@ class TestEnsembleExecutionPerformance:
 
     @pytest.mark.asyncio
     async def test_infrastructure_sharing_optimization(self) -> None:
-        """Should share ConfigurationManager and CredentialStorage across model loads."""
+        """Should share ConfigurationManager and CredentialStorage across model
+        loads."""
         from unittest.mock import patch
 
         from llm_orc.ensemble_execution import EnsembleExecutor
@@ -781,11 +808,11 @@ class TestEnsembleExecutionPerformance:
         credential_storage_calls = []
 
         def mock_config_manager(*args: Any, **kwargs: Any) -> MagicMock:
-            config_manager_calls.append(('ConfigurationManager', args, kwargs))
+            config_manager_calls.append(("ConfigurationManager", args, kwargs))
             return MagicMock()
 
         def mock_credential_storage(*args: Any, **kwargs: Any) -> MagicMock:
-            credential_storage_calls.append(('CredentialStorage', args, kwargs))
+            credential_storage_calls.append(("CredentialStorage", args, kwargs))
             return MagicMock()
 
         # Test with multiple agents
@@ -806,14 +833,20 @@ class TestEnsembleExecutionPerformance:
         executor = EnsembleExecutor()
 
         # Mock the infrastructure classes to track instantiation
-        with patch('llm_orc.ensemble_execution.ConfigurationManager', side_effect=mock_config_manager):
-            with patch('llm_orc.ensemble_execution.CredentialStorage', side_effect=mock_credential_storage):
+        with patch(
+            "llm_orc.ensemble_execution.ConfigurationManager",
+            side_effect=mock_config_manager,
+        ):
+            with patch(
+                "llm_orc.ensemble_execution.CredentialStorage",
+                side_effect=mock_credential_storage,
+            ):
                 # Mock the model loading to focus on infrastructure
-                with patch.object(executor, '_load_model') as mock_load_model:
+                with patch.object(executor, "_load_model") as mock_load_model:
                     mock_load_model.return_value = MagicMock()
 
                     # Mock role loading (not relevant for this test)
-                    with patch.object(executor, '_load_role_from_config'):
+                    with patch.object(executor, "_load_role_from_config"):
                         # Execute the test
                         await executor._execute_agents_parallel(
                             agent_configs, "test input", config, {}, {}
@@ -821,27 +854,54 @@ class TestEnsembleExecutionPerformance:
 
                         # Analysis
                         print("\nInfrastructure sharing test results:")
-                        print(f"ConfigurationManager instantiations: {len(config_manager_calls)}")
-                        print(f"CredentialStorage instantiations: {len(credential_storage_calls)}")
+                        print(
+                            f"ConfigurationManager instantiations: "
+                            f"{len(config_manager_calls)}"
+                        )
+                        print(
+                            f"CredentialStorage instantiations: "
+                            f"{len(credential_storage_calls)}"
+                        )
 
                         # With optimization, infrastructure should be shared
-                        # Without optimization, each model load would create new instances
-                        if len(config_manager_calls) == 0 and len(credential_storage_calls) == 0:
-                            print("✅ OPTIMIZED: Infrastructure is shared across model loads")
-                            print("   No new ConfigurationManager or CredentialStorage instances created")
+                        # Without optimization, each model load would create new
+                        # instances
+                        if (
+                            len(config_manager_calls) == 0
+                            and len(credential_storage_calls) == 0
+                        ):
+                            print(
+                                "✅ OPTIMIZED: Infrastructure is shared across model "
+                                "loads"
+                            )
+                            print(
+                                "   No new ConfigurationManager or CredentialStorage "
+                                "instances created"
+                            )
                         else:
-                            print("❌ INEFFICIENT: Infrastructure created per model load")
-                            print(f"   {len(config_manager_calls)} ConfigurationManager instances")
-                            print(f"   {len(credential_storage_calls)} CredentialStorage instances")
+                            print(
+                                "❌ INEFFICIENT: Infrastructure created per model load"
+                            )
+                            print(
+                                f"   {len(config_manager_calls)} ConfigurationManager "
+                                f"instances"
+                            )
+                            print(
+                                f"   {len(credential_storage_calls)} CredentialStorage "
+                                f"instances"
+                            )
                             print("   Each model load creates new infrastructure")
 
-                        # The optimization should result in no new infrastructure instantiation
+                        # The optimization should result in no new infrastructure
+                        # instantiation
                         # because we use shared instances from the executor
                         assert len(config_manager_calls) == 0, (
-                            f"Expected 0 ConfigurationManager calls (shared infrastructure), "
+                            f"Expected 0 ConfigurationManager calls (shared "
+                            f"infrastructure), "
                             f"got {len(config_manager_calls)}"
                         )
                         assert len(credential_storage_calls) == 0, (
-                            f"Expected 0 CredentialStorage calls (shared infrastructure), "
+                            f"Expected 0 CredentialStorage calls (shared "
+                            f"infrastructure), "
                             f"got {len(credential_storage_calls)}"
                         )

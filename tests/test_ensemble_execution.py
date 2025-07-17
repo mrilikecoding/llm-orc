@@ -821,9 +821,7 @@ class TestEnsembleExecutor:
                     )
 
                     # Verify that resolve_model_profile was called
-                    mock_resolve_model_profile.assert_called_once_with(
-                        "test-profile"
-                    )
+                    mock_resolve_model_profile.assert_called_once_with("test-profile")
 
     @pytest.mark.asyncio
     async def test_ensemble_execution_fallback_to_explicit_model_provider(
