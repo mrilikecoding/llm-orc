@@ -905,3 +905,97 @@ class TestEnsembleExecutionPerformance:
                             f"infrastructure), "
                             f"got {len(credential_storage_calls)}"
                         )
+
+    @pytest.mark.asyncio
+    async def test_performance_monitoring_hooks(self) -> None:
+        """Should emit performance monitoring events for Issue #27 visualization."""
+        from unittest.mock import AsyncMock, patch
+
+        from llm_orc.ensemble_config import EnsembleConfig
+        from llm_orc.ensemble_execution import EnsembleExecutor
+
+        # Track performance events emitted during execution
+        performance_events = []
+
+        def mock_performance_hook(event_type: str, data: dict[str, Any]) -> None:
+            """Mock performance monitoring hook to capture events."""
+            performance_events.append({"type": event_type, "data": data})
+
+        # Test with simple agent configuration
+        agent_configs = [
+            {"name": "agent1", "model": "mock-model-1", "provider": "mock"},
+            {"name": "agent2", "model": "mock-model-2", "provider": "mock"},
+        ]
+
+        config = EnsembleConfig(
+            name="performance-monitoring-test",
+            description="Test performance monitoring hooks",
+            agents=agent_configs,
+            coordinator={"type": "llm", "model": "mock-coordinator"},
+        )
+
+        executor = EnsembleExecutor()
+
+        # Mock model loading and role loading
+        with patch.object(executor, "_load_model") as mock_load_model:
+            mock_load_model.return_value = AsyncMock()
+
+            with patch.object(executor, "_load_role_from_config"):
+                # Register performance monitoring hook
+                executor.register_performance_hook(mock_performance_hook)
+
+                # Execute to trigger performance events
+                await executor._execute_agents_parallel(
+                    agent_configs, "test input", config, {}, {}
+                )
+
+                # Verify performance events were emitted
+                assert len(performance_events) > 0, (
+                    "Expected performance events to be emitted"
+                )
+
+                # Verify expected event types for Issue #27 visualization
+                event_types = [event["type"] for event in performance_events]
+
+                # Should emit events for agent execution lifecycle
+                assert "agent_started" in event_types, (
+                    "Expected 'agent_started' event for visualization"
+                )
+                assert "agent_completed" in event_types, (
+                    "Expected 'agent_completed' event for visualization"
+                )
+
+                # Should emit timing information
+                agent_started_events = [
+                    e for e in performance_events if e["type"] == "agent_started"
+                ]
+                agent_completed_events = [
+                    e for e in performance_events if e["type"] == "agent_completed"
+                ]
+
+                assert len(agent_started_events) == 2, (
+                    "Expected 2 agent_started events for 2 agents"
+                )
+                assert len(agent_completed_events) == 2, (
+                    "Expected 2 agent_completed events for 2 agents"
+                )
+
+                # Verify event data structure for Issue #27 integration
+                for event in agent_started_events:
+                    assert "agent_name" in event["data"], (
+                        "agent_started event should include agent_name"
+                    )
+                    assert "timestamp" in event["data"], (
+                        "agent_started event should include timestamp"
+                    )
+
+                for event in agent_completed_events:
+                    assert "agent_name" in event["data"], (
+                        "agent_completed event should include agent_name"
+                    )
+                    assert "timestamp" in event["data"], (
+                        "agent_completed event should include timestamp"
+                    )
+                    assert "duration_ms" in event["data"], (
+                        "agent_completed event should include duration_ms"
+                    )
