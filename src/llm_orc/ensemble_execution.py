@@ -96,8 +96,9 @@ class EnsembleExecutor:
             )
             enhanced_input = f"{task_input}\n\n{context_text}"
 
-        # Execute LLM agents concurrently with enhanced input
+        # Execute LLM agents in parallel with enhanced input
         agent_tasks = []
+        agent_names = []
         for agent_config in llm_agents:
             # Resolve model profile to get enhanced configuration
             enhanced_config = await self._resolve_model_profile_to_config(agent_config)
@@ -107,23 +108,40 @@ class EnsembleExecutor:
             task = self._execute_agent_with_timeout(
                 agent_config, enhanced_input, timeout
             )
-            agent_tasks.append((agent_config["name"], task))
+            agent_tasks.append(task)
+            agent_names.append(agent_config["name"])
 
-        # Wait for all LLM agents to complete
-        for agent_name, task in agent_tasks:
+        # Wait for all LLM agents to complete in parallel
+        if agent_tasks:
             try:
-                agent_result, model_instance = await task
-                results_dict[agent_name] = {
-                    "response": agent_result,
-                    "status": "success",
-                }
-                # Collect usage metrics (only for LLM agents)
-                if model_instance is not None:
-                    usage = model_instance.get_last_usage()
-                    if usage:
-                        agent_usage[agent_name] = usage
+                agent_results = await asyncio.gather(
+                    *agent_tasks, return_exceptions=True
+                )
+
+                for i, execution_result in enumerate(agent_results):
+                    agent_name = agent_names[i]
+                    if isinstance(execution_result, Exception):
+                        results_dict[agent_name] = {
+                            "error": str(execution_result),
+                            "status": "failed",
+                        }
+                        has_errors = True
+                    else:
+                        # execution_result is tuple[str, ModelInterface | None]
+                        response, model_instance = execution_result  # type: ignore[misc]
+                        results_dict[agent_name] = {
+                            "response": response,
+                            "status": "success",
+                        }
+                        # Collect usage metrics (only for LLM agents)
+                        if model_instance is not None:
+                            usage = model_instance.get_last_usage()
+                            if usage:
+                                agent_usage[agent_name] = usage
             except Exception as e:
-                results_dict[agent_name] = {"error": str(e), "status": "failed"}
+                # Fallback: if gather fails, mark all agents as failed
+                for agent_name in agent_names:
+                    results_dict[agent_name] = {"error": str(e), "status": "failed"}
                 has_errors = True
 
         # Synthesize results if coordinator is configured

@@ -256,7 +256,9 @@ class TestEnsembleExecutionPerformance:
     """Test ensemble execution performance requirements."""
 
     @pytest.mark.asyncio
-    async def test_parallel_execution_performance_improvement(self) -> None:
+    async def test_parallel_execution_performance_improvement(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Should execute independent agents in parallel for significant speedup."""
         from llm_orc.ensemble_config import EnsembleConfig
         from llm_orc.ensemble_execution import EnsembleExecutor
@@ -268,7 +270,7 @@ class TestEnsembleExecutionPerformance:
             agent_config = {
                 "name": f"agent_{i}",
                 "model": f"mock-model-{i}",
-                "provider": "mock"
+                "provider": "mock",
             }
             agent_configs.append(agent_config)
 
@@ -276,10 +278,24 @@ class TestEnsembleExecutionPerformance:
             name="parallel-test-ensemble",
             description="Test parallel execution performance",
             agents=agent_configs,
-            coordinator={"synthesis_prompt": "Combine all results"}
+            coordinator={"synthesis_prompt": "Combine all results"},
         )
 
         executor = EnsembleExecutor()
+
+        # Mock the model loading to use fast mock models
+        fast_mock_model = AsyncMock(spec=ModelInterface)
+        fast_mock_model.generate_response.return_value = "Fast mock response"
+        fast_mock_model.get_last_usage.return_value = {
+            "total_tokens": 10,
+            "input_tokens": 5,
+            "output_tokens": 5,
+            "cost_usd": 0.001,
+            "duration_ms": 1,
+        }
+
+        mock_load_model = AsyncMock(return_value=fast_mock_model)
+        monkeypatch.setattr(executor, "_load_model", mock_load_model)
 
         # Act - Measure execution time for parallel-capable ensemble
         start_time = time.perf_counter()
