@@ -5,6 +5,60 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2025-07-17
+
+### Added
+- **Agent Dependencies** - New flexible dependency system using `depends_on` field
+  - Agents can depend on specific other agents for sophisticated orchestration patterns
+  - Automatic dependency validation with circular dependency detection using DFS
+  - Missing dependency validation prevents configuration errors
+  - Parallel execution of independent agents with sequential execution after dependencies
+- **Streaming by Default** - Enhanced real-time user experience
+  - Streaming enabled by default in performance configuration
+  - CLI shows effective streaming setting from config
+  - Real-time progress updates during ensemble execution
+- **Enhanced Configuration System** - Better model profile management
+  - Migration to `anthropic-claude-pro-max` with correct pricing (cost: 0.0)
+  - Performance configuration section with streaming and concurrency settings
+  - Improved CLI configuration display and validation
+
+### Changed
+- **BREAKING: Ensemble Configuration Format** - Migration required for existing ensembles
+  - Replaced `coordinator` pattern with `depends_on` agent dependencies
+  - Coordinator field removed from EnsembleConfig dataclass
+  - All ensemble templates updated to use new dependency pattern
+  - Legacy coordinator-based ensembles need manual migration
+- **Architecture Enhancement** - Improved maintainability and performance
+  - Removed centralized synthesis bottleneck for better performance
+  - EnsembleExecutor handles dependency graphs instead of coordinator logic
+  - Synthesis now handled by dependent agents rather than separate coordinator
+- **Documentation Cleanup** - Consolidated essential information
+  - Removed outdated documentation files (agent_orchestration.md, pr_review_ensemble.md, etc.)
+  - Updated README with new dependency-based configuration examples
+  - Added agent dependencies section with benefits and usage patterns
+  - Kept only essential docs: design_philosophy.md and research analysis
+
+### Fixed
+- **Dependency Validation** - Robust configuration error prevention
+  - Comprehensive circular dependency detection at configuration load time
+  - Missing dependency validation with clear error messages
+  - All ensemble files validated for dependency correctness
+- **Test Coverage** - Complete migration to new architecture
+  - Updated all 209 tests to use new dependency pattern
+  - Removed coordinator-specific test files
+  - Added dependency validation tests for edge cases
+  - Performance tests updated to use `depends_on` instead of `dependencies`
+
+### Performance
+- **Parallel Execution** - Better resource utilization
+  - Independent agents execute concurrently using asyncio
+  - Dependent agents execute sequentially after dependencies complete
+  - Streaming provides real-time feedback without blocking
+- **Simplified Architecture** - Reduced complexity and overhead
+  - Removed complex coordinator synthesis logic
+  - Direct agent-to-agent dependency resolution
+  - More efficient execution patterns
+
 ## [0.5.1] - 2025-07-16
 
 ### Fixed
