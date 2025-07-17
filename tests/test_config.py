@@ -100,7 +100,8 @@ class TestConfigurationManager:
                         assert "name" in ensemble_config
                         assert "description" in ensemble_config
                         assert "agents" in ensemble_config
-                        assert "coordinator" in ensemble_config
+                        # New dependency-based architecture doesn't use coordinator
+                        assert len(ensemble_config["agents"]) > 0
 
     def test_setup_default_ensembles_no_templates(self) -> None:
         """Test that setup gracefully handles missing template directory."""
@@ -188,11 +189,9 @@ class TestConfigurationManager:
                 with open(example_ensemble) as f:
                     ensemble_data = yaml.safe_load(f)
                     assert ensemble_data["name"] == "example-local-ensemble"
-                    assert "coordinator" in ensemble_data
-                    assert (
-                        ensemble_data["coordinator"]["model_profile"]
-                        == "default-claude"
-                    )
+                    # New dependency-based architecture doesn't use coordinator
+                    assert "agents" in ensemble_data
+                    assert len(ensemble_data["agents"]) > 0
 
                 # Check gitignore was created
                 gitignore_file = local_dir / ".gitignore"

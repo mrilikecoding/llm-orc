@@ -167,7 +167,9 @@ class EnsembleExecutor:
                     agent_config
                 )
                 timeout = enhanced_config.get("timeout_seconds") or (
-                    config.coordinator.get("timeout_seconds")
+                    self._performance_config.get("execution", {}).get(
+                        "default_timeout", 60
+                    )
                 )
                 agent_result, model_instance = await self._execute_agent_with_timeout(
                     agent_config, input_data, timeout
@@ -240,23 +242,8 @@ class EnsembleExecutor:
             ):
                 has_errors = True
 
-        # Synthesize results if coordinator is configured
-        synthesis_usage = None
-        if config.coordinator.get("synthesis_prompt"):
-            try:
-                synthesis_timeout = config.coordinator.get("synthesis_timeout_seconds")
-                synthesis_result = await self._synthesize_results_with_timeout(
-                    config, results_dict, synthesis_timeout
-                )
-                synthesis, synthesis_model = synthesis_result
-                result["synthesis"] = synthesis
-                synthesis_usage = synthesis_model.get_last_usage()
-            except Exception as e:
-                result["synthesis"] = f"Synthesis failed: {str(e)}"
-                has_errors = True
-
-        # Calculate usage totals
-        usage_summary = self._calculate_usage_summary(agent_usage, synthesis_usage)
+        # Calculate usage totals (no coordinator synthesis in dependency-based model)
+        usage_summary = self._calculate_usage_summary(agent_usage, None)
 
         # Finalize result
         end_time = time.time()
@@ -465,58 +452,6 @@ class EnsembleExecutor:
                 click.echo(f"🔄 Using configured fallback instead of '{model_name}'")
                 return await self._get_fallback_model("general")
 
-    async def _synthesize_results(
-        self, config: EnsembleConfig, agent_results: dict[str, Any]
-    ) -> tuple[str, ModelInterface]:
-        """Synthesize results from all agents."""
-        synthesis_model = await self._get_synthesis_model(config)
-
-        # Prepare synthesis prompt with agent results
-        results_text = ""
-        for agent_name, result in agent_results.items():
-            if result["status"] == "success":
-                results_text += f"\n{agent_name}: {result['response']}\n"
-            else:
-                results_text += f"\n{agent_name}: [Error: {result['error']}]\n"
-
-        # Prepare role and message for coordinator
-        coordinator_role = config.coordinator.get("system_prompt")
-        synthesis_instructions = config.coordinator["synthesis_prompt"]
-
-        # If no coordinator system_prompt, use synthesis_prompt as role
-        if coordinator_role:
-            role_prompt = coordinator_role
-            message = f"{synthesis_instructions}\n\nAgent Results:{results_text}"
-        else:
-            role_prompt = synthesis_instructions
-            message = (
-                f"Please synthesize these results:\n\nAgent Results:{results_text}"
-            )
-
-        # Generate synthesis
-        response = await synthesis_model.generate_response(
-            message=message, role_prompt=role_prompt
-        )
-
-        return response, synthesis_model
-
-    async def _get_synthesis_model(self, config: EnsembleConfig) -> ModelInterface:
-        """Get model for synthesis based on coordinator configuration."""
-        # Check if coordinator specifies a model_profile or model
-        if config.coordinator.get("model_profile") or config.coordinator.get("model"):
-            try:
-                # Use the configured coordinator model
-                # (supports both model_profile and explicit model+provider)
-                return await self._load_model_from_agent_config(config.coordinator)
-            except Exception as e:
-                # Fallback to configured default model
-                click.echo(f"⚠️  Failed to load coordinator model: {str(e)}")
-                return await self._get_fallback_model("coordinator")
-        else:
-            # Use configured default for backward compatibility
-            click.echo("ℹ️  No coordinator model specified, using configured default")
-            return await self._get_fallback_model("coordinator")
-
     async def _get_fallback_model(self, context: str = "general") -> ModelInterface:
         """Get a fallback model - always use free local model for reliability."""
         import click
@@ -633,26 +568,6 @@ class EnsembleExecutor:
                 f"Agent execution timed out after {timeout_seconds} seconds"
             ) from e
 
-    async def _synthesize_results_with_timeout(
-        self,
-        config: EnsembleConfig,
-        agent_results: dict[str, Any],
-        timeout_seconds: int | None,
-    ) -> tuple[str, ModelInterface]:
-        """Synthesize results with optional timeout."""
-        if timeout_seconds is None:
-            # No timeout specified, execute normally
-            return await self._synthesize_results(config, agent_results)
-
-        try:
-            return await asyncio.wait_for(
-                self._synthesize_results(config, agent_results), timeout=timeout_seconds
-            )
-        except TimeoutError as e:
-            raise Exception(
-                f"Synthesis timed out after {timeout_seconds} seconds"
-            ) from e
-
     def _analyze_dependencies(
         self, llm_agents: list[dict[str, Any]]
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -661,7 +576,7 @@ class EnsembleExecutor:
         dependent_agents = []
 
         for agent_config in llm_agents:
-            dependencies = agent_config.get("dependencies", [])
+            dependencies = agent_config.get("depends_on", [])
             if dependencies and len(dependencies) > 0:
                 dependent_agents.append(agent_config)
             else:
@@ -681,10 +596,8 @@ class EnsembleExecutor:
         if not agents:
             return
 
-        # Get concurrency limit from config or use sensible default
-        max_concurrent = config.coordinator.get(
-            "max_concurrent_agents", self._get_effective_concurrency_limit(len(agents))
-        )
+        # Get concurrency limit from performance config or use sensible default
+        max_concurrent = self._get_effective_concurrency_limit(len(agents))
 
         # For small ensembles, run all in parallel
         # For large ensembles, use semaphore to limit concurrent execution
@@ -748,7 +661,9 @@ class EnsembleExecutor:
                         agent_config
                     )
                     timeout = enhanced_config.get("timeout_seconds") or (
-                        config.coordinator.get("timeout_seconds")
+                        self._performance_config.get("execution", {}).get(
+                            "default_timeout", 60
+                        )
                     )
                     result = await self._execute_agent_with_timeout(
                         agent_config, input_data, timeout
@@ -838,7 +753,9 @@ class EnsembleExecutor:
                         agent_config
                     )
                     timeout = enhanced_config.get("timeout_seconds") or (
-                        config.coordinator.get("timeout_seconds")
+                        self._performance_config.get("execution", {}).get(
+                            "default_timeout", 60
+                        )
                     )
                     result = await self._execute_agent_with_timeout(
                         agent_config, input_data, timeout

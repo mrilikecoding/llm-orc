@@ -23,10 +23,6 @@ class TestEnsembleScriptIntegration:
                     "timeout_seconds": 1,
                 }
             ],
-            coordinator={
-                "synthesis_prompt": "Summarize the script output",
-                "output_format": "json",
-            },
         )
 
         executor = EnsembleExecutor()
@@ -60,11 +56,6 @@ class TestEnsembleScriptIntegration:
                     "timeout_seconds": 2,
                 },
             ],
-            coordinator={
-                "synthesis_prompt": "Combine script and LLM outputs",
-                "output_format": "json",
-                "synthesis_timeout_seconds": 2,
-            },
         )
 
         executor = EnsembleExecutor()
@@ -88,7 +79,6 @@ class TestEnsembleScriptIntegration:
                     "command": "echo 'test'",
                 }
             ],
-            coordinator={"synthesis_prompt": "test"},
         )
 
         assert config.agents[0]["type"] == "script"

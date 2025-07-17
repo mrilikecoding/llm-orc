@@ -67,10 +67,6 @@ class TestEnhancedModelProfiles:
             name="test_ensemble",
             description="Test ensemble with model profile system prompt",
             agents=[{"name": "worker1", "model_profile": "worker_bee"}],
-            coordinator={
-                "synthesis_prompt": "Combine results",
-                "output_format": "text",
-            },
         )
 
         # Mock the configuration manager to return our enhanced profile
@@ -113,38 +109,20 @@ class TestEnhancedModelProfiles:
                     }
                     mock_load_model.return_value = mock_model
 
-                    # Mock synthesis
-                    with patch.object(
-                        executor, "_get_synthesis_model"
-                    ) as mock_synthesis:
-                        mock_synthesis_model = AsyncMock()
-                        mock_synthesis_model.generate_response.return_value = (
-                            "Synthesis result"
-                        )
-                        # For sync methods on async mock, explicitly set return value
-                        mock_synthesis_model.get_last_usage = lambda: {
-                            "total_tokens": 50,
-                            "input_tokens": 30,
-                            "output_tokens": 20,
-                            "cost_usd": 0.01,
-                            "duration_ms": 100,
-                        }
-                        mock_synthesis.return_value = mock_synthesis_model
+                    # Execute the ensemble (no synthesis in dependency-based arch)
+                    await executor.execute(config, "Test task")
 
-                        # Execute the ensemble
-                        await executor.execute(config, "Test task")
-
-                        # Verify the role was loaded with the system_prompt from
-                        # model profile
-                        mock_load_role.assert_called_once()
-                        # The agent config passed to _load_role_from_config is the
-                        # original config
-                        agent_config = mock_load_role.call_args[0][0]
-                        assert agent_config["name"] == "worker1"
-                        assert agent_config["model_profile"] == "worker_bee"
-                        # The enhanced config is resolved internally - verify
-                        # _resolve_model_profile_to_config was called
-                        assert mock_resolve.called
+                    # Verify the role was loaded with the system_prompt from
+                    # model profile
+                    mock_load_role.assert_called_once()
+                    # The agent config passed to _load_role_from_config is the
+                    # original config
+                    agent_config = mock_load_role.call_args[0][0]
+                    assert agent_config["name"] == "worker1"
+                    assert agent_config["model_profile"] == "worker_bee"
+                    # The enhanced config is resolved internally - verify
+                    # _resolve_model_profile_to_config was called
+                    assert mock_resolve.called
 
     @pytest.mark.asyncio
     async def test_ensemble_agent_uses_model_profile_timeout(self) -> None:
@@ -154,10 +132,6 @@ class TestEnhancedModelProfiles:
             name="test_ensemble",
             description="Test ensemble with model profile timeout",
             agents=[{"name": "worker1", "model_profile": "worker_bee"}],
-            coordinator={
-                "synthesis_prompt": "Combine results",
-                "output_format": "text",
-            },
         )
 
         # Mock the configuration manager to return our enhanced profile
@@ -181,31 +155,15 @@ class TestEnhancedModelProfiles:
             ) as mock_execute_timeout:
                 mock_execute_timeout.return_value = ("Task completed", None)
 
-                # Mock synthesis
-                with patch.object(executor, "_get_synthesis_model") as mock_synthesis:
-                    mock_synthesis_model = AsyncMock()
-                    mock_synthesis_model.generate_response.return_value = (
-                        "Synthesis result"
-                    )
-                    # For sync methods on async mock, explicitly set return value
-                    mock_synthesis_model.get_last_usage = lambda: {
-                        "total_tokens": 50,
-                        "input_tokens": 30,
-                        "output_tokens": 20,
-                        "cost_usd": 0.01,
-                        "duration_ms": 100,
-                    }
-                    mock_synthesis.return_value = mock_synthesis_model
+                # Execute the ensemble (no synthesis in dependency-based arch)
+                await executor.execute(config, "Test task")
 
-                    # Execute the ensemble
-                    await executor.execute(config, "Test task")
-
-                    # Verify the timeout was passed from model profile
-                    mock_execute_timeout.assert_called_once()
-                    timeout_arg = mock_execute_timeout.call_args[0][
-                        2
-                    ]  # Third argument is timeout
-                    assert timeout_arg == 30
+                # Verify the timeout was passed from model profile
+                mock_execute_timeout.assert_called_once()
+                timeout_arg = mock_execute_timeout.call_args[0][
+                    2
+                ]  # Third argument is timeout
+                assert timeout_arg == 30
 
     def test_model_profile_explicit_overrides_take_precedence(self) -> None:
         """Test that explicit agent config overrides model profile defaults."""

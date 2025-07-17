@@ -222,9 +222,13 @@ def invoke(
     # Show performance configuration for text output
     if output_format == "text":
         try:
-            config_manager.load_performance_config()
+            performance_config = config_manager.load_performance_config()
             effective_concurrency = executor._get_effective_concurrency_limit(
                 len(ensemble_config.agents)
+            )
+            # Determine effective streaming setting (CLI flag overrides config)
+            effective_streaming = streaming or performance_config.get(
+                "streaming_enabled", False
             )
             click.echo(
                 f"🚀 Executing ensemble '{ensemble_name}' with "
@@ -232,7 +236,7 @@ def invoke(
             )
             click.echo(
                 f"⚡ Performance: max_concurrent={effective_concurrency}, "
-                f"streaming={streaming}"
+                f"streaming={effective_streaming}"
             )
             click.echo("─" * 50)
         except Exception:
@@ -243,9 +247,15 @@ def invoke(
             click.echo(f"Input: {input_data}")
             click.echo("---")
 
+    # Determine effective streaming setting
+    performance_config = config_manager.load_performance_config()
+    effective_streaming = streaming or performance_config.get(
+        "streaming_enabled", False
+    )
+
     # Execute the ensemble
     try:
-        if streaming:
+        if effective_streaming:
             # Streaming execution
             async def run_streaming() -> None:
                 async for event in executor.execute_streaming(

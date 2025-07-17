@@ -9,12 +9,11 @@ import yaml
 
 @dataclass
 class EnsembleConfig:
-    """Configuration for an ensemble of agents."""
+    """Configuration for an ensemble of agents with dependency support."""
 
     name: str
     description: str
     agents: list[dict[str, Any]]
-    coordinator: dict[str, Any]
     default_task: str | None = None
     task: str | None = None  # Backward compatibility
 
@@ -34,14 +33,18 @@ class EnsembleLoader:
         # Support both default_task (preferred) and task (backward compatibility)
         default_task = data.get("default_task") or data.get("task")
 
-        return EnsembleConfig(
+        config = EnsembleConfig(
             name=data["name"],
             description=data["description"],
             agents=data["agents"],
-            coordinator=data["coordinator"],
             default_task=default_task,
             task=data.get("task"),  # Keep for backward compatibility
         )
+
+        # Validate agent dependencies
+        self._validate_dependencies(config.agents)
+
+        return config
 
     def list_ensembles(self, directory: str) -> list[EnsembleConfig]:
         """List all ensemble configurations in a directory."""
@@ -68,6 +71,54 @@ class EnsembleLoader:
                 continue
 
         return ensembles
+
+    def _validate_dependencies(self, agents: list[dict[str, Any]]) -> None:
+        """Validate agent dependencies for cycles and missing dependencies."""
+        # Create a map of agent names for quick lookup
+        agent_names = {agent["name"] for agent in agents}
+
+        # Check for missing dependencies
+        for agent in agents:
+            dependencies = agent.get("depends_on", [])
+            for dep in dependencies:
+                if dep not in agent_names:
+                    raise ValueError(
+                        f"Agent '{agent['name']}' has missing dependency: '{dep}'"
+                    )
+
+        # Check for circular dependencies using DFS
+        visited = set()
+        recursion_stack = set()
+
+        def has_cycle(agent_name: str) -> bool:
+            """Detect cycles using depth-first search."""
+            if agent_name in recursion_stack:
+                return True
+            if agent_name in visited:
+                return False
+
+            visited.add(agent_name)
+            recursion_stack.add(agent_name)
+
+            # Find agent config
+            agent_config = next((a for a in agents if a["name"] == agent_name), None)
+            if agent_config:
+                dependencies = agent_config.get("depends_on", [])
+                for dep in dependencies:
+                    if has_cycle(dep):
+                        return True
+
+            recursion_stack.remove(agent_name)
+            return False
+
+        # Check each agent for cycles
+        for agent in agents:
+            if agent["name"] not in visited:
+                if has_cycle(agent["name"]):
+                    raise ValueError(
+                        f"Circular dependency detected involving agent: "
+                        f"'{agent['name']}'"
+                    )
 
     def find_ensemble(self, directory: str, name: str) -> EnsembleConfig | None:
         """Find an ensemble by name in a directory."""

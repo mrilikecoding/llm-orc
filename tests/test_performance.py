@@ -281,7 +281,6 @@ class TestEnsembleExecutionPerformance:
             name="parallel-test-ensemble",
             description="Test parallel execution performance",
             agents=agent_configs,
-            coordinator={"synthesis_prompt": "Combine all results"},
         )
 
         executor = EnsembleExecutor()
@@ -352,7 +351,6 @@ class TestEnsembleExecutionPerformance:
             name="dependency-test-ensemble",
             description="Test dependency-aware execution",
             agents=agent_configs,
-            coordinator={"synthesis_prompt": "Final coordination"},
         )
 
         executor = EnsembleExecutor()
@@ -638,7 +636,6 @@ class TestEnsembleExecutionPerformance:
             name="parallel-model-loading-test",
             description="Test parallel model loading performance",
             agents=agent_configs,
-            coordinator={"type": "llm", "model": "mock-coordinator"},
         )
 
         executor = EnsembleExecutor()
@@ -735,7 +732,6 @@ class TestEnsembleExecutionPerformance:
             name="shared-model-test",
             description="Test model reuse optimization",
             agents=agent_configs,
-            coordinator={"type": "llm", "model": "mock-coordinator"},
         )
 
         executor = EnsembleExecutor()
@@ -827,7 +823,6 @@ class TestEnsembleExecutionPerformance:
             name="infrastructure-sharing-test",
             description="Test infrastructure sharing optimization",
             agents=agent_configs,
-            coordinator={"type": "llm", "model": "mock-coordinator"},
         )
 
         # Test with infrastructure sharing optimization
@@ -932,7 +927,6 @@ class TestEnsembleExecutionPerformance:
             name="performance-monitoring-test",
             description="Test performance monitoring hooks",
             agents=agent_configs,
-            coordinator={"type": "llm", "model": "mock-coordinator"},
         )
 
         executor = EnsembleExecutor()
@@ -1019,7 +1013,6 @@ class TestEnsembleExecutionPerformance:
             name="streaming-test",
             description="Test streaming execution interface",
             agents=agent_configs,
-            coordinator={"synthesis_prompt": "Combine results"},
         )
 
         executor = EnsembleExecutor()
@@ -1153,10 +1146,6 @@ class TestPerformanceBenchmarks:
                 {"name": "reviewer", "model": "mock-claude", "provider": "mock"},
                 {"name": "validator", "model": "mock-claude", "provider": "mock"},
             ],
-            coordinator={
-                "synthesis_prompt": "Synthesize the analysis results",
-                "timeout_seconds": 30,
-            },
         )
 
         # Create mock model with realistic timing
@@ -1219,10 +1208,6 @@ class TestPerformanceBenchmarks:
             name="scalability_benchmark",
             description="Large ensemble scalability test",
             agents=agents,
-            coordinator={
-                "synthesis_prompt": "Synthesize all results",
-                "timeout_seconds": 45,
-            },
         )
 
         # Create mock model with realistic timing
@@ -1278,9 +1263,6 @@ class TestPerformanceBenchmarks:
                 {"name": "stream_agent2", "model": "mock-model", "provider": "mock"},
                 {"name": "stream_agent3", "model": "mock-model", "provider": "mock"},
             ],
-            coordinator={
-                "synthesis_prompt": "Synthesize streaming results",
-            },
         )
 
         # Mock model with controlled timing
@@ -1392,9 +1374,6 @@ class TestPerformanceBenchmarks:
                 {"name": "monitor_agent1", "model": "mock-model", "provider": "mock"},
                 {"name": "monitor_agent2", "model": "mock-model", "provider": "mock"},
             ],
-            coordinator={
-                "synthesis_prompt": "Monitor performance",
-            },
         )
 
         # Mock model with usage tracking
@@ -1480,10 +1459,6 @@ class TestPerformanceBenchmarks:
                     "timeout_seconds": 0.1,  # Will timeout
                 },
             ],
-            coordinator={
-                "synthesis_prompt": "Handle timeout results",
-                "timeout_seconds": 5.0,
-            },
         )
 
         # Mock fast and slow models
@@ -1562,9 +1537,6 @@ class TestPerformanceBenchmarks:
                 {"name": "memory_agent2", "model": "mock-model", "provider": "mock"},
                 {"name": "memory_agent3", "model": "mock-model", "provider": "mock"},
             ],
-            coordinator={
-                "synthesis_prompt": "Test memory efficiency",
-            },
         )
 
         # Mock model with memory-conscious response
@@ -1642,10 +1614,6 @@ class TestPerformanceBenchmarks:
             name="concurrency_test",
             description="Test concurrency control",
             agents=agents,
-            coordinator={
-                "max_concurrent_agents": 5,  # Explicit limit
-                # No synthesis to avoid complexity
-            },
         )
 
         # Track concurrent execution
