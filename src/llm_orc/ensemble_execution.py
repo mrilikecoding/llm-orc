@@ -32,6 +32,9 @@ class EnsembleExecutor:
         self._config_manager = ConfigurationManager()
         self._credential_storage = CredentialStorage(self._config_manager)
 
+        # Load performance configuration
+        self._performance_config = self._config_manager.load_performance_config()
+
         # Performance monitoring hooks for Issue #27 visualization integration
         self._performance_hooks: list[Callable[[str, dict[str, Any]], None]] = []
 
@@ -67,7 +70,7 @@ class EnsembleExecutor:
                 "ensemble": config.name,
                 "timestamp": start_time,
                 "total_agents": len(config.agents),
-            }
+            },
         }
 
         # Set up progress tracking
@@ -83,18 +86,15 @@ class EnsembleExecutor:
         # Execute the ensemble using the existing execute method
         try:
             # Create task for execution
-            execution_task = asyncio.create_task(
-                self.execute(config, input_data)
-            )
+            execution_task = asyncio.create_task(self.execute(config, input_data))
 
             # Monitor progress while execution runs
             last_progress_count = 0
             while not execution_task.done():
                 # Check for new progress events
-                completed_count = len([
-                    e for e in progress_events
-                    if e["type"] == "agent_completed"
-                ])
+                completed_count = len(
+                    [e for e in progress_events if e["type"] == "agent_completed"]
+                )
 
                 # Emit progress update if we have new completions
                 if completed_count > last_progress_count:
@@ -105,9 +105,10 @@ class EnsembleExecutor:
                             "total_agents": len(config.agents),
                             "progress_percentage": (
                                 completed_count / len(config.agents)
-                            ) * 100,
+                            )
+                            * 100,
                             "timestamp": time.time(),
-                        }
+                        },
                     }
                     last_progress_count = completed_count
 
@@ -127,7 +128,7 @@ class EnsembleExecutor:
                     "results": final_result["results"],
                     "metadata": final_result["metadata"],
                     "status": final_result["status"],
-                }
+                },
             }
 
         finally:
@@ -676,12 +677,56 @@ class EnsembleExecutor:
         results_dict: dict[str, Any],
         agent_usage: dict[str, Any],
     ) -> None:
-        """Execute a list of agents in parallel."""
+        """Execute a list of agents in parallel with resource management."""
         if not agents:
             return
 
-        # Execute all agents in parallel using asyncio.create_task for concurrent
-        # execution
+        # Get concurrency limit from config or use sensible default
+        max_concurrent = config.coordinator.get(
+            "max_concurrent_agents", self._get_effective_concurrency_limit(len(agents))
+        )
+
+        # For small ensembles, run all in parallel
+        # For large ensembles, use semaphore to limit concurrent execution
+        if len(agents) <= max_concurrent:
+            await self._execute_agents_unlimited(
+                agents, input_data, config, results_dict, agent_usage
+            )
+        else:
+            await self._execute_agents_with_semaphore(
+                agents, input_data, config, results_dict, agent_usage, max_concurrent
+            )
+
+    def _get_effective_concurrency_limit(self, agent_count: int) -> int:
+        """Get effective concurrency limit based on configuration and agent count."""
+        # Check performance configuration first
+        configured_limit = self._performance_config.get("concurrency", {}).get(
+            "max_concurrent_agents", 0
+        )
+
+        # If explicitly configured and > 0, use it
+        if isinstance(configured_limit, int) and configured_limit > 0:
+            return configured_limit
+
+        # Otherwise use smart defaults based on agent count and system resources
+        if agent_count <= 3:
+            return agent_count  # Small ensembles: run all in parallel
+        elif agent_count <= 10:
+            return 5  # Medium ensembles: limit to 5 concurrent
+        elif agent_count <= 20:
+            return 8  # Large ensembles: limit to 8 concurrent
+        else:
+            return 10  # Very large ensembles: cap at 10 concurrent
+
+    async def _execute_agents_unlimited(
+        self,
+        agents: list[dict[str, Any]],
+        input_data: str,
+        config: EnsembleConfig,
+        results_dict: dict[str, Any],
+        agent_usage: dict[str, Any],
+    ) -> None:
+        """Execute agents without concurrency limits (for small ensembles)."""
         try:
 
             async def execute_agent_task(
@@ -752,34 +797,135 @@ class EnsembleExecutor:
             # Wait for all tasks to complete
             agent_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            for execution_result in agent_results:
-                if isinstance(execution_result, Exception):
-                    # If we can't determine agent name from exception, skip this result
-                    # The agent task should handle its own error recording
-                    continue
-                else:
-                    # execution_result is tuple[str, Any]
-                    agent_name, result = execution_result  # type: ignore[misc]
-                    if result is None:
-                        # Error was already recorded in create_agent_task
-                        continue
+            self._process_agent_results(agent_results, results_dict, agent_usage)
 
-                    # result is tuple[str, ModelInterface | None]
-                    response, model_instance = result
-                    results_dict[agent_name] = {
-                        "response": response,
-                        "status": "success",
-                    }
-                    # Collect usage metrics (only for LLM agents)
-                    if model_instance is not None:
-                        usage = model_instance.get_last_usage()
-                        if usage:
-                            agent_usage[agent_name] = usage
         except Exception as e:
             # Fallback: if gather fails, mark all agents as failed
             for agent_config in agents:
                 agent_name = agent_config["name"]
                 results_dict[agent_name] = {"error": str(e), "status": "failed"}
+
+    async def _execute_agents_with_semaphore(
+        self,
+        agents: list[dict[str, Any]],
+        input_data: str,
+        config: EnsembleConfig,
+        results_dict: dict[str, Any],
+        agent_usage: dict[str, Any],
+        max_concurrent: int,
+    ) -> None:
+        """Execute agents with semaphore-based concurrency control."""
+        # Create semaphore to limit concurrent execution
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        async def execute_agent_with_semaphore(
+            agent_config: dict[str, Any],
+        ) -> tuple[str, Any]:
+            """Execute agent with semaphore control."""
+            async with semaphore:
+                agent_name = agent_config["name"]
+                agent_start_time = time.time()
+
+                # Emit agent started event
+                self._emit_performance_event(
+                    "agent_started",
+                    {"agent_name": agent_name, "timestamp": agent_start_time},
+                )
+
+                try:
+                    # Resolve config and execute
+                    enhanced_config = await self._resolve_model_profile_to_config(
+                        agent_config
+                    )
+                    timeout = enhanced_config.get("timeout_seconds") or (
+                        config.coordinator.get("timeout_seconds")
+                    )
+                    result = await self._execute_agent_with_timeout(
+                        agent_config, input_data, timeout
+                    )
+
+                    # Emit agent completed event with duration
+                    agent_end_time = time.time()
+                    duration_ms = int((agent_end_time - agent_start_time) * 1000)
+                    self._emit_performance_event(
+                        "agent_completed",
+                        {
+                            "agent_name": agent_name,
+                            "timestamp": agent_end_time,
+                            "duration_ms": duration_ms,
+                        },
+                    )
+
+                    return agent_name, result
+                except Exception as e:
+                    # Emit agent completed event with error
+                    agent_end_time = time.time()
+                    duration_ms = int((agent_end_time - agent_start_time) * 1000)
+                    self._emit_performance_event(
+                        "agent_completed",
+                        {
+                            "agent_name": agent_name,
+                            "timestamp": agent_end_time,
+                            "duration_ms": duration_ms,
+                            "error": str(e),
+                        },
+                    )
+
+                    # Record error in results dict and return error indicator
+                    results_dict[agent_name] = {
+                        "error": str(e),
+                        "status": "failed",
+                    }
+                    return agent_name, None
+
+        try:
+            # Create tasks with semaphore control
+            tasks = [
+                asyncio.create_task(execute_agent_with_semaphore(agent_config))
+                for agent_config in agents
+            ]
+
+            # Wait for all tasks to complete
+            agent_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            self._process_agent_results(agent_results, results_dict, agent_usage)
+
+        except Exception as e:
+            # Fallback: if gather fails, mark all agents as failed
+            for agent_config in agents:
+                agent_name = agent_config["name"]
+                results_dict[agent_name] = {"error": str(e), "status": "failed"}
+
+    def _process_agent_results(
+        self,
+        agent_results: list[Any],
+        results_dict: dict[str, Any],
+        agent_usage: dict[str, Any],
+    ) -> None:
+        """Process results from agent execution."""
+        for execution_result in agent_results:
+            if isinstance(execution_result, Exception):
+                # If we can't determine agent name from exception, skip this result
+                # The agent task should handle its own error recording
+                continue
+            else:
+                # execution_result is tuple[str, Any]
+                agent_name, result = execution_result
+                if result is None:
+                    # Error was already recorded in execute_agent_task
+                    continue
+
+                # result is tuple[str, ModelInterface | None]
+                response, model_instance = result
+                results_dict[agent_name] = {
+                    "response": response,
+                    "status": "success",
+                }
+                # Collect usage metrics (only for LLM agents)
+                if model_instance is not None:
+                    usage = model_instance.get_last_usage()
+                    if usage:
+                        agent_usage[agent_name] = usage
 
     def _enhance_input_with_dependencies(
         self,

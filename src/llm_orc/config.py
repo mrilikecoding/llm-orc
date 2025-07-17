@@ -152,6 +152,64 @@ class ConfigurationManager:
         except Exception:
             return {}
 
+    def _load_global_config(self) -> dict[str, Any]:
+        """Load global configuration from config.yaml file."""
+        config_file = self._global_config_dir / "config.yaml"
+        if not config_file.exists():
+            return {}
+
+        try:
+            with open(config_file) as f:
+                return yaml.safe_load(f) or {}
+        except Exception:
+            return {}
+
+    def load_performance_config(self) -> dict[str, Any]:
+        """Load performance configuration with sensible defaults."""
+        # Default performance settings
+        defaults = {
+            "concurrency": {
+                "max_concurrent_agents": 0,  # 0 = use smart defaults
+                "connection_pool": {
+                    "max_connections": 100,
+                    "max_keepalive": 20,
+                    "keepalive_expiry": 30,
+                },
+            },
+            "execution": {
+                "default_timeout": 60,
+                "monitoring_enabled": True,
+                "streaming_enabled": True,
+            },
+            "memory": {
+                "efficient_mode": False,
+                "max_memory_mb": 0,  # 0 = unlimited
+            },
+        }
+
+        # Try to load from global config
+        global_config = self._load_global_config()
+        global_performance = global_config.get("performance", {})
+
+        # Try to load from local config
+        local_config = self.load_project_config()
+        local_performance = local_config.get("performance", {})
+
+        # Merge configurations: defaults -> global -> local
+        merged_config = defaults.copy()
+        self._deep_merge_dict(merged_config, global_performance)
+        self._deep_merge_dict(merged_config, local_performance)
+
+        return merged_config
+
+    def _deep_merge_dict(self, base: dict[str, Any], overlay: dict[str, Any]) -> None:
+        """Deep merge overlay dict into base dict."""
+        for key, value in overlay.items():
+            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+                self._deep_merge_dict(base[key], value)
+            else:
+                base[key] = value
+
     def init_local_config(self, project_name: str | None = None) -> None:
         """Initialize local configuration in current directory."""
         local_dir = Path.cwd() / ".llm-orc"
