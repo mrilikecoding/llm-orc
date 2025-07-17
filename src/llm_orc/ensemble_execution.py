@@ -24,6 +24,13 @@ from llm_orc.script_agent import ScriptAgent
 class EnsembleExecutor:
     """Executes ensembles of agents and coordinates their responses."""
 
+    def __init__(self) -> None:
+        """Initialize the ensemble executor with shared infrastructure."""
+        # Share configuration and credential infrastructure across model loads
+        # but keep model instances separate for independent contexts
+        self._config_manager = ConfigurationManager()
+        self._credential_storage = CredentialStorage(self._config_manager)
+
     async def execute(self, config: EnsembleConfig, input_data: str) -> dict[str, Any]:
         """Execute an ensemble and return structured results."""
         start_time = time.time()
@@ -73,7 +80,7 @@ class EnsembleExecutor:
                 }
                 has_errors = True
 
-        # Phase 2: Execute LLM agents with context from script agents
+        # Phase 2: Execute LLM agents with dependency-aware phasing
         llm_agents = [a for a in config.agents if a.get("type") != "script"]
 
         # Prepare enhanced input for LLM agents
@@ -96,52 +103,36 @@ class EnsembleExecutor:
             )
             enhanced_input = f"{task_input}\n\n{context_text}"
 
-        # Execute LLM agents in parallel with enhanced input
-        agent_tasks = []
-        agent_names = []
-        for agent_config in llm_agents:
-            # Resolve model profile to get enhanced configuration
-            enhanced_config = await self._resolve_model_profile_to_config(agent_config)
-            timeout = enhanced_config.get("timeout_seconds") or (
-                config.coordinator.get("timeout_seconds")
-            )
-            task = self._execute_agent_with_timeout(
-                agent_config, enhanced_input, timeout
-            )
-            agent_tasks.append(task)
-            agent_names.append(agent_config["name"])
+        # Analyze dependencies to determine execution phases
+        independent_agents, dependent_agents = self._analyze_dependencies(llm_agents)
 
-        # Wait for all LLM agents to complete in parallel
-        if agent_tasks:
-            try:
-                agent_results = await asyncio.gather(
-                    *agent_tasks, return_exceptions=True
-                )
+        # Phase 2.1: Execute independent LLM agents in parallel
+        if independent_agents:
+            await self._execute_agents_parallel(
+                independent_agents, enhanced_input, config, results_dict, agent_usage
+            )
+            if any(
+                result.get("status") == "failed" for result in results_dict.values()
+            ):
+                has_errors = True
 
-                for i, execution_result in enumerate(agent_results):
-                    agent_name = agent_names[i]
-                    if isinstance(execution_result, Exception):
-                        results_dict[agent_name] = {
-                            "error": str(execution_result),
-                            "status": "failed",
-                        }
-                        has_errors = True
-                    else:
-                        # execution_result is tuple[str, ModelInterface | None]
-                        response, model_instance = execution_result  # type: ignore[misc]
-                        results_dict[agent_name] = {
-                            "response": response,
-                            "status": "success",
-                        }
-                        # Collect usage metrics (only for LLM agents)
-                        if model_instance is not None:
-                            usage = model_instance.get_last_usage()
-                            if usage:
-                                agent_usage[agent_name] = usage
-            except Exception as e:
-                # Fallback: if gather fails, mark all agents as failed
-                for agent_name in agent_names:
-                    results_dict[agent_name] = {"error": str(e), "status": "failed"}
+        # Phase 2.2: Execute dependent agents with results from independent agents
+        if dependent_agents:
+            # Enhance input with results from independent agents
+            enhanced_input_with_deps = self._enhance_input_with_dependencies(
+                enhanced_input, dependent_agents, results_dict
+            )
+
+            await self._execute_agents_parallel(
+                dependent_agents,
+                enhanced_input_with_deps,
+                config,
+                results_dict,
+                agent_usage,
+            )
+            if any(
+                result.get("status") == "failed" for result in results_dict.values()
+            ):
                 has_errors = True
 
         # Synthesize results if coordinator is configured
@@ -224,8 +215,7 @@ class EnsembleExecutor:
 
         # If model_profile is specified, get its configuration
         if "model_profile" in agent_config:
-            config_manager = ConfigurationManager()
-            profiles = config_manager.get_model_profiles()
+            profiles = self._config_manager.get_model_profiles()
 
             profile_name = agent_config["model_profile"]
             if profile_name in profiles:
@@ -251,13 +241,11 @@ class EnsembleExecutor:
 
         Configuration can specify model_profile or model+provider.
         """
-        config_manager = ConfigurationManager()
-
         # Check if model_profile is specified (takes precedence)
         if "model_profile" in agent_config:
             profile_name = agent_config["model_profile"]
-            resolved_model, resolved_provider = config_manager.resolve_model_profile(
-                profile_name
+            resolved_model, resolved_provider = (
+                self._config_manager.resolve_model_profile(profile_name)
             )
             return await self._load_model(resolved_model, resolved_provider)
 
@@ -284,9 +272,9 @@ class EnsembleExecutor:
             mock.generate_response.return_value = f"Response from {model_name}"
             return mock
 
-        # Initialize configuration and credential storage
-        config_manager = ConfigurationManager()
-        storage = CredentialStorage(config_manager)
+        # Use shared configuration and credential storage for efficiency
+        # Each model instance remains independent for separate contexts
+        storage = self._credential_storage
 
         try:
             # Get authentication method for the provider configuration
@@ -559,6 +547,198 @@ class EnsembleExecutor:
             raise Exception(
                 f"Synthesis timed out after {timeout_seconds} seconds"
             ) from e
+
+    def _analyze_dependencies(
+        self, llm_agents: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Analyze agent dependencies and return independent and dependent agents."""
+        independent_agents = []
+        dependent_agents = []
+
+        for agent_config in llm_agents:
+            dependencies = agent_config.get("dependencies", [])
+            if dependencies and len(dependencies) > 0:
+                dependent_agents.append(agent_config)
+            else:
+                independent_agents.append(agent_config)
+
+        return independent_agents, dependent_agents
+
+    async def _execute_agents_parallel(
+        self,
+        agents: list[dict[str, Any]],
+        input_data: str,
+        config: EnsembleConfig,
+        results_dict: dict[str, Any],
+        agent_usage: dict[str, Any],
+    ) -> None:
+        """Execute a list of agents in parallel."""
+        if not agents:
+            return
+
+        # Execute all agents in parallel using asyncio.create_task for concurrent
+        # execution
+        try:
+
+            async def execute_agent_task(
+                agent_config: dict[str, Any],
+            ) -> tuple[str, Any]:
+                """Execute a single agent task."""
+                agent_name = agent_config["name"]
+                try:
+                    # Resolve config and execute - all happening in parallel per agent
+                    enhanced_config = await self._resolve_model_profile_to_config(
+                        agent_config
+                    )
+                    timeout = enhanced_config.get("timeout_seconds") or (
+                        config.coordinator.get("timeout_seconds")
+                    )
+                    result = await self._execute_agent_with_timeout(
+                        agent_config, input_data, timeout
+                    )
+                    return agent_name, result
+                except Exception as e:
+                    # Record error in results dict and return error indicator
+                    results_dict[agent_name] = {
+                        "error": str(e),
+                        "status": "failed",
+                    }
+                    return agent_name, None
+
+            # Create tasks using create_task to ensure they start immediately
+            tasks = [
+                asyncio.create_task(execute_agent_task(agent_config))
+                for agent_config in agents
+            ]
+
+            # Wait for all tasks to complete
+            agent_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for execution_result in agent_results:
+                if isinstance(execution_result, Exception):
+                    # If we can't determine agent name from exception, skip this result
+                    # The agent task should handle its own error recording
+                    continue
+                else:
+                    # execution_result is tuple[str, Any]
+                    agent_name, result = execution_result  # type: ignore[misc]
+                    if result is None:
+                        # Error was already recorded in create_agent_task
+                        continue
+
+                    # result is tuple[str, ModelInterface | None]
+                    response, model_instance = result
+                    results_dict[agent_name] = {
+                        "response": response,
+                        "status": "success",
+                    }
+                    # Collect usage metrics (only for LLM agents)
+                    if model_instance is not None:
+                        usage = model_instance.get_last_usage()
+                        if usage:
+                            agent_usage[agent_name] = usage
+        except Exception as e:
+            # Fallback: if gather fails, mark all agents as failed
+            for agent_config in agents:
+                agent_name = agent_config["name"]
+                results_dict[agent_name] = {"error": str(e), "status": "failed"}
+
+    def _enhance_input_with_dependencies(
+        self,
+        base_input: str,
+        dependent_agents: list[dict[str, Any]],
+        results_dict: dict[str, Any],
+    ) -> str:
+        """Enhance input with dependency results for dependent agents."""
+        # For now, use the same enhanced input for all dependent agents
+        # In future iterations, we could customize input per agent based on dependencies
+        dependency_results = []
+
+        for agent_config in dependent_agents:
+            dependencies = agent_config.get("dependencies", [])
+            for dep_name in dependencies:
+                if (
+                    dep_name in results_dict
+                    and results_dict[dep_name].get("status") == "success"
+                ):
+                    response = results_dict[dep_name]["response"]
+                    dependency_results.append(f"=== {dep_name} ===\n{response}")
+
+        if dependency_results:
+            deps_text = "\n\n".join(dependency_results)
+            return f"{base_input}\n\nDependency Results:\n{deps_text}"
+
+        return base_input
+
+    def _analyze_enhanced_dependency_graph(
+        self, agent_configs: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Analyze agent dependencies and organize into execution phases.
+
+        Uses topological sort to determine optimal execution order for agents
+        with dependencies. Agents with no dependencies can run in parallel.
+
+        Args:
+            agent_configs: List of agent configurations with optional dependencies
+
+        Returns:
+            Dictionary containing:
+            - phases: List of agent lists, each phase can run in parallel
+            - dependency_map: Mapping of agent names to their dependencies
+            - total_phases: Number of execution phases
+
+        Raises:
+            ValueError: If circular dependencies are detected
+        """
+        # Build dependency map for efficient lookup
+        dependency_map = {
+            agent_config["name"]: agent_config.get("dependencies", [])
+            for agent_config in agent_configs
+        }
+
+        # Topological sort to determine execution phases
+        phases = []
+        remaining_agents = agent_configs.copy()
+        processed_agents: set[str] = set()
+
+        while remaining_agents:
+            current_phase = []
+            agents_to_remove = []
+
+            # Find agents whose dependencies have been processed
+            for agent_config in remaining_agents:
+                agent_name = agent_config["name"]
+                dependencies = dependency_map[agent_name]
+
+                # Agent is ready if it has no dependencies or all are processed
+                if self._agent_dependencies_satisfied(dependencies, processed_agents):
+                    current_phase.append(agent_config)
+                    agents_to_remove.append(agent_config)
+
+            # Update processed agents and remove from remaining
+            for agent_config in agents_to_remove:
+                processed_agents.add(agent_config["name"])
+                remaining_agents.remove(agent_config)
+
+            # Detect circular dependencies
+            if not current_phase:
+                raise ValueError("Circular dependency detected in agent configuration")
+
+            phases.append(current_phase)
+
+        return {
+            "phases": phases,
+            "dependency_map": dependency_map,
+            "total_phases": len(phases),
+        }
+
+    def _agent_dependencies_satisfied(
+        self, dependencies: list[str], processed_agents: set[str]
+    ) -> bool:
+        """Check if an agent's dependencies have been processed."""
+        return len(dependencies) == 0 or all(
+            dep in processed_agents for dep in dependencies
+        )
 
 
 def _should_prompt_for_auth(model_name: str) -> bool:

@@ -635,18 +635,13 @@ class TestEnsembleExecutor:
         """Test _load_model resolves auth configurations to model instances."""
         executor = EnsembleExecutor()
 
-        # Mock authentication system
+        # Mock the shared authentication system instances
         with (
-            patch("llm_orc.ensemble_execution.ConfigurationManager"),
-            patch(
-                "llm_orc.ensemble_execution.CredentialStorage"
-            ) as mock_credential_storage,
+            patch.object(executor, "_credential_storage") as mock_storage,
         ):
-            mock_storage_instance = mock_credential_storage.return_value
-
             # Test 1: Load model for "anthropic-api" auth configuration
-            mock_storage_instance.get_auth_method.return_value = "api_key"
-            mock_storage_instance.get_api_key.return_value = "sk-ant-test123"
+            mock_storage.get_auth_method.return_value = "api_key"
+            mock_storage.get_api_key.return_value = "sk-ant-test123"
 
             model = await executor._load_model("anthropic-api")
 
@@ -655,8 +650,8 @@ class TestEnsembleExecutor:
             assert model.api_key == "sk-ant-test123"
 
             # Test 2: Load model for "anthropic-claude-pro-max" OAuth configuration
-            mock_storage_instance.get_auth_method.return_value = "oauth"
-            mock_storage_instance.get_oauth_token.return_value = {
+            mock_storage.get_auth_method.return_value = "oauth"
+            mock_storage.get_oauth_token.return_value = {
                 "access_token": "oauth_access_token",
                 "refresh_token": "oauth_refresh_token",
                 "client_id": "oauth_client_id",
@@ -672,8 +667,8 @@ class TestEnsembleExecutor:
 
             # Test 3: Load model for "claude-cli" configuration
             # claude-cli stores path as "api_key"
-            mock_storage_instance.get_auth_method.return_value = "api_key"
-            mock_storage_instance.get_api_key.return_value = "/usr/local/bin/claude"
+            mock_storage.get_auth_method.return_value = "api_key"
+            mock_storage.get_api_key.return_value = "/usr/local/bin/claude"
 
             model = await executor._load_model("claude-cli")
 
@@ -688,27 +683,22 @@ class TestEnsembleExecutor:
 
         # Mock authentication system - no auth method configured
         with (
-            patch("llm_orc.ensemble_execution.ConfigurationManager"),
-            patch(
-                "llm_orc.ensemble_execution.CredentialStorage"
-            ) as mock_credential_storage,
             patch(
                 "llm_orc.ensemble_execution._should_prompt_for_auth", return_value=True
             ),
             patch("llm_orc.ensemble_execution._prompt_auth_setup") as mock_prompt_setup,
+            patch.object(executor, "_credential_storage") as mock_storage,
         ):
-            mock_storage_instance = mock_credential_storage.return_value
-
             # Simulate no auth method configured
-            mock_storage_instance.get_auth_method.return_value = None
+            mock_storage.get_auth_method.return_value = None
 
             # Mock successful auth setup
             mock_prompt_setup.return_value = True
 
             # After setup, mock the configured auth method
             # First call: None, second call: oauth
-            mock_storage_instance.get_auth_method.side_effect = [None, "oauth"]
-            mock_storage_instance.get_oauth_token.return_value = {
+            mock_storage.get_auth_method.side_effect = [None, "oauth"]
+            mock_storage.get_oauth_token.return_value = {
                 "access_token": "new_oauth_token",
                 "refresh_token": "new_refresh_token",
                 "client_id": "new_client_id",
@@ -718,7 +708,7 @@ class TestEnsembleExecutor:
 
             # Should prompt for auth setup
             mock_prompt_setup.assert_called_once_with(
-                "anthropic-claude-pro-max", mock_storage_instance
+                "anthropic-claude-pro-max", mock_storage
             )
 
             # Should create OAuthClaudeModel after setup
@@ -731,19 +721,14 @@ class TestEnsembleExecutor:
 
         # Mock authentication system - no auth method configured
         with (
-            patch("llm_orc.ensemble_execution.ConfigurationManager"),
-            patch(
-                "llm_orc.ensemble_execution.CredentialStorage"
-            ) as mock_credential_storage,
             patch(
                 "llm_orc.ensemble_execution._should_prompt_for_auth", return_value=True
             ),
             patch("llm_orc.ensemble_execution._prompt_auth_setup") as mock_prompt_setup,
+            patch.object(executor, "_credential_storage") as mock_storage,
         ):
-            mock_storage_instance = mock_credential_storage.return_value
-
             # Simulate no auth method configured
-            mock_storage_instance.get_auth_method.return_value = None
+            mock_storage.get_auth_method.return_value = None
 
             # User declines to set up authentication
             mock_prompt_setup.return_value = False
@@ -752,7 +737,7 @@ class TestEnsembleExecutor:
 
             # Should prompt user for auth setup
             mock_prompt_setup.assert_called_once_with(
-                "anthropic-claude-pro-max", mock_storage_instance
+                "anthropic-claude-pro-max", mock_storage
             )
 
             # Should fall back to Ollama
@@ -814,20 +799,18 @@ class TestEnsembleExecutor:
             executor = EnsembleExecutor()
 
             # Test the _load_model_from_agent_config method directly
-            with patch(
-                "llm_orc.ensemble_execution.ConfigurationManager"
-            ) as mock_config_manager_class:
-                mock_config_manager = mock_config_manager_class.return_value
-                mock_config_manager.resolve_model_profile.return_value = (
+            with patch.object(
+                executor._config_manager, "resolve_model_profile"
+            ) as mock_resolve_model_profile:
+                mock_resolve_model_profile.return_value = (
                     "claude-3-5-sonnet-20241022",
                     "anthropic-claude-pro-max",
                 )
 
-                with patch(
-                    "llm_orc.ensemble_execution.CredentialStorage"
-                ) as mock_credential_storage:
-                    mock_storage_instance = mock_credential_storage.return_value
-                    mock_storage_instance.get_auth_method.return_value = None
+                with patch.object(
+                    executor._credential_storage, "get_auth_method"
+                ) as mock_get_auth_method:
+                    mock_get_auth_method.return_value = None
 
                     # This should call resolve_model_profile and use the resolved
                     # model+provider
@@ -838,7 +821,7 @@ class TestEnsembleExecutor:
                     )
 
                     # Verify that resolve_model_profile was called
-                    mock_config_manager.resolve_model_profile.assert_called_once_with(
+                    mock_resolve_model_profile.assert_called_once_with(
                         "test-profile"
                     )
 
