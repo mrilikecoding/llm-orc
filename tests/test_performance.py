@@ -1,6 +1,7 @@
 """Performance tests for agent orchestration."""
 
 import time
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -317,3 +318,135 @@ class TestEnsembleExecutionPerformance:
         assert len(result["results"]) == 3
         for i in range(3):
             assert f"agent_{i}" in result["results"]
+
+    @pytest.mark.asyncio
+    async def test_dependency_aware_execution_order(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should execute agents in correct order when dependencies exist."""
+        from llm_orc.ensemble_config import EnsembleConfig
+        from llm_orc.ensemble_execution import EnsembleExecutor
+
+        # Arrange - Create ensemble where synthesizer depends on 3 reviewers
+        agent_configs: list[dict[str, Any]] = [
+            # Independent agents (should run in parallel)
+            {"name": "security_reviewer", "model": "mock-security", "provider": "mock"},
+            {"name": "performance_reviewer", "model": "mock-perf", "provider": "mock"},
+            {"name": "style_reviewer", "model": "mock-style", "provider": "mock"},
+            # Dependent agent (should run after the above 3)
+            {
+                "name": "synthesizer",
+                "model": "mock-synthesizer",
+                "provider": "mock",
+                "dependencies": [
+                    "security_reviewer",
+                    "performance_reviewer", 
+                    "style_reviewer"
+                ],
+            },
+        ]
+
+        config = EnsembleConfig(
+            name="dependency-test-ensemble",
+            description="Test dependency-aware execution",
+            agents=agent_configs,
+            coordinator={"synthesis_prompt": "Final coordination"},
+        )
+
+        executor = EnsembleExecutor()
+
+        # Track execution order with mock that records call times
+        execution_times: dict[str, float] = {}
+        call_count = 0
+
+        def track_execution_time(model_name: str) -> str:
+            nonlocal call_count
+            call_count += 1
+            execution_times[model_name] = time.perf_counter()
+            return f"Response from {model_name}"
+
+        # Mock the model loading to track execution order
+        fast_mock_model = AsyncMock(spec=ModelInterface)
+        fast_mock_model.generate_response.side_effect = lambda message, role_prompt=None: track_execution_time(
+            fast_mock_model._model_name
+        )
+        fast_mock_model.get_last_usage.return_value = {
+            "total_tokens": 10,
+            "input_tokens": 5,
+            "output_tokens": 5,
+            "cost_usd": 0.001,
+            "duration_ms": 1,
+        }
+
+        def create_tracked_model(model_name: str) -> AsyncMock:
+            mock = AsyncMock(spec=ModelInterface)
+            mock._model_name = model_name  # Store model name for tracking
+            mock.generate_response.side_effect = lambda message, role_prompt=None: track_execution_time(model_name)
+            mock.get_last_usage.return_value = fast_mock_model.get_last_usage.return_value
+            return mock
+
+        # Mock model loading to return tracked models
+        async def mock_load_model(model_name: str, provider: str | None = None) -> AsyncMock:
+            return create_tracked_model(model_name)
+
+        monkeypatch.setattr(executor, "_load_model", mock_load_model)
+
+        # Act - Execute ensemble with dependencies
+        time.perf_counter()
+        result = await executor.execute(config, "Test dependency execution")
+        time.perf_counter()
+
+        # Assert - Verify execution order and timing
+        assert result["status"] in ["completed", "completed_with_errors"]
+
+        # All agents should have executed
+        assert len(result["results"]) == 4
+        expected_agents = ["security_reviewer", "performance_reviewer", "style_reviewer", "synthesizer"]
+        for agent_name in expected_agents:
+            assert agent_name in result["results"]
+
+        # Critical test: synthesizer should execute AFTER all its dependencies
+        synthesizer_time = execution_times.get("mock-synthesizer")
+        security_time = execution_times.get("mock-security")
+        perf_time = execution_times.get("mock-perf")
+        style_time = execution_times.get("mock-style")
+
+        assert synthesizer_time is not None, "Synthesizer should have executed"
+        assert security_time is not None, "Security reviewer should have executed"
+        assert perf_time is not None, "Performance reviewer should have executed"
+        assert style_time is not None, "Style reviewer should have executed"
+
+        # Synthesizer must execute after ALL dependencies complete
+        assert synthesizer_time > security_time, "Synthesizer must execute after security reviewer"
+        assert synthesizer_time > perf_time, "Synthesizer must execute after performance reviewer"
+        assert synthesizer_time > style_time, "Synthesizer must execute after style reviewer"
+
+        # Debug: Print execution times
+        print("\nExecution times:")
+        print(f"  Security: {security_time:.6f}")
+        print(f"  Performance: {perf_time:.6f}")
+        print(f"  Style: {style_time:.6f}")
+        print(f"  Synthesizer: {synthesizer_time:.6f}")
+
+        # Independent agents should execute in parallel (similar start times)
+        independent_times = [security_time, perf_time, style_time]
+        time_spread = max(independent_times) - min(independent_times)
+        print(f"  Time spread between independent agents: {time_spread:.6f}s")
+
+        # Critical test: Independent agents should run nearly simultaneously (parallel)
+        # But current implementation runs them sequentially - this should FAIL
+        assert time_spread < 0.001, (
+            f"Independent agents should run in parallel (time_spread < 0.001s), "
+            f"but got {time_spread:.6f}s. Current implementation is fully sequential!"
+        )
+
+        # Synthesizer should start after dependencies, but only slightly after latest independent
+        latest_independent_time = max(independent_times)
+        time_gap = synthesizer_time - latest_independent_time
+        print(f"  Time gap between latest independent and synthesizer: {time_gap:.6f}s")
+
+        # This should pass once we implement proper dependency analysis
+        assert time_gap > 0.001, (
+            f"Synthesizer should start after dependencies complete. "
+            f"Gap: {time_gap:.6f}s (should be > 0.001s)"
+        )
