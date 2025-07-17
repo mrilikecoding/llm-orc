@@ -7,9 +7,10 @@ agents:
   - name: reviewer
     model_profile: free-local
     system_prompt: You are a code reviewer that provides detailed feedback and suggestions for improvement.
-coordinator:
-  model_profile: default-claude
-  synthesis_prompt: |
-    Combine the research findings and review feedback into a coherent response.
-    Focus on practical, actionable advice for development.
-  output_format: text
+  - name: synthesizer
+    model_profile: default-claude
+    depends_on: [researcher, reviewer]
+    system_prompt: |
+      Combine the research findings and review feedback into a coherent response.
+      Focus on practical, actionable advice for development.
+    output_format: text

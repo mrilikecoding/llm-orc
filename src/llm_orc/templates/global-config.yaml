@@ -67,3 +67,31 @@ model_profiles:
     cost_per_token: 0.0
     system_prompt: Respond with 'Authentication working' to confirm local model access.
     timeout_seconds: 30
+
+# Performance configuration with sensible defaults
+performance:
+  # Resource management settings
+  concurrency:
+    # Maximum concurrent agents (0 = unlimited, uses smart defaults)
+    max_concurrent_agents: 0
+    # Connection pooling settings
+    connection_pool:
+      max_connections: 100
+      max_keepalive: 20
+      keepalive_expiry: 30
+    
+  # Execution settings
+  execution:
+    # Default timeout for agent execution (seconds)
+    default_timeout: 60
+    # Performance monitoring hooks enabled
+    monitoring_enabled: true
+    # Streaming execution enabled by default
+    streaming_enabled: true
+    
+  # Memory management
+  memory:
+    # Memory-efficient mode (reduces memory usage at slight performance cost)
+    efficient_mode: false
+    # Maximum memory usage threshold (MB, 0 = unlimited)
+    max_memory_mb: 0

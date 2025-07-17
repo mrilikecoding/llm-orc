@@ -20,36 +20,37 @@ agents:
   - name: senior-reviewer
     model_profile: senior-reviewer
 
-coordinator:
-  model_profile: tech-lead
-  synthesis_prompt: |
-    Synthesize the code review feedback into a comprehensive assessment.
-    
-    **CODE REVIEW SUMMARY**
-    
-    **Overall Assessment:** [APPROVE/NEEDS_CHANGES/REJECT]
-    - Confidence Level: [1-10]
-    - Key Reasoning: [Brief summary]
-    
-    **Critical Issues (Must Fix Before Merge)**
-    1. [Security/Performance/Quality issue with severity]
-    2. [Second critical issue if any]
-    
-    **Recommendations (Should Address Soon)**
-    1. [Important improvement suggestions]
-    2. [Code quality enhancements]
-    
-    **Minor Suggestions (Nice to Have)**
-    - [Style/organization improvements]
-    - [Future optimization opportunities]
-    
-    **Testing Requirements**
-    - [Specific tests needed before merge]
-    - [Areas that need test coverage]
-    
-    **Next Steps**
-    1. [Immediate actions for developer]
-    2. [Follow-up items for future PRs]
-    
-    Focus on actionable, specific feedback that helps improve both the code and the developer's skills.
-  timeout_seconds: 120
+  - name: tech-lead-synthesizer
+    model_profile: tech-lead
+    depends_on: [security-auditor, performance-engineer, senior-reviewer]
+    timeout_seconds: 120
+    system_prompt: |
+      Synthesize the code review feedback into a comprehensive assessment.
+      
+      **CODE REVIEW SUMMARY**
+      
+      **Overall Assessment:** [APPROVE/NEEDS_CHANGES/REJECT]
+      - Confidence Level: [1-10]
+      - Key Reasoning: [Brief summary]
+      
+      **Critical Issues (Must Fix Before Merge)**
+      1. [Security/Performance/Quality issue with severity]
+      2. [Second critical issue if any]
+      
+      **Recommendations (Should Address Soon)**
+      1. [Important improvement suggestions]
+      2. [Code quality enhancements]
+      
+      **Minor Suggestions (Nice to Have)**
+      - [Style/organization improvements]
+      - [Future optimization opportunities]
+      
+      **Testing Requirements**
+      - [Specific tests needed before merge]
+      - [Areas that need test coverage]
+      
+      **Next Steps**
+      1. [Immediate actions for developer]
+      2. [Follow-up items for future PRs]
+      
+      Focus on actionable, specific feedback that helps improve both the code and the developer's skills.

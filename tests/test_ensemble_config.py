@@ -20,17 +20,26 @@ class TestEnsembleConfig:
             agents=[
                 {"name": "agent1", "role": "tester", "model": "claude-3-sonnet"},
                 {"name": "agent2", "role": "reviewer", "model": "claude-3-sonnet"},
+                {
+                    "name": "synthesizer",
+                    "role": "synthesizer",
+                    "model": "claude-3-sonnet",
+                    "depends_on": ["agent1", "agent2"],
+                    "synthesis_prompt": "Combine the results",
+                    "output_format": "json",
+                },
             ],
-            coordinator={
-                "synthesis_prompt": "Combine the results",
-                "output_format": "json",
-            },
         )
 
         assert config.name == "test_ensemble"
         assert config.description == "A test ensemble"
-        assert len(config.agents) == 2
-        assert config.coordinator["output_format"] == "json"
+        assert len(config.agents) == 3
+
+        # Find synthesizer agent and verify its properties
+        synthesizer = next(
+            agent for agent in config.agents if agent["name"] == "synthesizer"
+        )
+        assert synthesizer["output_format"] == "json"
 
 
 class TestEnsembleLoader:
@@ -53,11 +62,15 @@ class TestEnsembleLoader:
                     "role": "performance_analyst",
                     "model": "claude-3-sonnet",
                 },
+                {
+                    "name": "synthesizer",
+                    "role": "synthesizer",
+                    "model": "claude-3-sonnet",
+                    "depends_on": ["security_reviewer", "performance_reviewer"],
+                    "synthesis_prompt": "Synthesize security and performance feedback",
+                    "output_format": "structured",
+                },
             ],
-            "coordinator": {
-                "synthesis_prompt": "Synthesize security and performance feedback",
-                "output_format": "structured",
-            },
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
@@ -69,9 +82,14 @@ class TestEnsembleLoader:
             config = loader.load_from_file(yaml_path)
 
             assert config.name == "pr_review"
-            assert len(config.agents) == 2
+            assert len(config.agents) == 3
             assert config.agents[0]["name"] == "security_reviewer"
-            assert config.coordinator["output_format"] == "structured"
+
+            # Find synthesizer and verify its properties
+            synthesizer = next(
+                agent for agent in config.agents if agent["name"] == "synthesizer"
+            )
+            assert synthesizer["output_format"] == "structured"
         finally:
             Path(yaml_path).unlink()
 
@@ -83,14 +101,12 @@ class TestEnsembleLoader:
                 "name": "ensemble1",
                 "description": "First ensemble",
                 "agents": [{"name": "agent1", "role": "role1", "model": "model1"}],
-                "coordinator": {"synthesis_prompt": "Combine", "output_format": "json"},
             }
 
             ensemble2 = {
                 "name": "ensemble2",
                 "description": "Second ensemble",
                 "agents": [{"name": "agent2", "role": "role2", "model": "model2"}],
-                "coordinator": {"synthesis_prompt": "Merge", "output_format": "json"},
             }
 
             # Write ensemble files
@@ -126,7 +142,6 @@ class TestEnsembleLoader:
                 "name": "target_ensemble",
                 "description": "Target ensemble",
                 "agents": [{"name": "agent", "role": "role", "model": "model"}],
-                "coordinator": {"synthesis_prompt": "Process", "output_format": "json"},
             }
 
             with open(f"{temp_dir}/target_ensemble.yaml", "w") as f:
@@ -141,3 +156,106 @@ class TestEnsembleLoader:
             # Test finding nonexistent ensemble
             config = loader.find_ensemble(temp_dir, "nonexistent")
             assert config is None
+
+    def test_dependency_based_ensemble_without_coordinator(self) -> None:
+        """Test new dependency-based ensemble without coordinator field."""
+        # RED: This test should fail initially since we haven't updated the code
+        ensemble_yaml = {
+            "name": "dependency_ensemble",
+            "description": "Ensemble using agent dependencies",
+            "agents": [
+                {
+                    "name": "researcher",
+                    "model_profile": "fast-model",
+                    "system_prompt": "Research the topic thoroughly",
+                },
+                {
+                    "name": "analyst",
+                    "model_profile": "quality-model",
+                    "system_prompt": "Analyze the research findings",
+                },
+                {
+                    "name": "synthesizer",
+                    "model_profile": "quality-model",
+                    "system_prompt": "Synthesize research and analysis",
+                    "depends_on": ["researcher", "analyst"],
+                },
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            loader = EnsembleLoader()
+            config = loader.load_from_file(yaml_path)
+
+            assert config.name == "dependency_ensemble"
+            assert len(config.agents) == 3
+
+            # Find synthesizer agent and verify its dependencies
+            synthesizer = next(
+                agent for agent in config.agents if agent["name"] == "synthesizer"
+            )
+            assert synthesizer["depends_on"] == ["researcher", "analyst"]
+
+        finally:
+            Path(yaml_path).unlink()
+
+    def test_dependency_validation_detects_cycles(self) -> None:
+        """Test that dependency validation catches circular dependencies."""
+        # RED: This should fail until we implement dependency validation
+        ensemble_yaml = {
+            "name": "circular_ensemble",
+            "description": "Ensemble with circular dependencies",
+            "agents": [
+                {
+                    "name": "agent_a",
+                    "model_profile": "test-model",
+                    "depends_on": ["agent_b"],
+                },
+                {
+                    "name": "agent_b",
+                    "model_profile": "test-model",
+                    "depends_on": ["agent_a"],  # Creates cycle
+                },
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            loader = EnsembleLoader()
+            with pytest.raises(ValueError, match="Circular dependency"):
+                loader.load_from_file(yaml_path)
+        finally:
+            Path(yaml_path).unlink()
+
+    def test_dependency_validation_detects_missing_deps(self) -> None:
+        """Test that dependency validation catches missing dependencies."""
+        # RED: This should fail until we implement dependency validation
+        ensemble_yaml = {
+            "name": "missing_dep_ensemble",
+            "description": "Ensemble with missing dependencies",
+            "agents": [
+                {
+                    "name": "dependent_agent",
+                    "model_profile": "test-model",
+                    "depends_on": ["nonexistent_agent"],  # Missing dep
+                },
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            loader = EnsembleLoader()
+            with pytest.raises(ValueError, match="missing dependency"):
+                loader.load_from_file(yaml_path)
+        finally:
+            Path(yaml_path).unlink()

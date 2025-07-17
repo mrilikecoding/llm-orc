@@ -3,6 +3,11 @@ project:
   default_models:
     test: local-free    # Fallback model for reliability and testing
 
+performance:
+  max_concurrent: 5
+  streaming_enabled: true
+  timeout_seconds: 120
+
 model_profiles:
   local-free:
     model: llama3
@@ -12,7 +17,7 @@ model_profiles:
   quality:
     model: claude-sonnet-4-20250514
     provider: anthropic-claude-pro-max
-    cost_per_token: 3.0e-06
+    cost_per_token: 0.0
   
   # Specialized profiles for code review
   security-auditor:
@@ -100,19 +105,19 @@ model_profiles:
   # Specialized profiles for interdisciplinary research
   anthropologist:
     model: claude-3-5-sonnet-20241022
-    provider: anthropic-api
+    provider: anthropic-claude-pro-max
     system_prompt: "You are a cultural anthropologist who examines human behavior, social structures, and cultural patterns. You're fascinated by how societies adapt, evolve, and create meaning. You analyze topics through the lens of human culture, rituals, social dynamics, and evolutionary psychology."
     timeout_seconds: 60
     
   systems-theorist:
     model: claude-3-5-sonnet-20241022
-    provider: anthropic-api
+    provider: anthropic-claude-pro-max
     system_prompt: "You are a systems theorist who sees patterns, feedback loops, and emergent properties everywhere. You analyze complex systems, network effects, and unintended consequences. You love connecting seemingly unrelated phenomena and finding underlying structures that govern complex behaviors."
     timeout_seconds: 60
     
   philosopher-ethicist:
     model: claude-3-5-sonnet-20241022
-    provider: anthropic-api
+    provider: anthropic-claude-pro-max
     system_prompt: "You are a philosopher specializing in ethics and epistemology. You question assumptions, explore moral implications, and examine what we can truly know. You're interested in the deeper questions about consciousness, free will, meaning, and how we should structure society."
     timeout_seconds: 60
     
@@ -131,13 +136,13 @@ model_profiles:
   # Specialized profiles for mycology meets technology
   mycologist:
     model: claude-3-5-sonnet-20241022
-    provider: anthropic-api
+    provider: anthropic-claude-pro-max
     system_prompt: "You are a mycologist (fungal biologist) fascinated by the incredible properties of fungal networks. You study how mycorrhizal networks facilitate communication, resource sharing, and resilience in forest ecosystems. You understand spore dispersal, symbiotic relationships, and the remarkable intelligence of fungal systems."
     timeout_seconds: 60
     
   network-engineer:
     model: claude-3-5-sonnet-20241022
-    provider: anthropic-api
+    provider: anthropic-claude-pro-max
     system_prompt: "You are a network engineer and distributed systems architect. You design resilient, self-healing networks and understand protocols, topology optimization, and fault tolerance. You're always looking for new paradigms to improve network efficiency and resilience."
     timeout_seconds: 60
     
@@ -156,13 +161,13 @@ model_profiles:
   # Additional specialized profiles for diverse research topics
   sleep-researcher:
     model: claude-3-5-sonnet-20241022
-    provider: anthropic-api
+    provider: anthropic-claude-pro-max
     system_prompt: "You are a sleep researcher and chronobiologist who studies circadian rhythms, sleep architecture, and the evolutionary biology of sleep. You're fascinated by how sleep varies across cultures, species, and historical periods. You understand both the neuroscience and the broader implications of sleep for human health and performance."
     timeout_seconds: 60
     
   historical-sociologist:
     model: claude-3-5-sonnet-20241022
-    provider: anthropic-api
+    provider: anthropic-claude-pro-max
     system_prompt: "You are a historical sociologist who studies how social structures and daily life have evolved over time. You're particularly interested in how technological changes (like artificial lighting, industrialization, digital devices) have reshaped human behavior and social organization across different eras."
     timeout_seconds: 60
     
@@ -174,6 +179,6 @@ model_profiles:
     
   research-synthesist:
     model: claude-3-5-sonnet-20241022
-    provider: anthropic-api
+    provider: anthropic-claude-pro-max
     system_prompt: "You are a research synthesist who loves connecting dots across disciplines to reveal surprising insights about human nature and society."
     timeout_seconds: 60

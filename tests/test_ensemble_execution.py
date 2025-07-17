@@ -26,10 +26,6 @@ class TestEnsembleExecutor:
                 {"name": "agent1", "role": "tester", "model": "mock-model"},
                 {"name": "agent2", "role": "reviewer", "model": "mock-model"},
             ],
-            coordinator={
-                "synthesis_prompt": "Combine the results from both agents",
-                "output_format": "json",
-            },
         )
 
         # Create mock model
@@ -53,18 +49,7 @@ class TestEnsembleExecutor:
         # Create executor with mock dependencies
         executor = EnsembleExecutor()
 
-        # Create mock synthesis model
-        mock_synthesis_model = AsyncMock(spec=ModelInterface)
-        mock_synthesis_model.generate_response.return_value = (
-            "Synthesis: Combined results from both agents"
-        )
-        mock_synthesis_model.get_last_usage.return_value = {
-            "total_tokens": 50,
-            "input_tokens": 30,
-            "output_tokens": 20,
-            "cost_usd": 0.01,
-            "duration_ms": 100,
-        }
+        # No synthesis model needed in dependency-based architecture
 
         # Mock the role and model loading methods
         with (
@@ -74,13 +59,9 @@ class TestEnsembleExecutor:
             patch.object(
                 executor, "_load_model", new_callable=AsyncMock
             ) as mock_load_model,
-            patch.object(
-                executor, "_get_synthesis_model", new_callable=AsyncMock
-            ) as mock_get_synthesis_model,
         ):
             mock_load_role.side_effect = [role1, role2]
             mock_load_model.return_value = mock_model
-            mock_get_synthesis_model.return_value = mock_synthesis_model
 
             # Execute ensemble
             result = await executor.execute(config, input_data="Test this code")
@@ -90,8 +71,9 @@ class TestEnsembleExecutor:
         assert result["status"] == "completed"
         assert "input" in result
         assert "results" in result
-        assert "synthesis" in result
         assert "metadata" in result
+        # Synthesis field exists but is None in new architecture
+        assert result["synthesis"] is None
 
         # Verify agent results
         agent_results = result["results"]
@@ -114,10 +96,6 @@ class TestEnsembleExecutor:
                 {"name": "claude_agent", "role": "analyst", "model": "claude-3-sonnet"},
                 {"name": "local_agent", "role": "checker", "model": "llama3"},
             ],
-            coordinator={
-                "synthesis_prompt": "Compare the analysis and check",
-                "output_format": "structured",
-            },
         )
 
         # Mock different models
@@ -147,18 +125,7 @@ class TestEnsembleExecutor:
 
         executor = EnsembleExecutor()
 
-        # Create mock synthesis model
-        mock_synthesis_model = AsyncMock(spec=ModelInterface)
-        mock_synthesis_model.generate_response.return_value = (
-            "Synthesis: The analysis and check both confirm the feature is solid"
-        )
-        mock_synthesis_model.get_last_usage.return_value = {
-            "total_tokens": 35,
-            "input_tokens": 20,
-            "output_tokens": 15,
-            "cost_usd": 0.006,
-            "duration_ms": 70,
-        }
+        # No synthesis model needed in dependency-based architecture
 
         # Mock the role and model loading methods
         with (
@@ -168,13 +135,9 @@ class TestEnsembleExecutor:
             patch.object(
                 executor, "_load_model", new_callable=AsyncMock
             ) as mock_load_model,
-            patch.object(
-                executor, "_get_synthesis_model", new_callable=AsyncMock
-            ) as mock_get_synthesis_model,
         ):
             mock_load_role.side_effect = [analyst_role, checker_role]
             mock_load_model.side_effect = [claude_model, llama_model]
-            mock_get_synthesis_model.return_value = mock_synthesis_model
 
             result = await executor.execute(config, input_data="Analyze this feature")
 
@@ -193,10 +156,6 @@ class TestEnsembleExecutor:
                 {"name": "working_agent", "role": "tester", "model": "mock-model"},
                 {"name": "failing_agent", "role": "reviewer", "model": "mock-model"},
             ],
-            coordinator={
-                "synthesis_prompt": "Combine available results",
-                "output_format": "json",
-            },
         )
 
         # Create mock models - one works, one fails
@@ -211,18 +170,7 @@ class TestEnsembleExecutor:
 
         executor = EnsembleExecutor()
 
-        # Mock synthesis model
-        mock_synthesis_model = AsyncMock(spec=ModelInterface)
-        mock_synthesis_model.generate_response.return_value = (
-            "Synthesis of available results"
-        )
-        mock_synthesis_model.get_last_usage.return_value = {
-            "total_tokens": 30,
-            "input_tokens": 20,
-            "output_tokens": 10,
-            "cost_usd": 0.005,
-            "duration_ms": 50,
-        }
+        # No synthesis model needed in dependency-based architecture
 
         # Mock the role and model loading methods
         with (
@@ -232,13 +180,9 @@ class TestEnsembleExecutor:
             patch.object(
                 executor, "_load_model", new_callable=AsyncMock
             ) as mock_load_model,
-            patch.object(
-                executor, "_get_synthesis_model", new_callable=AsyncMock
-            ) as mock_get_synthesis_model,
         ):
             mock_load_role.return_value = role
             mock_load_model.side_effect = [working_model, failing_model]
-            mock_get_synthesis_model.return_value = mock_synthesis_model
 
             result = await executor.execute(config, input_data="Test input")
 
@@ -255,27 +199,19 @@ class TestEnsembleExecutor:
         assert "error" in result["results"]["failing_agent"]
 
     @pytest.mark.asyncio
-    async def test_execute_ensemble_synthesis(self) -> None:
-        """Test that ensemble execution includes synthesis of results."""
+    async def test_execute_ensemble_dependency_based(self) -> None:
+        """Test that ensemble execution works with dependency-based approach."""
         config = EnsembleConfig(
-            name="synthesis_test",
-            description="Test synthesis functionality",
+            name="dependency_test",
+            description="Test dependency-based functionality",
             agents=[
                 {"name": "agent1", "role": "analyst", "model": "mock-model"},
             ],
-            coordinator={
-                "synthesis_prompt": "Summarize the analysis results",
-                "output_format": "json",
-            },
         )
 
         # Mock agent response
         agent_model = AsyncMock(spec=ModelInterface)
         agent_model.generate_response.return_value = "Detailed analysis result"
-
-        # Mock synthesis model
-        synthesis_model = AsyncMock(spec=ModelInterface)
-        synthesis_model.generate_response.return_value = "Synthesized summary"
 
         role = RoleDefinition(name="analyst", prompt="Analyze")
 
@@ -289,22 +225,15 @@ class TestEnsembleExecutor:
             patch.object(
                 executor, "_load_model", new_callable=AsyncMock
             ) as mock_load_model,
-            patch.object(
-                executor, "_get_synthesis_model", new_callable=AsyncMock
-            ) as mock_get_synthesis_model,
         ):
             mock_load_role.return_value = role
             mock_load_model.return_value = agent_model
-            mock_get_synthesis_model.return_value = synthesis_model
 
             result = await executor.execute(config, input_data="Test analysis")
 
-        assert result["synthesis"] == "Synthesized summary"
-
-        # Verify synthesis model was called with agent results
-        synthesis_model.generate_response.assert_called_once()
-        synthesis_call_args = synthesis_model.generate_response.call_args[1]
-        assert "Summarize the analysis results" in synthesis_call_args["role_prompt"]
+        # In dependency-based architecture, synthesis is None
+        assert result["synthesis"] is None
+        assert result["results"]["agent1"]["response"] == "Detailed analysis result"
 
     @pytest.mark.asyncio
     async def test_execute_ensemble_tracks_usage_metrics(self) -> None:
@@ -316,10 +245,6 @@ class TestEnsembleExecutor:
                 {"name": "agent1", "role": "analyst", "model": "claude-3-sonnet"},
                 {"name": "agent2", "role": "reviewer", "model": "llama3"},
             ],
-            coordinator={
-                "synthesis_prompt": "Combine results",
-                "output_format": "json",
-            },
         )
 
         # Mock models with usage tracking
@@ -345,16 +270,7 @@ class TestEnsembleExecutor:
             "model": "llama3",
         }
 
-        synthesis_model = AsyncMock(spec=ModelInterface)
-        synthesis_model.generate_response.return_value = "Synthesized result"
-        synthesis_model.get_last_usage.return_value = {
-            "input_tokens": 200,
-            "output_tokens": 50,
-            "total_tokens": 250,
-            "cost_usd": 0.0075,
-            "duration_ms": 1500,
-            "model": "llama3",
-        }
+        # No synthesis model needed in dependency-based architecture
 
         role = RoleDefinition(name="test", prompt="Test role")
 
@@ -368,13 +284,9 @@ class TestEnsembleExecutor:
             patch.object(
                 executor, "_load_model", new_callable=AsyncMock
             ) as mock_load_model,
-            patch.object(
-                executor, "_get_synthesis_model", new_callable=AsyncMock
-            ) as mock_get_synthesis_model,
         ):
             mock_load_role.return_value = role
             mock_load_model.side_effect = [claude_model, llama_model]
-            mock_get_synthesis_model.return_value = synthesis_model
 
             result = await executor.execute(config, input_data="Test usage tracking")
 
@@ -399,34 +311,28 @@ class TestEnsembleExecutor:
         assert agent_usage["agent2"]["total_tokens"] == 125
         assert agent_usage["agent2"]["cost_usd"] == 0.0
 
-        # Check synthesis usage
-        assert "synthesis" in usage
-        synthesis_usage = usage["synthesis"]
-        assert synthesis_usage["total_tokens"] == 250
-        assert synthesis_usage["cost_usd"] == 0.0075
-
-        # Check totals
+        # Check totals (no synthesis in dependency-based architecture)
         assert "totals" in usage
         totals = usage["totals"]
-        assert totals["total_tokens"] == 525  # 150 + 125 + 250
-        assert totals["total_cost_usd"] == 0.012  # 0.0045 + 0.0 + 0.0075
-        assert totals["total_duration_ms"] == 3500  # 1200 + 800 + 1500
+        assert totals["total_tokens"] == 275  # 150 + 125 (no synthesis)
+        assert totals["total_cost_usd"] == 0.0045  # 0.0045 + 0.0 (no synthesis)
+        assert totals["total_duration_ms"] == 2000  # 1200 + 800 (no synthesis)
         assert totals["agents_count"] == 2
 
     @pytest.mark.asyncio
-    async def test_execute_ensemble_with_timeout(self) -> None:
-        """Test that ensemble execution respects timeout settings."""
+    async def test_execute_ensemble_with_global_timeout(self) -> None:
+        """Test that ensemble execution respects global timeout settings."""
         config = EnsembleConfig(
             name="timeout_test",
             description="Test timeout functionality",
             agents=[
-                {"name": "slow_agent", "role": "analyst", "model": "slow-model"},
+                {
+                    "name": "slow_agent",
+                    "role": "analyst",
+                    "model": "slow-model",
+                    "timeout_seconds": 0.1,  # 100ms timeout at agent level
+                },
             ],
-            coordinator={
-                "synthesis_prompt": "Summarize results",
-                "output_format": "json",
-                "timeout_seconds": 0.1,  # 100ms timeout
-            },
         )
 
         # Mock model that takes too long
@@ -491,10 +397,6 @@ class TestEnsembleExecutor:
                     "timeout_seconds": 0.05,  # 50ms timeout
                 },
             ],
-            coordinator={
-                "synthesis_prompt": "Combine results",
-                "output_format": "json",
-            },
         )
 
         # Fast model
@@ -555,98 +457,20 @@ class TestEnsembleExecutor:
         assert result["results"]["slow_agent"]["status"] == "failed"
         assert "timed out" in result["results"]["slow_agent"]["error"].lower()
 
-    @pytest.mark.asyncio
-    async def test_execute_ensemble_with_synthesis_timeout(self) -> None:
-        """Test that synthesis step respects timeout settings."""
-        config = EnsembleConfig(
-            name="synthesis_timeout_test",
-            description="Test synthesis timeout",
-            agents=[
-                {"name": "agent1", "role": "analyst", "model": "fast-model"},
-            ],
-            coordinator={
-                "synthesis_prompt": "Synthesize results",
-                "output_format": "json",
-                "synthesis_timeout_seconds": 0.05,  # 50ms timeout
-            },
-        )
-
-        # Fast agent
-        fast_model = AsyncMock(spec=ModelInterface)
-        fast_model.generate_response.return_value = "Agent response"
-        fast_model.get_last_usage.return_value = {
-            "input_tokens": 20,
-            "output_tokens": 30,
-            "total_tokens": 50,
-            "cost_usd": 0.001,
-            "duration_ms": 500,
-            "model": "fast-model",
-        }
-
-        # Slow synthesis model
-        slow_synthesis_model = AsyncMock(spec=ModelInterface)
-
-        async def slow_synthesis(*args: Any, **kwargs: Any) -> str:
-            await asyncio.sleep(0.1)  # Takes 100ms, longer than 50ms timeout
-            return "This should timeout"
-
-        slow_synthesis_model.generate_response = slow_synthesis
-        slow_synthesis_model.get_last_usage.return_value = {
-            "input_tokens": 100,
-            "output_tokens": 50,
-            "total_tokens": 150,
-            "cost_usd": 0.003,
-            "duration_ms": 100,
-            "model": "synthesis-model",
-        }
-
-        role = RoleDefinition(name="analyst", prompt="Analyze")
-
-        executor = EnsembleExecutor()
-
-        # Mock the role and model loading methods
-        with (
-            patch.object(
-                executor, "_load_role", new_callable=AsyncMock
-            ) as mock_load_role,
-            patch.object(
-                executor, "_load_model", new_callable=AsyncMock
-            ) as mock_load_model,
-            patch.object(
-                executor, "_get_synthesis_model", new_callable=AsyncMock
-            ) as mock_get_synthesis_model,
-        ):
-            mock_load_role.return_value = role
-            mock_load_model.return_value = fast_model
-            mock_get_synthesis_model.return_value = slow_synthesis_model
-
-            result = await executor.execute(config, input_data="Test synthesis timeout")
-
-        # Should complete with errors due to synthesis timeout
-        assert result["status"] == "completed_with_errors"
-        assert result["results"]["agent1"]["status"] == "success"
-        assert (
-            "synthesis failed" in result["synthesis"].lower()
-            or "timeout" in result["synthesis"].lower()
-        )
+    # Synthesis timeout test removed - no synthesis in dependency-based arch
 
     @pytest.mark.asyncio
     async def test_load_model_with_authentication_configurations(self) -> None:
         """Test _load_model resolves auth configurations to model instances."""
         executor = EnsembleExecutor()
 
-        # Mock authentication system
+        # Mock the shared authentication system instances
         with (
-            patch("llm_orc.ensemble_execution.ConfigurationManager"),
-            patch(
-                "llm_orc.ensemble_execution.CredentialStorage"
-            ) as mock_credential_storage,
+            patch.object(executor, "_credential_storage") as mock_storage,
         ):
-            mock_storage_instance = mock_credential_storage.return_value
-
             # Test 1: Load model for "anthropic-api" auth configuration
-            mock_storage_instance.get_auth_method.return_value = "api_key"
-            mock_storage_instance.get_api_key.return_value = "sk-ant-test123"
+            mock_storage.get_auth_method.return_value = "api_key"
+            mock_storage.get_api_key.return_value = "sk-ant-test123"
 
             model = await executor._load_model("anthropic-api")
 
@@ -655,8 +479,8 @@ class TestEnsembleExecutor:
             assert model.api_key == "sk-ant-test123"
 
             # Test 2: Load model for "anthropic-claude-pro-max" OAuth configuration
-            mock_storage_instance.get_auth_method.return_value = "oauth"
-            mock_storage_instance.get_oauth_token.return_value = {
+            mock_storage.get_auth_method.return_value = "oauth"
+            mock_storage.get_oauth_token.return_value = {
                 "access_token": "oauth_access_token",
                 "refresh_token": "oauth_refresh_token",
                 "client_id": "oauth_client_id",
@@ -672,8 +496,8 @@ class TestEnsembleExecutor:
 
             # Test 3: Load model for "claude-cli" configuration
             # claude-cli stores path as "api_key"
-            mock_storage_instance.get_auth_method.return_value = "api_key"
-            mock_storage_instance.get_api_key.return_value = "/usr/local/bin/claude"
+            mock_storage.get_auth_method.return_value = "api_key"
+            mock_storage.get_api_key.return_value = "/usr/local/bin/claude"
 
             model = await executor._load_model("claude-cli")
 
@@ -688,27 +512,22 @@ class TestEnsembleExecutor:
 
         # Mock authentication system - no auth method configured
         with (
-            patch("llm_orc.ensemble_execution.ConfigurationManager"),
-            patch(
-                "llm_orc.ensemble_execution.CredentialStorage"
-            ) as mock_credential_storage,
             patch(
                 "llm_orc.ensemble_execution._should_prompt_for_auth", return_value=True
             ),
             patch("llm_orc.ensemble_execution._prompt_auth_setup") as mock_prompt_setup,
+            patch.object(executor, "_credential_storage") as mock_storage,
         ):
-            mock_storage_instance = mock_credential_storage.return_value
-
             # Simulate no auth method configured
-            mock_storage_instance.get_auth_method.return_value = None
+            mock_storage.get_auth_method.return_value = None
 
             # Mock successful auth setup
             mock_prompt_setup.return_value = True
 
             # After setup, mock the configured auth method
             # First call: None, second call: oauth
-            mock_storage_instance.get_auth_method.side_effect = [None, "oauth"]
-            mock_storage_instance.get_oauth_token.return_value = {
+            mock_storage.get_auth_method.side_effect = [None, "oauth"]
+            mock_storage.get_oauth_token.return_value = {
                 "access_token": "new_oauth_token",
                 "refresh_token": "new_refresh_token",
                 "client_id": "new_client_id",
@@ -718,7 +537,7 @@ class TestEnsembleExecutor:
 
             # Should prompt for auth setup
             mock_prompt_setup.assert_called_once_with(
-                "anthropic-claude-pro-max", mock_storage_instance
+                "anthropic-claude-pro-max", mock_storage
             )
 
             # Should create OAuthClaudeModel after setup
@@ -731,19 +550,14 @@ class TestEnsembleExecutor:
 
         # Mock authentication system - no auth method configured
         with (
-            patch("llm_orc.ensemble_execution.ConfigurationManager"),
-            patch(
-                "llm_orc.ensemble_execution.CredentialStorage"
-            ) as mock_credential_storage,
             patch(
                 "llm_orc.ensemble_execution._should_prompt_for_auth", return_value=True
             ),
             patch("llm_orc.ensemble_execution._prompt_auth_setup") as mock_prompt_setup,
+            patch.object(executor, "_credential_storage") as mock_storage,
         ):
-            mock_storage_instance = mock_credential_storage.return_value
-
             # Simulate no auth method configured
-            mock_storage_instance.get_auth_method.return_value = None
+            mock_storage.get_auth_method.return_value = None
 
             # User declines to set up authentication
             mock_prompt_setup.return_value = False
@@ -752,7 +566,7 @@ class TestEnsembleExecutor:
 
             # Should prompt user for auth setup
             mock_prompt_setup.assert_called_once_with(
-                "anthropic-claude-pro-max", mock_storage_instance
+                "anthropic-claude-pro-max", mock_storage
             )
 
             # Should fall back to Ollama
@@ -814,20 +628,18 @@ class TestEnsembleExecutor:
             executor = EnsembleExecutor()
 
             # Test the _load_model_from_agent_config method directly
-            with patch(
-                "llm_orc.ensemble_execution.ConfigurationManager"
-            ) as mock_config_manager_class:
-                mock_config_manager = mock_config_manager_class.return_value
-                mock_config_manager.resolve_model_profile.return_value = (
+            with patch.object(
+                executor._config_manager, "resolve_model_profile"
+            ) as mock_resolve_model_profile:
+                mock_resolve_model_profile.return_value = (
                     "claude-3-5-sonnet-20241022",
                     "anthropic-claude-pro-max",
                 )
 
-                with patch(
-                    "llm_orc.ensemble_execution.CredentialStorage"
-                ) as mock_credential_storage:
-                    mock_storage_instance = mock_credential_storage.return_value
-                    mock_storage_instance.get_auth_method.return_value = None
+                with patch.object(
+                    executor._credential_storage, "get_auth_method"
+                ) as mock_get_auth_method:
+                    mock_get_auth_method.return_value = None
 
                     # This should call resolve_model_profile and use the resolved
                     # model+provider
@@ -838,9 +650,7 @@ class TestEnsembleExecutor:
                     )
 
                     # Verify that resolve_model_profile was called
-                    mock_config_manager.resolve_model_profile.assert_called_once_with(
-                        "test-profile"
-                    )
+                    mock_resolve_model_profile.assert_called_once_with("test-profile")
 
     @pytest.mark.asyncio
     async def test_ensemble_execution_fallback_to_explicit_model_provider(
@@ -872,3 +682,79 @@ class TestEnsembleExecutor:
 
                 # Verify that resolve_model_profile was NOT called
                 mock_config_manager.resolve_model_profile.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_execute_dependency_based_ensemble(self) -> None:
+        """Test executing ensemble with agent dependencies instead of coordinator."""
+        # RED: This test should fail until we implement dependency execution
+        config = EnsembleConfig(
+            name="dependency_test",
+            description="Test dependency-based execution",
+            agents=[
+                {
+                    "name": "researcher",
+                    "role": "researcher",
+                    "model": "mock-model",
+                },
+                {
+                    "name": "analyzer",
+                    "role": "analyzer",
+                    "model": "mock-model",
+                },
+                {
+                    "name": "synthesizer",
+                    "role": "synthesizer",
+                    "model": "mock-model",
+                    "depends_on": ["researcher", "analyzer"],
+                },
+            ],
+        )
+
+        # Create mock models with predictable responses
+        mock_model = AsyncMock(spec=ModelInterface)
+        mock_model.generate_response.side_effect = [
+            "Research findings: Data collected",
+            "Analysis results: Patterns identified",
+            "Synthesis: Combined research and analysis",
+        ]
+        mock_model.get_last_usage.return_value = {
+            "total_tokens": 30,
+            "input_tokens": 20,
+            "output_tokens": 10,
+            "cost_usd": 0.005,
+            "duration_ms": 50,
+        }
+
+        # Create role definitions
+        role = RoleDefinition(name="test_role", prompt="You are an agent")
+
+        executor = EnsembleExecutor()
+
+        # Mock the role and model loading methods
+        with (
+            patch.object(
+                executor, "_load_role", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor, "_load_model", new_callable=AsyncMock
+            ) as mock_load_model,
+        ):
+            mock_load_role.return_value = role
+            mock_load_model.return_value = mock_model
+
+            result = await executor.execute(config, input_data="Test input")
+
+        # Verify dependency-based execution
+        assert result["status"] == "completed"
+        assert len(result["results"]) == 3
+        assert "researcher" in result["results"]
+        assert "analyzer" in result["results"]
+        assert "synthesizer" in result["results"]
+
+        # Verify synthesizer executed after dependencies
+        expected_response = "Synthesis: Combined research and analysis"
+        assert result["results"]["synthesizer"]["response"] == expected_response
+        assert result["results"]["synthesizer"]["status"] == "success"
+
+        # Should not have old coordinator-style synthesis
+        assert result["synthesis"] is None

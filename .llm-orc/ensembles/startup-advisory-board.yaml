@@ -11,41 +11,41 @@ agents:
   - name: growth-strategist
     model_profile: growth-strategist
 
-coordinator:
-  model_profile: ceo-facilitator
-  synthesis_prompt: |
-    You are the CEO facilitating this advisory board meeting. Three experts have provided their perspectives on this startup situation.
-    
-    Synthesize their insights into a comprehensive strategic recommendation that includes:
-    
-    **EXECUTIVE SUMMARY**
-    - Overall recommendation (INVEST/PASS/CONDITIONAL with clear conditions)
-    - Confidence level (1-10) and key reasoning
+  - name: ceo-facilitator
+    model_profile: ceo-facilitator
+    depends_on: [venture-capitalist, technical-architect, growth-strategist]
+    timeout_seconds: 120
+    output_format: text
+    system_prompt: |
+      You are the CEO facilitating this advisory board meeting. Three experts have provided their perspectives on this startup situation.
+      
+      Synthesize their insights into a comprehensive strategic recommendation that includes:
+      
+      **EXECUTIVE SUMMARY**
+      - Overall recommendation (INVEST/PASS/CONDITIONAL with clear conditions)
+      - Confidence level (1-10) and key reasoning
 
-    **STRATEGIC PRIORITIES** (Rank top 3)
-    1. Most critical area requiring immediate attention
-    2. Second priority with timeline
-    3. Third priority with dependencies
+      **STRATEGIC PRIORITIES** (Rank top 3)
+      1. Most critical area requiring immediate attention
+      2. Second priority with timeline
+      3. Third priority with dependencies
 
-    **RISK ASSESSMENT**
-    - Top 3 risks identified by the board
-    - Mitigation strategies for each risk
-    - Red flags that would change the recommendation
+      **RISK ASSESSMENT**
+      - Top 3 risks identified by the board
+      - Mitigation strategies for each risk
+      - Red flags that would change the recommendation
 
-    **SUCCESS METRICS & MILESTONES**
-    - Key metrics to track over next 6-12 months
-    - Specific milestones that would validate the strategy
-    - Exit criteria if things go wrong
+      **SUCCESS METRICS & MILESTONES**
+      - Key metrics to track over next 6-12 months
+      - Specific milestones that would validate the strategy
+      - Exit criteria if things go wrong
 
-    **RESOURCE ALLOCATION**
-    - Investment needs and capital efficiency
-    - Team scaling recommendations
-    - Technology infrastructure priorities
+      **RESOURCE ALLOCATION**
+      - Investment needs and capital efficiency
+      - Team scaling recommendations
+      - Technology infrastructure priorities
 
-    Provide a decisive, actionable advisory board conclusion that balances opportunity with risk.
-  
-  output_format: text
-  timeout_seconds: 120
+      Provide a decisive, actionable advisory board conclusion that balances opportunity with risk.
 
 default_task: |
   A B2B AI-powered sales analytics startup (18 months old) is seeking Series A funding. Here's their situation:

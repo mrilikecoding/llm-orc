@@ -118,21 +118,18 @@ class TestOAuthTokenStorage:
             # No client_id in stored token (simulating legacy storage)
         }
 
-        # Mock the configuration manager and storage creation
+        # Replace the executor's credential storage with mock
+        executor._credential_storage = mock_storage
+
+        # Mock the OAuthClaudeModel constructor to verify client_id is passed
+        oauth_model_calls = []
+
+        def mock_oauth_claude_model(*args: Any, **kwargs: Any) -> Mock:
+            oauth_model_calls.append(kwargs)
+            mock_model = Mock(spec=OAuthClaudeModel)
+            return mock_model
+
         with pytest.MonkeyPatch.context() as m:
-            m.setattr("llm_orc.ensemble_execution.ConfigurationManager", lambda: Mock())
-            m.setattr(
-                "llm_orc.ensemble_execution.CredentialStorage", lambda x: mock_storage
-            )
-
-            # Mock the OAuthClaudeModel constructor to verify client_id is passed
-            oauth_model_calls = []
-
-            def mock_oauth_claude_model(*args: Any, **kwargs: Any) -> Mock:
-                oauth_model_calls.append(kwargs)
-                mock_model = Mock(spec=OAuthClaudeModel)
-                return mock_model
-
             m.setattr(
                 "llm_orc.ensemble_execution.OAuthClaudeModel", mock_oauth_claude_model
             )
@@ -163,21 +160,18 @@ class TestOAuthTokenStorage:
             "client_id": "custom_client_id_from_storage",  # Custom client_id stored
         }
 
-        # Mock the configuration manager and storage creation
+        # Replace the executor's credential storage with mock
+        executor._credential_storage = mock_storage
+
+        # Mock the OAuthClaudeModel constructor to verify client_id is passed
+        oauth_model_calls = []
+
+        def mock_oauth_claude_model(*args: Any, **kwargs: Any) -> Mock:
+            oauth_model_calls.append(kwargs)
+            mock_model = Mock(spec=OAuthClaudeModel)
+            return mock_model
+
         with pytest.MonkeyPatch.context() as m:
-            m.setattr("llm_orc.ensemble_execution.ConfigurationManager", lambda: Mock())
-            m.setattr(
-                "llm_orc.ensemble_execution.CredentialStorage", lambda x: mock_storage
-            )
-
-            # Mock the OAuthClaudeModel constructor to verify client_id is passed
-            oauth_model_calls = []
-
-            def mock_oauth_claude_model(*args: Any, **kwargs: Any) -> Mock:
-                oauth_model_calls.append(kwargs)
-                mock_model = Mock(spec=OAuthClaudeModel)
-                return mock_model
-
             m.setattr(
                 "llm_orc.ensemble_execution.OAuthClaudeModel", mock_oauth_claude_model
             )
