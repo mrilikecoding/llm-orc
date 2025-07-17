@@ -339,7 +339,7 @@ class TestEnsembleExecutionPerformance:
                 "name": "synthesizer",
                 "model": "mock-synthesizer",
                 "provider": "mock",
-                "dependencies": [
+                "depends_on": [
                     "security_reviewer",
                     "performance_reviewer",
                     "style_reviewer",
