@@ -112,13 +112,15 @@ class TerminalVisualizer:
 
     async def _handle_ensemble_started(self, event: ExecutionEvent) -> None:
         """Handle ensemble started event."""
-        self.execution_state.update({
-            "ensemble_name": event.ensemble_name or "Unknown",
-            "execution_id": event.execution_id or "Unknown",
-            "status": "running",
-            "start_time": event.timestamp,
-            "total_agents": event.data.get("total_agents", 0),
-        })
+        self.execution_state.update(
+            {
+                "ensemble_name": event.ensemble_name or "Unknown",
+                "execution_id": event.execution_id or "Unknown",
+                "status": "running",
+                "start_time": event.timestamp,
+                "total_agents": event.data.get("total_agents", 0),
+            }
+        )
 
         # Create overall progress task
         self.overall_task_id = self.progress.add_task(
@@ -170,11 +172,13 @@ class TerminalVisualizer:
         # Add intermediate result if available
         intermediate_result = event.data.get("intermediate_result")
         if intermediate_result and self.config.terminal.show_live_results:
-            self.execution_state["live_results"].append({
-                "agent": agent_name,
-                "result": intermediate_result,
-                "timestamp": event.timestamp,
-            })
+            self.execution_state["live_results"].append(
+                {
+                    "agent": agent_name,
+                    "result": intermediate_result,
+                    "timestamp": event.timestamp,
+                }
+            )
 
     async def _handle_agent_completed(self, event: ExecutionEvent) -> None:
         """Handle agent completed event."""
@@ -184,13 +188,15 @@ class TerminalVisualizer:
 
         # Update agent state
         agent_info = self.execution_state["agents"][agent_name]
-        agent_info.update({
-            "status": "completed",
-            "result": event.data.get("result", ""),
-            "duration": event.data.get("duration_ms", 0),
-            "cost": event.data.get("cost_usd", 0.0),
-            "progress": 100.0,
-        })
+        agent_info.update(
+            {
+                "status": "completed",
+                "result": event.data.get("result", ""),
+                "duration": event.data.get("duration_ms", 0),
+                "cost": event.data.get("cost_usd", 0.0),
+                "progress": 100.0,
+            }
+        )
 
         # Update progress bars
         if agent_name in self.agent_task_ids:
@@ -199,7 +205,9 @@ class TerminalVisualizer:
         # Update overall progress
         self.execution_state["completed_agents"] += 1
         if self.overall_task_id:
-            self.progress.update(self.overall_task_id, completed=self.execution_state["completed_agents"])
+            self.progress.update(
+                self.overall_task_id, completed=self.execution_state["completed_agents"]
+            )
 
         # Update performance metrics
         self.execution_state["performance"]["total_cost"] += agent_info["cost"]
@@ -207,11 +215,15 @@ class TerminalVisualizer:
 
         # Add result to live results
         if self.config.terminal.show_live_results:
-            self.execution_state["live_results"].append({
-                "agent": agent_name,
-                "result": f"✅ {agent_name}: Completed in {agent_info['duration']}ms",
-                "timestamp": event.timestamp,
-            })
+            self.execution_state["live_results"].append(
+                {
+                    "agent": agent_name,
+                    "result": (
+                        f"✅ {agent_name}: Completed in {agent_info['duration']}ms"
+                    ),
+                    "timestamp": event.timestamp,
+                }
+            )
 
     async def _handle_agent_failed(self, event: ExecutionEvent) -> None:
         """Handle agent failed event."""
@@ -221,12 +233,14 @@ class TerminalVisualizer:
 
         # Update agent state
         agent_info = self.execution_state["agents"][agent_name]
-        agent_info.update({
-            "status": "failed",
-            "error": event.data.get("error", "Unknown error"),
-            "duration": event.data.get("duration_ms", 0),
-            "progress": 0.0,
-        })
+        agent_info.update(
+            {
+                "status": "failed",
+                "error": event.data.get("error", "Unknown error"),
+                "duration": event.data.get("duration_ms", 0),
+                "progress": 0.0,
+            }
+        )
 
         # Update progress bars
         if agent_name in self.agent_task_ids:
@@ -235,14 +249,18 @@ class TerminalVisualizer:
         # Update counters
         self.execution_state["failed_agents"] += 1
         if self.overall_task_id:
-            self.progress.update(self.overall_task_id, completed=self.execution_state["completed_agents"])
+            self.progress.update(
+                self.overall_task_id, completed=self.execution_state["completed_agents"]
+            )
 
         # Add error to live results
-        self.execution_state["live_results"].append({
-            "agent": agent_name,
-            "result": f"❌ {agent_name}: {agent_info['error']}",
-            "timestamp": event.timestamp,
-        })
+        self.execution_state["live_results"].append(
+            {
+                "agent": agent_name,
+                "result": f"❌ {agent_name}: {agent_info['error']}",
+                "timestamp": event.timestamp,
+            }
+        )
 
     async def _handle_ensemble_completed(self, event: ExecutionEvent) -> None:
         """Handle ensemble completed event."""
@@ -250,7 +268,9 @@ class TerminalVisualizer:
 
         # Complete overall progress
         if self.overall_task_id:
-            self.progress.update(self.overall_task_id, completed=self.execution_state["total_agents"])
+            self.progress.update(
+                self.overall_task_id, completed=self.execution_state["total_agents"]
+            )
 
     async def _handle_performance_metric(self, event: ExecutionEvent) -> None:
         """Handle performance metric event."""
@@ -298,10 +318,14 @@ class TerminalVisualizer:
         # Calculate duration
         duration_text = ""
         if self.execution_state["start_time"]:
-            duration = (datetime.now() - self.execution_state["start_time"]).total_seconds()
+            duration = (
+                datetime.now() - self.execution_state["start_time"]
+            ).total_seconds()
             duration_text = f"({duration:.1f}s)"
 
-        header_text = f"{status_emoji} {ensemble_name} - {status.title()} {duration_text}"
+        header_text = (
+            f"{status_emoji} {ensemble_name} - {status.title()} {duration_text}"
+        )
 
         return Panel(
             Align.center(Text(header_text, style="bold")),
@@ -387,10 +411,7 @@ class TerminalVisualizer:
         if not recent_results:
             return Panel("No results yet...", title="📋 Live Results")
 
-        results_text = "\n".join([
-            f"• {result['result']}"
-            for result in recent_results
-        ])
+        results_text = "\n".join([f"• {result['result']}" for result in recent_results])
 
         return Panel(results_text, title="📋 Live Results", border_style="yellow")
 
@@ -407,8 +428,12 @@ class TerminalVisualizer:
 
         # Calculate agents per second
         if self.execution_state["start_time"]:
-            elapsed = (datetime.now() - self.execution_state["start_time"]).total_seconds()
-            agents_per_sec = self.execution_state["completed_agents"] / elapsed if elapsed > 0 else 0
+            elapsed = (
+                datetime.now() - self.execution_state["start_time"]
+            ).total_seconds()
+            agents_per_sec = (
+                self.execution_state["completed_agents"] / elapsed if elapsed > 0 else 0
+            )
         else:
             agents_per_sec = 0
 
@@ -427,8 +452,8 @@ class TerminalVisualizer:
     def _is_execution_complete(self, event: ExecutionEvent) -> bool:
         """Check if execution is complete."""
         return (
-            event.event_type == ExecutionEventType.ENSEMBLE_COMPLETED or
-            event.event_type == ExecutionEventType.ENSEMBLE_FAILED
+            event.event_type == ExecutionEventType.ENSEMBLE_COMPLETED
+            or event.event_type == ExecutionEventType.ENSEMBLE_FAILED
         )
 
     def print_summary(self) -> None:
@@ -455,7 +480,9 @@ class TerminalVisualizer:
 
         # Duration
         if self.execution_state["start_time"]:
-            duration = (datetime.now() - self.execution_state["start_time"]).total_seconds()
+            duration = (
+                datetime.now() - self.execution_state["start_time"]
+            ).total_seconds()
             table.add_row("Execution Time", f"{duration:.1f}s")
 
         self.console.print(table)

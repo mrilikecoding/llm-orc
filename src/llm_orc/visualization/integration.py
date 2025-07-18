@@ -28,7 +28,7 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
         self,
         config: EnsembleConfig,
         input_data: str,
-        visualization_mode: str | None = None
+        visualization_mode: str | None = None,
     ) -> dict[str, Any]:
         """Execute ensemble with integrated visualization."""
         if not self.viz_config.enabled:
@@ -49,16 +49,22 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
 
             # Start visualization based on mode
             if mode == "terminal":
-                return await self._execute_with_terminal_visualization(config, input_data)
+                return await self._execute_with_terminal_visualization(
+                    config, input_data
+                )
             elif mode == "web":
                 return await self._execute_with_web_visualization(config, input_data)
             elif mode == "debug":
                 return await self._execute_with_debug_visualization(config, input_data)
             elif mode == "minimal":
-                return await self._execute_with_minimal_visualization(config, input_data)
+                return await self._execute_with_minimal_visualization(
+                    config, input_data
+                )
             else:
                 # Default to terminal
-                return await self._execute_with_terminal_visualization(config, input_data)
+                return await self._execute_with_terminal_visualization(
+                    config, input_data
+                )
 
         finally:
             # Clean up
@@ -77,7 +83,7 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
         )
 
         visualization_task = asyncio.create_task(
-            visualizer.visualize_execution(self.current_stream)
+            visualizer.visualize_execution(self.current_stream or EventStream(""))
         )
 
         try:
@@ -142,7 +148,7 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
         await self.current_stream.emit(
             EventFactory.ensemble_started(
                 ensemble_name=config.name,
-                execution_id=self.current_execution_id,
+                execution_id=self.current_execution_id or "unknown",
                 total_agents=len(config.agents),
             )
         )
@@ -155,7 +161,7 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
             await self.current_stream.emit(
                 EventFactory.ensemble_completed(
                     ensemble_name=config.name,
-                    execution_id=self.current_execution_id,
+                    execution_id=self.current_execution_id or "unknown",
                     result=result,
                     duration_ms=int(time.time() * 1000),
                 )
@@ -168,7 +174,7 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
             await self.current_stream.emit(
                 EventFactory.ensemble_failed(
                     ensemble_name=config.name,
-                    execution_id=self.current_execution_id,
+                    execution_id=self.current_execution_id or "unknown",
                     error=str(e),
                 )
             )
@@ -194,13 +200,15 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
             # Silently ignore conversion errors
             pass
 
-    def _convert_performance_event(self, event_type: str, data: dict[str, Any]):
+    def _convert_performance_event(
+        self, event_type: str, data: dict[str, Any]
+    ) -> Any | None:
         """Convert performance event to visualization event."""
         if event_type == "agent_started":
             return EventFactory.agent_started(
                 agent_name=data.get("agent_name", "unknown"),
                 ensemble_name="current_ensemble",  # Use a placeholder for now
-                execution_id=self.current_execution_id,
+                execution_id=self.current_execution_id or "unknown",
                 model=data.get("model", "unknown"),
                 dependencies=data.get("dependencies", []),
             )
@@ -209,7 +217,7 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
             return EventFactory.agent_completed(
                 agent_name=data.get("agent_name", "unknown"),
                 ensemble_name="current_ensemble",  # Use a placeholder for now
-                execution_id=self.current_execution_id,
+                execution_id=self.current_execution_id or "unknown",
                 result=data.get("result", ""),
                 duration_ms=data.get("duration_ms", 0),
                 cost_usd=data.get("cost_usd"),
@@ -220,7 +228,7 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
             return EventFactory.agent_failed(
                 agent_name=data.get("agent_name", "unknown"),
                 ensemble_name="current_ensemble",  # Use a placeholder for now
-                execution_id=self.current_execution_id,
+                execution_id=self.current_execution_id or "unknown",
                 error=data.get("error", "Unknown error"),
                 duration_ms=data.get("duration_ms", 0),
             )
@@ -229,19 +237,17 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
 
 
 # Add missing EventFactory methods
-def _add_missing_event_factory_methods():
+def _add_missing_event_factory_methods() -> None:
     """Add missing methods to EventFactory."""
+    from .events import ExecutionEvent
 
-    @staticmethod
     def ensemble_completed(
         ensemble_name: str,
         execution_id: str,
         result: dict[str, Any],
         duration_ms: int,
-    ):
+    ) -> ExecutionEvent:
         """Create ensemble completed event."""
-        from .events import ExecutionEvent
-
         return ExecutionEvent(
             event_type=ExecutionEventType.ENSEMBLE_COMPLETED,
             timestamp=datetime.now(),
@@ -254,15 +260,12 @@ def _add_missing_event_factory_methods():
             },
         )
 
-    @staticmethod
     def ensemble_failed(
         ensemble_name: str,
         execution_id: str,
         error: str,
-    ):
+    ) -> ExecutionEvent:
         """Create ensemble failed event."""
-        from .events import ExecutionEvent
-
         return ExecutionEvent(
             event_type=ExecutionEventType.ENSEMBLE_FAILED,
             timestamp=datetime.now(),
@@ -275,8 +278,9 @@ def _add_missing_event_factory_methods():
         )
 
     # Add methods to EventFactory
-    EventFactory.ensemble_completed = ensemble_completed
-    EventFactory.ensemble_failed = ensemble_failed
+    EventFactory.ensemble_completed = staticmethod(ensemble_completed)  # type: ignore[method-assign]
+    EventFactory.ensemble_failed = staticmethod(ensemble_failed)  # type: ignore[method-assign]
+
 
 # Apply the missing methods
 _add_missing_event_factory_methods()

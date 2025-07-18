@@ -127,7 +127,9 @@ class VisualizationConfig:
                 show_agent_status=terminal_data.get("show_agent_status", True),
                 show_live_results=terminal_data.get("show_live_results", False),
                 show_dependencies=terminal_data.get("show_dependencies", True),
-                show_performance_metrics=terminal_data.get("show_performance_metrics", True),
+                show_performance_metrics=terminal_data.get(
+                    "show_performance_metrics", True
+                ),
                 use_colors=terminal_data.get("use_colors", True),
                 use_emojis=terminal_data.get("use_emojis", True),
                 compact_mode=terminal_data.get("compact_mode", False),
@@ -155,13 +157,17 @@ class VisualizationConfig:
             config.debug = DebugVisualizationConfig(
                 enabled=debug_data.get("enabled", False),
                 step_mode=debug_data.get("step_mode", False),
-                show_intermediate_results=debug_data.get("show_intermediate_results", True),
+                show_intermediate_results=debug_data.get(
+                    "show_intermediate_results", True
+                ),
                 verbose_logging=debug_data.get("verbose_logging", True),
                 breakpoints=debug_data.get("breakpoints", []),
                 break_on_error=debug_data.get("break_on_error", True),
                 break_on_timeout=debug_data.get("break_on_timeout", False),
                 allow_agent_inspection=debug_data.get("allow_agent_inspection", True),
-                allow_result_modification=debug_data.get("allow_result_modification", False),
+                allow_result_modification=debug_data.get(
+                    "allow_result_modification", False
+                ),
             )
 
         # Set export configuration
@@ -170,7 +176,9 @@ class VisualizationConfig:
             config.export = ExportConfig(
                 save_execution_logs=export_data.get("save_execution_logs", True),
                 generate_reports=export_data.get("generate_reports", False),
-                output_directory=Path(export_data.get("output_directory", "./llm-orc-logs")),
+                output_directory=Path(
+                    export_data.get("output_directory", "./llm-orc-logs")
+                ),
                 export_json=export_data.get("export_json", True),
                 export_html=export_data.get("export_html", False),
                 export_csv=export_data.get("export_csv", False),
@@ -248,6 +256,7 @@ def load_visualization_config(config_path: Path | None = None) -> VisualizationC
 
     try:
         import yaml
+
         with open(config_path) as f:
             data = yaml.safe_load(f)
         return VisualizationConfig.from_dict(data)
@@ -256,7 +265,9 @@ def load_visualization_config(config_path: Path | None = None) -> VisualizationC
         return VisualizationConfig()
 
 
-def save_visualization_config(config: VisualizationConfig, config_path: Path | None = None) -> None:
+def save_visualization_config(
+    config: VisualizationConfig, config_path: Path | None = None
+) -> None:
     """Save visualization configuration to file."""
     if config_path is None:
         config_path = Path(".llm-orc/visualization.yaml")
@@ -266,7 +277,8 @@ def save_visualization_config(config: VisualizationConfig, config_path: Path | N
 
     try:
         import yaml
+
         with open(config_path, "w") as f:
             yaml.safe_dump(config.to_dict(), f, default_flow_style=False, indent=2)
     except Exception as e:
-        raise RuntimeError(f"Failed to save visualization configuration: {e}")
+        raise RuntimeError(f"Failed to save visualization configuration: {e}") from e

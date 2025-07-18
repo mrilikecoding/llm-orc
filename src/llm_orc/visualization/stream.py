@@ -14,7 +14,9 @@ class EventStream:
 
     def __init__(self, execution_id: str):
         self.execution_id = execution_id
-        self._subscribers: dict[str, list[asyncio.Queue]] = defaultdict(list)
+        self._subscribers: dict[str, list[asyncio.Queue[ExecutionEvent]]] = defaultdict(
+            list
+        )
         self._event_history: list[ExecutionEvent] = []
         self._is_closed = False
 
@@ -57,13 +59,13 @@ class EventStream:
 
         # Default to all event types
         if event_types is None:
-            event_types = [ExecutionEventType.ENSEMBLE_STARTED]  # Subscribe to all with "*"
+            event_types = [ExecutionEventType.ENSEMBLE_STARTED]  # Subscribe to all
             subscription_keys = ["*"]
         else:
             subscription_keys = [event_type.value for event_type in event_types]
 
         # Create queue for this subscription
-        queue = asyncio.Queue(maxsize=queue_size)
+        queue: asyncio.Queue[ExecutionEvent] = asyncio.Queue(maxsize=queue_size)
 
         # Register queue for each event type
         for key in subscription_keys:
@@ -119,9 +121,9 @@ class EventStream:
 class EventStreamManager:
     """Manages multiple event streams across different executions."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._streams: dict[str, EventStream] = {}
-        self._cleanup_tasks: set[asyncio.Task] = set()
+        self._cleanup_tasks: set[asyncio.Task[None]] = set()
 
     def create_stream(self, execution_id: str | None = None) -> EventStream:
         """Create a new event stream for an execution."""
@@ -135,7 +137,9 @@ class EventStreamManager:
         self._streams[execution_id] = stream
 
         # Schedule cleanup task
-        cleanup_task = asyncio.create_task(self._cleanup_stream_after_delay(execution_id))
+        cleanup_task = asyncio.create_task(
+            self._cleanup_stream_after_delay(execution_id)
+        )
         self._cleanup_tasks.add(cleanup_task)
 
         return stream
@@ -151,7 +155,9 @@ class EventStreamManager:
             stream.close()
             del self._streams[execution_id]
 
-    async def _cleanup_stream_after_delay(self, execution_id: str, delay: int = 3600) -> None:
+    async def _cleanup_stream_after_delay(
+        self, execution_id: str, delay: int = 3600
+    ) -> None:
         """Clean up a stream after a delay (default 1 hour)."""
         await asyncio.sleep(delay)
         self.remove_stream(execution_id)
@@ -184,28 +190,35 @@ class PerformanceEventCollector:
 
     async def collect_performance_events(self) -> None:
         """Collect performance events from the stream."""
-        async for event in self.stream.subscribe([
-            ExecutionEventType.AGENT_STARTED,
-            ExecutionEventType.AGENT_COMPLETED,
-            ExecutionEventType.AGENT_FAILED,
-            ExecutionEventType.PERFORMANCE_METRIC,
-            ExecutionEventType.COST_UPDATE,
-        ]):
+        async for event in self.stream.subscribe(
+            [
+                ExecutionEventType.AGENT_STARTED,
+                ExecutionEventType.AGENT_COMPLETED,
+                ExecutionEventType.AGENT_FAILED,
+                ExecutionEventType.PERFORMANCE_METRIC,
+                ExecutionEventType.COST_UPDATE,
+            ]
+        ):
             await self._process_performance_event(event)
 
     async def _process_performance_event(self, event: ExecutionEvent) -> None:
         """Process a single performance event."""
         if event.event_type == ExecutionEventType.AGENT_STARTED:
-            self._start_times[event.agent_name] = event.timestamp.timestamp()
+            self._start_times[event.agent_name or "unknown"] = (
+                event.timestamp.timestamp()
+            )
 
-        elif event.event_type in [ExecutionEventType.AGENT_COMPLETED, ExecutionEventType.AGENT_FAILED]:
+        elif event.event_type in [
+            ExecutionEventType.AGENT_COMPLETED,
+            ExecutionEventType.AGENT_FAILED,
+        ]:
             if event.agent_name and event.agent_name in self._start_times:
                 duration = event.data.get("duration_ms", 0)
                 self._durations[event.agent_name] = duration
 
                 cost = event.data.get("cost_usd", 0.0)
                 if cost:
-                    self._costs[event.agent_name] = cost
+                    self._costs[event.agent_name or "unknown"] = cost
 
         elif event.event_type == ExecutionEventType.PERFORMANCE_METRIC:
             metric_name = event.data.get("metric_name")
@@ -235,6 +248,7 @@ class PerformanceEventCollector:
 
 # Global event stream manager
 _global_stream_manager = EventStreamManager()
+
 
 def get_stream_manager() -> EventStreamManager:
     """Get the global event stream manager."""

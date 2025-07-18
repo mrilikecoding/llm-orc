@@ -227,7 +227,8 @@ def invoke(
     # Create executor (with visualization if requested)
     if visualize:
         from llm_orc.visualization.integration import VisualizationIntegratedExecutor
-        executor = VisualizationIntegratedExecutor()
+
+        executor: EnsembleExecutor = VisualizationIntegratedExecutor()
     else:
         executor = EnsembleExecutor()
 
@@ -275,15 +276,23 @@ def invoke(
         if visualize:
             # Enhanced visualization execution
             async def run_with_visualization() -> None:
-                result = await executor.execute_with_visualization(
-                    ensemble_config, input_data, visualization_mode
+                from llm_orc.visualization.integration import (
+                    VisualizationIntegratedExecutor,
                 )
+
+                viz_executor = executor
+                if isinstance(viz_executor, VisualizationIntegratedExecutor):
+                    result = await viz_executor.execute_with_visualization(
+                        ensemble_config, input_data, visualization_mode
+                    )
+                else:
+                    result = await executor.execute(ensemble_config, input_data)
                 if output_format == "json":
                     click.echo(json.dumps(result, indent=2))
                 else:
                     # Results are already displayed by the visualizer
                     pass
-            
+
             asyncio.run(run_with_visualization())
         elif effective_streaming:
             # Streaming execution
