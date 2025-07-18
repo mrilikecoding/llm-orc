@@ -162,6 +162,17 @@ def cli() -> None:
     default=None,
     help="Maximum number of concurrent agents (overrides config)",
 )
+@click.option(
+    "--visualize",
+    is_flag=True,
+    help="Enable enhanced visualization during execution",
+)
+@click.option(
+    "--visualization-mode",
+    type=click.Choice(["terminal", "web", "debug", "minimal"]),
+    default=None,
+    help="Visualization mode (overrides config default)",
+)
 def invoke(
     ensemble_name: str,
     config_dir: str,
@@ -169,6 +180,8 @@ def invoke(
     output_format: str,
     streaming: bool,
     max_concurrent: int,
+    visualize: bool,
+    visualization_mode: str,
 ) -> None:
     """Invoke an ensemble of agents."""
     # Initialize configuration manager
@@ -211,8 +224,12 @@ def invoke(
             f"Ensemble '{ensemble_name}' not found in: {', '.join(searched_dirs)}"
         )
 
-    # Create executor
-    executor = EnsembleExecutor()
+    # Create executor (with visualization if requested)
+    if visualize:
+        from llm_orc.visualization.integration import VisualizationIntegratedExecutor
+        executor = VisualizationIntegratedExecutor()
+    else:
+        executor = EnsembleExecutor()
 
     # Override concurrency settings if provided
     if max_concurrent is not None:
@@ -255,7 +272,20 @@ def invoke(
 
     # Execute the ensemble
     try:
-        if effective_streaming:
+        if visualize:
+            # Enhanced visualization execution
+            async def run_with_visualization() -> None:
+                result = await executor.execute_with_visualization(
+                    ensemble_config, input_data, visualization_mode
+                )
+                if output_format == "json":
+                    click.echo(json.dumps(result, indent=2))
+                else:
+                    # Results are already displayed by the visualizer
+                    pass
+            
+            asyncio.run(run_with_visualization())
+        elif effective_streaming:
             # Streaming execution
             async def run_streaming() -> None:
                 async for event in executor.execute_streaming(
