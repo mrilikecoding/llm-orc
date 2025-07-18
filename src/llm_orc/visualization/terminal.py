@@ -188,12 +188,13 @@ class TerminalVisualizer:
 
         # Update agent state
         agent_info = self.execution_state["agents"][agent_name]
+        cost_usd = event.data.get("cost_usd")
         agent_info.update(
             {
                 "status": "completed",
                 "result": event.data.get("result", ""),
                 "duration": event.data.get("duration_ms", 0),
-                "cost": event.data.get("cost_usd", 0.0),
+                "cost": cost_usd if cost_usd is not None else 0.0,
                 "progress": 100.0,
             }
         )

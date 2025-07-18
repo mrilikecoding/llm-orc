@@ -220,7 +220,7 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
                 execution_id=self.current_execution_id or "unknown",
                 result=data.get("result", ""),
                 duration_ms=data.get("duration_ms", 0),
-                cost_usd=data.get("cost_usd"),
+                cost_usd=data.get("cost_usd", 0.0),
                 tokens_used=data.get("tokens_used"),
             )
 

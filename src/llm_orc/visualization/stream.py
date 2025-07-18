@@ -216,8 +216,8 @@ class PerformanceEventCollector:
                 duration = event.data.get("duration_ms", 0)
                 self._durations[event.agent_name] = duration
 
-                cost = event.data.get("cost_usd", 0.0)
-                if cost:
+                cost = event.data.get("cost_usd")
+                if cost is not None and cost > 0:
                     self._costs[event.agent_name or "unknown"] = cost
 
         elif event.event_type == ExecutionEventType.PERFORMANCE_METRIC:

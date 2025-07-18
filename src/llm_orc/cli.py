@@ -290,8 +290,8 @@ def invoke(
                 if output_format == "json":
                     click.echo(json.dumps(result, indent=2))
                 else:
-                    # Results are already displayed by the visualizer
-                    pass
+                    # Display results after visualization completes
+                    _display_results(result["results"], result["metadata"])
 
             asyncio.run(run_with_visualization())
         elif effective_streaming:
