@@ -240,7 +240,7 @@ class TestVisualizationIntegratedExecutor:
             {
                 "agent_name": "test_agent",
                 "model": "test_model",
-                "dependencies": ["dep1", "dep2"],
+                "depends_on": ["dep1", "dep2"],
             },
         )
 
@@ -249,7 +249,7 @@ class TestVisualizationIntegratedExecutor:
         assert event.agent_name == "test_agent"
         assert event.execution_id == "test_id"
         assert event.data["model"] == "test_model"
-        assert event.data["dependencies"] == ["dep1", "dep2"]
+        assert event.data["depends_on"] == ["dep1", "dep2"]
 
     def test_convert_performance_event_agent_completed(self) -> None:
         """Test performance event conversion for agent completed."""

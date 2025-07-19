@@ -102,7 +102,7 @@ class EventFactory:
         ensemble_name: str,
         execution_id: str,
         model: str,
-        dependencies: list[str] | None = None,
+        depends_on: list[str] | None = None,
     ) -> ExecutionEvent:
         """Create agent started event."""
         return ExecutionEvent(
@@ -113,7 +113,7 @@ class EventFactory:
             execution_id=execution_id,
             data={
                 "model": model,
-                "dependencies": dependencies or [],
+                "depends_on": depends_on or [],
                 "status": "running",
             },
         )

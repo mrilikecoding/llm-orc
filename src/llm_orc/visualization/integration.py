@@ -210,7 +210,7 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
                 ensemble_name="current_ensemble",  # Use a placeholder for now
                 execution_id=self.current_execution_id or "unknown",
                 model=data.get("model", "unknown"),
-                dependencies=data.get("dependencies", []),
+                depends_on=data.get("depends_on", []),
             )
 
         elif event_type == "agent_completed":

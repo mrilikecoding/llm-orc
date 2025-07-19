@@ -1,0 +1,60 @@
+name: multi-level-test
+description: Test ensemble with multi-level dependencies (A,B,C → D → E,F → G)
+
+agents:
+  # Level 1: Independent agents (A, B, C)
+  - name: agent-a
+    provider: ollama
+    model: llama3
+    role: You are agent A. Provide analysis from perspective A.
+    temperature: 0.3
+    max_tokens: 50
+
+  - name: agent-b
+    provider: ollama
+    model: llama3
+    role: You are agent B. Provide analysis from perspective B.
+    temperature: 0.3
+    max_tokens: 50
+
+  - name: agent-c
+    provider: ollama
+    model: llama3
+    role: You are agent C. Provide analysis from perspective C.
+    temperature: 0.3
+    max_tokens: 50
+
+  # Level 2: Agent D depends on A, B, C
+  - name: agent-d
+    provider: ollama
+    model: llama3
+    role: You are agent D. Synthesize the input from agents A, B, and C.
+    depends_on: [agent-a, agent-b, agent-c]
+    temperature: 0.3
+    max_tokens: 75
+
+  # Level 3: Agents E, F depend on D
+  - name: agent-e
+    provider: ollama
+    model: llama3
+    role: You are agent E. Build on agent D's synthesis from your perspective.
+    depends_on: [agent-d]
+    temperature: 0.3
+    max_tokens: 50
+
+  - name: agent-f
+    provider: ollama
+    model: llama3
+    role: You are agent F. Build on agent D's synthesis from your perspective.
+    depends_on: [agent-d]
+    temperature: 0.3
+    max_tokens: 50
+
+  # Level 4: Agent G depends on E, F
+  - name: agent-g
+    provider: ollama
+    model: llama3
+    role: You are agent G. Provide final synthesis from agents E and F.
+    depends_on: [agent-e, agent-f]
+    temperature: 0.3
+    max_tokens: 100

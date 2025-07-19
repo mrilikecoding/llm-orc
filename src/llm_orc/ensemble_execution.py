@@ -140,6 +140,9 @@ class EnsembleExecutor:
         """Execute an ensemble and return structured results."""
         start_time = time.time()
 
+        # Store agent configs for role descriptions
+        self._current_agent_configs = config.agents
+
         # Initialize result structure
         result: dict[str, Any] = {
             "ensemble": config.name,
@@ -210,37 +213,58 @@ class EnsembleExecutor:
             )
             enhanced_input = f"{task_input}\n\n{context_text}"
 
-        # Analyze dependencies to determine execution phases
-        independent_agents, dependent_agents = self._analyze_dependencies(llm_agents)
-
-        # Phase 2.1: Execute independent LLM agents in parallel
-        if independent_agents:
-            await self._execute_agents_parallel(
-                independent_agents, enhanced_input, config, results_dict, agent_usage
-            )
-            if any(
-                result.get("status") == "failed" for result in results_dict.values()
-            ):
-                has_errors = True
-
-        # Phase 2.2: Execute dependent agents with results from independent agents
-        if dependent_agents:
-            # Enhance input with results from independent agents
-            enhanced_input_with_deps = self._enhance_input_with_dependencies(
-                enhanced_input, dependent_agents, results_dict
-            )
-
-            await self._execute_agents_parallel(
-                dependent_agents,
-                enhanced_input_with_deps,
-                config,
-                results_dict,
-                agent_usage,
-            )
-            if any(
-                result.get("status") == "failed" for result in results_dict.values()
-            ):
-                has_errors = True
+        # Use enhanced dependency analysis for multi-level execution
+        if llm_agents:
+            dependency_analysis = self._analyze_enhanced_dependency_graph(llm_agents)
+            phases = dependency_analysis["phases"]
+            
+            # Execute each phase sequentially, with parallelization within each phase
+            for phase_index, phase_agents in enumerate(phases):
+                self._emit_performance_event(
+                    "phase_started",
+                    {
+                        "phase_index": phase_index,
+                        "phase_agents": [agent["name"] for agent in phase_agents],
+                        "total_phases": len(phases),
+                    },
+                )
+                
+                # Determine input for this phase
+                if phase_index == 0:
+                    # First phase uses the base enhanced input
+                    phase_input = enhanced_input
+                else:
+                    # Subsequent phases get enhanced input with dependencies
+                    phase_input = self._enhance_input_with_dependencies(
+                        enhanced_input, phase_agents, results_dict
+                    )
+                
+                # Execute all agents in this phase in parallel
+                await self._execute_agents_parallel(
+                    phase_agents, phase_input, config, results_dict, agent_usage
+                )
+                
+                # Check for failures in this phase
+                if any(
+                    result.get("status") == "failed" for result in results_dict.values()
+                ):
+                    has_errors = True
+                
+                self._emit_performance_event(
+                    "phase_completed",
+                    {
+                        "phase_index": phase_index,
+                        "phase_agents": [agent["name"] for agent in phase_agents],
+                        "completed_agents": len([
+                            a for a in phase_agents 
+                            if results_dict.get(a["name"], {}).get("status") == "success"
+                        ]),
+                        "failed_agents": len([
+                            a for a in phase_agents 
+                            if results_dict.get(a["name"], {}).get("status") == "failed"
+                        ]),
+                    },
+                )
 
         # Calculate usage totals (no coordinator synthesis in dependency-based model)
         usage_summary = self._calculate_usage_summary(agent_usage, None)
@@ -584,15 +608,28 @@ class EnsembleExecutor:
 
         return independent_agents, dependent_agents
 
+    def _get_agent_input(
+        self, input_data: str | dict[str, str], agent_name: str
+    ) -> str:
+        """Get appropriate input for an agent from uniform or per-agent input."""
+        if isinstance(input_data, dict):
+            return input_data.get(agent_name, "")
+        return input_data
+
     async def _execute_agents_parallel(
         self,
         agents: list[dict[str, Any]],
-        input_data: str,
+        input_data: str | dict[str, str],
         config: EnsembleConfig,
         results_dict: dict[str, Any],
         agent_usage: dict[str, Any],
     ) -> None:
-        """Execute a list of agents in parallel with resource management."""
+        """Execute a list of agents in parallel with resource management.
+
+        Args:
+            input_data: Either a string for uniform input, or a dict mapping
+                       agent names to their specific enhanced input.
+        """
         if not agents:
             return
 
@@ -634,7 +671,7 @@ class EnsembleExecutor:
     async def _execute_agents_unlimited(
         self,
         agents: list[dict[str, Any]],
-        input_data: str,
+        input_data: str | dict[str, str],
         config: EnsembleConfig,
         results_dict: dict[str, Any],
         agent_usage: dict[str, Any],
@@ -665,8 +702,12 @@ class EnsembleExecutor:
                             "default_timeout", 60
                         )
                     )
+                    # Get the appropriate input for this agent
+                    agent_input = self._get_agent_input(
+                        input_data, agent_config["name"]
+                    )
                     result = await self._execute_agent_with_timeout(
-                        agent_config, input_data, timeout
+                        agent_config, agent_input, timeout
                     )
 
                     # Emit agent completed event with duration
@@ -723,7 +764,7 @@ class EnsembleExecutor:
     async def _execute_agents_with_semaphore(
         self,
         agents: list[dict[str, Any]],
-        input_data: str,
+        input_data: str | dict[str, str],
         config: EnsembleConfig,
         results_dict: dict[str, Any],
         agent_usage: dict[str, Any],
@@ -757,8 +798,12 @@ class EnsembleExecutor:
                             "default_timeout", 60
                         )
                     )
+                    # Get the appropriate input for this agent
+                    agent_input = self._get_agent_input(
+                        input_data, agent_config["name"]
+                    )
                     result = await self._execute_agent_with_timeout(
-                        agent_config, input_data, timeout
+                        agent_config, agent_input, timeout
                     )
 
                     # Emit agent completed event with duration
@@ -849,27 +894,71 @@ class EnsembleExecutor:
         base_input: str,
         dependent_agents: list[dict[str, Any]],
         results_dict: dict[str, Any],
-    ) -> str:
-        """Enhance input with dependency results for dependent agents."""
-        # For now, use the same enhanced input for all dependent agents
-        # In future iterations, we could customize input per agent based on dependencies
-        dependency_results = []
+    ) -> dict[str, str]:
+        """Enhance input with dependency results for each dependent agent.
+
+        Returns a dictionary mapping agent names to their enhanced input.
+        Each agent gets only the results from their specific dependencies.
+        """
+        enhanced_inputs = {}
 
         for agent_config in dependent_agents:
-            dependencies = agent_config.get("dependencies", [])
+            agent_name = agent_config["name"]
+            dependencies = agent_config.get("depends_on", [])
+
+            if not dependencies:
+                enhanced_inputs[agent_name] = base_input
+                continue
+
+            # Build structured dependency results for this specific agent
+            dependency_results = []
             for dep_name in dependencies:
                 if (
                     dep_name in results_dict
                     and results_dict[dep_name].get("status") == "success"
                 ):
                     response = results_dict[dep_name]["response"]
-                    dependency_results.append(f"=== {dep_name} ===\n{response}")
+                    # Get agent role/profile for better attribution
+                    dep_role = self._get_agent_role_description(dep_name)
+                    role_text = f" ({dep_role})" if dep_role else ""
 
-        if dependency_results:
-            deps_text = "\n\n".join(dependency_results)
-            return f"{base_input}\n\nDependency Results:\n{deps_text}"
+                    dependency_results.append(
+                        f"Agent {dep_name}{role_text}:\n{response}"
+                    )
 
-        return base_input
+            if dependency_results:
+                deps_text = "\n\n".join(dependency_results)
+                enhanced_inputs[agent_name] = (
+                    f"You are {agent_name}. Please respond to the following input, "
+                    f"taking into account the results from the previous agents in the dependency chain.\n\n"
+                    f"Original Input:\n{base_input}\n\n"
+                    f"Previous Agent Results (for your reference):\n"
+                    f"{deps_text}\n\n"
+                    f"Please provide your own analysis as {agent_name}, building upon "
+                    f"(but not simply repeating) the previous results."
+                )
+            else:
+                enhanced_inputs[agent_name] = f"You are {agent_name}. Please respond to: {base_input}"
+
+        return enhanced_inputs
+
+    def _get_agent_role_description(self, agent_name: str) -> str | None:
+        """Get a human-readable role description for an agent."""
+        # Try to find the agent in the current ensemble config
+        if hasattr(self, '_current_agent_configs'):
+            for agent_config in self._current_agent_configs:
+                if agent_config["name"] == agent_name:
+                    # Try model_profile first, then infer from name
+                    if "model_profile" in agent_config:
+                        profile = str(agent_config["model_profile"])
+                        # Convert kebab-case to title case
+                        return profile.replace("-", " ").title()
+                    else:
+                        # Convert agent name to readable format
+                        return agent_name.replace("-", " ").title()
+
+        # Fallback: convert name to readable format
+        return agent_name.replace("-", " ").title()
 
     def _analyze_enhanced_dependency_graph(
         self, agent_configs: list[dict[str, Any]]
@@ -893,7 +982,7 @@ class EnsembleExecutor:
         """
         # Build dependency map for efficient lookup
         dependency_map = {
-            agent_config["name"]: agent_config.get("dependencies", [])
+            agent_config["name"]: agent_config.get("depends_on", [])
             for agent_config in agent_configs
         }
 

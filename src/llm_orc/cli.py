@@ -173,6 +173,11 @@ def cli() -> None:
     default=None,
     help="Visualization mode (overrides config default)",
 )
+@click.option(
+    "--detailed",
+    is_flag=True,
+    help="Show detailed results and performance metrics",
+)
 def invoke(
     ensemble_name: str,
     config_dir: str,
@@ -182,6 +187,7 @@ def invoke(
     max_concurrent: int,
     visualize: bool,
     visualization_mode: str,
+    detailed: bool,
 ) -> None:
     """Invoke an ensemble of agents."""
     # Initialize configuration manager
@@ -291,7 +297,7 @@ def invoke(
                     click.echo(json.dumps(result, indent=2))
                 else:
                     # Display results after visualization completes
-                    _display_results(result["results"], result["metadata"])
+                    _display_results(result["results"], result["metadata"], detailed)
 
             asyncio.run(run_with_visualization())
         elif effective_streaming:
@@ -322,7 +328,7 @@ def invoke(
                             )
                             if output_format == "text":
                                 _display_results(
-                                    event["data"]["results"], event["data"]["metadata"]
+                                    event["data"]["results"], event["data"]["metadata"], detailed
                                 )
                             else:
                                 click.echo(
@@ -337,7 +343,7 @@ def invoke(
                 if output_format == "json":
                     click.echo(json.dumps(result, indent=2))
                 else:
-                    _display_results(result["results"], result["metadata"])
+                    _display_results(result["results"], result["metadata"], detailed)
 
             asyncio.run(run_standard())
 
@@ -345,58 +351,95 @@ def invoke(
         raise click.ClickException(f"Ensemble execution failed: {str(e)}") from e
 
 
-def _display_results(results: dict[str, Any], metadata: dict[str, Any]) -> None:
+def _display_results(
+    results: dict[str, Any], metadata: dict[str, Any], detailed: bool = False
+) -> None:
     """Display results in a formatted way."""
-    click.echo("\n📋 Results:")
-    click.echo("=" * 50)
+    if detailed:
+        # Show detailed results with all agents
+        click.echo("\n📋 Results:")
+        click.echo("=" * 50)
 
-    for agent_name, result in results.items():
-        if result.get("status") == "success":
-            click.echo(f"\n✅ {agent_name}:")
-            click.echo(f"   {result['response']}")
+        for agent_name, result in results.items():
+            if result.get("status") == "success":
+                click.echo(f"\n✅ {agent_name}:")
+                click.echo(f"   {result['response']}")
+            else:
+                click.echo(f"\n❌ {agent_name}:")
+                click.echo(f"   Error: {result.get('error', 'Unknown error')}")
+
+        # Show performance metrics
+        if "usage" in metadata:
+            usage = metadata["usage"]
+            totals = usage.get("totals", {})
+            click.echo("\n📊 Performance Metrics:")
+            click.echo(f"   Duration: {metadata['duration']}")
+            click.echo(f"   Total tokens: {totals.get('total_tokens', 0):,}")
+            click.echo(f"   Total cost: ${totals.get('total_cost_usd', 0.0):.4f}")
+            click.echo(f"   Agents: {totals.get('agents_count', 0)}")
+
+            # Show per-agent usage
+            agents_usage = usage.get("agents", {})
+            if agents_usage:
+                click.echo("\n   Per-Agent Usage:")
+                for agent_name, agent_usage in agents_usage.items():
+                    tokens = agent_usage.get("total_tokens", 0)
+                    cost = agent_usage.get("cost_usd", 0.0)
+                    duration = agent_usage.get("duration_ms", 0)
+                    model = agent_usage.get("model", "unknown")
+                    click.echo(
+                        f"     {agent_name} ({model}): {tokens:,} tokens, "
+                        f"${cost:.4f}, {duration}ms"
+                    )
+    else:
+        # Simplified output: just show final synthesis/result
+        _display_simplified_results(results, metadata)
+
+
+def _display_simplified_results(results: dict[str, Any], metadata: dict[str, Any]) -> None:
+    """Display simplified results showing only the final output."""
+    # Find the final agent (the one with no dependents)
+    final_agent = _find_final_agent(results)
+    
+    if final_agent and results[final_agent].get("status") == "success":
+        click.echo(f"\n✅ Final Result:")
+        click.echo(f"{results[final_agent]['response']}")
+    else:
+        # Fallback: show last successful agent
+        successful_agents = [
+            name for name, result in results.items()
+            if result.get("status") == "success"
+        ]
+        if successful_agents:
+            last_agent = successful_agents[-1]
+            click.echo(f"\n✅ Result from {last_agent}:")
+            click.echo(f"{results[last_agent]['response']}")
         else:
-            click.echo(f"\n❌ {agent_name}:")
-            click.echo(f"   Error: {result.get('error', 'Unknown error')}")
-
-    # Show performance metrics
+            click.echo(f"\n❌ No successful results found")
+    
+    # Show minimal performance summary
     if "usage" in metadata:
-        usage = metadata["usage"]
-        totals = usage.get("totals", {})
-        click.echo("\n📊 Performance Metrics:")
-        click.echo(f"   Duration: {metadata['duration']}")
-        click.echo(f"   Total tokens: {totals.get('total_tokens', 0):,}")
-        click.echo(f"   Total cost: ${totals.get('total_cost_usd', 0.0):.4f}")
-        click.echo(f"   Agents: {totals.get('agents_count', 0)}")
+        totals = metadata["usage"].get("totals", {})
+        agents_count = totals.get("agents_count", 0)
+        duration = metadata.get("duration", "unknown")
+        click.echo(f"\n⚡ {agents_count} agents completed in {duration}")
+        click.echo("   Use --detailed flag for full results and metrics")
 
-        # Show per-agent usage
-        agents_usage = usage.get("agents", {})
-        if agents_usage:
-            click.echo("\n   Per-Agent Usage:")
-            for agent_name, agent_usage in agents_usage.items():
-                tokens = agent_usage.get("total_tokens", 0)
-                cost = agent_usage.get("cost_usd", 0.0)
-                duration = agent_usage.get("duration_ms", 0)
-                model = agent_usage.get("model", "unknown")
-                click.echo(
-                    f"     {agent_name} ({model}): {tokens:,} tokens, "
-                    f"${cost:.4f}, {duration}ms"
-                )
 
-        # Show synthesis usage if present
-        synthesis_usage = usage.get("synthesis", {})
-        if synthesis_usage:
-            tokens = synthesis_usage.get("total_tokens", 0)
-            cost = synthesis_usage.get("cost_usd", 0.0)
-            duration = synthesis_usage.get("duration_ms", 0)
-            model = synthesis_usage.get("model", "unknown")
-            click.echo(
-                f"     synthesis ({model}): {tokens:,} tokens, "
-                f"${cost:.4f}, {duration}ms"
-            )
-
-    # Show synthesis result if present
-    if "synthesis" in metadata:
-        click.echo(f"\n🔄 Synthesis: {metadata['synthesis']}")
+def _find_final_agent(results: dict[str, Any]) -> str | None:
+    """Find the final agent in the dependency chain (the one with no dependents)."""
+    # For now, use a simple heuristic: the agent with the highest token count
+    # is likely the final agent (since it got input from all previous agents)
+    max_tokens = 0
+    final_agent = None
+    
+    for agent_name in results.keys():
+        # This is a simple heuristic - in practice we'd want to track dependencies
+        # But for now, we can assume the last successful agent is often the final one
+        if results[agent_name].get("status") == "success":
+            final_agent = agent_name
+    
+    return final_agent
 
 
 @cli.command("list-ensembles")

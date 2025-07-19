@@ -139,7 +139,7 @@ class TerminalVisualizer:
             "name": agent_name,
             "status": "running",
             "model": event.data.get("model", "Unknown"),
-            "dependencies": event.data.get("dependencies", []),
+            "dependencies": event.data.get("depends_on", []),
             "start_time": event.timestamp,
             "progress": 0.0,
             "result": None,
@@ -289,12 +289,14 @@ class TerminalVisualizer:
         if self.config.terminal.compact_mode:
             layout.split_column(
                 Layout(self.create_header(), name="header", size=3),
+                Layout(self.create_dependency_graph(), name="graph", size=5),
                 Layout(self.create_progress_section(), name="progress"),
                 Layout(self.create_metrics_section(), name="metrics", size=3),
             )
         else:
             layout.split_column(
                 Layout(self.create_header(), name="header", size=3),
+                Layout(self.create_dependency_graph(), name="graph", size=5),
                 Layout(self.create_progress_section(), name="progress"),
                 Layout(self.create_agents_section(), name="agents"),
                 Layout(self.create_results_section(), name="results"),
