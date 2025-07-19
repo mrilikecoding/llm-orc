@@ -210,12 +210,14 @@ class OAuthClaudeModel(ModelInterface):
         model: str = "claude-3-5-sonnet-20241022",
         credential_storage: Any = None,
         provider_key: str | None = None,
+        expires_at: int | None = None,
     ) -> None:
         super().__init__()
         self.access_token = access_token
         self.refresh_token = refresh_token
         self.client_id = client_id
         self.model = model
+        self.expires_at = expires_at
         self.client = OAuthClaudeClient(access_token, refresh_token)
         self._credential_storage = credential_storage
         self._provider_key = provider_key
@@ -229,6 +231,33 @@ class OAuthClaudeModel(ModelInterface):
     async def generate_response(self, message: str, role_prompt: str) -> str:
         """Generate response using OAuth-authenticated Claude API."""
         start_time = time.time()
+
+        # Proactive token refresh if token is about to expire
+        if (
+            self.expires_at
+            and self.refresh_token
+            and self.client_id
+            and self.client.is_token_expired(self.expires_at)
+        ):
+            print("🔄 Proactively refreshing token (expires soon)")
+            if self.client.refresh_access_token(self.client_id):
+                # Update stored credentials and local references
+                if self._credential_storage and self._provider_key:
+                    new_expires_at = int(time.time()) + 3600  # Default 1 hour expiry
+                    self._credential_storage.store_oauth_token(
+                        self._provider_key,
+                        self.client.access_token,
+                        self.client.refresh_token,
+                        expires_at=new_expires_at,
+                        client_id=self.client_id,
+                    )
+                    self.expires_at = new_expires_at
+
+                self.access_token = self.client.access_token
+                self.refresh_token = self.client.refresh_token
+                print("✅ Token refreshed proactively")
+            else:
+                print("❌ Proactive token refresh failed")
 
         try:
             # OAuth tokens require specific Claude Code system prompt for authorization
@@ -533,6 +562,7 @@ class ModelManager:
         model: str = "claude-3-5-sonnet-20241022",
         credential_storage: Any = None,
         provider_key: str | None = None,
+        expires_at: int | None = None,
     ) -> None:
         """Register an OAuth-authenticated Claude model."""
         oauth_model = OAuthClaudeModel(
@@ -542,6 +572,7 @@ class ModelManager:
             model=model,
             credential_storage=credential_storage,
             provider_key=provider_key,
+            expires_at=expires_at,
         )
         self.models[key] = oauth_model
 

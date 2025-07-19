@@ -573,6 +573,13 @@ def add_auth_provider(
     # Special handling for anthropic-claude-pro-max OAuth
     if provider.lower() == "anthropic-claude-pro-max":
         try:
+            # Check if provider already exists and remove if so
+            if provider in storage.list_providers():
+                click.echo(f"🔄 Existing authentication found for {provider}")
+                click.echo("   Removing old authentication before setting up new...")
+                storage.remove_provider(provider)
+                click.echo("✅ Old authentication removed")
+
             handle_claude_pro_max_oauth(auth_manager, storage)
             return
         except Exception as e:
@@ -588,6 +595,13 @@ def add_auth_provider(
     )
     if is_anthropic_interactive:
         try:
+            # Check if provider already exists and remove if so
+            if provider in storage.list_providers():
+                click.echo(f"🔄 Existing authentication found for {provider}")
+                click.echo("   Removing old authentication before setting up new...")
+                storage.remove_provider(provider)
+                click.echo("✅ Old authentication removed")
+
             handle_anthropic_interactive_auth(auth_manager, storage)
             return
         except Exception as e:
@@ -605,6 +619,13 @@ def add_auth_provider(
         )
 
     try:
+        # Check if provider already exists and remove if so
+        if provider in storage.list_providers():
+            click.echo(f"🔄 Existing authentication found for {provider}")
+            click.echo("   Removing old authentication before setting up new...")
+            storage.remove_provider(provider)
+            click.echo("✅ Old authentication removed")
+
         if api_key:
             # API key authentication
             storage.store_api_key(provider, api_key)
@@ -725,6 +746,90 @@ def remove_auth_provider(provider: str) -> None:
         raise click.ClickException(f"Failed to remove provider: {str(e)}") from e
 
 
+def test_token_refresh(provider: str) -> None:
+    """Test OAuth token refresh for a specific provider."""
+    config_manager = ConfigurationManager()
+    storage = CredentialStorage(config_manager)
+
+    try:
+        # Check if provider exists
+        if provider not in storage.list_providers():
+            raise click.ClickException(f"No authentication found for {provider}")
+
+        # Get OAuth token info
+        oauth_token = storage.get_oauth_token(provider)
+        if not oauth_token:
+            raise click.ClickException(f"No OAuth token found for {provider}")
+
+        # Check what we have
+        has_refresh_token = "refresh_token" in oauth_token
+        has_client_id = "client_id" in oauth_token
+        has_expires_at = "expires_at" in oauth_token
+
+        click.echo(f"🔍 Token info for {provider}:")
+        click.echo(f"  Has refresh token: {'✅' if has_refresh_token else '❌'}")
+        click.echo(f"  Has client ID: {'✅' if has_client_id else '❌'}")
+        click.echo(f"  Has expiration: {'✅' if has_expires_at else '❌'}")
+
+        if has_expires_at:
+            import time
+
+            expires_at = oauth_token["expires_at"]
+            now = time.time()
+            if expires_at > now:
+                remaining = int(expires_at - now)
+                hours, remainder = divmod(remaining, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                click.echo(f"  Token expires in: {hours}h {minutes}m {seconds}s")
+            else:
+                expired_for = int(now - expires_at)
+                click.echo(f"  ⚠️ Token expired {expired_for} seconds ago")
+
+        if not has_refresh_token:
+            click.echo("\n❌ Cannot test refresh: no refresh token available")
+            return
+
+        if not has_client_id:
+            # Use default client ID for anthropic-claude-pro-max
+            if provider == "anthropic-claude-pro-max":
+                client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+                click.echo(f"\n🔧 Using default client ID: {client_id}")
+            else:
+                click.echo("\n❌ Cannot test refresh: no client ID available")
+                return
+        else:
+            client_id = oauth_token["client_id"]
+
+        # Test the refresh
+        click.echo(f"\n🔄 Testing token refresh for {provider}...")
+
+        from llm_orc.oauth_client import OAuthClaudeClient
+
+        client = OAuthClaudeClient(
+            access_token=oauth_token["access_token"],
+            refresh_token=oauth_token["refresh_token"],
+        )
+
+        if client.refresh_access_token(client_id):
+            click.echo("✅ Token refresh successful!")
+
+            # Update stored credentials
+            storage.store_oauth_token(
+                provider,
+                client.access_token,
+                client.refresh_token,
+                expires_at=int(time.time()) + 3600,
+                client_id=client_id,
+            )
+            click.echo("✅ Updated stored credentials")
+        else:
+            click.echo("❌ Token refresh failed!")
+            click.echo("Check the error messages above for details.")
+
+    except Exception as e:
+        raise click.ClickException(f"Failed to test token refresh: {str(e)}") from e
+
+
 def auth_setup() -> None:
     """Interactive setup wizard for authentication."""
     from llm_orc.menu_system import (
@@ -759,6 +864,21 @@ def auth_setup() -> None:
             if not confirm_action("Add another provider?"):
                 break
             continue
+
+        # Check if provider already exists and offer to replace
+        if provider_key in storage.list_providers():
+            click.echo(
+                f"\n🔄 Existing authentication found for {provider.display_name}"
+            )
+            if confirm_action("Replace existing authentication?"):
+                storage.remove_provider(provider_key)
+                show_success(
+                    f"Removed existing authentication for {provider.display_name}"
+                )
+            else:
+                if not confirm_action("Add another provider?"):
+                    break
+                continue
 
         # Get authentication method based on provider
         if provider_key == "anthropic-claude-pro-max":

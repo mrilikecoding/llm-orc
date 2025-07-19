@@ -470,6 +470,7 @@ class EnsembleExecutor:
                     client_id=client_id,
                     credential_storage=storage,
                     provider_key=model_name,
+                    expires_at=oauth_token.get("expires_at"),
                 )
 
             else:

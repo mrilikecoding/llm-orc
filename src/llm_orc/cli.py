@@ -16,6 +16,7 @@ from llm_orc.cli_commands import (
     reset_global_config,
     reset_local_config,
     serve_ensemble,
+    test_token_refresh,
 )
 
 
@@ -250,6 +251,13 @@ def auth_setup_command() -> None:
 def auth_logout(provider: str | None, logout_all: bool) -> None:
     """Logout from OAuth providers (revokes tokens and removes credentials)."""
     logout_oauth_providers(provider, logout_all)
+
+
+@auth.command("test-refresh")
+@click.argument("provider")
+def auth_test_refresh(provider: str) -> None:
+    """Test OAuth token refresh for a provider."""
+    test_token_refresh(provider)
 
 
 @cli.command()

@@ -3,7 +3,7 @@
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -482,6 +482,48 @@ class TestAuthCommandsNew:
                 # Then
                 assert result.exit_code != 0
                 assert "Failed to logout" in result.output
+
+    def test_auth_add_replaces_existing_provider(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test that adding a provider automatically removes existing one."""
+        # Given
+        provider = "anthropic-api"
+        api_key = "new_test_key_123"
+
+        # When
+        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+            mock_instance.ensure_global_config_dir.return_value = None
+            mock_instance.get_credentials_file.return_value = (
+                temp_config_dir / "credentials.yaml"
+            )
+            mock_instance.get_encryption_key_file.return_value = (
+                temp_config_dir / ".encryption_key"
+            )
+            mock_instance.needs_migration.return_value = False
+
+            with patch("llm_orc.cli_commands.CredentialStorage") as mock_storage_class:
+                mock_storage = Mock()
+                mock_storage_class.return_value = mock_storage
+                mock_storage.list_providers.return_value = [provider]  # Provider exists
+
+                with patch("llm_orc.cli_commands.AuthenticationManager"):
+                    result = runner.invoke(
+                        cli, ["auth", "add", provider, "--api-key", api_key]
+                    )
+
+                    # Then
+                    assert result.exit_code == 0
+                    # Should remove existing provider then add new one
+                    mock_storage.remove_provider.assert_called_once_with(provider)
+                    mock_storage.store_api_key.assert_called_once_with(
+                        provider, api_key
+                    )
+                    assert "Existing authentication found" in result.output
+                    assert "Old authentication removed" in result.output
+                    assert f"API key for {provider} added successfully" in result.output
 
     def test_auth_logout_all_command(
         self, runner: CliRunner, temp_config_dir: Path
