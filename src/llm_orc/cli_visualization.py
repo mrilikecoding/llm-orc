@@ -1,6 +1,5 @@
 """CLI visualization utilities for dependency graphs and execution display."""
 
-import textwrap
 from typing import Any
 
 import click
@@ -9,30 +8,6 @@ from rich.markdown import Markdown
 from rich.tree import Tree
 
 from llm_orc.ensemble_config import EnsembleConfig
-
-
-def _wrap_text_content(text: str, width: int = 60) -> str:
-    """Wrap text content to prevent overflow, preserving code blocks."""
-    lines = text.split("\n")
-    wrapped_lines = []
-
-    for line in lines:
-        # Don't wrap very short lines or lines that look like code
-        if len(line) <= width or line.strip().startswith((" ", "\t")):
-            wrapped_lines.append(line)
-        else:
-            # Wrap long lines with more conservative settings
-            wrapped = textwrap.fill(
-                line,
-                width=width,
-                break_long_words=False,
-                break_on_hyphens=False,
-                expand_tabs=False,
-                replace_whitespace=False,
-            )
-            wrapped_lines.append(wrapped)
-
-    return "\n".join(wrapped_lines)
 
 
 def create_dependency_graph(agents: list[dict[str, Any]]) -> str:
@@ -178,7 +153,7 @@ def display_results(
     results: dict[str, Any], metadata: dict[str, Any], detailed: bool = False
 ) -> None:
     """Display results in a formatted way using Rich markdown rendering."""
-    console = Console(soft_wrap=True)
+    console = Console(soft_wrap=True, width=None, force_terminal=True)
 
     if detailed:
         # Build markdown content for detailed results
@@ -188,14 +163,13 @@ def display_results(
             if result.get("status") == "success":
                 markdown_content.append(f"## {agent_name}\n")
                 # Format the response as a code block if it looks like code,
-                # otherwise as regular text with proper wrapping
+                # otherwise as regular text (let Rich handle wrapping)
                 response = result["response"]
                 code_keywords = ["def ", "class ", "```", "import ", "function"]
                 if any(keyword in response.lower() for keyword in code_keywords):
                     markdown_content.append(f"```\n{response}\n```\n")
                 else:
-                    wrapped_response = _wrap_text_content(response)
-                    markdown_content.append(f"{wrapped_response}\n")
+                    markdown_content.append(f"{response}\n")
             else:
                 markdown_content.append(f"## ❌ {agent_name}\n")
                 error_msg = result.get("error", "Unknown error")
@@ -230,7 +204,7 @@ def display_results(
         # Render the markdown - Rich will handle soft wrapping
         markdown_text = "".join(markdown_content)
         markdown_obj = Markdown(markdown_text)
-        console.print(markdown_obj, overflow="fold", crop=False)
+        console.print(markdown_obj, overflow="ellipsis", crop=True, no_wrap=False)
     else:
         # Simplified output: just show final synthesis/result
         display_simplified_results(results, metadata)
@@ -240,7 +214,7 @@ def display_simplified_results(
     results: dict[str, Any], metadata: dict[str, Any]
 ) -> None:
     """Display simplified results showing only the final output using markdown."""
-    console = Console(soft_wrap=True)
+    console = Console(soft_wrap=True, width=None, force_terminal=True)
 
     # Find the final agent (the one with no dependents)
     final_agent = find_final_agent(results)
@@ -254,8 +228,7 @@ def display_simplified_results(
         if any(keyword in response.lower() for keyword in code_keywords):
             markdown_content.append(f"```\n{response}\n```\n")
         else:
-            wrapped_response = _wrap_text_content(response)
-            markdown_content.append(f"{wrapped_response}\n")
+            markdown_content.append(f"{response}\n")
     else:
         # Fallback: show last successful agent
         successful_agents = [
@@ -271,8 +244,7 @@ def display_simplified_results(
             if any(keyword in response.lower() for keyword in code_keywords):
                 markdown_content.append(f"```\n{response}\n```\n")
             else:
-                wrapped_response = _wrap_text_content(response)
-                markdown_content.append(f"{wrapped_response}\n")
+                markdown_content.append(f"{response}\n")
         else:
             markdown_content.append("**❌ No successful results found**\n")
 
@@ -288,7 +260,9 @@ def display_simplified_results(
     # Render the markdown
     if markdown_content:
         markdown_text = "".join(markdown_content)
-        console.print(Markdown(markdown_text), overflow="fold", crop=False)
+        console.print(
+            Markdown(markdown_text), overflow="ellipsis", crop=True, no_wrap=False
+        )
 
 
 def find_final_agent(results: dict[str, Any]) -> str | None:
@@ -314,7 +288,7 @@ async def run_streaming_execution(
     detailed: bool,
 ) -> None:
     """Run streaming execution with Rich status display."""
-    console = Console(soft_wrap=True)
+    console = Console(soft_wrap=True, width=None, force_terminal=True)
     agent_statuses: dict[str, str] = {}
 
     # Initialize with Rich status
