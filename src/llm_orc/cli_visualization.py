@@ -43,15 +43,15 @@ def create_dependency_graph_with_status(
             name = agent["name"]
             status = agent_statuses.get(name, "pending")
 
-            # Status indicators without dots
+            # Status indicators with symbols
             if status == "running":
-                agent_displays.append(f"[yellow]{name}[/yellow]")
+                agent_displays.append(f"[yellow]◐[/yellow] [yellow]{name}[/yellow]")
             elif status == "completed":
-                agent_displays.append(f"[green]{name}[/green]")
+                agent_displays.append(f"[green]✓[/green] [green]{name}[/green]")
             elif status == "failed":
-                agent_displays.append(f"[red]{name}[/red]")
+                agent_displays.append(f"[red]✗[/red] [red]{name}[/red]")
             else:
-                agent_displays.append(f"[dim]{name}[/dim]")
+                agent_displays.append(f"[dim]○[/dim] [dim]{name}[/dim]")
 
         # Join agents at same level with commas
         level_text = ", ".join(agent_displays)
@@ -87,22 +87,22 @@ def display_results(
     """Display results in a formatted way."""
     if detailed:
         # Show detailed results with all agents
-        click.echo("\n📋 Results:")
+        click.echo("\nResults:")
         click.echo("=" * 50)
 
         for agent_name, result in results.items():
             if result.get("status") == "success":
-                click.echo(f"\n✅ {agent_name}:")
+                click.echo(f"\n {agent_name}:")
                 click.echo(f"   {result['response']}")
             else:
-                click.echo(f"\n❌ {agent_name}:")
+                click.echo(f"\n[red]✗[/red] {agent_name}:")
                 click.echo(f"   Error: {result.get('error', 'Unknown error')}")
 
         # Show performance metrics
         if "usage" in metadata:
             usage = metadata["usage"]
             totals = usage.get("totals", {})
-            click.echo("\n📊 Performance Metrics:")
+            click.echo("\nPerformance Metrics:")
             click.echo(f"   Duration: {metadata['duration']}")
             click.echo(f"   Total tokens: {totals.get('total_tokens', 0):,}")
             click.echo(f"   Total cost: ${totals.get('total_cost_usd', 0.0):.4f}")
@@ -144,10 +144,10 @@ def display_simplified_results(
         ]
         if successful_agents:
             last_agent = successful_agents[-1]
-            click.echo(f"\n✅ Result from {last_agent}:")
+            click.echo(f"\n Result from {last_agent}:")
             click.echo(f"{results[last_agent]['response']}")
         else:
-            click.echo("\n❌ No successful results found")
+            click.echo("\n[red]✗[/red] No successful results found")
 
     # Show minimal performance summary
     if "usage" in metadata:
@@ -216,6 +216,9 @@ async def run_streaming_execution(
                     status.update(current_graph)
 
                 elif event_type == "execution_completed":
+                    # Stop the status spinner and show final results
+                    status.stop()
+
                     # Final update with all completed
                     final_statuses = {
                         agent["name"]: "completed" for agent in ensemble_config.agents
@@ -223,7 +226,7 @@ async def run_streaming_execution(
                     final_graph = create_dependency_graph_with_status(
                         ensemble_config.agents, final_statuses
                     )
-                    console.print(f"Final: {final_graph}")
+                    console.print(f"{final_graph}")
                     console.print(f"Completed in {event['data']['duration']:.2f}s")
 
                     if output_format == "text":
@@ -232,6 +235,7 @@ async def run_streaming_execution(
                             event["data"]["metadata"],
                             detailed,
                         )
+                    break
 
 
 async def run_standard_execution(
