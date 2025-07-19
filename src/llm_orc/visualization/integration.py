@@ -49,9 +49,7 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
 
             # Start visualization based on mode
             if mode == "simple":
-                return await self._execute_with_simple_visualization(
-                    config, input_data
-                )
+                return await self._execute_with_simple_visualization(config, input_data)
             elif mode == "terminal":
                 return await self._execute_with_terminal_visualization(
                     config, input_data
@@ -66,9 +64,7 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
                 )
             else:
                 # Default to simple
-                return await self._execute_with_simple_visualization(
-                    config, input_data
-                )
+                return await self._execute_with_simple_visualization(config, input_data)
 
         finally:
             # Clean up

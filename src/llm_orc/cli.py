@@ -9,7 +9,6 @@ from typing import Any
 
 import click
 from rich.console import Console
-from rich.status import Status
 
 from llm_orc.authentication import AuthenticationManager, CredentialStorage
 from llm_orc.config import ConfigurationManager
@@ -268,7 +267,7 @@ def invoke(
             async def run_streaming() -> None:
                 console = Console()
                 agent_statuses: dict[str, str] = {}
-                
+
                 # Initialize with Rich status
                 with console.status("Starting execution...", spinner="dots") as status:
                     async for event in executor.execute_streaming(
@@ -284,36 +283,48 @@ def invoke(
                                     ensemble_config.agents, {}
                                 )
                                 console.print(f"🔗 Dependency flow: {initial_graph}")
-                                
+
                             elif event_type == "agent_progress":
                                 # Extract agent status from progress data
-                                completed_agents = event['data'].get('completed_agents', 0)
-                                total_agents = event['data'].get('total_agents', len(ensemble_config.agents))
-                                
+                                completed_agents = event["data"].get(
+                                    "completed_agents", 0
+                                )
+                                total_agents = event["data"].get(
+                                    "total_agents", len(ensemble_config.agents)
+                                )
+
                                 # Mark first N agents as completed, rest as pending
                                 for i, agent in enumerate(ensemble_config.agents):
                                     if i < completed_agents:
                                         agent_statuses[agent["name"]] = "completed"
-                                    elif i == completed_agents and completed_agents < total_agents:
+                                    elif (
+                                        i == completed_agents
+                                        and completed_agents < total_agents
+                                    ):
                                         agent_statuses[agent["name"]] = "running"
                                     else:
                                         agent_statuses[agent["name"]] = "pending"
-                                
+
                                 # Update status display with current dependency graph
                                 current_graph = _create_dependency_graph_with_status(
                                     ensemble_config.agents, agent_statuses
                                 )
                                 status.update(current_graph)
-                                
+
                             elif event_type == "execution_completed":
                                 # Final update with all completed
-                                final_statuses = {agent["name"]: "completed" for agent in ensemble_config.agents}
+                                final_statuses = {
+                                    agent["name"]: "completed"
+                                    for agent in ensemble_config.agents
+                                }
                                 final_graph = _create_dependency_graph_with_status(
                                     ensemble_config.agents, final_statuses
                                 )
                                 console.print(f"✅ Final: {final_graph}")
-                                console.print(f"✅ Completed in {event['data']['duration']:.2f}s")
-                                
+                                console.print(
+                                    f"✅ Completed in {event['data']['duration']:.2f}s"
+                                )
+
                                 if output_format == "text":
                                     _display_results(
                                         event["data"]["results"],
@@ -348,30 +359,30 @@ def _create_dependency_graph_with_status(
     """Create horizontal dependency graph with status indicators."""
     # Group agents by dependency level
     agents_by_level: dict[int, list[dict[str, Any]]] = {}
-    
+
     for agent in agents:
         dependencies = agent.get("depends_on", [])
         level = _calculate_agent_level(agent["name"], dependencies, agents)
-        
+
         if level not in agents_by_level:
             agents_by_level[level] = []
         agents_by_level[level].append(agent)
-    
+
     # Build horizontal graph: A,B,C → D → E,F → G
     graph_parts = []
     max_level = max(agents_by_level.keys()) if agents_by_level else 0
-    
+
     for level in range(max_level + 1):
         if level not in agents_by_level:
             continue
-            
+
         level_agents = agents_by_level[level]
         agent_displays = []
-        
+
         for agent in level_agents:
             name = agent["name"]
             status = agent_statuses.get(name, "pending")
-            
+
             # Status indicators with Rich elements
             if status == "running":
                 # Use Rich spinner character for running
@@ -385,11 +396,11 @@ def _create_dependency_graph_with_status(
             else:
                 # Use Rich dot for pending
                 agent_displays.append(f"[dim]⦁[/dim] {name}")
-        
+
         # Join agents at same level with commas
         level_text = ", ".join(agent_displays)
         graph_parts.append(level_text)
-    
+
     # Join levels with arrows
     return " → ".join(graph_parts)
 
@@ -400,7 +411,7 @@ def _calculate_agent_level(
     """Calculate the dependency level of an agent (0 = no dependencies)."""
     if not dependencies:
         return 0
-    
+
     # Find the maximum level of all dependencies
     max_dep_level = 0
     for dep_name in dependencies:
@@ -410,7 +421,7 @@ def _calculate_agent_level(
             dep_dependencies = dep_agent.get("depends_on", [])
             dep_level = _calculate_agent_level(dep_name, dep_dependencies, all_agents)
             max_dep_level = max(max_dep_level, dep_level)
-    
+
     return max_dep_level + 1
 
 

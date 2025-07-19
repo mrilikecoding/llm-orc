@@ -1,12 +1,9 @@
 """Simple horizontal dependency graph visualization."""
 
-from datetime import datetime
 from typing import Any
 
 from rich.console import Console
 from rich.live import Live
-from rich.status import Status
-from rich.text import Text
 
 from .config import SimpleVisualizationConfig
 from .events import ExecutionEvent, ExecutionEventType
@@ -37,7 +34,7 @@ class SimpleVisualizer:
         """Visualize ensemble execution with simple dependency graph."""
         try:
             dependency_tree_shown = False
-            
+
             # Subscribe to all events
             async for event in stream.subscribe():
                 await self._process_event(event)
@@ -80,7 +77,7 @@ class SimpleVisualizer:
                 "total_agents": event.data.get("total_agents", 0),
             }
         )
-        
+
         # Populate all agents with pending status
         agents_config = event.data.get("agents_config", [])
         for agent_config in agents_config:
@@ -130,7 +127,6 @@ class SimpleVisualizer:
     async def _handle_ensemble_completed(self, event: ExecutionEvent) -> None:
         """Handle ensemble completed event."""
         self.execution_state["status"] = "completed"
-
 
     def _create_dependency_graph(self) -> str:
         """Create the horizontal dependency graph: A,B,C → D → E,F → G"""
@@ -227,9 +223,7 @@ class SimpleVisualizer:
 
         return agents_by_level
 
-    def _calculate_agent_level(
-        self, agent_name: str, dependencies: list[str]
-    ) -> int:
+    def _calculate_agent_level(self, agent_name: str, dependencies: list[str]) -> int:
         """Calculate the dependency level of an agent (0 = no dependencies)."""
         if not dependencies:
             return 0

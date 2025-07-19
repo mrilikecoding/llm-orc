@@ -12,11 +12,11 @@ class SimpleVisualizationConfig:
     # What to show
     show_dependency_graph: bool = True
     show_basic_metrics: bool = True
-    
+
     # Styling
     use_colors: bool = True
     use_emojis: bool = True
-    
+
     # Update frequency
     refresh_rate_ms: int = 500
 
@@ -111,9 +111,7 @@ class VisualizationConfig:
     default_mode: str = "simple"  # simple, terminal, web, minimal, debug
 
     # Mode-specific configurations
-    simple: SimpleVisualizationConfig = field(
-        default_factory=SimpleVisualizationConfig
-    )
+    simple: SimpleVisualizationConfig = field(default_factory=SimpleVisualizationConfig)
     terminal: TerminalVisualizationConfig = field(
         default_factory=TerminalVisualizationConfig
     )

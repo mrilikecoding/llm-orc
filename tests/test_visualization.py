@@ -159,7 +159,7 @@ class TestVisualizationConfig:
         config = VisualizationConfig()
 
         assert config.enabled is True
-        assert config.default_mode == "terminal"
+        assert config.default_mode == "simple"
         assert isinstance(config.terminal, TerminalVisualizationConfig)
 
     def test_config_to_dict(self) -> None:

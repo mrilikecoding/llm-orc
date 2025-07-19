@@ -339,36 +339,36 @@ class TerminalVisualizer:
         """Create a simple horizontal dependency graph visualization."""
         if not self.execution_state["agents"]:
             return Panel(
-                "Dependency graph will appear here...", 
+                "Dependency graph will appear here...",
                 title="🔗 Dependency Flow",
-                border_style="yellow"
+                border_style="yellow",
             )
-        
+
         # Group agents by dependency level
         agents_by_level = self._group_agents_by_level()
-        
+
         if not agents_by_level:
             return Panel(
-                "No agents to display", 
+                "No agents to display",
                 title="🔗 Dependency Flow",
-                border_style="yellow"
+                border_style="yellow",
             )
-        
+
         # Build horizontal graph: A,B,C → D → E,F → G
         graph_parts = []
         max_level = max(agents_by_level.keys())
-        
+
         for level in range(max_level + 1):
             if level not in agents_by_level:
                 continue
-                
+
             level_agents = agents_by_level[level]
             agent_displays = []
-            
+
             for agent_info in level_agents:
                 status = agent_info["status"]
                 name = agent_info["name"]
-                
+
                 # Status indicators
                 if status == "running":
                     indicator = "🔄"  # Spinner for active
@@ -378,45 +378,41 @@ class TerminalVisualizer:
                     indicator = "❌"  # X for failed
                 else:
                     indicator = "⏳"  # Hourglass for waiting
-                
+
                 agent_displays.append(f"{indicator} {name}")
-            
+
             # Join agents at same level with commas
             level_text = ", ".join(agent_displays)
             graph_parts.append(level_text)
-        
+
         # Join levels with arrows
         graph_text = " → ".join(graph_parts)
-        
+
         return Panel(
             Text(graph_text, style="bold"),
             title="🔗 Dependency Flow",
-            border_style="yellow"
+            border_style="yellow",
         )
-    
+
     def _group_agents_by_level(self) -> dict[int, list[dict[str, Any]]]:
         """Group agents by their dependency level."""
         agents_by_level: dict[int, list[dict[str, Any]]] = {}
-        
+
         for agent_name, agent_info in self.execution_state["agents"].items():
             dependencies = agent_info.get("dependencies", [])
             level = self._calculate_agent_level(agent_name, dependencies)
-            
+
             if level not in agents_by_level:
                 agents_by_level[level] = []
             agents_by_level[level].append(agent_info)
-        
+
         return agents_by_level
-    
-    def _calculate_agent_level(
-        self, 
-        agent_name: str, 
-        dependencies: list[str]
-    ) -> int:
+
+    def _calculate_agent_level(self, agent_name: str, dependencies: list[str]) -> int:
         """Calculate the dependency level of an agent (0 = no dependencies)."""
         if not dependencies:
             return 0
-        
+
         # Find the maximum level of all dependencies
         max_dep_level = 0
         for dep_name in dependencies:
@@ -425,7 +421,7 @@ class TerminalVisualizer:
                 dep_dependencies = dep_info.get("dependencies", [])
                 dep_level = self._calculate_agent_level(dep_name, dep_dependencies)
                 max_dep_level = max(max_dep_level, dep_level)
-        
+
         return max_dep_level + 1
 
     def create_progress_section(self) -> Panel:
