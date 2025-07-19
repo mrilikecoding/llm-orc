@@ -86,8 +86,6 @@ def invoke(
     )
 
 
-
-
 @cli.command("list-ensembles")
 @click.option(
     "--config-dir",
@@ -220,14 +218,6 @@ def auth_add(
     add_auth_provider(provider, api_key, client_id, client_secret)
 
 
-
-
-
-
-
-
-
-
 @auth.command("list")
 @click.option(
     "--interactive", "-i", is_flag=True, help="Show interactive menu with actions"
@@ -235,8 +225,6 @@ def auth_add(
 def auth_list(interactive: bool) -> None:
     """List configured authentication providers."""
     list_auth_providers(interactive)
-
-
 
 
 @auth.command("remove")
@@ -250,9 +238,8 @@ def auth_remove(provider: str) -> None:
 def auth_setup_command() -> None:
     """Interactive setup wizard for authentication."""
     from llm_orc.cli_commands import auth_setup as auth_setup_impl
+
     auth_setup_impl()
-
-
 
 
 @auth.command("logout")

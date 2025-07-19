@@ -189,6 +189,7 @@ async def run_streaming_execution(
         async for event in executor.execute_streaming(ensemble_config, input_data):
             if output_format == "json":
                 import json
+
                 click.echo(json.dumps(event, indent=2))
             else:
                 event_type = event["type"]
@@ -217,8 +218,7 @@ async def run_streaming_execution(
                 elif event_type == "execution_completed":
                     # Final update with all completed
                     final_statuses = {
-                        agent["name"]: "completed"
-                        for agent in ensemble_config.agents
+                        agent["name"]: "completed" for agent in ensemble_config.agents
                     }
                     final_graph = create_dependency_graph_with_status(
                         ensemble_config.agents, final_statuses
@@ -245,6 +245,7 @@ async def run_standard_execution(
     result = await executor.execute(ensemble_config, input_data)
     if output_format == "json":
         import json
+
         click.echo(json.dumps(result, indent=2))
     else:
         display_results(result["results"], result["metadata"], detailed)
