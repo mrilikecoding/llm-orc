@@ -4,6 +4,7 @@ from typing import Any
 
 import click
 from rich.console import Console
+from rich.markdown import Markdown
 from rich.tree import Tree
 
 from llm_orc.ensemble_config import EnsembleConfig
@@ -151,43 +152,58 @@ def _calculate_agent_level(
 def display_results(
     results: dict[str, Any], metadata: dict[str, Any], detailed: bool = False
 ) -> None:
-    """Display results in a formatted way."""
+    """Display results in a formatted way using Rich markdown rendering."""
+    console = Console()
+
     if detailed:
-        # Show detailed results with all agents
-        click.echo("\nResults:")
-        click.echo("=" * 50)
+        # Build markdown content for detailed results
+        markdown_content = ["# Results\n"]
 
         for agent_name, result in results.items():
             if result.get("status") == "success":
-                click.echo(f"\n {agent_name}:")
-                click.echo(f"   {result['response']}")
+                markdown_content.append(f"## {agent_name}\n")
+                # Format the response as a code block if it looks like code,
+                # otherwise as regular text
+                response = result["response"]
+                code_keywords = ["def ", "class ", "```", "import ", "function"]
+                if any(keyword in response.lower() for keyword in code_keywords):
+                    markdown_content.append(f"```\n{response}\n```\n")
+                else:
+                    markdown_content.append(f"{response}\n")
             else:
-                click.echo(f"\n[red]✗[/red] {agent_name}:")
-                click.echo(f"   Error: {result.get('error', 'Unknown error')}")
+                markdown_content.append(f"## ❌ {agent_name}\n")
+                error_msg = result.get("error", "Unknown error")
+                markdown_content.append(f"**Error:** {error_msg}\n")
 
         # Show performance metrics
         if "usage" in metadata:
             usage = metadata["usage"]
             totals = usage.get("totals", {})
-            click.echo("\nPerformance Metrics:")
-            click.echo(f"   Duration: {metadata['duration']}")
-            click.echo(f"   Total tokens: {totals.get('total_tokens', 0):,}")
-            click.echo(f"   Total cost: ${totals.get('total_cost_usd', 0.0):.4f}")
-            click.echo(f"   Agents: {totals.get('agents_count', 0)}")
+            markdown_content.append("## Performance Metrics\n")
+            markdown_content.append(f"- **Duration:** {metadata['duration']}\n")
+            total_tokens = totals.get("total_tokens", 0)
+            total_cost = totals.get("total_cost_usd", 0.0)
+            markdown_content.append(f"- **Total tokens:** {total_tokens:,}\n")
+            markdown_content.append(f"- **Total cost:** ${total_cost:.4f}\n")
+            markdown_content.append(f"- **Agents:** {totals.get('agents_count', 0)}\n")
 
             # Show per-agent usage
             agents_usage = usage.get("agents", {})
             if agents_usage:
-                click.echo("\n   Per-Agent Usage:")
+                markdown_content.append("\n### Per-Agent Usage\n")
                 for agent_name, agent_usage in agents_usage.items():
                     tokens = agent_usage.get("total_tokens", 0)
                     cost = agent_usage.get("cost_usd", 0.0)
                     duration = agent_usage.get("duration_ms", 0)
                     model = agent_usage.get("model", "unknown")
-                    click.echo(
-                        f"     {agent_name} ({model}): {tokens:,} tokens, "
-                        f"${cost:.4f}, {duration}ms"
+                    markdown_content.append(
+                        f"- **{agent_name}** ({model}): {tokens:,} tokens, "
+                        f"${cost:.4f}, {duration}ms\n"
                     )
+
+        # Render the markdown
+        markdown_text = "".join(markdown_content)
+        console.print(Markdown(markdown_text))
     else:
         # Simplified output: just show final synthesis/result
         display_simplified_results(results, metadata)
@@ -196,12 +212,22 @@ def display_results(
 def display_simplified_results(
     results: dict[str, Any], metadata: dict[str, Any]
 ) -> None:
-    """Display simplified results showing only the final output."""
+    """Display simplified results showing only the final output using markdown."""
+    console = Console()
+
     # Find the final agent (the one with no dependents)
     final_agent = find_final_agent(results)
 
+    markdown_content = []
+
     if final_agent and results[final_agent].get("status") == "success":
-        click.echo(f"\n{results[final_agent]['response']}")
+        response = results[final_agent]["response"]
+        # Format as code block if it looks like code, otherwise as regular text
+        code_keywords = ["def ", "class ", "```", "import ", "function"]
+        if any(keyword in response.lower() for keyword in code_keywords):
+            markdown_content.append(f"```\n{response}\n```\n")
+        else:
+            markdown_content.append(f"{response}\n")
     else:
         # Fallback: show last successful agent
         successful_agents = [
@@ -211,18 +237,29 @@ def display_simplified_results(
         ]
         if successful_agents:
             last_agent = successful_agents[-1]
-            click.echo(f"\n Result from {last_agent}:")
-            click.echo(f"{results[last_agent]['response']}")
+            response = results[last_agent]["response"]
+            markdown_content.append(f"## Result from {last_agent}\n")
+            code_keywords = ["def ", "class ", "```", "import ", "function"]
+            if any(keyword in response.lower() for keyword in code_keywords):
+                markdown_content.append(f"```\n{response}\n```\n")
+            else:
+                markdown_content.append(f"{response}\n")
         else:
-            click.echo("\n[red]✗[/red] No successful results found")
+            markdown_content.append("**❌ No successful results found**\n")
 
     # Show minimal performance summary
     if "usage" in metadata:
         totals = metadata["usage"].get("totals", {})
         agents_count = totals.get("agents_count", 0)
         duration = metadata.get("duration", "unknown")
-        click.echo(f"\n⚡ {agents_count} agents completed in {duration}")
-        click.echo("   Use --detailed flag for full results and metrics")
+        summary = f"\n⚡ **{agents_count} agents completed in {duration}**\n"
+        markdown_content.append(summary)
+        markdown_content.append("*Use --detailed flag for full results and metrics*\n")
+
+    # Render the markdown
+    if markdown_content:
+        markdown_text = "".join(markdown_content)
+        console.print(Markdown(markdown_text))
 
 
 def find_final_agent(results: dict[str, Any]) -> str | None:
