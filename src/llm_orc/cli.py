@@ -1737,5 +1737,61 @@ def serve(ensemble_name: str, port: int) -> None:
     runner.run()
 
 
+# Help command that shows main help with aliases
+@cli.command()
+def help_command() -> None:
+    """Show help for llm-orc commands."""
+    ctx = click.get_current_context()
+    if not ctx.parent:
+        click.echo("Help not available")
+        return
+
+    # Custom help that shows aliases alongside commands
+    click.echo("Usage: llm-orc [OPTIONS] COMMAND [ARGS]...")
+    click.echo()
+    click.echo("  LLM Orchestra - Multi-agent LLM communication system.")
+    click.echo()
+    click.echo("Options:")
+    click.echo("  --version  Show the version and exit.")
+    click.echo("  --help     Show this message and exit.")
+    click.echo()
+    click.echo("Commands:")
+
+    # Command mappings with their aliases
+    commands_with_aliases = [
+        ("auth", "a", "Authentication management commands."),
+        ("config", "c", "Configuration management commands."),
+        ("help", "h", "Show help for llm-orc commands."),
+        ("invoke", "i", "Invoke an ensemble of agents."),
+        ("list-ensembles", "le", "List available ensembles."),
+        (
+            "list-profiles",
+            "lp",
+            "List available model profiles with their provider/model...",
+        ),
+        ("serve", "s", "Serve an ensemble as an MCP server."),
+    ]
+
+    for cmd, alias, desc in commands_with_aliases:
+        click.echo(f"  {cmd:<15} ({alias:<2}) {desc}")
+
+    click.echo()
+    click.echo("You can use either the full command name or its alias.")
+    click.echo(
+        "Example: 'llm-orc invoke simple \"test\"' or 'llm-orc i simple \"test\"'"
+    )
+
+
+# Add command shortcuts for all top-level commands
+cli.add_command(invoke, name="i")
+cli.add_command(auth, name="a")
+cli.add_command(config, name="c")
+cli.add_command(list_ensembles, name="le")
+cli.add_command(list_profiles, name="lp")
+cli.add_command(serve, name="s")
+cli.add_command(help_command, name="help")
+cli.add_command(help_command, name="h")
+
+
 if __name__ == "__main__":
     cli()
