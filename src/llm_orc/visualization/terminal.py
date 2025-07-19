@@ -313,7 +313,7 @@ class TerminalVisualizer:
         status_emoji = {
             "starting": "🚀",
             "running": "⚡",
-            "completed": "✅",
+            "completed": "✓",
             "failed": "❌",
         }.get(status, "🔄")
 
@@ -340,7 +340,7 @@ class TerminalVisualizer:
         if not self.execution_state["agents"]:
             return Panel(
                 "Dependency graph will appear here...",
-                title="🔗 Dependency Flow",
+                title="Dependency Flow",
                 border_style="yellow",
             )
 
@@ -350,7 +350,7 @@ class TerminalVisualizer:
         if not agents_by_level:
             return Panel(
                 "No agents to display",
-                title="🔗 Dependency Flow",
+                title="Dependency Flow",
                 border_style="yellow",
             )
 
@@ -373,7 +373,7 @@ class TerminalVisualizer:
                 if status == "running":
                     indicator = "🔄"  # Spinner for active
                 elif status == "completed":
-                    indicator = "✅"  # Checkmark for done
+                    indicator = "✓"  # Checkmark for done
                 elif status == "failed":
                     indicator = "❌"  # X for failed
                 else:
@@ -390,7 +390,7 @@ class TerminalVisualizer:
 
         return Panel(
             Text(graph_text, style="bold"),
-            title="🔗 Dependency Flow",
+            title="Dependency Flow",
             border_style="yellow",
         )
 
@@ -463,7 +463,7 @@ class TerminalVisualizer:
             status_emoji = {
                 "waiting": "⏳",
                 "running": "🔄",
-                "completed": "✅",
+                "completed": "✓",
                 "failed": "❌",
             }.get(status, "❓")
 
@@ -588,11 +588,11 @@ class TerminalVisualizer:
 
         elif event.event_type == ExecutionEventType.AGENT_COMPLETED:
             duration = event.data.get("duration_ms", 0)
-            self.console.print(f"✅ {event.agent_name} completed in {duration}ms")
+            self.console.print(f"{event.agent_name} completed in {duration}ms")
 
         elif event.event_type == ExecutionEventType.AGENT_FAILED:
             error = event.data.get("error", "Unknown error")
             self.console.print(f"❌ {event.agent_name} failed: {error}")
 
         elif event.event_type == ExecutionEventType.ENSEMBLE_COMPLETED:
-            self.console.print(f"✅ {event.ensemble_name} ensemble completed!")
+            self.console.print(f"{event.ensemble_name} ensemble completed!")

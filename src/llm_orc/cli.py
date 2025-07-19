@@ -277,14 +277,7 @@ def invoke(
                             click.echo(json.dumps(event, indent=2))
                         else:
                             event_type = event["type"]
-                            if event_type == "execution_started":
-                                # Show initial dependency graph with all pending
-                                initial_graph = _create_dependency_graph_with_status(
-                                    ensemble_config.agents, {}
-                                )
-                                console.print(f"🔗 Dependency flow: {initial_graph}")
-
-                            elif event_type == "agent_progress":
+                            if event_type == "agent_progress":
                                 # Extract agent status from progress data
                                 completed_agents = event["data"].get(
                                     "completed_agents", 0
@@ -320,9 +313,9 @@ def invoke(
                                 final_graph = _create_dependency_graph_with_status(
                                     ensemble_config.agents, final_statuses
                                 )
-                                console.print(f"✅ Final: {final_graph}")
+                                console.print(f"Final: {final_graph}")
                                 console.print(
-                                    f"✅ Completed in {event['data']['duration']:.2f}s"
+                                    f"Completed in {event['data']['duration']:.2f}s"
                                 )
 
                                 if output_format == "text":
@@ -383,19 +376,15 @@ def _create_dependency_graph_with_status(
             name = agent["name"]
             status = agent_statuses.get(name, "pending")
 
-            # Status indicators with Rich elements
+            # Status indicators without dots
             if status == "running":
-                # Use Rich spinner character for running
-                agent_displays.append(f"[yellow]⠋[/yellow] {name}")
+                agent_displays.append(f"[yellow]{name}[/yellow]")
             elif status == "completed":
-                # Use Rich checkmark for completed
-                agent_displays.append(f"[green]✓[/green] {name}")
+                agent_displays.append(f"[green]{name}[/green]")
             elif status == "failed":
-                # Use Rich X for failed
-                agent_displays.append(f"[red]✗[/red] {name}")
+                agent_displays.append(f"[red]{name}[/red]")
             else:
-                # Use Rich dot for pending
-                agent_displays.append(f"[dim]⦁[/dim] {name}")
+                agent_displays.append(f"[dim]{name}[/dim]")
 
         # Join agents at same level with commas
         level_text = ", ".join(agent_displays)

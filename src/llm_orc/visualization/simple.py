@@ -43,7 +43,7 @@ class SimpleVisualizer:
                 if not dependency_tree_shown and self.execution_state["agents"]:
                     # Show the complete dependency tree before execution starts
                     full_tree = self._create_complete_dependency_tree()
-                    self.console.print(f"🔗 Dependency flow: {full_tree}")
+                    self.console.print(f"Dependency flow: {full_tree}")
                     dependency_tree_shown = True
 
                 # Check if execution is complete
@@ -165,8 +165,8 @@ class SimpleVisualizer:
                     # Use X for failed
                     agent_displays.append(f"[red]✗[/red] {name}")
                 else:
-                    # Use static dot for pending/not yet started
-                    agent_displays.append(f"[dim]⦁[/dim] {name}")
+                    # Use static text for pending/not yet started
+                    agent_displays.append(f"[dim]{name}[/dim]")
 
             # Join agents at same level with commas
             level_text = ", ".join(agent_displays)
@@ -199,8 +199,8 @@ class SimpleVisualizer:
 
             for agent_info in level_agents:
                 name = agent_info["name"]
-                # Show all agents with static dot initially
-                agent_displays.append(f"[dim]⦁[/dim] {name}")
+                # Show all agents with static text initially
+                agent_displays.append(f"[dim]{name}[/dim]")
 
             # Join agents at same level with commas
             level_text = ", ".join(agent_displays)
@@ -253,4 +253,4 @@ class SimpleVisualizer:
 
         # Final dependency graph showing completed status
         final_graph = self._create_dependency_graph()
-        self.console.print(f"✅ Final: {final_graph}")
+        self.console.print(f"Final: {final_graph}")
