@@ -1,61 +1,38 @@
 """CLI visualization utilities for dependency graphs and execution display."""
 
+import textwrap
 from typing import Any
 
 import click
 from rich.console import Console
-from rich.syntax import Syntax
+from rich.markdown import Markdown
 from rich.tree import Tree
 
 from llm_orc.ensemble_config import EnsembleConfig
 
 
-def _detect_language_and_format_code(response: str, console: Console) -> None:
-    """Detect programming language and render with syntax highlighting."""
-    # Language detection patterns
-    language_patterns = {
-        "python": ["def ", "import ", "class ", "if __name__", "print(", "from "],
-        "javascript": ["function ", "const ", "let ", "var ", "console.log", "=>"],
-        "typescript": ["interface ", "type ", ": string", ": number", "export "],
-        "java": ["public class", "public static", "System.out", "import java"],
-        "rust": ["fn ", "let mut", "impl ", "use ", "struct ", "enum "],
-        "go": ["func ", "package ", "import ", "type ", "var "],
-        "bash": ["#!/bin/bash", "echo ", "if [", "for ", "$1", "chmod "],
-        "sql": ["SELECT ", "FROM ", "WHERE ", "INSERT ", "UPDATE ", "DELETE "],
-        "json": ["{", "}", "[", "]", '":', '":'],
-        "yaml": ["---", "  - ", ": ", "version:"],
-        "markdown": ["# ", "## ", "```", "- ", "* "],
-    }
+def _wrap_text_content(text: str, width: int = 60) -> str:
+    """Wrap text content to prevent overflow, preserving code blocks."""
+    lines = text.split("\n")
+    wrapped_lines = []
 
-    # Convert to lowercase for case-insensitive matching
-    response_lower = response.lower()
+    for line in lines:
+        # Don't wrap very short lines or lines that look like code
+        if len(line) <= width or line.strip().startswith((" ", "\t")):
+            wrapped_lines.append(line)
+        else:
+            # Wrap long lines with more conservative settings
+            wrapped = textwrap.fill(
+                line,
+                width=width,
+                break_long_words=False,
+                break_on_hyphens=False,
+                expand_tabs=False,
+                replace_whitespace=False,
+            )
+            wrapped_lines.append(wrapped)
 
-    # Count matches for each language
-    language_scores = {}
-    for lang, patterns in language_patterns.items():
-        score = sum(1 for pattern in patterns if pattern in response_lower)
-        if score > 0:
-            language_scores[lang] = score
-
-    # Determine best language match
-    if language_scores:
-        detected_language = max(
-            language_scores.keys(), key=lambda k: language_scores[k]
-        )
-        # Only use detection if we have reasonable confidence
-        if language_scores[detected_language] >= 2:
-            try:
-                syntax = Syntax(
-                    response, detected_language, theme="monokai", line_numbers=False
-                )
-                console.print(syntax)
-                return
-            except Exception:
-                # Fall back to plain text if syntax highlighting fails
-                pass
-
-    # Fall back to plain text with some basic formatting
-    console.print(response)
+    return "\n".join(wrapped_lines)
 
 
 def create_dependency_graph(agents: list[dict[str, Any]]) -> str:
@@ -201,50 +178,59 @@ def display_results(
     results: dict[str, Any], metadata: dict[str, Any], detailed: bool = False
 ) -> None:
     """Display results in a formatted way using Rich markdown rendering."""
-    console = Console()
+    console = Console(soft_wrap=True)
 
     if detailed:
-        # Show detailed results with syntax highlighting
-        console.print("[bold blue]# Results[/bold blue]")
+        # Build markdown content for detailed results
+        markdown_content = ["# Results\n"]
 
         for agent_name, result in results.items():
             if result.get("status") == "success":
-                # Print header with rich formatting
-                console.print(f"\n[bold blue]## {agent_name}[/bold blue]")
-
-                # Use syntax highlighting for the response
+                markdown_content.append(f"## {agent_name}\n")
+                # Format the response as a code block if it looks like code,
+                # otherwise as regular text with proper wrapping
                 response = result["response"]
-                _detect_language_and_format_code(response, console)
+                code_keywords = ["def ", "class ", "```", "import ", "function"]
+                if any(keyword in response.lower() for keyword in code_keywords):
+                    markdown_content.append(f"```\n{response}\n```\n")
+                else:
+                    wrapped_response = _wrap_text_content(response)
+                    markdown_content.append(f"{wrapped_response}\n")
             else:
-                console.print(f"\n[bold red]## ❌ {agent_name}[/bold red]")
+                markdown_content.append(f"## ❌ {agent_name}\n")
                 error_msg = result.get("error", "Unknown error")
-                console.print(f"[red]**Error:** {error_msg}[/red]")
+                markdown_content.append(f"**Error:** {error_msg}\n")
 
         # Show performance metrics
         if "usage" in metadata:
             usage = metadata["usage"]
             totals = usage.get("totals", {})
-            console.print("\n[bold green]## Performance Metrics[/bold green]")
-            console.print(f"• [bold]Duration:[/bold] {metadata['duration']}")
+            markdown_content.append("## Performance Metrics\n")
+            markdown_content.append(f"- **Duration:** {metadata['duration']}\n")
             total_tokens = totals.get("total_tokens", 0)
             total_cost = totals.get("total_cost_usd", 0.0)
-            console.print(f"• [bold]Total tokens:[/bold] {total_tokens:,}")
-            console.print(f"• [bold]Total cost:[/bold] ${total_cost:.4f}")
-            console.print(f"• [bold]Agents:[/bold] {totals.get('agents_count', 0)}")
+            markdown_content.append(f"- **Total tokens:** {total_tokens:,}\n")
+            markdown_content.append(f"- **Total cost:** ${total_cost:.4f}\n")
+            markdown_content.append(f"- **Agents:** {totals.get('agents_count', 0)}\n")
 
             # Show per-agent usage
             agents_usage = usage.get("agents", {})
             if agents_usage:
-                console.print("\n[bold cyan]### Per-Agent Usage[/bold cyan]")
+                markdown_content.append("\n### Per-Agent Usage\n")
                 for agent_name, agent_usage in agents_usage.items():
                     tokens = agent_usage.get("total_tokens", 0)
                     cost = agent_usage.get("cost_usd", 0.0)
                     duration = agent_usage.get("duration_ms", 0)
                     model = agent_usage.get("model", "unknown")
-                    console.print(
-                        f"• [bold]{agent_name}[/bold] ({model}): {tokens:,} tokens, "
-                        f"${cost:.4f}, {duration}ms"
+                    markdown_content.append(
+                        f"- **{agent_name}** ({model}): {tokens:,} tokens, "
+                        f"${cost:.4f}, {duration}ms\n"
                     )
+
+        # Render the markdown - Rich will handle soft wrapping
+        markdown_text = "".join(markdown_content)
+        markdown_obj = Markdown(markdown_text)
+        console.print(markdown_obj, overflow="fold", crop=False)
     else:
         # Simplified output: just show final synthesis/result
         display_simplified_results(results, metadata)
@@ -254,14 +240,22 @@ def display_simplified_results(
     results: dict[str, Any], metadata: dict[str, Any]
 ) -> None:
     """Display simplified results showing only the final output using markdown."""
-    console = Console()
+    console = Console(soft_wrap=True)
 
     # Find the final agent (the one with no dependents)
     final_agent = find_final_agent(results)
 
+    markdown_content = []
+
     if final_agent and results[final_agent].get("status") == "success":
         response = results[final_agent]["response"]
-        _detect_language_and_format_code(response, console)
+        # Format as code block if it looks like code, otherwise as regular text
+        code_keywords = ["def ", "class ", "```", "import ", "function"]
+        if any(keyword in response.lower() for keyword in code_keywords):
+            markdown_content.append(f"```\n{response}\n```\n")
+        else:
+            wrapped_response = _wrap_text_content(response)
+            markdown_content.append(f"{wrapped_response}\n")
     else:
         # Fallback: show last successful agent
         successful_agents = [
@@ -272,20 +266,29 @@ def display_simplified_results(
         if successful_agents:
             last_agent = successful_agents[-1]
             response = results[last_agent]["response"]
-            console.print(f"[bold blue]## Result from {last_agent}[/bold blue]")
-            _detect_language_and_format_code(response, console)
+            markdown_content.append(f"## Result from {last_agent}\n")
+            code_keywords = ["def ", "class ", "```", "import ", "function"]
+            if any(keyword in response.lower() for keyword in code_keywords):
+                markdown_content.append(f"```\n{response}\n```\n")
+            else:
+                wrapped_response = _wrap_text_content(response)
+                markdown_content.append(f"{wrapped_response}\n")
         else:
-            console.print("[bold red]❌ No successful results found[/bold red]")
+            markdown_content.append("**❌ No successful results found**\n")
 
     # Show minimal performance summary
     if "usage" in metadata:
         totals = metadata["usage"].get("totals", {})
         agents_count = totals.get("agents_count", 0)
         duration = metadata.get("duration", "unknown")
-        summary_text = f"\n[bold green]⚡ {agents_count} agents completed in {duration}"
-        summary_text += "[/bold green]"
-        console.print(summary_text)
-        console.print("[dim]Use --detailed flag for full results and metrics[/dim]")
+        summary = f"\n⚡ **{agents_count} agents completed in {duration}**\n"
+        markdown_content.append(summary)
+        markdown_content.append("*Use --detailed flag for full results and metrics*\n")
+
+    # Render the markdown
+    if markdown_content:
+        markdown_text = "".join(markdown_content)
+        console.print(Markdown(markdown_text), overflow="fold", crop=False)
 
 
 def find_final_agent(results: dict[str, Any]) -> str | None:
@@ -311,7 +314,7 @@ async def run_streaming_execution(
     detailed: bool,
 ) -> None:
     """Run streaming execution with Rich status display."""
-    console = Console()
+    console = Console(soft_wrap=True)
     agent_statuses: dict[str, str] = {}
 
     # Initialize with Rich status
