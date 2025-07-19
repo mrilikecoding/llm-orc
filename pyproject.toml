@@ -34,6 +34,7 @@ dependencies = [
     "pyyaml",
     "cryptography",
     "requests>=2.32.4",
+    "rich>=13.0.0",
 ]
 requires-python = ">=3.11"
 

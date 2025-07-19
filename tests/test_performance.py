@@ -521,20 +521,20 @@ class TestEnsembleExecutionPerformance:
                 "name": "security_scanner",
                 "model": "mock-security",
                 "provider": "mock",
-                "dependencies": ["data_collector"],
+                "depends_on": ["data_collector"],
             },
             {
                 "name": "performance_analyzer",
                 "model": "mock-perf",
                 "provider": "mock",
-                "dependencies": ["data_collector", "schema_validator"],
+                "depends_on": ["data_collector", "schema_validator"],
             },
             # Level 2: Depends on Level 1
             {
                 "name": "final_synthesizer",
                 "model": "mock-synthesizer",
                 "provider": "mock",
-                "dependencies": ["security_scanner", "performance_analyzer"],
+                "depends_on": ["security_scanner", "performance_analyzer"],
             },
         ]
 

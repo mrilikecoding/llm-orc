@@ -80,6 +80,41 @@ class TestOAuthClaudeModel:
         assert mock_client.create_message.call_count == 2
 
     @pytest.mark.asyncio
+    async def test_generate_response_proactive_token_refresh(self) -> None:
+        """Test proactive token refresh when token is about to expire."""
+        import time
+
+        # Token expires in 2 minutes (should trigger proactive refresh)
+        expires_at = int(time.time()) + 120
+
+        model = OAuthClaudeModel(
+            access_token="test_token",
+            refresh_token="test_refresh",
+            client_id="test_client",
+            expires_at=expires_at,
+        )
+
+        # Mock the OAuth client to succeed with refresh
+        mock_client = Mock()
+        mock_client.is_token_expired.return_value = True
+        mock_client.refresh_access_token.return_value = True
+        mock_client.access_token = "new_access_token"
+        mock_client.refresh_token = "new_refresh_token"
+        mock_client.create_message.return_value = {
+            "content": [{"text": "Response with fresh token"}],
+            "usage": {"input_tokens": 5, "output_tokens": 10},
+        }
+        model.client = mock_client
+
+        result = await model.generate_response("Hello", "You are a helpful assistant")
+
+        assert result == "Response with fresh token"
+        assert mock_client.is_token_expired.called
+        assert mock_client.refresh_access_token.called
+        assert model.access_token == "new_access_token"
+        assert model.refresh_token == "new_refresh_token"
+
+    @pytest.mark.asyncio
     async def test_generate_response_token_refresh_fails(self) -> None:
         """Test response generation when token refresh fails."""
         model = OAuthClaudeModel(
