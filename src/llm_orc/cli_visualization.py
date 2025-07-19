@@ -4,10 +4,58 @@ from typing import Any
 
 import click
 from rich.console import Console
-from rich.markdown import Markdown
+from rich.syntax import Syntax
 from rich.tree import Tree
 
 from llm_orc.ensemble_config import EnsembleConfig
+
+
+def _detect_language_and_format_code(response: str, console: Console) -> None:
+    """Detect programming language and render with syntax highlighting."""
+    # Language detection patterns
+    language_patterns = {
+        "python": ["def ", "import ", "class ", "if __name__", "print(", "from "],
+        "javascript": ["function ", "const ", "let ", "var ", "console.log", "=>"],
+        "typescript": ["interface ", "type ", ": string", ": number", "export "],
+        "java": ["public class", "public static", "System.out", "import java"],
+        "rust": ["fn ", "let mut", "impl ", "use ", "struct ", "enum "],
+        "go": ["func ", "package ", "import ", "type ", "var "],
+        "bash": ["#!/bin/bash", "echo ", "if [", "for ", "$1", "chmod "],
+        "sql": ["SELECT ", "FROM ", "WHERE ", "INSERT ", "UPDATE ", "DELETE "],
+        "json": ["{", "}", "[", "]", '":', '":'],
+        "yaml": ["---", "  - ", ": ", "version:"],
+        "markdown": ["# ", "## ", "```", "- ", "* "],
+    }
+
+    # Convert to lowercase for case-insensitive matching
+    response_lower = response.lower()
+
+    # Count matches for each language
+    language_scores = {}
+    for lang, patterns in language_patterns.items():
+        score = sum(1 for pattern in patterns if pattern in response_lower)
+        if score > 0:
+            language_scores[lang] = score
+
+    # Determine best language match
+    if language_scores:
+        detected_language = max(
+            language_scores.keys(), key=lambda k: language_scores[k]
+        )
+        # Only use detection if we have reasonable confidence
+        if language_scores[detected_language] >= 2:
+            try:
+                syntax = Syntax(
+                    response, detected_language, theme="monokai", line_numbers=False
+                )
+                console.print(syntax)
+                return
+            except Exception:
+                # Fall back to plain text if syntax highlighting fails
+                pass
+
+    # Fall back to plain text with some basic formatting
+    console.print(response)
 
 
 def create_dependency_graph(agents: list[dict[str, Any]]) -> str:
@@ -24,7 +72,7 @@ def create_dependency_tree(
 
     # Group agents by dependency level
     agents_by_level = _group_agents_by_dependency_level(agents)
-    tree = Tree("[bold blue]⚡ Ensemble Execution Plan[/bold blue]")
+    tree = Tree("[bold blue]Orchestrating Agent Responses[/bold blue]")
 
     max_level = max(agents_by_level.keys()) if agents_by_level else 0
 
@@ -156,54 +204,47 @@ def display_results(
     console = Console()
 
     if detailed:
-        # Build markdown content for detailed results
-        markdown_content = ["# Results\n"]
+        # Show detailed results with syntax highlighting
+        console.print("[bold blue]# Results[/bold blue]")
 
         for agent_name, result in results.items():
             if result.get("status") == "success":
-                markdown_content.append(f"## {agent_name}\n")
-                # Format the response as a code block if it looks like code,
-                # otherwise as regular text
+                # Print header with rich formatting
+                console.print(f"\n[bold blue]## {agent_name}[/bold blue]")
+
+                # Use syntax highlighting for the response
                 response = result["response"]
-                code_keywords = ["def ", "class ", "```", "import ", "function"]
-                if any(keyword in response.lower() for keyword in code_keywords):
-                    markdown_content.append(f"```\n{response}\n```\n")
-                else:
-                    markdown_content.append(f"{response}\n")
+                _detect_language_and_format_code(response, console)
             else:
-                markdown_content.append(f"## ❌ {agent_name}\n")
+                console.print(f"\n[bold red]## ❌ {agent_name}[/bold red]")
                 error_msg = result.get("error", "Unknown error")
-                markdown_content.append(f"**Error:** {error_msg}\n")
+                console.print(f"[red]**Error:** {error_msg}[/red]")
 
         # Show performance metrics
         if "usage" in metadata:
             usage = metadata["usage"]
             totals = usage.get("totals", {})
-            markdown_content.append("## Performance Metrics\n")
-            markdown_content.append(f"- **Duration:** {metadata['duration']}\n")
+            console.print("\n[bold green]## Performance Metrics[/bold green]")
+            console.print(f"• [bold]Duration:[/bold] {metadata['duration']}")
             total_tokens = totals.get("total_tokens", 0)
             total_cost = totals.get("total_cost_usd", 0.0)
-            markdown_content.append(f"- **Total tokens:** {total_tokens:,}\n")
-            markdown_content.append(f"- **Total cost:** ${total_cost:.4f}\n")
-            markdown_content.append(f"- **Agents:** {totals.get('agents_count', 0)}\n")
+            console.print(f"• [bold]Total tokens:[/bold] {total_tokens:,}")
+            console.print(f"• [bold]Total cost:[/bold] ${total_cost:.4f}")
+            console.print(f"• [bold]Agents:[/bold] {totals.get('agents_count', 0)}")
 
             # Show per-agent usage
             agents_usage = usage.get("agents", {})
             if agents_usage:
-                markdown_content.append("\n### Per-Agent Usage\n")
+                console.print("\n[bold cyan]### Per-Agent Usage[/bold cyan]")
                 for agent_name, agent_usage in agents_usage.items():
                     tokens = agent_usage.get("total_tokens", 0)
                     cost = agent_usage.get("cost_usd", 0.0)
                     duration = agent_usage.get("duration_ms", 0)
                     model = agent_usage.get("model", "unknown")
-                    markdown_content.append(
-                        f"- **{agent_name}** ({model}): {tokens:,} tokens, "
-                        f"${cost:.4f}, {duration}ms\n"
+                    console.print(
+                        f"• [bold]{agent_name}[/bold] ({model}): {tokens:,} tokens, "
+                        f"${cost:.4f}, {duration}ms"
                     )
-
-        # Render the markdown
-        markdown_text = "".join(markdown_content)
-        console.print(Markdown(markdown_text))
     else:
         # Simplified output: just show final synthesis/result
         display_simplified_results(results, metadata)
@@ -218,16 +259,9 @@ def display_simplified_results(
     # Find the final agent (the one with no dependents)
     final_agent = find_final_agent(results)
 
-    markdown_content = []
-
     if final_agent and results[final_agent].get("status") == "success":
         response = results[final_agent]["response"]
-        # Format as code block if it looks like code, otherwise as regular text
-        code_keywords = ["def ", "class ", "```", "import ", "function"]
-        if any(keyword in response.lower() for keyword in code_keywords):
-            markdown_content.append(f"```\n{response}\n```\n")
-        else:
-            markdown_content.append(f"{response}\n")
+        _detect_language_and_format_code(response, console)
     else:
         # Fallback: show last successful agent
         successful_agents = [
@@ -238,28 +272,20 @@ def display_simplified_results(
         if successful_agents:
             last_agent = successful_agents[-1]
             response = results[last_agent]["response"]
-            markdown_content.append(f"## Result from {last_agent}\n")
-            code_keywords = ["def ", "class ", "```", "import ", "function"]
-            if any(keyword in response.lower() for keyword in code_keywords):
-                markdown_content.append(f"```\n{response}\n```\n")
-            else:
-                markdown_content.append(f"{response}\n")
+            console.print(f"[bold blue]## Result from {last_agent}[/bold blue]")
+            _detect_language_and_format_code(response, console)
         else:
-            markdown_content.append("**❌ No successful results found**\n")
+            console.print("[bold red]❌ No successful results found[/bold red]")
 
     # Show minimal performance summary
     if "usage" in metadata:
         totals = metadata["usage"].get("totals", {})
         agents_count = totals.get("agents_count", 0)
         duration = metadata.get("duration", "unknown")
-        summary = f"\n⚡ **{agents_count} agents completed in {duration}**\n"
-        markdown_content.append(summary)
-        markdown_content.append("*Use --detailed flag for full results and metrics*\n")
-
-    # Render the markdown
-    if markdown_content:
-        markdown_text = "".join(markdown_content)
-        console.print(Markdown(markdown_text))
+        summary_text = f"\n[bold green]⚡ {agents_count} agents completed in {duration}"
+        summary_text += "[/bold green]"
+        console.print(summary_text)
+        console.print("[dim]Use --detailed flag for full results and metrics[/dim]")
 
 
 def find_final_agent(results: dict[str, Any]) -> str | None:
