@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import click
+from rich.console import Console
+from rich.status import Status
 
 from llm_orc.authentication import AuthenticationManager, CredentialStorage
 from llm_orc.config import ConfigurationManager
@@ -163,17 +165,6 @@ def cli() -> None:
     help="Maximum number of concurrent agents (overrides config)",
 )
 @click.option(
-    "--visualize",
-    is_flag=True,
-    help="Enable enhanced visualization during execution",
-)
-@click.option(
-    "--visualization-mode",
-    type=click.Choice(["terminal", "web", "debug", "minimal"]),
-    default=None,
-    help="Visualization mode (overrides config default)",
-)
-@click.option(
     "--detailed",
     is_flag=True,
     help="Show detailed results and performance metrics",
@@ -185,8 +176,6 @@ def invoke(
     output_format: str,
     streaming: bool,
     max_concurrent: int,
-    visualize: bool,
-    visualization_mode: str,
     detailed: bool,
 ) -> None:
     """Invoke an ensemble of agents."""
@@ -230,13 +219,8 @@ def invoke(
             f"Ensemble '{ensemble_name}' not found in: {', '.join(searched_dirs)}"
         )
 
-    # Create executor (with visualization if requested)
-    if visualize:
-        from llm_orc.visualization.integration import VisualizationIntegratedExecutor
-
-        executor: EnsembleExecutor = VisualizationIntegratedExecutor()
-    else:
-        executor = EnsembleExecutor()
+    # Create standard executor
+    executor = EnsembleExecutor()
 
     # Override concurrency settings if provided
     if max_concurrent is not None:
@@ -279,61 +263,63 @@ def invoke(
 
     # Execute the ensemble
     try:
-        if visualize:
-            # Enhanced visualization execution
-            async def run_with_visualization() -> None:
-                from llm_orc.visualization.integration import (
-                    VisualizationIntegratedExecutor,
-                )
-
-                viz_executor = executor
-                if isinstance(viz_executor, VisualizationIntegratedExecutor):
-                    result = await viz_executor.execute_with_visualization(
-                        ensemble_config, input_data, visualization_mode
-                    )
-                else:
-                    result = await executor.execute(ensemble_config, input_data)
-                if output_format == "json":
-                    click.echo(json.dumps(result, indent=2))
-                else:
-                    # Display results after visualization completes
-                    _display_results(result["results"], result["metadata"], detailed)
-
-            asyncio.run(run_with_visualization())
-        elif effective_streaming:
-            # Streaming execution
+        if effective_streaming:
+            # Streaming execution with Rich status
             async def run_streaming() -> None:
-                async for event in executor.execute_streaming(
-                    ensemble_config, input_data
-                ):
-                    if output_format == "json":
-                        click.echo(json.dumps(event, indent=2))
-                    else:
-                        event_type = event["type"]
-                        if event_type == "execution_started":
-                            click.echo(
-                                f"🏁 Started execution with "
-                                f"{event['data']['total_agents']} agents"
-                            )
-                        elif event_type == "agent_progress":
-                            progress = event["data"]["progress_percentage"]
-                            click.echo(
-                                f"📊 Progress: {progress:.1f}% "
-                                f"({event['data']['completed_agents']}/"
-                                f"{event['data']['total_agents']})"
-                            )
-                        elif event_type == "execution_completed":
-                            click.echo(
-                                f"✅ Completed in {event['data']['duration']:.2f}s"
-                            )
-                            if output_format == "text":
-                                _display_results(
-                                    event["data"]["results"], event["data"]["metadata"], detailed
+                console = Console()
+                agent_statuses: dict[str, str] = {}
+                
+                # Initialize with Rich status
+                with console.status("Starting execution...", spinner="dots") as status:
+                    async for event in executor.execute_streaming(
+                        ensemble_config, input_data
+                    ):
+                        if output_format == "json":
+                            click.echo(json.dumps(event, indent=2))
+                        else:
+                            event_type = event["type"]
+                            if event_type == "execution_started":
+                                # Show initial dependency graph with all pending
+                                initial_graph = _create_dependency_graph_with_status(
+                                    ensemble_config.agents, {}
                                 )
-                            else:
-                                click.echo(
-                                    json.dumps(event["data"]["results"], indent=2)
+                                console.print(f"🔗 Dependency flow: {initial_graph}")
+                                
+                            elif event_type == "agent_progress":
+                                # Extract agent status from progress data
+                                completed_agents = event['data'].get('completed_agents', 0)
+                                total_agents = event['data'].get('total_agents', len(ensemble_config.agents))
+                                
+                                # Mark first N agents as completed, rest as pending
+                                for i, agent in enumerate(ensemble_config.agents):
+                                    if i < completed_agents:
+                                        agent_statuses[agent["name"]] = "completed"
+                                    elif i == completed_agents and completed_agents < total_agents:
+                                        agent_statuses[agent["name"]] = "running"
+                                    else:
+                                        agent_statuses[agent["name"]] = "pending"
+                                
+                                # Update status display with current dependency graph
+                                current_graph = _create_dependency_graph_with_status(
+                                    ensemble_config.agents, agent_statuses
                                 )
+                                status.update(current_graph)
+                                
+                            elif event_type == "execution_completed":
+                                # Final update with all completed
+                                final_statuses = {agent["name"]: "completed" for agent in ensemble_config.agents}
+                                final_graph = _create_dependency_graph_with_status(
+                                    ensemble_config.agents, final_statuses
+                                )
+                                console.print(f"✅ Final: {final_graph}")
+                                console.print(f"✅ Completed in {event['data']['duration']:.2f}s")
+                                
+                                if output_format == "text":
+                                    _display_results(
+                                        event["data"]["results"],
+                                        event["data"]["metadata"],
+                                        detailed,
+                                    )
 
             asyncio.run(run_streaming())
         else:
@@ -349,6 +335,83 @@ def invoke(
 
     except Exception as e:
         raise click.ClickException(f"Ensemble execution failed: {str(e)}") from e
+
+
+def _create_dependency_graph(agents: list[dict[str, Any]]) -> str:
+    """Create horizontal dependency graph: A,B,C → D → E,F → G"""
+    return _create_dependency_graph_with_status(agents, {})
+
+
+def _create_dependency_graph_with_status(
+    agents: list[dict[str, Any]], agent_statuses: dict[str, str]
+) -> str:
+    """Create horizontal dependency graph with status indicators."""
+    # Group agents by dependency level
+    agents_by_level: dict[int, list[dict[str, Any]]] = {}
+    
+    for agent in agents:
+        dependencies = agent.get("depends_on", [])
+        level = _calculate_agent_level(agent["name"], dependencies, agents)
+        
+        if level not in agents_by_level:
+            agents_by_level[level] = []
+        agents_by_level[level].append(agent)
+    
+    # Build horizontal graph: A,B,C → D → E,F → G
+    graph_parts = []
+    max_level = max(agents_by_level.keys()) if agents_by_level else 0
+    
+    for level in range(max_level + 1):
+        if level not in agents_by_level:
+            continue
+            
+        level_agents = agents_by_level[level]
+        agent_displays = []
+        
+        for agent in level_agents:
+            name = agent["name"]
+            status = agent_statuses.get(name, "pending")
+            
+            # Status indicators with Rich elements
+            if status == "running":
+                # Use Rich spinner character for running
+                agent_displays.append(f"[yellow]⠋[/yellow] {name}")
+            elif status == "completed":
+                # Use Rich checkmark for completed
+                agent_displays.append(f"[green]✓[/green] {name}")
+            elif status == "failed":
+                # Use Rich X for failed
+                agent_displays.append(f"[red]✗[/red] {name}")
+            else:
+                # Use Rich dot for pending
+                agent_displays.append(f"[dim]⦁[/dim] {name}")
+        
+        # Join agents at same level with commas
+        level_text = ", ".join(agent_displays)
+        graph_parts.append(level_text)
+    
+    # Join levels with arrows
+    return " → ".join(graph_parts)
+
+
+def _calculate_agent_level(
+    agent_name: str, dependencies: list[str], all_agents: list[dict[str, Any]]
+) -> int:
+    """Calculate the dependency level of an agent (0 = no dependencies)."""
+    if not dependencies:
+        return 0
+    
+    # Find the maximum level of all dependencies
+    max_dep_level = 0
+    for dep_name in dependencies:
+        # Find the dependency agent
+        dep_agent = next((a for a in all_agents if a["name"] == dep_name), None)
+        if dep_agent:
+            dep_dependencies = dep_agent.get("depends_on", [])
+            dep_level = _calculate_agent_level(dep_name, dep_dependencies, all_agents)
+            max_dep_level = max(max_dep_level, dep_level)
+    
+    return max_dep_level + 1
 
 
 def _display_results(
@@ -396,18 +459,21 @@ def _display_results(
         _display_simplified_results(results, metadata)
 
 
-def _display_simplified_results(results: dict[str, Any], metadata: dict[str, Any]) -> None:
+def _display_simplified_results(
+    results: dict[str, Any], metadata: dict[str, Any]
+) -> None:
     """Display simplified results showing only the final output."""
     # Find the final agent (the one with no dependents)
     final_agent = _find_final_agent(results)
-    
+
     if final_agent and results[final_agent].get("status") == "success":
-        click.echo(f"\n✅ Final Result:")
+        click.echo("\n✅ Final Result:")
         click.echo(f"{results[final_agent]['response']}")
     else:
         # Fallback: show last successful agent
         successful_agents = [
-            name for name, result in results.items()
+            name
+            for name, result in results.items()
             if result.get("status") == "success"
         ]
         if successful_agents:
@@ -415,8 +481,8 @@ def _display_simplified_results(results: dict[str, Any], metadata: dict[str, Any
             click.echo(f"\n✅ Result from {last_agent}:")
             click.echo(f"{results[last_agent]['response']}")
         else:
-            click.echo(f"\n❌ No successful results found")
-    
+            click.echo("\n❌ No successful results found")
+
     # Show minimal performance summary
     if "usage" in metadata:
         totals = metadata["usage"].get("totals", {})
@@ -430,15 +496,14 @@ def _find_final_agent(results: dict[str, Any]) -> str | None:
     """Find the final agent in the dependency chain (the one with no dependents)."""
     # For now, use a simple heuristic: the agent with the highest token count
     # is likely the final agent (since it got input from all previous agents)
-    max_tokens = 0
     final_agent = None
-    
+
     for agent_name in results.keys():
         # This is a simple heuristic - in practice we'd want to track dependencies
         # But for now, we can assume the last successful agent is often the final one
         if results[agent_name].get("status") == "success":
             final_agent = agent_name
-    
+
     return final_agent
 
 

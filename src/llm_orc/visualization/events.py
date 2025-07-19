@@ -83,6 +83,7 @@ class EventFactory:
         execution_id: str,
         total_agents: int,
         estimated_duration: float | None = None,
+        agents_config: list[dict[str, Any]] | None = None,
     ) -> ExecutionEvent:
         """Create ensemble started event."""
         return ExecutionEvent(
@@ -93,6 +94,7 @@ class EventFactory:
             data={
                 "total_agents": total_agents,
                 "estimated_duration": estimated_duration,
+                "agents_config": agents_config or [],
             },
         )
 

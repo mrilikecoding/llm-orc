@@ -48,7 +48,11 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
             self.register_performance_hook(self._visualization_hook)
 
             # Start visualization based on mode
-            if mode == "terminal":
+            if mode == "simple":
+                return await self._execute_with_simple_visualization(
+                    config, input_data
+                )
+            elif mode == "terminal":
                 return await self._execute_with_terminal_visualization(
                     config, input_data
                 )
@@ -61,8 +65,8 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
                     config, input_data
                 )
             else:
-                # Default to terminal
-                return await self._execute_with_terminal_visualization(
+                # Default to simple
+                return await self._execute_with_simple_visualization(
                     config, input_data
                 )
 
@@ -76,6 +80,44 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
     ) -> dict[str, Any]:
         """Execute with terminal visualization."""
         visualizer = TerminalVisualizer(self.viz_config)
+
+        # Start execution and visualization concurrently
+        execution_task = asyncio.create_task(
+            self._execute_with_events(config, input_data)
+        )
+
+        visualization_task = asyncio.create_task(
+            visualizer.visualize_execution(self.current_stream or EventStream(""))
+        )
+
+        try:
+            # Wait for execution to complete
+            result = await execution_task
+
+            # Cancel visualization task
+            visualization_task.cancel()
+            try:
+                await visualization_task
+            except asyncio.CancelledError:
+                pass
+
+            # Print summary
+            visualizer.print_summary()
+
+            return result
+
+        except Exception as e:
+            # Cancel visualization task
+            visualization_task.cancel()
+            raise e
+
+    async def _execute_with_simple_visualization(
+        self, config: EnsembleConfig, input_data: str
+    ) -> dict[str, Any]:
+        """Execute with simple horizontal dependency graph visualization."""
+        from .simple import SimpleVisualizer
+
+        visualizer = SimpleVisualizer(self.viz_config.simple)
 
         # Start execution and visualization concurrently
         execution_task = asyncio.create_task(
@@ -144,12 +186,21 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
         if not self.current_stream:
             raise RuntimeError("No event stream available")
 
-        # Emit ensemble started event
+        # Emit ensemble started event with agents config
+        agents_config = [
+            {
+                "name": agent.get("name", "unknown"),
+                "depends_on": agent.get("depends_on", []),
+                "model_profile": agent.get("model_profile", "default"),
+            }
+            for agent in config.agents
+        ]
         await self.current_stream.emit(
             EventFactory.ensemble_started(
                 ensemble_name=config.name,
                 execution_id=self.current_execution_id or "unknown",
                 total_agents=len(config.agents),
+                agents_config=agents_config,
             )
         )
 

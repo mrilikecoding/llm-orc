@@ -6,6 +6,22 @@ from typing import Any
 
 
 @dataclass
+class SimpleVisualizationConfig:
+    """Configuration for simple horizontal dependency graph visualization."""
+
+    # What to show
+    show_dependency_graph: bool = True
+    show_basic_metrics: bool = True
+    
+    # Styling
+    use_colors: bool = True
+    use_emojis: bool = True
+    
+    # Update frequency
+    refresh_rate_ms: int = 500
+
+
+@dataclass
 class TerminalVisualizationConfig:
     """Configuration for terminal-based visualization."""
 
@@ -92,9 +108,12 @@ class ExportConfig:
 class VisualizationConfig:
     """Main visualization configuration."""
 
-    default_mode: str = "terminal"  # terminal, web, minimal, debug
+    default_mode: str = "simple"  # simple, terminal, web, minimal, debug
 
     # Mode-specific configurations
+    simple: SimpleVisualizationConfig = field(
+        default_factory=SimpleVisualizationConfig
+    )
     terminal: TerminalVisualizationConfig = field(
         default_factory=TerminalVisualizationConfig
     )
