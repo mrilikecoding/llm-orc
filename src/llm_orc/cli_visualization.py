@@ -4,6 +4,7 @@ from typing import Any
 
 import click
 from rich.console import Console
+from rich.tree import Tree
 
 from llm_orc.ensemble_config import EnsembleConfig
 
@@ -11,6 +12,72 @@ from llm_orc.ensemble_config import EnsembleConfig
 def create_dependency_graph(agents: list[dict[str, Any]]) -> str:
     """Create horizontal dependency graph: A,B,C → D → E,F → G"""
     return create_dependency_graph_with_status(agents, {})
+
+
+def create_dependency_tree(
+    agents: list[dict[str, Any]], agent_statuses: dict[str, str] | None = None
+) -> Tree:
+    """Create a tree visualization of agent dependencies by execution levels."""
+    if agent_statuses is None:
+        agent_statuses = {}
+
+    # Group agents by dependency level
+    agents_by_level = _group_agents_by_dependency_level(agents)
+    tree = Tree("[bold blue]⚡ Ensemble Execution Plan[/bold blue]")
+
+    max_level = max(agents_by_level.keys()) if agents_by_level else 0
+
+    # Create each level as a single line with agents grouped together
+    for level in range(max_level + 1):
+        if level not in agents_by_level:
+            continue
+
+        level_agents = agents_by_level[level]
+
+        # Create agent status strings for this level
+        agent_labels = []
+        for agent in level_agents:
+            agent_name = agent["name"]
+            status = agent_statuses.get(agent_name, "pending")
+
+            if status == "running":
+                symbol = "[yellow]◐[/yellow]"
+                style = "yellow"
+            elif status == "completed":
+                symbol = "[green]✓[/green]"
+                style = "green"
+            elif status == "failed":
+                symbol = "[red]✗[/red]"
+                style = "red"
+            else:
+                symbol = "[dim]○[/dim]"
+                style = "dim"
+
+            agent_label = f"{symbol} [{style}]{agent_name}[/{style}]"
+            agent_labels.append(agent_label)
+
+        # Join all agents at this level into a single line
+        level_line = "  ".join(agent_labels)
+        tree.add(level_line)
+
+    return tree
+
+
+def _group_agents_by_dependency_level(
+    agents: list[dict[str, Any]],
+) -> dict[int, list[dict[str, Any]]]:
+    """Group agents by their dependency level (0 = no dependencies)."""
+    agents_by_level: dict[int, list[dict[str, Any]]] = {}
+
+    for agent in agents:
+        dependencies = agent.get("depends_on", [])
+        level = _calculate_agent_level(agent["name"], dependencies, agents)
+
+        if level not in agents_by_level:
+            agents_by_level[level] = []
+        agents_by_level[level].append(agent)
+
+    return agents_by_level
 
 
 def create_dependency_graph_with_status(
@@ -209,11 +276,11 @@ async def run_streaming_execution(
                         else:
                             agent_statuses[agent["name"]] = "pending"
 
-                    # Update status display with current dependency graph
-                    current_graph = create_dependency_graph_with_status(
+                    # Update status display with current dependency tree
+                    current_tree = create_dependency_tree(
                         ensemble_config.agents, agent_statuses
                     )
-                    status.update(current_graph)
+                    status.update(current_tree)
 
                 elif event_type == "execution_completed":
                     # Stop the status spinner and show final results
@@ -223,10 +290,10 @@ async def run_streaming_execution(
                     final_statuses = {
                         agent["name"]: "completed" for agent in ensemble_config.agents
                     }
-                    final_graph = create_dependency_graph_with_status(
+                    final_tree = create_dependency_tree(
                         ensemble_config.agents, final_statuses
                     )
-                    console.print(f"{final_graph}")
+                    console.print(final_tree)
                     console.print(f"Completed in {event['data']['duration']:.2f}s")
 
                     if output_format == "text":
