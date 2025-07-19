@@ -136,6 +136,7 @@ def cli() -> None:
 
 @cli.command()
 @click.argument("ensemble_name")
+@click.argument("input_data", required=False)
 @click.option(
     "--config-dir",
     default=None,
@@ -143,8 +144,10 @@ def cli() -> None:
 )
 @click.option(
     "--input-data",
+    "--input",
+    "input_data_option",
     default=None,
-    help="Input data for the ensemble (if not provided, reads from stdin)",
+    help="Input data for the ensemble (alternative to positional argument)",
 )
 @click.option(
     "--output-format",
@@ -170,8 +173,9 @@ def cli() -> None:
 )
 def invoke(
     ensemble_name: str,
+    input_data: str | None,
     config_dir: str,
-    input_data: str,
+    input_data_option: str | None,
     output_format: str,
     streaming: bool,
     max_concurrent: int,
@@ -194,14 +198,18 @@ def invoke(
         # Use specified config directory
         ensemble_dirs = [Path(config_dir)]
 
-    # Handle input from stdin if not provided via --input
-    if input_data is None:
+    # Handle input data priority: positional > option > stdin > default
+    final_input_data = input_data or input_data_option
+
+    if final_input_data is None:
         if not sys.stdin.isatty():
             # Read from stdin (piped input)
-            input_data = sys.stdin.read().strip()
+            final_input_data = sys.stdin.read().strip()
         else:
             # No input provided and not piped, use default
-            input_data = "Please analyze this."
+            final_input_data = "Please analyze this."
+
+    input_data = final_input_data
 
     # Find ensemble in the directories
     loader = EnsembleLoader()
