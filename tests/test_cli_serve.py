@@ -17,7 +17,7 @@ class TestCLIServe:
         assert result.exit_code == 0
         assert "serve" in result.output.lower()
 
-    @patch("llm_orc.cli.MCPServerRunner")
+    @patch("llm_orc.cli_commands.MCPServerRunner")
     def test_serve_command_with_ensemble_name(self, mock_runner_class: Mock) -> None:
         """Should start MCP server with specified ensemble."""
         mock_runner = Mock()
@@ -30,7 +30,7 @@ class TestCLIServe:
         mock_runner_class.assert_called_once_with("architecture_review", 3000)
         mock_runner.run.assert_called_once()
 
-    @patch("llm_orc.cli.MCPServerRunner")
+    @patch("llm_orc.cli_commands.MCPServerRunner")
     def test_serve_command_with_custom_port(self, mock_runner_class: Mock) -> None:
         """Should start MCP server with custom port."""
         mock_runner = Mock()
@@ -43,7 +43,7 @@ class TestCLIServe:
         mock_runner_class.assert_called_once_with("gesture_analysis", 8080)
         mock_runner.run.assert_called_once()
 
-    @patch("llm_orc.cli.MCPServerRunner")
+    @patch("llm_orc.cli_commands.MCPServerRunner")
     def test_serve_command_default_port(self, mock_runner_class: Mock) -> None:
         """Should use default port 3000 when not specified."""
         mock_runner = Mock()
