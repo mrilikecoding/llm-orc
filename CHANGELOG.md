@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2025-07-19
+
+### Added
+- **Comprehensive CLI Visualization System** - Transform ensemble execution from black box to transparent process
+  - Real-time progress tracking with Rich console streaming and live status updates
+  - Professional dependency tree visualization showing execution hierarchy and flow
+  - Rich symbols and colors for agent status (✓ completed, ◐ running, ✗ failed, ○ pending)
+  - Markdown rendering for agent responses with automatic code block detection
+  - Performance metrics display including duration, token usage, cost breakdown, and per-agent statistics
+  - Cross-terminal compatibility with proper width detection and text wrapping
+  - Streaming execution with live dependency tree updates during processing
+  - Detailed vs simplified output modes for different use cases
+- **CLI Module Refactoring** - Improved maintainability and extensibility
+  - Extracted CLI code into focused modules (auth, commands, config, visualization)
+  - Enhanced command organization and help display
+  - Better separation of concerns for future CLI enhancements
+
+### Fixed
+- **Text Overflow Issues** - Resolved content getting cut off in various terminal environments
+  - Native Rich text wrapping with proper terminal width detection
+  - Consistent display across different terminal applications and sizes
+  - Word boundary preservation preventing mid-word line breaks
+  - Background color overflow fixes for markdown content
+
+### Changed
+- **Rich Library Integration** - Upgraded to professional terminal output
+  - Replaced basic text output with Rich console formatting
+  - Enhanced visual feedback for better user experience
+  - Professional styling consistent with modern CLI tools
+
 ## [0.6.0] - 2025-07-17
 
 ### Added
