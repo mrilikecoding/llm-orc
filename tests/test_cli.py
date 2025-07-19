@@ -7,7 +7,8 @@ from unittest.mock import Mock, patch
 import yaml
 from click.testing import CliRunner
 
-from llm_orc.cli import _get_available_providers, cli
+from llm_orc.cli import cli
+from llm_orc.cli_config import get_available_providers
 
 
 class TestCLI:
@@ -163,7 +164,9 @@ class TestCLI:
                     yaml.dump(local_ensemble, f)
 
                 # Mock ConfigurationManager to return our test directories
-                with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager:
+                with patch(
+                    "llm_orc.cli_commands.ConfigurationManager"
+                ) as mock_config_manager:
                     mock_instance = mock_config_manager.return_value
                     mock_instance.global_config_dir = global_config_path
                     mock_instance.local_config_dir = local_config_path
@@ -214,8 +217,8 @@ class TestCLI:
         assert "anthropic" not in provider_keys
         assert "google" not in provider_keys
 
-    def test_get_available_providers_with_auth_and_ollama(self) -> None:
-        """Test _get_available_providers function with authentication and ollama."""
+    def testget_available_providers_with_auth_and_ollama(self) -> None:
+        """Test get_available_providers function with authentication and ollama."""
         with tempfile.TemporaryDirectory() as temp_dir:
             global_config_dir = Path(temp_dir)
 
@@ -228,7 +231,7 @@ class TestCLI:
             (global_config_dir / ".encryption_key").touch()
 
             # Mock CredentialStorage to return test providers
-            with patch("llm_orc.cli.CredentialStorage") as mock_storage_class:
+            with patch("llm_orc.cli_config.CredentialStorage") as mock_storage_class:
                 mock_storage = Mock()
                 mock_storage.list_providers.return_value = [
                     "anthropic-api",
@@ -243,7 +246,7 @@ class TestCLI:
                     mock_requests_get.return_value = mock_response
 
                     # Test the function
-                    providers = _get_available_providers(mock_config_manager)
+                    providers = get_available_providers(mock_config_manager)
 
                     # Should include authenticated providers + ollama
                     assert "anthropic-api" in providers
@@ -251,8 +254,8 @@ class TestCLI:
                     assert "ollama" in providers
                     assert len(providers) == 3
 
-    def test_get_available_providers_no_auth_no_ollama(self) -> None:
-        """Test _get_available_providers with no authentication and no ollama."""
+    def testget_available_providers_no_auth_no_ollama(self) -> None:
+        """Test get_available_providers with no authentication and no ollama."""
         with tempfile.TemporaryDirectory() as temp_dir:
             global_config_dir = Path(temp_dir)
 
@@ -265,13 +268,13 @@ class TestCLI:
                 mock_requests_get.side_effect = Exception("Connection refused")
 
                 # Test the function
-                providers = _get_available_providers(mock_config_manager)
+                providers = get_available_providers(mock_config_manager)
 
                 # Should be empty
                 assert len(providers) == 0
 
-    def test_get_available_providers_auth_only(self) -> None:
-        """Test _get_available_providers with only authentication."""
+    def testget_available_providers_auth_only(self) -> None:
+        """Test get_available_providers with only authentication."""
         with tempfile.TemporaryDirectory() as temp_dir:
             global_config_dir = Path(temp_dir)
 
@@ -283,7 +286,7 @@ class TestCLI:
             (global_config_dir / "credentials.yaml").touch()
 
             # Mock CredentialStorage
-            with patch("llm_orc.cli.CredentialStorage") as mock_storage_class:
+            with patch("llm_orc.cli_config.CredentialStorage") as mock_storage_class:
                 mock_storage = Mock()
                 mock_storage.list_providers.return_value = ["anthropic-claude-pro-max"]
                 mock_storage_class.return_value = mock_storage
@@ -293,7 +296,7 @@ class TestCLI:
                     mock_requests_get.side_effect = Exception("Connection refused")
 
                     # Test the function
-                    providers = _get_available_providers(mock_config_manager)
+                    providers = get_available_providers(mock_config_manager)
 
                     # Should only include authenticated provider
                     assert "anthropic-claude-pro-max" in providers
@@ -333,16 +336,18 @@ class TestCLI:
                 yaml.dump({"model_profiles": {}}, f)
 
             # Mock configuration manager
-            with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager_class:
+            with patch(
+                "llm_orc.cli_commands.ConfigurationManager"
+            ) as mock_config_manager_class:
                 mock_config_manager = Mock()
                 mock_config_manager.global_config_dir = global_config_dir
                 mock_config_manager.local_config_dir = None
                 mock_config_manager.load_project_config.return_value = None
                 mock_config_manager_class.return_value = mock_config_manager
 
-                # Mock _get_available_providers
+                # Mock get_available_providers
                 with patch(
-                    "llm_orc.cli._get_available_providers"
+                    "llm_orc.cli_commands.get_available_providers"
                 ) as mock_get_providers:
                     mock_get_providers.return_value = set()
 
@@ -382,7 +387,9 @@ class TestCLI:
                 yaml.dump(config_data, f)
 
             # Mock configuration manager
-            with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager_class:
+            with patch(
+                "llm_orc.cli_commands.ConfigurationManager"
+            ) as mock_config_manager_class:
                 mock_config_manager = Mock()
                 mock_config_manager.global_config_dir = global_config_dir
                 # Mock load_project_config to return empty config for this test
@@ -391,7 +398,7 @@ class TestCLI:
 
                 # Mock available providers (only test-provider available)
                 with patch(
-                    "llm_orc.cli._get_available_providers"
+                    "llm_orc.cli_commands.get_available_providers"
                 ) as mock_get_providers:
                     mock_get_providers.return_value = {"test-provider"}
 
@@ -420,14 +427,16 @@ class TestCLI:
                 yaml.dump(config_data, f)
 
             # Mock configuration manager
-            with patch("llm_orc.cli.ConfigurationManager") as mock_config_manager_class:
+            with patch(
+                "llm_orc.cli_commands.ConfigurationManager"
+            ) as mock_config_manager_class:
                 mock_config_manager = Mock()
                 mock_config_manager.load_project_config.return_value = config_data
                 mock_config_manager_class.return_value = mock_config_manager
 
                 # Mock available providers
                 with patch(
-                    "llm_orc.cli._get_available_providers"
+                    "llm_orc.cli_commands.get_available_providers"
                 ) as mock_get_providers:
                     mock_get_providers.return_value = set()
 

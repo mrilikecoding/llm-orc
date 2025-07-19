@@ -1,5 +1,6 @@
 """OAuth client for Claude API authentication."""
 
+import time
 from typing import Any
 
 import requests
@@ -27,6 +28,22 @@ class OAuthClaudeClient:
             "X-Stainless-Package-Version": __version__,
         }
 
+    def is_token_expired(self, expires_at: int | None = None) -> bool:
+        """Check if the access token is expired or about to expire.
+
+        Args:
+            expires_at: Unix timestamp of token expiration (optional)
+
+        Returns:
+            True if token is expired or expires within 5 minutes
+        """
+        if expires_at is None:
+            # If we don't have expiration info, assume it might be expired
+            return False
+
+        # Consider token expired if it expires within 5 minutes (300 seconds)
+        return time.time() >= (expires_at - 300)
+
     def refresh_access_token(self, client_id: str) -> bool:
         """Refresh access token using refresh token."""
         if not self.refresh_token:
@@ -53,9 +70,19 @@ class OAuthClaudeClient:
                     self.refresh_token = tokens["refresh_token"]
                 return True
             else:
+                # Log detailed error information for debugging
+                error_msg = (
+                    f"Token refresh failed with status {response.status_code}: "
+                    f"{response.text}"
+                )
+                print(f"🔄 Token refresh error: {error_msg}")
                 return False
 
-        except Exception:
+        except requests.exceptions.RequestException as e:
+            print(f"🔄 Token refresh network error: {str(e)}")
+            return False
+        except Exception as e:
+            print(f"🔄 Token refresh unexpected error: {str(e)}")
             return False
 
     def revoke_token(self, client_id: str, token_type: str = "access_token") -> bool:

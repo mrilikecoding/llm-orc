@@ -805,7 +805,7 @@ wheels = [
 
 [[package]]
 name = "llm-orchestra"
-version = "0.5.1"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -817,6 +817,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "requests" },
+    { name = "rich" },
     { name = "websockets" },
 ]
 
@@ -861,6 +862,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "pyyaml" },
     { name = "requests", specifier = ">=2.32.4" },
+    { name = "rich", specifier = ">=13.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.0.287" },
     { name = "twine", marker = "extra == 'dev'" },
     { name = "websockets" },
