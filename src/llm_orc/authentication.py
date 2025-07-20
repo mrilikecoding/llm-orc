@@ -222,8 +222,6 @@ class CredentialStorage:
             self._save_credentials(credentials)
 
 
-
-
 class AuthenticationManager:
     """Manages authentication with LLM providers."""
 
