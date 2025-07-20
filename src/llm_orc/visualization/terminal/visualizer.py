@@ -20,9 +20,9 @@ from rich.progress import (
 from rich.table import Table
 from rich.text import Text
 
-from .config import VisualizationConfig
-from .events import ExecutionEvent, ExecutionEventType
-from .stream import EventStream
+from ..config import VisualizationConfig
+from ..events import ExecutionEvent, ExecutionEventType
+from ..stream import EventStream
 
 
 class TerminalVisualizer:
@@ -542,7 +542,7 @@ class TerminalVisualizer:
 
     def _is_execution_complete(self, event: ExecutionEvent) -> bool:
         """Check if execution is complete."""
-        return (
+        return bool(
             event.event_type == ExecutionEventType.ENSEMBLE_COMPLETED
             or event.event_type == ExecutionEventType.ENSEMBLE_FAILED
         )
