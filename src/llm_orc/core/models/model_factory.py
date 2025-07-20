@@ -237,9 +237,7 @@ class ModelFactory:
             click.echo("🆘 Creating basic Ollama model as last resort")
             return OllamaModel(model_name="llama3")
 
-    def setup_authentication(
-        self, model_name: str, storage: CredentialStorage
-    ) -> bool:
+    def setup_authentication(self, model_name: str, storage: CredentialStorage) -> bool:
         """Set up authentication for a model.
 
         Args:

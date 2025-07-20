@@ -26,13 +26,9 @@ def safe_load_yaml(file_path: Path) -> dict[str, Any]:
         with open(file_path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except yaml.YAMLError as e:
-        raise click.ClickException(
-            f"Failed to parse YAML file {file_path}: {e}"
-        ) from e
+        raise click.ClickException(f"Failed to parse YAML file {file_path}: {e}") from e
     except OSError as e:
-        raise click.ClickException(
-            f"Failed to read file {file_path}: {e}"
-        ) from e
+        raise click.ClickException(f"Failed to read file {file_path}: {e}") from e
 
 
 def safe_write_yaml(file_path: Path, data: dict[str, Any]) -> None:
@@ -52,13 +48,9 @@ def safe_write_yaml(file_path: Path, data: dict[str, Any]) -> None:
         with open(file_path, "w", encoding="utf-8") as f:
             yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
     except yaml.YAMLError as e:
-        raise click.ClickException(
-            f"Failed to write YAML file {file_path}: {e}"
-        ) from e
+        raise click.ClickException(f"Failed to write YAML file {file_path}: {e}") from e
     except OSError as e:
-        raise click.ClickException(
-            f"Failed to write file {file_path}: {e}"
-        ) from e
+        raise click.ClickException(f"Failed to write file {file_path}: {e}") from e
 
 
 def backup_config_file(file_path: Path) -> Path | None:

@@ -81,9 +81,7 @@ def validate_required_param(value: Any, param_name: str) -> None:
 
 
 def format_list_output(
-    items: list[str],
-    prefix: str = "  ",
-    empty_message: str = "No items found"
+    items: list[str], prefix: str = "  ", empty_message: str = "No items found"
 ) -> None:
     """Format and display a list of items.
 
@@ -101,9 +99,7 @@ def format_list_output(
 
 
 def format_key_value_output(
-    data: dict[str, Any],
-    prefix: str = "  ",
-    separator: str = ": "
+    data: dict[str, Any], prefix: str = "  ", separator: str = ": "
 ) -> None:
     """Format and display key-value pairs.
 
@@ -128,4 +124,4 @@ def truncate_string(text: str, max_length: int = 80) -> str:
     """
     if len(text) <= max_length:
         return text
-    return text[:max_length - 3] + "..."
+    return text[: max_length - 3] + "..."

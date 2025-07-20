@@ -124,8 +124,7 @@ class DependencyAnalyzer:
 
         # Level is 1 + max level of dependencies
         max_dep_level = max(
-            self.calculate_agent_level(dep, dependency_map)
-            for dep in dependencies
+            self.calculate_agent_level(dep, dependency_map) for dep in dependencies
         )
         return max_dep_level + 1
 
@@ -142,8 +141,7 @@ class DependencyAnalyzer:
         """
         dependency_graph = self.analyze_enhanced_dependency_graph(agent_configs)
         return [
-            [agent["name"] for agent in phase]
-            for phase in dependency_graph["phases"]
+            [agent["name"] for agent in phase] for phase in dependency_graph["phases"]
         ]
 
     def validate_dependencies(self, agent_configs: list[dict[str, Any]]) -> list[str]:

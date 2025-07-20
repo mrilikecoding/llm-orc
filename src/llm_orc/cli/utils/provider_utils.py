@@ -1,7 +1,6 @@
 """Provider utility functions for CLI operations."""
 
 
-
 def get_provider_status_symbol(provider: str, available_providers: set[str]) -> str:
     """Get status symbol for a provider based on availability.
 
@@ -30,8 +29,7 @@ def format_provider_display(provider: str, available: bool) -> str:
 
 
 def format_provider_list(
-    providers: list[str],
-    available_providers: set[str]
+    providers: list[str], available_providers: set[str]
 ) -> list[str]:
     """Format a list of providers with their availability status.
 
@@ -61,9 +59,7 @@ def get_success_status_symbol(success: bool) -> str:
 
 
 def format_operation_result(
-    operation: str,
-    success: bool,
-    details: str | None = None
+    operation: str, success: bool, details: str | None = None
 ) -> str:
     """Format operation result with status symbol.
 

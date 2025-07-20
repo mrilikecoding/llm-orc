@@ -105,9 +105,7 @@ class InputEnhancer:
         # Fallback: convert name to readable format
         return agent_name.replace("-", " ").title()
 
-    def get_agent_input(
-        self, input_data: str | dict[str, str], agent_name: str
-    ) -> str:
+    def get_agent_input(self, input_data: str | dict[str, str], agent_name: str) -> str:
         """Get appropriate input for an agent from uniform or per-agent input.
 
         Args:
@@ -154,9 +152,7 @@ class InputEnhancer:
                 dep_role = self.get_agent_role_description(dep_name)
                 role_text = f" ({dep_role})" if dep_role else ""
 
-                dependency_results.append(
-                    f"Agent {dep_name}{role_text}:\n{response}"
-                )
+                dependency_results.append(f"Agent {dep_name}{role_text}:\n{response}")
 
         if dependency_results:
             deps_text = "\n\n".join(dependency_results)

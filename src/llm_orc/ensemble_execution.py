@@ -9,14 +9,12 @@ import click
 
 from llm_orc.authentication import AuthenticationManager, CredentialStorage
 from llm_orc.config import ConfigurationManager
+from llm_orc.core.execution.agent_executor import AgentExecutor
+from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
+from llm_orc.core.execution.input_enhancer import InputEnhancer
+from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.ensemble_config import EnsembleConfig
-from llm_orc.models import (
-    ClaudeCLIModel,
-    ClaudeModel,
-    ModelInterface,
-    OAuthClaudeModel,
-    OllamaModel,
-)
+from llm_orc.models import ModelInterface
 from llm_orc.orchestration import Agent
 from llm_orc.roles import RoleDefinition
 from llm_orc.script_agent import ScriptAgent
@@ -37,6 +35,33 @@ class EnsembleExecutor:
 
         # Performance monitoring hooks for Issue #27 visualization integration
         self._performance_hooks: list[Callable[[str, dict[str, Any]], None]] = []
+
+        # Initialize extracted components
+        self._model_factory = ModelFactory(
+            self._config_manager, self._credential_storage
+        )
+        self._dependency_analyzer = DependencyAnalyzer()
+        self._input_enhancer = InputEnhancer()
+        self._agent_executor = AgentExecutor(
+            self._performance_config,
+            self._emit_performance_event,
+            self._resolve_model_profile_to_config,
+            self._execute_agent_with_timeout,
+            self._input_enhancer.get_agent_input,
+        )
+
+    # Delegator methods for backward compatibility (especially for tests)
+    async def _load_model(
+        self, model_name: str, provider: str | None = None
+    ) -> ModelInterface:
+        """Delegate to model factory."""
+        return await self._model_factory.load_model(model_name, provider)
+
+    async def _load_model_from_agent_config(
+        self, agent_config: dict[str, Any]
+    ) -> ModelInterface:
+        """Delegate to model factory."""
+        return await self._model_factory.load_model_from_agent_config(agent_config)
 
     def register_performance_hook(
         self, hook: Callable[[str, dict[str, Any]], None]
@@ -215,7 +240,11 @@ class EnsembleExecutor:
 
         # Use enhanced dependency analysis for multi-level execution
         if llm_agents:
-            dependency_analysis = self._analyze_enhanced_dependency_graph(llm_agents)
+            # Update input enhancer with current agent configs for role descriptions
+            self._input_enhancer.update_agent_configs(llm_agents)
+            dependency_analysis = (
+                self._dependency_analyzer.analyze_enhanced_dependency_graph(llm_agents)
+            )
             phases = dependency_analysis["phases"]
 
             # Execute each phase sequentially, with parallelization within each phase
@@ -235,12 +264,12 @@ class EnsembleExecutor:
                     phase_input: str | dict[str, str] = enhanced_input
                 else:
                     # Subsequent phases get enhanced input with dependencies
-                    phase_input = self._enhance_input_with_dependencies(
+                    phase_input = self._input_enhancer.enhance_input_with_dependencies(
                         enhanced_input, phase_agents, results_dict
                     )
 
                 # Execute all agents in this phase in parallel
-                await self._execute_agents_parallel(
+                await self._agent_executor.execute_agents_parallel(
                     phase_agents, phase_input, config, results_dict, agent_usage
                 )
 
@@ -304,7 +333,7 @@ class EnsembleExecutor:
             # Execute LLM agent
             # Load role and model for this agent
             role = await self._load_role_from_config(agent_config)
-            model = await self._load_model_from_agent_config(agent_config)
+            model = await self._model_factory.load_model_from_agent_config(agent_config)
 
             # Create agent
             agent = Agent(agent_config["name"], role, model)
@@ -360,190 +389,8 @@ class EnsembleExecutor:
             name=role_name, prompt=f"You are a {role_name}. Provide helpful analysis."
         )
 
-    async def _load_model_from_agent_config(
-        self, agent_config: dict[str, Any]
-    ) -> ModelInterface:
-        """Load a model based on agent configuration.
 
-        Configuration can specify model_profile or model+provider.
-        """
-        # Check if model_profile is specified (takes precedence)
-        if "model_profile" in agent_config:
-            profile_name = agent_config["model_profile"]
-            resolved_model, resolved_provider = (
-                self._config_manager.resolve_model_profile(profile_name)
-            )
-            return await self._load_model(resolved_model, resolved_provider)
 
-        # Fall back to explicit model+provider
-        model: str | None = agent_config.get("model")
-        provider: str | None = agent_config.get("provider")
-
-        if not model:
-            raise ValueError(
-                "Agent configuration must specify either 'model_profile' or 'model'"
-            )
-
-        return await self._load_model(model, provider)
-
-    async def _load_model(
-        self, model_name: str, provider: str | None = None
-    ) -> ModelInterface:
-        """Load a model interface based on authentication configuration."""
-        # Handle mock models for testing
-        if model_name.startswith("mock"):
-            from unittest.mock import AsyncMock
-
-            mock = AsyncMock(spec=ModelInterface)
-            mock.generate_response.return_value = f"Response from {model_name}"
-            return mock
-
-        # Use shared configuration and credential storage for efficiency
-        # Each model instance remains independent for separate contexts
-        storage = self._credential_storage
-
-        try:
-            # Get authentication method for the provider configuration
-            # Use provider if specified, otherwise use model_name as lookup key
-            lookup_key = provider if provider else model_name
-            auth_method = storage.get_auth_method(lookup_key)
-
-            if not auth_method:
-                # Prompt user to set up authentication if not configured
-                if _should_prompt_for_auth(model_name):
-                    auth_configured = _prompt_auth_setup(model_name, storage)
-                    if auth_configured:
-                        # Retry model loading after auth setup
-                        return await self._load_model(model_name, provider)
-
-                # Handle based on provider
-                if provider == "ollama":
-                    # Expected behavior for Ollama - no auth needed
-                    return OllamaModel(model_name=model_name)
-                elif provider:
-                    # Other providers require authentication
-                    raise ValueError(
-                        f"No authentication configured for provider '{provider}' "
-                        f"with model '{model_name}'. "
-                        f"Run 'llm-orc auth setup' to configure authentication."
-                    )
-                else:
-                    # No provider specified, fallback to Ollama
-                    click.echo(
-                        f"ℹ️  No provider specified for '{model_name}', "
-                        f"treating as local Ollama model"
-                    )
-                    return OllamaModel(model_name=model_name)
-
-            if auth_method == "api_key":
-                lookup_key = provider if provider else model_name
-                api_key = storage.get_api_key(lookup_key)
-                if not api_key:
-                    raise ValueError(f"No API key found for {lookup_key}")
-
-                # Check if this is a claude-cli configuration
-                # (stored as api_key but path-like)
-                if model_name == "claude-cli" or api_key.startswith("/"):
-                    return ClaudeCLIModel(claude_path=api_key)
-                elif provider == "google-gemini":
-                    from .models import GeminiModel
-
-                    return GeminiModel(api_key=api_key, model=model_name)
-                else:
-                    # Assume it's an Anthropic API key for Claude
-                    return ClaudeModel(api_key=api_key)
-
-            elif auth_method == "oauth":
-                lookup_key = provider if provider else model_name
-                oauth_token = storage.get_oauth_token(lookup_key)
-                if not oauth_token:
-                    raise ValueError(f"No OAuth token found for {lookup_key}")
-
-                # Use stored client_id or fallback for anthropic-claude-pro-max
-                client_id = oauth_token.get("client_id")
-                if not client_id and lookup_key == "anthropic-claude-pro-max":
-                    client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-
-                return OAuthClaudeModel(
-                    access_token=oauth_token["access_token"],
-                    refresh_token=oauth_token.get("refresh_token"),
-                    client_id=client_id,
-                    credential_storage=storage,
-                    provider_key=model_name,
-                    expires_at=oauth_token.get("expires_at"),
-                )
-
-            else:
-                raise ValueError(f"Unknown authentication method: {auth_method}")
-
-        except Exception as e:
-            # Fallback: use configured default model or treat as Ollama
-            click.echo(f"⚠️  Failed to load model '{model_name}': {str(e)}")
-            if model_name in ["llama3", "llama2"]:  # Known local models
-                click.echo(f"🔄 Treating '{model_name}' as local Ollama model")
-                return OllamaModel(model_name=model_name)
-            else:
-                # For unknown models, use configured fallback
-                click.echo(f"🔄 Using configured fallback instead of '{model_name}'")
-                return await self._get_fallback_model("general")
-
-    async def _get_fallback_model(self, context: str = "general") -> ModelInterface:
-        """Get a fallback model - always use free local model for reliability."""
-        import click
-
-        # Load project configuration to get default models
-        config_manager = ConfigurationManager()
-        project_config = config_manager.load_project_config()
-
-        default_models = project_config.get("project", {}).get("default_models", {})
-
-        # Log that we're falling back
-        click.echo(f"⚠️  Falling back to free local model for {context}")
-
-        # Always prefer free local models for fallback reliability
-        # Look for a "test" profile first (typically free/local)
-        fallback_profile = default_models.get("test")
-
-        if fallback_profile and isinstance(fallback_profile, str):
-            try:
-                # Try to resolve the test profile to get a free local model
-                resolved_model, resolved_provider = (
-                    config_manager.resolve_model_profile(fallback_profile)
-                )
-                # Only use if it's a local/free provider (ollama)
-                if resolved_provider == "ollama":
-                    click.echo(
-                        f"🔄 Using configured free local model '{fallback_profile}' "
-                        f"→ {resolved_model}"
-                    )
-                    try:
-                        return await self._load_model(resolved_model, resolved_provider)
-                    except Exception as e:
-                        click.echo(
-                            f"❌ Failed to load configured fallback "
-                            f"'{fallback_profile}': {e}"
-                        )
-                        # Don't raise immediately, try hardcoded fallback first
-                else:
-                    click.echo(
-                        f"⚠️  Configured test profile '{fallback_profile}' uses "
-                        f"{resolved_provider}, not ollama"
-                    )
-            except (ValueError, KeyError) as e:
-                click.echo(
-                    f"⚠️  Configured test profile '{fallback_profile}' not found: {e}"
-                )
-
-        # Last resort: hardcoded free local fallback
-        click.echo("🔄 Using hardcoded fallback: llama3 via ollama")
-        try:
-            return await self._load_model("llama3", "ollama")
-        except Exception as e:
-            click.echo(f"❌ Hardcoded fallback model 'llama3' failed: {e}")
-            # For tests and when Ollama is not available, return basic model
-            # In production, this would indicate a serious configuration issue
-            click.echo("🆘 Creating basic Ollama model as last resort")
-            return OllamaModel(model_name="llama3")
 
     def _calculate_usage_summary(
         self, agent_usage: dict[str, Any], synthesis_usage: dict[str, Any] | None
@@ -619,13 +466,6 @@ class EnsembleExecutor:
 
         return independent_agents, dependent_agents
 
-    def _get_agent_input(
-        self, input_data: str | dict[str, str], agent_name: str
-    ) -> str:
-        """Get appropriate input for an agent from uniform or per-agent input."""
-        if isinstance(input_data, dict):
-            return input_data.get(agent_name, "")
-        return input_data
 
     async def _execute_agents_parallel(
         self,
@@ -714,7 +554,7 @@ class EnsembleExecutor:
                         )
                     )
                     # Get the appropriate input for this agent
-                    agent_input = self._get_agent_input(
+                    agent_input = self._input_enhancer.get_agent_input(
                         input_data, agent_config["name"]
                     )
                     result = await self._execute_agent_with_timeout(
@@ -810,7 +650,7 @@ class EnsembleExecutor:
                         )
                     )
                     # Get the appropriate input for this agent
-                    agent_input = self._get_agent_input(
+                    agent_input = self._input_enhancer.get_agent_input(
                         input_data, agent_config["name"]
                     )
                     result = await self._execute_agent_with_timeout(
@@ -1015,7 +855,9 @@ class EnsembleExecutor:
                 dependencies = dependency_map[agent_name]
 
                 # Agent is ready if it has no dependencies or all are processed
-                if self._agent_dependencies_satisfied(dependencies, processed_agents):
+                if self._dependency_analyzer.agent_dependencies_satisfied(
+                    dependencies, processed_agents
+                ):
                     current_phase.append(agent_config)
                     agents_to_remove.append(agent_config)
 
