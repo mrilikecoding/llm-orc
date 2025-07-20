@@ -337,7 +337,7 @@ class TestCLI:
 
             # Mock configuration manager
             with patch(
-                "llm_orc.cli_commands.ConfigurationManager"
+                "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
             ) as mock_config_manager_class:
                 mock_config_manager = Mock()
                 mock_config_manager.global_config_dir = global_config_dir
@@ -388,7 +388,7 @@ class TestCLI:
 
             # Mock configuration manager
             with patch(
-                "llm_orc.cli_commands.ConfigurationManager"
+                "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
             ) as mock_config_manager_class:
                 mock_config_manager = Mock()
                 mock_config_manager.global_config_dir = global_config_dir
@@ -398,7 +398,7 @@ class TestCLI:
 
                 # Mock available providers (only test-provider available)
                 with patch(
-                    "llm_orc.cli_commands.get_available_providers"
+                    "llm_orc.cli_modules.commands.config_commands.get_available_providers"
                 ) as mock_get_providers:
                     mock_get_providers.return_value = {"test-provider"}
 
@@ -428,7 +428,7 @@ class TestCLI:
 
             # Mock configuration manager
             with patch(
-                "llm_orc.cli_commands.ConfigurationManager"
+                "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
             ) as mock_config_manager_class:
                 mock_config_manager = Mock()
                 mock_config_manager.load_project_config.return_value = config_data
