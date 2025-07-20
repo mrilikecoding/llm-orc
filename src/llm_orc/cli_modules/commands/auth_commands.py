@@ -4,7 +4,7 @@ import time
 
 import click
 
-from llm_orc.authentication import AuthenticationManager, CredentialStorage
+from llm_orc.core.auth.authentication import AuthenticationManager, CredentialStorage
 from llm_orc.cli_modules.utils.auth_utils import (
     handle_anthropic_interactive_auth,
     handle_claude_cli_auth,
@@ -13,7 +13,7 @@ from llm_orc.cli_modules.utils.auth_utils import (
     test_provider_authentication,
 )
 from llm_orc.cli_modules.utils.config_utils import show_provider_details
-from llm_orc.config import ConfigurationManager
+from llm_orc.core.config.config_manager import ConfigurationManager
 
 
 class AuthCommands:

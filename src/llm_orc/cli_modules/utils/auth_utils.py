@@ -11,7 +11,7 @@ from urllib.parse import urlencode
 import click
 import requests
 
-from llm_orc.authentication import AuthenticationManager, CredentialStorage
+from llm_orc.core.auth.authentication import AuthenticationManager, CredentialStorage
 
 
 def handle_claude_cli_auth(storage: CredentialStorage) -> None:
@@ -73,7 +73,7 @@ def setup_anthropic_oauth(
     auth_manager: AuthenticationManager, provider_key: str
 ) -> None:
     """Set up Anthropic OAuth authentication."""
-    from llm_orc.authentication import AnthropicOAuthFlow
+    from llm_orc.core.auth.authentication import AnthropicOAuthFlow
 
     oauth_flow = AnthropicOAuthFlow.create_with_guidance()
 

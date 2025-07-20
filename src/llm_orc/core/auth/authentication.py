@@ -8,7 +8,7 @@ from typing import Any
 import yaml
 from cryptography.fernet import Fernet
 
-from llm_orc.config import ConfigurationManager
+from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.auth.oauth_flows import (
     AnthropicOAuthFlow,
     GoogleGeminiOAuthFlow,
@@ -467,7 +467,7 @@ class AuthenticationManager:
                 return True
 
             # Create OAuth client to revoke tokens
-            from llm_orc.oauth_client import OAuthClaudeClient
+            from llm_orc.core.auth.oauth_client import OAuthClaudeClient
 
             oauth_client = OAuthClaudeClient(
                 access_token=oauth_info["access_token"],

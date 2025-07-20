@@ -16,8 +16,8 @@ from llm_orc.cli_modules.utils.visualization import (
     run_standard_execution,
     run_streaming_execution,
 )
-from llm_orc.config import ConfigurationManager
-from llm_orc.ensemble_config import EnsembleLoader
+from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.ensemble_execution import EnsembleExecutor
 from llm_orc.mcp_server_runner import MCPServerRunner
 

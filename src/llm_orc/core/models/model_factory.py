@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock
 
 import click
 
-from llm_orc.authentication import AuthenticationManager, CredentialStorage
-from llm_orc.config import ConfigurationManager
+from llm_orc.core.auth.authentication import AuthenticationManager, CredentialStorage
+from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.models import (
     ClaudeCLIModel,
     ClaudeModel,
@@ -305,7 +305,7 @@ def _setup_anthropic_oauth_auth(
 ) -> bool:
     """Set up Anthropic OAuth authentication."""
     try:
-        from llm_orc.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.authentication import AnthropicOAuthFlow
 
         oauth_flow = AnthropicOAuthFlow.create_with_guidance()
 

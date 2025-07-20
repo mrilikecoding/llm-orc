@@ -5,16 +5,16 @@ import time
 from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
-from llm_orc.authentication import CredentialStorage
-from llm_orc.config import ConfigurationManager
+from llm_orc.core.auth.authentication import CredentialStorage
+from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.execution.agent_executor import AgentExecutor
 from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.input_enhancer import InputEnhancer
 from llm_orc.core.models.model_factory import ModelFactory
-from llm_orc.ensemble_config import EnsembleConfig
+from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.models import ModelInterface
 from llm_orc.orchestration import Agent
-from llm_orc.roles import RoleDefinition
+from llm_orc.core.config.roles import RoleDefinition
 from llm_orc.script_agent import ScriptAgent
 
 

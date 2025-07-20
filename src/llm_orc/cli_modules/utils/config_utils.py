@@ -6,8 +6,8 @@ from typing import Any
 import click
 import yaml
 
-from llm_orc.authentication import CredentialStorage
-from llm_orc.config import ConfigurationManager
+from llm_orc.core.auth.authentication import CredentialStorage
+from llm_orc.core.config.config_manager import ConfigurationManager
 
 
 def safe_load_yaml(file_path: Path) -> dict[str, Any]:

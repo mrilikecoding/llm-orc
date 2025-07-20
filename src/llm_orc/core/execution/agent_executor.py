@@ -5,7 +5,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from llm_orc.ensemble_config import EnsembleConfig
+from llm_orc.core.config.ensemble_config import EnsembleConfig
 
 
 class AgentExecutor:

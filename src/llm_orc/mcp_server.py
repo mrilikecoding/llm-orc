@@ -2,8 +2,8 @@
 
 from typing import Any
 
-from llm_orc.config import ConfigurationManager
-from llm_orc.ensemble_config import EnsembleConfig, EnsembleLoader
+from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
 from llm_orc.ensemble_execution import EnsembleExecutor
 
 

@@ -29,7 +29,7 @@ class HTTPConnectionPool:
             # Load performance configuration
             if cls._performance_config is None:
                 try:
-                    from llm_orc.config import ConfigurationManager
+                    from llm_orc.core.config.config_manager import ConfigurationManager
 
                     config_manager = ConfigurationManager()
                     cls._performance_config = config_manager.load_performance_config()

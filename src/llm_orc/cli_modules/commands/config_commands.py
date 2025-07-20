@@ -15,7 +15,7 @@ from llm_orc.cli_modules.utils.config_utils import (
     get_available_providers,
     safe_load_yaml,
 )
-from llm_orc.config import ConfigurationManager
+from llm_orc.core.config.config_manager import ConfigurationManager
 
 
 class ConfigCommands:

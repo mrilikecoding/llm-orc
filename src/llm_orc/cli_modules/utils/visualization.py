@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.tree import Tree
 
-from llm_orc.ensemble_config import EnsembleConfig
+from llm_orc.core.config.ensemble_config import EnsembleConfig
 
 
 def create_dependency_graph(agents: list[dict[str, Any]]) -> str:
