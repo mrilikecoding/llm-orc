@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from llm_orc.ensemble_config import EnsembleConfig, EnsembleLoader
+from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
 
 
 class TestEnsembleConfig:

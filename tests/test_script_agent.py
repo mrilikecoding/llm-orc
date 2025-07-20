@@ -2,7 +2,7 @@
 
 import pytest
 
-from llm_orc.script_agent import ScriptAgent
+from llm_orc.agents.script_agent import ScriptAgent
 
 
 class TestScriptAgent:

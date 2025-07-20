@@ -2,21 +2,23 @@
 
 import click
 
-from llm_orc.cli_commands import (
+from llm_orc.cli_modules.commands.auth_commands import (
     add_auth_provider,
+    list_auth_providers,
+    logout_oauth_providers,
+    remove_auth_provider,
+    test_token_refresh,
+)
+from llm_orc.cli_modules.commands.config_commands import (
     check_global_config,
     check_local_config,
     init_local_config,
     invoke_ensemble,
-    list_auth_providers,
     list_ensembles_command,
     list_profiles_command,
-    logout_oauth_providers,
-    remove_auth_provider,
     reset_global_config,
     reset_local_config,
     serve_ensemble,
-    test_token_refresh,
 )
 
 

@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
-from llm_orc.authentication import AuthenticationManager, CredentialStorage
-from llm_orc.config import ConfigurationManager
+from llm_orc.core.auth.authentication import AuthenticationManager, CredentialStorage
+from llm_orc.core.config.config_manager import ConfigurationManager
 
 
 class TestCredentialStorage:
@@ -209,7 +209,7 @@ class TestOAuthProviderIntegration:
     ) -> None:
         """Test that Google Gemini OAuth generates correct authorization URL."""
         # Given
-        from llm_orc.authentication import GoogleGeminiOAuthFlow
+        from llm_orc.core.auth.oauth_flows import GoogleGeminiOAuthFlow
 
         client_id = "test_client_id"
         client_secret = "test_client_secret"
@@ -234,7 +234,7 @@ class TestOAuthProviderIntegration:
     ) -> None:
         """Test that Google Gemini OAuth can exchange code for tokens."""
         # Given
-        from llm_orc.authentication import GoogleGeminiOAuthFlow
+        from llm_orc.core.auth.oauth_flows import GoogleGeminiOAuthFlow
 
         client_id = "test_client_id"
         client_secret = "test_client_secret"
@@ -254,7 +254,7 @@ class TestOAuthProviderIntegration:
     ) -> None:
         """Test that Anthropic OAuth generates correct authorization URL."""
         # Given
-        from llm_orc.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.oauth_flows import AnthropicOAuthFlow
 
         client_id = "test_client_id"
         client_secret = "test_client_secret"
@@ -275,7 +275,7 @@ class TestOAuthProviderIntegration:
         # Given
         from unittest.mock import Mock, patch
 
-        from llm_orc.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.oauth_flows import AnthropicOAuthFlow
 
         client_id = "test_client_id"
         client_secret = "test_client_secret"
@@ -306,7 +306,7 @@ class TestOAuthProviderIntegration:
     ) -> None:
         """Test that OAuth flow factory creates the correct provider-specific flow."""
         # Given
-        from llm_orc.authentication import create_oauth_flow
+        from llm_orc.core.auth.oauth_flows import create_oauth_flow
 
         # When & Then - Google
         google_flow = create_oauth_flow("google", "client_id", "client_secret")
@@ -321,7 +321,7 @@ class TestOAuthProviderIntegration:
     ) -> None:
         """Test that OAuth flow factory raises error for unsupported provider."""
         # Given
-        from llm_orc.authentication import create_oauth_flow
+        from llm_orc.core.auth.oauth_flows import create_oauth_flow
 
         # When & Then
         with pytest.raises(ValueError, match="OAuth not supported for provider"):
@@ -333,7 +333,7 @@ class TestAnthropicOAuthFlow:
 
     def test_uses_validated_oauth_parameters(self) -> None:
         """Test AnthropicOAuthFlow uses validated OAuth parameters from issue #32."""
-        from llm_orc.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.oauth_flows import AnthropicOAuthFlow
 
         # Create flow with the shared client ID discovered in testing
         client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
@@ -363,7 +363,7 @@ class TestAnthropicOAuthFlow:
         """Test that token exchange makes real API call to Anthropic OAuth endpoint."""
         from unittest.mock import Mock, patch
 
-        from llm_orc.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.oauth_flows import AnthropicOAuthFlow
 
         client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
         flow = AnthropicOAuthFlow(client_id, "")
@@ -406,7 +406,7 @@ class TestAnthropicOAuthFlow:
     def test_anthropic_oauth_flow_initialization(self) -> None:
         """Test AnthropicOAuthFlow can be initialized correctly."""
         # Given
-        from llm_orc.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.oauth_flows import AnthropicOAuthFlow
 
         client_id = "test_client_id"
         client_secret = "test_client_secret"
@@ -425,7 +425,7 @@ class TestAnthropicOAuthFlow:
         # Given
         from urllib.parse import parse_qs, urlparse
 
-        from llm_orc.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.oauth_flows import AnthropicOAuthFlow
 
         client_id = "test_client_id"
         client_secret = "test_client_secret"
@@ -448,7 +448,7 @@ class TestAnthropicOAuthFlow:
     def test_validate_credentials_with_accessible_endpoint(self) -> None:
         """Test credential validation when OAuth endpoint is accessible."""
         # Given
-        from llm_orc.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.oauth_flows import AnthropicOAuthFlow
 
         client_id = "test_client_id"
         client_secret = "test_client_secret"
@@ -464,7 +464,7 @@ class TestAnthropicOAuthFlow:
         # Given
         from unittest.mock import Mock, patch
 
-        from llm_orc.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.oauth_flows import AnthropicOAuthFlow
 
         client_id = "test_client_id"
         client_secret = "test_client_secret"
@@ -501,7 +501,7 @@ class TestAnthropicOAuthFlow:
     def test_mock_create_with_guidance_method_exists(self) -> None:
         """Test that create_with_guidance method exists for future testing."""
         # Given
-        from llm_orc.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.oauth_flows import AnthropicOAuthFlow
 
         # When & Then
         assert hasattr(AnthropicOAuthFlow, "create_with_guidance")
@@ -509,7 +509,7 @@ class TestAnthropicOAuthFlow:
 
     def test_uses_manual_callback_flow(self) -> None:
         """Test AnthropicOAuthFlow uses manual callback flow instead of local server."""
-        from llm_orc.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.oauth_flows import AnthropicOAuthFlow
 
         client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
         flow = AnthropicOAuthFlow(client_id, "")
@@ -524,7 +524,7 @@ class TestAnthropicOAuthFlow:
         """Test that callback server can handle OAuth authorization code."""
         import requests
 
-        from llm_orc.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.oauth_flows import AnthropicOAuthFlow
 
         client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
         flow = AnthropicOAuthFlow(client_id, "")
@@ -578,7 +578,7 @@ class TestImprovedAuthenticationManager:
     ) -> None:
         """Test that OAuth validation is called when available."""
         # Given
-        from llm_orc.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.oauth_flows import AnthropicOAuthFlow
 
         validation_called = False
 
@@ -638,7 +638,7 @@ class TestImprovedAuthenticationManager:
     ) -> None:
         """Test that OAuth flow handles timeout correctly."""
         # Given
-        from llm_orc.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.oauth_flows import AnthropicOAuthFlow
 
         def mock_start_server(self: Any) -> tuple[Any, int]:
             # Return a server that never receives auth code (simulating timeout)

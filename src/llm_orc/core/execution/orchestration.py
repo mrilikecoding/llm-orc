@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from llm_orc.communication import ConversationManager, MessageProtocol
+from llm_orc.core.communication.protocol import ConversationManager, MessageProtocol
 from llm_orc.models import ModelInterface
 from llm_orc.core.config.roles import RoleDefinition
 

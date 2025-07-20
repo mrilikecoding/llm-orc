@@ -171,7 +171,7 @@ class TestOAuthClaudeModel:
     @pytest.mark.asyncio
     async def test_automatic_token_refresh_updates_stored_credentials(self) -> None:
         """Test that automatic token refresh updates stored credentials."""
-        from llm_orc.authentication import CredentialStorage
+        from llm_orc.core.auth.authentication import CredentialStorage
 
         # Create a model with a credential storage callback
         model = OAuthClaudeModel(

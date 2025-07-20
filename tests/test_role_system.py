@@ -2,7 +2,7 @@
 
 import pytest
 
-from llm_orc.roles import RoleDefinition, RoleManager
+from llm_orc.core.config.roles import RoleDefinition, RoleManager
 
 
 class TestRoleDefinition:

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from llm_orc.models import ModelInterface
-from llm_orc.roles import RoleDefinition
+from llm_orc.core.config.roles import RoleDefinition
 
 
 class TestAgent:
@@ -22,7 +22,7 @@ class TestAgent:
         model.name = "test-model"
 
         # Act
-        from llm_orc.orchestration import Agent
+        from llm_orc.core.execution.orchestration import Agent
 
         agent = Agent(name="shakespeare", role=role, model=model)
 
@@ -45,7 +45,7 @@ class TestAgent:
             "Hark! What light through yonder window breaks?"
         )
 
-        from llm_orc.orchestration import Agent
+        from llm_orc.core.execution.orchestration import Agent
 
         agent = Agent(name="shakespeare", role=role, model=model)
 
@@ -71,7 +71,7 @@ class TestPracticalExamples:
     async def test_shakespeare_einstein_conversation(self) -> None:
         """Should orchestrate a conversation between Shakespeare and Einstein."""
         # Arrange - This will fail because ConversationOrchestrator doesn't exist yet
-        from llm_orc.orchestration import Agent, ConversationOrchestrator
+        from llm_orc.core.execution.orchestration import Agent, ConversationOrchestrator
 
         # Create Shakespeare agent
         shakespeare_role = RoleDefinition(
@@ -154,7 +154,7 @@ class TestPracticalExamples:
     async def test_pr_review_panel(self) -> None:
         """Should orchestrate a PR review with multiple specialist agents."""
         # Arrange - This will fail because PRReviewOrchestrator doesn't exist yet
-        from llm_orc.orchestration import Agent, PRReviewOrchestrator
+        from llm_orc.core.execution.orchestration import Agent, PRReviewOrchestrator
 
         # Mock PR data
         pr_data = {

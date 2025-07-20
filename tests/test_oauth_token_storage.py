@@ -5,9 +5,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from llm_orc.authentication import CredentialStorage
-from llm_orc.config import ConfigurationManager
-from llm_orc.ensemble_execution import EnsembleExecutor
+from llm_orc.core.auth.authentication import CredentialStorage
+from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.models import OAuthClaudeModel
 
 

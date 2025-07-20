@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import yaml
 
-from llm_orc.config import ConfigurationManager
+from llm_orc.core.config.config_manager import ConfigurationManager
 
 
 class TestConfigurationManager:

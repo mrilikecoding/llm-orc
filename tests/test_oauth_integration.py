@@ -13,8 +13,8 @@ class TestOAuthIntegration:
 
     def test_end_to_end_oauth_flow_with_anthropic(self) -> None:
         """Test complete OAuth flow from authorization to API calls."""
-        from llm_orc.authentication import AnthropicOAuthFlow
-        from llm_orc.oauth_client import OAuthClaudeClient
+        from llm_orc.core.auth.authentication import AnthropicOAuthFlow
+        from llm_orc.core.auth.oauth_client import OAuthClaudeClient
 
         # Given - OAuth flow with validated parameters from issue #32
         client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
@@ -90,7 +90,7 @@ class TestOAuthIntegration:
 
     def test_oauth_token_refresh_integration(self) -> None:
         """Test automatic token refresh during API calls."""
-        from llm_orc.oauth_client import OAuthClaudeClient
+        from llm_orc.core.auth.oauth_client import OAuthClaudeClient
 
         # Given - OAuth client with tokens
         client = OAuthClaudeClient(

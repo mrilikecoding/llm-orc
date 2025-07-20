@@ -7,10 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
-from llm_orc.ensemble_config import EnsembleConfig
+from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.models import ModelInterface
-from llm_orc.orchestration import Agent, ConversationOrchestrator
-from llm_orc.roles import RoleDefinition
+from llm_orc.core.execution.orchestration import Agent, ConversationOrchestrator
+from llm_orc.core.config.roles import RoleDefinition
 
 
 class TestMessageRoutingPerformance:
@@ -205,7 +205,7 @@ class TestPRReviewPerformance:
     async def test_pr_review_orchestration_performance(self) -> None:
         """Should orchestrate PR reviews efficiently."""
         # Arrange - Create PR review orchestrator with fast mock agents
-        from llm_orc.orchestration import PRReviewOrchestrator
+        from llm_orc.core.execution.orchestration import PRReviewOrchestrator
 
         pr_orchestrator = PRReviewOrchestrator()
 
@@ -263,8 +263,8 @@ class TestEnsembleExecutionPerformance:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Should execute independent agents in parallel for significant speedup."""
-        from llm_orc.ensemble_config import EnsembleConfig
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Arrange - Create ensemble with 3 independent agents (no dependencies)
         agent_configs: list[dict[str, str]] = []
@@ -325,8 +325,8 @@ class TestEnsembleExecutionPerformance:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Should execute agents in correct order when dependencies exist."""
-        from llm_orc.ensemble_config import EnsembleConfig
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Arrange - Create ensemble where synthesizer depends on 3 reviewers
         agent_configs: list[dict[str, Any]] = [
@@ -509,7 +509,7 @@ class TestEnsembleExecutionPerformance:
     async def test_enhanced_dependency_graph_analysis(self) -> None:
         """Should analyze complex dependency graphs and determine optimal
         execution phases."""
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Arrange - Create complex dependency graph
         agent_configs: list[dict[str, Any]] = [
@@ -594,7 +594,7 @@ class TestEnsembleExecutionPerformance:
         import time
         from unittest.mock import AsyncMock, patch
 
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
         from llm_orc.models import ModelInterface
 
         # Track model loading calls and timing
@@ -694,7 +694,7 @@ class TestEnsembleExecutionPerformance:
         """Should reuse model instances when multiple agents use the same model."""
         from unittest.mock import AsyncMock, patch
 
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
         from llm_orc.models import ModelInterface
 
         # Track model loading calls
@@ -798,7 +798,7 @@ class TestEnsembleExecutionPerformance:
         loads."""
         from unittest.mock import patch
 
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Track configuration and credential storage instantiation
         config_manager_calls = []
@@ -907,8 +907,8 @@ class TestEnsembleExecutionPerformance:
         """Should emit performance monitoring events for Issue #27 visualization."""
         from unittest.mock import AsyncMock, patch
 
-        from llm_orc.ensemble_config import EnsembleConfig
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Track performance events emitted during execution
         performance_events = []
@@ -1000,8 +1000,8 @@ class TestEnsembleExecutionPerformance:
         """Should provide async generator interface for real-time progress."""
         from unittest.mock import patch
 
-        from llm_orc.ensemble_config import EnsembleConfig
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Test with simple agent configuration
         agent_configs = [
@@ -1134,8 +1134,8 @@ class TestPerformanceBenchmarks:
         import time
         from unittest.mock import AsyncMock, patch
 
-        from llm_orc.ensemble_config import EnsembleConfig
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Create a realistic ensemble configuration
         config = EnsembleConfig(
@@ -1190,8 +1190,8 @@ class TestPerformanceBenchmarks:
         import time
         from unittest.mock import AsyncMock, patch
 
-        from llm_orc.ensemble_config import EnsembleConfig
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Create a large ensemble (10 agents) to test scalability
         agents = []
@@ -1251,8 +1251,8 @@ class TestPerformanceBenchmarks:
         import time
         from unittest.mock import AsyncMock, patch
 
-        from llm_orc.ensemble_config import EnsembleConfig
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Create ensemble for streaming benchmark
         config = EnsembleConfig(
@@ -1363,8 +1363,8 @@ class TestPerformanceBenchmarks:
         import time
         from unittest.mock import AsyncMock, patch
 
-        from llm_orc.ensemble_config import EnsembleConfig
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Create ensemble for monitoring benchmark
         config = EnsembleConfig(
@@ -1438,8 +1438,8 @@ class TestPerformanceBenchmarks:
         import time
         from unittest.mock import AsyncMock, patch
 
-        from llm_orc.ensemble_config import EnsembleConfig
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Create ensemble with timeout configuration
         config = EnsembleConfig(
@@ -1525,8 +1525,8 @@ class TestPerformanceBenchmarks:
         import time
         from unittest.mock import AsyncMock, patch
 
-        from llm_orc.ensemble_config import EnsembleConfig
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Create ensemble that tests memory efficiency
         config = EnsembleConfig(
@@ -1596,8 +1596,8 @@ class TestPerformanceBenchmarks:
         import time
         from unittest.mock import AsyncMock, patch
 
-        from llm_orc.ensemble_config import EnsembleConfig
-        from llm_orc.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Create large ensemble (15 agents) to test concurrency limits
         agents = []

@@ -2,8 +2,8 @@
 
 import pytest
 
-from llm_orc.ensemble_config import EnsembleConfig
-from llm_orc.ensemble_execution import EnsembleExecutor
+from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
 
 class TestEnsembleScriptIntegration:

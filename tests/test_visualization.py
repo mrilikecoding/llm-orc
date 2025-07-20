@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from llm_orc.ensemble_config import EnsembleConfig
+from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.visualization.config import (
     TerminalVisualizationConfig,
     VisualizationConfig,

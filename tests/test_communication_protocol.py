@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from llm_orc.communication import ConversationManager, Message, MessageProtocol
+from llm_orc.core.communication.protocol import ConversationManager, Message, MessageProtocol
 
 
 class TestMessage:
