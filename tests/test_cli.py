@@ -8,7 +8,7 @@ import yaml
 from click.testing import CliRunner
 
 from llm_orc.cli import cli
-from llm_orc.cli_config import get_available_providers
+from llm_orc.cli_modules.utils.config_utils import get_available_providers
 
 
 class TestCLI:

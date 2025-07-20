@@ -1,4 +1,4 @@
-"""CLI authentication command implementations."""
+"""Authentication utility functions for CLI operations."""
 
 import base64
 import hashlib

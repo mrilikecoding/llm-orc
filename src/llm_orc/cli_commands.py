@@ -7,12 +7,12 @@ from pathlib import Path
 import click
 import yaml
 
-from llm_orc.cli_config import (
+from llm_orc.cli_modules.commands import AuthCommands, ConfigCommands
+from llm_orc.cli_modules.utils.config_utils import (
     display_local_profiles,
     get_available_providers,
 )
-from llm_orc.cli_modules.commands import AuthCommands, ConfigCommands
-from llm_orc.cli_visualization import (
+from llm_orc.cli_modules.utils.visualization import (
     run_standard_execution,
     run_streaming_execution,
 )

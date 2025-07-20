@@ -5,16 +5,14 @@ from pathlib import Path
 
 import click
 
-from llm_orc.cli_config import (
+from llm_orc.cli_modules.utils.cli_utils import echo_error, echo_info, echo_success
+from llm_orc.cli_modules.utils.config_utils import (
     check_ensemble_availability,
     display_default_models_config,
     display_global_profiles,
     display_local_profiles,
     display_providers_status,
     get_available_providers,
-)
-from llm_orc.cli_modules.utils.cli_utils import echo_error, echo_info, echo_success
-from llm_orc.cli_modules.utils.config_utils import (
     safe_load_yaml,
 )
 from llm_orc.config import ConfigurationManager

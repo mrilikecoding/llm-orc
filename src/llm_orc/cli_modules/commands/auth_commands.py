@@ -5,14 +5,14 @@ import time
 import click
 
 from llm_orc.authentication import AuthenticationManager, CredentialStorage
-from llm_orc.cli_auth import (
+from llm_orc.cli_modules.utils.auth_utils import (
     handle_anthropic_interactive_auth,
     handle_claude_cli_auth,
     handle_claude_pro_max_oauth,
     show_auth_method_help,
     test_provider_authentication,
 )
-from llm_orc.cli_config import show_provider_details
+from llm_orc.cli_modules.utils.config_utils import show_provider_details
 from llm_orc.config import ConfigurationManager
 
 
