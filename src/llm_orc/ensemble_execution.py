@@ -389,9 +389,6 @@ class EnsembleExecutor:
             name=role_name, prompt=f"You are a {role_name}. Provide helpful analysis."
         )
 
-
-
-
     def _calculate_usage_summary(
         self, agent_usage: dict[str, Any], synthesis_usage: dict[str, Any] | None
     ) -> dict[str, Any]:
@@ -465,7 +462,6 @@ class EnsembleExecutor:
                 independent_agents.append(agent_config)
 
         return independent_agents, dependent_agents
-
 
     async def _execute_agents_parallel(
         self,
