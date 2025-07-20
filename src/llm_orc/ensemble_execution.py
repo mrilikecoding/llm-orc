@@ -5,9 +5,7 @@ import time
 from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
-import click
-
-from llm_orc.authentication import AuthenticationManager, CredentialStorage
+from llm_orc.authentication import CredentialStorage
 from llm_orc.config import ConfigurationManager
 from llm_orc.core.execution.agent_executor import AgentExecutor
 from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
@@ -881,98 +879,3 @@ class EnsembleExecutor:
         return len(dependencies) == 0 or all(
             dep in processed_agents for dep in dependencies
         )
-
-
-def _should_prompt_for_auth(model_name: str) -> bool:
-    """Determine if we should prompt for authentication setup."""
-    # Don't prompt for mock models or generic model names
-    if model_name.startswith("mock") or model_name in ["llama3", "llama2"]:
-        return False
-
-    # Prompt for known authentication configurations
-    known_auth_configs = [
-        "anthropic-api",
-        "anthropic-claude-pro-max",
-        "claude-cli",
-        "openai-api",
-        "google-api",
-    ]
-
-    return model_name in known_auth_configs
-
-
-def _prompt_auth_setup(model_name: str, storage: CredentialStorage) -> bool:
-    """Prompt user to set up authentication for the specified model."""
-    # Ask if user wants to set up authentication
-    if not click.confirm(
-        f"Authentication not configured for '{model_name}'. "
-        f"Would you like to set it up now?"
-    ):
-        return False
-
-    try:
-        auth_manager = AuthenticationManager(storage)
-
-        # Handle different authentication types
-        if model_name == "anthropic-api":
-            return _setup_anthropic_api_auth(storage)
-        elif model_name == "anthropic-claude-pro-max":
-            return _setup_anthropic_oauth_auth(auth_manager, model_name)
-        elif model_name == "claude-cli":
-            return _setup_claude_cli_auth(storage)
-        else:
-            click.echo(f"Don't know how to set up authentication for '{model_name}'")
-            return False
-
-    except Exception as e:
-        click.echo(f"Failed to set up authentication: {str(e)}")
-        return False
-
-
-def _setup_anthropic_api_auth(storage: CredentialStorage) -> bool:
-    """Set up Anthropic API key authentication."""
-    api_key = click.prompt("Enter your Anthropic API key", hide_input=True)
-    storage.store_api_key("anthropic-api", api_key)
-    click.echo("✅ Anthropic API key configured")
-    return True
-
-
-def _setup_anthropic_oauth_auth(
-    auth_manager: AuthenticationManager, provider_key: str
-) -> bool:
-    """Set up Anthropic OAuth authentication."""
-    try:
-        from llm_orc.authentication import AnthropicOAuthFlow
-
-        oauth_flow = AnthropicOAuthFlow.create_with_guidance()
-
-        if auth_manager.authenticate_oauth(
-            provider_key, oauth_flow.client_id, oauth_flow.client_secret
-        ):
-            click.echo("✅ Anthropic OAuth configured")
-            return True
-        else:
-            click.echo("❌ OAuth authentication failed")
-            return False
-
-    except Exception as e:
-        click.echo(f"❌ OAuth setup failed: {str(e)}")
-        return False
-
-
-def _setup_claude_cli_auth(storage: CredentialStorage) -> bool:
-    """Set up Claude CLI authentication."""
-    import shutil
-
-    # Check if claude command is available
-    claude_path = shutil.which("claude")
-    if not claude_path:
-        click.echo("❌ Claude CLI not found. Please install the Claude CLI from:")
-        click.echo("   https://docs.anthropic.com/en/docs/claude-code")
-        return False
-
-    # Store claude-cli configuration
-    storage.store_api_key("claude-cli", claude_path)
-    click.echo("✅ Claude CLI authentication configured")
-    click.echo(f"   Using local claude command at: {claude_path}")
-    return True

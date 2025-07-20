@@ -5,8 +5,7 @@ from their new organized structure. The actual implementations have been
 moved to focused, provider-specific modules.
 """
 
-# For backward compatibility, import everything from the new structure
-from llm_orc.models import *  # noqa: F403, F401
+# For backward compatibility, import all model classes from provider modules
 
 # Explicit re-exports for clarity
 from llm_orc.models.anthropic import (  # noqa: F401

@@ -5,7 +5,7 @@ from typing import Any
 
 import requests
 
-from . import __version__
+from llm_orc import __version__
 
 
 class OAuthClaudeClient:

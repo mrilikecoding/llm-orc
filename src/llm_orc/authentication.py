@@ -467,7 +467,7 @@ class AuthenticationManager:
                 return True
 
             # Create OAuth client to revoke tokens
-            from .oauth_client import OAuthClaudeClient
+            from llm_orc.oauth_client import OAuthClaudeClient
 
             oauth_client = OAuthClaudeClient(
                 access_token=oauth_info["access_token"],

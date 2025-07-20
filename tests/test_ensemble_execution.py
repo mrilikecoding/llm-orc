@@ -576,7 +576,7 @@ class TestEnsembleExecutor:
 
     def test_should_prompt_for_auth_returns_true_for_known_configs(self) -> None:
         """Test that _should_prompt_for_auth returns True for known auth configs."""
-        from llm_orc.ensemble_execution import _should_prompt_for_auth
+        from llm_orc.core.models.model_factory import _should_prompt_for_auth
 
         # Should return True for known auth configurations
         assert _should_prompt_for_auth("anthropic-api") is True
@@ -587,7 +587,7 @@ class TestEnsembleExecutor:
 
     def test_should_prompt_for_auth_returns_false_for_mock_models(self) -> None:
         """Test that _should_prompt_for_auth returns False for mock/local models."""
-        from llm_orc.ensemble_execution import _should_prompt_for_auth
+        from llm_orc.core.models.model_factory import _should_prompt_for_auth
 
         # Should return False for mock models and local models
         assert _should_prompt_for_auth("mock-model") is False
