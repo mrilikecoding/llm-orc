@@ -9,7 +9,11 @@ moved to focused, provider-specific modules.
 from llm_orc.models import *  # noqa: F403, F401
 
 # Explicit re-exports for clarity
-from llm_orc.models.anthropic import ClaudeModel, ClaudeCLIModel, OAuthClaudeModel  # noqa: F401
+from llm_orc.models.anthropic import (  # noqa: F401
+    ClaudeCLIModel,
+    ClaudeModel,
+    OAuthClaudeModel,
+)
 from llm_orc.models.base import HTTPConnectionPool, ModelInterface  # noqa: F401
 from llm_orc.models.google import GeminiModel  # noqa: F401
 from llm_orc.models.manager import ModelManager  # noqa: F401

@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from llm_orc.models.anthropic import ClaudeModel, ClaudeCLIModel, OAuthClaudeModel
+from llm_orc.models.anthropic import ClaudeCLIModel, ClaudeModel, OAuthClaudeModel
 from llm_orc.models.base import ModelInterface
 
 
