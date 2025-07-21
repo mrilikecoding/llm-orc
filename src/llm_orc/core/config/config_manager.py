@@ -97,15 +97,15 @@ class ConfigurationManager:
 
     def _get_template_ensembles_dir(self) -> Path:
         """Get the template ensembles directory path."""
-        # Get the directory containing this module
-        module_dir = Path(__file__).parent
-        return module_dir / "templates" / "ensembles"
+        # Get the llm_orc package directory (parent of core)
+        package_dir = Path(__file__).parent.parent.parent
+        return package_dir / "templates" / "ensembles"
 
     def _get_template_config_file(self, filename: str) -> Path:
         """Get the template config file path."""
-        # Get the directory containing this module
-        module_dir = Path(__file__).parent
-        return module_dir / "templates" / filename
+        # Get the llm_orc package directory (parent of core)
+        package_dir = Path(__file__).parent.parent.parent
+        return package_dir / "templates" / filename
 
     @property
     def local_config_dir(self) -> Path | None:
