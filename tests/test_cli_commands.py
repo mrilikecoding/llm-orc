@@ -37,7 +37,7 @@ class TestInvokeEnsemble:
         manager.get_ensembles_dirs.return_value = [Path("/test/ensembles")]
         manager.load_performance_config.return_value = {
             "streaming_enabled": False,
-            "max_concurrent": 3
+            "max_concurrent": 3,
         }
         return manager
 
@@ -64,14 +64,20 @@ class TestInvokeEnsemble:
         return executor
 
     def test_invoke_ensemble_basic_success(
-        self, mock_config_manager: Mock, mock_ensemble_config: Mock,
-        mock_loader: Mock, mock_executor: Mock
+        self,
+        mock_config_manager: Mock,
+        mock_ensemble_config: Mock,
+        mock_loader: Mock,
+        mock_executor: Mock,
     ) -> None:
         """Test basic ensemble invocation with minimal parameters."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
 
         with (
-            patch("llm_orc.cli_commands.ConfigurationManager", return_value=mock_config_manager),
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
             patch("llm_orc.cli_commands.asyncio.run") as mock_run,
@@ -85,14 +91,16 @@ class TestInvokeEnsemble:
                 output_format="json",
                 streaming=False,
                 max_concurrent=None,
-                detailed=False
+                detailed=False,
             )
 
             # Verify configuration manager was used to find ensemble dirs
             mock_config_manager.get_ensembles_dirs.assert_called_once()
 
             # Verify loader was used to find ensemble
-            mock_loader.find_ensemble.assert_called_once_with("/test/ensembles", "test_ensemble")
+            mock_loader.find_ensemble.assert_called_once_with(
+                "/test/ensembles", "test_ensemble"
+            )
 
             # Verify asyncio.run was called with standard execution
             mock_run.assert_called_once()
@@ -100,14 +108,20 @@ class TestInvokeEnsemble:
             assert asyncio.iscoroutine(call_args)
 
     def test_invoke_ensemble_custom_config_dir(
-        self, mock_config_manager: Mock, mock_ensemble_config: Mock,
-        mock_loader: Mock, mock_executor: Mock
+        self,
+        mock_config_manager: Mock,
+        mock_ensemble_config: Mock,
+        mock_loader: Mock,
+        mock_executor: Mock,
     ) -> None:
         """Test ensemble invocation with custom config directory."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
 
         with (
-            patch("llm_orc.cli_commands.ConfigurationManager", return_value=mock_config_manager),
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
             patch("llm_orc.cli_commands.asyncio.run"),
@@ -121,22 +135,29 @@ class TestInvokeEnsemble:
                 output_format="json",
                 streaming=False,
                 max_concurrent=None,
-                detailed=False
+                detailed=False,
             )
 
             # Should NOT call get_ensembles_dirs when custom config_dir provided
             mock_config_manager.get_ensembles_dirs.assert_not_called()
 
             # Should use custom config directory
-            mock_loader.find_ensemble.assert_called_once_with("/custom/config", "test_ensemble")
+            mock_loader.find_ensemble.assert_called_once_with(
+                "/custom/config", "test_ensemble"
+            )
 
-    def test_invoke_ensemble_no_ensemble_dirs_found(self, mock_config_manager: Mock) -> None:
+    def test_invoke_ensemble_no_ensemble_dirs_found(
+        self, mock_config_manager: Mock
+    ) -> None:
         """Test error when no ensemble directories are found."""
         mock_config_manager.get_ensembles_dirs.return_value = []
 
         with (
-            patch("llm_orc.cli_commands.ConfigurationManager", return_value=mock_config_manager),
-            pytest.raises(ClickException, match="No ensemble directories found")
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
+            pytest.raises(ClickException, match="No ensemble directories found"),
         ):
             invoke_ensemble(
                 ensemble_name="test_ensemble",
@@ -146,7 +167,7 @@ class TestInvokeEnsemble:
                 output_format="json",
                 streaming=False,
                 max_concurrent=None,
-                detailed=False
+                detailed=False,
             )
 
     def test_invoke_ensemble_not_found(
@@ -156,9 +177,14 @@ class TestInvokeEnsemble:
         mock_loader.find_ensemble.return_value = None
 
         with (
-            patch("llm_orc.cli_commands.ConfigurationManager", return_value=mock_config_manager),
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
-            pytest.raises(ClickException, match="Ensemble 'test_ensemble' not found in")
+            pytest.raises(
+                ClickException, match="Ensemble 'test_ensemble' not found in"
+            ),
         ):
             invoke_ensemble(
                 ensemble_name="test_ensemble",
@@ -168,12 +194,15 @@ class TestInvokeEnsemble:
                 output_format="json",
                 streaming=False,
                 max_concurrent=None,
-                detailed=False
+                detailed=False,
             )
 
     def test_invoke_ensemble_input_data_priority(
-        self, mock_config_manager: Mock, mock_ensemble_config: Mock,
-        mock_loader: Mock, mock_executor: Mock
+        self,
+        mock_config_manager: Mock,
+        mock_ensemble_config: Mock,
+        mock_loader: Mock,
+        mock_executor: Mock,
     ) -> None:
         """Test input data priority: positional > option."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
@@ -183,16 +212,10 @@ class TestInvokeEnsemble:
                 "llm_orc.cli_commands.ConfigurationManager",
                 return_value=mock_config_manager,
             ),
-            patch(
-                "llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader
-            ),
-            patch(
-                "llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor
-            ),
+            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
+            patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
             patch("llm_orc.cli_commands.asyncio.run"),
-            patch(
-                "llm_orc.cli_commands.run_standard_execution"
-            ) as mock_standard_exec,
+            patch("llm_orc.cli_commands.run_standard_execution") as mock_standard_exec,
         ):
             invoke_ensemble(
                 ensemble_name="test_ensemble",
@@ -202,7 +225,7 @@ class TestInvokeEnsemble:
                 output_format="json",
                 streaming=False,
                 max_concurrent=None,
-                detailed=False
+                detailed=False,
             )
 
             # The actual input data passed to execution should be positional
@@ -211,8 +234,11 @@ class TestInvokeEnsemble:
             assert "positional_input" in str(mock_run_call)
 
     def test_invoke_ensemble_fallback_to_option_input(
-        self, mock_config_manager: Mock, mock_ensemble_config: Mock,
-        mock_loader: Mock, mock_executor: Mock
+        self,
+        mock_config_manager: Mock,
+        mock_ensemble_config: Mock,
+        mock_loader: Mock,
+        mock_executor: Mock,
     ) -> None:
         """Test fallback to option input when positional is None."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
@@ -222,16 +248,10 @@ class TestInvokeEnsemble:
                 "llm_orc.cli_commands.ConfigurationManager",
                 return_value=mock_config_manager,
             ),
-            patch(
-                "llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader
-            ),
-            patch(
-                "llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor
-            ),
+            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
+            patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
             patch("llm_orc.cli_commands.asyncio.run"),
-            patch(
-                "llm_orc.cli_commands.run_standard_execution"
-            ) as mock_standard_exec,
+            patch("llm_orc.cli_commands.run_standard_execution") as mock_standard_exec,
         ):
             invoke_ensemble(
                 ensemble_name="test_ensemble",
@@ -241,7 +261,7 @@ class TestInvokeEnsemble:
                 output_format="json",
                 streaming=False,
                 max_concurrent=None,
-                detailed=False
+                detailed=False,
             )
 
             # The input data passed should be from option
@@ -249,8 +269,11 @@ class TestInvokeEnsemble:
             assert "option_input" in str(mock_run_call)
 
     def test_invoke_ensemble_stdin_input(
-        self, mock_config_manager: Mock, mock_ensemble_config: Mock,
-        mock_loader: Mock, mock_executor: Mock
+        self,
+        mock_config_manager: Mock,
+        mock_ensemble_config: Mock,
+        mock_loader: Mock,
+        mock_executor: Mock,
     ) -> None:
         """Test reading input from stdin when no input provided."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
@@ -261,7 +284,10 @@ class TestInvokeEnsemble:
         mock_stdin.isatty = lambda: False  # type: ignore[method-assign]  # Indicate piped input
 
         with (
-            patch("llm_orc.cli_commands.ConfigurationManager", return_value=mock_config_manager),
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
             patch("llm_orc.cli_commands.sys.stdin", mock_stdin),
@@ -276,7 +302,7 @@ class TestInvokeEnsemble:
                 output_format="json",
                 streaming=False,
                 max_concurrent=None,
-                detailed=False
+                detailed=False,
             )
 
             # Should use stdin data
@@ -284,8 +310,11 @@ class TestInvokeEnsemble:
             assert stdin_data in str(mock_run_call)
 
     def test_invoke_ensemble_default_input(
-        self, mock_config_manager: Mock, mock_ensemble_config: Mock,
-        mock_loader: Mock, mock_executor: Mock
+        self,
+        mock_config_manager: Mock,
+        mock_ensemble_config: Mock,
+        mock_loader: Mock,
+        mock_executor: Mock,
     ) -> None:
         """Test default input when no input provided and not piped."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
@@ -295,7 +324,10 @@ class TestInvokeEnsemble:
         mock_stdin.isatty.return_value = True
 
         with (
-            patch("llm_orc.cli_commands.ConfigurationManager", return_value=mock_config_manager),
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
             patch("llm_orc.cli_commands.sys.stdin", mock_stdin),
@@ -310,7 +342,7 @@ class TestInvokeEnsemble:
                 output_format="json",
                 streaming=False,
                 max_concurrent=None,
-                detailed=False
+                detailed=False,
             )
 
             # Should use default input
@@ -318,18 +350,26 @@ class TestInvokeEnsemble:
             assert "Please analyze this." in str(mock_run_call)
 
     def test_invoke_ensemble_streaming_execution(
-        self, mock_config_manager: Mock, mock_ensemble_config: Mock,
-        mock_loader: Mock, mock_executor: Mock
+        self,
+        mock_config_manager: Mock,
+        mock_ensemble_config: Mock,
+        mock_loader: Mock,
+        mock_executor: Mock,
     ) -> None:
         """Test streaming execution when streaming flag is enabled."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
 
         with (
-            patch("llm_orc.cli_commands.ConfigurationManager", return_value=mock_config_manager),
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
             patch("llm_orc.cli_commands.asyncio.run"),
-            patch("llm_orc.cli_commands.run_streaming_execution") as mock_streaming_exec,
+            patch(
+                "llm_orc.cli_commands.run_streaming_execution"
+            ) as mock_streaming_exec,
             patch("llm_orc.cli_commands.run_standard_execution") as mock_standard_exec,
         ):
             invoke_ensemble(
@@ -340,7 +380,7 @@ class TestInvokeEnsemble:
                 output_format="json",
                 streaming=True,  # Enable streaming
                 max_concurrent=None,
-                detailed=False
+                detailed=False,
             )
 
             # Should NOT call standard execution
@@ -350,8 +390,11 @@ class TestInvokeEnsemble:
             mock_streaming_exec.assert_called_once()
 
     def test_invoke_ensemble_streaming_from_config(
-        self, mock_config_manager: Mock, mock_ensemble_config: Mock,
-        mock_loader: Mock, mock_executor: Mock
+        self,
+        mock_config_manager: Mock,
+        mock_ensemble_config: Mock,
+        mock_loader: Mock,
+        mock_executor: Mock,
     ) -> None:
         """Test streaming execution when enabled in config."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
@@ -360,11 +403,16 @@ class TestInvokeEnsemble:
         }
 
         with (
-            patch("llm_orc.cli_commands.ConfigurationManager", return_value=mock_config_manager),
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
             patch("llm_orc.cli_commands.asyncio.run"),
-            patch("llm_orc.cli_commands.run_streaming_execution") as mock_streaming_exec,
+            patch(
+                "llm_orc.cli_commands.run_streaming_execution"
+            ) as mock_streaming_exec,
         ):
             invoke_ensemble(
                 ensemble_name="test_ensemble",
@@ -374,21 +422,27 @@ class TestInvokeEnsemble:
                 output_format="json",
                 streaming=False,  # CLI flag disabled
                 max_concurrent=None,
-                detailed=False
+                detailed=False,
             )
 
             # Should still call streaming execution due to config
             mock_streaming_exec.assert_called_once()
 
     def test_invoke_ensemble_text_output_with_performance_info(
-        self, mock_config_manager: Mock, mock_ensemble_config: Mock,
-        mock_loader: Mock, mock_executor: Mock
+        self,
+        mock_config_manager: Mock,
+        mock_ensemble_config: Mock,
+        mock_loader: Mock,
+        mock_executor: Mock,
     ) -> None:
         """Test text output format shows performance information."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
 
         with (
-            patch("llm_orc.cli_commands.ConfigurationManager", return_value=mock_config_manager),
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
             patch("llm_orc.cli_commands.asyncio.run"),
@@ -403,7 +457,7 @@ class TestInvokeEnsemble:
                 output_format="text",  # Text format
                 streaming=False,
                 max_concurrent=None,
-                detailed=False
+                detailed=False,
             )
 
             # Should print performance information
@@ -416,14 +470,18 @@ class TestInvokeEnsemble:
             assert "Performance" in echo_output
 
     def test_invoke_ensemble_text_output_performance_fallback(
-        self, mock_config_manager: Mock, mock_ensemble_config: Mock,
-        mock_loader: Mock, mock_executor: Mock
+        self,
+        mock_config_manager: Mock,
+        mock_ensemble_config: Mock,
+        mock_loader: Mock,
+        mock_executor: Mock,
     ) -> None:
         """Test text output fallback when first performance config call fails."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
 
         # Mock load_performance_config to fail on first call but succeed on second
         call_count = 0
+
         def performance_config_side_effect() -> dict[str, bool]:
             nonlocal call_count
             call_count += 1
@@ -432,10 +490,15 @@ class TestInvokeEnsemble:
             else:  # Second call (streaming decision) succeeds
                 return {"streaming_enabled": False}
 
-        mock_config_manager.load_performance_config.side_effect = performance_config_side_effect
+        mock_config_manager.load_performance_config.side_effect = (
+            performance_config_side_effect
+        )
 
         with (
-            patch("llm_orc.cli_commands.ConfigurationManager", return_value=mock_config_manager),
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
             patch("llm_orc.cli_commands.asyncio.run"),
@@ -450,7 +513,7 @@ class TestInvokeEnsemble:
                 output_format="text",
                 streaming=False,
                 max_concurrent=None,
-                detailed=False
+                detailed=False,
             )
 
             # Should print fallback information
@@ -461,8 +524,11 @@ class TestInvokeEnsemble:
             assert "Test ensemble for testing" in echo_output  # Description
 
     def test_invoke_ensemble_execution_failure(
-        self, mock_config_manager: Mock, mock_ensemble_config: Mock,
-        mock_loader: Mock, mock_executor: Mock
+        self,
+        mock_config_manager: Mock,
+        mock_ensemble_config: Mock,
+        mock_loader: Mock,
+        mock_executor: Mock,
     ) -> None:
         """Test error handling when execution fails."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
@@ -471,11 +537,16 @@ class TestInvokeEnsemble:
         execution_error = Exception("Execution failed")
 
         with (
-            patch("llm_orc.cli_commands.ConfigurationManager", return_value=mock_config_manager),
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
             patch("llm_orc.cli_commands.asyncio.run", side_effect=execution_error),
-            pytest.raises(ClickException, match="Ensemble execution failed: Execution failed")
+            pytest.raises(
+                ClickException, match="Ensemble execution failed: Execution failed"
+            ),
         ):
             invoke_ensemble(
                 ensemble_name="test_ensemble",
@@ -485,7 +556,7 @@ class TestInvokeEnsemble:
                 output_format="json",
                 streaming=False,
                 max_concurrent=None,
-                detailed=False
+                detailed=False,
             )
 
 
@@ -511,7 +582,10 @@ class TestListEnsemblesCommand:
         mock_loader.list_ensembles.return_value = [mock_ensemble1, mock_ensemble2]
 
         with (
-            patch("llm_orc.cli_commands.ConfigurationManager", return_value=mock_config_manager),
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
         ):
             list_ensembles_command(config_dir=None)
@@ -532,7 +606,10 @@ class TestListEnsemblesCommand:
         mock_loader.list_ensembles.return_value = [mock_ensemble]
 
         with (
-            patch("llm_orc.cli_commands.ConfigurationManager", return_value=mock_config_manager),
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
         ):
             list_ensembles_command(config_dir="/custom/config")
@@ -562,7 +639,9 @@ class TestServeEnsemble:
         mock_runner = Mock()
         mock_runner.run = Mock()
 
-        with patch("llm_orc.cli_commands.MCPServerRunner", return_value=mock_runner) as mock_runner_class:
+        with patch(
+            "llm_orc.cli_commands.MCPServerRunner", return_value=mock_runner
+        ) as mock_runner_class:
             serve_ensemble("test_ensemble", 8080)
 
             # Verify runner was created with correct parameters

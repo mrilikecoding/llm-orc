@@ -39,13 +39,13 @@ class TestMainCLI:
 
             mock_invoke.assert_called_once_with(
                 "test_ensemble",  # ensemble_name
-                None,             # input_data
-                None,             # config_dir
-                None,             # input_data_option
-                "text",           # output_format (default)
-                False,            # streaming (default)
-                None,             # max_concurrent (default)
-                False,            # detailed (default)
+                None,  # input_data
+                None,  # config_dir
+                None,  # input_data_option
+                "text",  # output_format (default)
+                False,  # streaming (default)
+                None,  # max_concurrent (default)
+                False,  # detailed (default)
             )
             assert result.exit_code == 0
 
@@ -54,27 +54,34 @@ class TestMainCLI:
         runner = CliRunner()
 
         with patch("llm_orc.cli.invoke_ensemble") as mock_invoke:
-            result = runner.invoke(cli, [
-                "invoke",
-                "test_ensemble",
-                "test input",
-                "--config-dir", "/custom/config",
-                "--input-data", "option input",
-                "--output-format", "json",
-                "--streaming",
-                "--max-concurrent", "5",
-                "--detailed"
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "invoke",
+                    "test_ensemble",
+                    "test input",
+                    "--config-dir",
+                    "/custom/config",
+                    "--input-data",
+                    "option input",
+                    "--output-format",
+                    "json",
+                    "--streaming",
+                    "--max-concurrent",
+                    "5",
+                    "--detailed",
+                ],
+            )
 
             mock_invoke.assert_called_once_with(
-                "test_ensemble",        # ensemble_name
-                "test input",           # input_data (positional)
-                "/custom/config",       # config_dir
-                "option input",         # input_data_option
-                "json",                 # output_format
-                True,                   # streaming
-                5,                      # max_concurrent
-                True,                   # detailed
+                "test_ensemble",  # ensemble_name
+                "test input",  # input_data (positional)
+                "/custom/config",  # config_dir
+                "option input",  # input_data_option
+                "json",  # output_format
+                True,  # streaming
+                5,  # max_concurrent
+                True,  # detailed
             )
             assert result.exit_code == 0
 
@@ -83,23 +90,27 @@ class TestMainCLI:
         runner = CliRunner()
 
         with patch("llm_orc.cli.invoke_ensemble") as mock_invoke:
-            runner.invoke(cli, [
-                "invoke",
-                "test_ensemble",
-                "positional_input",
-                "--input-data", "option_input"
-            ])
+            runner.invoke(
+                cli,
+                [
+                    "invoke",
+                    "test_ensemble",
+                    "positional_input",
+                    "--input-data",
+                    "option_input",
+                ],
+            )
 
             # Should pass positional argument, option argument goes to input_data_option
             mock_invoke.assert_called_once_with(
                 "test_ensemble",
-                "positional_input",    # positional takes precedence
-                None,                  # config_dir
-                "option_input",        # input_data_option
-                "text",                # output_format (default)
-                False,                 # streaming (default)
-                None,                  # max_concurrent (default)
-                False,                 # detailed (default)
+                "positional_input",  # positional takes precedence
+                None,  # config_dir
+                "option_input",  # input_data_option
+                "text",  # output_format (default)
+                False,  # streaming (default)
+                None,  # max_concurrent (default)
+                False,  # detailed (default)
             )
 
     def test_invoke_command_output_format_choices(self) -> None:
@@ -108,15 +119,11 @@ class TestMainCLI:
 
         # Valid choice
         with patch("llm_orc.cli.invoke_ensemble"):
-            result = runner.invoke(cli, [
-                "invoke", "test", "--output-format", "json"
-            ])
+            result = runner.invoke(cli, ["invoke", "test", "--output-format", "json"])
             assert result.exit_code == 0
 
         # Invalid choice
-        result = runner.invoke(cli, [
-            "invoke", "test", "--output-format", "invalid"
-        ])
+        result = runner.invoke(cli, ["invoke", "test", "--output-format", "invalid"])
         assert result.exit_code != 0
         assert "Invalid value for '--output-format'" in result.output
 
@@ -135,9 +142,9 @@ class TestMainCLI:
         runner = CliRunner()
 
         with patch("llm_orc.cli.list_ensembles_command") as mock_list:
-            result = runner.invoke(cli, [
-                "list-ensembles", "--config-dir", "/custom/config"
-            ])
+            result = runner.invoke(
+                cli, ["list-ensembles", "--config-dir", "/custom/config"]
+            )
 
             mock_list.assert_called_once_with("/custom/config")
             assert result.exit_code == 0
@@ -175,9 +182,9 @@ class TestMainCLI:
         runner = CliRunner()
 
         with patch("llm_orc.cli.init_local_config") as mock_init:
-            result = runner.invoke(cli, [
-                "config", "init", "--project-name", "MyProject"
-            ])
+            result = runner.invoke(
+                cli, ["config", "init", "--project-name", "MyProject"]
+            )
 
             mock_init.assert_called_once_with("MyProject")
             assert result.exit_code == 0
@@ -188,11 +195,11 @@ class TestMainCLI:
 
         with patch("llm_orc.cli.reset_global_config") as mock_reset:
             # Use --yes to skip confirmation prompt
-            result = runner.invoke(cli, [
-                "config", "reset-global", "--yes"
-            ])
+            result = runner.invoke(cli, ["config", "reset-global", "--yes"])
 
-            mock_reset.assert_called_once_with(True, True)  # backup=True, preserve_auth=True
+            mock_reset.assert_called_once_with(
+                True, True
+            )  # backup=True, preserve_auth=True
             assert result.exit_code == 0
 
     def test_config_reset_global_with_options(self) -> None:
@@ -200,14 +207,13 @@ class TestMainCLI:
         runner = CliRunner()
 
         with patch("llm_orc.cli.reset_global_config") as mock_reset:
-            result = runner.invoke(cli, [
-                "config", "reset-global",
-                "--no-backup",
-                "--reset-auth",
-                "--yes"
-            ])
+            result = runner.invoke(
+                cli, ["config", "reset-global", "--no-backup", "--reset-auth", "--yes"]
+            )
 
-            mock_reset.assert_called_once_with(False, False)  # backup=False, preserve_auth=False
+            mock_reset.assert_called_once_with(
+                False, False
+            )  # backup=False, preserve_auth=False
             assert result.exit_code == 0
 
     def test_config_check_global_command(self) -> None:
@@ -225,11 +231,11 @@ class TestMainCLI:
         runner = CliRunner()
 
         with patch("llm_orc.cli.reset_local_config") as mock_reset:
-            result = runner.invoke(cli, [
-                "config", "reset-local", "--yes"
-            ])
+            result = runner.invoke(cli, ["config", "reset-local", "--yes"])
 
-            mock_reset.assert_called_once_with(True, True, None)  # backup=True, preserve_ensembles=True, project_name=None
+            mock_reset.assert_called_once_with(
+                True, True, None
+            )  # backup=True, preserve_ensembles=True, project_name=None
             assert result.exit_code == 0
 
     def test_config_reset_local_with_options(self) -> None:
@@ -237,13 +243,18 @@ class TestMainCLI:
         runner = CliRunner()
 
         with patch("llm_orc.cli.reset_local_config") as mock_reset:
-            result = runner.invoke(cli, [
-                "config", "reset-local",
-                "--no-backup",
-                "--reset-ensembles",
-                "--project-name", "TestProject",
-                "--yes"
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "config",
+                    "reset-local",
+                    "--no-backup",
+                    "--reset-ensembles",
+                    "--project-name",
+                    "TestProject",
+                    "--yes",
+                ],
+            )
 
             mock_reset.assert_called_once_with(False, False, "TestProject")
             assert result.exit_code == 0
@@ -254,7 +265,7 @@ class TestMainCLI:
 
         with (
             patch("llm_orc.cli.check_global_config") as mock_check_global,
-            patch("llm_orc.cli.check_local_config") as mock_check_local
+            patch("llm_orc.cli.check_local_config") as mock_check_local,
         ):
             result = runner.invoke(cli, ["config", "check"])
 
@@ -291,9 +302,9 @@ class TestMainCLI:
         runner = CliRunner()
 
         with patch("llm_orc.cli.add_auth_provider") as mock_add:
-            result = runner.invoke(cli, [
-                "auth", "add", "anthropic", "--api-key", "test-key"
-            ])
+            result = runner.invoke(
+                cli, ["auth", "add", "anthropic", "--api-key", "test-key"]
+            )
 
             mock_add.assert_called_once_with("anthropic", "test-key", None, None)
             assert result.exit_code == 0
@@ -303,11 +314,18 @@ class TestMainCLI:
         runner = CliRunner()
 
         with patch("llm_orc.cli.add_auth_provider") as mock_add:
-            result = runner.invoke(cli, [
-                "auth", "add", "google",
-                "--client-id", "test-client-id",
-                "--client-secret", "test-secret"
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "auth",
+                    "add",
+                    "google",
+                    "--client-id",
+                    "test-client-id",
+                    "--client-secret",
+                    "test-secret",
+                ],
+            )
 
             mock_add.assert_called_once_with(
                 "google", None, "test-client-id", "test-secret"
@@ -319,12 +337,20 @@ class TestMainCLI:
         runner = CliRunner()
 
         with patch("llm_orc.cli.add_auth_provider") as mock_add:
-            result = runner.invoke(cli, [
-                "auth", "add", "provider",
-                "--api-key", "key",
-                "--client-id", "id",
-                "--client-secret", "secret"
-            ])
+            result = runner.invoke(
+                cli,
+                [
+                    "auth",
+                    "add",
+                    "provider",
+                    "--api-key",
+                    "key",
+                    "--client-id",
+                    "id",
+                    "--client-secret",
+                    "secret",
+                ],
+            )
 
             mock_add.assert_called_once_with("provider", "key", "id", "secret")
             assert result.exit_code == 0
@@ -414,9 +440,7 @@ class TestMainCLI:
         runner = CliRunner()
 
         with patch("llm_orc.cli.serve_ensemble") as mock_serve:
-            result = runner.invoke(cli, [
-                "serve", "test_ensemble", "--port", "8080"
-            ])
+            result = runner.invoke(cli, ["serve", "test_ensemble", "--port", "8080"])
 
             mock_serve.assert_called_once_with("test_ensemble", 8080)
             assert result.exit_code == 0
@@ -436,7 +460,9 @@ class TestMainCLI:
             assert result.exit_code == 0
             assert "Usage: llm-orc" in result.output
             assert "Commands:" in result.output
-            assert "You can use either the full command name or its alias" in result.output
+            assert (
+                "You can use either the full command name or its alias" in result.output
+            )
 
     def test_help_command_no_parent_context(self) -> None:
         """Test help command when no parent context available."""
@@ -464,13 +490,13 @@ class TestMainCLI:
             result = runner.invoke(cli, ["help"])
 
             # Check for some key aliases
-            assert "(a )" in result.output    # auth alias
-            assert "(c )" in result.output    # config alias
-            assert "(i )" in result.output    # invoke alias
-            assert "(le)" in result.output    # list-ensembles alias
-            assert "(lp)" in result.output    # list-profiles alias
-            assert "(s )" in result.output    # serve alias
-            assert "(h )" in result.output    # help alias
+            assert "(a )" in result.output  # auth alias
+            assert "(c )" in result.output  # config alias
+            assert "(i )" in result.output  # invoke alias
+            assert "(le)" in result.output  # list-ensembles alias
+            assert "(lp)" in result.output  # list-profiles alias
+            assert "(s )" in result.output  # serve alias
+            assert "(h )" in result.output  # help alias
 
     def test_command_aliases_work(self) -> None:
         """Test that command aliases work correctly."""
@@ -532,21 +558,21 @@ class TestMainCLI:
         try:
             # Use exec to execute the bottom of the cli.py file
             # This will execute the if __name__ == "__main__" block
-            exec_code = '''
+            exec_code = """
 if "__main__" == "__main__":
     from llm_orc.cli import cli
     try:
         cli()
     except SystemExit:
         pass  # Click exits with SystemExit, which is expected
-'''
+"""
             exec(exec_code)
 
             # If we get here, the execution worked
             assert True
         except Exception as e:
             # Should not raise unexpected exceptions
-            raise AssertionError(f"Main execution failed: {e}")
+            raise AssertionError(f"Main execution failed: {e}") from e
         finally:
             # Restore original argv
             sys.argv = original_argv
@@ -572,16 +598,14 @@ if "__main__" == "__main__":
         runner = CliRunner()
 
         # Test max-concurrent must be integer
-        result = runner.invoke(cli, [
-            "invoke", "test", "--max-concurrent", "not-a-number"
-        ])
+        result = runner.invoke(
+            cli, ["invoke", "test", "--max-concurrent", "not-a-number"]
+        )
         assert result.exit_code != 0
         assert "is not a valid integer" in result.output
 
         # Test port must be integer
-        result = runner.invoke(cli, [
-            "serve", "test", "--port", "not-a-number"
-        ])
+        result = runner.invoke(cli, ["serve", "test", "--port", "not-a-number"])
         assert result.exit_code != 0
         assert "is not a valid integer" in result.output
 
