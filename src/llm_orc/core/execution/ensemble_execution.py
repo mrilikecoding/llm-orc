@@ -191,94 +191,10 @@ class EnsembleExecutor:
         has_errors = has_errors or script_errors
 
         # Phase 2: Execute LLM agents with dependency-aware phasing
-        llm_agents = [a for a in config.agents if a.get("type") != "script"]
-
-        # Prepare enhanced input for LLM agents
-        # CLI input overrides config default_task when provided
-        # Fall back to config.default_task or config.task (backward compatibility)
-        if input_data and input_data.strip() and input_data != "Please analyze this.":
-            # Use CLI input when explicitly provided
-            task_input = input_data
-        else:
-            # Fall back to config default task (support both new and old field names)
-            task_input = (
-                getattr(config, "default_task", None)
-                or getattr(config, "task", None)
-                or input_data
-            )
-        enhanced_input = task_input
-        if context_data:
-            context_text = "\n\n".join(
-                [f"=== {name} ===\n{data}" for name, data in context_data.items()]
-            )
-            enhanced_input = f"{task_input}\n\n{context_text}"
-
-        # Use enhanced dependency analysis for multi-level execution
-        if llm_agents:
-            # Update input enhancer with current agent configs for role descriptions
-            self._input_enhancer.update_agent_configs(llm_agents)
-            dependency_analysis = (
-                self._dependency_analyzer.analyze_enhanced_dependency_graph(llm_agents)
-            )
-            phases = dependency_analysis["phases"]
-
-            # Execute each phase sequentially, with parallelization within each phase
-            for phase_index, phase_agents in enumerate(phases):
-                self._emit_performance_event(
-                    "phase_started",
-                    {
-                        "phase_index": phase_index,
-                        "phase_agents": [agent["name"] for agent in phase_agents],
-                        "total_phases": len(phases),
-                    },
-                )
-
-                # Determine input for this phase
-                if phase_index == 0:
-                    # First phase uses the base enhanced input
-                    phase_input: str | dict[str, str] = enhanced_input
-                else:
-                    # Subsequent phases get enhanced input with dependencies
-                    phase_input = self._input_enhancer.enhance_input_with_dependencies(
-                        enhanced_input, phase_agents, results_dict
-                    )
-
-                # Execute all agents in this phase in parallel
-                await self._agent_executor.execute_agents_parallel(
-                    phase_agents, phase_input, config, results_dict, agent_usage
-                )
-
-                # Check for failures in this phase
-                if any(
-                    result.get("status") == "failed" for result in results_dict.values()
-                ):
-                    has_errors = True
-
-                self._emit_performance_event(
-                    "phase_completed",
-                    {
-                        "phase_index": phase_index,
-                        "phase_agents": [agent["name"] for agent in phase_agents],
-                        "completed_agents": len(
-                            [
-                                a
-                                for a in phase_agents
-                                if (
-                                    results_dict.get(a["name"], {}).get("status")
-                                    == "success"
-                                )
-                            ]
-                        ),
-                        "failed_agents": len(
-                            [
-                                a
-                                for a in phase_agents
-                                if results_dict.get(a["name"], {}).get("status")
-                                == "failed"
-                            ]
-                        ),
-                    },
-                )
+        llm_agent_errors = await self._execute_llm_agents(
+            config, input_data, context_data, results_dict, agent_usage
+        )
+        has_errors = has_errors or llm_agent_errors
 
         # Calculate usage totals (no coordinator synthesis in dependency-based model)
         usage_summary = self._calculate_usage_summary(agent_usage, None)
@@ -403,6 +319,182 @@ class EnsembleExecutor:
                 has_errors = True
 
         return context_data, has_errors
+
+    async def _execute_llm_agents(
+        self,
+        config: EnsembleConfig,
+        input_data: str,
+        context_data: dict[str, Any],
+        results_dict: dict[str, Any],
+        agent_usage: dict[str, Any],
+    ) -> bool:
+        """Execute LLM agents with dependency-aware phasing."""
+        has_errors = False
+        llm_agents = [a for a in config.agents if a.get("type") != "script"]
+
+        # Prepare enhanced input for LLM agents
+        # CLI input overrides config default_task when provided
+        # Fall back to config.default_task or config.task (backward compatibility)
+        if input_data and input_data.strip() and input_data != "Please analyze this.":
+            # Use CLI input when explicitly provided
+            task_input = input_data
+        else:
+            # Fall back to config default task (support both new and old field names)
+            task_input = (
+                getattr(config, "default_task", None)
+                or getattr(config, "task", None)
+                or input_data
+            )
+        enhanced_input = task_input
+        if context_data:
+            context_text = "\n\n".join(
+                [f"=== {name} ===\n{data}" for name, data in context_data.items()]
+            )
+            enhanced_input = f"{task_input}\n\n{context_text}"
+
+        # Use enhanced dependency analysis for multi-level execution
+        if llm_agents:
+            # Update input enhancer with current agent configs for role descriptions
+            self._input_enhancer.update_agent_configs(llm_agents)
+            dependency_analysis = (
+                self._dependency_analyzer.analyze_enhanced_dependency_graph(llm_agents)
+            )
+            phases = dependency_analysis["phases"]
+
+            # Execute each phase sequentially, with parallelization within each phase
+            for phase_index, phase_agents in enumerate(phases):
+                self._emit_performance_event(
+                    "phase_started",
+                    {
+                        "phase_index": phase_index,
+                        "phase_agents": [agent["name"] for agent in phase_agents],
+                        "total_phases": len(phases),
+                    },
+                )
+
+                # Determine input for this phase
+                if phase_index == 0:
+                    # First phase uses the base enhanced input
+                    phase_input: str | dict[str, str] = enhanced_input
+                else:
+                    # Subsequent phases get enhanced input with dependencies
+                    phase_input = self._input_enhancer.enhance_input_with_dependencies(
+                        enhanced_input, phase_agents, results_dict
+                    )
+
+                # Get performance config
+                performance_config = ConfigurationManager().load_performance_config()
+                effective_concurrency = self._get_effective_concurrency_limit(
+                    len(phase_agents)
+                )
+
+                # Execute agents in this phase concurrently
+                semaphore = asyncio.Semaphore(effective_concurrency)
+
+                async def execute_agent_with_semaphore(
+                    agent_cfg: dict[str, Any],
+                    sem: asyncio.Semaphore,
+                    p_input: str | dict[str, str],
+                    enhanced_inp: str,
+                    perf_config: dict[str, Any],
+                ) -> None:
+                    async with sem:
+                        try:
+                            agent_name = agent_cfg["name"]
+                            self._emit_performance_event(
+                                "agent_started", {"agent_name": agent_name}
+                            )
+
+                            # Determine input for this specific agent
+                            if isinstance(p_input, dict):
+                                agent_input = p_input.get(agent_name, enhanced_inp)
+                            else:
+                                agent_input = p_input
+
+                            # Resolve model profile to get enhanced configuration
+                            enhanced_config = (
+                                await self._resolve_model_profile_to_config(agent_cfg)
+                            )
+                            timeout = enhanced_config.get("timeout_seconds") or (
+                                perf_config.get("execution", {}).get(
+                                    "default_timeout", 60
+                                )
+                            )
+
+                            (
+                                agent_result,
+                                model_instance,
+                            ) = await self._execute_agent_with_timeout(
+                                agent_cfg, agent_input, timeout
+                            )
+
+                            # Store successful result
+                            results_dict[agent_name] = {
+                                "response": agent_result,
+                                "status": "success",
+                            }
+
+                            # Capture model usage if available
+                            if model_instance and hasattr(model_instance, "get_usage"):
+                                usage = model_instance.get_usage()
+                                if usage:
+                                    agent_usage[agent_name] = usage
+
+                            self._emit_performance_event(
+                                "agent_completed", {"agent_name": agent_name}
+                            )
+
+                        except Exception as e:
+                            # Handle agent failure
+                            agent_name = agent_cfg["name"]
+                            results_dict[agent_name] = {
+                                "error": str(e),
+                                "status": "failed",
+                            }
+                            nonlocal has_errors
+                            has_errors = True
+                            self._emit_performance_event(
+                                "agent_failed",
+                                {"agent_name": agent_name, "error": str(e)},
+                            )
+
+                # Execute all agents in this phase
+                tasks = [
+                    execute_agent_with_semaphore(
+                        agent,
+                        semaphore,
+                        phase_input,
+                        enhanced_input,
+                        performance_config,
+                    )
+                    for agent in phase_agents
+                ]
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+                self._emit_performance_event(
+                    "phase_completed",
+                    {
+                        "phase_index": phase_index,
+                        "successful_agents": len(
+                            [
+                                a
+                                for a in phase_agents
+                                if results_dict.get(a["name"], {}).get("status")
+                                == "success"
+                            ]
+                        ),
+                        "failed_agents": len(
+                            [
+                                a
+                                for a in phase_agents
+                                if results_dict.get(a["name"], {}).get("status")
+                                == "failed"
+                            ]
+                        ),
+                    },
+                )
+
+        return has_errors
 
     def _calculate_usage_summary(
         self, agent_usage: dict[str, Any], synthesis_usage: dict[str, Any] | None
