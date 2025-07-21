@@ -1,7 +1,7 @@
 """Tests for OAuth token storage enhancements including client_id support."""
 
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -118,8 +118,8 @@ class TestOAuthTokenStorage:
             # No client_id in stored token (simulating legacy storage)
         }
 
-        # Replace the executor's credential storage with mock
-        executor._credential_storage = mock_storage
+        # Replace the model factory's credential storage with mock
+        executor._model_factory._credential_storage = mock_storage
 
         # Mock the OAuthClaudeModel constructor to verify client_id is passed
         oauth_model_calls = []
@@ -129,11 +129,10 @@ class TestOAuthTokenStorage:
             mock_model = Mock(spec=OAuthClaudeModel)
             return mock_model
 
-        with pytest.MonkeyPatch.context() as m:
-            m.setattr(
-                "llm_orc.ensemble_execution.OAuthClaudeModel", mock_oauth_claude_model
-            )
-
+        with patch(
+            "llm_orc.core.models.model_factory.OAuthClaudeModel",
+            side_effect=mock_oauth_claude_model,
+        ):
             # Load the model
             await executor._load_model("anthropic-claude-pro-max")
 
@@ -160,8 +159,8 @@ class TestOAuthTokenStorage:
             "client_id": "custom_client_id_from_storage",  # Custom client_id stored
         }
 
-        # Replace the executor's credential storage with mock
-        executor._credential_storage = mock_storage
+        # Replace the model factory's credential storage with mock
+        executor._model_factory._credential_storage = mock_storage
 
         # Mock the OAuthClaudeModel constructor to verify client_id is passed
         oauth_model_calls = []
@@ -171,11 +170,10 @@ class TestOAuthTokenStorage:
             mock_model = Mock(spec=OAuthClaudeModel)
             return mock_model
 
-        with pytest.MonkeyPatch.context() as m:
-            m.setattr(
-                "llm_orc.ensemble_execution.OAuthClaudeModel", mock_oauth_claude_model
-            )
-
+        with patch(
+            "llm_orc.core.models.model_factory.OAuthClaudeModel",
+            side_effect=mock_oauth_claude_model,
+        ):
             # Load the model
             await executor._load_model("anthropic-claude-pro-max")
 

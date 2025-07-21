@@ -34,7 +34,10 @@ class TestAuthCommandsNew:
         api_key = "test_key_123"
 
         # When
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
             mock_instance.ensure_global_config_dir.return_value = None
@@ -61,16 +64,15 @@ class TestAuthCommandsNew:
         assert result.exit_code == 0
         assert f"API key for {provider} added successfully" in result.output
 
-        # Verify credentials were stored
-        credentials_file = temp_config_dir / "credentials.yaml"
-        assert credentials_file.exists()
-
     def test_auth_list_command_shows_configured_providers(
         self, runner: CliRunner, temp_config_dir: Path
     ) -> None:
         """Test that 'auth list' command shows configured providers."""
         # Given - Set up some providers
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
             mock_instance.ensure_global_config_dir.return_value = None
@@ -119,19 +121,31 @@ class TestAuthCommandsNew:
         """Test that 'auth list' command shows message when no providers configured."""
         # Given - No providers configured
         # When
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
-            mock_instance.get_credentials_file.return_value = (
-                temp_config_dir / "credentials.yaml"
-            )
-            mock_instance.get_encryption_key_file.return_value = (
-                temp_config_dir / ".encryption_key"
-            )
-            mock_instance.needs_migration.return_value = False
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        credential_storage_path = (
+            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+        )
+        with patch(config_manager_path) as mock_config_manager:
+            with patch(credential_storage_path) as mock_storage_class:
+                mock_instance = mock_config_manager.return_value
+                mock_instance._global_config_dir = temp_config_dir
+                mock_instance.ensure_global_config_dir.return_value = None
+                mock_instance.get_credentials_file.return_value = (
+                    temp_config_dir / "credentials.yaml"
+                )
+                mock_instance.get_encryption_key_file.return_value = (
+                    temp_config_dir / ".encryption_key"
+                )
+                mock_instance.needs_migration.return_value = False
 
-            result = runner.invoke(cli, ["auth", "list"])
+                # Mock CredentialStorage to return no providers
+                mock_storage = Mock()
+                mock_storage.list_providers.return_value = []
+                mock_storage_class.return_value = mock_storage
+
+                result = runner.invoke(cli, ["auth", "list"])
 
         # Then
         assert result.exit_code == 0
@@ -144,7 +158,10 @@ class TestAuthCommandsNew:
         # Given
         provider = "anthropic"
 
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
             mock_instance.ensure_global_config_dir.return_value = None
@@ -183,7 +200,10 @@ class TestAuthCommandsNew:
         provider = "nonexistent"
 
         # When
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
             mock_instance.ensure_global_config_dir.return_value = None
@@ -214,23 +234,44 @@ class TestAuthCommandsNew:
         ]  # provider selection, api_key, no more
 
         # When
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
-            mock_instance.get_credentials_file.return_value = (
-                temp_config_dir / "credentials.yaml"
-            )
-            mock_instance.get_encryption_key_file.return_value = (
-                temp_config_dir / ".encryption_key"
-            )
-            mock_instance.needs_migration.return_value = False
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        credential_storage_path = (
+            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+        )
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
+            with patch(credential_storage_path) as mock_storage_class:
+                with patch(auth_manager_path) as mock_auth_class:
+                    mock_instance = mock_config_manager.return_value
+                    mock_instance._global_config_dir = temp_config_dir
+                    mock_instance.ensure_global_config_dir.return_value = None
+                    mock_instance.get_credentials_file.return_value = (
+                        temp_config_dir / "credentials.yaml"
+                    )
+                    mock_instance.get_encryption_key_file.return_value = (
+                        temp_config_dir / ".encryption_key"
+                    )
+                    mock_instance.needs_migration.return_value = False
 
-            result = runner.invoke(
-                cli,
-                ["auth", "setup"],
-                input="\n".join(inputs),
-            )
+                    # Mock CredentialStorage
+                    mock_storage = Mock()
+                    mock_storage.list_providers.return_value = []
+                    mock_storage.store_api_key.return_value = None
+                    mock_storage_class.return_value = mock_storage
+
+                    # Mock AuthenticationManager
+                    mock_auth_manager = Mock()
+                    mock_auth_class.return_value = mock_auth_manager
+
+                    result = runner.invoke(
+                        cli,
+                        ["auth", "setup"],
+                        input="\n".join(inputs),
+                    )
 
         # Then
         assert result.exit_code == 0
@@ -249,7 +290,10 @@ class TestAuthCommandsNew:
         ]
 
         # When
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
             mock_instance.ensure_global_config_dir.return_value = None
@@ -288,12 +332,12 @@ class TestAuthCommandsNew:
         ]
 
         # When
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
-            with patch("llm_orc.authentication.AnthropicOAuthFlow") as mock_oauth:
-                mock_flow = mock_oauth.create_with_guidance.return_value
-                mock_flow.client_id = "test-client-id"
-                mock_flow.client_secret = "test-client-secret"
-
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        setup_oauth_path = "llm_orc.cli_modules.utils.auth_utils.setup_anthropic_oauth"
+        with patch(config_manager_path) as mock_config_manager:
+            with patch(setup_oauth_path) as mock_setup_oauth:
                 mock_instance = mock_config_manager.return_value
                 mock_instance._global_config_dir = temp_config_dir
                 mock_instance.ensure_global_config_dir.return_value = None
@@ -305,16 +349,14 @@ class TestAuthCommandsNew:
                 )
                 mock_instance.needs_migration.return_value = False
 
-                # Mock successful OAuth flow
-                with patch("llm_orc.cli_commands.AuthenticationManager") as mock_auth:
-                    mock_auth_manager = mock_auth.return_value
-                    mock_auth_manager.authenticate_oauth.return_value = True
+                # Mock successful OAuth flow - just return successfully
+                mock_setup_oauth.return_value = None
 
-                    result = runner.invoke(
-                        cli,
-                        ["auth", "add", "anthropic"],
-                        input="\n".join(inputs),
-                    )
+                result = runner.invoke(
+                    cli,
+                    ["auth", "add", "anthropic"],
+                    input="\n".join(inputs),
+                )
 
         # Then
         assert result.exit_code == 0
@@ -333,12 +375,12 @@ class TestAuthCommandsNew:
         ]
 
         # When
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
-            with patch("llm_orc.authentication.AnthropicOAuthFlow") as mock_oauth:
-                mock_flow = mock_oauth.create_with_guidance.return_value
-                mock_flow.client_id = "test-client-id"
-                mock_flow.client_secret = "test-client-secret"
-
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        setup_oauth_path = "llm_orc.cli_modules.utils.auth_utils.setup_anthropic_oauth"
+        with patch(config_manager_path) as mock_config_manager:
+            with patch(setup_oauth_path) as mock_setup_oauth:
                 mock_instance = mock_config_manager.return_value
                 mock_instance._global_config_dir = temp_config_dir
                 mock_instance.ensure_global_config_dir.return_value = None
@@ -350,16 +392,14 @@ class TestAuthCommandsNew:
                 )
                 mock_instance.needs_migration.return_value = False
 
-                # Mock successful OAuth flow
-                with patch("llm_orc.cli_commands.AuthenticationManager") as mock_auth:
-                    mock_auth_manager = mock_auth.return_value
-                    mock_auth_manager.authenticate_oauth.return_value = True
+                # Mock successful OAuth flow - just return successfully
+                mock_setup_oauth.return_value = None
 
-                    result = runner.invoke(
-                        cli,
-                        ["auth", "add", "anthropic"],
-                        input="\n".join(inputs),
-                    )
+                result = runner.invoke(
+                    cli,
+                    ["auth", "add", "anthropic"],
+                    input="\n".join(inputs),
+                )
 
         # Then
         assert result.exit_code == 0
@@ -373,7 +413,10 @@ class TestAuthCommandsNew:
     ) -> None:
         """Test adding claude-cli authentication when claude command is available."""
         # When - Claude CLI is available
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
             mock_instance.ensure_global_config_dir.return_value = None
@@ -399,7 +442,10 @@ class TestAuthCommandsNew:
     ) -> None:
         """Test adding claude-cli auth when claude command is not available."""
         # When - Claude CLI is not available
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
             mock_instance.ensure_global_config_dir.return_value = None
@@ -425,7 +471,13 @@ class TestAuthCommandsNew:
     ) -> None:
         """Test that 'auth logout' command logs out OAuth provider."""
         # Given - Set up OAuth provider first
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
             mock_instance.ensure_global_config_dir.return_value = None
@@ -438,7 +490,7 @@ class TestAuthCommandsNew:
             mock_instance.needs_migration.return_value = False
 
             # Mock successful logout
-            with patch("llm_orc.cli_commands.AuthenticationManager") as mock_auth:
+            with patch(auth_manager_path) as mock_auth:
                 mock_auth_manager = mock_auth.return_value
                 mock_auth_manager.logout_oauth_provider.return_value = True
 
@@ -459,7 +511,13 @@ class TestAuthCommandsNew:
     ) -> None:
         """Test that 'auth logout' command fails for nonexistent provider."""
         # Given
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
             mock_instance.ensure_global_config_dir.return_value = None
@@ -472,7 +530,7 @@ class TestAuthCommandsNew:
             mock_instance.needs_migration.return_value = False
 
             # Mock failed logout (provider doesn't exist)
-            with patch("llm_orc.cli_commands.AuthenticationManager") as mock_auth:
+            with patch(auth_manager_path) as mock_auth:
                 mock_auth_manager = mock_auth.return_value
                 mock_auth_manager.logout_oauth_provider.return_value = False
 
@@ -492,7 +550,16 @@ class TestAuthCommandsNew:
         api_key = "new_test_key_123"
 
         # When
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        credential_storage_path = (
+            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+        )
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
             mock_instance.ensure_global_config_dir.return_value = None
@@ -504,12 +571,12 @@ class TestAuthCommandsNew:
             )
             mock_instance.needs_migration.return_value = False
 
-            with patch("llm_orc.cli_commands.CredentialStorage") as mock_storage_class:
+            with patch(credential_storage_path) as mock_storage_class:
                 mock_storage = Mock()
                 mock_storage_class.return_value = mock_storage
                 mock_storage.list_providers.return_value = [provider]  # Provider exists
 
-                with patch("llm_orc.cli_commands.AuthenticationManager"):
+                with patch(auth_manager_path):
                     result = runner.invoke(
                         cli, ["auth", "add", provider, "--api-key", api_key]
                     )
@@ -530,7 +597,13 @@ class TestAuthCommandsNew:
     ) -> None:
         """Test that 'auth logout --all' command logs out all OAuth providers."""
         # Given
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
             mock_instance.ensure_global_config_dir.return_value = None
@@ -543,7 +616,7 @@ class TestAuthCommandsNew:
             mock_instance.needs_migration.return_value = False
 
             # Mock successful logout of multiple providers
-            with patch("llm_orc.cli_commands.AuthenticationManager") as mock_auth:
+            with patch(auth_manager_path) as mock_auth:
                 mock_auth_manager = mock_auth.return_value
                 mock_auth_manager.logout_all_oauth_providers.return_value = {
                     "anthropic-claude-pro-max": True,

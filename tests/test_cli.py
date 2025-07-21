@@ -231,7 +231,9 @@ class TestCLI:
             (global_config_dir / ".encryption_key").touch()
 
             # Mock CredentialStorage to return test providers
-            with patch("llm_orc.cli_config.CredentialStorage") as mock_storage_class:
+            with patch(
+                "llm_orc.cli_modules.utils.config_utils.CredentialStorage"
+            ) as mock_storage_class:
                 mock_storage = Mock()
                 mock_storage.list_providers.return_value = [
                     "anthropic-api",
@@ -286,7 +288,9 @@ class TestCLI:
             (global_config_dir / "credentials.yaml").touch()
 
             # Mock CredentialStorage
-            with patch("llm_orc.cli_config.CredentialStorage") as mock_storage_class:
+            with patch(
+                "llm_orc.cli_modules.utils.config_utils.CredentialStorage"
+            ) as mock_storage_class:
                 mock_storage = Mock()
                 mock_storage.list_providers.return_value = ["anthropic-claude-pro-max"]
                 mock_storage_class.return_value = mock_storage

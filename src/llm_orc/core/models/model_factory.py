@@ -268,17 +268,16 @@ class ModelFactory:
 
 
 def _should_prompt_for_auth(model_name: str) -> bool:
-    """Check if we should prompt for authentication setup for this model."""
-    # Only prompt for known models that typically require setup
-    known_models = {
+    """Check if we should prompt for authentication setup for this provider."""
+    # Only prompt for known providers that typically require setup
+    known_providers = {
         "anthropic-api",
         "anthropic-claude-pro-max",
         "claude-cli",
-        "claude-3-5-sonnet-20241022",
-        "claude-3-5-haiku-20241022",
-        "claude-3-opus-20240229",
+        "openai-api",
+        "google-gemini",
     }
-    return model_name in known_models
+    return model_name in known_providers
 
 
 def _prompt_auth_setup(model_name: str, storage: CredentialStorage) -> bool:

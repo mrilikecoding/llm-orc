@@ -196,18 +196,8 @@ class EnsembleExecutor:
         )
         has_errors = has_errors or llm_agent_errors
 
-        # Calculate usage totals (no coordinator synthesis in dependency-based model)
-        usage_summary = self._calculate_usage_summary(agent_usage, None)
-
-        # Finalize result
-        end_time = time.time()
-        result["status"] = "completed_with_errors" if has_errors else "completed"
-        metadata_dict: dict[str, Any] = result["metadata"]
-        metadata_dict["duration"] = f"{(end_time - start_time):.2f}s"
-        metadata_dict["completed_at"] = end_time
-        metadata_dict["usage"] = usage_summary
-
-        return result
+        # Finalize and return result
+        return self._finalize_result(result, agent_usage, has_errors, start_time)
 
     async def _execute_agent(
         self, agent_config: dict[str, Any], input_data: str
@@ -435,8 +425,10 @@ class EnsembleExecutor:
                             }
 
                             # Capture model usage if available
-                            if model_instance and hasattr(model_instance, "get_usage"):
-                                usage = model_instance.get_usage()
+                            if model_instance and hasattr(
+                                model_instance, "get_last_usage"
+                            ):
+                                usage = model_instance.get_last_usage()
                                 if usage:
                                     agent_usage[agent_name] = usage
 
@@ -495,6 +487,26 @@ class EnsembleExecutor:
                 )
 
         return has_errors
+
+    def _finalize_result(
+        self,
+        result: dict[str, Any],
+        agent_usage: dict[str, Any],
+        has_errors: bool,
+        start_time: float,
+    ) -> dict[str, Any]:
+        """Finalize execution result with metadata and usage summary."""
+        # Calculate usage totals (no coordinator synthesis in dependency-based model)
+        usage_summary = self._calculate_usage_summary(agent_usage, None)
+
+        # Finalize result
+        end_time = time.time()
+        result["status"] = "completed_with_errors" if has_errors else "completed"
+        metadata_dict: dict[str, Any] = result["metadata"]
+        metadata_dict["duration"] = f"{(end_time - start_time):.2f}s"
+        metadata_dict["completed_at"] = end_time
+        metadata_dict["usage"] = usage_summary
+        return result
 
     def _calculate_usage_summary(
         self, agent_usage: dict[str, Any], synthesis_usage: dict[str, Any] | None

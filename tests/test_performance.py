@@ -404,7 +404,7 @@ class TestEnsembleExecutionPerformance:
         ) -> AsyncMock:
             return create_tracked_model(model_name)
 
-        monkeypatch.setattr(executor, "_load_model", mock_load_model)
+        monkeypatch.setattr(executor._model_factory, "load_model", mock_load_model)
 
         # Act - Execute ensemble with dependencies
         time.perf_counter()
@@ -738,7 +738,7 @@ class TestEnsembleExecutionPerformance:
 
         # Mock the model loading to track calls
         with patch.object(
-            executor, "_load_model", side_effect=mock_load_model_tracking
+            executor._model_factory, "load_model", side_effect=mock_load_model_tracking
         ):
             # Mock role loading (not relevant for this test)
             with patch.object(executor, "_load_role_from_config"):
@@ -830,11 +830,11 @@ class TestEnsembleExecutionPerformance:
 
         # Mock the infrastructure classes to track instantiation
         with patch(
-            "llm_orc.ensemble_execution.ConfigurationManager",
+            "llm_orc.core.execution.ensemble_execution.ConfigurationManager",
             side_effect=mock_config_manager,
         ):
             with patch(
-                "llm_orc.ensemble_execution.CredentialStorage",
+                "llm_orc.core.execution.ensemble_execution.CredentialStorage",
                 side_effect=mock_credential_storage,
             ):
                 # Mock the model loading to focus on infrastructure
@@ -1398,7 +1398,11 @@ class TestPerformanceBenchmarks:
         executor.register_performance_hook(performance_hook)
 
         # Mock model loading
-        with patch.object(executor, "_load_model", return_value=mock_model):
+        with patch.object(
+            executor._model_factory,
+            "load_model_from_agent_config",
+            return_value=mock_model,
+        ):
             # Act - Execute with performance monitoring
             start_time = time.time()
             result = await executor.execute(config, "Test performance monitoring")
@@ -1490,15 +1494,19 @@ class TestPerformanceBenchmarks:
         executor = EnsembleExecutor()
 
         # Mock model loading to return appropriate models
-        async def mock_load_model(
-            model_name: str, provider: str | None = None
+        async def mock_load_model_from_agent_config(
+            agent_config: dict[str, Any],
         ) -> ModelInterface:
-            if "fast" in model_name:
+            if "fast" in agent_config.get("model", ""):
                 return fast_model
             else:
                 return slow_model
 
-        with patch.object(executor, "_load_model", side_effect=mock_load_model):
+        with patch.object(
+            executor._model_factory,
+            "load_model_from_agent_config",
+            side_effect=mock_load_model_from_agent_config,
+        ):
             # Act - Execute with timeout handling
             start_time = time.time()
             result = await executor.execute(config, "Test timeout handling")

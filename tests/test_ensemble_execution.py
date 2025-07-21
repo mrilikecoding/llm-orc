@@ -54,10 +54,12 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role", new_callable=AsyncMock
+                executor, "_load_role_from_config", new_callable=AsyncMock
             ) as mock_load_role,
             patch.object(
-                executor, "_load_model", new_callable=AsyncMock
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
             ) as mock_load_model,
         ):
             mock_load_role.side_effect = [role1, role2]
@@ -130,10 +132,12 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role", new_callable=AsyncMock
+                executor, "_load_role_from_config", new_callable=AsyncMock
             ) as mock_load_role,
             patch.object(
-                executor, "_load_model", new_callable=AsyncMock
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
             ) as mock_load_model,
         ):
             mock_load_role.side_effect = [analyst_role, checker_role]
@@ -175,10 +179,12 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role", new_callable=AsyncMock
+                executor, "_load_role_from_config", new_callable=AsyncMock
             ) as mock_load_role,
             patch.object(
-                executor, "_load_model", new_callable=AsyncMock
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
             ) as mock_load_model,
         ):
             mock_load_role.return_value = role
@@ -220,10 +226,12 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role", new_callable=AsyncMock
+                executor, "_load_role_from_config", new_callable=AsyncMock
             ) as mock_load_role,
             patch.object(
-                executor, "_load_model", new_callable=AsyncMock
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
             ) as mock_load_model,
         ):
             mock_load_role.return_value = role
@@ -279,10 +287,12 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role", new_callable=AsyncMock
+                executor, "_load_role_from_config", new_callable=AsyncMock
             ) as mock_load_role,
             patch.object(
-                executor, "_load_model", new_callable=AsyncMock
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
             ) as mock_load_model,
         ):
             mock_load_role.return_value = role
@@ -359,10 +369,12 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role", new_callable=AsyncMock
+                executor, "_load_role_from_config", new_callable=AsyncMock
             ) as mock_load_role,
             patch.object(
-                executor, "_load_model", new_callable=AsyncMock
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
             ) as mock_load_model,
         ):
             mock_load_role.return_value = role
@@ -435,10 +447,12 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role", new_callable=AsyncMock
+                executor, "_load_role_from_config", new_callable=AsyncMock
             ) as mock_load_role,
             patch.object(
-                executor, "_load_model", new_callable=AsyncMock
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
             ) as mock_load_model,
         ):
             mock_load_role.return_value = role
@@ -464,15 +478,17 @@ class TestEnsembleExecutor:
         """Test _load_model resolves auth configurations to model instances."""
         executor = EnsembleExecutor()
 
-        # Mock the shared authentication system instances
+        # Mock the model factory's credential storage (not executor's)
         with (
-            patch.object(executor, "_credential_storage") as mock_storage,
+            patch.object(
+                executor._model_factory, "_credential_storage"
+            ) as mock_storage,
         ):
             # Test 1: Load model for "anthropic-api" auth configuration
             mock_storage.get_auth_method.return_value = "api_key"
             mock_storage.get_api_key.return_value = "sk-ant-test123"
 
-            model = await executor._load_model("anthropic-api")
+            model = await executor._model_factory.load_model("anthropic-api")
 
             # Should create ClaudeModel with API key
             assert isinstance(model, ClaudeModel)
@@ -486,7 +502,7 @@ class TestEnsembleExecutor:
                 "client_id": "oauth_client_id",
             }
 
-            model = await executor._load_model("anthropic-claude-pro-max")
+            model = await executor._model_factory.load_model("anthropic-claude-pro-max")
 
             # Should create OAuthClaudeModel
             assert isinstance(model, OAuthClaudeModel)
@@ -499,7 +515,7 @@ class TestEnsembleExecutor:
             mock_storage.get_auth_method.return_value = "api_key"
             mock_storage.get_api_key.return_value = "/usr/local/bin/claude"
 
-            model = await executor._load_model("claude-cli")
+            model = await executor._model_factory.load_model("claude-cli")
 
             # Should create ClaudeCLIModel
             assert isinstance(model, ClaudeCLIModel)
@@ -513,10 +529,15 @@ class TestEnsembleExecutor:
         # Mock authentication system - no auth method configured
         with (
             patch(
-                "llm_orc.ensemble_execution._should_prompt_for_auth", return_value=True
+                "llm_orc.core.models.model_factory._should_prompt_for_auth",
+                return_value=True,
             ),
-            patch("llm_orc.ensemble_execution._prompt_auth_setup") as mock_prompt_setup,
-            patch.object(executor, "_credential_storage") as mock_storage,
+            patch(
+                "llm_orc.core.models.model_factory._prompt_auth_setup"
+            ) as mock_prompt_setup,
+            patch.object(
+                executor._model_factory, "_credential_storage"
+            ) as mock_storage,
         ):
             # Simulate no auth method configured
             mock_storage.get_auth_method.return_value = None
@@ -533,7 +554,7 @@ class TestEnsembleExecutor:
                 "client_id": "new_client_id",
             }
 
-            model = await executor._load_model("anthropic-claude-pro-max")
+            model = await executor._model_factory.load_model("anthropic-claude-pro-max")
 
             # Should prompt for auth setup
             mock_prompt_setup.assert_called_once_with(
@@ -551,10 +572,15 @@ class TestEnsembleExecutor:
         # Mock authentication system - no auth method configured
         with (
             patch(
-                "llm_orc.ensemble_execution._should_prompt_for_auth", return_value=True
+                "llm_orc.core.models.model_factory._should_prompt_for_auth",
+                return_value=True,
             ),
-            patch("llm_orc.ensemble_execution._prompt_auth_setup") as mock_prompt_setup,
-            patch.object(executor, "_credential_storage") as mock_storage,
+            patch(
+                "llm_orc.core.models.model_factory._prompt_auth_setup"
+            ) as mock_prompt_setup,
+            patch.object(
+                executor._model_factory, "_credential_storage"
+            ) as mock_storage,
         ):
             # Simulate no auth method configured
             mock_storage.get_auth_method.return_value = None
@@ -562,7 +588,7 @@ class TestEnsembleExecutor:
             # User declines to set up authentication
             mock_prompt_setup.return_value = False
 
-            model = await executor._load_model("anthropic-claude-pro-max")
+            model = await executor._model_factory.load_model("anthropic-claude-pro-max")
 
             # Should prompt user for auth setup
             mock_prompt_setup.assert_called_once_with(
@@ -574,16 +600,16 @@ class TestEnsembleExecutor:
 
             assert isinstance(model, OllamaModel)
 
-    def test_should_prompt_for_auth_returns_true_for_known_configs(self) -> None:
-        """Test that _should_prompt_for_auth returns True for known auth configs."""
+    def test_should_prompt_for_auth_returns_true_for_known_providers(self) -> None:
+        """Test that _should_prompt_for_auth returns True for known provider configs."""
         from llm_orc.core.models.model_factory import _should_prompt_for_auth
 
-        # Should return True for known auth configurations
+        # Should return True for known provider configurations
         assert _should_prompt_for_auth("anthropic-api") is True
         assert _should_prompt_for_auth("anthropic-claude-pro-max") is True
         assert _should_prompt_for_auth("claude-cli") is True
         assert _should_prompt_for_auth("openai-api") is True
-        assert _should_prompt_for_auth("google-api") is True
+        assert _should_prompt_for_auth("google-gemini") is True
 
     def test_should_prompt_for_auth_returns_false_for_mock_models(self) -> None:
         """Test that _should_prompt_for_auth returns False for mock/local models."""
@@ -637,15 +663,21 @@ class TestEnsembleExecutor:
                 )
 
                 with patch.object(
-                    executor._credential_storage, "get_auth_method"
-                ) as mock_get_auth_method:
-                    mock_get_auth_method.return_value = None
+                    executor._model_factory, "_credential_storage"
+                ) as mock_credential_storage:
+                    # Mock auth method to prevent fallback logic
+                    mock_credential_storage.get_auth_method.return_value = "oauth"
+                    mock_credential_storage.get_oauth_token.return_value = {
+                        "access_token": "test_token",
+                        "refresh_token": "test_refresh",
+                        "client_id": "test_client_id",
+                    }
 
                     # This should call resolve_model_profile and use the resolved
                     # model+provider
                     # Note: The method may not raise an error due to fallback logic,
                     # but should call resolve_model_profile
-                    await executor._load_model_from_agent_config(
+                    await executor._model_factory.load_model_from_agent_config(
                         {"name": "agent1", "model_profile": "test-profile"}
                     )
 
@@ -660,19 +692,19 @@ class TestEnsembleExecutor:
         executor = EnsembleExecutor()
 
         with patch(
-            "llm_orc.ensemble_execution.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         ) as mock_config_manager_class:
             mock_config_manager = mock_config_manager_class.return_value
 
             with patch(
-                "llm_orc.ensemble_execution.CredentialStorage"
+                "llm_orc.core.auth.authentication.CredentialStorage"
             ) as mock_credential_storage:
                 mock_storage_instance = mock_credential_storage.return_value
                 mock_storage_instance.get_auth_method.return_value = None
 
                 # This should use explicit model+provider, not call
                 # resolve_model_profile
-                await executor._load_model_from_agent_config(
+                await executor._model_factory.load_model_from_agent_config(
                     {
                         "name": "agent1",
                         "model": "claude-3-5-sonnet-20241022",
@@ -733,10 +765,12 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role", new_callable=AsyncMock
+                executor, "_load_role_from_config", new_callable=AsyncMock
             ) as mock_load_role,
             patch.object(
-                executor, "_load_model", new_callable=AsyncMock
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
             ) as mock_load_model,
         ):
             mock_load_role.return_value = role
