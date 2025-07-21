@@ -10,7 +10,7 @@ import pytest
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.config.roles import RoleDefinition
 from llm_orc.core.execution.orchestration import Agent, ConversationOrchestrator
-from llm_orc.models import ModelInterface
+from llm_orc.models.base import ModelInterface
 
 
 class TestMessageRoutingPerformance:
@@ -595,7 +595,7 @@ class TestEnsembleExecutionPerformance:
         from unittest.mock import AsyncMock, patch
 
         from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
-        from llm_orc.models import ModelInterface
+        from llm_orc.models.base import ModelInterface
 
         # Track model loading calls and timing
         model_loading_times = {}
@@ -695,7 +695,7 @@ class TestEnsembleExecutionPerformance:
         from unittest.mock import AsyncMock, patch
 
         from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
-        from llm_orc.models import ModelInterface
+        from llm_orc.models.base import ModelInterface
 
         # Track model loading calls
         model_load_calls = []
@@ -1065,7 +1065,8 @@ class TestEnsembleExecutionPerformance:
         import time
         from unittest.mock import patch
 
-        from llm_orc.models import ClaudeModel, HTTPConnectionPool
+        from llm_orc.models.anthropic import ClaudeModel
+        from llm_orc.models.base import HTTPConnectionPool
 
         # Reset the singleton state for clean testing
         HTTPConnectionPool._instance = None
@@ -1311,7 +1312,8 @@ class TestPerformanceBenchmarks:
         import time
         from unittest.mock import patch
 
-        from llm_orc.models import ClaudeModel, HTTPConnectionPool
+        from llm_orc.models.anthropic import ClaudeModel
+        from llm_orc.models.base import HTTPConnectionPool
 
         # Reset connection pool for clean test
         HTTPConnectionPool._instance = None

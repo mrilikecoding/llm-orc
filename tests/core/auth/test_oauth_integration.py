@@ -72,7 +72,7 @@ class TestOAuthIntegration:
 
     def test_oauth_model_integration_with_authentication_manager(self) -> None:
         """Test OAuth model can be created with proper credentials."""
-        from llm_orc.models import OAuthClaudeModel
+        from llm_orc.models.anthropic import OAuthClaudeModel
 
         # Given - OAuth credentials as would be stored after successful OAuth flow
         access_token = "sk-ant-oat01-test-token"

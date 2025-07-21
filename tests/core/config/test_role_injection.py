@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from llm_orc.models import OAuthClaudeModel
+from llm_orc.models.anthropic import OAuthClaudeModel
 
 
 class TestRoleInjection:

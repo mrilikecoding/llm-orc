@@ -15,7 +15,7 @@ from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.input_enhancer import InputEnhancer
 from llm_orc.core.execution.orchestration import Agent
 from llm_orc.core.models.model_factory import ModelFactory
-from llm_orc.models import ModelInterface
+from llm_orc.models.base import ModelInterface
 
 
 class EnsembleExecutor:

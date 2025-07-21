@@ -4,13 +4,11 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from llm_orc.models import (
-    ClaudeModel,
-    GeminiModel,
-    ModelInterface,
-    ModelManager,
-    OllamaModel,
-)
+from llm_orc.models.anthropic import ClaudeModel
+from llm_orc.models.base import ModelInterface
+from llm_orc.models.google import GeminiModel
+from llm_orc.models.manager import ModelManager
+from llm_orc.models.ollama import OllamaModel
 
 
 class TestModelInterface:
@@ -126,7 +124,7 @@ class TestClaudeCLIModel:
 
     def test_initialization(self) -> None:
         """Test ClaudeCLIModel initialization."""
-        from llm_orc.models import ClaudeCLIModel
+        from llm_orc.models.anthropic import ClaudeCLIModel
 
         model = ClaudeCLIModel(
             claude_path="/usr/local/bin/claude", model="claude-3-5-sonnet-20241022"
@@ -141,7 +139,7 @@ class TestClaudeCLIModel:
         """Test successful response generation using Claude CLI."""
         from unittest.mock import Mock, patch
 
-        from llm_orc.models import ClaudeCLIModel
+        from llm_orc.models.anthropic import ClaudeCLIModel
 
         model = ClaudeCLIModel(claude_path="/usr/local/bin/claude")
 
@@ -171,7 +169,7 @@ class TestClaudeCLIModel:
         """Test response generation when Claude CLI returns error."""
         from unittest.mock import Mock, patch
 
-        from llm_orc.models import ClaudeCLIModel
+        from llm_orc.models.anthropic import ClaudeCLIModel
 
         model = ClaudeCLIModel(claude_path="/usr/local/bin/claude")
 

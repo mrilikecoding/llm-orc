@@ -7,13 +7,9 @@ import click
 
 from llm_orc.core.auth.authentication import AuthenticationManager, CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.models import (
-    ClaudeCLIModel,
-    ClaudeModel,
-    ModelInterface,
-    OAuthClaudeModel,
-    OllamaModel,
-)
+from llm_orc.models.anthropic import ClaudeCLIModel, ClaudeModel, OAuthClaudeModel
+from llm_orc.models.base import ModelInterface
+from llm_orc.models.ollama import OllamaModel
 
 
 class ModelFactory:
@@ -135,7 +131,7 @@ class ModelFactory:
                 if model_name == "claude-cli" or api_key.startswith("/"):
                     return ClaudeCLIModel(claude_path=api_key)
                 elif provider == "google-gemini":
-                    from llm_orc.models import GeminiModel
+                    from llm_orc.models.google import GeminiModel
 
                     return GeminiModel(api_key=api_key, model=model_name)
                 else:
