@@ -234,7 +234,7 @@ def check_ensemble_availability(
 
 def show_provider_details(storage: CredentialStorage, provider: str) -> None:
     """Show detailed information about a provider."""
-    from llm_orc.provider_registry import provider_registry
+    from llm_orc.providers.registry import provider_registry
 
     click.echo(f"\n📋 Provider Details: {provider}")
     click.echo("=" * 40)

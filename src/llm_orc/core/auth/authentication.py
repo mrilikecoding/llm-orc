@@ -8,7 +8,6 @@ from typing import Any
 import yaml
 from cryptography.fernet import Fernet
 
-from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.auth.oauth_flows import (
     AnthropicOAuthFlow,
     GoogleGeminiOAuthFlow,
@@ -16,6 +15,7 @@ from llm_orc.core.auth.oauth_flows import (
     OAuthFlow,
     create_oauth_flow,
 )
+from llm_orc.core.config.config_manager import ConfigurationManager
 
 __all__ = [
     "CredentialStorage",

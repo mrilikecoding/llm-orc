@@ -4,7 +4,7 @@ from typing import Any
 
 import click
 
-from .provider_registry import provider_registry
+from .providers.registry import provider_registry
 
 
 class MenuOption:

@@ -253,3 +253,11 @@ class ConfigCommands:
 
         except ValueError as e:
             raise click.ClickException(str(e)) from e
+
+
+# Module-level exports for CLI imports
+init_local_config = ConfigCommands.init_local_config
+reset_global_config = ConfigCommands.reset_global_config
+check_global_config = ConfigCommands.check_global_config
+check_local_config = ConfigCommands.check_local_config
+reset_local_config = ConfigCommands.reset_local_config

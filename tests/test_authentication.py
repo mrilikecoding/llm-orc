@@ -699,7 +699,7 @@ class TestImprovedAuthenticationManager:
         credential_storage._save_credentials(credentials)
 
         # Mock successful token revocation
-        with patch("llm_orc.oauth_client.requests.post") as mock_post:
+        with patch("llm_orc.core.auth.oauth_client.requests.post") as mock_post:
             mock_post.return_value.status_code = 200
 
             # When
@@ -768,7 +768,8 @@ class TestImprovedAuthenticationManager:
 
         # Mock failed token revocation
         with patch(
-            "llm_orc.oauth_client.requests.post", side_effect=Exception("Network error")
+            "llm_orc.core.auth.oauth_client.requests.post",
+            side_effect=Exception("Network error"),
         ):
             # When
             result = auth_manager.logout_oauth_provider(provider)
@@ -797,7 +798,7 @@ class TestImprovedAuthenticationManager:
         credential_storage.store_api_key("anthropic-api", "api_key")
 
         # Mock successful token revocations
-        with patch("llm_orc.oauth_client.requests.post") as mock_post:
+        with patch("llm_orc.core.auth.oauth_client.requests.post") as mock_post:
             mock_post.return_value.status_code = 200
 
             # When

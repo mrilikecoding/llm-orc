@@ -7,8 +7,8 @@ from typing import Any
 
 from anthropic import AsyncAnthropic
 
-from llm_orc.models.base import HTTPConnectionPool, ModelInterface
 from llm_orc.core.auth.oauth_client import OAuthClaudeClient
+from llm_orc.models.base import HTTPConnectionPool, ModelInterface
 
 
 class ClaudeModel(ModelInterface):

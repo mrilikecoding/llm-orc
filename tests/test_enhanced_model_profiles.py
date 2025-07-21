@@ -9,8 +9,8 @@ import yaml
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
-from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.core.config.roles import RoleDefinition
+from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
 
 class TestEnhancedModelProfiles:

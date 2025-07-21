@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from llm_orc.mcp_server import MCPServer
+from llm_orc.integrations.mcp.server import MCPServer
 
 
 class TestMCPServer:
@@ -57,7 +57,7 @@ class TestMCPServer:
         assert response["result"]["tools"][0]["name"] == "architecture_review"
 
     @pytest.mark.asyncio
-    @patch("llm_orc.mcp_server.MCPServer._load_ensemble_config")
+    @patch("llm_orc.integrations.mcp.server.MCPServer._load_ensemble_config")
     async def test_handle_tools_call_request(self, mock_load_config: AsyncMock) -> None:
         """Should execute ensemble when tool is called."""
         # Mock the ensemble executor

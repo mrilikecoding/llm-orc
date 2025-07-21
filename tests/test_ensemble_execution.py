@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.config.roles import RoleDefinition
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.models import ClaudeCLIModel, ClaudeModel, ModelInterface, OAuthClaudeModel
-from llm_orc.core.config.roles import RoleDefinition
 
 
 class TestEnsembleExecutor:

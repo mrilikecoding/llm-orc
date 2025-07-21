@@ -18,8 +18,8 @@ from llm_orc.cli_modules.utils.visualization import (
 )
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
-from llm_orc.ensemble_execution import EnsembleExecutor
-from llm_orc.mcp_server_runner import MCPServerRunner
+from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+from llm_orc.integrations.mcp.runner import MCPServerRunner
 
 
 def invoke_ensemble(

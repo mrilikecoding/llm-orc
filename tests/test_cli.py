@@ -201,7 +201,7 @@ class TestCLI:
 
     def test_auth_setup_provider_selection(self) -> None:
         """Test that auth setup shows only supported providers."""
-        from llm_orc.provider_registry import provider_registry
+        from llm_orc.providers.registry import provider_registry
 
         # Test that we have the expected providers
         providers = provider_registry.list_providers()

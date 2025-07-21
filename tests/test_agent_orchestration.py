@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from llm_orc.models import ModelInterface
 from llm_orc.core.config.roles import RoleDefinition
+from llm_orc.models import ModelInterface
 
 
 class TestAgent:

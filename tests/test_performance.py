@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 import pytest
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
-from llm_orc.models import ModelInterface
-from llm_orc.core.execution.orchestration import Agent, ConversationOrchestrator
 from llm_orc.core.config.roles import RoleDefinition
+from llm_orc.core.execution.orchestration import Agent, ConversationOrchestrator
+from llm_orc.models import ModelInterface
 
 
 class TestMessageRoutingPerformance:

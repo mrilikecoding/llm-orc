@@ -4,15 +4,15 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from llm_orc.mcp_server import MCPServer
+from llm_orc.integrations.mcp.server import MCPServer
 
 
 class TestMCPServerIntegration:
     """Test MCP server integration with real ensemble loading."""
 
     @pytest.mark.asyncio
-    @patch("llm_orc.mcp_server.EnsembleLoader")
-    @patch("llm_orc.mcp_server.ConfigurationManager")
+    @patch("llm_orc.integrations.mcp.server.EnsembleLoader")
+    @patch("llm_orc.integrations.mcp.server.ConfigurationManager")
     async def test_load_ensemble_config_from_file(
         self, mock_config_manager_class: Mock, mock_loader_class: Mock
     ) -> None:
@@ -38,7 +38,7 @@ class TestMCPServerIntegration:
         )
 
     @pytest.mark.asyncio
-    @patch("llm_orc.mcp_server.MCPServer._load_ensemble_config")
+    @patch("llm_orc.integrations.mcp.server.MCPServer._load_ensemble_config")
     async def test_end_to_end_tools_call_with_mock_ensemble(
         self, mock_load_config: AsyncMock
     ) -> None:

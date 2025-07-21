@@ -4,7 +4,6 @@ import time
 
 import click
 
-from llm_orc.core.auth.authentication import AuthenticationManager, CredentialStorage
 from llm_orc.cli_modules.utils.auth_utils import (
     handle_anthropic_interactive_auth,
     handle_claude_cli_auth,
@@ -13,6 +12,7 @@ from llm_orc.cli_modules.utils.auth_utils import (
     test_provider_authentication,
 )
 from llm_orc.cli_modules.utils.config_utils import show_provider_details
+from llm_orc.core.auth.authentication import AuthenticationManager, CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
 
 
@@ -283,7 +283,7 @@ class AuthCommands:
             # Test the refresh
             click.echo(f"\n🔄 Testing token refresh for {provider}...")
 
-            from llm_orc.oauth_client import OAuthClaudeClient
+            from llm_orc.core.auth.oauth_client import OAuthClaudeClient
 
             client = OAuthClaudeClient(
                 access_token=oauth_token["access_token"],
@@ -319,7 +319,7 @@ class AuthCommands:
             show_success,
             show_working,
         )
-        from llm_orc.provider_registry import provider_registry
+        from llm_orc.providers.registry import provider_registry
 
         config_manager = ConfigurationManager()
         storage = CredentialStorage(config_manager)
@@ -466,3 +466,11 @@ class AuthCommands:
 
         except Exception as e:
             raise click.ClickException(f"Failed to logout: {str(e)}") from e
+
+
+# Module-level exports for CLI imports
+add_auth_provider = AuthCommands.add_auth_provider
+list_auth_providers = AuthCommands.list_auth_providers
+remove_auth_provider = AuthCommands.remove_auth_provider
+test_token_refresh = AuthCommands.test_token_refresh
+logout_oauth_providers = AuthCommands.logout_oauth_providers

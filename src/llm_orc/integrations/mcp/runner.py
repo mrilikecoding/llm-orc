@@ -6,7 +6,7 @@ import sys
 
 from aiohttp import web
 
-from llm_orc.mcp_server import MCPServer
+from llm_orc.integrations.mcp.server import MCPServer
 
 
 class MCPServerRunner:

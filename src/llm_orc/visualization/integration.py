@@ -6,8 +6,9 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from ..ensemble_config import EnsembleConfig
-from ..ensemble_execution import EnsembleExecutor
+from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+
 from .config import VisualizationConfig, load_visualization_config
 from .events import EventFactory, ExecutionEventType
 from .stream import EventStream, get_stream_manager
