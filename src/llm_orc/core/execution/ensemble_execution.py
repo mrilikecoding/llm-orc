@@ -182,36 +182,13 @@ class EnsembleExecutor:
         # Execute agents in phases: script agents first, then LLM agents
         has_errors = False
         agent_usage: dict[str, Any] = {}
-        context_data = {}
+        context_data: dict[str, Any] = {}
 
         # Phase 1: Execute script agents to gather context
-        script_agents = [a for a in config.agents if a.get("type") == "script"]
-        for agent_config in script_agents:
-            try:
-                # Resolve model profile to get enhanced configuration
-                enhanced_config = await self._resolve_model_profile_to_config(
-                    agent_config
-                )
-                timeout = enhanced_config.get("timeout_seconds") or (
-                    self._performance_config.get("execution", {}).get(
-                        "default_timeout", 60
-                    )
-                )
-                agent_result, model_instance = await self._execute_agent_with_timeout(
-                    agent_config, input_data, timeout
-                )
-                results_dict[agent_config["name"]] = {
-                    "response": agent_result,
-                    "status": "success",
-                }
-                # Store script results as context for LLM agents
-                context_data[agent_config["name"]] = agent_result
-            except Exception as e:
-                results_dict[agent_config["name"]] = {
-                    "error": str(e),
-                    "status": "failed",
-                }
-                has_errors = True
+        context_data, script_errors = await self._execute_script_agents(
+            config, input_data, results_dict
+        )
+        has_errors = has_errors or script_errors
 
         # Phase 2: Execute LLM agents with dependency-aware phasing
         llm_agents = [a for a in config.agents if a.get("type") != "script"]
@@ -386,6 +363,46 @@ class EnsembleExecutor:
         return RoleDefinition(
             name=role_name, prompt=f"You are a {role_name}. Provide helpful analysis."
         )
+
+    async def _execute_script_agents(
+        self,
+        config: EnsembleConfig,
+        input_data: str,
+        results_dict: dict[str, Any],
+    ) -> tuple[dict[str, Any], bool]:
+        """Execute script agents and return context data and error status."""
+        context_data = {}
+        has_errors = False
+        script_agents = [a for a in config.agents if a.get("type") == "script"]
+
+        for agent_config in script_agents:
+            try:
+                # Resolve model profile to get enhanced configuration
+                enhanced_config = await self._resolve_model_profile_to_config(
+                    agent_config
+                )
+                timeout = enhanced_config.get("timeout_seconds") or (
+                    self._performance_config.get("execution", {}).get(
+                        "default_timeout", 60
+                    )
+                )
+                agent_result, model_instance = await self._execute_agent_with_timeout(
+                    agent_config, input_data, timeout
+                )
+                results_dict[agent_config["name"]] = {
+                    "response": agent_result,
+                    "status": "success",
+                }
+                # Store script results as context for LLM agents
+                context_data[agent_config["name"]] = agent_result
+            except Exception as e:
+                results_dict[agent_config["name"]] = {
+                    "error": str(e),
+                    "status": "failed",
+                }
+                has_errors = True
+
+        return context_data, has_errors
 
     def _calculate_usage_summary(
         self, agent_usage: dict[str, Any], synthesis_usage: dict[str, Any] | None
