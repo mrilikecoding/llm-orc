@@ -185,9 +185,7 @@ class TestMCPServer:
         server = MCPServer("nonexistent_ensemble")
 
         # Mock config manager to return empty directories
-        with patch.object(
-            server.config_manager, "get_ensembles_dirs", return_value=[]
-        ):
+        with patch.object(server.config_manager, "get_ensembles_dirs", return_value=[]):
             with pytest.raises(FileNotFoundError, match="not found in any"):
                 await server._load_ensemble_config("nonexistent_ensemble")
 

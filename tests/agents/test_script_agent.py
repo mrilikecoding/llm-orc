@@ -132,10 +132,6 @@ class TestScriptAgent:
         agent = ScriptAgent("test_agent", config)
 
         # Mock subprocess.run to raise a general exception
-        with patch(
-            "subprocess.run", side_effect=OSError("Permission denied")
-        ):
-            with pytest.raises(
-                RuntimeError, match="Script agent test_agent error"
-            ):
+        with patch("subprocess.run", side_effect=OSError("Permission denied")):
+            with pytest.raises(RuntimeError, match="Script agent test_agent error"):
                 await agent.execute("test input")

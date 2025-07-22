@@ -793,3 +793,470 @@ class TestEnsembleExecutor:
 
         # Should not have old coordinator-style synthesis
         assert result["synthesis"] is None
+
+    @pytest.mark.asyncio
+    async def test_performance_hook_exception_handling(self) -> None:
+        """Test that performance hook exceptions are silently ignored."""
+        executor = EnsembleExecutor()
+
+        # Add a hook that always raises an exception
+        def failing_hook(event_type: str, data: dict[str, Any]) -> None:
+            raise RuntimeError("Hook failure")
+
+        executor.register_performance_hook(failing_hook)
+
+        # This should not raise an exception despite the failing hook
+        executor._emit_performance_event("test_event", {"test": "data"})
+
+        # Verify the hook was registered
+        assert len(executor._performance_hooks) == 1
+        assert failing_hook in executor._performance_hooks
+
+    def test_register_multiple_performance_hooks(self) -> None:
+        """Test registering multiple performance hooks."""
+        executor = EnsembleExecutor()
+
+        def hook1(event_type: str, data: dict[str, Any]) -> None:
+            pass
+
+        def hook2(event_type: str, data: dict[str, Any]) -> None:
+            pass
+
+        executor.register_performance_hook(hook1)
+        executor.register_performance_hook(hook2)
+
+        assert len(executor._performance_hooks) == 2
+        assert hook1 in executor._performance_hooks
+        assert hook2 in executor._performance_hooks
+
+    @pytest.mark.asyncio
+    async def test_load_model_from_agent_config_delegation(self) -> None:
+        """Test _load_model_from_agent_config delegates to model factory."""
+        executor = EnsembleExecutor()
+
+        mock_model = AsyncMock(spec=ModelInterface)
+        agent_config = {"name": "test_agent", "model": "test-model"}
+
+        with patch.object(
+            executor._model_factory,
+            "load_model_from_agent_config",
+            new_callable=AsyncMock,
+        ) as mock_load:
+            mock_load.return_value = mock_model
+
+            result = await executor._load_model_from_agent_config(agent_config)
+
+            assert result == mock_model
+            mock_load.assert_called_once_with(agent_config)
+
+    @pytest.mark.asyncio
+    async def test_execute_streaming_with_progress_updates(self) -> None:
+        """Test streaming execution yields progress updates."""
+        config = EnsembleConfig(
+            name="streaming_test",
+            description="Test streaming execution",
+            agents=[
+                {"name": "agent1", "role": "tester", "model": "mock-model"},
+                {"name": "agent2", "role": "reviewer", "model": "mock-model"},
+            ],
+        )
+
+        # Create mock model
+        mock_model = AsyncMock(spec=ModelInterface)
+        mock_model.generate_response.side_effect = [
+            "Agent 1 response",
+            "Agent 2 response",
+        ]
+        mock_model.get_last_usage.return_value = {
+            "total_tokens": 30,
+            "input_tokens": 20,
+            "output_tokens": 10,
+            "cost_usd": 0.005,
+            "duration_ms": 50,
+        }
+
+        role = RoleDefinition(name="test", prompt="Test role")
+        executor = EnsembleExecutor()
+
+        # Mock dependencies
+        with (
+            patch.object(
+                executor, "_load_role_from_config", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
+            ) as mock_load_model,
+        ):
+            mock_load_role.return_value = role
+            mock_load_model.return_value = mock_model
+
+            # Collect streaming events
+            events = []
+            async for event in executor.execute_streaming(config, "Test input"):
+                events.append(event)
+
+        # Verify we got the expected events
+        assert len(events) >= 2  # At least started and completed
+
+        # Check execution started event
+        start_event = events[0]
+        assert start_event["type"] == "execution_started"
+        assert start_event["data"]["ensemble"] == "streaming_test"
+        assert start_event["data"]["total_agents"] == 2
+
+        # Check final completion event
+        final_event = events[-1]
+        assert final_event["type"] == "execution_completed"
+        assert final_event["data"]["ensemble"] == "streaming_test"
+        assert final_event["data"]["status"] == "completed"
+        assert "results" in final_event["data"]
+
+    @pytest.mark.asyncio
+    async def test_resolve_model_profile_to_config(self) -> None:
+        """Test model profile resolution to enhanced config."""
+        executor = EnsembleExecutor()
+
+        # Mock model profiles in config manager
+        mock_profiles = {
+            "test-profile": {
+                "model": "claude-3-5-sonnet",
+                "provider": "anthropic-claude-pro-max",
+                "temperature": 0.7,
+            }
+        }
+
+        with patch.object(
+            executor._config_manager, "get_model_profiles"
+        ) as mock_get_profiles:
+            mock_get_profiles.return_value = mock_profiles
+
+            # Test with model_profile specified
+            agent_config = {
+                "name": "test_agent",
+                "model_profile": "test-profile",
+                "temperature": 0.9  # Should override profile
+            }
+
+            enhanced = await executor._resolve_model_profile_to_config(agent_config)
+
+            # Should merge profile with agent config (agent takes precedence)
+            assert enhanced["model"] == "claude-3-5-sonnet"
+            assert enhanced["provider"] == "anthropic-claude-pro-max"
+            assert enhanced["temperature"] == 0.9  # Agent override
+            assert enhanced["name"] == "test_agent"
+
+    @pytest.mark.asyncio
+    async def test_resolve_model_profile_nonexistent_profile(self) -> None:
+        """Test model profile resolution with nonexistent profile."""
+        executor = EnsembleExecutor()
+
+        with patch.object(
+            executor._config_manager, "get_model_profiles"
+        ) as mock_get_profiles:
+            mock_get_profiles.return_value = {}  # No profiles
+
+            agent_config = {
+                "name": "test_agent",
+                "model_profile": "nonexistent-profile"
+            }
+
+            # Should return original config when profile doesn't exist
+            enhanced = await executor._resolve_model_profile_to_config(agent_config)
+            assert enhanced == agent_config
+
+    @pytest.mark.asyncio
+    async def test_execute_script_agents(self) -> None:
+        """Test execution of script agents."""
+        config = EnsembleConfig(
+            name="script_test",
+            description="Test script agent execution",
+            agents=[
+                {
+                    "name": "script_agent",
+                    "type": "script",
+                    "script": "echo 'Script output'",
+                    "role": "data_collector",
+                },
+                {
+                    "name": "llm_agent",
+                    "role": "analyzer",
+                    "model": "mock-model"
+                },
+            ],
+        )
+
+        executor = EnsembleExecutor()
+
+        # Create mock results dict to collect script results
+        results_dict: dict[str, Any] = {}
+
+        # Mock script agent execution
+        with patch.object(
+            executor, "_execute_agent_with_timeout", new_callable=AsyncMock
+        ) as mock_execute_timeout:
+            mock_execute_timeout.return_value = ("Script output", None)
+
+            with patch.object(
+                executor, "_resolve_model_profile_to_config", return_value={
+                    "name": "script_agent",
+                    "type": "script",
+                    "script": "echo 'Script output'",
+                    "timeout_seconds": 60
+                }
+            ):
+                context_data, has_errors = await executor._execute_script_agents(
+                    config, "Test input", results_dict
+                )
+
+        # Verify script results
+        assert has_errors is False
+        assert "script_agent" in results_dict
+        assert results_dict["script_agent"]["status"] == "success"
+        assert results_dict["script_agent"]["response"] == "Script output"
+
+        # Verify context data contains script results
+        assert "script_agent" in context_data
+        assert context_data["script_agent"] == "Script output"
+
+    @pytest.mark.asyncio
+    async def test_execute_script_agents_with_error(self) -> None:
+        """Test script agent execution with error handling."""
+        config = EnsembleConfig(
+            name="script_error_test",
+            description="Test script agent error handling",
+            agents=[
+                {
+                    "name": "failing_script",
+                    "type": "script",
+                    "script": "exit 1",
+                    "role": "data_collector",
+                },
+            ],
+        )
+
+        executor = EnsembleExecutor()
+        results_dict: dict[str, Any] = {}
+
+        # Mock script agent failure
+        with patch.object(
+            executor, "_execute_agent_with_timeout", new_callable=AsyncMock
+        ) as mock_execute_timeout:
+            mock_execute_timeout.side_effect = RuntimeError("Script failed")
+
+            with patch.object(executor, "_resolve_model_profile_to_config"):
+                context_data, has_errors = await executor._execute_script_agents(
+                    config, "Test input", results_dict
+                )
+
+        # Verify error handling
+        assert has_errors is True
+        assert "failing_script" in results_dict
+        assert results_dict["failing_script"]["status"] == "failed"
+        assert "Script failed" in results_dict["failing_script"]["error"]
+
+        # Context data should be empty when script fails
+        assert context_data == {}
+
+    @pytest.mark.asyncio
+    async def test_load_role_creates_default_role(self) -> None:
+        """Test _load_role creates default role definition."""
+        executor = EnsembleExecutor()
+
+        role = await executor._load_role("test_analyst")
+
+        assert isinstance(role, RoleDefinition)
+        assert role.name == "test_analyst"
+        assert "test_analyst" in role.prompt
+        assert "helpful analysis" in role.prompt
+
+    @pytest.mark.asyncio
+    async def test_execute_agent_with_timeout_no_timeout(self) -> None:
+        """Test _execute_agent_with_timeout with no timeout specified."""
+        executor = EnsembleExecutor()
+
+        agent_config = {"name": "test_agent", "model": "mock-model"}
+        input_data = "Test input"
+
+        # Mock _execute_agent to return expected result
+        with patch.object(
+            executor, "_execute_agent", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.return_value = ("Agent response", None)
+
+            result, model = await executor._execute_agent_with_timeout(
+                agent_config, input_data, None
+            )
+
+            assert result == "Agent response"
+            assert model is None
+            mock_execute.assert_called_once_with(agent_config, input_data)
+
+    @pytest.mark.asyncio
+    async def test_execute_agent_with_timeout_timeout_occurs(self) -> None:
+        """Test _execute_agent_with_timeout when timeout occurs."""
+        executor = EnsembleExecutor()
+
+        agent_config = {"name": "test_agent", "model": "mock-model"}
+        input_data = "Test input"
+
+        # Mock _execute_agent to simulate long-running operation
+        with patch.object(
+            executor, "_execute_agent", new_callable=AsyncMock
+        ) as mock_execute:
+            async def slow_execute(
+                config: dict[str, Any], data: str
+            ) -> tuple[str, None]:
+                await asyncio.sleep(0.2)  # 200ms
+                return ("Should not reach here", None)
+
+            mock_execute.side_effect = slow_execute
+
+            # Test with timeout that's shorter than sleep duration
+            with pytest.raises(Exception, match="timed out after 1 seconds"):
+                await executor._execute_agent_with_timeout(
+                    agent_config, input_data, 1  # 1 second timeout
+                )
+
+    @pytest.mark.asyncio
+    async def test_analyze_dependencies(self) -> None:
+        """Test _analyze_dependencies separates agents correctly."""
+        executor = EnsembleExecutor()
+
+        llm_agents: list[dict[str, Any]] = [
+            {"name": "independent1", "role": "analyst", "model": "mock-model"},
+            {"name": "independent2", "role": "reviewer", "model": "mock-model"},
+            {
+                "name": "dependent1",
+                "role": "synthesizer",
+                "model": "mock-model",
+                "depends_on": ["independent1", "independent2"]
+            },
+            {
+                "name": "dependent2",
+                "role": "summarizer",
+                "model": "mock-model",
+                "depends_on": ["dependent1"]
+            },
+        ]
+
+        independent, dependent = executor._analyze_dependencies(llm_agents)
+
+        assert len(independent) == 2
+        assert len(dependent) == 2
+
+        # Check independent agents
+        independent_names = [agent["name"] for agent in independent]
+        assert "independent1" in independent_names
+        assert "independent2" in independent_names
+
+        # Check dependent agents
+        dependent_names = [agent["name"] for agent in dependent]
+        assert "dependent1" in dependent_names
+        assert "dependent2" in dependent_names
+
+    @pytest.mark.asyncio
+    async def test_analyze_dependencies_empty_depends_on(self) -> None:
+        """Test _analyze_dependencies with empty depends_on list."""
+        executor = EnsembleExecutor()
+
+        llm_agents: list[dict[str, Any]] = [
+            {"name": "agent1", "role": "analyst", "model": "mock-model"},
+            {
+                "name": "agent2",
+                "role": "reviewer",
+                "model": "mock-model",
+                "depends_on": []  # Empty dependencies
+            },
+        ]
+
+        independent, dependent = executor._analyze_dependencies(llm_agents)
+
+        # Both should be independent since empty depends_on means no dependencies
+        assert len(independent) == 2
+        assert len(dependent) == 0
+
+    def test_calculate_usage_summary_with_synthesis(self) -> None:
+        """Test _calculate_usage_summary includes synthesis usage."""
+        executor = EnsembleExecutor()
+
+        agent_usage = {
+            "agent1": {
+                "total_tokens": 100,
+                "input_tokens": 60,
+                "output_tokens": 40,
+                "cost_usd": 0.01,
+                "duration_ms": 1000,
+            },
+            "agent2": {
+                "total_tokens": 150,
+                "input_tokens": 80,
+                "output_tokens": 70,
+                "cost_usd": 0.015,
+                "duration_ms": 1200,
+            }
+        }
+
+        synthesis_usage = {
+            "total_tokens": 50,
+            "input_tokens": 30,
+            "output_tokens": 20,
+            "cost_usd": 0.005,
+            "duration_ms": 500,
+        }
+
+        summary = executor._calculate_usage_summary(agent_usage, synthesis_usage)
+
+        # Check agent usage
+        assert "agents" in summary
+        assert "agent1" in summary["agents"]
+        assert "agent2" in summary["agents"]
+
+        # Check synthesis usage is included
+        assert "synthesis" in summary
+        assert summary["synthesis"]["total_tokens"] == 50
+        assert summary["synthesis"]["cost_usd"] == 0.005
+
+        # Check totals include synthesis
+        totals = summary["totals"]
+        assert totals["total_tokens"] == 300  # 100 + 150 + 50
+        assert totals["total_cost_usd"] == pytest.approx(0.03)  # 0.01 + 0.015 + 0.005
+        assert totals["total_duration_ms"] == 2700  # 1000 + 1200 + 500
+
+    def test_calculate_usage_summary_without_synthesis(self) -> None:
+        """Test _calculate_usage_summary without synthesis usage."""
+        executor = EnsembleExecutor()
+
+        agent_usage = {
+            "agent1": {
+                "total_tokens": 100,
+                "input_tokens": 60,
+                "output_tokens": 40,
+                "cost_usd": 0.01,
+                "duration_ms": 1000,
+            }
+        }
+
+        summary = executor._calculate_usage_summary(agent_usage, None)
+
+        # Should not have synthesis field
+        assert "synthesis" not in summary
+
+        # Totals should only include agent usage
+        totals = summary["totals"]
+        assert totals["total_tokens"] == 100
+        assert totals["total_cost_usd"] == 0.01
+        assert totals["total_duration_ms"] == 1000
+
+    @pytest.mark.asyncio
+    async def test_resolve_model_profile_to_config_without_profile(self) -> None:
+        """Test model profile resolution without model_profile key."""
+        executor = EnsembleExecutor()
+
+        agent_config = {"name": "test_agent", "model": "claude-3-sonnet"}
+
+        # Should return copy of original config when no model_profile
+        enhanced = await executor._resolve_model_profile_to_config(agent_config)
+        assert enhanced == agent_config
+        assert enhanced is not agent_config  # Should be a copy
