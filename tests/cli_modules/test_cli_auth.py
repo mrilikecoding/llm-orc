@@ -632,3 +632,442 @@ class TestAuthCommandsNew:
                 assert "anthropic-claude-pro-max: ✅" in result.output
                 assert "google-oauth: ✅" in result.output
                 mock_auth_manager.logout_all_oauth_providers.assert_called_once()
+
+    def test_auth_logout_all_no_oauth_providers(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test that 'auth logout --all' shows message when no OAuth providers found."""
+        # Given
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+            mock_instance.ensure_global_config_dir.return_value = None
+            mock_instance.get_credentials_file.return_value = (
+                temp_config_dir / "credentials.yaml"
+            )
+            mock_instance.get_encryption_key_file.return_value = (
+                temp_config_dir / ".encryption_key"
+            )
+            mock_instance.needs_migration.return_value = False
+
+            # Mock no OAuth providers found
+            with patch(auth_manager_path) as mock_auth:
+                mock_auth_manager = mock_auth.return_value
+                mock_auth_manager.logout_all_oauth_providers.return_value = {}
+
+                # When
+                result = runner.invoke(cli, ["auth", "logout", "--all"])
+
+                # Then
+                assert result.exit_code == 0
+                assert "No OAuth providers found to logout" in result.output
+                mock_auth_manager.logout_all_oauth_providers.assert_called_once()
+
+    def test_auth_logout_all_partial_success(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test logout all command with some providers failing."""
+        # Given
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+            mock_instance.ensure_global_config_dir.return_value = None
+            mock_instance.get_credentials_file.return_value = (
+                temp_config_dir / "credentials.yaml"
+            )
+            mock_instance.get_encryption_key_file.return_value = (
+                temp_config_dir / ".encryption_key"
+            )
+            mock_instance.needs_migration.return_value = False
+
+            # Mock partial success
+            with patch(auth_manager_path) as mock_auth:
+                mock_auth_manager = mock_auth.return_value
+                mock_auth_manager.logout_all_oauth_providers.return_value = {
+                    "anthropic-claude-pro-max": True,
+                    "failed-provider": False,
+                }
+
+                # When
+                result = runner.invoke(cli, ["auth", "logout", "--all"])
+
+                # Then
+                assert result.exit_code == 0
+                assert "Logged out from 1 OAuth providers" in result.output
+                assert "anthropic-claude-pro-max: ✅" in result.output
+                assert "failed-provider: ❌" in result.output
+
+    def test_auth_logout_no_provider_no_all_flag(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test logout command fails when no provider specified and no --all flag."""
+        # Given
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+            mock_instance.ensure_global_config_dir.return_value = None
+
+            # When
+            result = runner.invoke(cli, ["auth", "logout"])
+
+            # Then
+            assert result.exit_code != 0
+            assert "Must specify a provider name or use --all flag" in result.output
+
+    def test_auth_add_oauth_credentials_valid(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test adding OAuth credentials successfully."""
+        # Given
+        provider = "test-oauth"
+        client_id = "test_client_id"
+        client_secret = "test_client_secret"
+
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+            mock_instance.ensure_global_config_dir.return_value = None
+            mock_instance.get_credentials_file.return_value = (
+                temp_config_dir / "credentials.yaml"
+            )
+            mock_instance.get_encryption_key_file.return_value = (
+                temp_config_dir / ".encryption_key"
+            )
+            mock_instance.needs_migration.return_value = False
+
+            with patch(auth_manager_path) as mock_auth:
+                mock_auth_manager = mock_auth.return_value
+                mock_auth_manager.authenticate_oauth.return_value = True
+
+                # When
+                result = runner.invoke(
+                    cli,
+                    [
+                        "auth",
+                        "add",
+                        provider,
+                        "--client-id",
+                        client_id,
+                        "--client-secret",
+                        client_secret,
+                    ],
+                )
+
+                # Then
+                assert result.exit_code == 0
+                assert (
+                    f"OAuth authentication for {provider} completed successfully"
+                    in result.output
+                )
+                mock_auth_manager.authenticate_oauth.assert_called_once_with(
+                    provider, client_id, client_secret
+                )
+
+    def test_auth_add_oauth_credentials_failed(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test OAuth authentication failure."""
+        # Given
+        provider = "test-oauth"
+        client_id = "test_client_id"
+        client_secret = "test_client_secret"
+
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+            mock_instance.ensure_global_config_dir.return_value = None
+            mock_instance.get_credentials_file.return_value = (
+                temp_config_dir / "credentials.yaml"
+            )
+            mock_instance.get_encryption_key_file.return_value = (
+                temp_config_dir / ".encryption_key"
+            )
+            mock_instance.needs_migration.return_value = False
+
+            with patch(auth_manager_path) as mock_auth:
+                mock_auth_manager = mock_auth.return_value
+                mock_auth_manager.authenticate_oauth.return_value = False
+
+                # When
+                result = runner.invoke(
+                    cli,
+                    [
+                        "auth",
+                        "add",
+                        provider,
+                        "--client-id",
+                        client_id,
+                        "--client-secret",
+                        client_secret,
+                    ],
+                )
+
+                # Then
+                assert result.exit_code != 0
+                assert f"OAuth authentication for {provider} failed" in result.output
+
+    def test_auth_add_mixed_credentials_error(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test error when providing both API key and OAuth credentials."""
+        # Given
+        provider = "test-provider"
+        api_key = "test_api_key"
+        client_id = "test_client_id"
+
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+
+            # When
+            result = runner.invoke(
+                cli,
+                [
+                    "auth",
+                    "add",
+                    provider,
+                    "--api-key",
+                    api_key,
+                    "--client-id",
+                    client_id,
+                ],
+            )
+
+            # Then
+            assert result.exit_code != 0
+            assert "Cannot use both API key and OAuth credentials" in result.output
+
+    def test_auth_add_no_credentials_error(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test error when providing no credentials."""
+        # Given
+        provider = "test-provider"
+
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+
+            # When
+            result = runner.invoke(cli, ["auth", "add", provider])
+
+            # Then
+            assert result.exit_code != 0
+            assert (
+                "Must provide either --api-key or both --client-id and --client-secret"
+                in result.output
+            )
+
+    def test_auth_add_incomplete_oauth_error(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test error when providing incomplete OAuth credentials."""
+        # Given
+        provider = "test-provider"
+        client_id = "test_client_id"  # Missing client_secret
+
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+
+            # When
+            result = runner.invoke(
+                cli,
+                ["auth", "add", provider, "--client-id", client_id],
+            )
+
+            # Then
+            assert result.exit_code != 0
+            assert (
+                "Must provide either --api-key or both --client-id and --client-secret"
+                in result.output
+            )
+
+    def test_auth_add_storage_exception(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test handling of storage exceptions during add."""
+        # Given
+        provider = "test-provider"
+        api_key = "test_api_key"
+
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        credential_storage_path = (
+            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+        )
+        with patch(config_manager_path) as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+            mock_instance.ensure_global_config_dir.return_value = None
+            mock_instance.get_credentials_file.return_value = (
+                temp_config_dir / "credentials.yaml"
+            )
+            mock_instance.get_encryption_key_file.return_value = (
+                temp_config_dir / ".encryption_key"
+            )
+            mock_instance.needs_migration.return_value = False
+
+            with patch(credential_storage_path) as mock_storage_class:
+                mock_storage = Mock()
+                mock_storage_class.return_value = mock_storage
+                mock_storage.list_providers.return_value = []
+                mock_storage.store_api_key.side_effect = Exception("Storage error")
+
+                # When
+                result = runner.invoke(
+                    cli,
+                    ["auth", "add", provider, "--api-key", api_key],
+                )
+
+                # Then
+                assert result.exit_code != 0
+                assert "Failed to add authentication: Storage error" in result.output
+
+    def test_auth_remove_storage_exception(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test handling of storage exceptions during remove."""
+        # Given
+        provider = "test-provider"
+
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        credential_storage_path = (
+            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+        )
+        with patch(config_manager_path) as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+            mock_instance.ensure_global_config_dir.return_value = None
+            mock_instance.get_credentials_file.return_value = (
+                temp_config_dir / "credentials.yaml"
+            )
+            mock_instance.get_encryption_key_file.return_value = (
+                temp_config_dir / ".encryption_key"
+            )
+            mock_instance.needs_migration.return_value = False
+
+            with patch(credential_storage_path) as mock_storage_class:
+                mock_storage = Mock()
+                mock_storage_class.return_value = mock_storage
+                mock_storage.list_providers.return_value = [provider]
+                mock_storage.remove_provider.side_effect = Exception("Storage error")
+
+                # When
+                result = runner.invoke(cli, ["auth", "remove", provider])
+
+                # Then
+                assert result.exit_code != 0
+                assert "Failed to remove provider: Storage error" in result.output
+
+    def test_auth_list_storage_exception(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test handling of storage exceptions during list."""
+        # Given
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        credential_storage_path = (
+            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+        )
+        with patch(config_manager_path) as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+            mock_instance.ensure_global_config_dir.return_value = None
+            mock_instance.get_credentials_file.return_value = (
+                temp_config_dir / "credentials.yaml"
+            )
+            mock_instance.get_encryption_key_file.return_value = (
+                temp_config_dir / ".encryption_key"
+            )
+            mock_instance.needs_migration.return_value = False
+
+            with patch(credential_storage_path) as mock_storage_class:
+                mock_storage = Mock()
+                mock_storage_class.return_value = mock_storage
+                mock_storage.list_providers.side_effect = Exception("Storage error")
+
+                # When
+                result = runner.invoke(cli, ["auth", "list"])
+
+                # Then
+                assert result.exit_code != 0
+                assert "Failed to list providers: Storage error" in result.output
+
+    def test_auth_logout_exception(
+        self, runner: CliRunner, temp_config_dir: Path
+    ) -> None:
+        """Test handling of exceptions during logout."""
+        # Given
+        provider = "test-provider"
+
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        with patch(config_manager_path) as mock_config_manager:
+            mock_instance = mock_config_manager.return_value
+            mock_instance._global_config_dir = temp_config_dir
+            mock_instance.ensure_global_config_dir.return_value = None
+            mock_instance.get_credentials_file.return_value = (
+                temp_config_dir / "credentials.yaml"
+            )
+            mock_instance.get_encryption_key_file.return_value = (
+                temp_config_dir / ".encryption_key"
+            )
+            mock_instance.needs_migration.return_value = False
+
+            with patch(auth_manager_path) as mock_auth:
+                mock_auth_manager = mock_auth.return_value
+                mock_auth_manager.logout_oauth_provider.side_effect = Exception(
+                    "Logout error"
+                )
+
+                # When
+                result = runner.invoke(cli, ["auth", "logout", provider])
+
+                # Then
+                assert result.exit_code != 0
+                assert "Failed to logout: Logout error" in result.output
