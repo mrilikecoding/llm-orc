@@ -60,15 +60,21 @@ class TestConfigCommands:
         with patch(config_manager_path) as mock_config_manager_class:
             mock_config_manager = Mock()
             mock_config_manager_class.return_value = mock_config_manager
-            mock_config_manager.init_local_config.side_effect = ValueError("Invalid project name")
+            mock_config_manager.init_local_config.side_effect = ValueError(
+                "Invalid project name"
+            )
 
             # When / Then
-            with pytest.raises(Exception) as exc_info:
+            with pytest.raises(
+                click.ClickException, match="Invalid project name"
+            ) as exc_info:
                 ConfigCommands.init_local_config(project_name)
 
             assert "Invalid project name" in str(exc_info.value)
 
-    def test_reset_global_config_no_backup_no_preserve_auth(self, temp_dir: str) -> None:
+    def test_reset_global_config_no_backup_no_preserve_auth(
+        self, temp_dir: str
+    ) -> None:
         """Test global config reset without backup or auth preservation."""
         # Given
         global_config_dir = Path(temp_dir) / "global_config"
@@ -85,7 +91,9 @@ class TestConfigCommands:
         )
 
         with patch(config_manager_path) as mock_config_manager_class:
-            with patch("llm_orc.cli_modules.commands.config_commands.Path") as mock_path_class:
+            with patch(
+                "llm_orc.cli_modules.commands.config_commands.Path"
+            ) as mock_path_class:
                 mock_config_manager = Mock()
                 mock_config_manager_class.return_value = mock_config_manager
                 mock_config_manager.global_config_dir = str(global_config_dir)
@@ -93,12 +101,16 @@ class TestConfigCommands:
                 # Mock Path(__file__) chain
                 mock_file_path = Mock()
                 mock_file_path.parent.parent.parent = template_dir.parent
-                mock_path_class.side_effect = lambda p: Path(p) if p != "__file__" else mock_file_path
+                mock_path_class.side_effect = (
+                    lambda p: Path(p) if p != "__file__" else mock_file_path
+                )
 
                 with patch("shutil.rmtree") as mock_rmtree:
-                    with patch("shutil.copy") as mock_copy:
+                    with patch("shutil.copy"):
                         # When
-                        ConfigCommands.reset_global_config(backup=False, preserve_auth=False)
+                        ConfigCommands.reset_global_config(
+                            backup=False, preserve_auth=False
+                        )
 
                         # Then
                         mock_rmtree.assert_called_once()
@@ -125,27 +137,34 @@ class TestConfigCommands:
             mock_config_manager.global_config_dir = str(global_config_dir)
 
             with patch("shutil.copytree") as mock_copytree:
-                with patch("shutil.rmtree") as mock_rmtree:
-                    with patch("shutil.copy") as mock_copy:
+                with patch("shutil.rmtree"):
+                    with patch("shutil.copy"):
                         with patch("pathlib.Path.exists") as mock_exists:
-                            with patch("pathlib.Path.mkdir") as mock_mkdir:
+                            with patch("pathlib.Path.mkdir"):
                                 # Mock template exists
                                 def exists_side_effect(path_obj: Any) -> bool:
                                     path_str = str(path_obj)
                                     if "global-config.yaml" in path_str:
                                         return True
-                                    if "global_config" in path_str and "backup" not in path_str:
+                                    if (
+                                        "global_config" in path_str
+                                        and "backup" not in path_str
+                                    ):
                                         return True
                                     return False
 
-                                mock_exists.side_effect = lambda: True  # Simplified for this test
+                                # Simplified for this test
+                                mock_exists.side_effect = lambda: True
 
                                 # When
-                                ConfigCommands.reset_global_config(backup=True, preserve_auth=False)
+                                ConfigCommands.reset_global_config(
+                                    backup=True, preserve_auth=False
+                                )
 
                                 # Then
                                 # Should create backup
-                                assert mock_copytree.call_count >= 0  # Called for backup
+                                # Should create backup
+                                assert mock_copytree.call_count >= 0
 
     def test_reset_global_config_with_auth_preservation(self, temp_dir: str) -> None:
         """Test global config reset with authentication preservation."""
@@ -165,18 +184,20 @@ class TestConfigCommands:
             mock_config_manager_class.return_value = mock_config_manager
             mock_config_manager.global_config_dir = str(global_config_dir)
 
-            with patch("shutil.rmtree") as mock_rmtree:
-                with patch("shutil.copy") as mock_copy:
+            with patch("shutil.rmtree"):
+                with patch("shutil.copy"):
                     with patch("pathlib.Path.exists") as mock_exists:
-                        with patch("pathlib.Path.mkdir") as mock_mkdir:
+                        with patch("pathlib.Path.mkdir"):
                             with patch("pathlib.Path.read_bytes") as mock_read_bytes:
-                                with patch("pathlib.Path.write_bytes") as mock_write_bytes:
+                                with patch("pathlib.Path.write_bytes"):
                                     # Mock auth files exist
                                     mock_exists.side_effect = lambda: True
                                     mock_read_bytes.return_value = b"auth_content"
 
                                     # When
-                                    ConfigCommands.reset_global_config(backup=False, preserve_auth=True)
+                                    ConfigCommands.reset_global_config(
+                                        backup=False, preserve_auth=True
+                                    )
 
                                     # Then
                                     # Should preserve auth files
@@ -200,8 +221,10 @@ class TestConfigCommands:
                 mock_exists.return_value = False  # Template doesn't exist
 
                 # When / Then
-                with pytest.raises(Exception) as exc_info:
-                    ConfigCommands.reset_global_config(backup=False, preserve_auth=False)
+                with pytest.raises(Exception, match="Template not found") as exc_info:
+                    ConfigCommands.reset_global_config(
+                        backup=False, preserve_auth=False
+                    )
 
                 assert "Template not found" in str(exc_info.value)
 
@@ -218,15 +241,31 @@ class TestConfigCommands:
         )
 
         with patch(config_manager_path) as mock_config_manager_class:
-            with patch("llm_orc.cli_modules.commands.config_commands.get_available_providers") as mock_get_providers:
-                with patch("llm_orc.cli_modules.commands.config_commands.display_providers_status") as mock_display_providers:
-                    with patch("llm_orc.cli_modules.commands.config_commands.display_default_models_config") as mock_display_models:
-                        with patch("llm_orc.cli_modules.commands.config_commands.check_ensemble_availability") as mock_check_ensembles:
-                            with patch("llm_orc.cli_modules.commands.config_commands.display_global_profiles") as mock_display_profiles:
-                                with patch("llm_orc.cli_modules.commands.config_commands.safe_load_yaml") as mock_safe_load:
+            with patch(
+                "llm_orc.cli_modules.commands.config_commands.get_available_providers"
+            ) as mock_get_providers:
+                with patch(
+                    "llm_orc.cli_modules.commands.config_commands.display_providers_status"
+                ) as mock_display_providers:
+                    with patch(
+                        "llm_orc.cli_modules.commands.config_commands.display_default_models_config"
+                    ) as mock_display_models:
+                        with patch(
+                            "llm_orc.cli_modules.commands.config_commands.check_ensemble_availability"
+                        ) as mock_check_ensembles:
+                            with patch(
+                                "llm_orc.cli_modules.commands.config_commands.display_global_profiles"
+                            ) as mock_display_profiles:
+                                with patch(
+                                    "llm_orc.cli_modules.commands.config_commands.safe_load_yaml"
+                                ) as mock_safe_load:
                                     mock_config_manager = Mock()
-                                    mock_config_manager_class.return_value = mock_config_manager
-                                    mock_config_manager.global_config_dir = str(global_config_dir)
+                                    mock_config_manager_class.return_value = (
+                                        mock_config_manager
+                                    )
+                                    mock_config_manager.global_config_dir = str(
+                                        global_config_dir
+                                    )
 
                                     mock_get_providers.return_value = {}
                                     mock_safe_load.return_value = {"model_profiles": {}}
@@ -272,7 +311,9 @@ class TestConfigCommands:
         )
 
         with patch(config_manager_path) as mock_config_manager_class:
-            with patch("llm_orc.cli_modules.commands.config_commands.get_available_providers") as mock_get_providers:
+            with patch(
+                "llm_orc.cli_modules.commands.config_commands.get_available_providers"
+            ) as mock_get_providers:
                 mock_config_manager = Mock()
                 mock_config_manager_class.return_value = mock_config_manager
                 mock_config_manager.global_config_dir = str(global_config_dir)
@@ -293,26 +334,35 @@ class TestConfigCommands:
         try:
             # Change to temp directory
             import os
+
             os.chdir(test_dir)
 
             local_config_dir = test_dir / ".llm-orc"
             local_config_dir.mkdir(parents=True)
             config_file = local_config_dir / "config.yaml"
-            config_file.write_text(yaml.dump({"project": {"name": "TestProject"}, "model_profiles": {}}))
+            config_file.write_text(
+                yaml.dump({"project": {"name": "TestProject"}, "model_profiles": {}})
+            )
 
             config_manager_path = (
                 "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
             )
 
             with patch(config_manager_path) as mock_config_manager_class:
-                with patch("llm_orc.cli_modules.commands.config_commands.get_available_providers") as mock_get_providers:
-                    with patch("llm_orc.cli_modules.commands.config_commands.check_ensemble_availability") as mock_check_ensembles:
-                        with patch("llm_orc.cli_modules.commands.config_commands.display_local_profiles") as mock_display_profiles:
+                with patch(
+                    "llm_orc.cli_modules.commands.config_commands.get_available_providers"
+                ) as mock_get_providers:
+                    with patch(
+                        "llm_orc.cli_modules.commands.config_commands.check_ensemble_availability"
+                    ) as mock_check_ensembles:
+                        with patch(
+                            "llm_orc.cli_modules.commands.config_commands.display_local_profiles"
+                        ) as mock_display_profiles:
                             mock_config_manager = Mock()
                             mock_config_manager_class.return_value = mock_config_manager
                             mock_config_manager.load_project_config.return_value = {
                                 "project": {"name": "TestProject"},
-                                "model_profiles": {"test": "profile"}
+                                "model_profiles": {"test": "profile"},
                             }
 
                             mock_get_providers.return_value = {}
@@ -338,6 +388,7 @@ class TestConfigCommands:
 
         try:
             import os
+
             os.chdir(test_dir)
 
             local_config_dir = test_dir / ".llm-orc"
@@ -371,6 +422,7 @@ class TestConfigCommands:
 
         try:
             import os
+
             os.chdir(test_dir)
 
             # When
@@ -389,6 +441,7 @@ class TestConfigCommands:
 
         try:
             import os
+
             os.chdir(test_dir)
 
             local_config_dir = test_dir / ".llm-orc"
@@ -403,7 +456,9 @@ class TestConfigCommands:
             with patch(config_manager_path) as mock_config_manager_class:
                 mock_config_manager = Mock()
                 mock_config_manager_class.return_value = mock_config_manager
-                mock_config_manager.load_project_config.side_effect = Exception("Config error")
+                mock_config_manager.load_project_config.side_effect = Exception(
+                    "Config error"
+                )
 
                 # When
                 ConfigCommands.check_local_config()
@@ -421,6 +476,7 @@ class TestConfigCommands:
 
         try:
             import os
+
             os.chdir(test_dir)
 
             config_manager_path = (
@@ -432,7 +488,9 @@ class TestConfigCommands:
                 mock_config_manager_class.return_value = mock_config_manager
 
                 # When
-                ConfigCommands.reset_local_config(backup=False, preserve_ensembles=False, project_name=None)
+                ConfigCommands.reset_local_config(
+                    backup=False, preserve_ensembles=False, project_name=None
+                )
 
                 # Then - should return early with error message
 
@@ -447,6 +505,7 @@ class TestConfigCommands:
 
         try:
             import os
+
             os.chdir(test_dir)
 
             local_config_dir = test_dir / ".llm-orc"
@@ -464,12 +523,18 @@ class TestConfigCommands:
                         mock_config_manager_class.return_value = mock_config_manager
 
                         # When
-                        ConfigCommands.reset_local_config(backup=True, preserve_ensembles=False, project_name="test")
+                        ConfigCommands.reset_local_config(
+                            backup=True,
+                            preserve_ensembles=False,
+                            project_name="test",
+                        )
 
                         # Then
                         mock_copytree.assert_called_once()
                         mock_rmtree.assert_called()
-                        mock_config_manager.init_local_config.assert_called_once_with("test")
+                        mock_config_manager.init_local_config.assert_called_once_with(
+                            "test"
+                        )
 
         finally:
             os.chdir(original_cwd)
@@ -482,6 +547,7 @@ class TestConfigCommands:
 
         try:
             import os
+
             os.chdir(test_dir)
 
             local_config_dir = test_dir / ".llm-orc"
@@ -501,11 +567,17 @@ class TestConfigCommands:
                         mock_config_manager_class.return_value = mock_config_manager
 
                         # When
-                        ConfigCommands.reset_local_config(backup=False, preserve_ensembles=True, project_name="test")
+                        ConfigCommands.reset_local_config(
+                            backup=False,
+                            preserve_ensembles=True,
+                            project_name="test",
+                        )
 
                         # Then
                         mock_rmtree.assert_called_once()
-                        mock_config_manager.init_local_config.assert_called_once_with("test")
+                        mock_config_manager.init_local_config.assert_called_once_with(
+                            "test"
+                        )
                         # Should restore ensemble files
                         assert mock_write_text.call_count >= 0
 
@@ -520,6 +592,7 @@ class TestConfigCommands:
 
         try:
             import os
+
             os.chdir(test_dir)
 
             local_config_dir = test_dir / ".llm-orc"
@@ -531,14 +604,22 @@ class TestConfigCommands:
             )
 
             with patch(config_manager_path) as mock_config_manager_class:
-                with patch("shutil.rmtree") as mock_rmtree:
+                with patch("shutil.rmtree"):
                     mock_config_manager = Mock()
                     mock_config_manager_class.return_value = mock_config_manager
-                    mock_config_manager.init_local_config.side_effect = ValueError("Init failed")
+                    mock_config_manager.init_local_config.side_effect = ValueError(
+                        "Init failed"
+                    )
 
                     # When / Then
-                    with pytest.raises(Exception) as exc_info:
-                        ConfigCommands.reset_local_config(backup=False, preserve_ensembles=False, project_name="test")
+                    with pytest.raises(
+                        click.ClickException, match="Init failed"
+                    ) as exc_info:
+                        ConfigCommands.reset_local_config(
+                            backup=False,
+                            preserve_ensembles=False,
+                            project_name="test",
+                        )
 
                     assert "Init failed" in str(exc_info.value)
 
@@ -557,7 +638,9 @@ class TestConfigCommandsCLI:
     def test_config_init_cli_success(self, runner: CliRunner) -> None:
         """Test config init through CLI."""
         with patch("llm_orc.cli.init_local_config") as mock_init:
-            result = runner.invoke(cli, ["config", "init", "--project-name", "test-project"])
+            result = runner.invoke(
+                cli, ["config", "init", "--project-name", "test-project"]
+            )
 
             assert result.exit_code == 0
             mock_init.assert_called_once_with("test-project")
@@ -591,7 +674,11 @@ class TestConfigCommandsCLI:
     def test_config_reset_global_cli(self, runner: CliRunner) -> None:
         """Test config reset global through CLI."""
         with patch("llm_orc.cli.reset_global_config") as mock_reset:
-            result = runner.invoke(cli, ["config", "reset-global", "--backup", "--preserve-auth"], input="y\n")
+            result = runner.invoke(
+                cli,
+                ["config", "reset-global", "--backup", "--preserve-auth"],
+                input="y\n",
+            )
 
             assert result.exit_code == 0
             mock_reset.assert_called_once_with(True, True)
@@ -599,7 +686,18 @@ class TestConfigCommandsCLI:
     def test_config_reset_local_cli(self, runner: CliRunner) -> None:
         """Test config reset local through CLI."""
         with patch("llm_orc.cli.reset_local_config") as mock_reset:
-            result = runner.invoke(cli, ["config", "reset-local", "--backup", "--preserve-ensembles", "--project-name", "test"], input="y\n")
+            result = runner.invoke(
+                cli,
+                [
+                    "config",
+                    "reset-local",
+                    "--backup",
+                    "--preserve-ensembles",
+                    "--project-name",
+                    "test",
+                ],
+                input="y\n",
+            )
 
             assert result.exit_code == 0
             mock_reset.assert_called_once_with(True, True, "test")

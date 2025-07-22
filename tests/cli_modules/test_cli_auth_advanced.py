@@ -218,9 +218,7 @@ class TestAuthCommandsAdvanced:
         credential_storage_path = (
             "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
         )
-        oauth_client_path = (
-            "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
-        )
+        oauth_client_path = "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
 
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
@@ -281,9 +279,7 @@ class TestAuthCommandsAdvanced:
         credential_storage_path = (
             "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
         )
-        oauth_client_path = (
-            "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
-        )
+        oauth_client_path = "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
 
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
@@ -340,9 +336,7 @@ class TestAuthCommandsAdvanced:
         credential_storage_path = (
             "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
         )
-        oauth_client_path = (
-            "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
-        )
+        oauth_client_path = "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
 
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
@@ -398,9 +392,7 @@ class TestAuthCommandsAdvanced:
         credential_storage_path = (
             "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
         )
-        oauth_client_path = (
-            "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
-        )
+        oauth_client_path = "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
 
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
@@ -483,9 +475,7 @@ class TestAuthCommandsAdvanced:
         claude_cli_auth_path = (
             "llm_orc.cli_modules.utils.auth_utils.handle_claude_cli_auth"
         )
-        credential_storage_path = (
-            "llm_orc.core.auth.authentication.CredentialStorage"
-        )
+        credential_storage_path = "llm_orc.core.auth.authentication.CredentialStorage"
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
@@ -530,9 +520,7 @@ class TestAuthCommandsAdvanced:
         oauth_handler_path = (
             "llm_orc.cli_modules.commands.auth_commands.handle_claude_pro_max_oauth"
         )
-        credential_storage_path = (
-            "llm_orc.core.auth.authentication.CredentialStorage"
-        )
+        credential_storage_path = "llm_orc.core.auth.authentication.CredentialStorage"
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
@@ -569,11 +557,10 @@ class TestAuthCommandsAdvanced:
             "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
         )
         interactive_auth_path = (
-            "llm_orc.cli_modules.commands.auth_commands.handle_anthropic_interactive_auth"
+            "llm_orc.cli_modules.commands.auth_commands."
+            "handle_anthropic_interactive_auth"
         )
-        credential_storage_path = (
-            "llm_orc.core.auth.authentication.CredentialStorage"
-        )
+        credential_storage_path = "llm_orc.core.auth.authentication.CredentialStorage"
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
@@ -658,7 +645,7 @@ class TestAuthCommandsAdvanced:
         )
         auth_menus_path = "llm_orc.menu_system.AuthMenus"
         test_provider_auth_path = (
-            "llm_orc.cli_modules.commands.auth_commands.test_provider_authentication"
+            "llm_orc.cli_modules.commands.auth_commands.validate_provider_authentication"
         )
         show_success_path = "llm_orc.menu_system.show_success"
         show_working_path = "llm_orc.menu_system.show_working"

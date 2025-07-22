@@ -629,3 +629,227 @@ class TestDisplayFunctions:
 
             calls = [str(call) for call in mock_echo.call_args_list]
             assert any("Providers" in call for call in calls)
+
+
+class TestConfigUtilsErrorHandling:
+    """Test error handling scenarios in config utils."""
+
+    @patch("click.echo")
+    def test_check_ensemble_availability_with_missing_profiles(
+        self, mock_echo: Mock
+    ) -> None:
+        """Test ensemble availability check with missing model profiles."""
+        # Given
+        mock_config = Mock()
+
+        # Mock profile resolution to raise ValueError for missing profiles
+        def mock_resolve_profile(profile_name: str) -> tuple[str, str]:
+            if profile_name == "missing-profile":
+                raise ValueError("Profile not found")
+            return "claude-3", "anthropic"
+
+        mock_config.resolve_model_profile = mock_resolve_profile
+        mock_config.get_config.return_value = {}
+
+        # Create ensemble with missing profile
+        ensemble_data = {
+            "name": "test-ensemble",
+            "agents": [
+                {"name": "agent1", "model_profile": "missing-profile"},
+                {"name": "agent2", "model_profile": "valid-profile"},
+            ],
+            "coordinator": {"model_profile": "missing-coordinator-profile"},
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ensemble_dir = Path(temp_dir)
+            ensemble_file = ensemble_dir / "test_ensemble.yaml"
+
+            with open(ensemble_file, "w") as f:
+                yaml.safe_dump(ensemble_data, f)
+
+            # When
+            check_ensemble_availability(ensemble_dir, {"anthropic"}, mock_config)
+
+            # Then - missing profiles should be handled gracefully
+            calls = [str(call) for call in mock_echo.call_args_list]
+            # Should not crash and should process the file
+            assert any("ensemble" in call.lower() for call in calls)
+
+    @patch("click.echo")
+    def test_check_ensemble_availability_coordinator_missing_profile(
+        self, mock_echo: Mock
+    ) -> None:
+        """Test ensemble availability with missing coordinator profile."""
+        # Given
+        mock_config = Mock()
+
+        # Mock coordinator profile resolution to raise KeyError
+        def mock_resolve_profile(profile_name: str) -> tuple[str, str]:
+            if profile_name == "missing-coordinator":
+                raise KeyError("Profile not found")
+            return "claude-3", "anthropic"
+
+        mock_config.resolve_model_profile = mock_resolve_profile
+        mock_config.get_config.return_value = {}
+
+        # Create ensemble with missing coordinator profile
+        ensemble_data = {
+            "name": "test-ensemble",
+            "agents": [{"name": "agent1", "provider": "anthropic"}],
+            "coordinator": {"model_profile": "missing-coordinator"},
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ensemble_dir = Path(temp_dir)
+            ensemble_file = ensemble_dir / "test_ensemble.yaml"
+
+            with open(ensemble_file, "w") as f:
+                yaml.safe_dump(ensemble_data, f)
+
+            # When
+            check_ensemble_availability(ensemble_dir, {"anthropic"}, mock_config)
+
+            # Then - should handle missing coordinator profile
+            calls = [str(call) for call in mock_echo.call_args_list]
+            assert any("ensemble" in call.lower() for call in calls)
+
+    @patch("click.echo")
+    @patch("llm_orc.cli_modules.utils.config_utils.CredentialStorage")
+    def test_show_provider_details_no_auth_required(
+        self, mock_storage_class: Mock, mock_echo: Mock
+    ) -> None:
+        """Test show_provider_details for provider that doesn't require auth."""
+        # Given
+        mock_storage = Mock()
+        mock_storage_class.return_value = mock_storage
+
+        # Mock provider that doesn't require auth
+        with patch("llm_orc.providers.registry.provider_registry") as mock_registry:
+            mock_provider_info = Mock()
+            mock_provider_info.supports_oauth = False
+            mock_provider_info.supports_api_key = False
+            mock_provider_info.requires_auth = False
+            mock_registry.get_provider.return_value = mock_provider_info
+
+            # When
+            show_provider_details(mock_storage, "no-auth-provider")
+
+            # Then
+            calls = [str(call) for call in mock_echo.call_args_list]
+            assert any("No authentication required" in call for call in calls)
+
+    @patch("click.echo")
+    @patch("llm_orc.cli_modules.utils.config_utils.CredentialStorage")
+    def test_show_provider_details_api_key_only(
+        self, mock_storage_class: Mock, mock_echo: Mock
+    ) -> None:
+        """Test show_provider_details for API key only provider."""
+        # Given
+        mock_storage = Mock()
+        mock_storage_class.return_value = mock_storage
+
+        # Mock provider that only supports API key
+        with patch("llm_orc.providers.registry.provider_registry") as mock_registry:
+            mock_provider_info = Mock()
+            mock_provider_info.supports_oauth = False
+            mock_provider_info.supports_api_key = True
+            mock_provider_info.requires_auth = True
+            mock_registry.get_provider.return_value = mock_provider_info
+
+            mock_storage.get_auth_method.return_value = None
+
+            # When
+            show_provider_details(mock_storage, "api-key-provider")
+
+            # Then
+            calls = [str(call) for call in mock_echo.call_args_list]
+            assert any("API Key" in call for call in calls)
+
+    @patch("click.echo")
+    @patch("llm_orc.cli_modules.utils.config_utils.CredentialStorage")
+    def test_show_provider_details_oauth_exception_handling(
+        self, mock_storage_class: Mock, mock_echo: Mock
+    ) -> None:
+        """Test show_provider_details OAuth status with exception."""
+        # Given
+        mock_storage = Mock()
+        mock_storage_class.return_value = mock_storage
+
+        # Mock provider with OAuth
+        with patch("llm_orc.providers.registry.provider_registry") as mock_registry:
+            mock_provider_info = Mock()
+            mock_provider_info.supports_oauth = True
+            mock_provider_info.supports_api_key = True
+            mock_provider_info.requires_auth = True
+            mock_registry.get_provider.return_value = mock_provider_info
+
+            mock_storage.get_auth_method.return_value = "oauth"
+
+            # When
+            show_provider_details(mock_storage, "oauth-provider")
+
+            # Then - should handle the try/except block for OAuth status
+            calls = [str(call) for call in mock_echo.call_args_list]
+            assert any("OAuth" in call for call in calls)
+
+    @patch("click.echo")
+    def test_display_default_models_config_profile_not_found(
+        self, mock_echo: Mock
+    ) -> None:
+        """Test display_default_models_config with missing profiles."""
+        # Given
+        mock_config = Mock()
+
+        # Mock resolve to raise ValueError for missing profiles
+        def mock_resolve_profile(profile_name: str) -> tuple[str, str]:
+            if profile_name == "missing-profile":
+                raise ValueError("Profile not found")
+            return "claude-3", "anthropic"
+
+        mock_config.resolve_model_profile = mock_resolve_profile
+        mock_config.load_project_config.return_value = {
+            "project": {
+                "default_models": {
+                    "primary": "valid-profile",
+                    "fallback": "missing-profile",
+                }
+            }
+        }
+
+        # When
+        display_default_models_config(mock_config, {"anthropic"})
+
+        # Then
+        calls = [str(call) for call in mock_echo.call_args_list]
+        assert any("profile not found" in call for call in calls)
+
+    @patch("click.echo")
+    def test_display_default_models_config_keyerror_handling(
+        self, mock_echo: Mock
+    ) -> None:
+        """Test display_default_models_config with KeyError."""
+        # Given
+        mock_config = Mock()
+
+        # Mock resolve to raise KeyError for missing profiles
+        def mock_resolve_profile(profile_name: str) -> tuple[str, str]:
+            if profile_name == "missing-profile":
+                raise KeyError("Profile key not found")
+            return "claude-3", "anthropic"
+
+        mock_config.resolve_model_profile = mock_resolve_profile
+        mock_config.load_project_config.return_value = {
+            "project": {
+                "default_models": {
+                    "primary": "missing-profile",
+                }
+            }
+        }
+
+        # When
+        display_default_models_config(mock_config, {"anthropic"})
+
+        # Then
+        calls = [str(call) for call in mock_echo.call_args_list]
+        assert any("profile not found" in call for call in calls)

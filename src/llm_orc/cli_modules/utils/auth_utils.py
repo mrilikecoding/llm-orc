@@ -237,10 +237,10 @@ def show_auth_method_help() -> None:
     click.echo()
 
 
-def test_provider_authentication(
+def validate_provider_authentication(
     storage: CredentialStorage, auth_manager: AuthenticationManager, provider: str
 ) -> bool:
-    """Test authentication for a specific provider."""
+    """Validate authentication for a specific provider."""
     auth_method = storage.get_auth_method(provider)
     if not auth_method:
         return False

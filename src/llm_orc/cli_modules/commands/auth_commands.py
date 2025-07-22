@@ -9,7 +9,7 @@ from llm_orc.cli_modules.utils.auth_utils import (
     handle_claude_cli_auth,
     handle_claude_pro_max_oauth,
     show_auth_method_help,
-    test_provider_authentication,
+    validate_provider_authentication,
 )
 from llm_orc.cli_modules.utils.config_utils import show_provider_details
 from llm_orc.core.auth.authentication import AuthenticationManager, CredentialStorage
@@ -168,7 +168,7 @@ class AuthCommands:
                 elif action == "test" and selected_provider:
                     show_working(f"Testing {selected_provider}...")
                     try:
-                        success = test_provider_authentication(
+                        success = validate_provider_authentication(
                             storage, auth_manager, selected_provider
                         )
                         if success:
