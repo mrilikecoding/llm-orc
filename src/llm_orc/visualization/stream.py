@@ -43,8 +43,8 @@ class EventStream:
         # Send event to all relevant queues
         for queue in queues_to_notify:
             try:
-                await queue.put(event)
-            except asyncio.QueueEmpty:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
                 # Queue is full, skip this subscriber
                 pass
 
@@ -136,11 +136,15 @@ class EventStreamManager:
         stream = EventStream(execution_id)
         self._streams[execution_id] = stream
 
-        # Schedule cleanup task
-        cleanup_task = asyncio.create_task(
-            self._cleanup_stream_after_delay(execution_id)
-        )
-        self._cleanup_tasks.add(cleanup_task)
+        # Schedule cleanup task if event loop is running
+        try:
+            cleanup_task = asyncio.create_task(
+                self._cleanup_stream_after_delay(execution_id)
+            )
+            self._cleanup_tasks.add(cleanup_task)
+        except RuntimeError:
+            # No event loop running, skip cleanup task scheduling
+            pass
 
         return stream
 
