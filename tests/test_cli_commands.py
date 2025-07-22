@@ -19,11 +19,11 @@ from llm_orc.cli_commands import (
     list_ensembles_command,
     list_profiles_command,
     logout_oauth_providers,
+    refresh_token_test,
     remove_auth_provider,
     reset_global_config,
     reset_local_config,
     serve_ensemble,
-    test_token_refresh,
 )
 
 
@@ -713,7 +713,7 @@ class TestAuthCommands:
     def test_test_token_refresh(self) -> None:
         """Test token refresh command delegation."""
         with patch("llm_orc.cli_commands.AuthCommands") as mock_auth_class:
-            test_token_refresh("provider")
+            refresh_token_test("provider")
             mock_auth_class.test_token_refresh.assert_called_once_with("provider")
 
     def test_auth_setup(self) -> None:

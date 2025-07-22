@@ -328,7 +328,7 @@ def remove_auth_provider(provider: str) -> None:
     AuthCommands.remove_auth_provider(provider)
 
 
-def test_token_refresh(provider: str) -> None:
+def refresh_token_test(provider: str) -> None:
     """Test OAuth token refresh for a specific provider."""
     AuthCommands.test_token_refresh(provider)
 

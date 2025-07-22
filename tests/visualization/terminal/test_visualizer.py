@@ -97,10 +97,8 @@ class TestTerminalVisualizer:
             for event in events:
                 yield event
 
-        with patch.object(stream, 'subscribe', return_value=mock_subscribe()):
+        with patch.object(stream, "subscribe", return_value=mock_subscribe()):
             await visualizer.visualize_execution(stream)
-
-        await visualizer.visualize_execution(stream)
 
         # Verify Live was used correctly
         mock_live_class.assert_called_once()
@@ -324,11 +322,13 @@ class TestTerminalVisualizer:
     def test_create_header(self) -> None:
         """Test header creation."""
         visualizer = TerminalVisualizer()
-        visualizer.execution_state.update({
-            "ensemble_name": "test-ensemble",
-            "execution_id": "test-123",
-            "status": "running",
-        })
+        visualizer.execution_state.update(
+            {
+                "ensemble_name": "test-ensemble",
+                "execution_id": "test-123",
+                "status": "running",
+            }
+        )
 
         header = visualizer.create_header()
 
@@ -410,11 +410,13 @@ class TestTerminalVisualizer:
     def test_create_progress_section(self) -> None:
         """Test progress section creation."""
         visualizer = TerminalVisualizer()
-        visualizer.execution_state.update({
-            "total_agents": 5,
-            "completed_agents": 3,
-            "failed_agents": 1,
-        })
+        visualizer.execution_state.update(
+            {
+                "total_agents": 5,
+                "completed_agents": 3,
+                "failed_agents": 1,
+            }
+        )
 
         progress = visualizer.create_progress_section()
 
@@ -481,11 +483,13 @@ class TestTerminalVisualizer:
     def test_create_metrics_section(self) -> None:
         """Test metrics section creation."""
         visualizer = TerminalVisualizer()
-        visualizer.execution_state["performance"].update({
-            "total_cost": 0.15,
-            "total_duration": 10000,
-            "memory_usage": 1024,
-        })
+        visualizer.execution_state["performance"].update(
+            {
+                "total_cost": 0.15,
+                "total_duration": 10000,
+                "memory_usage": 1024,
+            }
+        )
 
         metrics = visualizer.create_metrics_section()
 
@@ -524,18 +528,20 @@ class TestTerminalVisualizer:
     def test_print_summary(self, mock_print: Mock) -> None:
         """Test summary printing."""
         visualizer = TerminalVisualizer()
-        visualizer.execution_state.update({
-            "ensemble_name": "test-ensemble",
-            "execution_id": "test-123",
-            "status": "completed",
-            "total_agents": 3,
-            "completed_agents": 2,
-            "failed_agents": 1,
-            "performance": {
-                "total_cost": 0.15,
-                "total_duration": 10000,
-            },
-        })
+        visualizer.execution_state.update(
+            {
+                "ensemble_name": "test-ensemble",
+                "execution_id": "test-123",
+                "status": "completed",
+                "total_agents": 3,
+                "completed_agents": 2,
+                "failed_agents": 1,
+                "performance": {
+                    "total_cost": 0.15,
+                    "total_duration": 10000,
+                },
+            }
+        )
 
         with patch.object(visualizer.console, "print") as mock_console_print:
             visualizer.print_summary()
