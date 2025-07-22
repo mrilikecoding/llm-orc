@@ -627,7 +627,6 @@ class TestModuleFunctions:
         mock_echo.assert_called_once_with("✅ Anthropic API key configured")
 
     @patch("llm_orc.core.models.model_factory.click.echo")
-    @patch("llm_orc.core.models.model_factory.click.echo")
     def test_setup_anthropic_oauth_auth_success(self, mock_echo: Mock) -> None:
         """Test successful Anthropic OAuth setup."""
         mock_auth_manager = Mock()
@@ -650,7 +649,6 @@ class TestModuleFunctions:
             mock_echo.assert_called_once_with("✅ Anthropic OAuth configured")
 
     @patch("llm_orc.core.models.model_factory.click.echo")
-    @patch("llm_orc.core.models.model_factory.click.echo")
     def test_setup_anthropic_oauth_auth_failed(self, mock_echo: Mock) -> None:
         """Test failed Anthropic OAuth setup."""
         mock_auth_manager = Mock()
@@ -670,7 +668,6 @@ class TestModuleFunctions:
             mock_echo.assert_called_once_with("❌ OAuth authentication failed")
 
     @patch("llm_orc.core.models.model_factory.click.echo")
-    @patch("llm_orc.core.models.model_factory.click.echo")
     def test_setup_anthropic_oauth_auth_exception(self, mock_echo: Mock) -> None:
         """Test Anthropic OAuth setup with exception."""
         mock_auth_manager = Mock()
@@ -687,7 +684,7 @@ class TestModuleFunctions:
             assert result is False
             mock_echo.assert_called_once_with("❌ OAuth setup failed: OAuth error")
 
-    @patch("llm_orc.core.models.model_factory.shutil.which")
+    @patch("shutil.which")
     @patch("llm_orc.core.models.model_factory.click.echo")
     def test_setup_claude_cli_auth_success(
         self, mock_echo: Mock, mock_which: Mock
@@ -708,7 +705,7 @@ class TestModuleFunctions:
             "   Using local claude command at: /usr/local/bin/claude"
         )
 
-    @patch("llm_orc.core.models.model_factory.shutil.which")
+    @patch("shutil.which")
     @patch("llm_orc.core.models.model_factory.click.echo")
     def test_setup_claude_cli_auth_not_found(
         self, mock_echo: Mock, mock_which: Mock
