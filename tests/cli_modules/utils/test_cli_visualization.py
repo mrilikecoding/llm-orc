@@ -269,9 +269,7 @@ class TestResultsDisplay:
         mock_console = Mock(spec=Console)
         mock_console_class.return_value = mock_console
 
-        results = {
-            "agent_a": {"status": "error", "error": "Something went wrong"}
-        }
+        results = {"agent_a": {"status": "error", "error": "Something went wrong"}}
         metadata = {"duration": "1.0s"}
 
         # When
@@ -325,9 +323,7 @@ class TestResultsDisplay:
         mock_console_class.return_value = mock_console
         mock_find_final.return_value = "agent_final"
 
-        results = {
-            "agent_final": {"status": "success", "response": "Final result"}
-        }
+        results = {"agent_final": {"status": "success", "response": "Final result"}}
         metadata = {
             "duration": "3.0s",
             "usage": {"totals": {"agents_count": 2}},
@@ -350,9 +346,7 @@ class TestResultsDisplay:
         mock_console_class.return_value = mock_console
         mock_find_final.return_value = None
 
-        results = {
-            "agent_a": {"status": "success", "response": "Fallback result"}
-        }
+        results = {"agent_a": {"status": "success", "response": "Fallback result"}}
         metadata = {"duration": "2.0s"}
 
         # When
@@ -440,7 +434,7 @@ class TestStreamingExecution:
         mock_console_class.return_value = mock_console
 
         # Create an async iterator for the streaming response
-        async def async_iter():
+        async def async_iter() -> Any:
             yield {"type": "agent_progress", "data": {"completed_agents": 1}}
             yield {
                 "type": "execution_completed",
@@ -480,7 +474,7 @@ class TestStreamingExecution:
         mock_console_class.return_value = mock_console
 
         # Create an async iterator for the streaming response
-        async def async_iter():
+        async def async_iter() -> Any:
             yield {
                 "type": "agent_progress",
                 "data": {"completed_agents": 1, "total_agents": 2},

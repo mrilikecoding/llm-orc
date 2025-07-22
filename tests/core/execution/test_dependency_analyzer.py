@@ -246,7 +246,7 @@ class TestDependencyAnalyzer:
         """Test calculating level for agent with no dependencies."""
         # Given
         analyzer = DependencyAnalyzer()
-        dependency_map = {"agent_a": []}
+        dependency_map: dict[str, list[str]] = {"agent_a": []}
 
         # When
         result = analyzer.calculate_agent_level("agent_a", dependency_map)
@@ -438,7 +438,7 @@ class TestDependencyAnalyzer:
         """Test validation with agents having no depends_on key."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
+        agent_configs: list[dict[str, Any]] = [
             {"name": "agent_a"},  # No depends_on key
             {"name": "agent_b", "depends_on": ["agent_a"]},
         ]

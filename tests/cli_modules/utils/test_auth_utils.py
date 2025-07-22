@@ -41,9 +41,7 @@ class TestHandleClaudeCLIAuth:
         mock_storage = Mock()
 
         # When / Then
-        with pytest.raises(
-            click.ClickException, match="Claude CLI not found"
-        ):
+        with pytest.raises(click.ClickException, match="Claude CLI not found"):
             handle_claude_cli_auth(mock_storage)
 
         mock_storage.store_api_key.assert_not_called()
@@ -278,4 +276,3 @@ class TestProviderAuthentication:
 
         # Then
         assert result is False
-

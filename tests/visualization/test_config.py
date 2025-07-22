@@ -275,9 +275,11 @@ class TestLoadVisualizationConfig:
         """Test loading with None path when local config exists."""
         mock_data = {"default_mode": "terminal", "enabled": True}
 
-        with patch("pathlib.Path.exists") as mock_exists, patch(
-            "builtins.open", mock_open(read_data="default_mode: terminal")
-        ), patch("yaml.safe_load", return_value=mock_data):
+        with (
+            patch("pathlib.Path.exists") as mock_exists,
+            patch("builtins.open", mock_open(read_data="default_mode: terminal")),
+            patch("yaml.safe_load", return_value=mock_data),
+        ):
             # Local path exists, home path doesn't matter
             mock_exists.side_effect = lambda: True
 
@@ -289,9 +291,11 @@ class TestLoadVisualizationConfig:
         """Test loading with None path when only home config exists."""
         mock_data = {"default_mode": "web", "enabled": False}
 
-        with patch("pathlib.Path.exists") as mock_exists, patch(
-            "builtins.open", mock_open(read_data="default_mode: web")
-        ), patch("yaml.safe_load", return_value=mock_data):
+        with (
+            patch("pathlib.Path.exists") as mock_exists,
+            patch("builtins.open", mock_open(read_data="default_mode: web")),
+            patch("yaml.safe_load", return_value=mock_data),
+        ):
             # First call (local) returns False, second call (home) returns True
             mock_exists.side_effect = [False, True]
 
@@ -305,9 +309,11 @@ class TestLoadVisualizationConfig:
         config_path = Path("/custom/config.yaml")
         mock_data = {"default_mode": "debug", "event_buffer_size": 2000}
 
-        with patch("pathlib.Path.exists", return_value=True), patch(
-            "builtins.open", mock_open(read_data="default_mode: debug")
-        ), patch("yaml.safe_load", return_value=mock_data):
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", mock_open(read_data="default_mode: debug")),
+            patch("yaml.safe_load", return_value=mock_data),
+        ):
             config = load_visualization_config(config_path)
 
         assert config.default_mode == "debug"
@@ -327,9 +333,11 @@ class TestLoadVisualizationConfig:
         """Test loading when yaml import fails."""
         config_path = Path("/test/config.yaml")
 
-        with patch("pathlib.Path.exists", return_value=True), patch(
-            "builtins.open", mock_open()
-        ), patch("yaml.safe_load", side_effect=ImportError("No yaml module")):
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", mock_open()),
+            patch("yaml.safe_load", side_effect=ImportError("No yaml module")),
+        ):
             config = load_visualization_config(config_path)
 
         assert isinstance(config, VisualizationConfig)
@@ -339,9 +347,11 @@ class TestLoadVisualizationConfig:
         """Test loading when yaml parsing fails."""
         config_path = Path("/test/config.yaml")
 
-        with patch("pathlib.Path.exists", return_value=True), patch(
-            "builtins.open", mock_open(read_data="invalid: yaml: content")
-        ), patch("yaml.safe_load", side_effect=Exception("YAML parse error")):
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", mock_open(read_data="invalid: yaml: content")),
+            patch("yaml.safe_load", side_effect=Exception("YAML parse error")),
+        ):
             config = load_visualization_config(config_path)
 
         assert isinstance(config, VisualizationConfig)
@@ -351,8 +361,9 @@ class TestLoadVisualizationConfig:
         """Test loading when file reading fails."""
         config_path = Path("/test/config.yaml")
 
-        with patch("pathlib.Path.exists", return_value=True), patch(
-            "builtins.open", side_effect=OSError("Cannot read file")
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", side_effect=OSError("Cannot read file")),
         ):
             config = load_visualization_config(config_path)
 
@@ -369,9 +380,11 @@ class TestSaveVisualizationConfig:
         config.default_mode = "web"
 
         mock_file = mock_open()
-        with patch("pathlib.Path.mkdir") as mock_mkdir, patch(
-            "builtins.open", mock_file
-        ), patch("yaml.safe_dump") as mock_dump:
+        with (
+            patch("pathlib.Path.mkdir") as mock_mkdir,
+            patch("builtins.open", mock_file),
+            patch("yaml.safe_dump") as mock_dump,
+        ):
             save_visualization_config(config, None)
 
         # Check that mkdir was called to create directory
@@ -395,9 +408,11 @@ class TestSaveVisualizationConfig:
         config_path = Path("/custom/path/config.yaml")
 
         mock_file = mock_open()
-        with patch("pathlib.Path.mkdir") as mock_mkdir, patch(
-            "builtins.open", mock_file
-        ), patch("yaml.safe_dump") as mock_dump:
+        with (
+            patch("pathlib.Path.mkdir") as mock_mkdir,
+            patch("builtins.open", mock_file),
+            patch("yaml.safe_dump") as mock_dump,
+        ):
             save_visualization_config(config, config_path)
 
         # Check that mkdir was called on the parent directory
@@ -414,10 +429,13 @@ class TestSaveVisualizationConfig:
         config = VisualizationConfig()
         config_path = Path("/test/config.yaml")
 
-        with patch("pathlib.Path.mkdir"), patch("builtins.open", mock_open()), patch(
-            "yaml.safe_dump", side_effect=ImportError("No yaml module")
-        ), pytest.raises(
-            RuntimeError, match="Failed to save visualization configuration"
+        with (
+            patch("pathlib.Path.mkdir"),
+            patch("builtins.open", mock_open()),
+            patch("yaml.safe_dump", side_effect=ImportError("No yaml module")),
+            pytest.raises(
+                RuntimeError, match="Failed to save visualization configuration"
+            ),
         ):
             save_visualization_config(config, config_path)
 
@@ -426,10 +444,12 @@ class TestSaveVisualizationConfig:
         config = VisualizationConfig()
         config_path = Path("/test/config.yaml")
 
-        with patch("pathlib.Path.mkdir"), patch(
-            "builtins.open", side_effect=OSError("Cannot write file")
-        ), pytest.raises(
-            RuntimeError, match="Failed to save visualization configuration"
+        with (
+            patch("pathlib.Path.mkdir"),
+            patch("builtins.open", side_effect=OSError("Cannot write file")),
+            pytest.raises(
+                RuntimeError, match="Failed to save visualization configuration"
+            ),
         ):
             save_visualization_config(config, config_path)
 
@@ -438,10 +458,13 @@ class TestSaveVisualizationConfig:
         config = VisualizationConfig()
         config_path = Path("/test/config.yaml")
 
-        with patch("pathlib.Path.mkdir"), patch("builtins.open", mock_open()), patch(
-            "yaml.safe_dump", side_effect=Exception("YAML dump error")
-        ), pytest.raises(
-            RuntimeError, match="Failed to save visualization configuration"
+        with (
+            patch("pathlib.Path.mkdir"),
+            patch("builtins.open", mock_open()),
+            patch("yaml.safe_dump", side_effect=Exception("YAML dump error")),
+            pytest.raises(
+                RuntimeError, match="Failed to save visualization configuration"
+            ),
         ):
             save_visualization_config(config, config_path)
 
@@ -450,9 +473,11 @@ class TestSaveVisualizationConfig:
         config = VisualizationConfig()
         config_path = Path("/deep/nested/path/config.yaml")
 
-        with patch("pathlib.Path.mkdir") as mock_mkdir, patch(
-            "builtins.open", mock_open()
-        ), patch("yaml.safe_dump"):
+        with (
+            patch("pathlib.Path.mkdir") as mock_mkdir,
+            patch("builtins.open", mock_open()),
+            patch("yaml.safe_dump"),
+        ):
             save_visualization_config(config, config_path)
 
         # Verify mkdir was called with correct arguments
@@ -529,4 +554,3 @@ class TestSubconfigurations:
         assert config.export_csv is False
         assert config.max_log_files == 100
         assert config.max_log_age_days == 30
-

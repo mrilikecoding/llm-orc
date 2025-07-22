@@ -507,9 +507,7 @@ class TestVisualizationIntegratedExecutor:
         with pytest.raises(RuntimeError, match="No event stream available"):
             await executor._execute_with_events(mock_ensemble_config, "test input")
 
-    def test_visualization_hook_no_stream(
-        self, mock_viz_config: Mock
-    ) -> None:
+    def test_visualization_hook_no_stream(self, mock_viz_config: Mock) -> None:
         """Test visualization hook when no stream is available."""
         # Given
         executor = VisualizationIntegratedExecutor(mock_viz_config)
@@ -578,9 +576,7 @@ class TestVisualizationIntegratedExecutor:
             )
             mock_asyncio_run.assert_called_once()
 
-    def test_visualization_hook_exception_handling(
-        self, mock_viz_config: Mock
-    ) -> None:
+    def test_visualization_hook_exception_handling(self, mock_viz_config: Mock) -> None:
         """Test visualization hook handles exceptions gracefully."""
         # Given
         mock_stream = Mock()
@@ -731,4 +727,3 @@ class TestVisualizationIntegratedExecutor:
                 model="unknown",
                 depends_on=[],
             )
-

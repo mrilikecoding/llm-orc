@@ -1,10 +1,11 @@
 """Test suite for multi-model support."""
 
+from typing import cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from llm_orc.models.anthropic import ClaudeModel
+from llm_orc.models.anthropic import ClaudeCLIModel, ClaudeModel, OAuthClaudeModel
 from llm_orc.models.base import ModelInterface
 from llm_orc.models.google import GeminiModel
 from llm_orc.models.manager import ModelManager
@@ -149,7 +150,7 @@ class TestModelManager:
         )
 
         assert "oauth_claude_full" in manager.models
-        model = manager.models["oauth_claude_full"]
+        model = cast(OAuthClaudeModel, manager.models["oauth_claude_full"])
         assert model.access_token == "test_access_token"
         assert model.refresh_token == "test_refresh_token"
         assert model.client_id == "test_client_id"
@@ -168,7 +169,7 @@ class TestModelManager:
         )
 
         assert "claude_api" in manager.models
-        model = manager.models["claude_api"]
+        model = cast(ClaudeModel, manager.models["claude_api"])
         assert model.api_key == "test_api_key"
         assert model.model == "claude-3-5-sonnet-20241022"  # Default model
 
@@ -183,7 +184,7 @@ class TestModelManager:
         )
 
         assert "claude_api_custom" in manager.models
-        model = manager.models["claude_api_custom"]
+        model = cast(ClaudeModel, manager.models["claude_api_custom"])
         assert model.api_key == "test_api_key"
         assert model.model == "claude-3-opus-20240229"
 
@@ -197,7 +198,7 @@ class TestModelManager:
         )
 
         assert "claude_cli" in manager.models
-        model = manager.models["claude_cli"]
+        model = cast(ClaudeCLIModel, manager.models["claude_cli"])
         assert model.claude_path == "/usr/local/bin/claude"
         assert model.model == "claude-3-5-sonnet-20241022"  # Default model
 
@@ -212,7 +213,7 @@ class TestModelManager:
         )
 
         assert "claude_cli_custom" in manager.models
-        model = manager.models["claude_cli_custom"]
+        model = cast(ClaudeCLIModel, manager.models["claude_cli_custom"])
         assert model.claude_path == "/opt/claude/bin/claude"
         assert model.model == "claude-3-opus-20240229"
 
@@ -273,6 +274,7 @@ class TestModelManager:
         assert "cli1" not in result
         # Verify the values are OAuthClaudeModel instances
         from llm_orc.models.anthropic import OAuthClaudeModel
+
         assert all(isinstance(model, OAuthClaudeModel) for model in result.values())
 
     def test_get_api_key_models_empty(self) -> None:
@@ -306,6 +308,7 @@ class TestModelManager:
         assert "cli1" not in result
         # Verify the values are ClaudeModel instances
         from llm_orc.models.anthropic import ClaudeModel
+
         assert all(isinstance(model, ClaudeModel) for model in result.values())
 
     def test_mixed_model_registration_and_retrieval(self) -> None:
@@ -328,6 +331,7 @@ class TestModelManager:
             ClaudeModel,
             OAuthClaudeModel,
         )
+
         assert isinstance(claude_api, ClaudeModel)
         assert isinstance(claude_oauth, OAuthClaudeModel)
         assert isinstance(claude_cli, ClaudeCLIModel)

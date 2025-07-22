@@ -63,9 +63,7 @@ class TestMCPServerRunner:
         # Then
         mock_app_runner.assert_called_once()
         mock_runner_instance.setup.assert_called_once()
-        mock_tcp_site.assert_called_once_with(
-            mock_runner_instance, "localhost", 8080
-        )
+        mock_tcp_site.assert_called_once_with(mock_runner_instance, "localhost", 8080)
         mock_site_instance.start.assert_called_once()
         mock_runner_instance.cleanup.assert_called_once()
 
@@ -79,13 +77,18 @@ class TestMCPServerRunner:
         )
 
         # When
-        with patch.object(
-            runner.mcp_server, "handle_request", new=AsyncMock(
-                return_value={"jsonrpc": "2.0", "id": 1, "result": "success"}
-            )
-        ) as mock_handle, patch(
-            "llm_orc.integrations.mcp.runner.web.json_response"
-        ) as mock_json_response:
+        with (
+            patch.object(
+                runner.mcp_server,
+                "handle_request",
+                new=AsyncMock(
+                    return_value={"jsonrpc": "2.0", "id": 1, "result": "success"}
+                ),
+            ) as mock_handle,
+            patch(
+                "llm_orc.integrations.mcp.runner.web.json_response"
+            ) as mock_json_response,
+        ):
             mock_json_response.return_value = web.Response()
             await runner._handle_http_request(mock_request)
 
@@ -130,13 +133,16 @@ class TestMCPServerRunner:
         )
 
         # When
-        with patch.object(
-            runner.mcp_server, "handle_request", new=AsyncMock(
-                side_effect=Exception("Internal error")
-            )
-        ), patch(
-            "llm_orc.integrations.mcp.runner.web.json_response"
-        ) as mock_json_response:
+        with (
+            patch.object(
+                runner.mcp_server,
+                "handle_request",
+                new=AsyncMock(side_effect=Exception("Internal error")),
+            ),
+            patch(
+                "llm_orc.integrations.mcp.runner.web.json_response"
+            ) as mock_json_response,
+        ):
             mock_json_response.return_value = web.Response()
             await runner._handle_http_request(mock_request)
 
@@ -181,9 +187,7 @@ class TestMCPStdioRunner:
 
     @patch("sys.stdin")
     @patch("builtins.print")
-    async def test_run_stdio_success(
-        self, mock_print: Mock, mock_stdin: Mock
-    ) -> None:
+    async def test_run_stdio_success(self, mock_print: Mock, mock_stdin: Mock) -> None:
         """Test successful stdio request processing."""
         # Given
         runner = MCPStdioRunner("test-ensemble")
@@ -196,9 +200,11 @@ class TestMCPStdioRunner:
 
         # When
         with patch.object(
-            runner.mcp_server, "handle_request", new=AsyncMock(
+            runner.mcp_server,
+            "handle_request",
+            new=AsyncMock(
                 return_value={"jsonrpc": "2.0", "id": 1, "result": "success"}
-            )
+            ),
         ) as mock_handle:
             await runner._run_stdio()
 
@@ -253,9 +259,9 @@ class TestMCPStdioRunner:
 
         # When
         with patch.object(
-            runner.mcp_server, "handle_request", new=AsyncMock(
-                side_effect=Exception("Internal error")
-            )
+            runner.mcp_server,
+            "handle_request",
+            new=AsyncMock(side_effect=Exception("Internal error")),
         ):
             await runner._run_stdio()
 
@@ -297,23 +303,21 @@ class TestMCPStdioRunner:
 
         # When
         with patch.object(
-            runner.mcp_server, "handle_request", new=AsyncMock(
+            runner.mcp_server,
+            "handle_request",
+            new=AsyncMock(
                 side_effect=[
                     {"jsonrpc": "2.0", "id": 1, "result": "first"},
                     {"jsonrpc": "2.0", "id": 2, "result": "second"},
                 ]
-            )
+            ),
         ) as mock_handle:
             await runner._run_stdio()
 
             # Then
             assert mock_handle.call_count == 2
-            mock_handle.assert_any_call(
-                {"jsonrpc": "2.0", "id": 1, "method": "test1"}
-            )
-            mock_handle.assert_any_call(
-                {"jsonrpc": "2.0", "id": 2, "method": "test2"}
-            )
+            mock_handle.assert_any_call({"jsonrpc": "2.0", "id": 1, "method": "test1"})
+            mock_handle.assert_any_call({"jsonrpc": "2.0", "id": 2, "method": "test2"})
 
             expected_calls = [
                 (('{"jsonrpc": "2.0", "id": 1, "result": "first"}',), {"flush": True}),
@@ -345,9 +349,7 @@ class TestMCPRunnerIntegration(AioHTTPTestCase):
         request_data = {"jsonrpc": "2.0", "id": 1, "method": "test_integration"}
 
         # When
-        async with self.client.post(
-            "/mcp", json=request_data
-        ) as response:
+        async with self.client.post("/mcp", json=request_data) as response:
             response_data = await response.json()
 
             # Then
@@ -362,9 +364,7 @@ class TestMCPRunnerIntegration(AioHTTPTestCase):
     async def test_integration_http_invalid_json(self) -> None:
         """Test integration with invalid JSON."""
         # When
-        async with self.client.post(
-            "/mcp", data="invalid json"
-        ) as response:
+        async with self.client.post("/mcp", data="invalid json") as response:
             response_data = await response.json()
 
             # Then
@@ -374,4 +374,3 @@ class TestMCPRunnerIntegration(AioHTTPTestCase):
                 "id": None,
                 "error": {"code": -32700, "message": "Parse error"},
             }
-

@@ -1,6 +1,6 @@
 """Comprehensive tests for input enhancer."""
 
-from typing import Any
+from typing import Any, cast
 
 from llm_orc.core.execution.input_enhancer import InputEnhancer
 
@@ -40,7 +40,7 @@ class TestInputEnhancer:
 
         # When
         result = enhancer.enhance_input_with_dependencies(
-            base_input, dependent_agents, results_dict
+            base_input, cast(list[dict[str, Any]], dependent_agents), results_dict
         )
 
         # Then
@@ -63,7 +63,7 @@ class TestInputEnhancer:
 
         # When
         result = enhancer.enhance_input_with_dependencies(
-            base_input, dependent_agents, results_dict
+            base_input, cast(list[dict[str, Any]], dependent_agents), results_dict
         )
 
         # Then
@@ -88,7 +88,7 @@ class TestInputEnhancer:
 
         # When
         result = enhancer.enhance_input_with_dependencies(
-            base_input, dependent_agents, results_dict
+            base_input, cast(list[dict[str, Any]], dependent_agents), results_dict
         )
 
         # Then
@@ -108,7 +108,7 @@ class TestInputEnhancer:
 
         # When
         result = enhancer.enhance_input_with_dependencies(
-            base_input, dependent_agents, results_dict
+            base_input, cast(list[dict[str, Any]], dependent_agents), results_dict
         )
 
         # Then
@@ -131,7 +131,7 @@ class TestInputEnhancer:
 
         # When
         result = enhancer.enhance_input_with_dependencies(
-            base_input, dependent_agents, results_dict
+            base_input, cast(list[dict[str, Any]], dependent_agents), results_dict
         )
 
         # Then
@@ -157,7 +157,7 @@ class TestInputEnhancer:
 
         # When
         result = enhancer.enhance_input_with_dependencies(
-            base_input, dependent_agents, results_dict
+            base_input, cast(list[dict[str, Any]], dependent_agents), results_dict
         )
 
         # Then
@@ -265,9 +265,7 @@ class TestInputEnhancer:
         base_input = "Original input"
 
         # When
-        result = enhancer.create_enhanced_input_for_agent(
-            "agent_a", base_input, [], {}
-        )
+        result = enhancer.create_enhanced_input_for_agent("agent_a", base_input, [], {})
 
         # Then
         assert result == "Original input"
@@ -298,9 +296,7 @@ class TestInputEnhancer:
         enhancer = InputEnhancer()
         base_input = "Original input"
         dependencies = ["agent_a"]
-        results_dict = {
-            "agent_a": {"status": "failed", "error": "Failed"}
-        }
+        results_dict = {"agent_a": {"status": "failed", "error": "Failed"}}
 
         # When
         result = enhancer.create_enhanced_input_for_agent(
@@ -386,7 +382,7 @@ class TestInputEnhancer:
 
         # When
         result = enhancer.enhance_input_with_dependencies(
-            base_input, dependent_agents, results_dict
+            base_input, cast(list[dict[str, Any]], dependent_agents), results_dict
         )
 
         # Then

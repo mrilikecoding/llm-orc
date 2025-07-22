@@ -645,7 +645,8 @@ class TestAuthCommandsAdvanced:
         )
         auth_menus_path = "llm_orc.menu_system.AuthMenus"
         test_provider_auth_path = (
-            "llm_orc.cli_modules.commands.auth_commands.validate_provider_authentication"
+            "llm_orc.cli_modules.commands.auth_commands."
+            "validate_provider_authentication"
         )
         show_success_path = "llm_orc.menu_system.show_success"
         show_working_path = "llm_orc.menu_system.show_working"

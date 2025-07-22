@@ -113,8 +113,7 @@ class TestAddAuthProvider:
         """Test validation error when both API key and OAuth provided."""
         # When/Then
         with pytest.raises(
-            click.ClickException,
-            match="Cannot use both API key and OAuth credentials"
+            click.ClickException, match="Cannot use both API key and OAuth credentials"
         ):
             AuthCommands.add_auth_provider(
                 provider="test-provider",
@@ -129,8 +128,7 @@ class TestAddAuthProvider:
         with pytest.raises(
             click.ClickException,
             match=(
-                "Must provide either --api-key or both --client-id and "
-                "--client-secret"
+                "Must provide either --api-key or both --client-id and --client-secret"
             ),
         ):
             AuthCommands.add_auth_provider(
@@ -146,8 +144,7 @@ class TestAddAuthProvider:
         with pytest.raises(
             click.ClickException,
             match=(
-                "Must provide either --api-key or both --client-id and "
-                "--client-secret"
+                "Must provide either --api-key or both --client-id and --client-secret"
             ),
         ):
             AuthCommands.add_auth_provider(
@@ -216,8 +213,7 @@ class TestAddAuthProvider:
 
         # When/Then
         with pytest.raises(
-            click.ClickException,
-            match="OAuth authentication for test-provider failed"
+            click.ClickException, match="OAuth authentication for test-provider failed"
         ):
             AuthCommands.add_auth_provider(
                 provider="test-provider",
@@ -338,8 +334,7 @@ class TestRemoveAuthProvider:
 
         # When/Then
         with pytest.raises(
-            click.ClickException,
-            match="No authentication found for test-provider"
+            click.ClickException, match="No authentication found for test-provider"
         ):
             AuthCommands.remove_auth_provider("test-provider")
 
@@ -366,8 +361,7 @@ class TestTokenRefresh:
 
         # When/Then
         with pytest.raises(
-            click.ClickException,
-            match="No authentication found for test-provider"
+            click.ClickException, match="No authentication found for test-provider"
         ):
             AuthCommands.test_token_refresh("test-provider")
 
@@ -391,8 +385,7 @@ class TestTokenRefresh:
 
         # When/Then
         with pytest.raises(
-            click.ClickException,
-            match="No OAuth token found for test-provider"
+            click.ClickException, match="No OAuth token found for test-provider"
         ):
             AuthCommands.test_token_refresh("test-provider")
 
@@ -494,7 +487,7 @@ class TestSpecialProviderHandling:
         # When/Then
         with pytest.raises(
             click.ClickException,
-            match="Failed to set up Claude CLI authentication: Claude CLI error"
+            match="Failed to set up Claude CLI authentication: Claude CLI error",
         ):
             AuthCommands.add_auth_provider(
                 provider="claude-cli",
@@ -566,7 +559,7 @@ class TestSpecialProviderHandling:
         # When/Then
         with pytest.raises(
             click.ClickException,
-            match="Failed to set up Claude Pro/Max OAuth authentication: OAuth error"
+            match="Failed to set up Claude Pro/Max OAuth authentication: OAuth error",
         ):
             AuthCommands.add_auth_provider(
                 provider="anthropic-claude-pro-max",
@@ -575,7 +568,9 @@ class TestSpecialProviderHandling:
                 client_secret=None,
             )
 
-    @patch("llm_orc.cli_modules.commands.auth_commands.handle_anthropic_interactive_auth")
+    @patch(
+        "llm_orc.cli_modules.commands.auth_commands.handle_anthropic_interactive_auth"
+    )
     @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
     @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
     @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
@@ -611,7 +606,9 @@ class TestSpecialProviderHandling:
         mock_storage.remove_provider.assert_called_once_with("anthropic")
         mock_handle_interactive.assert_called_once_with(mock_auth_manager, mock_storage)
 
-    @patch("llm_orc.cli_modules.commands.auth_commands.handle_anthropic_interactive_auth")
+    @patch(
+        "llm_orc.cli_modules.commands.auth_commands.handle_anthropic_interactive_auth"
+    )
     @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
     @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
     @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
@@ -638,7 +635,7 @@ class TestSpecialProviderHandling:
         # When/Then
         with pytest.raises(
             click.ClickException,
-            match="Failed to set up Anthropic authentication: Interactive auth error"
+            match="Failed to set up Anthropic authentication: Interactive auth error",
         ):
             AuthCommands.add_auth_provider(
                 provider="anthropic",
@@ -716,8 +713,7 @@ class TestTokenRefreshAdvanced:
         # Then
         echo_calls = [call[0][0] for call in mock_echo.call_args_list]
         no_client_id_found = any(
-            "Cannot test refresh: no client ID available" in call
-            for call in echo_calls
+            "Cannot test refresh: no client ID available" in call for call in echo_calls
         )
         assert no_client_id_found
 
@@ -784,8 +780,7 @@ class TestLogoutOAuthProviders:
 
         # When/Then
         with pytest.raises(
-            click.ClickException,
-            match="Failed to logout from test-provider"
+            click.ClickException, match="Failed to logout from test-provider"
         ):
             AuthCommands.logout_oauth_providers(
                 provider="test-provider", logout_all=False
@@ -856,8 +851,6 @@ class TestLogoutOAuthProviders:
         """Test error when neither provider nor all flag specified."""
         # When/Then
         with pytest.raises(
-            click.ClickException,
-            match="Must specify a provider name or use --all flag"
+            click.ClickException, match="Must specify a provider name or use --all flag"
         ):
             AuthCommands.logout_oauth_providers(provider=None, logout_all=False)
-
