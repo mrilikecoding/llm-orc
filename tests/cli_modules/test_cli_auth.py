@@ -35,7 +35,7 @@ class TestAuthCommandsNew:
 
         # When
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
@@ -70,7 +70,7 @@ class TestAuthCommandsNew:
         """Test that 'auth list' command shows configured providers."""
         # Given - Set up some providers
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
@@ -122,7 +122,7 @@ class TestAuthCommandsNew:
         # Given - No providers configured
         # When
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         credential_storage_path = (
             "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
@@ -159,7 +159,7 @@ class TestAuthCommandsNew:
         provider = "anthropic"
 
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
@@ -201,7 +201,7 @@ class TestAuthCommandsNew:
 
         # When
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
@@ -235,7 +235,7 @@ class TestAuthCommandsNew:
 
         # When
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         credential_storage_path = (
             "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
@@ -291,7 +291,7 @@ class TestAuthCommandsNew:
 
         # When
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
@@ -333,7 +333,7 @@ class TestAuthCommandsNew:
 
         # When
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         setup_oauth_path = "llm_orc.cli_modules.utils.auth_utils.setup_anthropic_oauth"
         with patch(config_manager_path) as mock_config_manager:
@@ -376,7 +376,7 @@ class TestAuthCommandsNew:
 
         # When
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         setup_oauth_path = "llm_orc.cli_modules.utils.auth_utils.setup_anthropic_oauth"
         with patch(config_manager_path) as mock_config_manager:
@@ -414,7 +414,7 @@ class TestAuthCommandsNew:
         """Test adding claude-cli authentication when claude command is available."""
         # When - Claude CLI is available
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
@@ -443,7 +443,7 @@ class TestAuthCommandsNew:
         """Test adding claude-cli auth when claude command is not available."""
         # When - Claude CLI is not available
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
@@ -472,7 +472,7 @@ class TestAuthCommandsNew:
         """Test that 'auth logout' command logs out OAuth provider."""
         # Given - Set up OAuth provider first
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         auth_manager_path = (
             "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
@@ -512,7 +512,7 @@ class TestAuthCommandsNew:
         """Test that 'auth logout' command fails for nonexistent provider."""
         # Given
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         auth_manager_path = (
             "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
@@ -551,7 +551,7 @@ class TestAuthCommandsNew:
 
         # When
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         credential_storage_path = (
             "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
@@ -598,7 +598,7 @@ class TestAuthCommandsNew:
         """Test that 'auth logout --all' command logs out all OAuth providers."""
         # Given
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         auth_manager_path = (
             "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
@@ -639,7 +639,7 @@ class TestAuthCommandsNew:
         """Test that 'auth logout --all' shows message when no OAuth providers found."""
         # Given
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         auth_manager_path = (
             "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
@@ -675,7 +675,7 @@ class TestAuthCommandsNew:
         """Test logout all command with some providers failing."""
         # Given
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         auth_manager_path = (
             "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
@@ -715,19 +715,31 @@ class TestAuthCommandsNew:
         """Test logout command fails when no provider specified and no --all flag."""
         # Given
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
+        credential_storage_path = (
+            "llm_orc.core.auth.authentication.CredentialStorage"
+        )
+        auth_manager_path = (
+            "llm_orc.core.auth.authentication.AuthenticationManager"
+        )
+
         with patch(config_manager_path) as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
+            with patch(credential_storage_path) as mock_storage_class:
+                with patch(auth_manager_path) as mock_auth_manager_class:
+                    mock_instance = mock_config_manager.return_value
+                    mock_instance._global_config_dir = temp_config_dir
+                    mock_instance.ensure_global_config_dir.return_value = None
 
-            # When
-            result = runner.invoke(cli, ["auth", "logout"])
+                    mock_storage = mock_storage_class.return_value
+                    mock_auth_manager = mock_auth_manager_class.return_value
 
-            # Then
-            assert result.exit_code != 0
-            assert "Must specify a provider name or use --all flag" in result.output
+                    # When
+                    result = runner.invoke(cli, ["auth", "logout"])
+
+                    # Then
+                    assert result.exit_code != 0
+                    assert "Must specify a provider name or use --all flag" in result.output
 
     def test_auth_add_oauth_credentials_valid(
         self, runner: CliRunner, temp_config_dir: Path
@@ -739,7 +751,7 @@ class TestAuthCommandsNew:
         client_secret = "test_client_secret"
 
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         auth_manager_path = (
             "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
@@ -794,7 +806,7 @@ class TestAuthCommandsNew:
         client_secret = "test_client_secret"
 
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         auth_manager_path = (
             "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
@@ -843,7 +855,7 @@ class TestAuthCommandsNew:
         client_id = "test_client_id"
 
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
@@ -875,7 +887,7 @@ class TestAuthCommandsNew:
         provider = "test-provider"
 
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
@@ -900,7 +912,7 @@ class TestAuthCommandsNew:
         client_id = "test_client_id"  # Missing client_secret
 
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
@@ -928,7 +940,7 @@ class TestAuthCommandsNew:
         api_key = "test_api_key"
 
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         credential_storage_path = (
             "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
@@ -969,7 +981,7 @@ class TestAuthCommandsNew:
         provider = "test-provider"
 
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         credential_storage_path = (
             "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
@@ -1005,7 +1017,7 @@ class TestAuthCommandsNew:
         """Test handling of storage exceptions during list."""
         # Given
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         credential_storage_path = (
             "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
@@ -1042,7 +1054,7 @@ class TestAuthCommandsNew:
         provider = "test-provider"
 
         config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            "llm_orc.core.config.config_manager.ConfigurationManager"
         )
         auth_manager_path = (
             "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
