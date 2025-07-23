@@ -3,8 +3,6 @@
 import time
 from typing import Any
 
-from llm_orc.models.base import ModelInterface
-
 
 class ResultsProcessor:
     """Processes and formats execution results with metadata and usage."""
@@ -115,14 +113,12 @@ class ResultsProcessor:
             "metadata": {"agents_used": agent_count, "started_at": start_time},
         }
 
-    def format_execution_summary(
-        self, result: dict[str, Any]
-    ) -> dict[str, Any]:
+    def format_execution_summary(self, result: dict[str, Any]) -> dict[str, Any]:
         """Format execution summary with key metrics."""
         metadata = result.get("metadata", {})
         usage = metadata.get("usage", {})
         totals = usage.get("totals", {})
-        
+
         return {
             "ensemble_name": result.get("ensemble", "unknown"),
             "status": result.get("status", "unknown"),
@@ -146,14 +142,16 @@ class ResultsProcessor:
     def count_successful_agents(self, results: dict[str, Any]) -> int:
         """Count the number of successful agents."""
         return sum(
-            1 for result in results.values()
+            1
+            for result in results.values()
             if isinstance(result, dict) and result.get("status") == "success"
         )
 
     def count_failed_agents(self, results: dict[str, Any]) -> int:
         """Count the number of failed agents."""
         return sum(
-            1 for result in results.values()
+            1
+            for result in results.values()
             if isinstance(result, dict) and result.get("status") == "failed"
         )
 
@@ -169,8 +167,10 @@ class ResultsProcessor:
         """Extract error messages from failed agents."""
         errors = {}
         for agent_name, result in results.items():
-            if (isinstance(result, dict) 
-                and result.get("status") == "failed" 
-                and "error" in result):
+            if (
+                isinstance(result, dict)
+                and result.get("status") == "failed"
+                and "error" in result
+            ):
                 errors[agent_name] = result["error"]
         return errors

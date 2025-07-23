@@ -12,7 +12,6 @@ from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.config.roles import RoleDefinition
 from llm_orc.core.execution.agent_execution_coordinator import AgentExecutionCoordinator
 from llm_orc.core.execution.agent_executor import AgentExecutor
-from llm_orc.core.execution.agent_orchestrator import AgentOrchestrator
 from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.input_enhancer import InputEnhancer
@@ -59,7 +58,7 @@ class EnsembleExecutor:
             agent_config: dict[str, Any], input_data: str
         ) -> tuple[str, ModelInterface | None]:
             return await self._execute_agent(agent_config, input_data)
-            
+
         self._execution_coordinator = AgentExecutionCoordinator(
             self._performance_config, agent_executor_wrapper
         )
@@ -372,11 +371,12 @@ class EnsembleExecutor:
                         )
 
                         # Execute agent with timeout coordination
-                        response, model_instance = (
-                            await self._execution_coordinator
-                            .execute_agent_with_timeout(
-                                agent_config, agent_input, timeout
-                            )
+                        coordinator = self._execution_coordinator
+                        (
+                            response,
+                            model_instance,
+                        ) = await coordinator.execute_agent_with_timeout(
+                            agent_config, agent_input, timeout
                         )
 
                         # Store successful result

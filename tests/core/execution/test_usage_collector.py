@@ -120,21 +120,27 @@ class TestUsageCollector:
         """Test calculating basic usage summary."""
         collector = UsageCollector()
 
-        collector.add_manual_usage("agent1", {
-            "total_tokens": 100,
-            "input_tokens": 60,
-            "output_tokens": 40,
-            "cost_usd": 0.05,
-            "duration_ms": 1000,
-        })
+        collector.add_manual_usage(
+            "agent1",
+            {
+                "total_tokens": 100,
+                "input_tokens": 60,
+                "output_tokens": 40,
+                "cost_usd": 0.05,
+                "duration_ms": 1000,
+            },
+        )
 
-        collector.add_manual_usage("agent2", {
-            "total_tokens": 150,
-            "input_tokens": 90,
-            "output_tokens": 60,
-            "cost_usd": 0.08,
-            "duration_ms": 1500,
-        })
+        collector.add_manual_usage(
+            "agent2",
+            {
+                "total_tokens": 150,
+                "input_tokens": 90,
+                "output_tokens": 60,
+                "cost_usd": 0.08,
+                "duration_ms": 1500,
+            },
+        )
 
         summary = collector.calculate_usage_summary()
 
@@ -161,13 +167,16 @@ class TestUsageCollector:
         """Test calculating usage summary with synthesis."""
         collector = UsageCollector()
 
-        collector.add_manual_usage("agent1", {
-            "total_tokens": 100,
-            "input_tokens": 60,
-            "output_tokens": 40,
-            "cost_usd": 0.05,
-            "duration_ms": 1000,
-        })
+        collector.add_manual_usage(
+            "agent1",
+            {
+                "total_tokens": 100,
+                "input_tokens": 60,
+                "output_tokens": 40,
+                "cost_usd": 0.05,
+                "duration_ms": 1000,
+            },
+        )
 
         synthesis_usage = {
             "total_tokens": 50,
@@ -284,21 +293,27 @@ class TestUsageCollector:
         """Test getting usage breakdown organized by metric type."""
         collector = UsageCollector()
 
-        collector.add_manual_usage("agent1", {
-            "total_tokens": 100,
-            "input_tokens": 60,
-            "output_tokens": 40,
-            "cost_usd": 0.05,
-            "duration_ms": 1000,
-        })
+        collector.add_manual_usage(
+            "agent1",
+            {
+                "total_tokens": 100,
+                "input_tokens": 60,
+                "output_tokens": 40,
+                "cost_usd": 0.05,
+                "duration_ms": 1000,
+            },
+        )
 
-        collector.add_manual_usage("agent2", {
-            "total_tokens": 150,
-            "input_tokens": 90,
-            "output_tokens": 60,
-            "cost_usd": 0.08,
-            "duration_ms": 1500,
-        })
+        collector.add_manual_usage(
+            "agent2",
+            {
+                "total_tokens": 150,
+                "input_tokens": 90,
+                "output_tokens": 60,
+                "cost_usd": 0.08,
+                "duration_ms": 1500,
+            },
+        )
 
         breakdown = collector.get_usage_breakdown_by_metric()
 
@@ -358,7 +373,9 @@ class TestUsageCollector:
 
         # Original should be unchanged
         assert usage2["agent1"]["total_tokens"] == 100
-        assert collector.get_agent_usage_data("agent1")["total_tokens"] == 100
+        agent1_data = collector.get_agent_usage_data("agent1")
+        assert agent1_data is not None
+        assert agent1_data["total_tokens"] == 100
 
     def test_complex_workflow(self) -> None:
         """Test complex workflow with multiple operations."""
@@ -381,15 +398,18 @@ class TestUsageCollector:
         collector.collect_agent_usage("llm_agent2", mock_model2)
 
         # Add manual usage for script agent
-        collector.add_manual_usage("script_agent", {
-            "total_tokens": 0,  # Script agents don't use tokens
-            "duration_ms": 500,
-        })
+        collector.add_manual_usage(
+            "script_agent",
+            {
+                "total_tokens": 0,  # Script agents don't use tokens
+                "duration_ms": 500,
+            },
+        )
 
         # Merge additional usage
-        collector.merge_usage({
-            "external_agent": {"total_tokens": 75, "cost_usd": 0.03}
-        })
+        collector.merge_usage(
+            {"external_agent": {"total_tokens": 75, "cost_usd": 0.03}}
+        )
 
         # Calculate summary
         summary = collector.calculate_usage_summary()
@@ -403,4 +423,3 @@ class TestUsageCollector:
 
         final_summary = collector.calculate_usage_summary()
         assert final_summary["totals"]["agents_count"] == 3
-

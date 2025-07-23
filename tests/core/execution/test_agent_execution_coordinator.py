@@ -53,7 +53,9 @@ class TestAgentExecutionCoordinator:
         coordinator, mocks = self.setup_coordinator()
 
         # Mock that completes quickly
-        async def quick_execution(config: dict[str, Any], input_data: str) -> tuple[str, Any]:
+        async def quick_execution(
+            config: dict[str, Any], input_data: str
+        ) -> tuple[str, Any]:
             await asyncio.sleep(0.01)  # Very short delay
             return ("Quick response", None)
 
@@ -61,7 +63,9 @@ class TestAgentExecutionCoordinator:
 
         agent_config = {"name": "test_agent", "model": "mock"}
         result = await coordinator.execute_agent_with_timeout(
-            agent_config, "test input", 1  # 1 second timeout
+            agent_config,
+            "test input",
+            1,  # 1 second timeout
         )
 
         assert result == ("Quick response", None)
@@ -72,17 +76,21 @@ class TestAgentExecutionCoordinator:
         coordinator, mocks = self.setup_coordinator()
 
         # Mock that takes too long
-        async def slow_execution(config: dict[str, Any], input_data: str) -> tuple[str, Any]:
-            await asyncio.sleep(0.2)  # Longer than timeout
+        async def slow_execution(
+            config: dict[str, Any], input_data: str
+        ) -> tuple[str, Any]:
+            await asyncio.sleep(2.0)  # 2 seconds, longer than timeout
             return ("Slow response", None)
 
         mocks["agent_executor"].side_effect = slow_execution
 
         agent_config = {"name": "test_agent", "model": "mock"}
 
-        with pytest.raises(Exception, match="timed out after 0.1 seconds"):
+        with pytest.raises(Exception, match="timed out after 1 seconds"):
             await coordinator.execute_agent_with_timeout(
-                agent_config, "test input", 0.1  # 100ms timeout
+                agent_config,
+                "test input",
+                1,  # 1 second timeout (but will time out due to slow mock)
             )
 
     def test_get_effective_concurrency_limit_configured(self) -> None:
@@ -95,7 +103,8 @@ class TestAgentExecutionCoordinator:
 
     def test_get_effective_concurrency_limit_calculated_small(self) -> None:
         """Test calculated concurrency limit for small ensembles."""
-        performance_config = {"execution": {"default_timeout": 60}}  # No concurrency config
+        # No concurrency config
+        performance_config = {"execution": {"default_timeout": 60}}
         coordinator = AgentExecutionCoordinator(performance_config, AsyncMock())
 
         assert coordinator.get_effective_concurrency_limit(1) == 1
@@ -140,18 +149,18 @@ class TestAgentExecutionCoordinator:
         coordinator, _ = self.setup_coordinator()
 
         agent_config = {"name": "test"}
-        enhanced_config = {}  # No timeout specified
+        enhanced_config: dict[str, Any] = {}  # No timeout specified
 
         timeout = coordinator.get_agent_timeout(agent_config, enhanced_config)
         assert timeout == 60  # From performance_config default
 
     def test_get_agent_timeout_fallback(self) -> None:
         """Test timeout fallback when no config available."""
-        performance_config = {}  # No execution config
+        performance_config: dict[str, Any] = {}  # No execution config
         coordinator = AgentExecutionCoordinator(performance_config, AsyncMock())
 
         agent_config = {"name": "test"}
-        enhanced_config = {}
+        enhanced_config: dict[str, Any] = {}
 
         timeout = coordinator.get_agent_timeout(agent_config, enhanced_config)
         assert timeout == 60  # Hardcoded fallback
@@ -285,9 +294,7 @@ class TestAgentExecutionCoordinator:
         ]
 
         results = await coordinator.execute_multiple_with_coordination(
-            agents,
-            lambda agent: f"input for {agent['name']}",
-            lambda agent: 30
+            agents, lambda agent: f"input for {agent['name']}", lambda agent: 30
         )
 
         assert len(results) == 2
@@ -302,21 +309,16 @@ class TestAgentExecutionCoordinator:
             "execution": {"default_timeout": 60},
             "concurrency": {"max_concurrent_agents": 2},
         }
-        coordinator = AgentExecutionCoordinator(performance_config, AsyncMock())
+        mock_agent_executor = AsyncMock()
+        coordinator = AgentExecutionCoordinator(performance_config, mock_agent_executor)
 
         # Large enough agent count to trigger semaphore
-        agents = [
-            {"name": f"agent{i}", "model": "mock"} for i in range(5)
-        ]
+        agents = [{"name": f"agent{i}", "model": "mock"} for i in range(5)]
 
-        coordinator._execute_agent.side_effect = [
-            (f"Response {i}", None) for i in range(5)
-        ]
+        mock_agent_executor.side_effect = [(f"Response {i}", None) for i in range(5)]
 
         results = await coordinator.execute_multiple_with_coordination(
-            agents,
-            lambda agent: f"input for {agent['name']}",
-            lambda agent: 30
+            agents, lambda agent: f"input for {agent['name']}", lambda agent: 30
         )
 
         assert len(results) == 5
@@ -327,7 +329,7 @@ class TestAgentExecutionCoordinator:
         """Test getting execution plan."""
         coordinator, _ = self.setup_coordinator()
 
-        agents = [
+        agents: list[dict[str, Any]] = [
             {"name": "agent1", "timeout_seconds": 90},
             {"name": "agent2"},  # No custom timeout
         ]
@@ -372,7 +374,9 @@ class TestAgentExecutionCoordinator:
         coordinator, mocks = self.setup_coordinator()
 
         # Mock some agents fast, some slow
-        async def variable_execution(config: dict[str, Any], input_data: str) -> tuple[str, Any]:
+        async def variable_execution(
+            config: dict[str, Any], input_data: str
+        ) -> tuple[str, Any]:
             if "fast" in config["name"]:
                 await asyncio.sleep(0.01)
                 return (f"Fast {config['name']}", None)
@@ -391,7 +395,7 @@ class TestAgentExecutionCoordinator:
         results = await coordinator.execute_multiple_with_coordination(
             agents,
             lambda agent: f"input for {agent['name']}",
-            lambda agent: 1  # 1 second timeout (should be enough)
+            lambda agent: 1,  # 1 second timeout (should be enough)
         )
 
         assert len(results) == 3
@@ -409,7 +413,9 @@ class TestAgentExecutionCoordinator:
 
         execution_times = []
 
-        async def tracked_execution(config: dict[str, Any], input_data: str) -> tuple[str, Any]:
+        async def tracked_execution(
+            config: dict[str, Any], input_data: str
+        ) -> tuple[str, Any]:
             start_time = asyncio.get_event_loop().time()
             execution_times.append(("start", config["name"], start_time))
             await asyncio.sleep(0.1)  # Simulate work
@@ -424,7 +430,7 @@ class TestAgentExecutionCoordinator:
         results = await coordinator.execute_multiple_with_coordination(
             agents,
             lambda agent: "input",
-            lambda agent: 10  # Long timeout
+            lambda agent: 10,  # Long timeout
         )
 
         assert len(results) == 4
@@ -434,4 +440,5 @@ class TestAgentExecutionCoordinator:
         assert len(start_times) == 4
 
         # Should have exactly 2 concurrent executions at any time
-        # (This is a simplified check - in practice we'd need more sophisticated timing analysis)
+        # This is a simplified check - in practice we'd need more
+        # sophisticated timing analysis

@@ -2,7 +2,8 @@
 
 import asyncio
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from llm_orc.core.execution.input_enhancer import InputEnhancer
 
@@ -15,13 +16,9 @@ class AgentOrchestrator:
         performance_config: dict[str, Any],
         event_emitter: Callable[[str, dict[str, Any]], None],
         config_resolver: Callable[[dict[str, Any]], dict[str, Any]],
-        agent_executor: Callable[
-            [dict[str, Any], str, int | None], tuple[str, Any]
-        ],
+        agent_executor: Callable[[dict[str, Any], str, int | None], tuple[str, Any]],
         input_enhancer: InputEnhancer,
-        results_processor: Callable[
-            [list[Any], dict[str, Any], dict[str, Any]], None
-        ],
+        results_processor: Callable[[list[Any], dict[str, Any], dict[str, Any]], None],
     ) -> None:
         """Initialize orchestrator with required dependencies."""
         self._performance_config = performance_config
@@ -39,7 +36,7 @@ class AgentOrchestrator:
         agent_usage: dict[str, Any],
     ) -> bool:
         """Execute agents in parallel and return success status.
-        
+
         Returns True if all agents succeeded, False if any failed.
         """
         if not agents:
@@ -86,11 +83,9 @@ class AgentOrchestrator:
 
         try:
             # Resolve config and execute - all happening in parallel per agent
-            enhanced_config = await self._resolve_model_profile_to_config(agent_config)
+            enhanced_config = self._resolve_model_profile_to_config(agent_config)
             timeout = enhanced_config.get("timeout_seconds") or (
-                self._performance_config.get("execution", {}).get(
-                    "default_timeout", 60
-                )
+                self._performance_config.get("execution", {}).get("default_timeout", 60)
             )
 
             # Get the appropriate input for this agent
@@ -103,7 +98,7 @@ class AgentOrchestrator:
                     input_data, agent_config["name"]
                 )
 
-            result = await self._execute_agent_with_timeout(
+            result = self._execute_agent_with_timeout(
                 agent_config, agent_input, timeout
             )
 

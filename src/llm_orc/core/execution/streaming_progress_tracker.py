@@ -37,7 +37,7 @@ class StreamingProgressTracker:
         start_time: float,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Track progress and yield events during execution.
-        
+
         Yields progress events: execution_started, agent_progress, execution_completed.
         """
         # Emit execution started event

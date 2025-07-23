@@ -1,7 +1,7 @@
 """Agent execution coordination with timeout and concurrency management."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from llm_orc.models.base import ModelInterface
@@ -14,7 +14,7 @@ class AgentExecutionCoordinator:
         self,
         performance_config: dict[str, Any],
         agent_executor: Callable[
-            [dict[str, Any], str], tuple[str, ModelInterface | None]
+            [dict[str, Any], str], Awaitable[tuple[str, ModelInterface | None]]
         ],
     ) -> None:
         """Initialize coordinator with performance config and agent executor."""
@@ -68,10 +68,13 @@ class AgentExecutionCoordinator:
         """Get timeout for an agent based on config hierarchy."""
         # Priority: enhanced_config -> performance_config default
         timeout = enhanced_config.get("timeout_seconds")
-        if timeout is not None:
-            return timeout
+        if timeout is not None and isinstance(timeout, int):
+            return int(timeout)
 
-        return self._performance_config.get("execution", {}).get("default_timeout", 60)
+        default = self._performance_config.get("execution", {}).get(
+            "default_timeout", 60
+        )
+        return default if isinstance(default, int) else 60
 
     def should_use_concurrency_limit(
         self, agent_count: int, max_concurrent: int
@@ -113,7 +116,7 @@ class AgentExecutionCoordinator:
 
         return timeout_info
 
-    def validate_timeout_config(self, timeout_seconds: int | None) -> bool:
+    def validate_timeout_config(self, timeout_seconds: Any) -> bool:
         """Validate timeout configuration."""
         if timeout_seconds is None:
             return True
@@ -132,7 +135,8 @@ class AgentExecutionCoordinator:
             "concurrency_source": "configured"
             if self._performance_config.get("concurrency", {}).get(
                 "max_concurrent_agents", 0
-            ) > 0
+            )
+            > 0
             else "calculated",
         }
 
@@ -158,13 +162,20 @@ class AgentExecutionCoordinator:
         use_semaphore = self.should_use_concurrency_limit(len(agents), max_concurrent)
 
         if use_semaphore:
-            return await self._execute_with_semaphore_coordination(
+            results = await self._execute_with_semaphore_coordination(
                 agents, input_data_func, timeout_func, max_concurrent
             )
         else:
-            return await self._execute_unlimited_coordination(
+            results = await self._execute_unlimited_coordination(
                 agents, input_data_func, timeout_func
             )
+
+        # Filter out any BaseException instances and return only successful results
+        successful_results: list[tuple[str, Any]] = []
+        for result in results:
+            if not isinstance(result, BaseException):
+                successful_results.append(result)
+        return successful_results
 
     async def _execute_with_semaphore_coordination(
         self,
@@ -177,7 +188,7 @@ class AgentExecutionCoordinator:
         semaphore = self.create_semaphore(max_concurrent)
 
         async def execute_with_coordination(
-            agent_config: dict[str, Any]
+            agent_config: dict[str, Any],
         ) -> tuple[str, Any]:
             input_data = input_data_func(agent_config)
             timeout = timeout_func(agent_config)
@@ -186,11 +197,10 @@ class AgentExecutionCoordinator:
             )
 
         tasks = [
-            asyncio.create_task(execute_with_coordination(agent))
-            for agent in agents
+            asyncio.create_task(execute_with_coordination(agent)) for agent in agents
         ]
 
-        return await asyncio.gather(*tasks, return_exceptions=True)
+        return await asyncio.gather(*tasks, return_exceptions=False)
 
     async def _execute_unlimited_coordination(
         self,
@@ -201,7 +211,7 @@ class AgentExecutionCoordinator:
         """Execute agents without concurrency limits."""
 
         async def execute_with_coordination(
-            agent_config: dict[str, Any]
+            agent_config: dict[str, Any],
         ) -> tuple[str, Any]:
             input_data = input_data_func(agent_config)
             timeout = timeout_func(agent_config)
@@ -210,25 +220,24 @@ class AgentExecutionCoordinator:
             )
 
         tasks = [
-            asyncio.create_task(execute_with_coordination(agent))
-            for agent in agents
+            asyncio.create_task(execute_with_coordination(agent)) for agent in agents
         ]
 
-        return await asyncio.gather(*tasks, return_exceptions=True)
+        return await asyncio.gather(*tasks, return_exceptions=False)
 
-    def get_execution_plan(
-        self, agents: list[dict[str, Any]]
-    ) -> dict[str, Any]:
+    def get_execution_plan(self, agents: list[dict[str, Any]]) -> dict[str, Any]:
         """Get execution plan with timeout and concurrency details."""
         concurrency_info = self.get_concurrency_strategy(len(agents))
 
         agent_timeouts = []
         for agent in agents:
             timeout_info = self.get_timeout_strategy(agent)
-            agent_timeouts.append({
-                "agent_name": agent["name"],
-                "timeout_info": timeout_info,
-            })
+            agent_timeouts.append(
+                {
+                    "agent_name": agent["name"],
+                    "timeout_info": timeout_info,
+                }
+            )
 
         return {
             "total_agents": len(agents),

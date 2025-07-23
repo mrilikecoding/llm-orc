@@ -174,7 +174,7 @@ class TestDependencyResolver:
         """Test filtering agents with satisfied dependencies."""
         resolver, _ = self.setup_resolver()
 
-        agents = [
+        agents: list[dict[str, Any]] = [
             {"name": "independent", "role": "test"},
             {"name": "dependent1", "depends_on": ["independent"]},
             {"name": "dependent2", "depends_on": ["missing"]},
@@ -194,7 +194,7 @@ class TestDependencyResolver:
         """Test filtering agents without dependencies."""
         resolver, _ = self.setup_resolver()
 
-        agents = [
+        agents: list[dict[str, Any]] = [
             {"name": "independent1", "role": "test"},
             {"name": "independent2", "role": "test"},
             {"name": "dependent", "depends_on": ["independent1"]},
@@ -212,7 +212,7 @@ class TestDependencyResolver:
         """Test validation of valid dependency chain."""
         resolver, _ = self.setup_resolver()
 
-        agents = [
+        agents: list[dict[str, Any]] = [
             {"name": "agent1", "role": "test"},
             {"name": "agent2", "depends_on": ["agent1"]},
             {"name": "agent3", "depends_on": ["agent1", "agent2"]},
@@ -324,9 +324,7 @@ class TestDependencyResolver:
         """Test filtering with empty agent list."""
         resolver, _ = self.setup_resolver()
 
-        result = resolver.filter_by_dependency_status(
-            [], set(), with_dependencies=True
-        )
+        result = resolver.filter_by_dependency_status([], set(), with_dependencies=True)
         assert result == []
 
         result = resolver.filter_by_dependency_status(
@@ -340,4 +338,3 @@ class TestDependencyResolver:
 
         errors = resolver.validate_dependency_chain([])
         assert errors == []
-

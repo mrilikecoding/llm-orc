@@ -95,7 +95,12 @@ class UsageCollector:
 
     def get_total_cost(self) -> float:
         """Get total cost across all agents."""
-        return sum(usage.get("cost_usd", 0.0) for usage in self._agent_usage.values())
+        total: float = 0.0
+        for usage in self._agent_usage.values():
+            cost = usage.get("cost_usd", 0.0)
+            if isinstance(cost, int | float):
+                total += float(cost)
+        return total
 
     def get_agent_count(self) -> int:
         """Get number of agents with usage data."""
@@ -115,7 +120,7 @@ class UsageCollector:
 
     def get_usage_breakdown_by_metric(self) -> dict[str, dict[str, Any]]:
         """Get usage breakdown organized by metric type."""
-        breakdown = {
+        breakdown: dict[str, dict[str, Any]] = {
             "tokens": {},
             "costs": {},
             "durations": {},
@@ -140,4 +145,3 @@ class UsageCollector:
             }
 
         return breakdown
-

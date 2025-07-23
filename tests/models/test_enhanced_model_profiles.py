@@ -131,7 +131,9 @@ class TestEnhancedModelProfiles:
         config = EnsembleConfig(
             name="test_ensemble",
             description="Test ensemble with model profile timeout",
-            agents=[{"name": "worker1", "model_profile": "worker_bee", "model": "llama3"}],
+            agents=[
+                {"name": "worker1", "model_profile": "worker_bee", "model": "llama3"}
+            ],
         )
 
         # Mock the configuration manager to return our enhanced profile
@@ -153,18 +155,27 @@ class TestEnhancedModelProfiles:
             mock_model = Mock()
             mock_model.generate_response.return_value = "Task completed"
             mock_model.get_last_usage.return_value = {}
-            
+
             mock_role = Mock()
             mock_role.name = "worker1"
             mock_role.prompt = "You are a worker agent"
-            
-            with patch.object(executor._model_factory, "load_model_from_agent_config", return_value=mock_model):
-                with patch.object(executor, "_load_role_from_config", return_value=mock_role):
+
+            with patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                return_value=mock_model,
+            ):
+                with patch.object(
+                    executor, "_load_role_from_config", return_value=mock_role
+                ):
                     # Mock the execution coordinator method to capture timeout value
                     with patch.object(
                         executor._execution_coordinator, "execute_agent_with_timeout"
                     ) as mock_execute_timeout:
-                        mock_execute_timeout.return_value = ("Task completed", mock_model)
+                        mock_execute_timeout.return_value = (
+                            "Task completed",
+                            mock_model,
+                        )
 
                         # Execute the ensemble (no synthesis in dependency-based arch)
                         await executor.execute(config, "Test task")

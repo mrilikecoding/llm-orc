@@ -77,7 +77,8 @@ class DependencyResolver:
 
     def get_dependencies(self, agent_config: dict[str, Any]) -> list[str]:
         """Get list of dependencies for an agent."""
-        return agent_config.get("depends_on", [])
+        dependencies = agent_config.get("depends_on", [])
+        return dependencies if isinstance(dependencies, list) else []
 
     def dependencies_satisfied(
         self, agent_config: dict[str, Any], completed_agents: set[str]
@@ -163,4 +164,3 @@ class DependencyResolver:
                         break
 
         return errors
-
