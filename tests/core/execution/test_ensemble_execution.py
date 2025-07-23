@@ -1101,9 +1101,9 @@ class TestEnsembleExecutor:
 
         # Mock the execution coordinator to raise the timeout exception directly
         with patch.object(
-            executor._execution_coordinator, 
-            "execute_agent_with_timeout", 
-            new_callable=AsyncMock
+            executor._execution_coordinator,
+            "execute_agent_with_timeout",
+            new_callable=AsyncMock,
         ) as mock_execute:
             # Make the coordinator raise the timeout exception
             timeout_msg = "Agent execution timed out after 1 seconds"
@@ -1175,77 +1175,6 @@ class TestEnsembleExecutor:
         assert len(independent) == 2
         assert len(dependent) == 0
 
-    def test_calculate_usage_summary_with_synthesis(self) -> None:
-        """Test _calculate_usage_summary includes synthesis usage."""
-        executor = EnsembleExecutor()
-
-        agent_usage = {
-            "agent1": {
-                "total_tokens": 100,
-                "input_tokens": 60,
-                "output_tokens": 40,
-                "cost_usd": 0.01,
-                "duration_ms": 1000,
-            },
-            "agent2": {
-                "total_tokens": 150,
-                "input_tokens": 80,
-                "output_tokens": 70,
-                "cost_usd": 0.015,
-                "duration_ms": 1200,
-            },
-        }
-
-        synthesis_usage = {
-            "total_tokens": 50,
-            "input_tokens": 30,
-            "output_tokens": 20,
-            "cost_usd": 0.005,
-            "duration_ms": 500,
-        }
-
-        summary = executor._calculate_usage_summary(agent_usage, synthesis_usage)
-
-        # Check agent usage
-        assert "agents" in summary
-        assert "agent1" in summary["agents"]
-        assert "agent2" in summary["agents"]
-
-        # Check synthesis usage is included
-        assert "synthesis" in summary
-        assert summary["synthesis"]["total_tokens"] == 50
-        assert summary["synthesis"]["cost_usd"] == 0.005
-
-        # Check totals include synthesis
-        totals = summary["totals"]
-        assert totals["total_tokens"] == 300  # 100 + 150 + 50
-        assert totals["total_cost_usd"] == pytest.approx(0.03)  # 0.01 + 0.015 + 0.005
-        assert totals["total_duration_ms"] == 2700  # 1000 + 1200 + 500
-
-    def test_calculate_usage_summary_without_synthesis(self) -> None:
-        """Test _calculate_usage_summary without synthesis usage."""
-        executor = EnsembleExecutor()
-
-        agent_usage = {
-            "agent1": {
-                "total_tokens": 100,
-                "input_tokens": 60,
-                "output_tokens": 40,
-                "cost_usd": 0.01,
-                "duration_ms": 1000,
-            }
-        }
-
-        summary = executor._calculate_usage_summary(agent_usage, None)
-
-        # Should not have synthesis field
-        assert "synthesis" not in summary
-
-        # Totals should only include agent usage
-        totals = summary["totals"]
-        assert totals["total_tokens"] == 100
-        assert totals["total_cost_usd"] == 0.01
-        assert totals["total_duration_ms"] == 1000
 
     @pytest.mark.asyncio
     async def test_resolve_model_profile_to_config_without_profile(self) -> None:

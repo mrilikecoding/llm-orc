@@ -540,8 +540,9 @@ class TestEnsembleExecutionPerformance:
 
         executor = EnsembleExecutor()
 
-        # Act - Analyze dependency graph
-        dependency_graph = executor._analyze_enhanced_dependency_graph(agent_configs)
+        # Act - Analyze dependency graph using the dependency analyzer
+        analyzer = executor._dependency_analyzer
+        dependency_graph = analyzer.analyze_enhanced_dependency_graph(agent_configs)
 
         # Assert - Should identify execution phases correctly
         assert len(dependency_graph["phases"]) == 3, (
@@ -650,9 +651,8 @@ class TestEnsembleExecutionPerformance:
             with patch.object(executor, "_load_role_from_config"):
                 # Execute the test
                 start_time = time.time()
-                await executor._execute_agents_parallel(
-                    agent_configs, "test input", config, {}, {}
-                )
+                # Use main execution method with performance optimization
+                await executor.execute(config, "test input")
                 end_time = time.time()
 
                 total_execution_time = end_time - start_time
@@ -743,9 +743,8 @@ class TestEnsembleExecutionPerformance:
             # Mock role loading (not relevant for this test)
             with patch.object(executor, "_load_role_from_config"):
                 # Execute the test
-                await executor._execute_agents_parallel(
-                    agent_configs, "test input", config, {}, {}
-                )
+                # Use main execution method with performance optimization
+                await executor.execute(config, "test input")
 
                 # Analysis
                 print("\nShared model optimization test results:")
@@ -844,9 +843,8 @@ class TestEnsembleExecutionPerformance:
                     # Mock role loading (not relevant for this test)
                     with patch.object(executor, "_load_role_from_config"):
                         # Execute the test
-                        await executor._execute_agents_parallel(
-                            agent_configs, "test input", config, {}, {}
-                        )
+                        # Use main execution method with performance optimization
+                        await executor.execute(config, "test input")
 
                         # Analysis
                         print("\nInfrastructure sharing test results:")
@@ -940,9 +938,8 @@ class TestEnsembleExecutionPerformance:
                 executor.register_performance_hook(mock_performance_hook)
 
                 # Execute to trigger performance events
-                await executor._execute_agents_parallel(
-                    agent_configs, "test input", config, {}, {}
-                )
+                # Use main execution method with performance optimization
+                await executor.execute(config, "test input")
 
                 # Verify performance events were emitted
                 assert len(performance_events) > 0, (

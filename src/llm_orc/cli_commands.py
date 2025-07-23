@@ -89,7 +89,8 @@ def invoke_ensemble(
     if output_format == "text":
         try:
             performance_config = config_manager.load_performance_config()
-            effective_concurrency = executor._get_effective_concurrency_limit(
+            coordinator = executor._execution_coordinator
+            effective_concurrency = coordinator.get_effective_concurrency_limit(
                 len(ensemble_config.agents)
             )
             # Determine effective streaming setting (CLI flag overrides config)

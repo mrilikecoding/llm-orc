@@ -134,7 +134,7 @@ class TestOAuthTokenStorage:
             side_effect=mock_oauth_claude_model,
         ):
             # Load the model
-            await executor._load_model("anthropic-claude-pro-max")
+            await executor._model_factory.load_model("anthropic-claude-pro-max")
 
             # Verify that the hardcoded client_id was used as fallback
             assert len(oauth_model_calls) == 1
@@ -175,7 +175,7 @@ class TestOAuthTokenStorage:
             side_effect=mock_oauth_claude_model,
         ):
             # Load the model
-            await executor._load_model("anthropic-claude-pro-max")
+            await executor._model_factory.load_model("anthropic-claude-pro-max")
 
             # Verify that the stored client_id was used (not the fallback)
             assert len(oauth_model_calls) == 1
