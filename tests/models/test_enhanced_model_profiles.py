@@ -2,7 +2,7 @@
 
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 import yaml
@@ -131,7 +131,7 @@ class TestEnhancedModelProfiles:
         config = EnsembleConfig(
             name="test_ensemble",
             description="Test ensemble with model profile timeout",
-            agents=[{"name": "worker1", "model_profile": "worker_bee"}],
+            agents=[{"name": "worker1", "model_profile": "worker_bee", "model": "llama3"}],
         )
 
         # Mock the configuration manager to return our enhanced profile
@@ -149,21 +149,32 @@ class TestEnhancedModelProfiles:
         with patch.object(executor, "_resolve_model_profile_to_config") as mock_resolve:
             mock_resolve.return_value = enhanced_profile
 
-            # Mock the timeout execution method to capture timeout value
-            with patch.object(
-                executor, "_execute_agent_with_timeout"
-            ) as mock_execute_timeout:
-                mock_execute_timeout.return_value = ("Task completed", None)
+            # Mock model and role loading for LLM agents
+            mock_model = Mock()
+            mock_model.generate_response.return_value = "Task completed"
+            mock_model.get_last_usage.return_value = {}
+            
+            mock_role = Mock()
+            mock_role.name = "worker1"
+            mock_role.prompt = "You are a worker agent"
+            
+            with patch.object(executor._model_factory, "load_model_from_agent_config", return_value=mock_model):
+                with patch.object(executor, "_load_role_from_config", return_value=mock_role):
+                    # Mock the execution coordinator method to capture timeout value
+                    with patch.object(
+                        executor._execution_coordinator, "execute_agent_with_timeout"
+                    ) as mock_execute_timeout:
+                        mock_execute_timeout.return_value = ("Task completed", mock_model)
 
-                # Execute the ensemble (no synthesis in dependency-based arch)
-                await executor.execute(config, "Test task")
+                        # Execute the ensemble (no synthesis in dependency-based arch)
+                        await executor.execute(config, "Test task")
 
-                # Verify the timeout was passed from model profile
-                mock_execute_timeout.assert_called_once()
-                timeout_arg = mock_execute_timeout.call_args[0][
-                    2
-                ]  # Third argument is timeout
-                assert timeout_arg == 30
+                        # Verify the timeout was passed from model profile
+                        mock_execute_timeout.assert_called_once()
+                        timeout_arg = mock_execute_timeout.call_args[0][
+                            2
+                        ]  # Third argument is timeout
+                        assert timeout_arg == 30
 
     def test_model_profile_explicit_overrides_take_precedence(self) -> None:
         """Test that explicit agent config overrides model profile defaults."""

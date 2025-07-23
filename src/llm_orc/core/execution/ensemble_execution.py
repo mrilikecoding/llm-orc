@@ -10,10 +10,16 @@ from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.config.roles import RoleDefinition
+from llm_orc.core.execution.agent_execution_coordinator import AgentExecutionCoordinator
 from llm_orc.core.execution.agent_executor import AgentExecutor
+from llm_orc.core.execution.agent_orchestrator import AgentOrchestrator
 from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
+from llm_orc.core.execution.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.input_enhancer import InputEnhancer
 from llm_orc.core.execution.orchestration import Agent
+from llm_orc.core.execution.results_processor import ResultsProcessor
+from llm_orc.core.execution.streaming_progress_tracker import StreamingProgressTracker
+from llm_orc.core.execution.usage_collector import UsageCollector
 from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.models.base import ModelInterface
 
@@ -39,7 +45,28 @@ class EnsembleExecutor:
             self._config_manager, self._credential_storage
         )
         self._dependency_analyzer = DependencyAnalyzer()
+        self._dependency_resolver = DependencyResolver(self._get_agent_role_description)
         self._input_enhancer = InputEnhancer()
+        self._usage_collector = UsageCollector()
+        self._results_processor = ResultsProcessor()
+        self._streaming_progress_tracker = StreamingProgressTracker(
+            self.register_performance_hook, self._remove_performance_hook
+        )
+
+        # Initialize execution coordinator with agent executor function
+        # Use a wrapper to avoid circular dependency with _execute_agent_with_timeout
+        async def agent_executor_wrapper(
+            agent_config: dict[str, Any], input_data: str
+        ) -> tuple[str, ModelInterface | None]:
+            return await self._execute_agent(agent_config, input_data)
+            
+        self._execution_coordinator = AgentExecutionCoordinator(
+            self._performance_config, agent_executor_wrapper
+        )
+
+        # Note: AgentOrchestrator not used in current simplified implementation
+
+        # Keep existing agent executor for backward compatibility
         self._agent_executor = AgentExecutor(
             self._performance_config,
             self._emit_performance_event,
@@ -67,6 +94,13 @@ class EnsembleExecutor:
         """Register a performance monitoring hook for Issue #27 visualization."""
         self._performance_hooks.append(hook)
 
+    def _remove_performance_hook(
+        self, hook: Callable[[str, dict[str, Any]], None]
+    ) -> None:
+        """Remove a performance monitoring hook."""
+        if hook in self._performance_hooks:
+            self._performance_hooks.remove(hook)
+
     def _emit_performance_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Emit performance monitoring events to registered hooks."""
         for hook in self._performance_hooks:
@@ -84,80 +118,14 @@ class EnsembleExecutor:
         Yields progress events during execution for real-time monitoring.
         Events include: execution_started, agent_progress, execution_completed.
         """
+        # Use StreamingProgressTracker for streaming execution
         start_time = time.time()
+        execution_task = asyncio.create_task(self.execute(config, input_data))
 
-        # Emit execution started event
-        yield {
-            "type": "execution_started",
-            "data": {
-                "ensemble": config.name,
-                "timestamp": start_time,
-                "total_agents": len(config.agents),
-            },
-        }
-
-        # Set up progress tracking
-        progress_events: list[dict[str, Any]] = []
-
-        # Register a progress hook to capture streaming events
-        def progress_hook(event_type: str, data: dict[str, Any]) -> None:
-            progress_events.append({"type": event_type, "data": data})
-
-        # Register our progress hook
-        self.register_performance_hook(progress_hook)
-
-        # Execute the ensemble using the existing execute method
-        try:
-            # Create task for execution
-            execution_task = asyncio.create_task(self.execute(config, input_data))
-
-            # Monitor progress while execution runs
-            last_progress_count = 0
-            while not execution_task.done():
-                # Check for new progress events
-                completed_count = len(
-                    [e for e in progress_events if e["type"] == "agent_completed"]
-                )
-
-                # Emit progress update if we have new completions
-                if completed_count > last_progress_count:
-                    yield {
-                        "type": "agent_progress",
-                        "data": {
-                            "completed_agents": completed_count,
-                            "total_agents": len(config.agents),
-                            "progress_percentage": (
-                                completed_count / len(config.agents)
-                            )
-                            * 100,
-                            "timestamp": time.time(),
-                        },
-                    }
-                    last_progress_count = completed_count
-
-                # Small delay to avoid busy waiting
-                await asyncio.sleep(0.05)
-
-            # Get final results
-            final_result = await execution_task
-
-            # Emit execution completed event with full results
-            yield {
-                "type": "execution_completed",
-                "data": {
-                    "ensemble": config.name,
-                    "timestamp": time.time(),
-                    "duration": time.time() - start_time,
-                    "results": final_result["results"],
-                    "metadata": final_result["metadata"],
-                    "status": final_result["status"],
-                },
-            }
-
-        finally:
-            # Clean up the progress hook
-            if progress_hook in self._performance_hooks:
-                self._performance_hooks.remove(progress_hook)
+        async for event in self._streaming_progress_tracker.track_execution_progress(
+            config, execution_task, start_time
+        ):
+            yield event
 
     async def execute(self, config: EnsembleConfig, input_data: str) -> dict[str, Any]:
         """Execute an ensemble and return structured results."""
@@ -166,22 +134,17 @@ class EnsembleExecutor:
         # Store agent configs for role descriptions
         self._current_agent_configs = config.agents
 
-        # Initialize result structure
-        result: dict[str, Any] = {
-            "ensemble": config.name,
-            "status": "running",
-            "input": {"data": input_data},
-            "results": {},
-            "synthesis": None,
-            "metadata": {"agents_used": len(config.agents), "started_at": start_time},
-        }
-
-        # Ensure results is properly typed
+        # Initialize result structure using ResultsProcessor
+        result = self._results_processor.create_initial_result(
+            config.name, input_data, len(config.agents)
+        )
         results_dict: dict[str, Any] = result["results"]
+
+        # Reset usage collector for this execution
+        self._usage_collector.reset()
 
         # Execute agents in phases: script agents first, then LLM agents
         has_errors = False
-        agent_usage: dict[str, Any] = {}
         context_data: dict[str, Any] = {}
 
         # Phase 1: Execute script agents to gather context
@@ -192,12 +155,15 @@ class EnsembleExecutor:
 
         # Phase 2: Execute LLM agents with dependency-aware phasing
         llm_agent_errors = await self._execute_llm_agents(
-            config, input_data, context_data, results_dict, agent_usage
+            config, input_data, context_data, results_dict
         )
         has_errors = has_errors or llm_agent_errors
 
-        # Finalize and return result
-        return self._finalize_result(result, agent_usage, has_errors, start_time)
+        # Get collected usage and finalize result using ResultsProcessor
+        agent_usage = self._usage_collector.get_agent_usage()
+        return self._results_processor.finalize_result(
+            result, agent_usage, has_errors, start_time
+        )
 
     async def _execute_agent(
         self, agent_config: dict[str, Any], input_data: str
@@ -301,6 +267,11 @@ class EnsembleExecutor:
                 }
                 # Store script results as context for LLM agents
                 context_data[agent_config["name"]] = agent_result
+
+                # Collect usage for script agents
+                self._usage_collector.collect_agent_usage(
+                    agent_config["name"], model_instance
+                )
             except Exception as e:
                 results_dict[agent_config["name"]] = {
                     "error": str(e),
@@ -316,7 +287,6 @@ class EnsembleExecutor:
         input_data: str,
         context_data: dict[str, Any],
         results_dict: dict[str, Any],
-        agent_usage: dict[str, Any],
     ) -> bool:
         """Execute LLM agents with dependency-aware phasing."""
         has_errors = False
@@ -362,106 +332,97 @@ class EnsembleExecutor:
                     },
                 )
 
-                # Determine input for this phase
+                # Determine input for this phase using DependencyResolver
                 if phase_index == 0:
                     # First phase uses the base enhanced input
                     phase_input: str | dict[str, str] = enhanced_input
                 else:
                     # Subsequent phases get enhanced input with dependencies
-                    phase_input = self._input_enhancer.enhance_input_with_dependencies(
-                        enhanced_input, phase_agents, results_dict
+                    phase_input = (
+                        self._dependency_resolver.enhance_input_with_dependencies(
+                            enhanced_input, phase_agents, results_dict
+                        )
                     )
 
-                # Get performance config
-                performance_config = ConfigurationManager().load_performance_config()
-                effective_concurrency = self._get_effective_concurrency_limit(
-                    len(phase_agents)
-                )
+                # Execute agents in this phase individually with proper coordination
+                for agent_config in phase_agents:
+                    try:
+                        agent_name = agent_config["name"]
+                        agent_start_time = time.time()
 
-                # Execute agents in this phase concurrently
-                semaphore = asyncio.Semaphore(effective_concurrency)
+                        # Emit agent started event
+                        self._emit_performance_event(
+                            "agent_started",
+                            {"agent_name": agent_name, "timestamp": agent_start_time},
+                        )
 
-                async def execute_agent_with_semaphore(
-                    agent_cfg: dict[str, Any],
-                    sem: asyncio.Semaphore,
-                    p_input: str | dict[str, str],
-                    enhanced_inp: str,
-                    perf_config: dict[str, Any],
-                ) -> None:
-                    async with sem:
-                        try:
-                            agent_name = agent_cfg["name"]
-                            self._emit_performance_event(
-                                "agent_started", {"agent_name": agent_name}
+                        # Get agent input
+                        agent_input = self._input_enhancer.get_agent_input(
+                            phase_input, agent_name
+                        )
+
+                        # Get timeout from enhanced config (same as script agents)
+                        enhanced_config = await self._resolve_model_profile_to_config(
+                            agent_config
+                        )
+                        timeout = enhanced_config.get("timeout_seconds") or (
+                            self._performance_config.get("execution", {}).get(
+                                "default_timeout", 60
                             )
+                        )
 
-                            # Determine input for this specific agent
-                            if isinstance(p_input, dict):
-                                agent_input = p_input.get(agent_name, enhanced_inp)
-                            else:
-                                agent_input = p_input
-
-                            # Resolve model profile to get enhanced configuration
-                            enhanced_config = (
-                                await self._resolve_model_profile_to_config(agent_cfg)
+                        # Execute agent with timeout coordination
+                        response, model_instance = (
+                            await self._execution_coordinator
+                            .execute_agent_with_timeout(
+                                agent_config, agent_input, timeout
                             )
-                            timeout = enhanced_config.get("timeout_seconds") or (
-                                perf_config.get("execution", {}).get(
-                                    "default_timeout", 60
-                                )
-                            )
+                        )
 
-                            (
-                                agent_result,
-                                model_instance,
-                            ) = await self._execute_agent_with_timeout(
-                                agent_cfg, agent_input, timeout
-                            )
+                        # Store successful result
+                        results_dict[agent_name] = {
+                            "response": response,
+                            "status": "success",
+                        }
 
-                            # Store successful result
-                            results_dict[agent_name] = {
-                                "response": agent_result,
-                                "status": "success",
-                            }
+                        # Collect usage
+                        self._usage_collector.collect_agent_usage(
+                            agent_name, model_instance
+                        )
 
-                            # Capture model usage if available
-                            if model_instance and hasattr(
-                                model_instance, "get_last_usage"
-                            ):
-                                usage = model_instance.get_last_usage()
-                                if usage:
-                                    agent_usage[agent_name] = usage
+                        # Emit agent completed event with duration
+                        agent_end_time = time.time()
+                        duration_ms = int((agent_end_time - agent_start_time) * 1000)
+                        self._emit_performance_event(
+                            "agent_completed",
+                            {
+                                "agent_name": agent_name,
+                                "timestamp": agent_end_time,
+                                "duration_ms": duration_ms,
+                            },
+                        )
 
-                            self._emit_performance_event(
-                                "agent_completed", {"agent_name": agent_name}
-                            )
+                    except Exception as e:
+                        # Handle agent failure
+                        agent_name = agent_config["name"]
+                        results_dict[agent_name] = {
+                            "error": str(e),
+                            "status": "failed",
+                        }
+                        has_errors = True
 
-                        except Exception as e:
-                            # Handle agent failure
-                            agent_name = agent_cfg["name"]
-                            results_dict[agent_name] = {
+                        # Emit agent completed event with error
+                        agent_end_time = time.time()
+                        duration_ms = int((agent_end_time - agent_start_time) * 1000)
+                        self._emit_performance_event(
+                            "agent_completed",
+                            {
+                                "agent_name": agent_name,
+                                "timestamp": agent_end_time,
+                                "duration_ms": duration_ms,
                                 "error": str(e),
-                                "status": "failed",
-                            }
-                            nonlocal has_errors
-                            has_errors = True
-                            self._emit_performance_event(
-                                "agent_failed",
-                                {"agent_name": agent_name, "error": str(e)},
-                            )
-
-                # Execute all agents in this phase
-                tasks = [
-                    execute_agent_with_semaphore(
-                        agent,
-                        semaphore,
-                        phase_input,
-                        enhanced_input,
-                        performance_config,
-                    )
-                    for agent in phase_agents
-                ]
-                await asyncio.gather(*tasks, return_exceptions=True)
+                            },
+                        )
 
                 self._emit_performance_event(
                     "phase_completed",
@@ -496,75 +457,25 @@ class EnsembleExecutor:
         start_time: float,
     ) -> dict[str, Any]:
         """Finalize execution result with metadata and usage summary."""
-        # Calculate usage totals (no coordinator synthesis in dependency-based model)
-        usage_summary = self._calculate_usage_summary(agent_usage, None)
-
-        # Finalize result
-        end_time = time.time()
-        result["status"] = "completed_with_errors" if has_errors else "completed"
-        metadata_dict: dict[str, Any] = result["metadata"]
-        metadata_dict["duration"] = f"{(end_time - start_time):.2f}s"
-        metadata_dict["completed_at"] = end_time
-        metadata_dict["usage"] = usage_summary
-        return result
+        return self._results_processor.finalize_result(
+            result, agent_usage, has_errors, start_time
+        )
 
     def _calculate_usage_summary(
         self, agent_usage: dict[str, Any], synthesis_usage: dict[str, Any] | None
     ) -> dict[str, Any]:
         """Calculate aggregated usage summary."""
-        summary = {
-            "agents": agent_usage,
-            "totals": {
-                "total_tokens": 0,
-                "total_input_tokens": 0,
-                "total_output_tokens": 0,
-                "total_cost_usd": 0.0,
-                "total_duration_ms": 0,
-                "agents_count": len(agent_usage),
-            },
-        }
-
-        # Aggregate agent usage
-        for usage in agent_usage.values():
-            summary["totals"]["total_tokens"] += usage.get("total_tokens", 0)
-            summary["totals"]["total_input_tokens"] += usage.get("input_tokens", 0)
-            summary["totals"]["total_output_tokens"] += usage.get("output_tokens", 0)
-            summary["totals"]["total_cost_usd"] += usage.get("cost_usd", 0.0)
-            summary["totals"]["total_duration_ms"] += usage.get("duration_ms", 0)
-
-        # Add synthesis usage
-        if synthesis_usage:
-            summary["synthesis"] = synthesis_usage
-            summary["totals"]["total_tokens"] += synthesis_usage.get("total_tokens", 0)
-            summary["totals"]["total_input_tokens"] += synthesis_usage.get(
-                "input_tokens", 0
-            )
-            summary["totals"]["total_output_tokens"] += synthesis_usage.get(
-                "output_tokens", 0
-            )
-            summary["totals"]["total_cost_usd"] += synthesis_usage.get("cost_usd", 0.0)
-            summary["totals"]["total_duration_ms"] += synthesis_usage.get(
-                "duration_ms", 0
-            )
-
-        return summary
+        return self._results_processor.calculate_usage_summary(
+            agent_usage, synthesis_usage
+        )
 
     async def _execute_agent_with_timeout(
         self, agent_config: dict[str, Any], input_data: str, timeout_seconds: int | None
     ) -> tuple[str, ModelInterface | None]:
-        """Execute an agent with optional timeout."""
-        if timeout_seconds is None:
-            # No timeout specified, execute normally
-            return await self._execute_agent(agent_config, input_data)
-
-        try:
-            return await asyncio.wait_for(
-                self._execute_agent(agent_config, input_data), timeout=timeout_seconds
-            )
-        except TimeoutError as e:
-            raise Exception(
-                f"Agent execution timed out after {timeout_seconds} seconds"
-            ) from e
+        """Execute agent with timeout using the extracted coordinator."""
+        return await self._execution_coordinator.execute_agent_with_timeout(
+            agent_config, input_data, timeout_seconds
+        )
 
     def _analyze_dependencies(
         self, llm_agents: list[dict[str, Any]]

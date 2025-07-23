@@ -936,7 +936,7 @@ class TestEnsembleExecutor:
             agent_config = {
                 "name": "test_agent",
                 "model_profile": "test-profile",
-                "temperature": 0.9  # Should override profile
+                "temperature": 0.9,  # Should override profile
             }
 
             enhanced = await executor._resolve_model_profile_to_config(agent_config)
@@ -959,7 +959,7 @@ class TestEnsembleExecutor:
 
             agent_config = {
                 "name": "test_agent",
-                "model_profile": "nonexistent-profile"
+                "model_profile": "nonexistent-profile",
             }
 
             # Should return original config when profile doesn't exist
@@ -979,11 +979,7 @@ class TestEnsembleExecutor:
                     "script": "echo 'Script output'",
                     "role": "data_collector",
                 },
-                {
-                    "name": "llm_agent",
-                    "role": "analyzer",
-                    "model": "mock-model"
-                },
+                {"name": "llm_agent", "role": "analyzer", "model": "mock-model"},
             ],
         )
 
@@ -999,12 +995,14 @@ class TestEnsembleExecutor:
             mock_execute_timeout.return_value = ("Script output", None)
 
             with patch.object(
-                executor, "_resolve_model_profile_to_config", return_value={
+                executor,
+                "_resolve_model_profile_to_config",
+                return_value={
                     "name": "script_agent",
                     "type": "script",
                     "script": "echo 'Script output'",
-                    "timeout_seconds": 60
-                }
+                    "timeout_seconds": 60,
+                },
             ):
                 context_data, has_errors = await executor._execute_script_agents(
                     config, "Test input", results_dict
@@ -1105,6 +1103,7 @@ class TestEnsembleExecutor:
         with patch.object(
             executor, "_execute_agent", new_callable=AsyncMock
         ) as mock_execute:
+
             async def slow_execute(
                 config: dict[str, Any], data: str
             ) -> tuple[str, None]:
@@ -1114,9 +1113,11 @@ class TestEnsembleExecutor:
             mock_execute.side_effect = slow_execute
 
             # Test with timeout that's shorter than sleep duration
-            with pytest.raises(Exception, match="timed out after 1 seconds"):
+            with pytest.raises(Exception, match="timed out after 0.1 seconds"):
                 await executor._execute_agent_with_timeout(
-                    agent_config, input_data, 1  # 1 second timeout
+                    agent_config,
+                    input_data,
+                    0.1,  # 100ms timeout (shorter than 200ms sleep)
                 )
 
     @pytest.mark.asyncio
@@ -1131,13 +1132,13 @@ class TestEnsembleExecutor:
                 "name": "dependent1",
                 "role": "synthesizer",
                 "model": "mock-model",
-                "depends_on": ["independent1", "independent2"]
+                "depends_on": ["independent1", "independent2"],
             },
             {
                 "name": "dependent2",
                 "role": "summarizer",
                 "model": "mock-model",
-                "depends_on": ["dependent1"]
+                "depends_on": ["dependent1"],
             },
         ]
 
@@ -1167,7 +1168,7 @@ class TestEnsembleExecutor:
                 "name": "agent2",
                 "role": "reviewer",
                 "model": "mock-model",
-                "depends_on": []  # Empty dependencies
+                "depends_on": [],  # Empty dependencies
             },
         ]
 
@@ -1195,7 +1196,7 @@ class TestEnsembleExecutor:
                 "output_tokens": 70,
                 "cost_usd": 0.015,
                 "duration_ms": 1200,
-            }
+            },
         }
 
         synthesis_usage = {
