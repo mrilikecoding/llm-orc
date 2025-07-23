@@ -74,7 +74,6 @@ class EnsembleExecutor:
             self._input_enhancer.get_agent_input,
         )
 
-
     async def _load_model_from_agent_config(
         self, agent_config: dict[str, Any]
     ) -> ModelInterface:
@@ -443,7 +442,6 @@ class EnsembleExecutor:
 
         return has_errors
 
-
     async def _execute_agent_with_timeout(
         self, agent_config: dict[str, Any], input_data: str, timeout_seconds: int | None
     ) -> tuple[str, ModelInterface | None]:
@@ -468,9 +466,6 @@ class EnsembleExecutor:
 
         return independent_agents, dependent_agents
 
-
-
-
     def _get_agent_role_description(self, agent_name: str) -> str | None:
         """Get a human-readable role description for an agent."""
         # Try to find the agent in the current ensemble config
@@ -488,4 +483,3 @@ class EnsembleExecutor:
 
         # Fallback: convert name to readable format
         return agent_name.replace("-", " ").title()
-

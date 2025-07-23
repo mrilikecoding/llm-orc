@@ -1175,7 +1175,6 @@ class TestEnsembleExecutor:
         assert len(independent) == 2
         assert len(dependent) == 0
 
-
     @pytest.mark.asyncio
     async def test_resolve_model_profile_to_config_without_profile(self) -> None:
         """Test model profile resolution without model_profile key."""
