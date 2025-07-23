@@ -259,3 +259,93 @@ class TestEnsembleLoader:
                 loader.load_from_file(yaml_path)
         finally:
             Path(yaml_path).unlink()
+
+    def test_list_ensembles_nonexistent_directory(self) -> None:
+        """Test listing ensembles from nonexistent directory (line 53)."""
+        loader = EnsembleLoader()
+
+        # Test nonexistent directory
+        result = loader.list_ensembles("/nonexistent/directory")
+
+        assert result == []
+
+    def test_list_ensembles_with_valid_files(self) -> None:
+        """Test listing ensembles from directory with valid files."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create a valid .yaml file
+            yaml_config = {
+                "name": "test_ensemble_yaml",
+                "description": "Test ensemble in YAML",
+                "agents": [{"name": "agent1", "model": "claude-3-sonnet"}],
+            }
+            yaml_file = Path(temp_dir) / "test.yaml"
+            with open(yaml_file, "w") as f:
+                yaml.dump(yaml_config, f)
+
+            # Create a valid .yml file
+            yml_config = {
+                "name": "test_ensemble_yml",
+                "description": "Test ensemble in YML",
+                "agents": [{"name": "agent2", "model": "claude-3-sonnet"}],
+            }
+            yml_file = Path(temp_dir) / "test.yml"
+            with open(yml_file, "w") as f:
+                yaml.dump(yml_config, f)
+
+            loader = EnsembleLoader()
+            result = loader.list_ensembles(temp_dir)
+
+            assert len(result) == 2
+            names = [config.name for config in result]
+            assert "test_ensemble_yaml" in names
+            assert "test_ensemble_yml" in names
+
+    def test_list_ensembles_with_invalid_files(self) -> None:
+        """Test listing ensembles with invalid files (lines 60-62, 66-71)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create an invalid .yaml file
+            invalid_yaml = Path(temp_dir) / "invalid.yaml"
+            with open(invalid_yaml, "w") as f:
+                f.write("invalid: yaml: content: [")
+
+            # Create an invalid .yml file
+            invalid_yml = Path(temp_dir) / "invalid.yml"
+            with open(invalid_yml, "w") as f:
+                f.write("invalid: yml: content: {")
+
+            # Create a valid file to ensure others still work
+            valid_config = {
+                "name": "valid_ensemble",
+                "description": "Valid ensemble",
+                "agents": [{"name": "agent1", "model": "claude-3-sonnet"}],
+            }
+            valid_file = Path(temp_dir) / "valid.yaml"
+            with open(valid_file, "w") as f:
+                yaml.dump(valid_config, f)
+
+            loader = EnsembleLoader()
+            result = loader.list_ensembles(temp_dir)
+
+            # Should only return valid ensemble, invalid ones are skipped
+            assert len(result) == 1
+            assert result[0].name == "valid_ensemble"
+
+    def test_list_ensembles_empty_directory(self) -> None:
+        """Test listing ensembles from empty directory."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            loader = EnsembleLoader()
+            result = loader.list_ensembles(temp_dir)
+
+            assert result == []
+
+    def test_list_ensembles_no_yaml_files(self) -> None:
+        """Test listing ensembles from directory with no YAML files."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create non-YAML files
+            (Path(temp_dir) / "readme.txt").write_text("Not a YAML file")
+            (Path(temp_dir) / "config.json").write_text('{"not": "yaml"}')
+
+            loader = EnsembleLoader()
+            result = loader.list_ensembles(temp_dir)
+
+            assert result == []

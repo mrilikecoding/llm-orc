@@ -109,6 +109,208 @@ class TestCredentialStorage:
         assert provider not in credential_storage.list_providers()
 
 
+class TestCredentialStorageAdvanced:
+    """Test advanced credential storage functionality for better coverage."""
+
+    @pytest.fixture
+    def temp_config_dir(self) -> Generator[Path, None, None]:
+        """Create a temporary config directory for testing."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yield Path(temp_dir)
+
+    @pytest.fixture
+    def credential_storage(self, temp_config_dir: Path) -> CredentialStorage:
+        """Create CredentialStorage instance with temp directory."""
+        config_manager = ConfigurationManager()
+        config_manager._global_config_dir = temp_config_dir
+        return CredentialStorage(config_manager)
+
+    def test_encryption_key_creation_new_file(self, temp_config_dir: Path) -> None:
+        """Test encryption key creation when no existing key file (lines 54-58)."""
+        # Given - key file doesn't exist initially
+        key_file = temp_config_dir / ".encryption_key"
+        assert not key_file.exists()
+
+        # When - creating CredentialStorage triggers key creation
+        config_manager = ConfigurationManager()
+        config_manager._global_config_dir = temp_config_dir
+        credential_storage = CredentialStorage(config_manager)
+
+        # Then - key file should be created with proper permissions
+        assert key_file.exists()
+        assert oct(key_file.stat().st_mode)[-3:] == "600"  # Check file permissions
+        assert credential_storage._encryption_key is not None
+
+    def test_load_credentials_empty_file(
+        self, credential_storage: CredentialStorage, temp_config_dir: Path
+    ) -> None:
+        """Test loading credentials from empty file (lines 71-72)."""
+        # Given - create empty credentials file
+        credentials_file = temp_config_dir / "credentials.yaml"
+        with open(credentials_file, "w") as f:
+            f.write("")
+
+        # When
+        result = credential_storage._load_credentials()
+
+        # Then
+        assert result == {}
+
+    def test_load_credentials_file_not_exists(
+        self, credential_storage: CredentialStorage
+    ) -> None:
+        """Test loading credentials when file doesn't exist (lines 64-65)."""
+        # Given - no credentials file exists
+
+        # When
+        result = credential_storage._load_credentials()
+
+        # Then
+        assert result == {}
+
+    def test_load_credentials_decryption_error(
+        self, credential_storage: CredentialStorage, temp_config_dir: Path
+    ) -> None:
+        """Test loading credentials with decryption error (lines 77-78)."""
+        # Given - create invalid encrypted file
+        credentials_file = temp_config_dir / "credentials.yaml"
+        with open(credentials_file, "w") as f:
+            f.write("invalid_encrypted_data")
+
+        # When
+        result = credential_storage._load_credentials()
+
+        # Then - should return empty dict on decryption error
+        assert result == {}
+
+    def test_save_credentials_sets_file_permissions(
+        self, credential_storage: CredentialStorage, temp_config_dir: Path
+    ) -> None:
+        """Test that saving credentials sets proper file permissions (lines 88-89)."""
+        # Given
+        test_credentials = {"test_provider": {"api_key": "test_key"}}
+
+        # When
+        credential_storage._save_credentials(test_credentials)
+
+        # Then
+        credentials_file = temp_config_dir / "credentials.yaml"
+        assert credentials_file.exists()
+        # Check file permissions
+        assert oct(credentials_file.stat().st_mode)[-3:] == "600"
+
+    def test_store_oauth_token_with_all_parameters(
+        self, credential_storage: CredentialStorage
+    ) -> None:
+        """Test storing OAuth token with all optional parameters (lines 125-139)."""
+        # Given
+        provider = "test_provider"
+        access_token = "access_123"
+        refresh_token = "refresh_456"
+        expires_at = 1234567890
+        client_id = "client_789"
+
+        # When
+        credential_storage.store_oauth_token(
+            provider, access_token, refresh_token, expires_at, client_id
+        )
+
+        # Then
+        stored_token = credential_storage.get_oauth_token(provider)
+        assert stored_token is not None
+        assert stored_token["access_token"] == access_token
+        assert stored_token["refresh_token"] == refresh_token
+        assert stored_token["expires_at"] == expires_at
+        assert stored_token["client_id"] == client_id
+
+        # Verify auth method is set correctly
+        assert credential_storage.get_auth_method(provider) == "oauth"
+
+    def test_store_oauth_token_minimal_parameters(
+        self, credential_storage: CredentialStorage
+    ) -> None:
+        """Test storing OAuth token with minimal parameters."""
+        # Given
+        provider = "test_provider"
+        access_token = "access_123"
+
+        # When
+        credential_storage.store_oauth_token(provider, access_token)
+
+        # Then
+        stored_token = credential_storage.get_oauth_token(provider)
+        assert stored_token is not None
+        assert stored_token["access_token"] == access_token
+        assert "refresh_token" not in stored_token
+        assert "expires_at" not in stored_token
+        assert "client_id" not in stored_token
+
+    def test_get_api_key_none_value(
+        self, credential_storage: CredentialStorage
+    ) -> None:
+        """Test getting API key that has None value (lines 154-155)."""
+        # Given - manually store a provider with None api_key
+        credentials = {"test_provider": {"auth_method": "api_key", "api_key": None}}
+        credential_storage._save_credentials(credentials)
+
+        # When
+        result = credential_storage.get_api_key("test_provider")
+
+        # Then
+        assert result is None
+
+    def test_get_oauth_token_partial_data(
+        self, credential_storage: CredentialStorage
+    ) -> None:
+        """Test getting OAuth token with partial data (lines 173-182)."""
+        # Given - store OAuth provider with only access token
+        credentials = {
+            "test_provider": {
+                "auth_method": "oauth",
+                "access_token": "test_access",
+                # Missing other OAuth fields
+            }
+        }
+        credential_storage._save_credentials(credentials)
+
+        # When
+        result = credential_storage.get_oauth_token("test_provider")
+
+        # Then
+        assert result is not None
+        assert result["access_token"] == "test_access"
+        assert "refresh_token" not in result
+        assert "expires_at" not in result
+        assert "client_id" not in result
+
+    def test_get_oauth_token_non_oauth_provider(
+        self, credential_storage: CredentialStorage
+    ) -> None:
+        """Test getting OAuth token for non-OAuth provider."""
+        # Given - store API key provider
+        credential_storage.store_api_key("test_provider", "test_key")
+
+        # When
+        result = credential_storage.get_oauth_token("test_provider")
+
+        # Then
+        assert result is None
+
+    def test_get_auth_method_none_value(
+        self, credential_storage: CredentialStorage
+    ) -> None:
+        """Test getting auth method with None value (lines 198-199)."""
+        # Given - manually store provider with None auth_method
+        credentials = {"test_provider": {"auth_method": None}}
+        credential_storage._save_credentials(credentials)
+
+        # When
+        result = credential_storage.get_auth_method("test_provider")
+
+        # Then
+        assert result is None
+
+
 class TestAuthenticationManager:
     """Test authentication manager functionality."""
 

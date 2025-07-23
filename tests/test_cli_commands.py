@@ -559,6 +559,46 @@ class TestInvokeEnsemble:
                 detailed=False,
             )
 
+    def test_invoke_ensemble_max_concurrent_override(self) -> None:
+        """Test max_concurrent parameter override (line 86)."""
+        mock_config_manager = Mock()
+        mock_config_manager.get_ensembles_dirs.return_value = [Path("/test/ensembles")]
+        mock_config_manager.load_performance_config.return_value = {
+            "streaming_enabled": False
+        }
+
+        mock_ensemble_config = Mock()
+        mock_ensemble_config.name = "test_ensemble"
+        mock_ensemble_config.description = "Test ensemble"
+        mock_ensemble_config.agents = [Mock(), Mock()]
+
+        mock_loader = Mock()
+        mock_loader.find_ensemble.return_value = mock_ensemble_config
+
+        mock_executor = Mock()
+
+        with (
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
+            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
+            patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
+            patch("llm_orc.cli_commands.asyncio.run"),
+            patch("click.echo"),
+        ):
+            # This should hit line 86 (the pass statement in max_concurrent handling)
+            invoke_ensemble(
+                ensemble_name="test_ensemble",
+                input_data="test input",
+                config_dir=None,
+                input_data_option=None,
+                output_format="json",
+                streaming=False,
+                max_concurrent=5,  # This triggers the max_concurrent override logic
+                detailed=False,
+            )
+
 
 class TestListEnsemblesCommand:
     """Test the list_ensembles_command function."""
@@ -620,6 +660,97 @@ class TestListEnsemblesCommand:
             # Should call list_ensembles with custom directory
             mock_loader.list_ensembles.assert_called_once_with("/custom/config")
 
+    def test_list_ensembles_no_directories_found(self) -> None:
+        """Test when no ensemble directories are found (lines 153-155)."""
+        mock_config_manager = Mock()
+        mock_config_manager.get_ensembles_dirs.return_value = []
+
+        with (
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
+            patch("click.echo") as mock_echo,
+        ):
+            list_ensembles_command(None)
+
+            mock_echo.assert_any_call("No ensemble directories found.")
+            mock_echo.assert_any_call(
+                "Run 'llm-orc config init' to set up local configuration."
+            )
+
+    def test_list_ensembles_no_ensembles_found_in_directories(self) -> None:
+        """Test when no ensembles are found in any directories (lines 175-179)."""
+        mock_config_manager = Mock()
+        mock_config_manager.get_ensembles_dirs.return_value = [Path("/test/ensembles")]
+        mock_config_manager.local_config_dir = None
+
+        mock_loader = Mock()
+        mock_loader.list_ensembles.return_value = []
+
+        with (
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
+            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
+            patch("click.echo") as mock_echo,
+        ):
+            list_ensembles_command(None)
+
+            mock_echo.assert_any_call(
+                "No ensembles found in any configured directories:"
+            )
+            mock_echo.assert_any_call("  /test/ensembles")
+            mock_echo.assert_any_call(
+                "  (Create .yaml files with ensemble configurations)"
+            )
+
+    def test_list_ensembles_with_local_ensembles(self) -> None:
+        """Test listing with local ensembles (lines 185-187)."""
+        mock_config_manager = Mock()
+        mock_config_manager.get_ensembles_dirs.return_value = [
+            Path("/home/.llm-orc/ensembles")
+        ]
+        mock_config_manager.local_config_dir = Path("/home/.llm-orc")
+
+        mock_ensemble = Mock()
+        mock_ensemble.name = "local_ensemble"
+        mock_ensemble.description = "Local test ensemble"
+
+        mock_loader = Mock()
+        mock_loader.list_ensembles.return_value = [mock_ensemble]
+
+        with (
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
+            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
+            patch("click.echo") as mock_echo,
+        ):
+            list_ensembles_command(None)
+
+            mock_echo.assert_any_call("Available ensembles:")
+            mock_echo.assert_any_call("\n📁 Local Repo (.llm-orc/ensembles):")
+            mock_echo.assert_any_call("  local_ensemble: Local test ensemble")
+
+    def test_list_ensembles_custom_dir_no_ensembles(self) -> None:
+        """Test custom directory with no ensembles (lines 203-204)."""
+        mock_loader = Mock()
+        mock_loader.list_ensembles.return_value = []
+
+        with (
+            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
+            patch("click.echo") as mock_echo,
+        ):
+            list_ensembles_command("/custom/config")
+
+            mock_echo.assert_any_call("No ensembles found in /custom/config")
+            mock_echo.assert_any_call(
+                "  (Create .yaml files with ensemble configurations)"
+            )
+
 
 class TestListProfilesCommand:
     """Test the list_profiles_command function."""
@@ -629,6 +760,101 @@ class TestListProfilesCommand:
         with patch("llm_orc.cli_commands.display_local_profiles") as mock_display:
             list_profiles_command()
             mock_display.assert_called_once()
+
+    def test_list_profiles_no_profiles_found(self) -> None:
+        """Test when no model profiles are found (lines 220-222)."""
+        mock_config_manager = Mock()
+        mock_config_manager.get_model_profiles.return_value = {}
+
+        with (
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
+            patch("click.echo") as mock_echo,
+        ):
+            list_profiles_command()
+
+            mock_echo.assert_any_call("No model profiles found.")
+            mock_echo.assert_any_call(
+                "Run 'llm-orc config init' to create default profiles."
+            )
+
+    def test_list_profiles_global_profile_overridden_by_local(self) -> None:
+        """Test when global profile is overridden by local (lines 256-257)."""
+        mock_config_manager = Mock()
+        mock_config_manager.get_model_profiles.return_value = {
+            "test-model": {"provider": "anthropic", "model": "claude-3-sonnet"}
+        }
+        mock_config_manager.global_config_dir = Path("/global")
+        mock_config_manager.local_config_dir = Path("/local")
+
+        # Mock global and local profiles - test-model exists in both (overridden)
+        global_profiles = {
+            "test-model": {"provider": "anthropic", "model": "claude-3-sonnet"}
+        }
+        local_profiles = {
+            "test-model": {"provider": "anthropic", "model": "claude-3-haiku"}
+        }
+
+        with (
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
+            patch("builtins.open"),
+            patch("yaml.safe_load") as mock_yaml_load,
+            patch("llm_orc.cli_commands.get_available_providers", return_value={}),
+            patch("llm_orc.cli_commands.display_local_profiles"),
+            patch("click.echo") as mock_echo,
+        ):
+            # Mock path.exists() to return True for both config files
+            with patch.object(Path, "exists", return_value=True):
+                # Set up yaml.safe_load to return profiles based on call order
+                mock_yaml_load.side_effect = [
+                    {"model_profiles": global_profiles},  # First call (global)
+                    {"model_profiles": local_profiles},  # Second call (local)
+                ]
+
+                list_profiles_command()
+
+            # The key test: verify that the overridden message is shown
+            mock_echo.assert_any_call("  test-model: (overridden by local)")
+
+    def test_list_profiles_invalid_profile_format(self) -> None:
+        """Test handling of invalid profile format (lines 263-267)."""
+        mock_config_manager = Mock()
+        mock_config_manager.get_model_profiles.return_value = {
+            "valid-model": {"provider": "anthropic", "model": "claude-3-sonnet"},
+            "invalid-model": "not_a_dict",  # This is invalid
+        }
+        mock_config_manager.global_config_dir = Path("/global")
+        mock_config_manager.local_config_dir = None
+
+        # Mock global config with invalid profile
+        global_profiles = {
+            "valid-model": {"provider": "anthropic", "model": "claude-3-sonnet"},
+            "invalid-model": "not_a_dict",
+        }
+
+        with (
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
+            patch("builtins.open"),
+            patch("yaml.safe_load", return_value={"model_profiles": global_profiles}),
+            patch("llm_orc.cli_commands.get_available_providers", return_value={}),
+            patch("click.echo") as mock_echo,
+        ):
+            # Mock path.exists() to return True for global config file
+            with patch.object(Path, "exists", return_value=True):
+                list_profiles_command()
+
+            # Check that invalid profile format is handled
+            mock_echo.assert_any_call(
+                "  invalid-model: [Invalid profile format - expected dict, got str]"
+            )
 
 
 class TestServeEnsemble:

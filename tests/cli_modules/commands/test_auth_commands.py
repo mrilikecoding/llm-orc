@@ -286,6 +286,489 @@ class TestListAuthProviders:
         mock_echo.assert_any_call("  provider1: API key")
         mock_echo.assert_any_call("  provider2: OAuth")
 
+    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
+    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
+    @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
+    @patch("llm_orc.menu_system.AuthMenus")
+    @patch("llm_orc.menu_system.show_working")
+    @patch("llm_orc.menu_system.show_success")
+    @patch("llm_orc.menu_system.show_error")
+    @patch(
+        "llm_orc.cli_modules.commands.auth_commands.validate_provider_authentication"
+    )
+    def test_list_providers_interactive_quit_action(
+        self,
+        mock_validate: Mock,
+        mock_show_error: Mock,
+        mock_show_success: Mock,
+        mock_show_working: Mock,
+        mock_auth_menus: Mock,
+        mock_auth_manager_class: Mock,
+        mock_storage_class: Mock,
+        mock_config_class: Mock,
+    ) -> None:
+        """Test interactive listing with quit action."""
+        # Given
+        mock_config = Mock()
+        mock_storage = Mock()
+        mock_auth_manager = Mock()
+
+        mock_config_class.return_value = mock_config
+        mock_storage_class.return_value = mock_storage
+        mock_auth_manager_class.return_value = mock_auth_manager
+
+        providers = ["provider1", "provider2"]
+        mock_storage.list_providers.return_value = providers
+
+        # Mock menu to return quit action
+        mock_auth_menus.auth_list_actions.return_value = ("quit", None)
+
+        # When
+        AuthCommands.list_auth_providers(interactive=True)
+
+        # Then
+        mock_auth_menus.auth_list_actions.assert_called_once_with(providers)
+
+    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
+    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
+    @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
+    @patch("llm_orc.menu_system.AuthMenus")
+    @patch("llm_orc.menu_system.show_working")
+    @patch("llm_orc.menu_system.show_success")
+    @patch("llm_orc.menu_system.show_error")
+    @patch(
+        "llm_orc.cli_modules.commands.auth_commands.validate_provider_authentication"
+    )
+    def test_list_providers_interactive_test_action_success(
+        self,
+        mock_validate: Mock,
+        mock_show_error: Mock,
+        mock_show_success: Mock,
+        mock_show_working: Mock,
+        mock_auth_menus: Mock,
+        mock_auth_manager_class: Mock,
+        mock_storage_class: Mock,
+        mock_config_class: Mock,
+    ) -> None:
+        """Test interactive listing with test action that succeeds."""
+        # Given
+        mock_config = Mock()
+        mock_storage = Mock()
+        mock_auth_manager = Mock()
+
+        mock_config_class.return_value = mock_config
+        mock_storage_class.return_value = mock_storage
+        mock_auth_manager_class.return_value = mock_auth_manager
+
+        providers = ["provider1"]
+        mock_storage.list_providers.return_value = providers
+
+        # Mock menu to return test action, then quit
+        mock_auth_menus.auth_list_actions.side_effect = [
+            ("test", "provider1"),
+            ("quit", None),
+        ]
+
+        # Mock successful validation
+        mock_validate.return_value = True
+
+        # When
+        AuthCommands.list_auth_providers(interactive=True)
+
+        # Then
+        mock_show_working.assert_called_with("Testing provider1...")
+        mock_validate.assert_called_once_with(
+            mock_storage, mock_auth_manager, "provider1"
+        )
+        mock_show_success.assert_called_with("Authentication for provider1 is working!")
+
+    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
+    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
+    @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
+    @patch("llm_orc.menu_system.AuthMenus")
+    @patch("llm_orc.menu_system.show_working")
+    @patch("llm_orc.menu_system.show_success")
+    @patch("llm_orc.menu_system.show_error")
+    @patch(
+        "llm_orc.cli_modules.commands.auth_commands.validate_provider_authentication"
+    )
+    def test_list_providers_interactive_test_action_failure(
+        self,
+        mock_validate: Mock,
+        mock_show_error: Mock,
+        mock_show_success: Mock,
+        mock_show_working: Mock,
+        mock_auth_menus: Mock,
+        mock_auth_manager_class: Mock,
+        mock_storage_class: Mock,
+        mock_config_class: Mock,
+    ) -> None:
+        """Test interactive listing with test action that fails."""
+        # Given
+        mock_config = Mock()
+        mock_storage = Mock()
+        mock_auth_manager = Mock()
+
+        mock_config_class.return_value = mock_config
+        mock_storage_class.return_value = mock_storage
+        mock_auth_manager_class.return_value = mock_auth_manager
+
+        providers = ["provider1"]
+        mock_storage.list_providers.return_value = providers
+
+        # Mock menu to return test action, then quit
+        mock_auth_menus.auth_list_actions.side_effect = [
+            ("test", "provider1"),
+            ("quit", None),
+        ]
+
+        # Mock failed validation
+        mock_validate.return_value = False
+
+        # When
+        AuthCommands.list_auth_providers(interactive=True)
+
+        # Then
+        mock_show_working.assert_called_with("Testing provider1...")
+        mock_validate.assert_called_once_with(
+            mock_storage, mock_auth_manager, "provider1"
+        )
+        mock_show_error.assert_called_with("Authentication for provider1 failed")
+
+    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
+    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
+    @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
+    @patch("llm_orc.menu_system.AuthMenus")
+    @patch("llm_orc.menu_system.show_working")
+    @patch("llm_orc.menu_system.show_success")
+    @patch("llm_orc.menu_system.show_error")
+    @patch(
+        "llm_orc.cli_modules.commands.auth_commands.validate_provider_authentication"
+    )
+    def test_list_providers_interactive_test_action_exception(
+        self,
+        mock_validate: Mock,
+        mock_show_error: Mock,
+        mock_show_success: Mock,
+        mock_show_working: Mock,
+        mock_auth_menus: Mock,
+        mock_auth_manager_class: Mock,
+        mock_storage_class: Mock,
+        mock_config_class: Mock,
+    ) -> None:
+        """Test interactive listing with test action that raises exception."""
+        # Given
+        mock_config = Mock()
+        mock_storage = Mock()
+        mock_auth_manager = Mock()
+
+        mock_config_class.return_value = mock_config
+        mock_storage_class.return_value = mock_storage
+        mock_auth_manager_class.return_value = mock_auth_manager
+
+        providers = ["provider1"]
+        mock_storage.list_providers.return_value = providers
+
+        # Mock menu to return test action, then quit
+        mock_auth_menus.auth_list_actions.side_effect = [
+            ("test", "provider1"),
+            ("quit", None),
+        ]
+
+        # Mock validation raising exception
+        mock_validate.side_effect = Exception("Test error")
+
+        # When
+        AuthCommands.list_auth_providers(interactive=True)
+
+        # Then
+        mock_show_working.assert_called_with("Testing provider1...")
+        mock_show_error.assert_called_with("Test failed: Test error")
+
+    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
+    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
+    @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
+    @patch("llm_orc.menu_system.AuthMenus")
+    @patch("llm_orc.menu_system.confirm_action")
+    @patch("llm_orc.menu_system.show_success")
+    def test_list_providers_interactive_remove_action_confirmed(
+        self,
+        mock_show_success: Mock,
+        mock_confirm: Mock,
+        mock_auth_menus: Mock,
+        mock_auth_manager_class: Mock,
+        mock_storage_class: Mock,
+        mock_config_class: Mock,
+    ) -> None:
+        """Test interactive listing with remove action that is confirmed."""
+        # Given
+        mock_config = Mock()
+        mock_storage = Mock()
+        mock_auth_manager = Mock()
+
+        mock_config_class.return_value = mock_config
+        mock_storage_class.return_value = mock_storage
+        mock_auth_manager_class.return_value = mock_auth_manager
+
+        providers = ["provider1"]
+        mock_storage.list_providers.return_value = providers
+
+        # Mock menu to return remove action, then quit
+        mock_auth_menus.auth_list_actions.side_effect = [
+            ("remove", "provider1"),
+            ("quit", None),
+        ]
+
+        # Mock confirmation as True
+        mock_confirm.return_value = True
+
+        # When
+        AuthCommands.list_auth_providers(interactive=True)
+
+        # Then
+        mock_confirm.assert_called_with("Remove authentication for provider1?")
+        mock_storage.remove_provider.assert_called_once_with("provider1")
+        mock_show_success.assert_called_with("Removed provider1")
+
+    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
+    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
+    @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
+    @patch("llm_orc.menu_system.AuthMenus")
+    @patch("llm_orc.cli_modules.commands.auth_commands.AuthCommands.auth_setup")
+    def test_list_providers_interactive_setup_action(
+        self,
+        mock_auth_setup: Mock,
+        mock_auth_menus: Mock,
+        mock_auth_manager_class: Mock,
+        mock_storage_class: Mock,
+        mock_config_class: Mock,
+    ) -> None:
+        """Test interactive listing with setup action."""
+        # Given
+        mock_config = Mock()
+        mock_storage = Mock()
+        mock_auth_manager = Mock()
+
+        mock_config_class.return_value = mock_config
+        mock_storage_class.return_value = mock_storage
+        mock_auth_manager_class.return_value = mock_auth_manager
+
+        providers: list[str] = []
+        mock_storage.list_providers.return_value = providers
+
+        # Mock menu to return setup action, then quit
+        mock_auth_menus.auth_list_actions.side_effect = [
+            ("setup", None),
+            ("quit", None),
+        ]
+
+        # When
+        AuthCommands.list_auth_providers(interactive=True)
+
+        # Then
+        mock_auth_setup.assert_called_once()
+
+    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
+    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
+    @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
+    @patch("llm_orc.menu_system.AuthMenus")
+    @patch("llm_orc.cli_modules.commands.auth_commands.show_provider_details")
+    def test_list_providers_interactive_details_action(
+        self,
+        mock_show_details: Mock,
+        mock_auth_menus: Mock,
+        mock_auth_manager_class: Mock,
+        mock_storage_class: Mock,
+        mock_config_class: Mock,
+    ) -> None:
+        """Test interactive listing with details action."""
+        # Given
+        mock_config = Mock()
+        mock_storage = Mock()
+        mock_auth_manager = Mock()
+
+        mock_config_class.return_value = mock_config
+        mock_storage_class.return_value = mock_storage
+        mock_auth_manager_class.return_value = mock_auth_manager
+
+        providers = ["provider1"]
+        mock_storage.list_providers.return_value = providers
+
+        # Mock menu to return details action, then quit
+        mock_auth_menus.auth_list_actions.side_effect = [
+            ("details", "provider1"),
+            ("quit", None),
+        ]
+
+        # When
+        AuthCommands.list_auth_providers(interactive=True)
+
+        # Then
+        mock_show_details.assert_called_once_with(mock_storage, "provider1")
+
+    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
+    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
+    @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
+    @patch("llm_orc.menu_system.AuthMenus")
+    @patch("llm_orc.menu_system.show_working")
+    @patch("llm_orc.menu_system.show_success")
+    @patch("llm_orc.menu_system.show_error")
+    @patch("llm_orc.menu_system.show_info")
+    def test_list_providers_interactive_refresh_oauth_action(
+        self,
+        mock_show_info: Mock,
+        mock_show_error: Mock,
+        mock_show_success: Mock,
+        mock_show_working: Mock,
+        mock_auth_menus: Mock,
+        mock_auth_manager_class: Mock,
+        mock_storage_class: Mock,
+        mock_config_class: Mock,
+    ) -> None:
+        """Test interactive listing with refresh action for OAuth provider."""
+        # Given
+        mock_config = Mock()
+        mock_storage = Mock()
+        mock_auth_manager = Mock()
+
+        mock_config_class.return_value = mock_config
+        mock_storage_class.return_value = mock_storage
+        mock_auth_manager_class.return_value = mock_auth_manager
+
+        providers = ["provider1"]
+        mock_storage.list_providers.return_value = providers
+        mock_storage.get_auth_method.return_value = "oauth"
+
+        # Mock menu to return refresh action, then quit
+        mock_auth_menus.auth_list_actions.side_effect = [
+            ("refresh", "provider1"),
+            ("quit", None),
+        ]
+
+        # When
+        AuthCommands.list_auth_providers(interactive=True)
+
+        # Then
+        mock_show_working.assert_called_with("Refreshing tokens for provider1...")
+        mock_storage.get_auth_method.assert_called_with("provider1")
+        mock_show_info.assert_called_with(
+            "Re-authentication required for OAuth token refresh"
+        )
+        mock_show_success.assert_called_with("Token refresh would be performed here")
+
+    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
+    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
+    @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
+    @patch("llm_orc.menu_system.AuthMenus")
+    @patch("llm_orc.menu_system.show_working")
+    @patch("llm_orc.menu_system.show_error")
+    def test_list_providers_interactive_refresh_api_key_action(
+        self,
+        mock_show_error: Mock,
+        mock_show_working: Mock,
+        mock_auth_menus: Mock,
+        mock_auth_manager_class: Mock,
+        mock_storage_class: Mock,
+        mock_config_class: Mock,
+    ) -> None:
+        """Test interactive listing with refresh action for API key provider."""
+        # Given
+        mock_config = Mock()
+        mock_storage = Mock()
+        mock_auth_manager = Mock()
+
+        mock_config_class.return_value = mock_config
+        mock_storage_class.return_value = mock_storage
+        mock_auth_manager_class.return_value = mock_auth_manager
+
+        providers = ["provider1"]
+        mock_storage.list_providers.return_value = providers
+        mock_storage.get_auth_method.return_value = "api_key"
+
+        # Mock menu to return refresh action, then quit
+        mock_auth_menus.auth_list_actions.side_effect = [
+            ("refresh", "provider1"),
+            ("quit", None),
+        ]
+
+        # When
+        AuthCommands.list_auth_providers(interactive=True)
+
+        # Then
+        mock_show_working.assert_called_with("Refreshing tokens for provider1...")
+        mock_storage.get_auth_method.assert_called_with("provider1")
+        mock_show_error.assert_called_with(
+            "Token refresh only available for OAuth providers"
+        )
+
+    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
+    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
+    @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
+    @patch("llm_orc.menu_system.AuthMenus")
+    @patch("llm_orc.menu_system.show_working")
+    @patch("llm_orc.menu_system.show_error")
+    def test_list_providers_interactive_refresh_exception(
+        self,
+        mock_show_error: Mock,
+        mock_show_working: Mock,
+        mock_auth_menus: Mock,
+        mock_auth_manager_class: Mock,
+        mock_storage_class: Mock,
+        mock_config_class: Mock,
+    ) -> None:
+        """Test interactive listing with refresh action that raises exception."""
+        # Given
+        mock_config = Mock()
+        mock_storage = Mock()
+        mock_auth_manager = Mock()
+
+        mock_config_class.return_value = mock_config
+        mock_storage_class.return_value = mock_storage
+        mock_auth_manager_class.return_value = mock_auth_manager
+
+        providers = ["provider1"]
+        mock_storage.list_providers.return_value = providers
+        mock_storage.get_auth_method.side_effect = Exception("Auth method error")
+
+        # Mock menu to return refresh action, then quit
+        mock_auth_menus.auth_list_actions.side_effect = [
+            ("refresh", "provider1"),
+            ("quit", None),
+        ]
+
+        # When
+        AuthCommands.list_auth_providers(interactive=True)
+
+        # Then
+        mock_show_working.assert_called_with("Refreshing tokens for provider1...")
+        mock_show_error.assert_called_with("Refresh failed: Auth method error")
+
+    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
+    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
+    @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
+    def test_list_providers_interactive_exception_handling(
+        self,
+        mock_auth_manager_class: Mock,
+        mock_storage_class: Mock,
+        mock_config_class: Mock,
+    ) -> None:
+        """Test interactive listing with exception in main flow."""
+        # Given
+        mock_config = Mock()
+        mock_storage = Mock()
+
+        mock_config_class.return_value = mock_config
+        mock_storage_class.return_value = mock_storage
+
+        # Mock storage to raise exception
+        mock_storage.list_providers.side_effect = Exception("Storage error")
+
+        # When/Then
+        with pytest.raises(
+            click.ClickException, match="Failed to list providers: Storage error"
+        ):
+            AuthCommands.list_auth_providers(interactive=True)
+
 
 class TestRemoveAuthProvider:
     """Test removing authentication providers."""
@@ -335,6 +818,32 @@ class TestRemoveAuthProvider:
         # When/Then
         with pytest.raises(
             click.ClickException, match="No authentication found for test-provider"
+        ):
+            AuthCommands.remove_auth_provider("test-provider")
+
+    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
+    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
+    def test_remove_provider_exception_handling(
+        self,
+        mock_storage_class: Mock,
+        mock_config_class: Mock,
+    ) -> None:
+        """Test exception handling when remove operation fails (lines 227-228)."""
+        # Given
+        mock_config = Mock()
+        mock_storage = Mock()
+
+        mock_config_class.return_value = mock_config
+        mock_storage_class.return_value = mock_storage
+
+        mock_storage.list_providers.return_value = ["test-provider"]
+
+        # Mock storage.remove_provider to raise a generic exception
+        mock_storage.remove_provider.side_effect = Exception("Storage error")
+
+        # When & Then
+        with pytest.raises(
+            click.ClickException, match="Failed to remove provider: Storage error"
         ):
             AuthCommands.remove_auth_provider("test-provider")
 
@@ -716,6 +1225,132 @@ class TestTokenRefreshAdvanced:
             "Cannot test refresh: no client ID available" in call for call in echo_calls
         )
         assert no_client_id_found
+
+    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
+    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
+    def test_refresh_default_client_id_anthropic_claude_pro_max(
+        self,
+        mock_storage_class: Mock,
+        mock_config_class: Mock,
+    ) -> None:
+        """
+        Test token refresh using default client ID for anthropic-claude-pro-max.
+        (lines 275-276)
+        """
+        # Given
+        mock_config = Mock()
+        mock_storage = Mock()
+
+        mock_config_class.return_value = mock_config
+        mock_storage_class.return_value = mock_storage
+
+        mock_storage.list_providers.return_value = ["anthropic-claude-pro-max"]
+        oauth_token = {
+            "access_token": "test_token",
+            "refresh_token": "test_refresh",
+            "expires_at": time.time() + 3600,
+            # No client_id in the token - should use default
+        }
+        mock_storage.get_oauth_token.return_value = oauth_token
+
+        # Mock OAuthClaudeClient to return successful refresh
+        with patch(
+            "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
+        ) as mock_client_class:
+            mock_client = Mock()
+            mock_client.refresh_access_token.return_value = True
+            mock_client.access_token = "new_access_token"
+            mock_client.refresh_token = "new_refresh_token"
+            mock_client_class.return_value = mock_client
+
+            with (
+                patch("click.echo") as mock_echo,
+                patch("time.time", return_value=1000),
+            ):
+                # When
+                AuthCommands.test_token_refresh("anthropic-claude-pro-max")
+
+                # Then
+                echo_calls = [call[0][0] for call in mock_echo.call_args_list]
+                default_client_id_found = any(
+                    "Using default client ID: 9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+                    in call
+                    for call in echo_calls
+                )
+                assert default_client_id_found
+
+                # Verify client was created with correct tokens
+                mock_client_class.assert_called_once_with(
+                    access_token="test_token",
+                    refresh_token="test_refresh",
+                )
+
+                # Verify refresh was called with default client ID
+                mock_client.refresh_access_token.assert_called_once_with(
+                    "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+                )
+
+    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
+    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
+    def test_refresh_successful_token_update(
+        self,
+        mock_storage_class: Mock,
+        mock_config_class: Mock,
+    ) -> None:
+        """Test successful token refresh and credential update (lines 294-304)."""
+        # Given
+        mock_config = Mock()
+        mock_storage = Mock()
+
+        mock_config_class.return_value = mock_config
+        mock_storage_class.return_value = mock_storage
+
+        mock_storage.list_providers.return_value = ["test-provider"]
+        oauth_token = {
+            "access_token": "old_token",
+            "refresh_token": "old_refresh",
+            "client_id": "test_client_id",
+            "expires_at": time.time() + 3600,
+        }
+        mock_storage.get_oauth_token.return_value = oauth_token
+
+        # Mock OAuthClaudeClient to return successful refresh
+        with patch(
+            "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
+        ) as mock_client_class:
+            mock_client = Mock()
+            mock_client.refresh_access_token.return_value = True
+            mock_client.access_token = "new_access_token"
+            mock_client.refresh_token = "new_refresh_token"
+            mock_client_class.return_value = mock_client
+
+            with (
+                patch("click.echo") as mock_echo,
+                patch("time.time", return_value=1000),
+            ):
+                # When
+                AuthCommands.test_token_refresh("test-provider")
+
+                # Then
+                echo_calls = [call[0][0] for call in mock_echo.call_args_list]
+                success_messages = [
+                    "Token refresh successful!",
+                    "Updated stored credentials",
+                ]
+                for message in success_messages:
+                    found = any(message in call for call in echo_calls)
+                    assert found, (
+                        f"Expected message '{message}' not found in {echo_calls}"
+                    )
+
+                # Verify credentials were updated
+                mock_storage.store_oauth_token.assert_called_once_with(
+                    "test-provider",
+                    "new_access_token",
+                    "new_refresh_token",
+                    expires_at=1000 + 3600,  # time.time() + 3600
+                    client_id="test_client_id",
+                )
 
     # NOTE: Advanced token refresh tests with OAuthClaudeClient are
     # intentionally omitted
