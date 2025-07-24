@@ -184,6 +184,11 @@ class TestOAuthGenerateResponseHelperMethods:
         result = _handle_oauth_token_refresh_error(model, error, "Hello", "Role")
 
         assert result is not None  # Should return a coroutine for retry
+        # Check that it's an awaitable object and close it to prevent warning
+        import inspect
+
+        assert inspect.iscoroutine(result)
+        result.close()  # Close the coroutine to prevent warning
 
     def test_handle_oauth_token_refresh_error_not_token_error(self) -> None:
         """Test handling OAuth error that is not a token error."""

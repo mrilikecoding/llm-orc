@@ -931,6 +931,7 @@ class TestTokenRefresh:
         )
         assert token_info_found
 
+    @patch("llm_orc.core.auth.oauth_client.OAuthClaudeClient")
     @patch("time.time")
     @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
     @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
@@ -939,6 +940,7 @@ class TestTokenRefresh:
         mock_storage_class: Mock,
         mock_config_class: Mock,
         mock_time: Mock,
+        mock_oauth_client_class: Mock,
     ) -> None:
         """Test token refresh with expired token."""
         # Given
@@ -948,7 +950,14 @@ class TestTokenRefresh:
         mock_config_class.return_value = mock_config
         mock_storage_class.return_value = mock_storage
 
-        current_time = 1000000
+        # Mock the OAuth client to prevent actual HTTP requests
+        mock_oauth_client = Mock()
+        mock_oauth_client.refresh_access_token.return_value = False  # Simulate failure
+        mock_oauth_client_class.return_value = mock_oauth_client
+
+        import time
+
+        current_time = int(time.time())  # Use current time
         mock_time.return_value = current_time
 
         mock_storage.list_providers.return_value = ["test-provider"]

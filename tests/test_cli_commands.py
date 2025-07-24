@@ -1,9 +1,8 @@
 """Tests for CLI command implementations."""
 
-import asyncio
 from io import StringIO
 from pathlib import Path
-from unittest.mock import Mock, call, mock_open, patch
+from unittest.mock import AsyncMock, Mock, call, mock_open, patch
 
 import click
 import pytest
@@ -76,6 +75,14 @@ class TestInvokeEnsemble:
         """Test basic ensemble invocation with minimal parameters."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
 
+        # Mock the executor.execute method to return expected structure
+        mock_executor.execute = AsyncMock(
+            return_value={
+                "results": {"test_agent": "Test response"},
+                "metadata": {"execution_time": 1.5},
+            }
+        )
+
         with (
             patch(
                 "llm_orc.cli_commands.ConfigurationManager",
@@ -83,8 +90,6 @@ class TestInvokeEnsemble:
             ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
-            patch("llm_orc.cli_commands.asyncio.run") as mock_run,
-            patch("llm_orc.cli_commands.run_standard_execution"),
         ):
             invoke_ensemble(
                 ensemble_name="test_ensemble",
@@ -105,10 +110,11 @@ class TestInvokeEnsemble:
                 "/test/ensembles", "test_ensemble"
             )
 
-            # Verify asyncio.run was called with standard execution
-            mock_run.assert_called_once()
-            call_args = mock_run.call_args[0][0]
-            assert asyncio.iscoroutine(call_args)
+            # Verify executor.execute was called with correct parameters
+            mock_executor.execute.assert_called_once()
+            call_args = mock_executor.execute.call_args
+            assert call_args[0][0] == mock_ensemble_config  # ensemble_config
+            assert call_args[0][1] == "test input"  # input_data
 
     def test_invoke_ensemble_custom_config_dir(
         self,
@@ -120,6 +126,14 @@ class TestInvokeEnsemble:
         """Test ensemble invocation with custom config directory."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
 
+        # Mock the executor.execute method to return expected structure
+        mock_executor.execute = AsyncMock(
+            return_value={
+                "results": {"test_agent": "Test response"},
+                "metadata": {"execution_time": 1.5},
+            }
+        )
+
         with (
             patch(
                 "llm_orc.cli_commands.ConfigurationManager",
@@ -127,8 +141,6 @@ class TestInvokeEnsemble:
             ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
-            patch("llm_orc.cli_commands.asyncio.run"),
-            patch("llm_orc.cli_commands.run_standard_execution"),
         ):
             invoke_ensemble(
                 ensemble_name="test_ensemble",
@@ -148,6 +160,12 @@ class TestInvokeEnsemble:
             mock_loader.find_ensemble.assert_called_once_with(
                 "/custom/config", "test_ensemble"
             )
+
+            # Verify executor.execute was called with correct parameters
+            mock_executor.execute.assert_called_once()
+            call_args = mock_executor.execute.call_args
+            assert call_args[0][0] == mock_ensemble_config  # ensemble_config
+            assert call_args[0][1] == "test input"  # input_data
 
     def test_invoke_ensemble_no_ensemble_dirs_found(
         self, mock_config_manager: Mock
@@ -210,6 +228,14 @@ class TestInvokeEnsemble:
         """Test input data priority: positional > option."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
 
+        # Mock the executor.execute method to return expected structure
+        mock_executor.execute = AsyncMock(
+            return_value={
+                "results": {"test_agent": "Test response"},
+                "metadata": {"execution_time": 1.5},
+            }
+        )
+
         with (
             patch(
                 "llm_orc.cli_commands.ConfigurationManager",
@@ -217,8 +243,6 @@ class TestInvokeEnsemble:
             ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
-            patch("llm_orc.cli_commands.asyncio.run"),
-            patch("llm_orc.cli_commands.run_standard_execution") as mock_standard_exec,
         ):
             invoke_ensemble(
                 ensemble_name="test_ensemble",
@@ -231,10 +255,11 @@ class TestInvokeEnsemble:
                 detailed=False,
             )
 
-            # The actual input data passed to execution should be positional
-            mock_run_call = mock_standard_exec.call_args
-            # input_data should be the third argument
-            assert "positional_input" in str(mock_run_call)
+            # Verify that executor.execute was called with the positional input
+            mock_executor.execute.assert_called_once()
+            call_args = mock_executor.execute.call_args
+            # The second argument should be the input data (positional takes precedence)
+            assert call_args[0][1] == "positional_input"
 
     def test_invoke_ensemble_fallback_to_option_input(
         self,
@@ -246,6 +271,14 @@ class TestInvokeEnsemble:
         """Test fallback to option input when positional is None."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
 
+        # Mock the executor.execute method to return expected structure
+        mock_executor.execute = AsyncMock(
+            return_value={
+                "results": {"test_agent": "Test response"},
+                "metadata": {"execution_time": 1.5},
+            }
+        )
+
         with (
             patch(
                 "llm_orc.cli_commands.ConfigurationManager",
@@ -253,8 +286,6 @@ class TestInvokeEnsemble:
             ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
-            patch("llm_orc.cli_commands.asyncio.run"),
-            patch("llm_orc.cli_commands.run_standard_execution") as mock_standard_exec,
         ):
             invoke_ensemble(
                 ensemble_name="test_ensemble",
@@ -267,9 +298,11 @@ class TestInvokeEnsemble:
                 detailed=False,
             )
 
-            # The input data passed should be from option
-            mock_run_call = mock_standard_exec.call_args
-            assert "option_input" in str(mock_run_call)
+            # Verify that executor.execute was called with the correct input
+            mock_executor.execute.assert_called_once()
+            call_args = mock_executor.execute.call_args
+            # The second argument should be the input data
+            assert call_args[0][1] == "option_input"
 
     def test_invoke_ensemble_stdin_input(
         self,
@@ -280,6 +313,14 @@ class TestInvokeEnsemble:
     ) -> None:
         """Test reading input from stdin when no input provided."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
+
+        # Mock the executor.execute method to return expected structure
+        mock_executor.execute = AsyncMock(
+            return_value={
+                "results": {"test_agent": "Test response"},
+                "metadata": {"execution_time": 1.5},
+            }
+        )
 
         # Mock stdin
         stdin_data = "input from stdin"
@@ -294,8 +335,6 @@ class TestInvokeEnsemble:
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
             patch("llm_orc.cli_commands.sys.stdin", mock_stdin),
-            patch("llm_orc.cli_commands.asyncio.run"),
-            patch("llm_orc.cli_commands.run_standard_execution") as mock_standard_exec,
         ):
             invoke_ensemble(
                 ensemble_name="test_ensemble",
@@ -308,9 +347,11 @@ class TestInvokeEnsemble:
                 detailed=False,
             )
 
-            # Should use stdin data
-            mock_run_call = mock_standard_exec.call_args
-            assert stdin_data in str(mock_run_call)
+            # Verify that executor.execute was called with stdin data
+            mock_executor.execute.assert_called_once()
+            call_args = mock_executor.execute.call_args
+            # The second argument should be the input data from stdin
+            assert call_args[0][1] == stdin_data
 
     def test_invoke_ensemble_default_input(
         self,
@@ -321,6 +362,14 @@ class TestInvokeEnsemble:
     ) -> None:
         """Test default input when no input provided and not piped."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
+
+        # Mock the executor.execute method to return expected structure
+        mock_executor.execute = AsyncMock(
+            return_value={
+                "results": {"test_agent": "Test response"},
+                "metadata": {"execution_time": 1.5},
+            }
+        )
 
         # Mock stdin as TTY (not piped)
         mock_stdin = Mock()
@@ -334,8 +383,6 @@ class TestInvokeEnsemble:
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
             patch("llm_orc.cli_commands.sys.stdin", mock_stdin),
-            patch("llm_orc.cli_commands.asyncio.run"),
-            patch("llm_orc.cli_commands.run_standard_execution") as mock_standard_exec,
         ):
             invoke_ensemble(
                 ensemble_name="test_ensemble",
@@ -348,9 +395,11 @@ class TestInvokeEnsemble:
                 detailed=False,
             )
 
-            # Should use default input
-            mock_run_call = mock_standard_exec.call_args
-            assert "Please analyze this." in str(mock_run_call)
+            # Verify that executor.execute was called with default input
+            mock_executor.execute.assert_called_once()
+            call_args = mock_executor.execute.call_args
+            # The second argument should be the default input data
+            assert call_args[0][1] == "Please analyze this."
 
     def test_invoke_ensemble_streaming_execution(
         self,
@@ -369,7 +418,7 @@ class TestInvokeEnsemble:
             ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
-            patch("llm_orc.cli_commands.asyncio.run"),
+            patch("llm_orc.cli_commands.asyncio.run") as mock_asyncio_run,
             patch(
                 "llm_orc.cli_commands.run_streaming_execution"
             ) as mock_streaming_exec,
@@ -391,6 +440,9 @@ class TestInvokeEnsemble:
 
             # Should call streaming execution
             mock_streaming_exec.assert_called_once()
+
+            # Verify asyncio.run was called with the streaming function
+            mock_asyncio_run.assert_called_once()
 
     def test_invoke_ensemble_streaming_from_config(
         self,

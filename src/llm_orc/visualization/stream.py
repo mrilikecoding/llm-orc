@@ -138,10 +138,12 @@ class EventStreamManager:
 
         # Schedule cleanup task if event loop is running
         try:
-            cleanup_task = asyncio.create_task(
-                self._cleanup_stream_after_delay(execution_id)
-            )
-            self._cleanup_tasks.add(cleanup_task)
+            loop = asyncio.get_running_loop()
+            if loop:
+                cleanup_task = asyncio.create_task(
+                    self._cleanup_stream_after_delay(execution_id)
+                )
+                self._cleanup_tasks.add(cleanup_task)
         except RuntimeError:
             # No event loop running, skip cleanup task scheduling
             pass

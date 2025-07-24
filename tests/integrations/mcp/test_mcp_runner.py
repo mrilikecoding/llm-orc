@@ -1,6 +1,7 @@
 """Comprehensive tests for MCP server runners."""
 
 import json
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 from aiohttp import web
@@ -31,6 +32,12 @@ class TestMCPServerRunner:
         """Test run method starts server."""
         # Given
         runner = MCPServerRunner("test-ensemble", 8080)
+
+        # Mock asyncio.run to close the coroutine to prevent warnings
+        def close_coro(coro: Any) -> None:
+            coro.close()
+
+        mock_asyncio_run.side_effect = close_coro
 
         # When
         runner.run()
@@ -178,6 +185,12 @@ class TestMCPStdioRunner:
         """Test run method starts stdio server."""
         # Given
         runner = MCPStdioRunner("test-ensemble")
+
+        # Mock asyncio.run to close the coroutine to prevent warnings
+        def close_coro(coro: Any) -> None:
+            coro.close()
+
+        mock_asyncio_run.side_effect = close_coro
 
         # When
         runner.run()

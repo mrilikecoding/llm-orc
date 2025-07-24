@@ -6,7 +6,7 @@ help:
 	@echo "  setup           Setup development environment"
 	@echo "  test            Run tests"
 	@echo "  test-watch      Run tests in watch mode"
-	@echo "  lint            Run linting checks (mypy + ruff + format check)"
+	@echo "  lint            Run linting checks (mypy + ruff + format check + complexity)"
 	@echo "  lint-fix        Run linting checks and auto-fix issues"
 	@echo "  format          Format code with ruff"
 	@echo "  lint-check      Same as lint (compatibility)"
@@ -38,6 +38,7 @@ lint:
 	uv run mypy src tests
 	uv run ruff check src tests
 	uv run ruff format --check src tests
+	uv run complexipy --max-complexity-allowed 15 src
 
 lint-fix:
 	uv run mypy src tests
