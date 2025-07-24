@@ -338,3 +338,118 @@ class TestDependencyResolver:
 
         errors = resolver.validate_dependency_chain([])
         assert errors == []
+
+
+class TestValidateDependencyChainHelperMethods:
+    """Test helper methods extracted from validate_dependency_chain for complexity."""
+
+    def setup_resolver(self) -> DependencyResolver:
+        """Set up resolver for testing."""
+        mock_role_resolver = Mock()
+        mock_role_resolver.return_value = "Test Role"
+        return DependencyResolver(role_resolver=mock_role_resolver)
+
+    def test_validate_basic_dependencies_no_errors(self) -> None:
+        """Test basic dependency validation with no errors."""
+        from llm_orc.core.execution.dependency_resolver import (
+            _validate_basic_dependencies,
+        )
+
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1", "role": "test"},
+            {"name": "agent2", "depends_on": ["agent1"]},
+        ]
+
+        errors = _validate_basic_dependencies(agents)
+        assert errors == []
+
+    def test_validate_basic_dependencies_self_dependency(self) -> None:
+        """Test basic validation detects self-dependency."""
+        from llm_orc.core.execution.dependency_resolver import (
+            _validate_basic_dependencies,
+        )
+
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1", "depends_on": ["agent1"]}
+        ]
+
+        errors = _validate_basic_dependencies(agents)
+        assert len(errors) == 1
+        assert "cannot depend on itself" in errors[0]
+
+    def test_validate_basic_dependencies_missing_dependency(self) -> None:
+        """Test basic validation detects missing dependencies."""
+        from llm_orc.core.execution.dependency_resolver import (
+            _validate_basic_dependencies,
+        )
+
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1", "depends_on": ["missing_agent"]}
+        ]
+
+        errors = _validate_basic_dependencies(agents)
+        assert len(errors) == 1
+        assert "non-existent agent" in errors[0]
+
+    def test_validate_basic_dependencies_multiple_errors(self) -> None:
+        """Test basic validation returns multiple errors."""
+        from llm_orc.core.execution.dependency_resolver import (
+            _validate_basic_dependencies,
+        )
+
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1", "depends_on": ["agent1", "missing"]},
+            {"name": "agent2", "depends_on": ["missing2"]},
+        ]
+
+        errors = _validate_basic_dependencies(agents)
+        assert len(errors) == 3  # Self-dep, missing1, missing2
+
+    def test_detect_circular_dependencies_no_cycles(self) -> None:
+        """Test circular dependency detection with no cycles."""
+        from llm_orc.core.execution.dependency_resolver import (
+            _detect_circular_dependencies,
+        )
+
+        resolver = self.setup_resolver()
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1", "role": "test"},
+            {"name": "agent2", "depends_on": ["agent1"]},
+            {"name": "agent3", "depends_on": ["agent1", "agent2"]},
+        ]
+
+        errors = _detect_circular_dependencies(agents, resolver)
+        assert errors == []
+
+    def test_detect_circular_dependencies_simple_cycle(self) -> None:
+        """Test detection of simple circular dependency."""
+        from llm_orc.core.execution.dependency_resolver import (
+            _detect_circular_dependencies,
+        )
+
+        resolver = self.setup_resolver()
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1", "depends_on": ["agent2"]},
+            {"name": "agent2", "depends_on": ["agent1"]},
+        ]
+
+        errors = _detect_circular_dependencies(agents, resolver)
+        assert len(errors) == 1
+        assert "Circular dependency detected" in errors[0]
+
+    def test_detect_circular_dependencies_complex_cycle(self) -> None:
+        """Test detection of complex circular dependency."""
+        from llm_orc.core.execution.dependency_resolver import (
+            _detect_circular_dependencies,
+        )
+
+        resolver = self.setup_resolver()
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1", "depends_on": ["agent3"]},
+            {"name": "agent2", "depends_on": ["agent1"]},
+            {"name": "agent3", "depends_on": ["agent2"]},
+        ]
+
+        errors = _detect_circular_dependencies(agents, resolver)
+        assert len(errors) == 1
+        assert "Circular dependency detected" in errors[0]

@@ -735,7 +735,7 @@ class TestLoadModelHelperMethods:
     def test_handle_mock_models(self) -> None:
         """Test mock model handling helper method."""
         # When
-        with patch('llm_orc.core.models.model_factory.AsyncMock') as mock_async:
+        with patch("llm_orc.core.models.model_factory.AsyncMock") as mock_async:
             mock_instance = Mock()
             mock_async.return_value = mock_instance
 
@@ -756,11 +756,11 @@ class TestLoadModelHelperMethods:
         # When
         with (
             patch(
-                'llm_orc.core.models.model_factory._should_prompt_for_auth',
+                "llm_orc.core.models.model_factory._should_prompt_for_auth",
                 return_value=True,
             ),
             patch(
-                'llm_orc.core.models.model_factory._prompt_auth_setup',
+                "llm_orc.core.models.model_factory._prompt_auth_setup",
                 return_value=True,
             ),
         ):
@@ -778,7 +778,7 @@ class TestLoadModelHelperMethods:
 
         # When
         with patch(
-            'llm_orc.core.models.model_factory._should_prompt_for_auth',
+            "llm_orc.core.models.model_factory._should_prompt_for_auth",
             return_value=False,
         ):
             result = _handle_no_authentication(model_name, provider, storage)
@@ -807,7 +807,7 @@ class TestLoadModelHelperMethods:
         oauth_token = {
             "access_token": "test-token",
             "refresh_token": "refresh-token",
-            "expires_at": 1234567890
+            "expires_at": 1234567890,
         }
         storage = Mock()
         model_name = "claude-pro"

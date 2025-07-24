@@ -113,54 +113,88 @@ class DependencyResolver:
 
     def validate_dependency_chain(self, agents: list[dict[str, Any]]) -> list[str]:
         """Validate dependency chain and return list of validation errors."""
-        errors = []
-        agent_names = {agent["name"] for agent in agents}
+        # Perform basic validation (self-deps and missing deps)
+        errors = _validate_basic_dependencies(agents)
 
-        for agent in agents:
-            agent_name = agent["name"]
-            dependencies = self.get_dependencies(agent)
-
-            # Check for self-dependency
-            if agent_name in dependencies:
-                errors.append(f"Agent '{agent_name}' cannot depend on itself")
-
-            # Check for missing dependencies
-            for dep in dependencies:
-                if dep not in agent_names:
-                    errors.append(
-                        f"Agent '{agent_name}' depends on non-existent agent '{dep}'"
-                    )
-
-        # Check for circular dependencies using topological sort
-        if not errors:  # Only check cycles if basic validation passes
-            visited = set()
-            rec_stack = set()
-
-            def has_cycle(agent_name: str) -> bool:
-                if agent_name in rec_stack:
-                    return True
-                if agent_name in visited:
-                    return False
-
-                visited.add(agent_name)
-                rec_stack.add(agent_name)
-
-                # Find agent config by name
-                agent_config = next(
-                    (a for a in agents if a["name"] == agent_name), None
-                )
-                if agent_config:
-                    for dep in self.get_dependencies(agent_config):
-                        if has_cycle(dep):
-                            return True
-
-                rec_stack.remove(agent_name)
-                return False
-
-            for agent in agents:
-                if agent["name"] not in visited:
-                    if has_cycle(agent["name"]):
-                        errors.append("Circular dependency detected in agent chain")
-                        break
+        # Check for circular dependencies only if basic validation passes
+        if not errors:
+            circular_errors = _detect_circular_dependencies(agents, self)
+            errors.extend(circular_errors)
 
         return errors
+
+
+def _validate_basic_dependencies(agents: list[dict[str, Any]]) -> list[str]:
+    """Validate basic dependency requirements (self-deps and missing deps).
+
+    Args:
+        agents: List of agent configurations
+
+    Returns:
+        List of validation error messages
+    """
+    errors = []
+    agent_names = {agent["name"] for agent in agents}
+
+    for agent in agents:
+        agent_name = agent["name"]
+        dependencies = agent.get("depends_on", [])
+
+        # Check for self-dependency
+        if agent_name in dependencies:
+            errors.append(f"Agent '{agent_name}' cannot depend on itself")
+
+        # Check for missing dependencies
+        for dep in dependencies:
+            if dep not in agent_names:
+                errors.append(
+                    f"Agent '{agent_name}' depends on non-existent agent '{dep}'"
+                )
+
+    return errors
+
+
+def _detect_circular_dependencies(
+    agents: list[dict[str, Any]], resolver: DependencyResolver
+) -> list[str]:
+    """Detect circular dependencies using depth-first search.
+
+    Args:
+        agents: List of agent configurations
+        resolver: Dependency resolver instance for getting dependencies
+
+    Returns:
+        List of error messages (empty if no cycles detected)
+    """
+    errors = []
+    visited = set()
+    rec_stack = set()
+
+    def has_cycle(agent_name: str) -> bool:
+        if agent_name in rec_stack:
+            return True
+        if agent_name in visited:
+            return False
+
+        visited.add(agent_name)
+        rec_stack.add(agent_name)
+
+        # Find agent config by name
+        agent_config = next(
+            (a for a in agents if a["name"] == agent_name), None
+        )
+        if agent_config:
+            for dep in resolver.get_dependencies(agent_config):
+                if has_cycle(dep):
+                    return True
+
+        rec_stack.remove(agent_name)
+        return False
+
+    for agent in agents:
+        if agent["name"] not in visited:
+            if has_cycle(agent["name"]):
+                errors.append("Circular dependency detected in agent chain")
+                break
+
+    return errors
