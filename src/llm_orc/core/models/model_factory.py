@@ -1,6 +1,6 @@
 """Model factory for creating model instances based on configuration."""
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import click
@@ -81,9 +81,7 @@ class ModelFactory:
         """
         # Handle mock models for testing
         if model_name.startswith("mock"):
-            mock = AsyncMock(spec=ModelInterface)
-            mock.generate_response.return_value = f"Response from {model_name}"
-            return mock
+            return _handle_mock_models(model_name)
 
         storage = self._credential_storage
 
@@ -94,69 +92,26 @@ class ModelFactory:
             auth_method = storage.get_auth_method(lookup_key)
 
             if not auth_method:
-                # Prompt user to set up authentication if not configured
-                if _should_prompt_for_auth(model_name):
-                    auth_configured = _prompt_auth_setup(model_name, storage)
-                    if auth_configured:
-                        # Retry model loading after auth setup
-                        return await self.load_model(model_name, provider)
-
-                # Handle based on provider
-                if provider == "ollama":
-                    # Expected behavior for Ollama - no auth needed
-                    return OllamaModel(model_name=model_name)
-                elif provider:
-                    # Other providers require authentication
-                    raise ValueError(
-                        f"No authentication configured for provider '{provider}' "
-                        f"with model '{model_name}'. "
-                        f"Run 'llm-orc auth setup' to configure authentication."
-                    )
-                else:
-                    # No provider specified, fallback to Ollama
-                    click.echo(
-                        f"ℹ️  No provider specified for '{model_name}', "
-                        f"treating as local Ollama model"
-                    )
-                    return OllamaModel(model_name=model_name)
+                result = _handle_no_authentication(model_name, provider, storage)
+                if isinstance(result, str) and result == "retry":
+                    # Retry model loading after auth setup
+                    return await self.load_model(model_name, provider)
+                # result is guaranteed to be ModelInterface at this point
+                return cast(ModelInterface, result)
 
             if auth_method == "api_key":
                 lookup_key = provider if provider else model_name
                 api_key = storage.get_api_key(lookup_key)
                 if not api_key:
                     raise ValueError(f"No API key found for {lookup_key}")
-
-                # Check if this is a claude-cli configuration
-                # (stored as api_key but path-like)
-                if model_name == "claude-cli" or api_key.startswith("/"):
-                    return ClaudeCLIModel(claude_path=api_key)
-                elif provider == "google-gemini":
-                    from llm_orc.models.google import GeminiModel
-
-                    return GeminiModel(api_key=api_key, model=model_name)
-                else:
-                    # Assume it's an Anthropic API key for Claude
-                    return ClaudeModel(api_key=api_key)
+                return _create_api_key_model(model_name, api_key, provider)
 
             elif auth_method == "oauth":
                 lookup_key = provider if provider else model_name
                 oauth_token = storage.get_oauth_token(lookup_key)
                 if not oauth_token:
                     raise ValueError(f"No OAuth token found for {lookup_key}")
-
-                # Use stored client_id or fallback for anthropic-claude-pro-max
-                client_id = oauth_token.get("client_id")
-                if not client_id and lookup_key == "anthropic-claude-pro-max":
-                    client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-
-                return OAuthClaudeModel(
-                    access_token=oauth_token["access_token"],
-                    refresh_token=oauth_token.get("refresh_token"),
-                    client_id=client_id,
-                    credential_storage=storage,
-                    provider_key=model_name,
-                    expires_at=oauth_token.get("expires_at"),
-                )
+                return _create_oauth_model(oauth_token, storage, lookup_key)
 
             else:
                 raise ValueError(f"Unknown authentication method: {auth_method}")
@@ -316,6 +271,114 @@ def _setup_anthropic_oauth_auth(
     except Exception as e:
         click.echo(f"❌ OAuth setup failed: {str(e)}")
         return False
+
+
+def _handle_mock_models(model_name: str) -> ModelInterface:
+    """Handle mock model creation for testing.
+
+    Args:
+        model_name: Name of the mock model
+
+    Returns:
+        Mock model interface with predefined response
+    """
+    mock = AsyncMock(spec=ModelInterface)
+    mock.generate_response.return_value = f"Response from {model_name}"
+    return mock
+
+
+def _handle_no_authentication(
+    model_name: str, provider: str | None, storage: CredentialStorage
+) -> ModelInterface | str:
+    """Handle cases when no authentication is configured.
+
+    Args:
+        model_name: Name of the model
+        provider: Optional provider name
+        storage: Credential storage instance
+
+    Returns:
+        Model interface or "retry" string to indicate retry after auth setup
+    """
+    # Prompt user to set up authentication if not configured
+    if _should_prompt_for_auth(model_name):
+        auth_configured = _prompt_auth_setup(model_name, storage)
+        if auth_configured:
+            # Signal to retry model loading after auth setup
+            return "retry"
+
+    # Handle based on provider
+    if provider == "ollama":
+        # Expected behavior for Ollama - no auth needed
+        return OllamaModel(model_name=model_name)
+    elif provider:
+        # Other providers require authentication
+        raise ValueError(
+            f"No authentication configured for provider '{provider}' "
+            f"with model '{model_name}'. "
+            f"Run 'llm-orc auth setup' to configure authentication."
+        )
+    else:
+        # No provider specified, fallback to Ollama
+        click.echo(
+            f"ℹ️  No provider specified for '{model_name}', "
+            f"treating as local Ollama model"
+        )
+        return OllamaModel(model_name=model_name)
+
+
+def _create_api_key_model(
+    model_name: str, api_key: str, provider: str | None
+) -> ModelInterface:
+    """Create model using API key authentication.
+
+    Args:
+        model_name: Name of the model
+        api_key: API key for authentication
+        provider: Optional provider name
+
+    Returns:
+        Configured model interface
+    """
+    # Check if this is a claude-cli configuration
+    # (stored as api_key but path-like)
+    if model_name == "claude-cli" or api_key.startswith("/"):
+        return ClaudeCLIModel(claude_path=api_key)
+    elif provider == "google-gemini":
+        from llm_orc.models.google import GeminiModel
+
+        return GeminiModel(api_key=api_key, model=model_name)
+    else:
+        # Assume it's an Anthropic API key for Claude
+        return ClaudeModel(api_key=api_key)
+
+
+def _create_oauth_model(
+    oauth_token: dict[str, Any], storage: CredentialStorage, model_name: str
+) -> ModelInterface:
+    """Create model using OAuth authentication.
+
+    Args:
+        oauth_token: OAuth token dictionary
+        storage: Credential storage instance
+        model_name: Name of the model
+
+    Returns:
+        Configured OAuth model interface
+    """
+    # Use stored client_id or fallback for anthropic-claude-pro-max
+    client_id = oauth_token.get("client_id")
+    if not client_id and model_name == "anthropic-claude-pro-max":
+        client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+
+    return OAuthClaudeModel(
+        access_token=oauth_token["access_token"],
+        refresh_token=oauth_token.get("refresh_token"),
+        client_id=client_id,
+        credential_storage=storage,
+        provider_key=model_name,
+        expires_at=oauth_token.get("expires_at"),
+    )
 
 
 def _setup_claude_cli_auth(storage: CredentialStorage) -> bool:

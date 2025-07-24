@@ -8,6 +8,10 @@ from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.models.model_factory import (
     ModelFactory,
+    _create_api_key_model,
+    _create_oauth_model,
+    _handle_mock_models,
+    _handle_no_authentication,
     _prompt_auth_setup,
     _setup_anthropic_api_auth,
     _setup_anthropic_oauth_auth,
@@ -723,3 +727,94 @@ class TestModuleFunctions:
         )
         mock_echo.assert_any_call("   https://docs.anthropic.com/en/docs/claude-code")
         mock_storage.store_api_key.assert_not_called()
+
+
+class TestLoadModelHelperMethods:
+    """Test helper methods extracted from load_model for complexity reduction."""
+
+    def test_handle_mock_models(self) -> None:
+        """Test mock model handling helper method."""
+        # When
+        with patch('llm_orc.core.models.model_factory.AsyncMock') as mock_async:
+            mock_instance = Mock()
+            mock_async.return_value = mock_instance
+
+            result = _handle_mock_models("mock-test-model")
+
+        # Then
+        assert result == mock_instance
+        mock_async.assert_called_once()
+        mock_instance.generate_response.return_value = "Response from mock-test-model"
+
+    def test_handle_no_authentication_with_prompting(self) -> None:
+        """Test no authentication handler with successful prompting."""
+        # Given
+        model_name = "claude-3-sonnet"
+        provider = "anthropic"
+        storage = Mock()
+
+        # When
+        with (
+            patch(
+                'llm_orc.core.models.model_factory._should_prompt_for_auth',
+                return_value=True,
+            ),
+            patch(
+                'llm_orc.core.models.model_factory._prompt_auth_setup',
+                return_value=True,
+            ),
+        ):
+            result = _handle_no_authentication(model_name, provider, storage)
+
+        # Then
+        assert result == "retry"  # Should indicate retry after auth setup
+
+    def test_handle_no_authentication_ollama_fallback(self) -> None:
+        """Test no authentication handler with Ollama fallback."""
+        # Given
+        model_name = "llama3"
+        provider = None
+        storage = Mock()
+
+        # When
+        with patch(
+            'llm_orc.core.models.model_factory._should_prompt_for_auth',
+            return_value=False,
+        ):
+            result = _handle_no_authentication(model_name, provider, storage)
+
+        # Then
+        assert isinstance(result, OllamaModel)
+        assert result.model_name == "llama3"
+
+    def test_create_api_key_model_claude_cli(self) -> None:
+        """Test API key model creation for Claude CLI."""
+        # Given
+        model_name = "claude-cli"
+        api_key = "/path/to/claude"
+        provider = None
+
+        # When
+        result = _create_api_key_model(model_name, api_key, provider)
+
+        # Then
+        assert isinstance(result, ClaudeCLIModel)
+        assert result.claude_path == "/path/to/claude"
+
+    def test_create_oauth_model(self) -> None:
+        """Test OAuth model creation."""
+        # Given
+        oauth_token = {
+            "access_token": "test-token",
+            "refresh_token": "refresh-token",
+            "expires_at": 1234567890
+        }
+        storage = Mock()
+        model_name = "claude-pro"
+
+        # When
+        result = _create_oauth_model(oauth_token, storage, model_name)
+
+        # Then
+        assert isinstance(result, OAuthClaudeModel)
+        assert result.access_token == "test-token"
