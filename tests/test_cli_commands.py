@@ -3,11 +3,13 @@
 import asyncio
 from io import StringIO
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
+import click
 import pytest
 from click.exceptions import ClickException
 
+import llm_orc.cli_commands
 from llm_orc.cli_commands import (
     add_auth_provider,
     auth_setup,
@@ -911,6 +913,265 @@ class TestConfigCommands:
             mock_config_class.reset_local_config.assert_called_once_with(
                 False, True, "project"
             )
+
+
+class TestInvokeEnsembleHelperMethods:
+    """Test helper methods extracted from invoke_ensemble for complexity reduction."""
+
+    def test_resolve_input_data_positional_priority(self) -> None:
+        """Test input data resolution with positional argument having priority."""
+        # Given
+        positional_input = "positional data"
+        option_input = "option data"
+
+        # When
+        with patch("llm_orc.cli_commands.sys.stdin") as mock_stdin:
+            mock_stdin.isatty.return_value = True
+            result = llm_orc.cli_commands._resolve_input_data(
+                positional_input, option_input
+            )
+
+        # Then
+        assert result == "positional data"
+
+    def test_resolve_input_data_option_fallback(self) -> None:
+        """Test input data resolution falling back to option when positional is None."""
+        # Given
+        positional_input = None
+        option_input = "option data"
+
+        # When
+        with patch("llm_orc.cli_commands.sys.stdin") as mock_stdin:
+            mock_stdin.isatty.return_value = True
+            result = llm_orc.cli_commands._resolve_input_data(
+                positional_input, option_input
+            )
+
+        # Then
+        assert result == "option data"
+
+    def test_resolve_input_data_stdin_when_piped(self) -> None:
+        """Test input data resolution reading from stdin when piped."""
+        # Given
+        positional_input = None
+        option_input = None
+        stdin_content = "piped input data"
+
+        # When
+        with patch("llm_orc.cli_commands.sys.stdin") as mock_stdin:
+            mock_stdin.isatty.return_value = False  # Piped input
+            mock_stdin.read.return_value = stdin_content + "\n  "  # With whitespace
+            result = llm_orc.cli_commands._resolve_input_data(
+                positional_input, option_input
+            )
+
+        # Then
+        assert result == "piped input data"  # Stripped
+
+    def test_resolve_input_data_default_when_tty(self) -> None:
+        """Test input data resolution using default when no input and TTY."""
+        # Given
+        positional_input = None
+        option_input = None
+
+        # When
+        with patch("llm_orc.cli_commands.sys.stdin") as mock_stdin:
+            mock_stdin.isatty.return_value = True  # TTY (not piped)
+            result = llm_orc.cli_commands._resolve_input_data(
+                positional_input, option_input
+            )
+
+        # Then
+        assert result == "Please analyze this."
+
+    def test_find_ensemble_config_found_in_first_dir(self) -> None:
+        """Test ensemble config found in first directory."""
+        # Given
+        ensemble_name = "test-ensemble"
+        ensemble_dirs = [Path("/dir1"), Path("/dir2")]
+        mock_config = Mock()
+        mock_config.name = "test-ensemble"
+
+        # When
+        with patch("llm_orc.cli_commands.EnsembleLoader") as mock_loader_class:
+            mock_loader = Mock()
+            mock_loader_class.return_value = mock_loader
+            mock_loader.find_ensemble.side_effect = [
+                mock_config,
+                None,
+            ]  # Found in first
+
+            result = llm_orc.cli_commands._find_ensemble_config(
+                ensemble_name, ensemble_dirs
+            )
+
+        # Then
+        assert result == mock_config
+        mock_loader.find_ensemble.assert_called_once_with("/dir1", "test-ensemble")
+
+    def test_find_ensemble_config_found_in_second_dir(self) -> None:
+        """Test ensemble config found in second directory."""
+        # Given
+        ensemble_name = "test-ensemble"
+        ensemble_dirs = [Path("/dir1"), Path("/dir2")]
+        mock_config = Mock()
+
+        # When
+        with patch("llm_orc.cli_commands.EnsembleLoader") as mock_loader_class:
+            mock_loader = Mock()
+            mock_loader_class.return_value = mock_loader
+            mock_loader.find_ensemble.side_effect = [
+                None,
+                mock_config,
+            ]  # Found in second
+
+            result = llm_orc.cli_commands._find_ensemble_config(
+                ensemble_name, ensemble_dirs
+            )
+
+        # Then
+        assert result == mock_config
+        assert mock_loader.find_ensemble.call_count == 2
+
+    def test_find_ensemble_config_not_found(self) -> None:
+        """Test ensemble config not found in any directory."""
+        # Given
+        ensemble_name = "missing-ensemble"
+        ensemble_dirs = [Path("/dir1"), Path("/dir2")]
+
+        # When/Then
+        with patch("llm_orc.cli_commands.EnsembleLoader") as mock_loader_class:
+            mock_loader = Mock()
+            mock_loader_class.return_value = mock_loader
+            mock_loader.find_ensemble.return_value = None  # Not found anywhere
+
+            with pytest.raises(
+                click.ClickException,
+                match="Ensemble 'missing-ensemble' not found in: /dir1, /dir2",
+            ):
+                llm_orc.cli_commands._find_ensemble_config(ensemble_name, ensemble_dirs)
+
+
+class TestListEnsemblesHelperMethods:
+    """Test helper methods extracted from list_ensembles_command for complexity."""
+
+    def test_get_grouped_ensembles_with_local_and_global(self) -> None:
+        """Test grouping ensembles into local and global categories."""
+        # Given
+        config_manager = Mock()
+        config_manager.local_config_dir = Path("/local")
+        ensemble_dirs = [Path("/local/ensembles"), Path("/global/ensembles")]
+
+        mock_local_ensemble = Mock()
+        mock_local_ensemble.name = "local-ensemble"
+        mock_global_ensemble = Mock()
+        mock_global_ensemble.name = "global-ensemble"
+
+        # When
+        with patch("llm_orc.cli_commands.EnsembleLoader") as mock_loader_class:
+            mock_loader = Mock()
+            mock_loader_class.return_value = mock_loader
+            mock_loader.list_ensembles.side_effect = [
+                [mock_local_ensemble],
+                [mock_global_ensemble],
+            ]
+
+            local_ensembles, global_ensembles = (
+                llm_orc.cli_commands._get_grouped_ensembles(
+                    config_manager, ensemble_dirs
+                )
+            )
+
+        # Then
+        assert local_ensembles == [mock_local_ensemble]
+        assert global_ensembles == [mock_global_ensemble]
+        assert mock_loader.list_ensembles.call_count == 2
+
+    def test_get_grouped_ensembles_no_local_config(self) -> None:
+        """Test grouping when no local config directory exists."""
+        # Given
+        config_manager = Mock()
+        config_manager.local_config_dir = None
+        ensemble_dirs = [Path("/global/ensembles")]
+
+        mock_ensemble = Mock()
+        mock_ensemble.name = "global-ensemble"
+
+        # When
+        with patch("llm_orc.cli_commands.EnsembleLoader") as mock_loader_class:
+            mock_loader = Mock()
+            mock_loader_class.return_value = mock_loader
+            mock_loader.list_ensembles.return_value = [mock_ensemble]
+
+            local_ensembles, global_ensembles = (
+                llm_orc.cli_commands._get_grouped_ensembles(
+                    config_manager, ensemble_dirs
+                )
+            )
+
+        # Then
+        assert local_ensembles == []
+        assert global_ensembles == [mock_ensemble]
+
+    def test_display_grouped_ensembles_both_types(self) -> None:
+        """Test displaying both local and global ensembles."""
+        # Given
+        config_manager = Mock()
+        config_manager.global_config_dir = Path("/global")
+
+        local_ensemble = Mock()
+        local_ensemble.name = "local-test"
+        local_ensemble.description = "Local description"
+
+        global_ensemble = Mock()
+        global_ensemble.name = "global-test"
+        global_ensemble.description = "Global description"
+
+        local_ensembles = [local_ensemble]
+        global_ensembles = [global_ensemble]
+
+        # When
+        with patch("click.echo") as mock_echo:
+            llm_orc.cli_commands._display_grouped_ensembles(
+                config_manager, local_ensembles, global_ensembles
+            )
+
+        # Then
+        expected_calls = [
+            call("Available ensembles:"),
+            call("\n📁 Local Repo (.llm-orc/ensembles):"),
+            call("  local-test: Local description"),
+            call("\n🌐 Global (/global/ensembles):"),
+            call("  global-test: Global description"),
+        ]
+        mock_echo.assert_has_calls(expected_calls)
+
+    def test_display_grouped_ensembles_only_global(self) -> None:
+        """Test displaying only global ensembles."""
+        # Given
+        config_manager = Mock()
+        config_manager.global_config_dir = Path("/global")
+
+        global_ensemble = Mock()
+        global_ensemble.name = "global-test"
+        global_ensemble.description = "Global description"
+
+        local_ensembles: list[Mock] = []
+        global_ensembles = [global_ensemble]
+
+        # When
+        with patch("click.echo") as mock_echo:
+            llm_orc.cli_commands._display_grouped_ensembles(
+                config_manager, local_ensembles, global_ensembles
+            )
+
+        # Then
+        expected_calls = [
+            call("Available ensembles:"),
+            call("\n🌐 Global (/global/ensembles):"),
+            call("  global-test: Global description"),
+        ]
+        mock_echo.assert_has_calls(expected_calls)
 
 
 class TestAuthCommands:

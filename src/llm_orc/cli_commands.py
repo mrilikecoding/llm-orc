@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 import click
@@ -17,9 +18,124 @@ from llm_orc.cli_modules.utils.visualization import (
     run_streaming_execution,
 )
 from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.core.config.ensemble_config import EnsembleLoader
+from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.integrations.mcp.runner import MCPServerRunner
+
+
+def _resolve_input_data(positional_input: str | None, option_input: str | None) -> str:
+    """Resolve input data using priority: positional > option > stdin > default.
+
+    Args:
+        positional_input: Input data from positional argument
+        option_input: Input data from --input option
+
+    Returns:
+        str: Resolved input data
+    """
+    # Handle input data priority: positional > option > stdin > default
+    final_input_data = positional_input or option_input
+
+    if final_input_data is None:
+        if not sys.stdin.isatty():
+            # Read from stdin (piped input)
+            final_input_data = sys.stdin.read().strip()
+        else:
+            # No input provided and not piped, use default
+            final_input_data = "Please analyze this."
+
+    return final_input_data
+
+
+def _find_ensemble_config(
+    ensemble_name: str, ensemble_dirs: list[Path]
+) -> EnsembleConfig:
+    """Find ensemble configuration in the provided directories.
+
+    Args:
+        ensemble_name: Name of the ensemble to find
+        ensemble_dirs: List of directories to search
+
+    Returns:
+        EnsembleConfig: The found ensemble configuration
+
+    Raises:
+        click.ClickException: If ensemble is not found in any directory
+    """
+    # Find ensemble in the directories
+    loader = EnsembleLoader()
+    ensemble_config = None
+
+    for ensemble_dir in ensemble_dirs:
+        ensemble_config = loader.find_ensemble(str(ensemble_dir), ensemble_name)
+        if ensemble_config is not None:
+            break
+
+    if ensemble_config is None:
+        searched_dirs = [str(d) for d in ensemble_dirs]
+        raise click.ClickException(
+            f"Ensemble '{ensemble_name}' not found in: {', '.join(searched_dirs)}"
+        )
+
+    return ensemble_config
+
+
+def _get_grouped_ensembles(
+    config_manager: ConfigurationManager, ensemble_dirs: list[Path]
+) -> tuple[list[EnsembleConfig], list[EnsembleConfig]]:
+    """Group ensembles into local and global categories.
+
+    Args:
+        config_manager: Configuration manager instance
+        ensemble_dirs: List of ensemble directories to search
+
+    Returns:
+        tuple: (local_ensembles, global_ensembles)
+    """
+    loader = EnsembleLoader()
+    local_ensembles: list[EnsembleConfig] = []
+    global_ensembles: list[EnsembleConfig] = []
+
+    for dir_path in ensemble_dirs:
+        ensembles = loader.list_ensembles(str(dir_path))
+        is_local = config_manager.local_config_dir and str(dir_path).startswith(
+            str(config_manager.local_config_dir)
+        )
+
+        if is_local:
+            local_ensembles.extend(ensembles)
+        else:
+            global_ensembles.extend(ensembles)
+
+    return local_ensembles, global_ensembles
+
+
+def _display_grouped_ensembles(
+    config_manager: ConfigurationManager,
+    local_ensembles: Sequence[EnsembleConfig],
+    global_ensembles: Sequence[EnsembleConfig],
+) -> None:
+    """Display grouped ensembles with proper formatting.
+
+    Args:
+        config_manager: Configuration manager instance
+        local_ensembles: List of local ensemble configs
+        global_ensembles: List of global ensemble configs
+    """
+    click.echo("Available ensembles:")
+
+    # Show local ensembles first
+    if local_ensembles:
+        click.echo("\n📁 Local Repo (.llm-orc/ensembles):")
+        for ensemble in sorted(local_ensembles, key=lambda e: e.name):
+            click.echo(f"  {ensemble.name}: {ensemble.description}")
+
+    # Show global ensembles
+    if global_ensembles:
+        global_config_label = f"Global ({config_manager.global_config_dir}/ensembles)"
+        click.echo(f"\n🌐 {global_config_label}:")
+        for ensemble in sorted(global_ensembles, key=lambda e: e.name):
+            click.echo(f"  {ensemble.name}: {ensemble.description}")
 
 
 def invoke_ensemble(
@@ -49,33 +165,11 @@ def invoke_ensemble(
         # Use specified config directory
         ensemble_dirs = [Path(config_dir)]
 
-    # Handle input data priority: positional > option > stdin > default
-    final_input_data = input_data or input_data_option
+    # Resolve input data using helper method
+    input_data = _resolve_input_data(input_data, input_data_option)
 
-    if final_input_data is None:
-        if not sys.stdin.isatty():
-            # Read from stdin (piped input)
-            final_input_data = sys.stdin.read().strip()
-        else:
-            # No input provided and not piped, use default
-            final_input_data = "Please analyze this."
-
-    input_data = final_input_data
-
-    # Find ensemble in the directories
-    loader = EnsembleLoader()
-    ensemble_config = None
-
-    for ensemble_dir in ensemble_dirs:
-        ensemble_config = loader.find_ensemble(str(ensemble_dir), ensemble_name)
-        if ensemble_config is not None:
-            break
-
-    if ensemble_config is None:
-        searched_dirs = [str(d) for d in ensemble_dirs]
-        raise click.ClickException(
-            f"Ensemble '{ensemble_name}' not found in: {', '.join(searched_dirs)}"
-        )
+    # Find ensemble configuration using helper method
+    ensemble_config = _find_ensemble_config(ensemble_name, ensemble_dirs)
 
     # Create standard executor
     executor = EnsembleExecutor()
@@ -154,21 +248,10 @@ def list_ensembles_command(config_dir: str | None) -> None:
             click.echo("Run 'llm-orc config init' to set up local configuration.")
             return
 
-        # List ensembles from all directories, grouped by location
-        loader = EnsembleLoader()
-        local_ensembles = []
-        global_ensembles = []
-
-        for dir_path in ensemble_dirs:
-            ensembles = loader.list_ensembles(str(dir_path))
-            is_local = config_manager.local_config_dir and str(dir_path).startswith(
-                str(config_manager.local_config_dir)
-            )
-
-            if is_local:
-                local_ensembles.extend(ensembles)
-            else:
-                global_ensembles.extend(ensembles)
+        # Get grouped ensembles using helper method
+        local_ensembles, global_ensembles = _get_grouped_ensembles(
+            config_manager, ensemble_dirs
+        )
 
         # Check if we have any ensembles at all
         if not local_ensembles and not global_ensembles:
@@ -178,22 +261,8 @@ def list_ensembles_command(config_dir: str | None) -> None:
             click.echo("  (Create .yaml files with ensemble configurations)")
             return
 
-        click.echo("Available ensembles:")
-
-        # Show local ensembles first
-        if local_ensembles:
-            click.echo("\n📁 Local Repo (.llm-orc/ensembles):")
-            for ensemble in sorted(local_ensembles, key=lambda e: e.name):
-                click.echo(f"  {ensemble.name}: {ensemble.description}")
-
-        # Show global ensembles
-        if global_ensembles:
-            global_config_label = (
-                f"Global ({config_manager.global_config_dir}/ensembles)"
-            )
-            click.echo(f"\n🌐 {global_config_label}:")
-            for ensemble in sorted(global_ensembles, key=lambda e: e.name):
-                click.echo(f"  {ensemble.name}: {ensemble.description}")
+        # Display grouped ensembles using helper method
+        _display_grouped_ensembles(config_manager, local_ensembles, global_ensembles)
     else:
         # Use specified config directory
         loader = EnsembleLoader()

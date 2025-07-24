@@ -293,9 +293,7 @@ class TestListAuthProviders:
     @patch("llm_orc.menu_system.show_working")
     @patch("llm_orc.menu_system.show_success")
     @patch("llm_orc.menu_system.show_error")
-    @patch(
-        "llm_orc.cli_modules.utils.auth_utils.validate_provider_authentication"
-    )
+    @patch("llm_orc.cli_modules.utils.auth_utils.validate_provider_authentication")
     def test_list_providers_interactive_quit_action(
         self,
         mock_validate: Mock,
@@ -336,9 +334,7 @@ class TestListAuthProviders:
     @patch("llm_orc.menu_system.show_working")
     @patch("llm_orc.menu_system.show_success")
     @patch("llm_orc.menu_system.show_error")
-    @patch(
-        "llm_orc.cli_modules.utils.auth_utils.validate_provider_authentication"
-    )
+    @patch("llm_orc.cli_modules.utils.auth_utils.validate_provider_authentication")
     def test_list_providers_interactive_test_action_success(
         self,
         mock_validate: Mock,
@@ -389,9 +385,7 @@ class TestListAuthProviders:
     @patch("llm_orc.menu_system.show_working")
     @patch("llm_orc.menu_system.show_success")
     @patch("llm_orc.menu_system.show_error")
-    @patch(
-        "llm_orc.cli_modules.utils.auth_utils.validate_provider_authentication"
-    )
+    @patch("llm_orc.cli_modules.utils.auth_utils.validate_provider_authentication")
     def test_list_providers_interactive_test_action_failure(
         self,
         mock_validate: Mock,
@@ -442,9 +436,7 @@ class TestListAuthProviders:
     @patch("llm_orc.menu_system.show_working")
     @patch("llm_orc.menu_system.show_success")
     @patch("llm_orc.menu_system.show_error")
-    @patch(
-        "llm_orc.cli_modules.utils.auth_utils.validate_provider_authentication"
-    )
+    @patch("llm_orc.cli_modules.utils.auth_utils.validate_provider_authentication")
     def test_list_providers_interactive_test_action_exception(
         self,
         mock_validate: Mock,
@@ -1713,17 +1705,17 @@ class TestAuthSetupHelperMethods:
 
 
 class TestListAuthProvidersHelperMethods:
-    """Test helper methods extracted from list_auth_providers for complexity reduction."""
+    """Test helper methods extracted from list_auth_providers for complexity."""
 
     def test_display_simple_provider_list_empty(self) -> None:
         """Test displaying simple provider list when no providers configured."""
         # Given
         providers: list[str] = []
-        
+
         # When
         with patch("click.echo") as mock_echo:
             AuthCommands._display_simple_provider_list(providers)
-        
+
         # Then
         mock_echo.assert_called_once_with("No authentication providers configured")
 
@@ -1733,11 +1725,11 @@ class TestListAuthProvidersHelperMethods:
         providers = ["anthropic-api", "google-gemini"]
         mock_storage = Mock()
         mock_storage.get_auth_method.side_effect = ["api_key", "oauth"]
-        
+
         # When
         with patch("click.echo") as mock_echo:
             AuthCommands._display_simple_provider_list(providers, mock_storage)
-        
+
         # Then
         expected_calls = [
             call("Configured providers:"),
@@ -1752,11 +1744,11 @@ class TestListAuthProvidersHelperMethods:
         providers = ["test-oauth-provider"]
         mock_storage = Mock()
         mock_storage.get_auth_method.return_value = "oauth"
-        
+
         # When
         with patch("click.echo") as mock_echo:
             AuthCommands._display_simple_provider_list(providers, mock_storage)
-        
+
         # Then
         expected_calls = [
             call("Configured providers:"),
@@ -1768,11 +1760,11 @@ class TestListAuthProvidersHelperMethods:
         """Test displaying provider list without storage details."""
         # Given
         providers = ["anthropic-api", "google-gemini"]
-        
+
         # When
         with patch("click.echo") as mock_echo:
             AuthCommands._display_simple_provider_list(providers)
-        
+
         # Then
         expected_calls = [
             call("Configured providers:"),
@@ -1788,15 +1780,15 @@ class TestListAuthProvidersHelperMethods:
         selected_provider = None
         storage = Mock()
         auth_manager = Mock()
-        
+
         # When
         result = AuthCommands._handle_interactive_action(
             action, selected_provider, storage, auth_manager
         )
-        
+
         # Then
         assert result is None  # Quit action returns None
-        
+
     def test_handle_interactive_action_setup(self) -> None:
         """Test handling setup action."""
         # Given
@@ -1804,13 +1796,13 @@ class TestListAuthProvidersHelperMethods:
         selected_provider = None
         storage = Mock()
         auth_manager = Mock()
-        
+
         # When
         with patch.object(AuthCommands, "auth_setup") as mock_auth_setup:
             result = AuthCommands._handle_interactive_action(
                 action, selected_provider, storage, auth_manager
             )
-        
+
         # Then
         assert result is True  # Setup action returns True to refresh providers
         mock_auth_setup.assert_called_once()
@@ -1822,7 +1814,7 @@ class TestListAuthProvidersHelperMethods:
         selected_provider = "anthropic-api"
         storage = Mock()
         auth_manager = Mock()
-        
+
         # When
         with (
             patch(
@@ -1835,7 +1827,7 @@ class TestListAuthProvidersHelperMethods:
             result = AuthCommands._handle_interactive_action(
                 action, selected_provider, storage, auth_manager
             )
-        
+
         # Then
         assert result is False  # Test action returns False (no provider refresh)
         mock_working.assert_called_once_with("Testing anthropic-api...")
@@ -1850,7 +1842,7 @@ class TestListAuthProvidersHelperMethods:
         selected_provider = "anthropic-api"
         storage = Mock()
         auth_manager = Mock()
-        
+
         # When
         with (
             patch(
@@ -1863,12 +1855,10 @@ class TestListAuthProvidersHelperMethods:
             result = AuthCommands._handle_interactive_action(
                 action, selected_provider, storage, auth_manager
             )
-        
+
         # Then
         assert result is False
-        mock_error.assert_called_once_with(
-            "Authentication for anthropic-api failed"
-        )
+        mock_error.assert_called_once_with("Authentication for anthropic-api failed")
 
     def test_handle_interactive_action_test_exception(self) -> None:
         """Test handling test action with exception."""
@@ -1877,7 +1867,7 @@ class TestListAuthProvidersHelperMethods:
         selected_provider = "anthropic-api"
         storage = Mock()
         auth_manager = Mock()
-        
+
         # When
         with (
             patch(
@@ -1890,7 +1880,7 @@ class TestListAuthProvidersHelperMethods:
             result = AuthCommands._handle_interactive_action(
                 action, selected_provider, storage, auth_manager
             )
-        
+
         # Then
         assert result is False
         mock_error.assert_called_once_with("Test failed: Test error")
@@ -1902,7 +1892,7 @@ class TestListAuthProvidersHelperMethods:
         selected_provider = "anthropic-api"
         storage = Mock()
         auth_manager = Mock()
-        
+
         # When
         with (
             patch("llm_orc.menu_system.confirm_action", return_value=True),
@@ -1911,7 +1901,7 @@ class TestListAuthProvidersHelperMethods:
             result = AuthCommands._handle_interactive_action(
                 action, selected_provider, storage, auth_manager
             )
-        
+
         # Then
         assert result is True  # Remove action returns True to refresh providers
         storage.remove_provider.assert_called_once_with("anthropic-api")
@@ -1924,13 +1914,13 @@ class TestListAuthProvidersHelperMethods:
         selected_provider = "anthropic-api"
         storage = Mock()
         auth_manager = Mock()
-        
+
         # When
         with patch("llm_orc.menu_system.confirm_action", return_value=False):
             result = AuthCommands._handle_interactive_action(
                 action, selected_provider, storage, auth_manager
             )
-        
+
         # Then
         assert result is False  # Cancelled remove returns False
         storage.remove_provider.assert_not_called()
@@ -1942,7 +1932,7 @@ class TestListAuthProvidersHelperMethods:
         selected_provider = "anthropic-api"
         storage = Mock()
         auth_manager = Mock()
-        
+
         # When
         with patch(
             "llm_orc.cli_modules.utils.config_utils.show_provider_details"
@@ -1950,7 +1940,7 @@ class TestListAuthProvidersHelperMethods:
             result = AuthCommands._handle_interactive_action(
                 action, selected_provider, storage, auth_manager
             )
-        
+
         # Then
         assert result is False  # Details action returns False
         mock_details.assert_called_once_with(storage, "anthropic-api")
@@ -1965,11 +1955,11 @@ class TestAddAuthProviderHelperMethods:
         storage = Mock()
         storage.list_providers.return_value = []  # Provider doesn't exist
         provider = "test-provider"
-        
+
         # When
         with patch("click.echo") as mock_echo:
             AuthCommands._remove_existing_provider(storage, provider)
-        
+
         # Then
         storage.remove_provider.assert_not_called()
         mock_echo.assert_not_called()
@@ -1980,11 +1970,11 @@ class TestAddAuthProviderHelperMethods:
         storage = Mock()
         storage.list_providers.return_value = ["test-provider"]  # Provider exists
         provider = "test-provider"
-        
+
         # When
         with patch("click.echo") as mock_echo:
             AuthCommands._remove_existing_provider(storage, provider)
-        
+
         # Then
         storage.remove_provider.assert_called_once_with("test-provider")
         expected_calls = [
@@ -2000,11 +1990,10 @@ class TestAddAuthProviderHelperMethods:
         api_key = "test-api-key"
         client_id = "client-id"
         client_secret = "client-secret"
-        
+
         # When/Then
         with pytest.raises(
-            click.ClickException, 
-            match="Cannot use both API key and OAuth credentials"
+            click.ClickException, match="Cannot use both API key and OAuth credentials"
         ):
             AuthCommands._validate_auth_credentials(api_key, client_id, client_secret)
 
@@ -2014,11 +2003,13 @@ class TestAddAuthProviderHelperMethods:
         api_key = None
         client_id = None
         client_secret = None
-        
+
         # When/Then
         with pytest.raises(
             click.ClickException,
-            match="Must provide either --api-key or both --client-id and --client-secret"
+            match=(
+                "Must provide either --api-key or both --client-id and --client-secret"
+            ),
         ):
             AuthCommands._validate_auth_credentials(api_key, client_id, client_secret)
 
@@ -2028,11 +2019,13 @@ class TestAddAuthProviderHelperMethods:
         api_key = None
         client_id = "client-id"
         client_secret = None  # Missing client_secret
-        
+
         # When/Then
         with pytest.raises(
             click.ClickException,
-            match="Must provide either --api-key or both --client-id and --client-secret"
+            match=(
+                "Must provide either --api-key or both --client-id and --client-secret"
+            ),
         ):
             AuthCommands._validate_auth_credentials(api_key, client_id, client_secret)
 
@@ -2042,10 +2035,10 @@ class TestAddAuthProviderHelperMethods:
         api_key = "test-api-key"
         client_id = None
         client_secret = None
-        
+
         # When (should not raise exception)
         AuthCommands._validate_auth_credentials(api_key, client_id, client_secret)
-        
+
         # Then - no exception raised means success
 
     def test_validate_auth_credentials_valid_oauth(self) -> None:
@@ -2054,10 +2047,10 @@ class TestAddAuthProviderHelperMethods:
         api_key = None
         client_id = "client-id"
         client_secret = "client-secret"
-        
+
         # When (should not raise exception)
         AuthCommands._validate_auth_credentials(api_key, client_id, client_secret)
-        
+
         # Then - no exception raised means success
 
     def test_handle_provider_test_success(self) -> None:
@@ -2066,7 +2059,7 @@ class TestAddAuthProviderHelperMethods:
         selected_provider = "anthropic-api"
         storage = Mock()
         auth_manager = Mock()
-        
+
         # When
         with (
             patch(
@@ -2079,7 +2072,7 @@ class TestAddAuthProviderHelperMethods:
             result = AuthCommands._handle_provider_test(
                 selected_provider, storage, auth_manager
             )
-        
+
         # Then
         assert result is False  # Test action returns False (no provider refresh)
         mock_working.assert_called_once_with("Testing anthropic-api...")
@@ -2093,7 +2086,7 @@ class TestAddAuthProviderHelperMethods:
         selected_provider = "anthropic-api"
         storage = Mock()
         auth_manager = Mock()
-        
+
         # When
         with (
             patch(
@@ -2106,12 +2099,10 @@ class TestAddAuthProviderHelperMethods:
             result = AuthCommands._handle_provider_test(
                 selected_provider, storage, auth_manager
             )
-        
+
         # Then
         assert result is False
-        mock_error.assert_called_once_with(
-            "Authentication for anthropic-api failed"
-        )
+        mock_error.assert_called_once_with("Authentication for anthropic-api failed")
 
     def test_handle_provider_test_exception(self) -> None:
         """Test _handle_provider_test helper method with exception."""
@@ -2119,7 +2110,7 @@ class TestAddAuthProviderHelperMethods:
         selected_provider = "anthropic-api"
         storage = Mock()
         auth_manager = Mock()
-        
+
         # When
         with (
             patch(
@@ -2132,7 +2123,7 @@ class TestAddAuthProviderHelperMethods:
             result = AuthCommands._handle_provider_test(
                 selected_provider, storage, auth_manager
             )
-        
+
         # Then
         assert result is False
         mock_error.assert_called_once_with("Test failed: Test error")
@@ -2143,7 +2134,7 @@ class TestAddAuthProviderHelperMethods:
         selected_provider = "anthropic-claude-pro-max"
         storage = Mock()
         storage.get_auth_method.return_value = "oauth"
-        
+
         # When
         with (
             patch("llm_orc.menu_system.show_working") as mock_working,
@@ -2151,7 +2142,7 @@ class TestAddAuthProviderHelperMethods:
             patch("llm_orc.menu_system.show_success") as mock_success,
         ):
             result = AuthCommands._handle_token_refresh(selected_provider, storage)
-        
+
         # Then
         assert result is False  # Refresh action returns False
         mock_working.assert_called_once_with(
@@ -2160,9 +2151,7 @@ class TestAddAuthProviderHelperMethods:
         mock_info.assert_called_once_with(
             "Re-authentication required for OAuth token refresh"
         )
-        mock_success.assert_called_once_with(
-            "Token refresh would be performed here"
-        )
+        mock_success.assert_called_once_with("Token refresh would be performed here")
 
     def test_handle_token_refresh_api_key_error(self) -> None:
         """Test _handle_token_refresh helper method for API key provider."""
@@ -2170,14 +2159,14 @@ class TestAddAuthProviderHelperMethods:
         selected_provider = "anthropic-api"
         storage = Mock()
         storage.get_auth_method.return_value = "api_key"
-        
+
         # When
         with (
             patch("llm_orc.menu_system.show_working"),
             patch("llm_orc.menu_system.show_error") as mock_error,
         ):
             result = AuthCommands._handle_token_refresh(selected_provider, storage)
-        
+
         # Then
         assert result is False
         mock_error.assert_called_once_with(
@@ -2190,14 +2179,14 @@ class TestAddAuthProviderHelperMethods:
         selected_provider = "test-provider"
         storage = Mock()
         storage.get_auth_method.side_effect = Exception("Auth method error")
-        
+
         # When
         with (
             patch("llm_orc.menu_system.show_working"),
             patch("llm_orc.menu_system.show_error") as mock_error,
         ):
             result = AuthCommands._handle_token_refresh(selected_provider, storage)
-        
+
         # Then
         assert result is False
         mock_error.assert_called_once_with("Refresh failed: Auth method error")
