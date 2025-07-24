@@ -627,6 +627,385 @@ class TestConfigCommands:
             os.chdir(original_cwd)
 
 
+class TestResetGlobalConfigHelperMethods:
+    """Test helper methods extracted from reset_global_config for complexity reduction."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[str, None, None]:
+        """Create a temporary directory for testing."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yield temp_dir
+
+    def test_create_backup_if_requested_with_backup_enabled(self, temp_dir: str) -> None:
+        """Test backup creation when backup is requested and config exists."""
+        from llm_orc.cli_modules.commands.config_commands import _create_backup_if_requested
+
+        # Given
+        global_config_dir = Path(temp_dir) / "global_config"
+        global_config_dir.mkdir(parents=True)
+        (global_config_dir / "config.yaml").write_text("existing: config")
+
+        # When
+        _create_backup_if_requested(True, global_config_dir)
+
+        # Then
+        backup_path = global_config_dir.with_suffix(".backup")
+        assert backup_path.exists()
+        assert (backup_path / "config.yaml").read_text() == "existing: config"
+
+    def test_create_backup_if_requested_with_backup_disabled(self, temp_dir: str) -> None:
+        """Test no backup creation when backup is disabled."""
+        from llm_orc.cli_modules.commands.config_commands import _create_backup_if_requested
+
+        # Given
+        global_config_dir = Path(temp_dir) / "global_config"
+        global_config_dir.mkdir(parents=True)
+        (global_config_dir / "config.yaml").write_text("existing: config")
+
+        # When
+        _create_backup_if_requested(False, global_config_dir)
+
+        # Then
+        backup_path = global_config_dir.with_suffix(".backup")
+        assert not backup_path.exists()
+
+    def test_create_backup_if_requested_nonexistent_config(self, temp_dir: str) -> None:
+        """Test backup creation when config directory doesn't exist."""
+        from llm_orc.cli_modules.commands.config_commands import _create_backup_if_requested
+
+        # Given
+        global_config_dir = Path(temp_dir) / "nonexistent"
+
+        # When
+        _create_backup_if_requested(True, global_config_dir)
+
+        # Then
+        backup_path = global_config_dir.with_suffix(".backup")
+        assert not backup_path.exists()
+
+    def test_preserve_auth_files_if_requested_with_auth_files(self, temp_dir: str) -> None:
+        """Test auth file preservation when requested and auth files exist."""
+        from llm_orc.cli_modules.commands.config_commands import _preserve_auth_files_if_requested
+
+        # Given
+        global_config_dir = Path(temp_dir) / "global_config"
+        global_config_dir.mkdir(parents=True)
+        (global_config_dir / "credentials.yaml").write_text("auth: data")
+        (global_config_dir / ".encryption_key").write_bytes(b"secret_key")
+
+        # When
+        auth_files = _preserve_auth_files_if_requested(True, global_config_dir)
+
+        # Then
+        assert len(auth_files) == 2
+        assert ("credentials.yaml", b"auth: data") in auth_files
+        assert (".encryption_key", b"secret_key") in auth_files
+
+    def test_preserve_auth_files_if_requested_disabled(self, temp_dir: str) -> None:
+        """Test no auth file preservation when disabled."""
+        from llm_orc.cli_modules.commands.config_commands import _preserve_auth_files_if_requested
+
+        # Given
+        global_config_dir = Path(temp_dir) / "global_config"
+        global_config_dir.mkdir(parents=True)
+        (global_config_dir / "credentials.yaml").write_text("auth: data")
+
+        # When
+        auth_files = _preserve_auth_files_if_requested(False, global_config_dir)
+
+        # Then
+        assert auth_files == []
+
+    def test_preserve_auth_files_if_requested_no_config_dir(self, temp_dir: str) -> None:
+        """Test auth file preservation when config directory doesn't exist."""
+        from llm_orc.cli_modules.commands.config_commands import _preserve_auth_files_if_requested
+
+        # Given
+        global_config_dir = Path(temp_dir) / "nonexistent"
+
+        # When
+        auth_files = _preserve_auth_files_if_requested(True, global_config_dir)
+
+        # Then
+        assert auth_files == []
+
+    def test_recreate_config_directory_existing_dir(self, temp_dir: str) -> None:
+        """Test directory recreation when existing directory exists."""
+        from llm_orc.cli_modules.commands.config_commands import _recreate_config_directory
+
+        # Given
+        global_config_dir = Path(temp_dir) / "global_config"
+        global_config_dir.mkdir(parents=True)
+        (global_config_dir / "old_file.txt").write_text("old content")
+
+        # When
+        _recreate_config_directory(global_config_dir)
+
+        # Then
+        assert global_config_dir.exists()
+        assert not (global_config_dir / "old_file.txt").exists()
+
+    def test_recreate_config_directory_nonexistent_dir(self, temp_dir: str) -> None:
+        """Test directory recreation when directory doesn't exist."""
+        from llm_orc.cli_modules.commands.config_commands import _recreate_config_directory
+
+        # Given
+        global_config_dir = Path(temp_dir) / "new_config"
+
+        # When
+        _recreate_config_directory(global_config_dir)
+
+        # Then
+        assert global_config_dir.exists()
+
+    def test_install_template_and_restore_auth_success(self, temp_dir: str) -> None:
+        """Test template installation and auth restoration success case."""
+        from llm_orc.cli_modules.commands.config_commands import _install_template_and_restore_auth
+
+        # Given
+        global_config_dir = Path(temp_dir) / "global_config"
+        global_config_dir.mkdir(parents=True)
+        
+        template_path = Path(temp_dir) / "global-config.yaml"
+        template_path.write_text("template: config")
+        
+        auth_files = [("credentials.yaml", b"auth: data")]
+
+        # When
+        _install_template_and_restore_auth(global_config_dir, template_path, auth_files)
+
+        # Then
+        config_path = global_config_dir / "config.yaml"
+        assert config_path.exists()
+        assert config_path.read_text() == "template: config"
+        
+        auth_path = global_config_dir / "credentials.yaml"
+        assert auth_path.exists()
+        assert auth_path.read_bytes() == b"auth: data"
+
+    def test_install_template_and_restore_auth_template_not_found(self, temp_dir: str) -> None:
+        """Test template installation when template file doesn't exist."""
+        from llm_orc.cli_modules.commands.config_commands import _install_template_and_restore_auth
+
+        # Given
+        global_config_dir = Path(temp_dir) / "global_config"
+        global_config_dir.mkdir(parents=True)
+        
+        template_path = Path(temp_dir) / "nonexistent.yaml"
+        auth_files: list[tuple[str, bytes]] = []
+
+        # When/Then
+        with pytest.raises(click.ClickException, match="Template not found"):
+            _install_template_and_restore_auth(global_config_dir, template_path, auth_files)
+
+
+class TestResetLocalConfigHelperMethods:
+    """Test helper methods extracted from reset_local_config for complexity reduction."""
+
+    @pytest.fixture
+    def temp_dir(self) -> Generator[str, None, None]:
+        """Create a temporary directory for testing."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yield temp_dir
+
+    def test_create_local_backup_if_requested_with_backup_enabled(self, temp_dir: str) -> None:
+        """Test local backup creation when backup is requested and config exists."""
+        from llm_orc.cli_modules.commands.config_commands import _create_local_backup_if_requested
+
+        # Given
+        original_cwd = Path.cwd()
+        test_dir = Path(temp_dir)
+        
+        try:
+            import os
+            os.chdir(test_dir)
+            
+            local_config_dir = test_dir / ".llm-orc"
+            local_config_dir.mkdir(parents=True)
+            (local_config_dir / "config.yaml").write_text("existing: config")
+
+            # When
+            _create_local_backup_if_requested(True, local_config_dir)
+
+            # Then
+            backup_path = test_dir / ".llm-orc.backup"
+            assert backup_path.exists()
+            assert (backup_path / "config.yaml").read_text() == "existing: config"
+        finally:
+            os.chdir(original_cwd)
+
+    def test_create_local_backup_if_requested_with_backup_disabled(self, temp_dir: str) -> None:
+        """Test no local backup creation when backup is disabled."""
+        from llm_orc.cli_modules.commands.config_commands import _create_local_backup_if_requested
+
+        # Given
+        original_cwd = Path.cwd()
+        test_dir = Path(temp_dir)
+        
+        try:
+            import os
+            os.chdir(test_dir)
+            
+            local_config_dir = test_dir / ".llm-orc"
+            local_config_dir.mkdir(parents=True)
+            (local_config_dir / "config.yaml").write_text("existing: config")
+
+            # When
+            _create_local_backup_if_requested(False, local_config_dir)
+
+            # Then
+            backup_path = test_dir / ".llm-orc.backup"
+            assert not backup_path.exists()
+        finally:
+            os.chdir(original_cwd)
+
+    def test_preserve_ensembles_if_requested_with_ensembles(self, temp_dir: str) -> None:
+        """Test ensemble preservation when requested and ensembles exist."""
+        from llm_orc.cli_modules.commands.config_commands import _preserve_ensembles_if_requested
+
+        # Given
+        local_config_dir = Path(temp_dir) / ".llm-orc"
+        ensembles_dir = local_config_dir / "ensembles"
+        ensembles_dir.mkdir(parents=True)
+        (ensembles_dir / "test-ensemble.yaml").write_text("ensemble: config")
+        (ensembles_dir / "another-ensemble.yaml").write_text("another: config")
+
+        # When
+        ensembles_backup = _preserve_ensembles_if_requested(True, local_config_dir)
+
+        # Then
+        assert len(ensembles_backup) == 2
+        assert ensembles_backup["test-ensemble.yaml"] == "ensemble: config"
+        assert ensembles_backup["another-ensemble.yaml"] == "another: config"
+
+    def test_preserve_ensembles_if_requested_disabled(self, temp_dir: str) -> None:
+        """Test no ensemble preservation when disabled."""
+        from llm_orc.cli_modules.commands.config_commands import _preserve_ensembles_if_requested
+
+        # Given
+        local_config_dir = Path(temp_dir) / ".llm-orc"
+        ensembles_dir = local_config_dir / "ensembles"
+        ensembles_dir.mkdir(parents=True)
+        (ensembles_dir / "test-ensemble.yaml").write_text("ensemble: config")
+
+        # When
+        ensembles_backup = _preserve_ensembles_if_requested(False, local_config_dir)
+
+        # Then
+        assert ensembles_backup == {}
+
+    def test_preserve_ensembles_if_requested_no_ensembles_dir(self, temp_dir: str) -> None:
+        """Test ensemble preservation when ensembles directory doesn't exist."""
+        from llm_orc.cli_modules.commands.config_commands import _preserve_ensembles_if_requested
+
+        # Given
+        local_config_dir = Path(temp_dir) / ".llm-orc"
+        local_config_dir.mkdir(parents=True)
+
+        # When
+        ensembles_backup = _preserve_ensembles_if_requested(True, local_config_dir)
+
+        # Then
+        assert ensembles_backup == {}
+
+    def test_reset_and_initialize_local_config_success(self, temp_dir: str) -> None:
+        """Test local config reset and initialization success case."""
+        from llm_orc.cli_modules.commands.config_commands import _reset_and_initialize_local_config
+
+        # Given
+        original_cwd = Path.cwd()
+        test_dir = Path(temp_dir)
+        
+        try:
+            import os
+            os.chdir(test_dir)
+            
+            local_config_dir = test_dir / ".llm-orc"
+            local_config_dir.mkdir(parents=True)
+            (local_config_dir / "old_file.txt").write_text("old content")
+
+            with patch("llm_orc.cli_modules.commands.config_commands.ConfigurationManager") as mock_config_manager_class:
+                mock_config_manager = Mock()
+                mock_config_manager_class.return_value = mock_config_manager
+                
+                # Mock init_local_config to recreate the directory
+                def mock_init(project_name: str | None) -> None:
+                    local_config_dir.mkdir(parents=True, exist_ok=True)
+                
+                mock_config_manager.init_local_config.side_effect = mock_init
+
+                # When
+                _reset_and_initialize_local_config(local_config_dir, mock_config_manager, "test-project")
+
+                # Then
+                assert local_config_dir.exists()
+                assert not (local_config_dir / "old_file.txt").exists()
+                mock_config_manager.init_local_config.assert_called_once_with("test-project")
+        finally:
+            os.chdir(original_cwd)
+
+    def test_reset_and_initialize_local_config_init_failure(self, temp_dir: str) -> None:
+        """Test local config reset when initialization fails."""
+        from llm_orc.cli_modules.commands.config_commands import _reset_and_initialize_local_config
+
+        # Given
+        original_cwd = Path.cwd()
+        test_dir = Path(temp_dir)
+        
+        try:
+            import os
+            os.chdir(test_dir)
+            
+            local_config_dir = test_dir / ".llm-orc"
+            local_config_dir.mkdir(parents=True)
+
+            with patch("llm_orc.cli_modules.commands.config_commands.ConfigurationManager") as mock_config_manager_class:
+                mock_config_manager = Mock()
+                mock_config_manager_class.return_value = mock_config_manager
+                mock_config_manager.init_local_config.side_effect = ValueError("Init failed")
+
+                # When/Then
+                with pytest.raises(click.ClickException, match="Init failed"):
+                    _reset_and_initialize_local_config(local_config_dir, mock_config_manager, "test-project")
+        finally:
+            os.chdir(original_cwd)
+
+    def test_restore_ensembles_and_complete_with_ensembles(self, temp_dir: str) -> None:
+        """Test ensemble restoration and completion with ensembles."""
+        from llm_orc.cli_modules.commands.config_commands import _restore_ensembles_and_complete
+
+        # Given
+        local_config_dir = Path(temp_dir) / ".llm-orc"
+        ensembles_dir = local_config_dir / "ensembles"
+        ensembles_dir.mkdir(parents=True)
+        
+        ensembles_backup = {
+            "test-ensemble.yaml": "ensemble: config",
+            "another-ensemble.yaml": "another: config"
+        }
+
+        # When
+        _restore_ensembles_and_complete(local_config_dir, ensembles_backup, True)
+
+        # Then
+        assert (ensembles_dir / "test-ensemble.yaml").read_text() == "ensemble: config"
+        assert (ensembles_dir / "another-ensemble.yaml").read_text() == "another: config"
+
+    def test_restore_ensembles_and_complete_without_ensembles(self, temp_dir: str) -> None:
+        """Test ensemble restoration and completion without ensembles."""
+        from llm_orc.cli_modules.commands.config_commands import _restore_ensembles_and_complete
+
+        # Given
+        local_config_dir = Path(temp_dir) / ".llm-orc"
+        local_config_dir.mkdir(parents=True)
+        ensembles_backup: dict[str, str] = {}
+
+        # When
+        _restore_ensembles_and_complete(local_config_dir, ensembles_backup, False)
+
+        # Then - should complete without error
+
+
 class TestConfigCommandsCLI:
     """Test config commands through CLI interface."""
 

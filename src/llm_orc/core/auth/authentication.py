@@ -28,6 +28,143 @@ __all__ = [
 ]
 
 
+def _setup_and_validate_oauth_flow(
+    provider: str, client_id: str, client_secret: str
+) -> OAuthFlow | None:
+    """Setup and validate OAuth flow.
+    
+    Args:
+        provider: OAuth provider name
+        client_id: OAuth client ID
+        client_secret: OAuth client secret
+        
+    Returns:
+        OAuth flow if successful, None if validation fails
+    """
+    # Create OAuth flow with enhanced error handling
+    oauth_flow = create_oauth_flow(provider, client_id, client_secret)
+
+    # Validate credentials if the provider supports it
+    if hasattr(oauth_flow, "validate_credentials"):
+        print("🔍 Validating OAuth credentials...")
+        if not oauth_flow.validate_credentials():
+            print("❌ OAuth credential validation failed")
+            return None
+
+    return oauth_flow
+
+
+def _get_authorization_url_and_open_browser(oauth_flow: OAuthFlow) -> bool:
+    """Get authorization URL and open browser.
+    
+    Args:
+        oauth_flow: OAuth flow instance
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    # We're using Anthropic's callback endpoint, so no local server needed
+    print("🔧 Using Anthropic's OAuth callback endpoint...")
+
+    # Get authorization URL and open browser
+    try:
+        auth_url = oauth_flow.get_authorization_url()
+        print("🌐 Opening browser for OAuth authorization...")
+        print(f"   URL: {auth_url}")
+        webbrowser.open(auth_url)
+        return True
+    except Exception as e:
+        print(f"❌ Failed to get authorization URL: {e}")
+        return False
+
+
+def _exchange_authorization_code_for_tokens(oauth_flow: OAuthFlow) -> dict[str, Any] | None:
+    """Exchange authorization code for tokens.
+    
+    Args:
+        oauth_flow: OAuth flow instance
+        
+    Returns:
+        Tokens dictionary if successful, None otherwise
+    """
+    # Use manual callback flow to get authorization code
+    try:
+        if hasattr(oauth_flow, "start_manual_callback_flow"):
+            auth_code = oauth_flow.start_manual_callback_flow()
+        else:
+            # Fallback for other OAuth flows
+            auth_code = input("Enter authorization code from callback URL: ").strip()
+        print("✅ Authorization code received!")
+
+        # Exchange code for tokens
+        print("🔄 Exchanging code for access tokens...")
+        tokens = oauth_flow.exchange_code_for_tokens(auth_code)
+
+        # Check if manual extraction is required
+        if tokens.get("requires_manual_extraction"):
+            print("\n🔧 OAuth flow completed - manual token extraction required")
+            print("   Authorization successful, token exchange needs manual steps")
+            print("   Follow the instructions above to extract tokens manually")
+
+            # For now, we'll return None since we don't have tokens yet
+            # In a real implementation, you might want to:
+            # 1. Save the auth_code for later manual exchange
+            # 2. Provide a separate method to input manually extracted tokens
+            # 3. Guide the user through the manual process
+            return None
+
+        if not tokens or "access_token" not in tokens:
+            print("❌ Failed to receive valid tokens")
+            return None
+
+        print("✅ Access tokens received!")
+        return tokens
+    except Exception as e:
+        print(f"❌ Token exchange failed: {e}")
+        return None
+
+
+def _store_tokens_and_create_client(
+    auth_manager: "AuthenticationManager", provider: str, tokens: dict[str, Any]
+) -> Any | None:
+    """Store tokens and create authenticated client.
+    
+    Args:
+        auth_manager: Authentication manager instance
+        provider: OAuth provider name
+        tokens: OAuth tokens dictionary
+        
+    Returns:
+        Mock client if successful, None otherwise
+    """
+    # Store tokens
+    try:
+        expires_at = int(time.time()) + tokens.get("expires_in", 3600)
+        auth_manager.credential_storage.store_oauth_token(
+            provider,
+            tokens["access_token"],
+            tokens.get("refresh_token"),
+            expires_at,
+        )
+        print("✅ Tokens stored securely!")
+    except Exception as e:
+        print(f"❌ Failed to store tokens: {e}")
+        return None
+
+    # Create mock client for testing
+    client = type(
+        "MockOAuthClient",
+        (),
+        {
+            "access_token": tokens["access_token"],
+            "token_type": tokens.get("token_type", "Bearer"),
+        },
+    )()
+
+    auth_manager._authenticated_clients[provider] = client
+    return client
+
+
 class CredentialStorage:
     """Handles encrypted storage and retrieval of credentials."""
 
@@ -272,96 +409,23 @@ class AuthenticationManager:
             True if authentication successful, False otherwise
         """
         try:
-            # Create OAuth flow with enhanced error handling
-            oauth_flow = create_oauth_flow(provider, client_id, client_secret)
-
-            # Validate credentials if the provider supports it
-            if hasattr(oauth_flow, "validate_credentials"):
-                print("🔍 Validating OAuth credentials...")
-                if not oauth_flow.validate_credentials():
-                    print("❌ OAuth credential validation failed")
-                    return False
-
-            # We're using Anthropic's callback endpoint, so no local server needed
-            print("🔧 Using Anthropic's OAuth callback endpoint...")
+            # Setup and validate OAuth flow
+            oauth_flow = _setup_and_validate_oauth_flow(provider, client_id, client_secret)
+            if not oauth_flow:
+                return False
 
             # Get authorization URL and open browser
-            try:
-                auth_url = oauth_flow.get_authorization_url()
-                print("🌐 Opening browser for OAuth authorization...")
-                print(f"   URL: {auth_url}")
-                webbrowser.open(auth_url)
-            except Exception as e:
-                print(f"❌ Failed to get authorization URL: {e}")
+            if not _get_authorization_url_and_open_browser(oauth_flow):
                 return False
 
-            # Use manual callback flow to get authorization code
-            try:
-                if hasattr(oauth_flow, "start_manual_callback_flow"):
-                    auth_code = oauth_flow.start_manual_callback_flow()
-                else:
-                    # Fallback for other OAuth flows
-                    auth_code = input(
-                        "Enter authorization code from callback URL: "
-                    ).strip()
-                print("✅ Authorization code received!")
-
-                # Exchange code for tokens
-                print("🔄 Exchanging code for access tokens...")
-                tokens = oauth_flow.exchange_code_for_tokens(auth_code)
-
-                # Check if manual extraction is required
-                if tokens.get("requires_manual_extraction"):
-                    print(
-                        "\n🔧 OAuth flow completed - manual token extraction required"
-                    )
-                    print(
-                        "   Authorization successful, token exchange needs manual steps"
-                    )
-                    print("   Follow the instructions above to extract tokens manually")
-
-                    # For now, we'll return False since we don't have tokens yet
-                    # In a real implementation, you might want to:
-                    # 1. Save the auth_code for later manual exchange
-                    # 2. Provide a separate method to input manually extracted tokens
-                    # 3. Guide the user through the manual process
-                    return False
-
-                if not tokens or "access_token" not in tokens:
-                    print("❌ Failed to receive valid tokens")
-                    return False
-
-                print("✅ Access tokens received!")
-            except Exception as e:
-                print(f"❌ Token exchange failed: {e}")
+            # Exchange authorization code for tokens
+            tokens = _exchange_authorization_code_for_tokens(oauth_flow)
+            if not tokens:
                 return False
 
-            # Store tokens
-            try:
-                expires_at = int(time.time()) + tokens.get("expires_in", 3600)
-                self.credential_storage.store_oauth_token(
-                    provider,
-                    tokens["access_token"],
-                    tokens.get("refresh_token"),
-                    expires_at,
-                )
-                print("✅ Tokens stored securely!")
-            except Exception as e:
-                print(f"❌ Failed to store tokens: {e}")
-                return False
-
-            # Create mock client for testing
-            client = type(
-                "MockOAuthClient",
-                (),
-                {
-                    "access_token": tokens["access_token"],
-                    "token_type": tokens.get("token_type", "Bearer"),
-                },
-            )()
-
-            self._authenticated_clients[provider] = client
-            return True
+            # Store tokens and create client
+            client = _store_tokens_and_create_client(self, provider, tokens)
+            return client is not None
 
         except ValueError as e:
             print(f"❌ Configuration error: {e}")
@@ -373,8 +437,6 @@ class AuthenticationManager:
         except Exception as e:
             print(f"❌ OAuth authentication failed: {e}")
             return False
-
-        return False
 
     def store_manual_oauth_token(
         self,

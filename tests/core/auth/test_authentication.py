@@ -4,7 +4,7 @@ import tempfile
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -1020,3 +1020,239 @@ class TestImprovedAuthenticationManager:
 
             # Verify revocation calls were made (2 per provider: access + refresh)
             assert mock_post.call_count == 4
+
+
+class TestAuthenticateOAuthHelperMethods:
+    """Test helper methods extracted from authenticate_oauth for complexity reduction."""
+
+    @pytest.fixture
+    def temp_config_dir(self) -> Generator[Path, None, None]:
+        """Create a temporary config directory for testing."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yield Path(temp_dir)
+
+    @pytest.fixture
+    def auth_manager(self, temp_config_dir: Path) -> AuthenticationManager:
+        """Create an AuthenticationManager for testing."""
+        config_manager = ConfigurationManager()
+        config_manager._global_config_dir = temp_config_dir
+        storage = CredentialStorage(config_manager)
+        return AuthenticationManager(storage)
+
+    def test_setup_and_validate_oauth_flow_success(self, auth_manager: AuthenticationManager) -> None:
+        """Test OAuth flow setup and validation success case."""
+        from llm_orc.core.auth.authentication import _setup_and_validate_oauth_flow
+
+        # Given
+        provider = "anthropic"
+        client_id = "test_client_id"
+        client_secret = "test_client_secret"
+
+        # When
+        with patch("llm_orc.core.auth.authentication.create_oauth_flow") as mock_create_flow:
+            mock_flow = Mock()
+            mock_flow.validate_credentials.return_value = True
+            mock_create_flow.return_value = mock_flow
+
+            result = _setup_and_validate_oauth_flow(provider, client_id, client_secret)
+
+            # Then
+            assert result == mock_flow
+            mock_create_flow.assert_called_once_with(provider, client_id, client_secret)
+            mock_flow.validate_credentials.assert_called_once()
+
+    def test_setup_and_validate_oauth_flow_validation_failure(self, auth_manager: AuthenticationManager) -> None:
+        """Test OAuth flow setup when validation fails."""
+        from llm_orc.core.auth.authentication import _setup_and_validate_oauth_flow
+
+        # Given
+        provider = "anthropic"
+        client_id = "test_client_id"
+        client_secret = "test_client_secret"
+
+        # When
+        with patch("llm_orc.core.auth.authentication.create_oauth_flow") as mock_create_flow:
+            mock_flow = Mock()
+            mock_flow.validate_credentials.return_value = False
+            mock_create_flow.return_value = mock_flow
+
+            result = _setup_and_validate_oauth_flow(provider, client_id, client_secret)
+
+            # Then
+            assert result is None
+
+    def test_setup_and_validate_oauth_flow_no_validation_method(self, auth_manager: AuthenticationManager) -> None:
+        """Test OAuth flow setup when flow doesn't have validation method."""
+        from llm_orc.core.auth.authentication import _setup_and_validate_oauth_flow
+
+        # Given
+        provider = "anthropic"
+        client_id = "test_client_id"
+        client_secret = "test_client_secret"
+
+        # When
+        with patch("llm_orc.core.auth.authentication.create_oauth_flow") as mock_create_flow:
+            mock_flow = Mock()
+            del mock_flow.validate_credentials  # Remove the method
+            mock_create_flow.return_value = mock_flow
+
+            result = _setup_and_validate_oauth_flow(provider, client_id, client_secret)
+
+            # Then
+            assert result == mock_flow
+            mock_create_flow.assert_called_once_with(provider, client_id, client_secret)
+
+    def test_get_authorization_url_and_open_browser_success(self, auth_manager: AuthenticationManager) -> None:
+        """Test getting authorization URL and opening browser successfully."""
+        from llm_orc.core.auth.authentication import _get_authorization_url_and_open_browser
+
+        # Given
+        mock_flow = Mock()
+        mock_flow.get_authorization_url.return_value = "https://example.com/auth"
+
+        # When
+        with patch("llm_orc.core.auth.authentication.webbrowser.open") as mock_open:
+            result = _get_authorization_url_and_open_browser(mock_flow)
+
+            # Then
+            assert result is True
+            mock_flow.get_authorization_url.assert_called_once()
+            mock_open.assert_called_once_with("https://example.com/auth")
+
+    def test_get_authorization_url_and_open_browser_failure(self, auth_manager: AuthenticationManager) -> None:
+        """Test getting authorization URL when it fails."""
+        from llm_orc.core.auth.authentication import _get_authorization_url_and_open_browser
+
+        # Given
+        mock_flow = Mock()
+        mock_flow.get_authorization_url.side_effect = Exception("URL generation failed")
+
+        # When
+        result = _get_authorization_url_and_open_browser(mock_flow)
+
+        # Then
+        assert result is False
+
+    def test_exchange_authorization_code_for_tokens_success(self, auth_manager: AuthenticationManager) -> None:
+        """Test exchanging authorization code for tokens successfully."""
+        from llm_orc.core.auth.authentication import _exchange_authorization_code_for_tokens
+
+        # Given
+        mock_flow = Mock()
+        mock_flow.start_manual_callback_flow.return_value = "auth_code_123"
+        mock_flow.exchange_code_for_tokens.return_value = {
+            "access_token": "access_123",
+            "refresh_token": "refresh_123",
+            "expires_in": 3600
+        }
+
+        # When
+        result = _exchange_authorization_code_for_tokens(mock_flow)
+
+        # Then
+        assert result == {
+            "access_token": "access_123",
+            "refresh_token": "refresh_123",
+            "expires_in": 3600
+        }
+        mock_flow.start_manual_callback_flow.assert_called_once()
+        mock_flow.exchange_code_for_tokens.assert_called_once_with("auth_code_123")
+
+    def test_exchange_authorization_code_for_tokens_manual_extraction(self, auth_manager: AuthenticationManager) -> None:
+        """Test handling manual token extraction requirement."""
+        from llm_orc.core.auth.authentication import _exchange_authorization_code_for_tokens
+
+        # Given
+        mock_flow = Mock()
+        mock_flow.start_manual_callback_flow.return_value = "auth_code_123"
+        mock_flow.exchange_code_for_tokens.return_value = {
+            "requires_manual_extraction": True
+        }
+
+        # When
+        result = _exchange_authorization_code_for_tokens(mock_flow)
+
+        # Then
+        assert result is None
+
+    def test_exchange_authorization_code_for_tokens_fallback_input(self, auth_manager: AuthenticationManager) -> None:
+        """Test fallback to manual input when flow doesn't have callback method."""
+        from llm_orc.core.auth.authentication import _exchange_authorization_code_for_tokens
+
+        # Given
+        mock_flow = Mock()
+        del mock_flow.start_manual_callback_flow  # Remove the method
+        mock_flow.exchange_code_for_tokens.return_value = {
+            "access_token": "access_123",
+            "expires_in": 3600
+        }
+
+        # When
+        with patch("llm_orc.core.auth.authentication.input", return_value="fallback_code"):
+            result = _exchange_authorization_code_for_tokens(mock_flow)
+
+            # Then
+            assert result == {
+                "access_token": "access_123",
+                "expires_in": 3600
+            }
+            mock_flow.exchange_code_for_tokens.assert_called_once_with("fallback_code")
+
+    def test_exchange_authorization_code_for_tokens_invalid_tokens(self, auth_manager: AuthenticationManager) -> None:
+        """Test handling invalid or empty tokens."""
+        from llm_orc.core.auth.authentication import _exchange_authorization_code_for_tokens
+
+        # Given
+        mock_flow = Mock()
+        mock_flow.start_manual_callback_flow.return_value = "auth_code_123"
+        mock_flow.exchange_code_for_tokens.return_value = {}  # No access_token
+
+        # When
+        result = _exchange_authorization_code_for_tokens(mock_flow)
+
+        # Then
+        assert result is None
+
+    def test_store_tokens_and_create_client_success(self, auth_manager: AuthenticationManager) -> None:
+        """Test storing tokens and creating client successfully."""
+        from llm_orc.core.auth.authentication import _store_tokens_and_create_client
+
+        # Given
+        provider = "anthropic"
+        tokens = {
+            "access_token": "access_123",
+            "refresh_token": "refresh_123",
+            "expires_in": 3600,
+            "token_type": "Bearer"
+        }
+
+        # When
+        with patch("llm_orc.core.auth.authentication.time.time", return_value=1000):
+            result = _store_tokens_and_create_client(auth_manager, provider, tokens)
+
+            # Then
+            assert result is not None
+            assert result.access_token == "access_123"
+            assert result.token_type == "Bearer"
+            
+            # Verify tokens were stored
+            stored_method = auth_manager.credential_storage.get_auth_method(provider)
+            assert stored_method == "oauth"
+
+    def test_store_tokens_and_create_client_storage_failure(self, auth_manager: AuthenticationManager) -> None:
+        """Test handling token storage failure."""
+        from llm_orc.core.auth.authentication import _store_tokens_and_create_client
+
+        # Given
+        provider = "anthropic"
+        tokens = {
+            "access_token": "access_123",
+            "expires_in": 3600
+        }
+
+        # When
+        with patch.object(auth_manager.credential_storage, 'store_oauth_token', side_effect=Exception("Storage failed")):
+            result = _store_tokens_and_create_client(auth_manager, provider, tokens)
+
+            # Then
+            assert result is None
