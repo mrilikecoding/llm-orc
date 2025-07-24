@@ -7,6 +7,81 @@ from typing import Any
 import yaml
 
 
+def _find_agent_by_name(
+    agents: list[dict[str, Any]], agent_name: str
+) -> dict[str, Any] | None:
+    """Find an agent by name in the agents list.
+
+    Args:
+        agents: List of agent configurations
+        agent_name: Name of agent to find
+
+    Returns:
+        Agent configuration dictionary if found, None otherwise
+    """
+    return next((a for a in agents if a["name"] == agent_name), None)
+
+
+def _perform_cycle_detection(
+    agent_name: str,
+    agents: list[dict[str, Any]],
+    visited: set[str],
+    recursion_stack: set[str],
+) -> bool:
+    """Perform cycle detection using depth-first search for a specific agent.
+
+    Args:
+        agent_name: Name of agent to check for cycles
+        agents: List of agent configurations
+        visited: Set of visited agent names
+        recursion_stack: Set of agents currently in recursion stack
+
+    Returns:
+        True if cycle detected, False otherwise
+    """
+    if agent_name in recursion_stack:
+        return True
+    if agent_name in visited:
+        return False
+
+    visited.add(agent_name)
+    recursion_stack.add(agent_name)
+
+    # Find agent config
+    agent_config = _find_agent_by_name(agents, agent_name)
+    if agent_config:
+        dependencies = agent_config.get("depends_on", [])
+        for dep in dependencies:
+            if _perform_cycle_detection(dep, agents, visited, recursion_stack):
+                return True
+
+    recursion_stack.remove(agent_name)
+    return False
+
+
+def _check_agents_for_cycles(agents: list[dict[str, Any]]) -> None:
+    """Check all agents for cycles and raise error if found.
+
+    Args:
+        agents: List of agent configurations
+
+    Raises:
+        ValueError: If circular dependencies are detected
+    """
+    visited: set[str] = set()
+
+    # Check each agent for cycles
+    for agent in agents:
+        if agent["name"] not in visited:
+            recursion_stack: set[str] = set()
+            if _perform_cycle_detection(
+                agent["name"], agents, visited, recursion_stack
+            ):
+                raise ValueError(
+                    f"Circular dependency detected involving agent: '{agent['name']}'"
+                )
+
+
 def _check_missing_dependencies(agents: list[dict[str, Any]]) -> None:
     """Check for missing dependencies in agent configurations.
 
@@ -38,37 +113,7 @@ def _detect_circular_dependencies(agents: list[dict[str, Any]]) -> None:
     Raises:
         ValueError: If circular dependencies are detected
     """
-    visited = set()
-    recursion_stack = set()
-
-    def has_cycle(agent_name: str) -> bool:
-        """Detect cycles using depth-first search."""
-        if agent_name in recursion_stack:
-            return True
-        if agent_name in visited:
-            return False
-
-        visited.add(agent_name)
-        recursion_stack.add(agent_name)
-
-        # Find agent config
-        agent_config = next((a for a in agents if a["name"] == agent_name), None)
-        if agent_config:
-            dependencies = agent_config.get("depends_on", [])
-            for dep in dependencies:
-                if has_cycle(dep):
-                    return True
-
-        recursion_stack.remove(agent_name)
-        return False
-
-    # Check each agent for cycles
-    for agent in agents:
-        if agent["name"] not in visited:
-            if has_cycle(agent["name"]):
-                raise ValueError(
-                    f"Circular dependency detected involving agent: '{agent['name']}'"
-                )
+    _check_agents_for_cycles(agents)
 
 
 @dataclass

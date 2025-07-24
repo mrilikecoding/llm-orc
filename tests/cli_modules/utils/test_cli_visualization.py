@@ -10,6 +10,8 @@ from rich.tree import Tree
 from llm_orc.cli_modules.utils.visualization import (
     _calculate_agent_level,
     _group_agents_by_dependency_level,
+    _process_execution_completed_event,
+    _update_agent_progress_status,
     create_dependency_graph,
     create_dependency_graph_with_status,
     create_dependency_tree,
@@ -556,4 +558,153 @@ class TestStandardExecution:
         # Then
         mock_display_results.assert_called_once_with(
             result_data["results"], result_data["metadata"], True
+        )
+
+
+class TestDisplayResultsHelperMethods:
+    """Test helper methods extracted from display_results for complexity reduction."""
+
+    def test_process_agent_results(self) -> None:
+        """Test agent results processing helper method."""
+        # Given
+        results = {
+            "agent_success": {"status": "success", "response": "def hello(): pass"},
+            "agent_error": {"status": "error", "error": "Something went wrong"},
+            "agent_text": {"status": "success", "response": "Just plain text"},
+        }
+
+        # When
+        from llm_orc.cli_modules.utils.visualization import _process_agent_results
+
+        markdown_content = _process_agent_results(results)
+
+        # Then
+        combined_content = "".join(markdown_content)
+        assert "## agent_success\n" in combined_content
+        assert "```\ndef hello(): pass\n```\n" in combined_content
+        assert "## ❌ agent_error\n" in combined_content
+        assert "**Error:** Something went wrong\n" in combined_content
+        assert "Just plain text\n" in combined_content
+
+    def test_format_performance_metrics(self) -> None:
+        """Test performance metrics formatting helper method."""
+        # Given
+        metadata = {
+            "duration": "2.5s",
+            "usage": {
+                "totals": {
+                    "total_tokens": 1500,
+                    "total_cost_usd": 0.075,
+                    "agents_count": 2,
+                },
+                "agents": {
+                    "agent_a": {
+                        "total_tokens": 800,
+                        "cost_usd": 0.04,
+                        "duration_ms": 1200,
+                        "model": "claude-3",
+                    },
+                    "agent_b": {
+                        "total_tokens": 700,
+                        "cost_usd": 0.035,
+                        "duration_ms": 1300,
+                        "model": "gpt-4",
+                    },
+                },
+            },
+        }
+
+        # When
+        from llm_orc.cli_modules.utils.visualization import _format_performance_metrics
+
+        markdown_content = _format_performance_metrics(metadata)
+
+        # Then
+        combined_content = "".join(markdown_content)
+        assert "## Performance Metrics\n" in combined_content
+        assert "- **Duration:** 2.5s\n" in combined_content
+        assert "- **Total tokens:** 1,500\n" in combined_content
+        assert "- **Total cost:** $0.0750\n" in combined_content
+        assert "- **Agents:** 2\n" in combined_content
+        assert "### Per-Agent Usage\n" in combined_content
+        assert "**agent_a** (claude-3): 800 tokens" in combined_content
+
+
+class TestStreamingExecutionHelperMethods:
+    """Test helper methods for run_streaming_execution complexity reduction."""
+
+    def test_update_agent_progress_status(self) -> None:
+        """Test agent progress status update helper method."""
+        # Given
+        agents = [
+            {"name": "agent_a", "depends_on": []},
+            {"name": "agent_b", "depends_on": ["agent_a"]},
+            {"name": "agent_c", "depends_on": ["agent_b"]},
+        ]
+        completed_agents = 1
+        total_agents = 3
+        agent_statuses: dict[str, str] = {}
+
+        # When
+        _update_agent_progress_status(
+            agents, completed_agents, total_agents, agent_statuses
+        )
+
+        # Then
+        assert agent_statuses["agent_a"] == "completed"
+        assert agent_statuses["agent_b"] == "running"
+        assert agent_statuses["agent_c"] == "pending"
+
+    def test_update_agent_progress_status_all_completed(self) -> None:
+        """Test agent progress status when all agents are completed."""
+        # Given
+        agents = [
+            {"name": "agent_a", "depends_on": []},
+            {"name": "agent_b", "depends_on": ["agent_a"]},
+        ]
+        completed_agents = 2
+        total_agents = 2
+        agent_statuses: dict[str, str] = {}
+
+        # When
+        _update_agent_progress_status(
+            agents, completed_agents, total_agents, agent_statuses
+        )
+
+        # Then
+        assert agent_statuses["agent_a"] == "completed"
+        assert agent_statuses["agent_b"] == "completed"
+
+    @patch("llm_orc.cli_modules.utils.visualization.create_dependency_tree")
+    def test_process_execution_completed_event_text_format(
+        self, mock_create_tree: Mock
+    ) -> None:
+        """Test processing execution completed event with text format."""
+        # Given
+        mock_console = Mock(spec=Console)
+        mock_status = Mock()
+        agents = [{"name": "agent_a"}]
+        event_data = {
+            "duration": 2.5,
+            "results": {"agent_a": {"status": "success"}},
+            "metadata": {"usage": {}},
+        }
+        mock_tree = Mock()
+        mock_create_tree.return_value = mock_tree
+
+        # When
+        with patch(
+            "llm_orc.cli_modules.utils.visualization.display_results"
+        ) as mock_display:
+            result = _process_execution_completed_event(
+                mock_console, mock_status, agents, event_data, "text", True
+            )
+
+        # Then
+        assert result is True  # Should indicate to break from loop
+        mock_status.stop.assert_called_once()
+        mock_console.print.assert_any_call(mock_tree)
+        mock_console.print.assert_any_call("Completed in 2.50s")
+        mock_display.assert_called_once_with(
+            event_data["results"], event_data["metadata"], True
         )

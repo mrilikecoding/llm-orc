@@ -4,6 +4,7 @@ import asyncio
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import click
 import yaml
@@ -277,6 +278,49 @@ def list_ensembles_command(config_dir: str | None) -> None:
                 click.echo(f"  {ensemble.name}: {ensemble.description}")
 
 
+def _load_profiles_from_config(config_file: Path) -> dict[str, Any]:
+    """Load model profiles from a configuration file.
+
+    Args:
+        config_file: Path to the configuration file
+
+    Returns:
+        Dictionary of model profiles, empty if file doesn't exist or has no profiles
+    """
+    if not config_file.exists():
+        return {}
+
+    with open(config_file) as f:
+        config = yaml.safe_load(f) or {}
+        profiles: dict[str, Any] = config.get("model_profiles", {})
+        return profiles
+
+
+def _display_global_profile(profile_name: str, profile: Any) -> None:
+    """Display a single global profile with validation.
+
+    Args:
+        profile_name: Name of the profile
+        profile: Profile configuration (should be dict)
+    """
+    # Handle case where profile is not a dict (malformed YAML)
+    if not isinstance(profile, dict):
+        click.echo(
+            f"  {profile_name}: [Invalid profile format - "
+            f"expected dict, got {type(profile).__name__}]"
+        )
+        return
+
+    model = profile.get("model", "Unknown")
+    provider = profile.get("provider", "Unknown")
+    cost = profile.get("cost_per_token", "Not specified")
+
+    click.echo(f"  {profile_name}:")
+    click.echo(f"    Model: {model}")
+    click.echo(f"    Provider: {provider}")
+    click.echo(f"    Cost per token: {cost}")
+
+
 def list_profiles_command() -> None:
     """List available model profiles with their provider/model details."""
     # Initialize configuration manager
@@ -290,21 +334,14 @@ def list_profiles_command() -> None:
         click.echo("Run 'llm-orc config init' to create default profiles.")
         return
 
-    # Get separate global and local profiles for grouping
-    global_profiles = {}
+    # Load separate global and local profiles for grouping
     global_config_file = config_manager.global_config_dir / "config.yaml"
-    if global_config_file.exists():
-        with open(global_config_file) as f:
-            global_config = yaml.safe_load(f) or {}
-            global_profiles = global_config.get("model_profiles", {})
+    global_profiles = _load_profiles_from_config(global_config_file)
 
     local_profiles = {}
     if config_manager.local_config_dir:
         local_config_file = config_manager.local_config_dir / "config.yaml"
-        if local_config_file.exists():
-            with open(local_config_file) as f:
-                local_config = yaml.safe_load(f) or {}
-                local_profiles = local_config.get("model_profiles", {})
+        local_profiles = _load_profiles_from_config(local_config_file)
 
     click.echo("Available model profiles:")
 
@@ -326,23 +363,7 @@ def list_profiles_command() -> None:
                 continue
 
             profile = global_profiles[profile_name]
-
-            # Handle case where profile is not a dict (malformed YAML)
-            if not isinstance(profile, dict):
-                click.echo(
-                    f"  {profile_name}: [Invalid profile format - "
-                    f"expected dict, got {type(profile).__name__}]"
-                )
-                continue
-
-            model = profile.get("model", "Unknown")
-            provider = profile.get("provider", "Unknown")
-            cost = profile.get("cost_per_token", "Not specified")
-
-            click.echo(f"  {profile_name}:")
-            click.echo(f"    Model: {model}")
-            click.echo(f"    Provider: {provider}")
-            click.echo(f"    Cost per token: {cost}")
+            _display_global_profile(profile_name, profile)
 
 
 def init_local_config(project_name: str | None) -> None:

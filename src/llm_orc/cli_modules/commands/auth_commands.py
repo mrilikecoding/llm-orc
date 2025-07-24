@@ -1,7 +1,7 @@
 """Authentication management CLI commands."""
 
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 
@@ -168,42 +168,19 @@ class AuthCommands:
             if not oauth_token:
                 raise click.ClickException(f"No OAuth token found for {provider}")
 
-            # Check what we have
-            has_refresh_token = "refresh_token" in oauth_token
-            has_client_id = "client_id" in oauth_token
-            has_expires_at = "expires_at" in oauth_token
+            # Analyze token structure and display status
+            token_analysis = _analyze_token_info(oauth_token)
+            _display_token_status(provider, token_analysis)
 
-            click.echo(f"🔍 Token info for {provider}:")
-            click.echo(f"  Has refresh token: {'✅' if has_refresh_token else '❌'}")
-            click.echo(f"  Has client ID: {'✅' if has_client_id else '❌'}")
-            click.echo(f"  Has expiration: {'✅' if has_expires_at else '❌'}")
-
-            if has_expires_at:
-                expires_at = oauth_token["expires_at"]
-                now = time.time()
-                if expires_at > now:
-                    remaining = int(expires_at - now)
-                    hours, remainder = divmod(remaining, 3600)
-                    minutes, seconds = divmod(remainder, 60)
-                    click.echo(f"  Token expires in: {hours}h {minutes}m {seconds}s")
-                else:
-                    expired_for = int(now - expires_at)
-                    click.echo(f"  ⚠️ Token expired {expired_for} seconds ago")
-
-            if not has_refresh_token:
+            # Check if refresh is possible
+            if not token_analysis["has_refresh_token"]:
                 click.echo("\n❌ Cannot test refresh: no refresh token available")
                 return
 
-            if not has_client_id:
-                # Use default client ID for anthropic-claude-pro-max
-                if provider == "anthropic-claude-pro-max":
-                    client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-                    click.echo(f"\n🔧 Using default client ID: {client_id}")
-                else:
-                    click.echo("\n❌ Cannot test refresh: no client ID available")
-                    return
-            else:
-                client_id = oauth_token["client_id"]
+            # Resolve client ID (with provider-specific defaults)
+            client_id = _resolve_client_id(provider, token_analysis, oauth_token)
+            if not client_id:
+                return
 
             # Test the refresh
             click.echo(f"\n🔄 Testing token refresh for {provider}...")
@@ -237,22 +214,11 @@ class AuthCommands:
     @staticmethod
     def auth_setup() -> None:
         """Interactive setup wizard for authentication."""
-        from llm_orc.menu_system import (
-            AuthMenus,
-            confirm_action,
-            show_error,
-            show_success,
-        )
+        from llm_orc.menu_system import AuthMenus, show_error
         from llm_orc.providers.registry import provider_registry
 
-        config_manager = ConfigurationManager()
-        storage = CredentialStorage(config_manager)
-        auth_manager = AuthenticationManager(storage)
-
-        click.echo("🚀 Welcome to LLM Orchestra setup!")
-        click.echo(
-            "This wizard will help you configure authentication for LLM providers."
-        )
+        # Initialize managers and show welcome message
+        config_manager, storage, auth_manager = _initialize_auth_setup_managers()
 
         while True:
             # Use interactive menu for provider selection
@@ -265,41 +231,16 @@ class AuthCommands:
                 show_error(f"Provider '{provider_key}' not found in registry")
                 continue
 
-            if not provider.requires_auth:
-                show_success(f"{provider.display_name} doesn't require authentication!")
-                if not confirm_action("Add another provider?"):
-                    break
-                continue
-
-            # Handle existing provider authentication
-            existing_result = AuthCommands._handle_existing_provider(
-                storage, provider_key, provider.display_name
+            # Process the selected provider
+            result = _process_single_provider(
+                provider_key, provider, storage, auth_manager
             )
-            if existing_result is None:
-                break  # User chose to exit
-            elif existing_result is False:
-                continue  # Skip this provider but continue with others
 
-            # Determine authentication method for provider
-            auth_method = AuthCommands._determine_auth_method(provider_key)
-
-            # Handle authentication setup based on method
-            try:
-                should_continue = AuthCommands._handle_authentication_setup(
-                    auth_method, provider_key, provider, storage, auth_manager
-                )
-                if should_continue:
-                    continue  # Help case - continue with next iteration
-            except Exception as e:
-                show_error(f"Failed to configure {provider.display_name}: {str(e)}")
-
-            if not confirm_action("Add another provider?"):
+            if result == "break":
                 break
 
-        click.echo()
-        show_success(
-            "Setup complete! Use 'llm-orc auth list' to see your configured providers."
-        )
+        # Display completion message
+        _show_setup_completion_message()
 
     @staticmethod
     def _handle_existing_provider(
@@ -596,29 +537,9 @@ class AuthCommands:
 
         try:
             if logout_all:
-                # Logout from all OAuth providers
-                results = auth_manager.logout_all_oauth_providers()
-
-                if not results:
-                    click.echo("No OAuth providers found to logout")
-                    return
-
-                success_count = sum(1 for success in results.values() if success)
-
-                click.echo(f"Logged out from {success_count} OAuth providers:")
-                for provider_name, success in results.items():
-                    status = "✅" if success else "❌"
-                    click.echo(f"  {provider_name}: {status}")
-
+                _handle_all_providers_logout(auth_manager)
             elif provider:
-                # Logout from specific provider
-                if auth_manager.logout_oauth_provider(provider):
-                    click.echo(f"✅ Logged out from {provider}")
-                else:
-                    raise click.ClickException(
-                        f"Failed to logout from {provider}. "
-                        f"Provider may not exist or is not an OAuth provider."
-                    )
+                _handle_single_provider_logout(provider, auth_manager)
             else:
                 raise click.ClickException(
                     "Must specify a provider name or use --all flag"
@@ -626,6 +547,243 @@ class AuthCommands:
 
         except Exception as e:
             raise click.ClickException(f"Failed to logout: {str(e)}") from e
+
+
+def _analyze_token_info(oauth_token: dict[str, Any]) -> dict[str, Any]:
+    """Analyze OAuth token structure and extract useful information.
+
+    Args:
+        oauth_token: OAuth token dictionary from storage
+
+    Returns:
+        Dictionary containing analysis results with boolean flags and data
+    """
+    has_refresh_token = "refresh_token" in oauth_token
+    has_client_id = "client_id" in oauth_token
+    has_expires_at = "expires_at" in oauth_token
+
+    token_analysis: dict[str, Any] = {
+        "has_refresh_token": has_refresh_token,
+        "has_client_id": has_client_id,
+        "has_expires_at": has_expires_at,
+    }
+
+    if has_expires_at:
+        expires_at = oauth_token["expires_at"]
+        now = time.time()
+        token_analysis["expires_at"] = expires_at
+        token_analysis["current_time"] = now
+        token_analysis["is_expired"] = expires_at <= now
+
+        if expires_at > now:
+            remaining = int(expires_at - now)
+            hours, remainder = divmod(remaining, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            token_analysis["time_remaining"] = {
+                "hours": hours,
+                "minutes": minutes,
+                "seconds": seconds,
+            }
+        else:
+            expired_for = int(now - expires_at)
+            token_analysis["expired_for_seconds"] = expired_for
+
+    return token_analysis
+
+
+def _display_token_status(provider: str, token_analysis: dict[str, Any]) -> None:
+    """Display token status information to the user.
+
+    Args:
+        provider: Provider name
+        token_analysis: Token analysis results from _analyze_token_info
+    """
+    click.echo(f"🔍 Token info for {provider}:")
+    refresh_status = "✅" if token_analysis["has_refresh_token"] else "❌"
+    client_status = "✅" if token_analysis["has_client_id"] else "❌"
+    expires_status = "✅" if token_analysis["has_expires_at"] else "❌"
+
+    click.echo(f"  Has refresh token: {refresh_status}")
+    click.echo(f"  Has client ID: {client_status}")
+    click.echo(f"  Has expiration: {expires_status}")
+
+    if token_analysis["has_expires_at"]:
+        if "time_remaining" in token_analysis:
+            time_info = token_analysis["time_remaining"]
+            click.echo(
+                f"  Token expires in: {time_info['hours']}h "
+                f"{time_info['minutes']}m {time_info['seconds']}s"
+            )
+        elif "expired_for_seconds" in token_analysis:
+            expired_for = token_analysis["expired_for_seconds"]
+            click.echo(f"  ⚠️ Token expired {expired_for} seconds ago")
+
+
+def _resolve_client_id(
+    provider: str, token_analysis: dict[str, Any], oauth_token: dict[str, Any]
+) -> str | None:
+    """Resolve client ID for token refresh, using defaults when needed.
+
+    Args:
+        provider: Provider name
+        token_analysis: Token analysis results
+        oauth_token: OAuth token dictionary
+
+    Returns:
+        Client ID string if available, None if cannot be resolved
+    """
+    if token_analysis["has_client_id"]:
+        return str(oauth_token["client_id"])
+
+    # Use default client ID for anthropic-claude-pro-max
+    if provider == "anthropic-claude-pro-max":
+        default_client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        click.echo(f"\n🔧 Using default client ID: {default_client_id}")
+        return default_client_id
+
+    click.echo("\n❌ Cannot test refresh: no client ID available")
+    return None
+
+
+def _initialize_auth_setup_managers() -> tuple[
+    "ConfigurationManager", "CredentialStorage", "AuthenticationManager"
+]:
+    """Initialize managers needed for auth setup.
+
+    Returns:
+        Tuple of (config_manager, storage, auth_manager)
+    """
+    import click
+
+    config_manager = ConfigurationManager()
+    storage = CredentialStorage(config_manager)
+    auth_manager = AuthenticationManager(storage)
+
+    click.echo("🚀 Welcome to LLM Orchestra setup!")
+    click.echo("This wizard will help you configure authentication for LLM providers.")
+
+    return config_manager, storage, auth_manager
+
+
+def _process_single_provider(
+    provider_key: str,
+    provider: "ProviderInfo",
+    storage: "CredentialStorage",
+    auth_manager: "AuthenticationManager",
+) -> str:
+    """Process a single provider during auth setup.
+
+    Args:
+        provider_key: The provider key
+        provider: Provider information
+        storage: Credential storage instance
+        auth_manager: Authentication manager instance
+
+    Returns:
+        "break" to exit main loop, "continue" to continue with next provider
+    """
+    from llm_orc.menu_system import confirm_action, show_error, show_success
+
+    if not provider.requires_auth:
+        show_success(f"{provider.display_name} doesn't require authentication!")
+        if not confirm_action("Add another provider?"):
+            return "break"
+        return "continue"
+
+    # Handle existing provider authentication
+    existing_result = AuthCommands._handle_existing_provider(
+        storage, provider_key, provider.display_name
+    )
+    if existing_result is None:
+        return "break"  # User chose to exit
+    elif existing_result is False:
+        return "continue"  # Skip this provider but continue with others
+
+    # Determine authentication method for provider
+    auth_method = AuthCommands._determine_auth_method(provider_key)
+
+    # Handle authentication setup based on method
+    try:
+        should_continue = AuthCommands._handle_authentication_setup(
+            auth_method, provider_key, provider, storage, auth_manager
+        )
+        if should_continue:
+            return "continue"  # Help case - continue with next iteration
+    except Exception as e:
+        show_error(f"Failed to configure {provider.display_name}: {str(e)}")
+
+    if not confirm_action("Add another provider?"):
+        return "break"
+
+    return "continue"
+
+
+def _show_setup_completion_message() -> None:
+    """Display setup completion message."""
+    import click
+
+    from llm_orc.menu_system import show_success
+
+    click.echo()
+    show_success(
+        "Setup complete! Use 'llm-orc auth list' to see your configured providers."
+    )
+
+
+def _handle_all_providers_logout(auth_manager: "AuthenticationManager") -> None:
+    """Handle logout from all OAuth providers.
+
+    Args:
+        auth_manager: Authentication manager instance
+    """
+    import click
+
+    results = auth_manager.logout_all_oauth_providers()
+
+    if not results:
+        click.echo("No OAuth providers found to logout")
+        return
+
+    _display_logout_results(results)
+
+
+def _handle_single_provider_logout(
+    provider: str, auth_manager: "AuthenticationManager"
+) -> None:
+    """Handle logout from a single OAuth provider.
+
+    Args:
+        provider: Provider name to logout from
+        auth_manager: Authentication manager instance
+
+    Raises:
+        click.ClickException: If logout fails
+    """
+    import click
+
+    if auth_manager.logout_oauth_provider(provider):
+        click.echo(f"✅ Logged out from {provider}")
+    else:
+        raise click.ClickException(
+            f"Failed to logout from {provider}. "
+            f"Provider may not exist or is not an OAuth provider."
+        )
+
+
+def _display_logout_results(results: dict[str, bool]) -> None:
+    """Display logout results for multiple providers.
+
+    Args:
+        results: Dictionary mapping provider names to success status
+    """
+    import click
+
+    success_count = sum(1 for success in results.values() if success)
+
+    click.echo(f"Logged out from {success_count} OAuth providers:")
+    for provider_name, success in results.items():
+        status = "✅" if success else "❌"
+        click.echo(f"  {provider_name}: {status}")
 
 
 # Module-level exports for CLI imports

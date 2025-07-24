@@ -451,3 +451,122 @@ class TestValidateDependencyChainHelperMethods:
         errors = _detect_circular_dependencies(agents, resolver)
         assert len(errors) == 1
         assert "Circular dependency detected" in errors[0]
+
+    def test_find_agent_by_name_found(self) -> None:
+        """Test finding agent by name when agent exists."""
+        from llm_orc.core.execution.dependency_resolver import _find_agent_by_name
+
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1", "role": "test"},
+            {"name": "agent2", "depends_on": ["agent1"]},
+        ]
+
+        result = _find_agent_by_name(agents, "agent2")
+        assert result is not None
+        assert result["name"] == "agent2"
+        assert result["depends_on"] == ["agent1"]
+
+    def test_find_agent_by_name_not_found(self) -> None:
+        """Test finding agent by name when agent doesn't exist."""
+        from llm_orc.core.execution.dependency_resolver import _find_agent_by_name
+
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1", "role": "test"},
+        ]
+
+        result = _find_agent_by_name(agents, "missing_agent")
+        assert result is None
+
+    def test_find_agent_by_name_empty_list(self) -> None:
+        """Test finding agent by name in empty agent list."""
+        from llm_orc.core.execution.dependency_resolver import _find_agent_by_name
+
+        result = _find_agent_by_name([], "any_agent")
+        assert result is None
+
+    def test_check_cycle_from_node_no_cycle(self) -> None:
+        """Test cycle checking from node with no cycles."""
+        from llm_orc.core.execution.dependency_resolver import (
+            _check_cycle_from_node,
+        )
+
+        resolver = self.setup_resolver()
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1", "role": "test"},
+            {"name": "agent2", "depends_on": ["agent1"]},
+        ]
+        visited: set[str] = set()
+        rec_stack: set[str] = set()
+
+        result = _check_cycle_from_node("agent2", agents, resolver, visited, rec_stack)
+        assert result is False
+        assert "agent1" in visited
+        assert "agent2" in visited
+        assert len(rec_stack) == 0  # Should be empty after completion
+
+    def test_check_cycle_from_node_direct_cycle(self) -> None:
+        """Test cycle checking detects direct cycle."""
+        from llm_orc.core.execution.dependency_resolver import (
+            _check_cycle_from_node,
+        )
+
+        resolver = self.setup_resolver()
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1", "depends_on": ["agent2"]},
+            {"name": "agent2", "depends_on": ["agent1"]},
+        ]
+        visited: set[str] = set()
+        rec_stack: set[str] = set()
+
+        result = _check_cycle_from_node("agent1", agents, resolver, visited, rec_stack)
+        assert result is True
+
+    def test_check_cycle_from_node_already_visited(self) -> None:
+        """Test cycle checking with already visited node."""
+        from llm_orc.core.execution.dependency_resolver import (
+            _check_cycle_from_node,
+        )
+
+        resolver = self.setup_resolver()
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1", "role": "test"},
+        ]
+        visited: set[str] = {"agent1"}  # Already visited
+        rec_stack: set[str] = set()
+
+        result = _check_cycle_from_node("agent1", agents, resolver, visited, rec_stack)
+        assert result is False
+
+    def test_check_cycle_from_node_in_recursion_stack(self) -> None:
+        """Test cycle checking detects node in recursion stack."""
+        from llm_orc.core.execution.dependency_resolver import (
+            _check_cycle_from_node,
+        )
+
+        resolver = self.setup_resolver()
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1", "role": "test"},
+        ]
+        visited: set[str] = set()
+        rec_stack: set[str] = {"agent1"}  # Already in recursion stack
+
+        result = _check_cycle_from_node("agent1", agents, resolver, visited, rec_stack)
+        assert result is True
+
+    def test_check_cycle_from_node_missing_agent(self) -> None:
+        """Test cycle checking with missing agent config."""
+        from llm_orc.core.execution.dependency_resolver import (
+            _check_cycle_from_node,
+        )
+
+        resolver = self.setup_resolver()
+        agents: list[dict[str, Any]] = []  # Empty agents list
+        visited: set[str] = set()
+        rec_stack: set[str] = set()
+
+        result = _check_cycle_from_node(
+            "missing_agent", agents, resolver, visited, rec_stack
+        )
+        assert result is False
+        assert "missing_agent" in visited
+        assert len(rec_stack) == 0

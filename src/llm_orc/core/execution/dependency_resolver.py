@@ -154,6 +154,58 @@ def _validate_basic_dependencies(agents: list[dict[str, Any]]) -> list[str]:
     return errors
 
 
+def _find_agent_by_name(
+    agents: list[dict[str, Any]], agent_name: str
+) -> dict[str, Any] | None:
+    """Find agent configuration by name.
+
+    Args:
+        agents: List of agent configurations
+        agent_name: Name of agent to find
+
+    Returns:
+        Agent configuration or None if not found
+    """
+    return next((a for a in agents if a["name"] == agent_name), None)
+
+
+def _check_cycle_from_node(
+    agent_name: str,
+    agents: list[dict[str, Any]],
+    resolver: DependencyResolver,
+    visited: set[str],
+    rec_stack: set[str],
+) -> bool:
+    """Check for cycles starting from a specific agent node.
+
+    Args:
+        agent_name: Starting agent name
+        agents: List of agent configurations
+        resolver: Dependency resolver for getting dependencies
+        visited: Set of already visited nodes
+        rec_stack: Set of nodes in current recursion stack
+
+    Returns:
+        True if cycle detected, False otherwise
+    """
+    if agent_name in rec_stack:
+        return True
+    if agent_name in visited:
+        return False
+
+    visited.add(agent_name)
+    rec_stack.add(agent_name)
+
+    agent_config = _find_agent_by_name(agents, agent_name)
+    if agent_config:
+        for dep in resolver.get_dependencies(agent_config):
+            if _check_cycle_from_node(dep, agents, resolver, visited, rec_stack):
+                return True
+
+    rec_stack.remove(agent_name)
+    return False
+
+
 def _detect_circular_dependencies(
     agents: list[dict[str, Any]], resolver: DependencyResolver
 ) -> list[str]:
@@ -166,33 +218,13 @@ def _detect_circular_dependencies(
     Returns:
         List of error messages (empty if no cycles detected)
     """
-    errors = []
-    visited = set()
-    rec_stack = set()
-
-    def has_cycle(agent_name: str) -> bool:
-        if agent_name in rec_stack:
-            return True
-        if agent_name in visited:
-            return False
-
-        visited.add(agent_name)
-        rec_stack.add(agent_name)
-
-        # Find agent config by name
-        agent_config = next((a for a in agents if a["name"] == agent_name), None)
-        if agent_config:
-            for dep in resolver.get_dependencies(agent_config):
-                if has_cycle(dep):
-                    return True
-
-        rec_stack.remove(agent_name)
-        return False
+    visited: set[str] = set()
+    rec_stack: set[str] = set()
 
     for agent in agents:
-        if agent["name"] not in visited:
-            if has_cycle(agent["name"]):
-                errors.append("Circular dependency detected in agent chain")
-                break
+        agent_name = agent["name"]
+        if agent_name not in visited:
+            if _check_cycle_from_node(agent_name, agents, resolver, visited, rec_stack):
+                return ["Circular dependency detected in agent chain"]
 
-    return errors
+    return []

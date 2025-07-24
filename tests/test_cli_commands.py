@@ -3,10 +3,11 @@
 import asyncio
 from io import StringIO
 from pathlib import Path
-from unittest.mock import Mock, call, patch
+from unittest.mock import Mock, call, mock_open, patch
 
 import click
 import pytest
+import yaml
 from click.exceptions import ClickException
 
 import llm_orc.cli_commands
@@ -857,6 +858,104 @@ class TestListProfilesCommand:
             mock_echo.assert_any_call(
                 "  invalid-model: [Invalid profile format - expected dict, got str]"
             )
+
+
+class TestListProfilesCommandHelpers:
+    """Test helper functions extracted from list_profiles_command for complexity."""
+
+    def test_load_profiles_from_config_existing_file(self) -> None:
+        """Test loading profiles from existing config file."""
+        from llm_orc.cli_commands import _load_profiles_from_config
+
+        config_file = Path("/test/config.yaml")
+        expected_profiles = {
+            "test-model": {"provider": "anthropic", "model": "claude-3-sonnet"}
+        }
+
+        mock_config = {"model_profiles": expected_profiles}
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", mock_open(read_data=yaml.dump(mock_config))),
+        ):
+            result = _load_profiles_from_config(config_file)
+
+        assert result == expected_profiles
+
+    def test_load_profiles_from_config_nonexistent_file(self) -> None:
+        """Test loading profiles from nonexistent config file returns empty dict."""
+        from llm_orc.cli_commands import _load_profiles_from_config
+
+        config_file = Path("/nonexistent/config.yaml")
+
+        with patch("pathlib.Path.exists", return_value=False):
+            result = _load_profiles_from_config(config_file)
+
+        assert result == {}
+
+    def test_load_profiles_from_config_no_model_profiles_key(self) -> None:
+        """Test loading from config file with no model_profiles key."""
+        from llm_orc.cli_commands import _load_profiles_from_config
+
+        config_file = Path("/test/config.yaml")
+        mock_config = {"other_key": "value"}
+
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", mock_open(read_data=yaml.dump(mock_config))),
+        ):
+            result = _load_profiles_from_config(config_file)
+
+        assert result == {}
+
+    def test_display_global_profile_valid(self) -> None:
+        """Test displaying a valid global profile."""
+        from llm_orc.cli_commands import _display_global_profile
+
+        profile_name = "test-model"
+        profile = {
+            "provider": "anthropic",
+            "model": "claude-3-sonnet",
+            "cost_per_token": "$0.003",
+        }
+
+        with patch("click.echo") as mock_echo:
+            _display_global_profile(profile_name, profile)
+
+        mock_echo.assert_any_call(f"  {profile_name}:")
+        mock_echo.assert_any_call("    Model: claude-3-sonnet")
+        mock_echo.assert_any_call("    Provider: anthropic")
+        mock_echo.assert_any_call("    Cost per token: $0.003")
+
+    def test_display_global_profile_invalid_format(self) -> None:
+        """Test displaying an invalid global profile format."""
+        from llm_orc.cli_commands import _display_global_profile
+
+        profile_name = "invalid-model"
+        profile = "not_a_dict"
+
+        with patch("click.echo") as mock_echo:
+            _display_global_profile(profile_name, profile)
+
+        expected_message = (
+            "  invalid-model: [Invalid profile format - expected dict, got str]"
+        )
+        mock_echo.assert_called_once_with(expected_message)
+
+    def test_display_global_profile_missing_fields(self) -> None:
+        """Test displaying a profile with missing fields."""
+        from llm_orc.cli_commands import _display_global_profile
+
+        profile_name = "incomplete-model"
+        profile = {"provider": "anthropic"}  # Missing model and cost
+
+        with patch("click.echo") as mock_echo:
+            _display_global_profile(profile_name, profile)
+
+        mock_echo.assert_any_call(f"  {profile_name}:")
+        mock_echo.assert_any_call("    Model: Unknown")
+        mock_echo.assert_any_call("    Provider: anthropic")
+        mock_echo.assert_any_call("    Cost per token: Not specified")
 
 
 class TestServeEnsemble:

@@ -1000,3 +1000,106 @@ class TestCheckEnsembleAvailabilityHelperMethods:
 
         assert len(required_providers) == 0
         assert "missing-profile" in missing_profiles
+
+    def test_determine_ensemble_availability(self) -> None:
+        """Test ensemble availability determination helper method."""
+        # Given
+        agent_providers = {"anthropic", "openai"}
+        coord_providers = {"google"}
+        agent_missing = ["missing-agent-profile"]
+        coord_missing: list[str] = []
+        available_providers = {"anthropic", "openai", "google"}
+
+        # When
+        from llm_orc.cli_modules.utils.config_utils import (
+            _determine_ensemble_availability,
+        )
+
+        is_available, missing_providers, missing_profiles = (
+            _determine_ensemble_availability(
+                agent_providers,
+                coord_providers,
+                agent_missing,
+                coord_missing,
+                available_providers,
+            )
+        )
+
+        # Then
+        assert not is_available  # Should be False due to missing profiles
+        assert len(missing_providers) == 0  # All providers available
+        assert missing_profiles == ["missing-agent-profile"]
+
+    def test_determine_ensemble_availability_missing_providers(self) -> None:
+        """Test ensemble availability with missing providers."""
+        # Given
+        agent_providers = {"anthropic", "unavailable-provider"}
+        coord_providers: set[str] = set()
+        agent_missing: list[str] = []
+        coord_missing: list[str] = []
+        available_providers = {"anthropic"}
+
+        # When
+        from llm_orc.cli_modules.utils.config_utils import (
+            _determine_ensemble_availability,
+        )
+
+        is_available, missing_providers, missing_profiles = (
+            _determine_ensemble_availability(
+                agent_providers,
+                coord_providers,
+                agent_missing,
+                coord_missing,
+                available_providers,
+            )
+        )
+
+        # Then
+        assert not is_available
+        assert missing_providers == ["unavailable-provider"]
+        assert len(missing_profiles) == 0
+
+    @patch("click.echo")
+    def test_display_ensemble_status_available(self, mock_echo: Mock) -> None:
+        """Test displaying status for available ensemble."""
+        # Given
+        ensemble_name = "test-ensemble"
+        is_available = True
+        missing_providers: list[str] = []
+        missing_profiles: list[str] = []
+
+        # When
+        from llm_orc.cli_modules.utils.config_utils import _display_ensemble_status
+
+        _display_ensemble_status(
+            ensemble_name, is_available, missing_providers, missing_profiles
+        )
+
+        # Then
+        mock_echo.assert_called_once_with("  🟢 test-ensemble")
+
+    @patch("click.echo")
+    def test_display_ensemble_status_unavailable(self, mock_echo: Mock) -> None:
+        """Test displaying status for unavailable ensemble."""
+        # Given
+        ensemble_name = "test-ensemble"
+        is_available = False
+        missing_providers: list[str] = ["missing-provider"]
+        missing_profiles: list[str] = ["missing-profile"]
+
+        # When
+        from llm_orc.cli_modules.utils.config_utils import _display_ensemble_status
+
+        _display_ensemble_status(
+            ensemble_name, is_available, missing_providers, missing_profiles
+        )
+
+        # Then
+        expected_calls = [
+            "  🟥 test-ensemble",
+            "    Missing profiles: missing-profile",
+            "    Missing providers: missing-provider",
+        ]
+        actual_calls = [call.args[0] for call in mock_echo.call_args_list]
+        for expected in expected_calls:
+            assert expected in actual_calls

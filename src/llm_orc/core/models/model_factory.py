@@ -87,9 +87,7 @@ class ModelFactory:
 
         try:
             # Get authentication method for the provider configuration
-            # Use provider if specified, otherwise use model_name as lookup key
-            lookup_key = provider if provider else model_name
-            auth_method = storage.get_auth_method(lookup_key)
+            auth_method = _resolve_authentication_method(model_name, provider, storage)
 
             if not auth_method:
                 result = _handle_no_authentication(model_name, provider, storage)
@@ -99,22 +97,10 @@ class ModelFactory:
                 # result is guaranteed to be ModelInterface at this point
                 return cast(ModelInterface, result)
 
-            if auth_method == "api_key":
-                lookup_key = provider if provider else model_name
-                api_key = storage.get_api_key(lookup_key)
-                if not api_key:
-                    raise ValueError(f"No API key found for {lookup_key}")
-                return _create_api_key_model(model_name, api_key, provider)
-
-            elif auth_method == "oauth":
-                lookup_key = provider if provider else model_name
-                oauth_token = storage.get_oauth_token(lookup_key)
-                if not oauth_token:
-                    raise ValueError(f"No OAuth token found for {lookup_key}")
-                return _create_oauth_model(oauth_token, storage, lookup_key)
-
-            else:
-                raise ValueError(f"Unknown authentication method: {auth_method}")
+            # Create authenticated model using helper method
+            return _create_authenticated_model(
+                model_name, provider, auth_method, storage
+            )
 
         except Exception as e:
             # Fallback: use configured default model or treat as Ollama
@@ -285,6 +271,62 @@ def _handle_mock_models(model_name: str) -> ModelInterface:
     mock = AsyncMock(spec=ModelInterface)
     mock.generate_response.return_value = f"Response from {model_name}"
     return mock
+
+
+def _resolve_authentication_method(
+    model_name: str, provider: str | None, storage: CredentialStorage
+) -> str | None:
+    """Resolve authentication method for model loading.
+
+    Args:
+        model_name: Name of the model to load
+        provider: Optional provider name
+        storage: Credential storage instance
+
+    Returns:
+        Authentication method string or None if not found
+    """
+    # Use provider if specified, otherwise use model_name as lookup key
+    lookup_key = provider if provider else model_name
+    return storage.get_auth_method(lookup_key)
+
+
+def _create_authenticated_model(
+    model_name: str,
+    provider: str | None,
+    auth_method: str,
+    storage: CredentialStorage,
+) -> ModelInterface:
+    """Create authenticated model based on authentication method.
+
+    Args:
+        model_name: Name of the model to load
+        provider: Optional provider name
+        auth_method: Authentication method (api_key or oauth)
+        storage: Credential storage instance
+
+    Returns:
+        Configured model interface
+
+    Raises:
+        ValueError: If credentials are missing or auth method is unknown
+    """
+    lookup_key = provider if provider else model_name
+
+    if auth_method == "api_key":
+        api_key = storage.get_api_key(lookup_key)
+        if not api_key:
+            raise ValueError(f"No API key found for {lookup_key}")
+        return _create_api_key_model(model_name, api_key, provider)
+
+    elif auth_method == "oauth":
+        oauth_token = storage.get_oauth_token(lookup_key)
+        if not oauth_token:
+            raise ValueError(f"No OAuth token found for {lookup_key}")
+        return _create_oauth_model(oauth_token, storage, lookup_key)
+
+    else:
+        raise ValueError(f"Unknown authentication method: {auth_method}")
 
 
 def _handle_no_authentication(

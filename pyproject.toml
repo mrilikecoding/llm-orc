@@ -94,5 +94,6 @@ dev = [
     "mypy>=1.5.0",
     "pip-audit>=2.6.0",
     "types-requests>=2.32.4.20250611",
+    "complexipy>=3.3.0",
 ]
 

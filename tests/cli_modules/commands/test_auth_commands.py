@@ -1,12 +1,18 @@
 """Comprehensive tests for auth commands module."""
 
 import time
+from typing import Any
 from unittest.mock import Mock, call, patch
 
 import click
 import pytest
 
-from llm_orc.cli_modules.commands.auth_commands import AuthCommands
+from llm_orc.cli_modules.commands.auth_commands import (
+    AuthCommands,
+    _display_logout_results,
+    _handle_all_providers_logout,
+    _handle_single_provider_logout,
+)
 
 
 class TestAddAuthProvider:
@@ -1703,6 +1709,145 @@ class TestAuthSetupHelperMethods:
             "OAuth authentication for Test Provider failed"
         )
 
+    def test_initialize_auth_setup_managers(self) -> None:
+        """Test initializing managers for auth setup."""
+        from llm_orc.cli_modules.commands.auth_commands import (
+            _initialize_auth_setup_managers,
+        )
+
+        # When
+        with (
+            patch(
+                "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+            ) as mock_config_class,
+            patch(
+                "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+            ) as mock_storage_class,
+            patch(
+                "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+            ) as mock_auth_class,
+            patch("click.echo"),
+        ):
+            config_manager, storage, auth_manager = _initialize_auth_setup_managers()
+
+        # Then
+        mock_config_class.assert_called_once()
+        mock_storage_class.assert_called_once_with(mock_config_class.return_value)
+        mock_auth_class.assert_called_once_with(mock_storage_class.return_value)
+        assert config_manager == mock_config_class.return_value
+        assert storage == mock_storage_class.return_value
+        assert auth_manager == mock_auth_class.return_value
+
+    def test_process_single_provider_no_auth_required(self) -> None:
+        """Test processing a provider that doesn't require authentication."""
+        from llm_orc.cli_modules.commands.auth_commands import _process_single_provider
+
+        # Given
+        mock_storage = Mock()
+        mock_auth_manager = Mock()
+        mock_provider = Mock()
+        mock_provider.requires_auth = False
+        mock_provider.display_name = "Test Provider"
+
+        # When
+        with (
+            patch("llm_orc.menu_system.show_success") as mock_success,
+            patch("llm_orc.menu_system.confirm_action", return_value=False),
+        ):
+            result = _process_single_provider(
+                provider_key="test-provider",
+                provider=mock_provider,
+                storage=mock_storage,
+                auth_manager=mock_auth_manager,
+            )
+
+        # Then
+        assert result == "break"  # Should exit main loop
+        mock_success.assert_called_once_with(
+            "Test Provider doesn't require authentication!"
+        )
+
+    def test_process_single_provider_authentication_success(self) -> None:
+        """Test successfully processing a provider that requires authentication."""
+        from llm_orc.cli_modules.commands.auth_commands import _process_single_provider
+
+        # Given
+        mock_storage = Mock()
+        mock_auth_manager = Mock()
+        mock_provider = Mock()
+        mock_provider.requires_auth = True
+        mock_provider.display_name = "Test Provider"
+
+        # When
+        with (
+            patch(
+                "llm_orc.cli_modules.commands.auth_commands.AuthCommands._handle_existing_provider",
+                return_value=True,
+            ),
+            patch(
+                "llm_orc.cli_modules.commands.auth_commands.AuthCommands._determine_auth_method",
+                return_value="api_key",
+            ),
+            patch(
+                "llm_orc.cli_modules.commands.auth_commands.AuthCommands._handle_authentication_setup",
+                return_value=False,
+            ),
+            patch("llm_orc.menu_system.confirm_action", return_value=False),
+        ):
+            result = _process_single_provider(
+                provider_key="test-provider",
+                provider=mock_provider,
+                storage=mock_storage,
+                auth_manager=mock_auth_manager,
+            )
+
+        # Then
+        assert result == "break"  # Should exit main loop
+
+    def test_process_single_provider_user_exit(self) -> None:
+        """Test processing when user chooses to exit."""
+        from llm_orc.cli_modules.commands.auth_commands import _process_single_provider
+
+        # Given
+        mock_storage = Mock()
+        mock_auth_manager = Mock()
+        mock_provider = Mock()
+        mock_provider.requires_auth = True
+
+        # When
+        with patch(
+            "llm_orc.cli_modules.commands.auth_commands.AuthCommands._handle_existing_provider",
+            return_value=None,
+        ):
+            result = _process_single_provider(
+                provider_key="test-provider",
+                provider=mock_provider,
+                storage=mock_storage,
+                auth_manager=mock_auth_manager,
+            )
+
+        # Then
+        assert result == "break"  # Should exit main loop
+
+    def test_show_setup_completion_message(self) -> None:
+        """Test displaying setup completion message."""
+        from llm_orc.cli_modules.commands.auth_commands import (
+            _show_setup_completion_message,
+        )
+
+        # When
+        with (
+            patch("click.echo") as mock_echo,
+            patch("llm_orc.menu_system.show_success") as mock_success,
+        ):
+            _show_setup_completion_message()
+
+        # Then
+        mock_echo.assert_called_once()
+        mock_success.assert_called_once_with(
+            "Setup complete! Use 'llm-orc auth list' to see your configured providers."
+        )
+
 
 class TestListAuthProvidersHelperMethods:
     """Test helper methods extracted from list_auth_providers for complexity."""
@@ -2190,3 +2335,216 @@ class TestAddAuthProviderHelperMethods:
         # Then
         assert result is False
         mock_error.assert_called_once_with("Refresh failed: Auth method error")
+
+
+class TestTokenRefreshHelperMethods:
+    """Test helper methods extracted from test_token_refresh for complexity."""
+
+    def test_analyze_token_info(self) -> None:
+        """Test token information analysis helper method."""
+        # Given
+        oauth_token = {
+            "access_token": "test_token",
+            "refresh_token": "test_refresh",
+            "client_id": "test_client",
+            "expires_at": 1234567890,
+        }
+
+        # When
+        from llm_orc.cli_modules.commands.auth_commands import _analyze_token_info
+
+        result = _analyze_token_info(oauth_token)
+
+        # Then
+        assert result["has_refresh_token"] is True
+        assert result["has_client_id"] is True
+        assert result["has_expires_at"] is True
+        assert "expires_at" in result
+        assert "current_time" in result
+        assert "is_expired" in result
+
+    def test_analyze_token_info_missing_fields(self) -> None:
+        """Test token analysis with missing fields."""
+        # Given
+        oauth_token = {"access_token": "test_token"}
+
+        # When
+        from llm_orc.cli_modules.commands.auth_commands import _analyze_token_info
+
+        result = _analyze_token_info(oauth_token)
+
+        # Then
+        assert result["has_refresh_token"] is False
+        assert result["has_client_id"] is False
+        assert result["has_expires_at"] is False
+
+    @patch("click.echo")
+    def test_display_token_status(self, mock_echo: Mock) -> None:
+        """Test token status display helper method."""
+        # Given
+        provider = "test-provider"
+        token_analysis = {
+            "has_refresh_token": True,
+            "has_client_id": False,
+            "has_expires_at": True,
+            "time_remaining": {"hours": 0, "minutes": 14, "seconds": 50},
+        }
+
+        # When
+        from llm_orc.cli_modules.commands.auth_commands import _display_token_status
+
+        _display_token_status(provider, token_analysis)
+
+        # Then
+        expected_calls = [
+            "🔍 Token info for test-provider:",
+            "  Has refresh token: ✅",
+            "  Has client ID: ❌",
+            "  Has expiration: ✅",
+        ]
+        actual_calls = [call.args[0] for call in mock_echo.call_args_list]
+        for expected in expected_calls:
+            assert expected in actual_calls
+
+    def test_resolve_client_id_with_existing(self) -> None:
+        """Test client ID resolution when already present."""
+        # Given
+        oauth_token = {"client_id": "existing_client_id"}
+        provider = "test-provider"
+        token_analysis = {"has_client_id": True}
+
+        # When
+        from llm_orc.cli_modules.commands.auth_commands import _resolve_client_id
+
+        client_id = _resolve_client_id(provider, token_analysis, oauth_token)
+
+        # Then
+        assert client_id == "existing_client_id"
+
+    @patch("click.echo")
+    def test_resolve_client_id_anthropic_default(self, mock_echo: Mock) -> None:
+        """Test client ID resolution for anthropic with default."""
+        # Given
+        oauth_token: dict[str, Any] = {}
+        provider = "anthropic-claude-pro-max"
+        token_analysis = {"has_client_id": False}
+
+        # When
+        from llm_orc.cli_modules.commands.auth_commands import _resolve_client_id
+
+        client_id = _resolve_client_id(provider, token_analysis, oauth_token)
+
+        # Then
+        assert client_id == "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        mock_echo.assert_any_call(
+            "\n🔧 Using default client ID: 9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        )
+
+    @patch("click.echo")
+    def test_resolve_client_id_missing_other_provider(self, mock_echo: Mock) -> None:
+        """Test client ID resolution for other provider without client ID."""
+        # Given
+        oauth_token: dict[str, Any] = {}
+        provider = "other-provider"
+        token_analysis = {"has_client_id": False}
+
+        # When
+        from llm_orc.cli_modules.commands.auth_commands import _resolve_client_id
+
+        client_id = _resolve_client_id(provider, token_analysis, oauth_token)
+
+        # Then
+        assert client_id is None
+        mock_echo.assert_any_call("\n❌ Cannot test refresh: no client ID available")
+
+
+class TestLogoutOAuthProvidersHelperMethods:
+    """Test helper methods extracted from logout_oauth_providers for complexity."""
+
+    def test_handle_all_providers_logout_with_results(self) -> None:
+        """Test _handle_all_providers_logout helper method with successful results."""
+        # Given
+        mock_auth_manager = Mock()
+        mock_auth_manager.logout_all_oauth_providers.return_value = {
+            "provider1": True,
+            "provider2": False,
+            "provider3": True,
+        }
+
+        # When
+        with patch("click.echo") as mock_echo:
+            _handle_all_providers_logout(mock_auth_manager)
+
+        # Then
+        mock_auth_manager.logout_all_oauth_providers.assert_called_once()
+        echo_calls = [call[0][0] for call in mock_echo.call_args_list]
+        assert any("Logged out from 2 OAuth providers" in call for call in echo_calls)
+
+    def test_handle_all_providers_logout_no_providers(self) -> None:
+        """Test _handle_all_providers_logout helper method with no providers found."""
+        # Given
+        mock_auth_manager = Mock()
+        mock_auth_manager.logout_all_oauth_providers.return_value = {}
+
+        # When
+        with patch("click.echo") as mock_echo:
+            _handle_all_providers_logout(mock_auth_manager)
+
+        # Then
+        mock_echo.assert_called_once_with("No OAuth providers found to logout")
+
+    def test_handle_single_provider_logout_success(self) -> None:
+        """Test _handle_single_provider_logout helper method with successful logout."""
+        # Given
+        provider = "test-provider"
+        mock_auth_manager = Mock()
+        mock_auth_manager.logout_oauth_provider.return_value = True
+
+        # When
+        with patch("click.echo") as mock_echo:
+            _handle_single_provider_logout(provider, mock_auth_manager)
+
+        # Then
+        mock_auth_manager.logout_oauth_provider.assert_called_once_with(provider)
+        mock_echo.assert_called_once_with(f"✅ Logged out from {provider}")
+
+    def test_handle_single_provider_logout_failure(self) -> None:
+        """Test _handle_single_provider_logout helper method with failed logout."""
+        # Given
+        provider = "test-provider"
+        mock_auth_manager = Mock()
+        mock_auth_manager.logout_oauth_provider.return_value = False
+
+        # When/Then
+        with pytest.raises(
+            click.ClickException,
+            match=(
+                "Failed to logout from test-provider. "
+                "Provider may not exist or is not an OAuth provider."
+            ),
+        ):
+            _handle_single_provider_logout(provider, mock_auth_manager)
+
+    def test_display_logout_results_with_mixed_results(self) -> None:
+        """Test _display_logout_results helper method with mixed success/failure."""
+        # Given
+        results = {
+            "provider1": True,
+            "provider2": False,
+            "provider3": True,
+            "provider4": False,
+        }
+
+        # When
+        with patch("click.echo") as mock_echo:
+            _display_logout_results(results)
+
+        # Then
+        echo_calls = [call[0][0] for call in mock_echo.call_args_list]
+        # Should show count of successful logouts
+        assert any("Logged out from 2 OAuth providers" in call for call in echo_calls)
+        # Should show individual provider results
+        assert any("provider1: ✅" in call for call in echo_calls)
+        assert any("provider2: ❌" in call for call in echo_calls)
+        assert any("provider3: ✅" in call for call in echo_calls)
+        assert any("provider4: ❌" in call for call in echo_calls)

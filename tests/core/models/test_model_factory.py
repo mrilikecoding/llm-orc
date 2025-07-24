@@ -9,10 +9,12 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.models.model_factory import (
     ModelFactory,
     _create_api_key_model,
+    _create_authenticated_model,
     _create_oauth_model,
     _handle_mock_models,
     _handle_no_authentication,
     _prompt_auth_setup,
+    _resolve_authentication_method,
     _setup_anthropic_api_auth,
     _setup_anthropic_oauth_auth,
     _setup_claude_cli_auth,
@@ -818,3 +820,122 @@ class TestLoadModelHelperMethods:
         # Then
         assert isinstance(result, OAuthClaudeModel)
         assert result.access_token == "test-token"
+
+    def test_resolve_authentication_method_with_provider(self) -> None:
+        """Test authentication method resolution with explicit provider."""
+        # Given
+        model_name = "claude-3-sonnet"
+        provider = "anthropic"
+        storage = Mock()
+        storage.get_auth_method.return_value = "oauth"
+
+        # When
+        result = _resolve_authentication_method(model_name, provider, storage)
+
+        # Then
+        assert result == "oauth"
+        storage.get_auth_method.assert_called_once_with("anthropic")
+
+    def test_resolve_authentication_method_without_provider(self) -> None:
+        """Test authentication method resolution using model name as lookup key."""
+        # Given
+        model_name = "claude-3-sonnet"
+        provider = None
+        storage = Mock()
+        storage.get_auth_method.return_value = "api_key"
+
+        # When
+        result = _resolve_authentication_method(model_name, provider, storage)
+
+        # Then
+        assert result == "api_key"
+        storage.get_auth_method.assert_called_once_with("claude-3-sonnet")
+
+    def test_resolve_authentication_method_no_auth(self) -> None:
+        """Test authentication method resolution when no auth is found."""
+        # Given
+        model_name = "claude-3-sonnet"
+        provider = "anthropic"
+        storage = Mock()
+        storage.get_auth_method.return_value = None
+
+        # When
+        result = _resolve_authentication_method(model_name, provider, storage)
+
+        # Then
+        assert result is None
+        storage.get_auth_method.assert_called_once_with("anthropic")
+
+    def test_create_authenticated_model_api_key(self) -> None:
+        """Test authenticated model creation with API key method."""
+        # Given
+        model_name = "claude-3-sonnet"
+        provider = "anthropic"
+        auth_method = "api_key"
+        storage = Mock()
+        storage.get_api_key.return_value = "test-api-key"
+
+        # When
+        with patch(
+            "llm_orc.core.models.model_factory._create_api_key_model"
+        ) as mock_create:
+            mock_model = Mock()
+            mock_create.return_value = mock_model
+
+            result = _create_authenticated_model(
+                model_name, provider, auth_method, storage
+            )
+
+        # Then
+        assert result == mock_model
+        mock_create.assert_called_once_with(model_name, "test-api-key", provider)
+
+    def test_create_authenticated_model_oauth(self) -> None:
+        """Test authenticated model creation with OAuth method."""
+        # Given
+        model_name = "claude-pro"
+        provider = "anthropic"
+        auth_method = "oauth"
+        storage = Mock()
+        oauth_token = {"access_token": "test-token"}
+        storage.get_oauth_token.return_value = oauth_token
+
+        # When
+        with patch(
+            "llm_orc.core.models.model_factory._create_oauth_model"
+        ) as mock_create:
+            mock_model = Mock()
+            mock_create.return_value = mock_model
+
+            result = _create_authenticated_model(
+                model_name, provider, auth_method, storage
+            )
+
+        # Then
+        assert result == mock_model
+        mock_create.assert_called_once_with(oauth_token, storage, "anthropic")
+
+    def test_create_authenticated_model_no_api_key(self) -> None:
+        """Test authenticated model creation when API key is missing."""
+        # Given
+        model_name = "claude-3-sonnet"
+        provider = "anthropic"
+        auth_method = "api_key"
+        storage = Mock()
+        storage.get_api_key.return_value = None
+
+        # When/Then
+        with pytest.raises(ValueError, match="No API key found for anthropic"):
+            _create_authenticated_model(model_name, provider, auth_method, storage)
+
+    def test_create_authenticated_model_unknown_method(self) -> None:
+        """Test authenticated model creation with unknown auth method."""
+        # Given
+        model_name = "claude-3-sonnet"
+        provider = "anthropic"
+        auth_method = "unknown"
+        storage = Mock()
+
+        # When/Then
+        with pytest.raises(ValueError, match="Unknown authentication method: unknown"):
+            _create_authenticated_model(model_name, provider, auth_method, storage)

@@ -149,6 +149,79 @@ def _calculate_agent_level(
     return max_dep_level + 1
 
 
+def _process_agent_results(results: dict[str, Any]) -> list[str]:
+    """Process agent results and generate markdown content.
+
+    Args:
+        results: Dictionary of agent results
+
+    Returns:
+        List of markdown content strings for agent results
+    """
+    markdown_content = []
+
+    for agent_name, result in results.items():
+        if result.get("status") == "success":
+            markdown_content.append(f"## {agent_name}\n")
+            # Format the response as a code block if it looks like code,
+            # otherwise as regular text (let Rich handle wrapping)
+            response = result["response"]
+            code_keywords = ["def ", "class ", "```", "import ", "function"]
+            if any(keyword in response.lower() for keyword in code_keywords):
+                markdown_content.append(f"```\n{response}\n```\n")
+            else:
+                markdown_content.append(f"{response}\n")
+        else:
+            markdown_content.append(f"## ❌ {agent_name}\n")
+            error_msg = result.get("error", "Unknown error")
+            markdown_content.append(f"**Error:** {error_msg}\n")
+
+    return markdown_content
+
+
+def _format_performance_metrics(metadata: dict[str, Any]) -> list[str]:
+    """Format performance metrics into markdown content.
+
+    Args:
+        metadata: Metadata dictionary containing usage information
+
+    Returns:
+        List of markdown content strings for performance metrics
+    """
+    markdown_content: list[str] = []
+
+    if "usage" not in metadata:
+        return markdown_content
+
+    usage = metadata["usage"]
+    totals = usage.get("totals", {})
+
+    markdown_content.append("## Performance Metrics\n")
+    markdown_content.append(f"- **Duration:** {metadata['duration']}\n")
+
+    total_tokens = totals.get("total_tokens", 0)
+    total_cost = totals.get("total_cost_usd", 0.0)
+    markdown_content.append(f"- **Total tokens:** {total_tokens:,}\n")
+    markdown_content.append(f"- **Total cost:** ${total_cost:.4f}\n")
+    markdown_content.append(f"- **Agents:** {totals.get('agents_count', 0)}\n")
+
+    # Show per-agent usage
+    agents_usage = usage.get("agents", {})
+    if agents_usage:
+        markdown_content.append("\n### Per-Agent Usage\n")
+        for agent_name, agent_usage in agents_usage.items():
+            tokens = agent_usage.get("total_tokens", 0)
+            cost = agent_usage.get("cost_usd", 0.0)
+            duration = agent_usage.get("duration_ms", 0)
+            model = agent_usage.get("model", "unknown")
+            markdown_content.append(
+                f"- **{agent_name}** ({model}): {tokens:,} tokens, "
+                f"${cost:.4f}, {duration}ms\n"
+            )
+
+    return markdown_content
+
+
 def display_results(
     results: dict[str, Any], metadata: dict[str, Any], detailed: bool = False
 ) -> None:
@@ -156,50 +229,14 @@ def display_results(
     console = Console(soft_wrap=True, width=None, force_terminal=True)
 
     if detailed:
-        # Build markdown content for detailed results
+        # Build markdown content for detailed results using helper methods
         markdown_content = ["# Results\n"]
 
-        for agent_name, result in results.items():
-            if result.get("status") == "success":
-                markdown_content.append(f"## {agent_name}\n")
-                # Format the response as a code block if it looks like code,
-                # otherwise as regular text (let Rich handle wrapping)
-                response = result["response"]
-                code_keywords = ["def ", "class ", "```", "import ", "function"]
-                if any(keyword in response.lower() for keyword in code_keywords):
-                    markdown_content.append(f"```\n{response}\n```\n")
-                else:
-                    markdown_content.append(f"{response}\n")
-            else:
-                markdown_content.append(f"## ❌ {agent_name}\n")
-                error_msg = result.get("error", "Unknown error")
-                markdown_content.append(f"**Error:** {error_msg}\n")
+        # Process agent results using helper method
+        markdown_content.extend(_process_agent_results(results))
 
-        # Show performance metrics
-        if "usage" in metadata:
-            usage = metadata["usage"]
-            totals = usage.get("totals", {})
-            markdown_content.append("## Performance Metrics\n")
-            markdown_content.append(f"- **Duration:** {metadata['duration']}\n")
-            total_tokens = totals.get("total_tokens", 0)
-            total_cost = totals.get("total_cost_usd", 0.0)
-            markdown_content.append(f"- **Total tokens:** {total_tokens:,}\n")
-            markdown_content.append(f"- **Total cost:** ${total_cost:.4f}\n")
-            markdown_content.append(f"- **Agents:** {totals.get('agents_count', 0)}\n")
-
-            # Show per-agent usage
-            agents_usage = usage.get("agents", {})
-            if agents_usage:
-                markdown_content.append("\n### Per-Agent Usage\n")
-                for agent_name, agent_usage in agents_usage.items():
-                    tokens = agent_usage.get("total_tokens", 0)
-                    cost = agent_usage.get("cost_usd", 0.0)
-                    duration = agent_usage.get("duration_ms", 0)
-                    model = agent_usage.get("model", "unknown")
-                    markdown_content.append(
-                        f"- **{agent_name}** ({model}): {tokens:,} tokens, "
-                        f"${cost:.4f}, {duration}ms\n"
-                    )
+        # Format performance metrics using helper method
+        markdown_content.extend(_format_performance_metrics(metadata))
 
         # Render the markdown - Rich will handle soft wrapping
         markdown_text = "".join(markdown_content)
@@ -280,6 +317,66 @@ def find_final_agent(results: dict[str, Any]) -> str | None:
     return final_agent
 
 
+def _update_agent_progress_status(
+    agents: list[dict[str, Any]],
+    completed_agents: int,
+    total_agents: int,
+    agent_statuses: dict[str, str],
+) -> None:
+    """Update agent progress statuses based on completion count.
+
+    Args:
+        agents: List of agent configurations
+        completed_agents: Number of completed agents
+        total_agents: Total number of agents
+        agent_statuses: Dictionary to update with agent statuses
+    """
+    # Mark first N agents as completed, rest as pending
+    for i, agent in enumerate(agents):
+        if i < completed_agents:
+            agent_statuses[agent["name"]] = "completed"
+        elif i == completed_agents and completed_agents < total_agents:
+            agent_statuses[agent["name"]] = "running"
+        else:
+            agent_statuses[agent["name"]] = "pending"
+
+
+def _process_execution_completed_event(
+    console: Console,
+    status: Any,
+    agents: list[dict[str, Any]],
+    event_data: dict[str, Any],
+    output_format: str,
+    detailed: bool,
+) -> bool:
+    """Process execution completed event and display final results.
+
+    Args:
+        console: Rich console instance
+        status: Rich status object
+        agents: List of agent configurations
+        event_data: Event data containing results and metadata
+        output_format: Output format (text/json)
+        detailed: Whether to show detailed output
+
+    Returns:
+        bool: True to indicate loop should break
+    """
+    # Stop the status spinner and show final results
+    status.stop()
+
+    # Final update with all completed
+    final_statuses = {agent["name"]: "completed" for agent in agents}
+    final_tree = create_dependency_tree(agents, final_statuses)
+    console.print(final_tree)
+    console.print(f"Completed in {event_data['duration']:.2f}s")
+
+    if output_format == "text":
+        display_results(event_data["results"], event_data["metadata"], detailed)
+
+    return True
+
+
 async def run_streaming_execution(
     executor: Any,
     ensemble_config: EnsembleConfig,
@@ -307,14 +404,13 @@ async def run_streaming_execution(
                         "total_agents", len(ensemble_config.agents)
                     )
 
-                    # Mark first N agents as completed, rest as pending
-                    for i, agent in enumerate(ensemble_config.agents):
-                        if i < completed_agents:
-                            agent_statuses[agent["name"]] = "completed"
-                        elif i == completed_agents and completed_agents < total_agents:
-                            agent_statuses[agent["name"]] = "running"
-                        else:
-                            agent_statuses[agent["name"]] = "pending"
+                    # Update agent progress statuses using helper method
+                    _update_agent_progress_status(
+                        ensemble_config.agents,
+                        completed_agents,
+                        total_agents,
+                        agent_statuses,
+                    )
 
                     # Update status display with current dependency tree
                     current_tree = create_dependency_tree(
@@ -323,26 +419,16 @@ async def run_streaming_execution(
                     status.update(current_tree)
 
                 elif event_type == "execution_completed":
-                    # Stop the status spinner and show final results
-                    status.stop()
-
-                    # Final update with all completed
-                    final_statuses = {
-                        agent["name"]: "completed" for agent in ensemble_config.agents
-                    }
-                    final_tree = create_dependency_tree(
-                        ensemble_config.agents, final_statuses
-                    )
-                    console.print(final_tree)
-                    console.print(f"Completed in {event['data']['duration']:.2f}s")
-
-                    if output_format == "text":
-                        display_results(
-                            event["data"]["results"],
-                            event["data"]["metadata"],
-                            detailed,
-                        )
-                    break
+                    # Process execution completed event using helper method
+                    if _process_execution_completed_event(
+                        console,
+                        status,
+                        ensemble_config.agents,
+                        event["data"],
+                        output_format,
+                        detailed,
+                    ):
+                        break
 
 
 async def run_standard_execution(

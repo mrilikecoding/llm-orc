@@ -233,6 +233,62 @@ def _check_coordinator_requirements(
     return required_providers, missing_profiles
 
 
+def _determine_ensemble_availability(
+    agent_providers: set[str],
+    coord_providers: set[str],
+    agent_missing: list[str],
+    coord_missing: list[str],
+    available_providers: set[str],
+) -> tuple[bool, list[str], list[str]]:
+    """Determine ensemble availability based on provider and profile status.
+
+    Args:
+        agent_providers: Set of providers required by agents
+        coord_providers: Set of providers required by coordinator
+        agent_missing: List of missing agent profiles
+        coord_missing: List of missing coordinator profiles
+        available_providers: Set of available providers
+
+    Returns:
+        Tuple of (is_available, missing_providers, missing_profiles)
+    """
+    # Combine results
+    required_providers = agent_providers.union(coord_providers)
+    missing_profiles = agent_missing + coord_missing
+
+    # Determine availability
+    missing_providers_set = required_providers - available_providers
+    missing_providers = list(missing_providers_set)
+    is_available = not missing_providers and not missing_profiles
+
+    return is_available, missing_providers, missing_profiles
+
+
+def _display_ensemble_status(
+    ensemble_name: str,
+    is_available: bool,
+    missing_providers: list[str],
+    missing_profiles: list[str],
+) -> None:
+    """Display ensemble status with details for unavailable ensembles.
+
+    Args:
+        ensemble_name: Name of the ensemble
+        is_available: Whether the ensemble is available
+        missing_providers: List of missing providers
+        missing_profiles: List of missing profiles
+    """
+    status_symbol = "🟢" if is_available else "🟥"
+    click.echo(f"  {status_symbol} {ensemble_name}")
+
+    # Show details for unavailable ensembles
+    if not is_available:
+        if missing_profiles:
+            click.echo(f"    Missing profiles: {', '.join(missing_profiles)}")
+        if missing_providers:
+            click.echo(f"    Missing providers: {', '.join(missing_providers)}")
+
+
 def check_ensemble_availability(
     ensembles_dir: Path,
     available_providers: set[str],
@@ -266,24 +322,21 @@ def check_ensemble_availability(
                 coordinator, config_manager
             )
 
-            # Combine results
-            required_providers = agent_providers.union(coord_providers)
-            missing_profiles = agent_missing + coord_missing
+            # Determine availability using helper method
+            is_available, missing_providers, missing_profiles = (
+                _determine_ensemble_availability(
+                    agent_providers,
+                    coord_providers,
+                    agent_missing,
+                    coord_missing,
+                    available_providers,
+                )
+            )
 
-            # Determine availability
-            missing_providers_set = required_providers - available_providers
-            missing_providers = list(missing_providers_set)
-            is_available = not missing_providers and not missing_profiles
-
-            status_symbol = "🟢" if is_available else "🟥"
-            click.echo(f"  {status_symbol} {ensemble_name}")
-
-            # Show details for unavailable ensembles
-            if not is_available:
-                if missing_profiles:
-                    click.echo(f"    Missing profiles: {', '.join(missing_profiles)}")
-                if missing_providers:
-                    click.echo(f"    Missing providers: {', '.join(missing_providers)}")
+            # Display status using helper method
+            _display_ensemble_status(
+                ensemble_name, is_available, missing_providers, missing_profiles
+            )
 
         except Exception as e:
             click.echo(f"  🟥 {ensemble_file.stem} (error reading: {e})")

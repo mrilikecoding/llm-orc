@@ -465,3 +465,133 @@ class TestValidateDependenciesHelperMethods:
 
         with pytest.raises(ValueError, match="Circular dependency detected"):
             _detect_circular_dependencies(agents)
+
+
+class TestDetectCircularDependenciesHelperMethods:
+    """Test helper methods extracted from _detect_circular_dependencies."""
+
+    def test_find_agent_by_name_existing(self) -> None:
+        """Test finding an existing agent by name."""
+        from llm_orc.core.config.ensemble_config import _find_agent_by_name
+
+        agents = [
+            {"name": "agent1", "model": "model1"},
+            {"name": "agent2", "model": "model2"},
+            {"name": "agent3", "model": "model3"},
+        ]
+
+        result = _find_agent_by_name(agents, "agent2")
+
+        assert result == {"name": "agent2", "model": "model2"}
+
+    def test_find_agent_by_name_non_existing(self) -> None:
+        """Test finding a non-existing agent by name."""
+        from llm_orc.core.config.ensemble_config import _find_agent_by_name
+
+        agents = [
+            {"name": "agent1", "model": "model1"},
+            {"name": "agent2", "model": "model2"},
+        ]
+
+        result = _find_agent_by_name(agents, "non_existing")
+
+        assert result is None
+
+    def test_find_agent_by_name_empty_list(self) -> None:
+        """Test finding agent in empty list."""
+        from llm_orc.core.config.ensemble_config import _find_agent_by_name
+
+        agents: list[dict[str, Any]] = []
+
+        result = _find_agent_by_name(agents, "any_agent")
+
+        assert result is None
+
+    def test_perform_cycle_detection_no_cycle(self) -> None:
+        """Test cycle detection with no cycles present."""
+        from llm_orc.core.config.ensemble_config import _perform_cycle_detection
+
+        agents = [
+            {"name": "agent1", "depends_on": []},
+            {"name": "agent2", "depends_on": ["agent1"]},
+            {"name": "agent3", "depends_on": ["agent2"]},
+        ]
+        visited: set[str] = set()
+        recursion_stack: set[str] = set()
+
+        result = _perform_cycle_detection("agent1", agents, visited, recursion_stack)
+
+        assert result is False
+        assert "agent1" in visited
+        assert "agent1" not in recursion_stack
+
+    def test_perform_cycle_detection_direct_cycle(self) -> None:
+        """Test cycle detection with direct cycle."""
+        from llm_orc.core.config.ensemble_config import _perform_cycle_detection
+
+        agents = [
+            {"name": "agent1", "depends_on": ["agent2"]},
+            {"name": "agent2", "depends_on": ["agent1"]},
+        ]
+        visited: set[str] = set()
+        recursion_stack: set[str] = set()
+
+        result = _perform_cycle_detection("agent1", agents, visited, recursion_stack)
+
+        assert result is True
+
+    def test_perform_cycle_detection_already_visited(self) -> None:
+        """Test cycle detection with already visited agent."""
+        from llm_orc.core.config.ensemble_config import _perform_cycle_detection
+
+        agents = [
+            {"name": "agent1", "depends_on": []},
+            {"name": "agent2", "depends_on": ["agent1"]},
+        ]
+        visited: set[str] = {"agent1"}  # Already visited
+        recursion_stack: set[str] = set()
+
+        result = _perform_cycle_detection("agent1", agents, visited, recursion_stack)
+
+        assert result is False
+
+    def test_perform_cycle_detection_in_recursion_stack(self) -> None:
+        """Test cycle detection with agent already in recursion stack."""
+        from llm_orc.core.config.ensemble_config import _perform_cycle_detection
+
+        agents = [
+            {"name": "agent1", "depends_on": []},
+        ]
+        visited: set[str] = set()
+        recursion_stack: set[str] = {"agent1"}  # Already in recursion stack
+
+        result = _perform_cycle_detection("agent1", agents, visited, recursion_stack)
+
+        assert result is True
+
+    def test_check_agents_for_cycles_no_cycles(self) -> None:
+        """Test checking all agents for cycles with no cycles present."""
+        from llm_orc.core.config.ensemble_config import _check_agents_for_cycles
+
+        agents = [
+            {"name": "agent1", "depends_on": []},
+            {"name": "agent2", "depends_on": ["agent1"]},
+            {"name": "agent3", "depends_on": ["agent2"]},
+        ]
+
+        # Should not raise any exception
+        _check_agents_for_cycles(agents)
+
+    def test_check_agents_for_cycles_with_cycle(self) -> None:
+        """Test checking all agents for cycles with cycle present."""
+        from llm_orc.core.config.ensemble_config import _check_agents_for_cycles
+
+        agents = [
+            {"name": "agent1", "depends_on": ["agent2"]},
+            {"name": "agent2", "depends_on": ["agent1"]},
+        ]
+
+        with pytest.raises(
+            ValueError, match="Circular dependency detected involving agent: 'agent1'"
+        ):
+            _check_agents_for_cycles(agents)
