@@ -493,6 +493,12 @@ class TestInvokeEnsemble:
         """Test text output format shows performance information."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
 
+        # Mock the executor.execute method to return expected structure
+        mock_executor.execute = AsyncMock(return_value={
+            "results": {"test_agent": "Test response"},
+            "metadata": {"execution_time": 1.5, "agents_used": 1}
+        })
+
         with (
             patch(
                 "llm_orc.cli_commands.ConfigurationManager",
@@ -500,8 +506,9 @@ class TestInvokeEnsemble:
             ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
-            patch("llm_orc.cli_commands.asyncio.run"),
-            patch("llm_orc.cli_commands.run_standard_execution"),
+            patch(
+                "llm_orc.cli_commands.run_standard_execution", new_callable=AsyncMock
+            ),
             patch("llm_orc.cli_commands.click.echo") as mock_echo,
         ):
             invoke_ensemble(
@@ -549,6 +556,12 @@ class TestInvokeEnsemble:
             performance_config_side_effect
         )
 
+        # Mock the executor.execute method to return expected structure
+        mock_executor.execute = AsyncMock(return_value={
+            "results": {"test_agent": "Test response"},
+            "metadata": {"execution_time": 1.5, "agents_used": 1}
+        })
+
         with (
             patch(
                 "llm_orc.cli_commands.ConfigurationManager",
@@ -556,8 +569,9 @@ class TestInvokeEnsemble:
             ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
-            patch("llm_orc.cli_commands.asyncio.run"),
-            patch("llm_orc.cli_commands.run_standard_execution"),
+            patch(
+                "llm_orc.cli_commands.run_standard_execution", new_callable=AsyncMock
+            ),
             patch("llm_orc.cli_commands.click.echo") as mock_echo,
         ):
             invoke_ensemble(
@@ -631,6 +645,11 @@ class TestInvokeEnsemble:
         mock_loader.find_ensemble.return_value = mock_ensemble_config
 
         mock_executor = Mock()
+        # Mock the executor.execute method to return expected structure
+        mock_executor.execute = AsyncMock(return_value={
+            "results": {"test_agent": "Test response"},
+            "metadata": {"execution_time": 1.5, "agents_used": 1}
+        })
 
         with (
             patch(
@@ -639,7 +658,6 @@ class TestInvokeEnsemble:
             ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
-            patch("llm_orc.cli_commands.asyncio.run"),
             patch("click.echo"),
         ):
             # This should hit line 86 (the pass statement in max_concurrent handling)
