@@ -494,10 +494,17 @@ class TestInvokeEnsemble:
         mock_loader.find_ensemble.return_value = mock_ensemble_config
 
         # Mock the executor.execute method to return expected structure
-        mock_executor.execute = AsyncMock(return_value={
-            "results": {"test_agent": "Test response"},
-            "metadata": {"execution_time": 1.5, "agents_used": 1}
-        })
+        mock_executor.execute = AsyncMock(
+            return_value={
+                "results": {"test_agent": "Test response"},
+                "metadata": {"execution_time": 1.5, "agents_used": 1},
+            }
+        )
+        
+        # Mock the execution coordinator to prevent AsyncMock warnings
+        mock_coordinator = Mock()
+        mock_coordinator.get_effective_concurrency_limit.return_value = 3
+        mock_executor._execution_coordinator = mock_coordinator
 
         with (
             patch(
@@ -557,10 +564,12 @@ class TestInvokeEnsemble:
         )
 
         # Mock the executor.execute method to return expected structure
-        mock_executor.execute = AsyncMock(return_value={
-            "results": {"test_agent": "Test response"},
-            "metadata": {"execution_time": 1.5, "agents_used": 1}
-        })
+        mock_executor.execute = AsyncMock(
+            return_value={
+                "results": {"test_agent": "Test response"},
+                "metadata": {"execution_time": 1.5, "agents_used": 1},
+            }
+        )
 
         with (
             patch(
@@ -646,10 +655,12 @@ class TestInvokeEnsemble:
 
         mock_executor = Mock()
         # Mock the executor.execute method to return expected structure
-        mock_executor.execute = AsyncMock(return_value={
-            "results": {"test_agent": "Test response"},
-            "metadata": {"execution_time": 1.5, "agents_used": 1}
-        })
+        mock_executor.execute = AsyncMock(
+            return_value={
+                "results": {"test_agent": "Test response"},
+                "metadata": {"execution_time": 1.5, "agents_used": 1},
+            }
+        )
 
         with (
             patch(
@@ -658,6 +669,9 @@ class TestInvokeEnsemble:
             ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
+            patch(
+                "llm_orc.cli_commands.run_standard_execution", new_callable=AsyncMock
+            ),
             patch("click.echo"),
         ):
             # This should hit line 86 (the pass statement in max_concurrent handling)
