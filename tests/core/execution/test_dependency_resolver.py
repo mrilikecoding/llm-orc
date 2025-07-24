@@ -369,9 +369,7 @@ class TestValidateDependencyChainHelperMethods:
             _validate_basic_dependencies,
         )
 
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "depends_on": ["agent1"]}
-        ]
+        agents: list[dict[str, Any]] = [{"name": "agent1", "depends_on": ["agent1"]}]
 
         errors = _validate_basic_dependencies(agents)
         assert len(errors) == 1

@@ -180,9 +180,7 @@ def _detect_circular_dependencies(
         rec_stack.add(agent_name)
 
         # Find agent config by name
-        agent_config = next(
-            (a for a in agents if a["name"] == agent_name), None
-        )
+        agent_config = next((a for a in agents if a["name"] == agent_name), None)
         if agent_config:
             for dep in resolver.get_dependencies(agent_config):
                 if has_cycle(dep):

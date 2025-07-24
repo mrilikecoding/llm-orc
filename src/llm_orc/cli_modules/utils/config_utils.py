@@ -159,6 +159,80 @@ def get_available_providers(config_manager: ConfigurationManager) -> set[str]:
     return available_providers
 
 
+def _process_ensemble_file(ensemble_file: Path) -> dict[str, Any]:
+    """Process a single ensemble YAML file and return its data.
+
+    Args:
+        ensemble_file: Path to the ensemble YAML file
+
+    Returns:
+        Dictionary containing the ensemble configuration data
+
+    Raises:
+        Exception: If YAML parsing fails or file cannot be read
+    """
+    with open(ensemble_file) as f:
+        ensemble_data = yaml.safe_load(f) or {}
+    return ensemble_data
+
+
+def _check_agent_requirements(
+    agents: list[dict[str, Any]], config_manager: ConfigurationManager
+) -> tuple[set[str], list[str]]:
+    """Check requirements for all agents in an ensemble.
+
+    Args:
+        agents: List of agent configurations
+        config_manager: Configuration manager for resolving profiles
+
+    Returns:
+        Tuple of (required_providers_set, missing_profiles_list)
+    """
+    required_providers: set[str] = set()
+    missing_profiles: list[str] = []
+
+    for agent in agents:
+        if "model_profile" in agent:
+            profile_name = agent["model_profile"]
+            try:
+                _, provider = config_manager.resolve_model_profile(profile_name)
+                required_providers.add(provider)
+            except (ValueError, KeyError):
+                missing_profiles.append(profile_name)
+        elif "provider" in agent:
+            required_providers.add(agent["provider"])
+
+    return required_providers, missing_profiles
+
+
+def _check_coordinator_requirements(
+    coordinator: dict[str, Any], config_manager: ConfigurationManager
+) -> tuple[set[str], list[str]]:
+    """Check requirements for ensemble coordinator.
+
+    Args:
+        coordinator: Coordinator configuration dictionary
+        config_manager: Configuration manager for resolving profiles
+
+    Returns:
+        Tuple of (required_providers_set, missing_profiles_list)
+    """
+    required_providers: set[str] = set()
+    missing_profiles: list[str] = []
+
+    if "model_profile" in coordinator:
+        profile_name = coordinator["model_profile"]
+        try:
+            _, provider = config_manager.resolve_model_profile(profile_name)
+            required_providers.add(provider)
+        except (ValueError, KeyError):
+            missing_profiles.append(profile_name)
+    elif "provider" in coordinator:
+        required_providers.add(coordinator["provider"])
+
+    return required_providers, missing_profiles
+
+
 def check_ensemble_availability(
     ensembles_dir: Path,
     available_providers: set[str],
@@ -178,40 +252,23 @@ def check_ensemble_availability(
 
     for ensemble_file in sorted(ensemble_files):
         try:
-            with open(ensemble_file) as f:
-                ensemble_data = yaml.safe_load(f) or {}
-
+            # Process ensemble file
+            ensemble_data = _process_ensemble_file(ensemble_file)
             ensemble_name = ensemble_data.get("name", ensemble_file.stem)
             agents = ensemble_data.get("agents", [])
             coordinator = ensemble_data.get("coordinator", {})
 
-            # Check all required providers for this ensemble
-            required_providers = set()
-            missing_profiles: list[str] = []
-            missing_providers: list[str] = []
+            # Check requirements using helper methods
+            agent_providers, agent_missing = _check_agent_requirements(
+                agents, config_manager
+            )
+            coord_providers, coord_missing = _check_coordinator_requirements(
+                coordinator, config_manager
+            )
 
-            # Check agent requirements
-            for agent in agents:
-                if "model_profile" in agent:
-                    profile_name = agent["model_profile"]
-                    try:
-                        _, provider = config_manager.resolve_model_profile(profile_name)
-                        required_providers.add(provider)
-                    except (ValueError, KeyError):
-                        missing_profiles.append(profile_name)
-                elif "provider" in agent:
-                    required_providers.add(agent["provider"])
-
-            # Check coordinator requirements
-            if "model_profile" in coordinator:
-                profile_name = coordinator["model_profile"]
-                try:
-                    _, provider = config_manager.resolve_model_profile(profile_name)
-                    required_providers.add(provider)
-                except (ValueError, KeyError):
-                    missing_profiles.append(profile_name)
-            elif "provider" in coordinator:
-                required_providers.add(coordinator["provider"])
+            # Combine results
+            required_providers = agent_providers.union(coord_providers)
+            missing_profiles = agent_missing + coord_missing
 
             # Determine availability
             missing_providers_set = required_providers - available_providers

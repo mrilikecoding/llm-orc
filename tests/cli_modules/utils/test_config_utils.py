@@ -853,3 +853,150 @@ class TestConfigUtilsErrorHandling:
         # Then
         calls = [str(call) for call in mock_echo.call_args_list]
         assert any("profile not found" in call for call in calls)
+
+
+class TestCheckEnsembleAvailabilityHelperMethods:
+    """Test helper methods extracted from check_ensemble_availability for complexity."""
+
+    def test_process_ensemble_file_valid_yaml(self) -> None:
+        """Test processing valid ensemble YAML file."""
+        from llm_orc.cli_modules.utils.config_utils import _process_ensemble_file
+
+        # This should fail initially as the helper doesn't exist yet
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ensemble_file = Path(temp_dir) / "valid.yaml"
+            ensemble_data = {"name": "Test Ensemble", "agents": []}
+
+            with open(ensemble_file, "w") as f:
+                yaml.safe_dump(ensemble_data, f)
+
+            result = _process_ensemble_file(ensemble_file)
+            assert result == ensemble_data
+
+    def test_process_ensemble_file_missing_name(self) -> None:
+        """Test processing ensemble file without name field."""
+        from llm_orc.cli_modules.utils.config_utils import _process_ensemble_file
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ensemble_file = Path(temp_dir) / "no_name.yaml"
+            ensemble_data: dict[str, Any] = {"agents": []}
+
+            with open(ensemble_file, "w") as f:
+                yaml.safe_dump(ensemble_data, f)
+
+            result = _process_ensemble_file(ensemble_file)
+            assert result == ensemble_data  # Should return data even without name
+
+    def test_process_ensemble_file_invalid_yaml(self) -> None:
+        """Test processing invalid YAML file raises exception."""
+        from llm_orc.cli_modules.utils.config_utils import _process_ensemble_file
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ensemble_file = Path(temp_dir) / "invalid.yaml"
+
+            with open(ensemble_file, "w") as f:
+                f.write("invalid: yaml: content: [")
+
+            with pytest.raises(yaml.YAMLError):  # Should handle YAML error
+                _process_ensemble_file(ensemble_file)
+
+    def test_check_agent_requirements_with_profiles(self) -> None:
+        """Test checking agent requirements with model profiles."""
+        from llm_orc.cli_modules.utils.config_utils import _check_agent_requirements
+
+        mock_config = Mock()
+        mock_config.resolve_model_profile.return_value = ("claude-3", "anthropic")
+
+        agents = [
+            {"name": "agent1", "model_profile": "test-profile"},
+            {"name": "agent2", "provider": "ollama"},
+        ]
+
+        required_providers, missing_profiles = _check_agent_requirements(
+            agents, mock_config
+        )
+
+        assert "anthropic" in required_providers
+        assert "ollama" in required_providers
+        assert len(missing_profiles) == 0
+
+    def test_check_agent_requirements_empty_agents(self) -> None:
+        """Test checking requirements with empty agents list."""
+        from llm_orc.cli_modules.utils.config_utils import _check_agent_requirements
+
+        mock_config = Mock()
+
+        required_providers, missing_profiles = _check_agent_requirements(
+            [], mock_config
+        )
+
+        assert len(required_providers) == 0
+        assert len(missing_profiles) == 0
+
+    def test_check_coordinator_requirements_with_profile(self) -> None:
+        """Test checking coordinator requirements with model profile."""
+        from llm_orc.cli_modules.utils.config_utils import (
+            _check_coordinator_requirements,
+        )
+
+        mock_config = Mock()
+        mock_config.resolve_model_profile.return_value = ("claude-3", "anthropic")
+
+        coordinator = {"model_profile": "coordinator-profile"}
+
+        required_providers, missing_profiles = _check_coordinator_requirements(
+            coordinator, mock_config
+        )
+
+        assert "anthropic" in required_providers
+        assert len(missing_profiles) == 0
+
+    def test_check_coordinator_requirements_with_provider(self) -> None:
+        """Test checking coordinator requirements with direct provider."""
+        from llm_orc.cli_modules.utils.config_utils import (
+            _check_coordinator_requirements,
+        )
+
+        mock_config = Mock()
+
+        coordinator = {"provider": "ollama"}
+
+        required_providers, missing_profiles = _check_coordinator_requirements(
+            coordinator, mock_config
+        )
+
+        assert "ollama" in required_providers
+        assert len(missing_profiles) == 0
+
+    def test_check_coordinator_requirements_empty_coordinator(self) -> None:
+        """Test checking requirements with empty coordinator."""
+        from llm_orc.cli_modules.utils.config_utils import (
+            _check_coordinator_requirements,
+        )
+
+        mock_config = Mock()
+
+        required_providers, missing_profiles = _check_coordinator_requirements(
+            {}, mock_config
+        )
+
+        assert len(required_providers) == 0
+        assert len(missing_profiles) == 0
+
+    def test_check_coordinator_requirements_missing_profile(self) -> None:
+        """Test checking coordinator with missing profile."""
+        from llm_orc.cli_modules.utils.config_utils import (
+            _check_coordinator_requirements,
+        )
+
+        mock_config = Mock()
+        mock_config.resolve_model_profile.side_effect = ValueError("Profile not found")
+
+        coordinator = {"model_profile": "missing-profile"}
+
+        required_providers, missing_profiles = _check_coordinator_requirements(
+            coordinator, mock_config
+        )
+
+        assert len(required_providers) == 0
+        assert "missing-profile" in missing_profiles
