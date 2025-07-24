@@ -32,12 +32,12 @@ def _setup_and_validate_oauth_flow(
     provider: str, client_id: str, client_secret: str
 ) -> OAuthFlow | None:
     """Setup and validate OAuth flow.
-    
+
     Args:
         provider: OAuth provider name
         client_id: OAuth client ID
         client_secret: OAuth client secret
-        
+
     Returns:
         OAuth flow if successful, None if validation fails
     """
@@ -56,10 +56,10 @@ def _setup_and_validate_oauth_flow(
 
 def _get_authorization_url_and_open_browser(oauth_flow: OAuthFlow) -> bool:
     """Get authorization URL and open browser.
-    
+
     Args:
         oauth_flow: OAuth flow instance
-        
+
     Returns:
         True if successful, False otherwise
     """
@@ -78,12 +78,14 @@ def _get_authorization_url_and_open_browser(oauth_flow: OAuthFlow) -> bool:
         return False
 
 
-def _exchange_authorization_code_for_tokens(oauth_flow: OAuthFlow) -> dict[str, Any] | None:
+def _exchange_authorization_code_for_tokens(
+    oauth_flow: OAuthFlow,
+) -> dict[str, Any] | None:
     """Exchange authorization code for tokens.
-    
+
     Args:
         oauth_flow: OAuth flow instance
-        
+
     Returns:
         Tokens dictionary if successful, None otherwise
     """
@@ -128,12 +130,12 @@ def _store_tokens_and_create_client(
     auth_manager: "AuthenticationManager", provider: str, tokens: dict[str, Any]
 ) -> Any | None:
     """Store tokens and create authenticated client.
-    
+
     Args:
         auth_manager: Authentication manager instance
         provider: OAuth provider name
         tokens: OAuth tokens dictionary
-        
+
     Returns:
         Mock client if successful, None otherwise
     """
@@ -410,7 +412,9 @@ class AuthenticationManager:
         """
         try:
             # Setup and validate OAuth flow
-            oauth_flow = _setup_and_validate_oauth_flow(provider, client_id, client_secret)
+            oauth_flow = _setup_and_validate_oauth_flow(
+                provider, client_id, client_secret
+            )
             if not oauth_flow:
                 return False
 
