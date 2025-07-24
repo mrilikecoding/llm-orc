@@ -7,6 +7,70 @@ from typing import Any
 import yaml
 
 
+def _check_missing_dependencies(agents: list[dict[str, Any]]) -> None:
+    """Check for missing dependencies in agent configurations.
+
+    Args:
+        agents: List of agent configurations
+
+    Raises:
+        ValueError: If any agent depends on a non-existent agent
+    """
+    # Create a map of agent names for quick lookup
+    agent_names = {agent["name"] for agent in agents}
+
+    # Check for missing dependencies
+    for agent in agents:
+        dependencies = agent.get("depends_on", [])
+        for dep in dependencies:
+            if dep not in agent_names:
+                raise ValueError(
+                    f"Agent '{agent['name']}' has missing dependency: '{dep}'"
+                )
+
+
+def _detect_circular_dependencies(agents: list[dict[str, Any]]) -> None:
+    """Detect circular dependencies using depth-first search.
+
+    Args:
+        agents: List of agent configurations
+
+    Raises:
+        ValueError: If circular dependencies are detected
+    """
+    visited = set()
+    recursion_stack = set()
+
+    def has_cycle(agent_name: str) -> bool:
+        """Detect cycles using depth-first search."""
+        if agent_name in recursion_stack:
+            return True
+        if agent_name in visited:
+            return False
+
+        visited.add(agent_name)
+        recursion_stack.add(agent_name)
+
+        # Find agent config
+        agent_config = next((a for a in agents if a["name"] == agent_name), None)
+        if agent_config:
+            dependencies = agent_config.get("depends_on", [])
+            for dep in dependencies:
+                if has_cycle(dep):
+                    return True
+
+        recursion_stack.remove(agent_name)
+        return False
+
+    # Check each agent for cycles
+    for agent in agents:
+        if agent["name"] not in visited:
+            if has_cycle(agent["name"]):
+                raise ValueError(
+                    f"Circular dependency detected involving agent: '{agent['name']}'"
+                )
+
+
 @dataclass
 class EnsembleConfig:
     """Configuration for an ensemble of agents with dependency support."""
@@ -74,51 +138,11 @@ class EnsembleLoader:
 
     def _validate_dependencies(self, agents: list[dict[str, Any]]) -> None:
         """Validate agent dependencies for cycles and missing dependencies."""
-        # Create a map of agent names for quick lookup
-        agent_names = {agent["name"] for agent in agents}
+        # Check for missing dependencies first
+        _check_missing_dependencies(agents)
 
-        # Check for missing dependencies
-        for agent in agents:
-            dependencies = agent.get("depends_on", [])
-            for dep in dependencies:
-                if dep not in agent_names:
-                    raise ValueError(
-                        f"Agent '{agent['name']}' has missing dependency: '{dep}'"
-                    )
-
-        # Check for circular dependencies using DFS
-        visited = set()
-        recursion_stack = set()
-
-        def has_cycle(agent_name: str) -> bool:
-            """Detect cycles using depth-first search."""
-            if agent_name in recursion_stack:
-                return True
-            if agent_name in visited:
-                return False
-
-            visited.add(agent_name)
-            recursion_stack.add(agent_name)
-
-            # Find agent config
-            agent_config = next((a for a in agents if a["name"] == agent_name), None)
-            if agent_config:
-                dependencies = agent_config.get("depends_on", [])
-                for dep in dependencies:
-                    if has_cycle(dep):
-                        return True
-
-            recursion_stack.remove(agent_name)
-            return False
-
-        # Check each agent for cycles
-        for agent in agents:
-            if agent["name"] not in visited:
-                if has_cycle(agent["name"]):
-                    raise ValueError(
-                        f"Circular dependency detected involving agent: "
-                        f"'{agent['name']}'"
-                    )
+        # Then check for circular dependencies
+        _detect_circular_dependencies(agents)
 
     def find_ensemble(self, directory: str, name: str) -> EnsembleConfig | None:
         """Find an ensemble by name in a directory."""

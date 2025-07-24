@@ -2,6 +2,7 @@
 
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -349,3 +350,118 @@ class TestEnsembleLoader:
             result = loader.list_ensembles(temp_dir)
 
             assert result == []
+
+
+class TestValidateDependenciesHelperMethods:
+    """Test helper methods extracted from _validate_dependencies for complexity."""
+
+    def test_check_missing_dependencies_no_errors(self) -> None:
+        """Test missing dependency check with valid dependencies."""
+        from llm_orc.core.config.ensemble_config import _check_missing_dependencies
+
+        agents = [
+            {"name": "agent1", "depends_on": []},
+            {"name": "agent2", "depends_on": ["agent1"]},
+            {"name": "agent3", "depends_on": ["agent1", "agent2"]},
+        ]
+
+        # Should not raise any exception
+        _check_missing_dependencies(agents)
+
+    def test_check_missing_dependencies_single_missing(self) -> None:
+        """Test missing dependency check with single missing dependency."""
+        from llm_orc.core.config.ensemble_config import _check_missing_dependencies
+
+        agents = [
+            {"name": "agent1", "depends_on": ["missing_agent"]},
+        ]
+
+        with pytest.raises(ValueError, match="missing dependency: 'missing_agent'"):
+            _check_missing_dependencies(agents)
+
+    def test_check_missing_dependencies_multiple_missing(self) -> None:
+        """Test missing dependency check with multiple missing dependencies."""
+        from llm_orc.core.config.ensemble_config import _check_missing_dependencies
+
+        agents = [
+            {"name": "agent1", "depends_on": ["missing1", "missing2"]},
+            {"name": "agent2", "depends_on": ["missing3"]},
+        ]
+
+        with pytest.raises(ValueError, match="missing dependency"):
+            _check_missing_dependencies(agents)
+
+    def test_check_missing_dependencies_no_depends_on_field(self) -> None:
+        """Test missing dependency check with agents that have no depends_on field."""
+        from llm_orc.core.config.ensemble_config import _check_missing_dependencies
+
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1"},  # No depends_on field
+            {"name": "agent2", "depends_on": ["agent1"]},
+        ]
+
+        # Should not raise any exception
+        _check_missing_dependencies(agents)
+
+    def test_detect_circular_dependencies_no_cycles(self) -> None:
+        """Test circular dependency detection with no cycles."""
+        from llm_orc.core.config.ensemble_config import _detect_circular_dependencies
+
+        agents = [
+            {"name": "agent1", "depends_on": []},
+            {"name": "agent2", "depends_on": ["agent1"]},
+            {"name": "agent3", "depends_on": ["agent1", "agent2"]},
+        ]
+
+        # Should not raise any exception
+        _detect_circular_dependencies(agents)
+
+    def test_detect_circular_dependencies_simple_cycle(self) -> None:
+        """Test circular dependency detection with simple A->B->A cycle."""
+        from llm_orc.core.config.ensemble_config import _detect_circular_dependencies
+
+        agents = [
+            {"name": "agent1", "depends_on": ["agent2"]},
+            {"name": "agent2", "depends_on": ["agent1"]},
+        ]
+
+        with pytest.raises(ValueError, match="Circular dependency detected"):
+            _detect_circular_dependencies(agents)
+
+    def test_detect_circular_dependencies_complex_cycle(self) -> None:
+        """Test circular dependency detection with complex A->B->C->A cycle."""
+        from llm_orc.core.config.ensemble_config import _detect_circular_dependencies
+
+        agents = [
+            {"name": "agent1", "depends_on": ["agent3"]},
+            {"name": "agent2", "depends_on": ["agent1"]},
+            {"name": "agent3", "depends_on": ["agent2"]},
+        ]
+
+        with pytest.raises(ValueError, match="Circular dependency detected"):
+            _detect_circular_dependencies(agents)
+
+    def test_detect_circular_dependencies_self_dependency(self) -> None:
+        """Test circular dependency detection with self-dependency."""
+        from llm_orc.core.config.ensemble_config import _detect_circular_dependencies
+
+        agents = [
+            {"name": "agent1", "depends_on": ["agent1"]},  # Self-dependency
+        ]
+
+        with pytest.raises(ValueError, match="Circular dependency detected"):
+            _detect_circular_dependencies(agents)
+
+    def test_detect_circular_dependencies_mixed_scenario(self) -> None:
+        """Test circular dependency detection with mixed valid and cyclic deps."""
+        from llm_orc.core.config.ensemble_config import _detect_circular_dependencies
+
+        agents = [
+            {"name": "agent1", "depends_on": []},  # Independent
+            {"name": "agent2", "depends_on": ["agent1"]},  # Valid dependency
+            {"name": "agent3", "depends_on": ["agent4"]},  # Part of cycle
+            {"name": "agent4", "depends_on": ["agent3"]},  # Creates cycle with agent3
+        ]
+
+        with pytest.raises(ValueError, match="Circular dependency detected"):
+            _detect_circular_dependencies(agents)
