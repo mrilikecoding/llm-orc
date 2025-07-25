@@ -1060,14 +1060,19 @@ class TestEnsembleExecutor:
     @pytest.mark.asyncio
     async def test_load_role_creates_default_role(self) -> None:
         """Test _load_role creates default role definition."""
-        executor = EnsembleExecutor()
+        # Mock dependencies to avoid YAML loading affected by test contamination
+        with (
+            patch("llm_orc.core.execution.ensemble_execution.ConfigurationManager"),
+            patch("llm_orc.core.execution.ensemble_execution.CredentialStorage"),
+        ):
+            executor = EnsembleExecutor()
 
-        role = await executor._load_role("test_analyst")
+            role = await executor._load_role("test_analyst")
 
-        assert isinstance(role, RoleDefinition)
-        assert role.name == "test_analyst"
-        assert "test_analyst" in role.prompt
-        assert "helpful analysis" in role.prompt
+            assert isinstance(role, RoleDefinition)
+            assert role.name == "test_analyst"
+            assert "test_analyst" in role.prompt
+            assert "helpful analysis" in role.prompt
 
     @pytest.mark.asyncio
     async def test_execute_agent_with_timeout_no_timeout(self) -> None:

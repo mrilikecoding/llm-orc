@@ -488,14 +488,14 @@ class TestEventStreamManager:
 
     def test_init(self) -> None:
         """Test EventStreamManager initialization."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
 
         assert manager._streams == {}
         assert manager._cleanup_tasks == set()
 
     def test_create_stream_with_explicit_id(self) -> None:
         """Test creating stream with explicit execution ID."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
         execution_id = "explicit-test-id"
 
         stream = manager.create_stream(execution_id)
@@ -505,7 +505,7 @@ class TestEventStreamManager:
 
     def test_create_stream_with_none_id_generates_uuid(self) -> None:
         """Test creating stream with None ID generates UUID."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
 
         with patch("uuid.uuid4", return_value="generated-uuid"):
             stream = manager.create_stream(None)
@@ -515,7 +515,7 @@ class TestEventStreamManager:
 
     def test_create_stream_with_existing_id_raises_error(self) -> None:
         """Test that creating stream with existing ID raises ValueError."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
         execution_id = "duplicate-id"
 
         manager.create_stream(execution_id)
@@ -528,20 +528,25 @@ class TestEventStreamManager:
     @pytest.mark.asyncio
     async def test_create_stream_schedules_cleanup_task(self) -> None:
         """Test that creating stream schedules a cleanup task."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=True)  # Enable for this test
 
         with patch("asyncio.create_task") as mock_create_task:
             mock_task = Mock()
             mock_create_task.return_value = mock_task
 
-            manager.create_stream("test-id")
+            # Mock the cleanup method to prevent warnings
+            with patch.object(
+                manager, "_cleanup_stream_after_delay", new=Mock()
+            ):
 
-            mock_create_task.assert_called_once()
-            assert mock_task in manager._cleanup_tasks
+                manager.create_stream("test-id")
+
+                mock_create_task.assert_called_once()
+                assert mock_task in manager._cleanup_tasks
 
     def test_get_existing_stream(self) -> None:
         """Test getting an existing stream."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
         execution_id = "existing-id"
 
         created_stream = manager.create_stream(execution_id)
@@ -551,7 +556,7 @@ class TestEventStreamManager:
 
     def test_get_nonexistent_stream_returns_none(self) -> None:
         """Test getting a non-existent stream returns None."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
 
         retrieved_stream = manager.get_stream("nonexistent-id")
 
@@ -559,7 +564,7 @@ class TestEventStreamManager:
 
     def test_remove_existing_stream(self) -> None:
         """Test removing an existing stream."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
         execution_id = "to-remove"
 
         stream = manager.create_stream(execution_id)
@@ -570,7 +575,7 @@ class TestEventStreamManager:
 
     def test_remove_nonexistent_stream_does_nothing(self) -> None:
         """Test removing a non-existent stream does nothing."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
 
         # Should not raise an error
         manager.remove_stream("nonexistent-id")
@@ -578,7 +583,7 @@ class TestEventStreamManager:
     @pytest.mark.asyncio
     async def test_cleanup_stream_after_delay(self) -> None:
         """Test the cleanup mechanism after delay."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
         execution_id = "cleanup-test"
 
         # Create stream
@@ -593,7 +598,7 @@ class TestEventStreamManager:
 
     def test_list_active_streams_empty(self) -> None:
         """Test listing active streams when empty."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
 
         active_streams = manager.list_active_streams()
 
@@ -601,7 +606,7 @@ class TestEventStreamManager:
 
     def test_list_active_streams_multiple(self) -> None:
         """Test listing multiple active streams."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
 
         stream_ids = ["stream-1", "stream-2", "stream-3"]
         for stream_id in stream_ids:
@@ -613,7 +618,7 @@ class TestEventStreamManager:
 
     def test_close_all_streams(self) -> None:
         """Test closing all streams."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
 
         # Create multiple streams
         stream_ids = ["stream-1", "stream-2", "stream-3"]

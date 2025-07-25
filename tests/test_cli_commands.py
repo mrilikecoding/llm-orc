@@ -2,6 +2,7 @@
 
 from io import StringIO
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, Mock, call, mock_open, patch
 
 import click
@@ -500,11 +501,16 @@ class TestInvokeEnsemble:
                 "metadata": {"execution_time": 1.5, "agents_used": 1},
             }
         )
-        
+
         # Mock the execution coordinator to prevent AsyncMock warnings
-        mock_coordinator = Mock()
+        mock_coordinator = Mock(spec_set=['get_effective_concurrency_limit'])
         mock_coordinator.get_effective_concurrency_limit.return_value = 3
         mock_executor._execution_coordinator = mock_coordinator
+
+        # Explicitly set mock attributes to prevent AsyncMock creation
+        mock_executor.configure_mock(**{
+            '_execution_coordinator': mock_coordinator
+        })
 
         with (
             patch(
@@ -669,11 +675,14 @@ class TestInvokeEnsemble:
             ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
-            patch(
-                "llm_orc.cli_commands.run_standard_execution", new_callable=AsyncMock
-            ),
+            patch("llm_orc.cli_commands.run_standard_execution") as mock_run_std,
             patch("click.echo"),
         ):
+            # Create a simple async function to avoid AsyncMockMixin issues
+            async def simple_run_standard_execution(*args: Any, **kwargs: Any) -> None:
+                return None
+            mock_run_std.side_effect = simple_run_standard_execution
+
             # This should hit line 86 (the pass statement in max_concurrent handling)
             invoke_ensemble(
                 ensemble_name="test_ensemble",
@@ -961,6 +970,8 @@ class TestListProfilesCommandHelpers:
         with (
             patch("pathlib.Path.exists", return_value=True),
             patch("builtins.open", mock_open(read_data=yaml.dump(mock_config))),
+            # Defensive patch to prevent AsyncMock contamination from other tests
+            patch("llm_orc.cli_commands.run_standard_execution", return_value=None),
         ):
             result = _load_profiles_from_config(config_file)
 

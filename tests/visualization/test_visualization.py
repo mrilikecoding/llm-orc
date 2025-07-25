@@ -117,13 +117,13 @@ class TestEventStreamManager:
 
     def test_stream_manager_creation(self) -> None:
         """Test stream manager creation."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
         assert len(manager._streams) == 0
 
     @pytest.mark.asyncio
     async def test_create_stream(self) -> None:
         """Test stream creation."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
         stream = manager.create_stream("test_execution")
 
         assert stream.execution_id == "test_execution"
@@ -132,7 +132,7 @@ class TestEventStreamManager:
     @pytest.mark.asyncio
     async def test_create_stream_with_existing_id_raises_error(self) -> None:
         """Test that creating a stream with existing ID raises error."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
         manager.create_stream("test_execution")
 
         with pytest.raises(
@@ -143,7 +143,7 @@ class TestEventStreamManager:
     @pytest.mark.asyncio
     async def test_remove_stream(self) -> None:
         """Test stream removal."""
-        manager = EventStreamManager()
+        manager = EventStreamManager(enable_cleanup_tasks=False)
         manager.create_stream("test_execution")
 
         manager.remove_stream("test_execution")
