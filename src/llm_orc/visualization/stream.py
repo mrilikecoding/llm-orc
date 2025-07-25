@@ -1,6 +1,8 @@
 """Event streaming system for real-time visualization."""
 
 import asyncio
+import os
+import sys
 import uuid
 from collections import defaultdict
 from collections.abc import AsyncIterator
@@ -43,8 +45,8 @@ class EventStream:
         # Send event to all relevant queues
         for queue in queues_to_notify:
             try:
-                await queue.put(event)
-            except asyncio.QueueEmpty:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
                 # Queue is full, skip this subscriber
                 pass
 
@@ -121,9 +123,11 @@ class EventStream:
 class EventStreamManager:
     """Manages multiple event streams across different executions."""
 
-    def __init__(self) -> None:
+    def __init__(self, enable_cleanup_tasks: bool = True) -> None:
         self._streams: dict[str, EventStream] = {}
         self._cleanup_tasks: set[asyncio.Task[None]] = set()
+        self._stream_cleanup_tasks: dict[str, asyncio.Task[None]] = {}
+        self._enable_cleanup_tasks = enable_cleanup_tasks
 
     def create_stream(self, execution_id: str | None = None) -> EventStream:
         """Create a new event stream for an execution."""
@@ -136,11 +140,27 @@ class EventStreamManager:
         stream = EventStream(execution_id)
         self._streams[execution_id] = stream
 
-        # Schedule cleanup task
-        cleanup_task = asyncio.create_task(
-            self._cleanup_stream_after_delay(execution_id)
-        )
-        self._cleanup_tasks.add(cleanup_task)
+        # Schedule cleanup task if enabled and event loop is running
+        if self._enable_cleanup_tasks:
+            try:
+                loop = asyncio.get_running_loop()
+                if loop:
+                    cleanup_task = asyncio.create_task(
+                        self._cleanup_stream_after_delay(execution_id)
+                    )
+                    self._cleanup_tasks.add(cleanup_task)
+                    self._stream_cleanup_tasks[execution_id] = cleanup_task
+
+                    # Remove completed tasks from set to prevent memory leaks
+                    def cleanup_task_done(task: asyncio.Task[None]) -> None:
+                        self._cleanup_tasks.discard(task)
+                        if execution_id in self._stream_cleanup_tasks:
+                            del self._stream_cleanup_tasks[execution_id]
+
+                    cleanup_task.add_done_callback(cleanup_task_done)
+            except RuntimeError:
+                # No event loop running, skip cleanup task scheduling
+                pass
 
         return stream
 
@@ -154,6 +174,13 @@ class EventStreamManager:
             stream = self._streams[execution_id]
             stream.close()
             del self._streams[execution_id]
+
+            # Cancel the cleanup task if it exists
+            if execution_id in self._stream_cleanup_tasks:
+                cleanup_task = self._stream_cleanup_tasks[execution_id]
+                cleanup_task.cancel()
+                self._cleanup_tasks.discard(cleanup_task)
+                del self._stream_cleanup_tasks[execution_id]
 
     async def _cleanup_stream_after_delay(
         self, execution_id: str, delay: int = 3600
@@ -176,6 +203,7 @@ class EventStreamManager:
         for task in self._cleanup_tasks:
             task.cancel()
         self._cleanup_tasks.clear()
+        self._stream_cleanup_tasks.clear()
 
 
 class PerformanceEventCollector:
@@ -247,9 +275,21 @@ class PerformanceEventCollector:
 
 
 # Global event stream manager
-_global_stream_manager = EventStreamManager()
+# Disable cleanup tasks during testing
+_is_testing = "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST") is not None
+_global_stream_manager = EventStreamManager(enable_cleanup_tasks=not _is_testing)
 
 
 def get_stream_manager() -> EventStreamManager:
     """Get the global event stream manager."""
     return _global_stream_manager
+
+
+def reset_global_stream_manager() -> None:
+    """Reset the global stream manager (useful for testing)."""
+    global _global_stream_manager
+    _global_stream_manager.close_all()
+    _is_testing = (
+        "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST") is not None
+    )
+    _global_stream_manager = EventStreamManager(enable_cleanup_tasks=not _is_testing)
