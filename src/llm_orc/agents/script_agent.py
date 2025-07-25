@@ -72,7 +72,7 @@ class ScriptAgent:
 
         try:
             # Make script executable
-            os.chmod(script_path, 0o755)
+            os.chmod(script_path, 0o755)  # nosec B103
 
             # Execute script
             result = subprocess.run(

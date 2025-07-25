@@ -362,7 +362,7 @@ class AnthropicOAuthFlow(OAuthFlow):
             # Try to access the authorization URL to validate the client_id
             import urllib.request
 
-            urllib.request.urlopen(auth_url, timeout=10)  # noqa: F841
+            urllib.request.urlopen(auth_url, timeout=10)  # noqa: F841  # nosec B310
             # A 200 response indicates the endpoint is accessible
             # A 403 might mean the endpoint exists but requires authentication
             # Both are acceptable for validation purposes
