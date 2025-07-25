@@ -62,20 +62,16 @@ class TestEnsembleNameCompletion:
             ensemble1_content = {
                 "name": "prod-ensemble",
                 "description": "Production ensemble",
-                "agents": []
+                "agents": [],
             }
             ensemble2_content = {
                 "name": "test-ensemble",
                 "description": "Test ensemble",
-                "agents": []
+                "agents": [],
             }
 
-            (temp_path / "prod-ensemble.yaml").write_text(
-                yaml.dump(ensemble1_content)
-            )
-            (temp_path / "test-ensemble.yaml").write_text(
-                yaml.dump(ensemble2_content)
-            )
+            (temp_path / "prod-ensemble.yaml").write_text(yaml.dump(ensemble1_content))
+            (temp_path / "test-ensemble.yaml").write_text(yaml.dump(ensemble2_content))
 
             ctx = Mock(spec=click.Context)
             ctx.params = {"config_dir": str(temp_path)}
@@ -187,4 +183,3 @@ class TestCLICompletionIntegration:
         assert hasattr(provider_param, "shell_complete"), "No shell_complete attribute"
         # Check it's not the default parameter shell_complete
         assert provider_param.shell_complete is not None, "shell_complete is None"
-

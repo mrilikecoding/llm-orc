@@ -10,13 +10,13 @@ from llm_orc.core.config.ensemble_config import EnsembleLoader
 
 
 def complete_ensemble_names(
-    ctx: click.Context, param: click.Parameter, incomplete: str
+    ctx: click.Context, _param: click.Parameter, incomplete: str
 ) -> list[str]:
     """Complete ensemble names from available ensemble directories.
 
     Args:
         ctx: Click context containing command arguments
-        param: Click parameter being completed
+        _param: Click parameter being completed (unused)
         incomplete: Partial input to complete
 
     Returns:
@@ -58,13 +58,13 @@ def complete_ensemble_names(
 
 
 def complete_providers(
-    ctx: click.Context, param: click.Parameter, incomplete: str
+    ctx: click.Context, _param: click.Parameter, incomplete: str
 ) -> list[str]:
     """Complete authentication provider names.
 
     Args:
         ctx: Click context containing command arguments
-        param: Click parameter being completed
+        _param: Click parameter being completed (unused)
         incomplete: Partial input to complete
 
     Returns:
