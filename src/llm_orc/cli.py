@@ -72,7 +72,7 @@ def completion(shell: str | None) -> None:
     click.echo("# Add this line to your shell config file:")
 
     if shell == "fish":
-        click.echo(f'{complete_var} llm-orc completion | source')
+        click.echo(f"{complete_var} llm-orc completion | source")
     else:
         click.echo(f'eval "$({complete_var} llm-orc completion)"')
 
