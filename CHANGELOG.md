@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2025-07-25
+
+### Added
+- **Tab Completion Support** - Comprehensive shell completion for improved CLI usability
+  - Ensemble name completion for `invoke` and `serve` commands
+  - Provider name completion for all authentication commands (`auth add`, `auth remove`, etc.)
+  - Built-in `llm-orc completion` command with shell-specific setup instructions
+  - Support for bash, zsh, and fish shells
+  - Dynamic completion that loads data at completion time
+  - Graceful error handling to prevent shell completion failures
+
+### Technical
+- Added `cli_completion.py` module with Click-based completion functions
+- Comprehensive test coverage for completion functionality (7 tests, 82% coverage)
+- Full type safety compliance with strict mypy checking
+- TDD implementation following project standards
+
 ## [0.8.0] - 2025-07-25
 
 ### Added
