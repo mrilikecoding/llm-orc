@@ -8,6 +8,7 @@ from llm_orc.cli_commands import (
     list_profiles_command,
     serve_ensemble,
 )
+from llm_orc.cli_completion import complete_ensemble_names, complete_providers
 from llm_orc.cli_modules.commands.auth_commands import (
     add_auth_provider,
     list_auth_providers,
@@ -32,7 +33,52 @@ def cli() -> None:
 
 
 @cli.command()
-@click.argument("ensemble_name")
+@click.option(
+    "--shell",
+    type=click.Choice(["bash", "zsh", "fish"], case_sensitive=False),
+    help="Shell type for completion script (auto-detected if not specified)",
+)
+def completion(shell: str | None) -> None:
+    """Generate shell completion script for llm-orc.
+
+    To enable tab completion, run one of these commands:
+
+    Bash:
+      eval "$(_LLM_ORC_COMPLETE=bash_source llm-orc completion)"
+
+    Zsh:
+      eval "$(_LLM_ORC_COMPLETE=zsh_source llm-orc completion)"
+
+    Fish:
+      _LLM_ORC_COMPLETE=fish_source llm-orc completion | source
+
+    You can also add the appropriate line to your shell's config file
+    (~/.bashrc, ~/.zshrc, ~/.config/fish/config.fish) to enable completion permanently.
+    """
+    import os
+
+    # Get shell from environment if not specified
+    if shell is None:
+        shell_env = os.environ.get("SHELL", "").split("/")[-1]
+        if shell_env in ["bash", "zsh", "fish"]:
+            shell = shell_env
+        else:
+            shell = "bash"  # Default to bash
+
+    shell = shell.lower()
+    complete_var = f"_LLM_ORC_COMPLETE={shell}_source"
+
+    click.echo(f"# Tab completion for llm-orc ({shell})")
+    click.echo("# Add this line to your shell config file:")
+
+    if shell == "fish":
+        click.echo(f'{complete_var} llm-orc completion | source')
+    else:
+        click.echo(f'eval "$({complete_var} llm-orc completion)"')
+
+
+@cli.command()
+@click.argument("ensemble_name", shell_complete=complete_ensemble_names)
 @click.argument("input_data", required=False)
 @click.option(
     "--config-dir",
@@ -209,7 +255,7 @@ def auth() -> None:
 
 
 @auth.command("add")
-@click.argument("provider")
+@click.argument("provider", shell_complete=complete_providers)
 @click.option("--api-key", help="API key for the provider")
 @click.option("--client-id", help="OAuth client ID")
 @click.option("--client-secret", help="OAuth client secret")
@@ -233,7 +279,7 @@ def auth_list(interactive: bool) -> None:
 
 
 @auth.command("remove")
-@click.argument("provider")
+@click.argument("provider", shell_complete=complete_providers)
 def auth_remove(provider: str) -> None:
     """Remove authentication for a provider."""
     remove_auth_provider(provider)
@@ -248,7 +294,7 @@ def auth_setup_command() -> None:
 
 
 @auth.command("logout")
-@click.argument("provider", required=False)
+@click.argument("provider", required=False, shell_complete=complete_providers)
 @click.option(
     "--all", "logout_all", is_flag=True, help="Logout from all OAuth providers"
 )
@@ -258,14 +304,14 @@ def auth_logout(provider: str | None, logout_all: bool) -> None:
 
 
 @auth.command("test-refresh")
-@click.argument("provider")
+@click.argument("provider", shell_complete=complete_providers)
 def auth_test_refresh(provider: str) -> None:
     """Test OAuth token refresh for a provider."""
     test_token_refresh(provider)
 
 
 @cli.command()
-@click.argument("ensemble_name")
+@click.argument("ensemble_name", shell_complete=complete_ensemble_names)
 @click.option("--port", default=3000, help="Port to serve MCP server on")
 def serve(ensemble_name: str, port: int) -> None:
     """Serve an ensemble as an MCP server."""
