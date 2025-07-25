@@ -150,11 +150,13 @@ class EventStreamManager:
                     )
                     self._cleanup_tasks.add(cleanup_task)
                     self._stream_cleanup_tasks[execution_id] = cleanup_task
+
                     # Remove completed tasks from set to prevent memory leaks
                     def cleanup_task_done(task: asyncio.Task[None]) -> None:
                         self._cleanup_tasks.discard(task)
                         if execution_id in self._stream_cleanup_tasks:
                             del self._stream_cleanup_tasks[execution_id]
+
                     cleanup_task.add_done_callback(cleanup_task_done)
             except RuntimeError:
                 # No event loop running, skip cleanup task scheduling
@@ -274,9 +276,7 @@ class PerformanceEventCollector:
 
 # Global event stream manager
 # Disable cleanup tasks during testing
-_is_testing = (
-    "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST") is not None
-)
+_is_testing = "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST") is not None
 _global_stream_manager = EventStreamManager(enable_cleanup_tasks=not _is_testing)
 
 

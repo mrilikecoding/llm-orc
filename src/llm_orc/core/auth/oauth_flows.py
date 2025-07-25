@@ -55,7 +55,8 @@ class OAuthCallbackHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format_str: str, *args: Any) -> None:
         """Suppress log messages."""
-        pass
+        # Deliberately suppress logging for OAuth callback server
+        _ = format_str, args  # Mark as intentionally unused
 
 
 class OAuthFlow:

@@ -1,6 +1,7 @@
 """Script-based agent execution for hybrid LLM/script workflows."""
 
 import os
+import shlex
 import subprocess
 import tempfile
 from pathlib import Path
@@ -90,10 +91,24 @@ class ScriptAgent:
             Path(script_path).unlink(missing_ok=True)
 
     async def _execute_command(self, command: str, env: dict[str, str]) -> str:
-        """Execute command directly."""
+        """Execute command directly with safer parsing."""
+        # Parse command safely without shell=True
+        try:
+            # Split command into args safely
+            args = shlex.split(command)
+        except ValueError as e:
+            raise RuntimeError(f"Invalid command syntax: {e}") from e
+
+        if not args:
+            raise RuntimeError("Empty command provided")
+
+        # Validate that the command executable exists and is safe
+        executable = args[0]
+        self._validate_executable_safety(executable)
+
+        # Execute without shell=True for security
         result = subprocess.run(
-            command,
-            shell=True,
+            args,  # Use parsed args instead of shell=True
             capture_output=True,
             text=True,
             timeout=self.timeout,
@@ -102,6 +117,37 @@ class ScriptAgent:
         )
 
         return result.stdout
+
+    def _validate_executable_safety(self, executable: str) -> None:
+        """Validate that the executable is safe to run."""
+        # Block obvious dangerous commands
+        dangerous_commands = {
+            "rm",
+            "rmdir",
+            "del",
+            "format",
+            "fdisk",
+            "mkfs",
+            "dd",
+            "sudo",
+            "su",
+            "chmod",
+            "chown",
+            "passwd",
+            "useradd",
+            "userdel",
+        }
+
+        # Extract just the command name (handle paths)
+        cmd_name = Path(executable).name
+
+        if cmd_name in dangerous_commands:
+            raise RuntimeError(
+                f"Blocked dangerous command: {cmd_name}. "
+                f"Script agents cannot execute system modification commands."
+            )
+
+        # Additional validation could be added here for allowed command lists
 
     def get_agent_type(self) -> str:
         """Return the agent type."""

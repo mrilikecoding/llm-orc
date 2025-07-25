@@ -19,7 +19,7 @@ class TestEnsembleScriptIntegration:
                 {
                     "name": "echo_agent",
                     "type": "script",
-                    "command": 'echo "Script output: $INPUT_DATA"',
+                    "script": 'echo "Script output: $INPUT_DATA"',
                     "timeout_seconds": 1,
                 }
             ],

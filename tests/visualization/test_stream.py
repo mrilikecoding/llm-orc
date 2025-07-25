@@ -535,10 +535,7 @@ class TestEventStreamManager:
             mock_create_task.return_value = mock_task
 
             # Mock the cleanup method to prevent warnings
-            with patch.object(
-                manager, "_cleanup_stream_after_delay", new=Mock()
-            ):
-
+            with patch.object(manager, "_cleanup_stream_after_delay", new=Mock()):
                 manager.create_stream("test-id")
 
                 mock_create_task.assert_called_once()

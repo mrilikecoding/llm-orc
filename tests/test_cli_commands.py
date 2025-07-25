@@ -503,14 +503,12 @@ class TestInvokeEnsemble:
         )
 
         # Mock the execution coordinator to prevent AsyncMock warnings
-        mock_coordinator = Mock(spec_set=['get_effective_concurrency_limit'])
+        mock_coordinator = Mock(spec_set=["get_effective_concurrency_limit"])
         mock_coordinator.get_effective_concurrency_limit.return_value = 3
         mock_executor._execution_coordinator = mock_coordinator
 
         # Explicitly set mock attributes to prevent AsyncMock creation
-        mock_executor.configure_mock(**{
-            '_execution_coordinator': mock_coordinator
-        })
+        mock_executor.configure_mock(**{"_execution_coordinator": mock_coordinator})
 
         with (
             patch(
@@ -681,6 +679,7 @@ class TestInvokeEnsemble:
             # Create a simple async function to avoid AsyncMockMixin issues
             async def simple_run_standard_execution(*args: Any, **kwargs: Any) -> None:
                 return None
+
             mock_run_std.side_effect = simple_run_standard_execution
 
             # This should hit line 86 (the pass statement in max_concurrent handling)
