@@ -378,6 +378,11 @@ def help_command() -> None:
         ("config", "c", "Configuration management commands."),
         ("help", "h", "Show help for llm-orc commands."),
         ("invoke", "i", "Invoke an ensemble of agents."),
+        (
+            "library",
+            "l",
+            "Library management commands for browsing and copying ensembles.",
+        ),
         ("list-ensembles", "le", "List available ensembles."),
         (
             "list-profiles",
@@ -401,6 +406,7 @@ def help_command() -> None:
 cli.add_command(invoke, name="i")
 cli.add_command(auth, name="a")
 cli.add_command(config, name="c")
+cli.add_command(library, name="l")
 cli.add_command(list_ensembles, name="le")
 cli.add_command(list_profiles, name="lp")
 cli.add_command(serve, name="s")
