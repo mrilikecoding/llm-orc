@@ -1,4 +1,4 @@
-.PHONY: test test-watch lint lint-fix format lint-check setup clean install help push workflow-status watch-workflows status red green refactor pre-commit roadmap
+.PHONY: test test-watch lint lint-fix format lint-check security dead-code setup clean install help push workflow-status watch-workflows status red green refactor pre-commit roadmap
 
 # Help target
 help:
@@ -6,10 +6,12 @@ help:
 	@echo "  setup           Setup development environment"
 	@echo "  test            Run tests"
 	@echo "  test-watch      Run tests in watch mode"
-	@echo "  lint            Run linting checks (mypy + ruff + format check)"
+	@echo "  lint            Run linting checks (mypy + ruff + format check + complexity + security + dead code)"
 	@echo "  lint-fix        Run linting checks and auto-fix issues"
 	@echo "  format          Format code with ruff"
 	@echo "  lint-check      Same as lint (compatibility)"
+	@echo "  security        Run security analysis with bandit"
+	@echo "  dead-code       Run dead code analysis with vulture"
 	@echo "  pre-commit      Run all CI checks locally before commit"
 	@echo "  push            Push changes with pre-commit checks and workflow monitoring"
 	@echo "  workflow-status Check CI workflow status"
@@ -38,6 +40,9 @@ lint:
 	uv run mypy src tests
 	uv run ruff check src tests
 	uv run ruff format --check src tests
+	uv run complexipy --max-complexity-allowed 15 src
+	uv run bandit -r src/ --quiet --severity-level medium
+	uv run vulture src/ --min-confidence 80
 
 lint-fix:
 	uv run mypy src tests
@@ -49,6 +54,14 @@ lint-check: lint
 format:
 	uv run ruff check --fix src tests
 	uv run ruff format src tests
+
+security:
+	@echo "Running security analysis with bandit..."
+	uv run bandit -r src/ --quiet --severity-level medium
+
+dead-code:
+	@echo "Running dead code analysis with vulture..."
+	uv run vulture src/ --min-confidence 80
 
 clean:
 	rm -rf build/ dist/ *.egg-info/ .venv/

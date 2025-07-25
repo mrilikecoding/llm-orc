@@ -1,0 +1,68 @@
+[
+  {
+    "complexity": 0,
+    "file_name": "dependency_resolver.py",
+    "function_name": "DependencyResolver::__init__",
+    "path": "dependency_resolver.py"
+  },
+  {
+    "complexity": 0,
+    "file_name": "dependency_resolver.py",
+    "function_name": "DependencyResolver::dependencies_satisfied",
+    "path": "dependency_resolver.py"
+  },
+  {
+    "complexity": 0,
+    "file_name": "dependency_resolver.py",
+    "function_name": "DependencyResolver::has_dependencies",
+    "path": "dependency_resolver.py"
+  },
+  {
+    "complexity": 0,
+    "file_name": "dependency_resolver.py",
+    "function_name": "_find_agent_by_name",
+    "path": "dependency_resolver.py"
+  },
+  {
+    "complexity": 1,
+    "file_name": "dependency_resolver.py",
+    "function_name": "DependencyResolver::filter_by_dependency_status",
+    "path": "dependency_resolver.py"
+  },
+  {
+    "complexity": 1,
+    "file_name": "dependency_resolver.py",
+    "function_name": "DependencyResolver::get_dependencies",
+    "path": "dependency_resolver.py"
+  },
+  {
+    "complexity": 1,
+    "file_name": "dependency_resolver.py",
+    "function_name": "DependencyResolver::validate_dependency_chain",
+    "path": "dependency_resolver.py"
+  },
+  {
+    "complexity": 6,
+    "file_name": "dependency_resolver.py",
+    "function_name": "_detect_circular_dependencies",
+    "path": "dependency_resolver.py"
+  },
+  {
+    "complexity": 8,
+    "file_name": "dependency_resolver.py",
+    "function_name": "_check_cycle_from_node",
+    "path": "dependency_resolver.py"
+  },
+  {
+    "complexity": 8,
+    "file_name": "dependency_resolver.py",
+    "function_name": "_validate_basic_dependencies",
+    "path": "dependency_resolver.py"
+  },
+  {
+    "complexity": 15,
+    "file_name": "dependency_resolver.py",
+    "function_name": "DependencyResolver::enhance_input_with_dependencies",
+    "path": "dependency_resolver.py"
+  }
+]

@@ -30,7 +30,7 @@ from urllib.parse import urlparse
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from llm_orc.models import OllamaModel
+from llm_orc.models.ollama import OllamaModel
 from llm_orc.orchestration import Agent, PRReviewOrchestrator
 from llm_orc.roles import RoleDefinition
 
