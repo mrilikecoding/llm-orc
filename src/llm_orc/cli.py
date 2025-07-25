@@ -9,6 +9,11 @@ from llm_orc.cli_commands import (
     serve_ensemble,
 )
 from llm_orc.cli_completion import complete_ensemble_names, complete_providers
+from llm_orc.cli_library.library import (
+    browse_library,
+    copy_ensemble,
+    list_categories,
+)
 from llm_orc.cli_modules.commands.auth_commands import (
     add_auth_provider,
     list_auth_providers,
@@ -252,6 +257,35 @@ def check_local() -> None:
 def auth() -> None:
     """Authentication management commands."""
     pass
+
+
+@cli.group()
+def library() -> None:
+    """Library management commands for browsing and copying ensembles."""
+    pass
+
+
+@library.command()
+@click.argument("category", required=False)
+def browse(category: str | None) -> None:
+    """Browse available ensembles by category."""
+    browse_library(category)
+
+
+@library.command()
+@click.argument("ensemble_path")
+@click.option(
+    "--global", "is_global", is_flag=True, help="Copy to global config instead of local"
+)
+def copy(ensemble_path: str, is_global: bool) -> None:
+    """Copy an ensemble from the library to your config."""
+    copy_ensemble(ensemble_path, is_global)
+
+
+@library.command()
+def categories() -> None:
+    """List all available ensemble categories."""
+    list_categories()
 
 
 @auth.command("add")

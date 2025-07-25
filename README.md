@@ -205,6 +205,10 @@ llm-orc config reset-local --reset-ensembles --no-backup   # Reset including ens
 
 ```
 
+## Ensemble Library
+
+Looking for pre-built ensembles? Check out the [LLM Orchestra Library](https://github.com/mrilikecoding/llm-orchestra-library) - a curated collection of analytical ensembles for code review, research analysis, decision support, and more.
+
 ## Use Cases
 
 ### Code Review
