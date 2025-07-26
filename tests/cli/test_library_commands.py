@@ -1,8 +1,10 @@
 """Tests for library CLI commands."""
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import mock_open, patch
 
+import click
 import pytest
 import requests
 from click.testing import CliRunner
@@ -249,7 +251,6 @@ agents:
 
     def test_complete_library_ensemble_paths_uses_dynamic_fetching(self) -> None:
         """Should complete ensemble paths using dynamic GitHub API fetching."""
-        import click
 
         from llm_orc.cli_completion import complete_library_ensemble_paths
 
@@ -478,3 +479,618 @@ class TestLibraryIntegration:
             )
             assert copy_result.exit_code == 0
             assert "Copied" in copy_result.output
+
+
+class TestLibraryGitHubAPIIntegration:
+    """Test real GitHub API integration functionality."""
+
+    def test_get_library_categories_with_descriptions(self) -> None:
+        """Should return all library categories with descriptions."""
+        from llm_orc.cli_library.library import get_library_categories_with_descriptions
+
+        categories = get_library_categories_with_descriptions()
+
+        assert isinstance(categories, list)
+        assert len(categories) > 0
+
+        # Verify structure: list of tuples (category, description)
+        for category, description in categories:
+            assert isinstance(category, str)
+            assert isinstance(description, str)
+            assert len(category) > 0
+            assert len(description) > 0
+
+        # Verify expected categories exist
+        category_names = [cat[0] for cat in categories]
+        assert "code-analysis" in category_names
+        assert "idea-exploration" in category_names
+
+    def test_get_category_ensembles_success(self) -> None:
+        """Should fetch ensembles from GitHub API successfully."""
+        from llm_orc.cli_library.library import get_category_ensembles
+
+        mock_response_data = [
+            {
+                "type": "file",
+                "name": "security-review.yaml",
+                "download_url": "https://example.com/security-review.yaml",
+            },
+            {
+                "type": "file",
+                "name": "README.md",
+                "download_url": "https://example.com/README.md",
+            },
+        ]
+
+        mock_ensemble_content = """
+name: security-review
+description: Multi-perspective security analysis
+agents:
+  - name: security-expert
+    model: claude-3-5-sonnet
+"""
+
+        with (
+            patch("requests.get") as mock_get,
+            patch("llm_orc.cli_library.library.fetch_ensemble_content") as mock_fetch,
+        ):
+            # Mock API response
+            mock_response = mock_get.return_value
+            mock_response.raise_for_status.return_value = None
+            mock_response.json.return_value = mock_response_data
+
+            # Mock ensemble content fetch
+            mock_fetch.return_value = mock_ensemble_content
+
+            ensembles = get_category_ensembles("code-analysis")
+
+            assert len(ensembles) == 1  # Only .yaml files, not README.md
+            assert ensembles[0]["name"] == "security-review"
+            assert ensembles[0]["description"] == "Multi-perspective security analysis"
+            assert ensembles[0]["path"] == "code-analysis/security-review.yaml"
+
+            # Verify API was called correctly
+            mock_get.assert_called_once_with(
+                "https://api.github.com/repos/mrilikecoding/llm-orchestra-library/contents/code-analysis",
+                timeout=10,
+            )
+
+    def test_get_category_ensembles_network_error(self) -> None:
+        """Should handle network errors gracefully."""
+        from llm_orc.cli_library.library import get_category_ensembles
+
+        with patch("requests.get") as mock_get:
+            # Mock network timeout
+            mock_get.side_effect = requests.exceptions.Timeout("Request timed out")
+
+            ensembles = get_category_ensembles("code-analysis")
+
+            assert ensembles == []
+
+    def test_get_category_ensembles_http_error(self) -> None:
+        """Should handle HTTP errors gracefully."""
+        from llm_orc.cli_library.library import get_category_ensembles
+
+        with patch("requests.get") as mock_get:
+            # Mock HTTP 404 error
+            mock_response = mock_get.return_value
+            mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+                "404 Not Found"
+            )
+
+            ensembles = get_category_ensembles("nonexistent-category")
+
+            assert ensembles == []
+
+    def test_get_category_ensembles_invalid_yaml(self) -> None:
+        """Should handle invalid YAML content gracefully."""
+        from llm_orc.cli_library.library import get_category_ensembles
+
+        mock_response_data = [
+            {
+                "type": "file",
+                "name": "invalid-ensemble.yaml",
+                "download_url": "https://example.com/invalid-ensemble.yaml",
+            }
+        ]
+
+        invalid_yaml_content = "name: test\ninvalid: yaml: content: [unclosed"
+
+        with (
+            patch("requests.get") as mock_get,
+            patch("llm_orc.cli_library.library.fetch_ensemble_content") as mock_fetch,
+        ):
+            # Mock API response
+            mock_response = mock_get.return_value
+            mock_response.raise_for_status.return_value = None
+            mock_response.json.return_value = mock_response_data
+
+            # Mock invalid YAML content
+            mock_fetch.return_value = invalid_yaml_content
+
+            ensembles = get_category_ensembles("code-analysis")
+
+            # Should handle YAML error and include ensemble with fallback description
+            assert len(ensembles) == 1
+            assert ensembles[0]["name"] == "invalid-ensemble"
+            # Should have some fallback description
+            assert "description" in ensembles[0]
+
+    def test_fetch_ensemble_content_success(self) -> None:
+        """Should fetch ensemble content from GitHub successfully."""
+        from llm_orc.cli_library.library import fetch_ensemble_content
+
+        mock_content = """name: test-ensemble
+description: Test ensemble for unit testing
+agents:
+  - name: test-agent
+    model: claude-3-5-sonnet
+"""
+
+        with patch("requests.get") as mock_get:
+            mock_response = mock_get.return_value
+            mock_response.raise_for_status.return_value = None
+            mock_response.text = mock_content
+
+            content = fetch_ensemble_content("code-analysis/test-ensemble.yaml")
+
+            assert content == mock_content
+
+            # Verify correct URL was called
+            expected_url = (
+                "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main/"
+                "code-analysis/test-ensemble.yaml"
+            )
+            mock_get.assert_called_once_with(expected_url, timeout=10)
+
+    def test_fetch_ensemble_content_not_found(self) -> None:
+        """Should handle ensemble not found gracefully."""
+        from llm_orc.cli_library.library import fetch_ensemble_content
+
+        with patch("requests.get") as mock_get:
+            mock_response = mock_get.return_value
+            mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+                "404 Not Found"
+            )
+
+            with pytest.raises(FileNotFoundError, match="Ensemble not found"):
+                fetch_ensemble_content("nonexistent/ensemble.yaml")
+
+    def test_fetch_ensemble_content_network_error(self) -> None:
+        """Should handle network errors when fetching content."""
+        from llm_orc.cli_library.library import fetch_ensemble_content
+
+        with patch("requests.get") as mock_get:
+            mock_get.side_effect = requests.exceptions.ConnectionError("Network error")
+
+            with pytest.raises(FileNotFoundError, match="Ensemble not found"):
+                fetch_ensemble_content("code-analysis/test-ensemble.yaml")
+
+
+class TestLibraryEnsembleAnalysis:
+    """Test ensemble analysis and metadata extraction functions."""
+
+    def test_analyze_ensemble_metadata_basic(self) -> None:
+        """Should extract basic metadata from agents list."""
+        from llm_orc.cli_library.library import _analyze_ensemble_metadata
+
+        agents: list[dict[str, Any]] = [
+            {
+                "name": "agent1",
+                "model_profile": "fast",
+                "depends_on": ["agent2"],
+                "output_format": "json",
+            },
+            {"name": "agent2", "model_profile": "default"},
+        ]
+
+        (
+            model_profiles,
+            dependencies,
+            output_formats,
+        ) = _analyze_ensemble_metadata(agents)
+
+        assert model_profiles == {"fast", "default"}
+        assert dependencies == [("agent1", "agent2")]
+        assert output_formats == {"json"}
+
+    def test_analyze_ensemble_metadata_defaults(self) -> None:
+        """Should handle agents with default values."""
+        from llm_orc.cli_library.library import _analyze_ensemble_metadata
+
+        agents: list[dict[str, Any]] = [{"name": "simple-agent"}]
+
+        (
+            model_profiles,
+            dependencies,
+            output_formats,
+        ) = _analyze_ensemble_metadata(agents)
+
+        assert model_profiles == {"default"}
+        assert dependencies == []
+        assert output_formats == set()
+
+    def test_analyze_ensemble_metadata_multiple_dependencies(self) -> None:
+        """Should handle agents with multiple dependencies."""
+        from llm_orc.cli_library.library import _analyze_ensemble_metadata
+
+        agents: list[dict[str, Any]] = [
+            {
+                "name": "agent1",
+                "depends_on": ["agent2", "agent3"],
+                "output_format": "markdown",
+            },
+            {
+                "name": "agent4",
+                "depends_on": "agent1",  # Single dependency (not list)
+                "output_format": "json",
+            },
+        ]
+
+        (
+            model_profiles,
+            dependencies,
+            output_formats,
+        ) = _analyze_ensemble_metadata(agents)
+
+        expected_dependencies = [
+            ("agent1", "agent2"),
+            ("agent1", "agent3"),
+            ("agent4", "agent1"),
+        ]
+        assert dependencies == expected_dependencies
+        assert output_formats == {"markdown", "json"}
+
+    def test_display_agent_details_basic(self) -> None:
+        """Should display basic agent information."""
+        from llm_orc.cli_library.library import _display_agent_details
+
+        agents = [
+            {"name": "test-agent", "model_profile": "fast"},
+            {"name": "another-agent"},
+        ]
+
+        with patch("click.echo") as mock_echo:
+            _display_agent_details(agents)
+
+            # Verify header and agent details were displayed
+            mock_echo.assert_any_call("👤 Agent Details:")
+            mock_echo.assert_any_call("  • test-agent (fast)")
+            mock_echo.assert_any_call("  • another-agent (default)")
+
+    def test_display_agent_details_with_dependencies(self) -> None:
+        """Should display agent dependencies."""
+        from llm_orc.cli_library.library import _display_agent_details
+
+        agents = [
+            {
+                "name": "dependent-agent",
+                "depends_on": ["agent1", "agent2"],
+                "output_format": "json",
+            }
+        ]
+
+        with patch("click.echo") as mock_echo:
+            _display_agent_details(agents)
+
+            mock_echo.assert_any_call("    ↳ depends on: agent1, agent2")
+            mock_echo.assert_any_call("    ↳ output format: json")
+
+    def test_display_agent_details_single_dependency(self) -> None:
+        """Should handle single dependency (not list)."""
+        from llm_orc.cli_library.library import _display_agent_details
+
+        agents = [{"name": "agent", "depends_on": "parent-agent"}]
+
+        with patch("click.echo") as mock_echo:
+            _display_agent_details(agents)
+
+            mock_echo.assert_any_call("    ↳ depends on: parent-agent")
+
+    def test_display_execution_flow_no_dependencies(self) -> None:
+        """Should handle agents with no dependencies."""
+        from llm_orc.cli_library.library import _display_execution_flow
+
+        agents = [{"name": "agent1"}, {"name": "agent2"}]
+        dependencies: list[tuple[str, str]] = []
+
+        with patch("click.echo") as mock_echo:
+            _display_execution_flow(agents, dependencies)
+
+            # Should not display anything for empty dependencies
+            mock_echo.assert_not_called()
+
+    def test_display_execution_flow_with_dependencies(self) -> None:
+        """Should display execution flow with dependencies."""
+        from llm_orc.cli_library.library import _display_execution_flow
+
+        agents: list[dict[str, Any]] = [
+            {"name": "independent1"},
+            {"name": "independent2"},
+            {"name": "dependent1", "depends_on": ["independent1"]},
+            {"name": "dependent2", "depends_on": ["independent2"]},
+        ]
+        dependencies: list[tuple[str, str]] = [
+            ("dependent1", "independent1"),
+            ("dependent2", "independent2"),
+        ]
+
+        with patch("click.echo") as mock_echo:
+            _display_execution_flow(agents, dependencies)
+
+            mock_echo.assert_any_call()
+            mock_echo.assert_any_call("🔄 Execution Flow:")
+            mock_echo.assert_any_call("  1. Parallel: independent1, independent2")
+            mock_echo.assert_any_call("  2. Sequential: dependent1, dependent2")
+
+
+class TestLibraryShowEnsembleInfo:
+    """Test show_ensemble_info command functionality."""
+
+    def test_show_ensemble_info_success(self) -> None:
+        """Should display complete ensemble information."""
+        from llm_orc.cli_library.library import show_ensemble_info
+
+        mock_content = """
+name: test-ensemble
+description: A test ensemble for analysis
+agents:
+  - name: analyzer
+    model_profile: fast
+    depends_on: ["extractor"]
+    output_format: json
+  - name: extractor
+    model_profile: default
+"""
+
+        with (
+            patch("llm_orc.cli_library.library.fetch_ensemble_content") as mock_fetch,
+            patch("click.echo") as mock_echo,
+        ):
+            mock_fetch.return_value = mock_content
+
+            show_ensemble_info("test/ensemble")
+
+            # Verify ensemble info display
+            mock_echo.assert_any_call("📋 Ensemble: test-ensemble")
+            mock_echo.assert_any_call("📝 Description: A test ensemble for analysis")
+            mock_echo.assert_any_call("👥 Agents: 2")
+            mock_echo.assert_any_call("🤖 Model Profiles:")
+            mock_echo.assert_any_call("  • default")
+            mock_echo.assert_any_call("  • fast")
+
+    def test_show_ensemble_info_yaml_error(self) -> None:
+        """Should handle YAML parsing errors."""
+        from llm_orc.cli_library.library import show_ensemble_info
+
+        invalid_content = "name: test\ninvalid: yaml: content: [unclosed"
+
+        with (
+            patch("llm_orc.cli_library.library.fetch_ensemble_content") as mock_fetch,
+            patch("click.echo") as mock_echo,
+        ):
+            mock_fetch.return_value = invalid_content
+
+            with pytest.raises(Exception, match="Invalid YAML"):
+                show_ensemble_info("test/ensemble")
+
+            # Check that an error message was displayed (exact text may vary)
+            error_calls = [
+                call
+                for call in mock_echo.call_args_list
+                if call.kwargs.get("err") is True
+            ]
+            assert len(error_calls) > 0
+            assert "Invalid YAML" in str(error_calls[0])
+
+    def test_show_ensemble_info_file_not_found(self) -> None:
+        """Should handle ensemble not found errors."""
+        from llm_orc.cli_library.library import show_ensemble_info
+
+        with (
+            patch("llm_orc.cli_library.library.fetch_ensemble_content") as mock_fetch,
+            patch("click.echo") as mock_echo,
+        ):
+            mock_fetch.side_effect = FileNotFoundError(
+                "Ensemble not found: test/ensemble"
+            )
+
+            with pytest.raises(Exception, match="Ensemble not found"):
+                show_ensemble_info("test/ensemble")
+
+            mock_echo.assert_any_call(
+                "Error: Ensemble not found: test/ensemble", err=True
+            )
+
+
+class TestLibraryEdgeCases:
+    """Test edge cases and string manipulation."""
+
+    def test_fetch_ensemble_content_adds_yaml_extension(self) -> None:
+        """Should add .yaml extension when not present."""
+        from llm_orc.cli_library.library import fetch_ensemble_content
+
+        with patch("requests.get") as mock_get:
+            mock_response = mock_get.return_value
+            mock_response.raise_for_status.return_value = None
+            mock_response.text = "ensemble content"
+
+            content = fetch_ensemble_content("code-analysis/security-review")
+
+            assert content == "ensemble content"
+            # Verify .yaml was appended to URL
+            expected_url = (
+                "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main/"
+                "code-analysis/security-review.yaml"
+            )
+            mock_get.assert_called_once_with(expected_url, timeout=10)
+
+    def test_get_template_content_adds_yaml_extension(self) -> None:
+        """Should add .yaml extension to template name when not present."""
+        from llm_orc.cli_library.library import get_template_content
+
+        with patch("requests.get") as mock_get:
+            mock_response = mock_get.return_value
+            mock_response.raise_for_status.return_value = None
+            mock_response.text = "template content"
+
+            content = get_template_content("local-config")
+
+            assert content == "template content"
+            # Verify .yaml was appended to URL
+            expected_url = (
+                "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main/"
+                "templates/local-config.yaml"
+            )
+            mock_get.assert_called_once_with(expected_url, timeout=10)
+
+    def test_copy_ensemble_user_declines_overwrite(self) -> None:
+        """Should handle user declining overwrite confirmation."""
+        from llm_orc.cli_library.library import copy_ensemble
+
+        ensemble_content = "name: existing-ensemble"
+
+        with (
+            patch("llm_orc.cli_library.library.fetch_ensemble_content") as mock_fetch,
+            patch("llm_orc.cli_library.library.ensemble_exists") as mock_exists,
+            patch("click.confirm") as mock_confirm,
+            patch("click.echo") as mock_echo,
+        ):
+            mock_fetch.return_value = ensemble_content
+            mock_exists.return_value = True
+            mock_confirm.return_value = False  # User declines
+
+            copy_ensemble("test/ensemble", is_global=False)
+
+            mock_echo.assert_called_with("Copy cancelled.")
+
+    def test_list_categories_display(self) -> None:
+        """Should display categories with descriptions properly formatted."""
+        from llm_orc.cli_library.library import list_categories
+
+        with (
+            patch(
+                "llm_orc.cli_library.library.get_library_categories_with_descriptions"
+            ) as mock_get_cats,
+            patch("click.echo") as mock_echo,
+        ):
+            mock_get_cats.return_value = [
+                ("code-analysis", "Code review and security analysis"),
+                ("idea-exploration", "Concept mapping and perspective taking"),
+            ]
+
+            list_categories()
+
+            mock_echo.assert_any_call("Available ensemble categories:")
+            mock_echo.assert_any_call()
+            # Check formatting is reasonable (exact spacing may vary)
+            calls = [str(call) for call in mock_echo.call_args_list]
+            assert any(
+                "code-analysis" in call and "Code review" in call for call in calls
+            )
+            assert any(
+                "idea-exploration" in call and "Concept mapping" in call
+                for call in calls
+            )
+            mock_echo.assert_any_call()
+
+
+class TestLibraryConfigurationIntegration:
+    """Test integration with configuration manager."""
+
+    def test_ensure_global_ensembles_dir_creates_directory(self) -> None:
+        """Should create global ensembles directory if it doesn't exist."""
+        from llm_orc.cli_library.library import ensure_global_ensembles_dir
+
+        with (
+            patch("llm_orc.cli_library.library.ConfigurationManager") as mock_config,
+            patch("pathlib.Path.mkdir") as mock_mkdir,
+        ):
+            mock_config_instance = mock_config.return_value
+            mock_config_instance.global_config_dir = "/home/test/.llm-orc"
+
+            result_path = ensure_global_ensembles_dir()
+
+            expected_path = "/home/test/.llm-orc/ensembles"
+            assert result_path == expected_path
+
+            # Verify directory creation was attempted
+            mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+    def test_ensure_global_ensembles_dir_existing_directory(self) -> None:
+        """Should return path if global ensembles directory already exists."""
+        from llm_orc.cli_library.library import ensure_global_ensembles_dir
+
+        with (
+            patch("llm_orc.cli_library.library.ConfigurationManager") as mock_config,
+            patch("pathlib.Path.mkdir") as mock_mkdir,
+        ):
+            mock_config_instance = mock_config.return_value
+            mock_config_instance.global_config_dir = "/home/test/.llm-orc"
+
+            result_path = ensure_global_ensembles_dir()
+
+            expected_path = "/home/test/.llm-orc/ensembles"
+            assert result_path == expected_path
+
+            # Should still call mkdir with exist_ok=True
+            mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+    def test_ensure_local_ensembles_dir_creates_directory(self) -> None:
+        """Should create local ensembles directory if it doesn't exist."""
+        from llm_orc.cli_library.library import ensure_local_ensembles_dir
+
+        with patch("pathlib.Path.mkdir") as mock_mkdir:
+            result_path = ensure_local_ensembles_dir()
+
+            expected_path = ".llm-orc/ensembles"
+            assert result_path == expected_path
+
+            # Verify directory creation
+            mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
+
+    def test_ensemble_exists_local_true(self) -> None:
+        """Should detect when ensemble exists in local directory."""
+        from llm_orc.cli_library.library import ensemble_exists
+
+        with (
+            patch("pathlib.Path.cwd") as mock_cwd,
+            patch("pathlib.Path.exists", return_value=True),
+        ):
+            mock_cwd.return_value = Path("/project")
+
+            exists = ensemble_exists("test-ensemble", is_global=False)
+
+            assert exists is True
+
+    def test_ensemble_exists_global_true(self) -> None:
+        """Should detect when ensemble exists in global directory."""
+        from llm_orc.cli_library.library import ensemble_exists
+
+        with (
+            patch(
+                "llm_orc.cli_library.library.ensure_global_ensembles_dir"
+            ) as mock_ensure_dir,
+            patch("pathlib.Path.exists", return_value=True),
+        ):
+            mock_ensure_dir.return_value = "/home/test/.llm-orc/ensembles"
+
+            exists = ensemble_exists("test-ensemble", is_global=True)
+
+            assert exists is True
+
+    def test_ensemble_exists_false(self) -> None:
+        """Should return false when ensemble doesn't exist anywhere."""
+        from llm_orc.cli_library.library import ensemble_exists
+
+        with (
+            patch(
+                "llm_orc.cli_library.library.ensure_local_ensembles_dir"
+            ) as mock_ensure_dir,
+            patch("pathlib.Path.exists", return_value=False),
+        ):
+            mock_ensure_dir.return_value = "/project/.llm-orc/ensembles"
+
+            exists = ensemble_exists("nonexistent-ensemble", is_global=False)
+
+            assert exists is False
