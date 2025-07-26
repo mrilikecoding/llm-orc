@@ -61,7 +61,16 @@ To create a new release:
    gh release create v0.2.2 --title "Release v0.2.2" --notes "Release notes here"
    ```
 
-6. **Automation takes over**:
+6. **Clean up lock file** (after automation completes):
+   ```bash
+   # Wait for workflows to complete, then commit any uv.lock changes
+   # Note: uv.lock gets updated during CI/PyPI publishing but isn't included in release commit
+   git add uv.lock
+   git commit -m "chore: update uv.lock for version 0.2.2 release"
+   git push origin main
+   ```
+
+7. **Automation takes over**:
    - The workflow will automatically update the Homebrew formula
    - Users can install the new version with `brew update && brew upgrade llm-orchestra`
 
@@ -105,6 +114,7 @@ If the automation fails:
 - [ ] Create and push git tag
 - [ ] Create GitHub release
 - [ ] Verify automation worked
+- [ ] **Clean up lock file**: Commit any `uv.lock` changes after workflows complete
 - [ ] Test installation: `brew update && brew upgrade llm-orchestra`
 - [ ] Verify `llm-orc --version` shows correct version
 
