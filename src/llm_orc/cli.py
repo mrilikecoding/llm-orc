@@ -8,7 +8,17 @@ from llm_orc.cli_commands import (
     list_profiles_command,
     serve_ensemble,
 )
-from llm_orc.cli_completion import complete_ensemble_names, complete_providers
+from llm_orc.cli_completion import (
+    complete_ensemble_names,
+    complete_library_ensemble_paths,
+    complete_providers,
+)
+from llm_orc.cli_library.library import (
+    browse_library,
+    copy_ensemble,
+    list_categories,
+    show_ensemble_info,
+)
 from llm_orc.cli_modules.commands.auth_commands import (
     add_auth_provider,
     list_auth_providers,
@@ -254,6 +264,42 @@ def auth() -> None:
     pass
 
 
+@cli.group()
+def library() -> None:
+    """Library management commands for browsing and copying ensembles."""
+    pass
+
+
+@library.command()
+@click.argument("category", required=False)
+def browse(category: str | None) -> None:
+    """Browse available ensembles by category."""
+    browse_library(category)
+
+
+@library.command()
+@click.argument("ensemble_path", shell_complete=complete_library_ensemble_paths)
+@click.option(
+    "--global", "is_global", is_flag=True, help="Copy to global config instead of local"
+)
+def copy(ensemble_path: str, is_global: bool) -> None:
+    """Copy an ensemble from the library to your config."""
+    copy_ensemble(ensemble_path, is_global)
+
+
+@library.command()
+def categories() -> None:
+    """List all available ensemble categories."""
+    list_categories()
+
+
+@library.command()
+@click.argument("ensemble_path", shell_complete=complete_library_ensemble_paths)
+def show(ensemble_path: str) -> None:
+    """Show detailed information about an ensemble."""
+    show_ensemble_info(ensemble_path)
+
+
 @auth.command("add")
 @click.argument("provider", shell_complete=complete_providers)
 @click.option("--api-key", help="API key for the provider")
@@ -344,6 +390,11 @@ def help_command() -> None:
         ("config", "c", "Configuration management commands."),
         ("help", "h", "Show help for llm-orc commands."),
         ("invoke", "i", "Invoke an ensemble of agents."),
+        (
+            "library",
+            "l",
+            "Library management commands for browsing and copying ensembles.",
+        ),
         ("list-ensembles", "le", "List available ensembles."),
         (
             "list-profiles",
@@ -367,6 +418,7 @@ def help_command() -> None:
 cli.add_command(invoke, name="i")
 cli.add_command(auth, name="a")
 cli.add_command(config, name="c")
+cli.add_command(library, name="l")
 cli.add_command(list_ensembles, name="le")
 cli.add_command(list_profiles, name="lp")
 cli.add_command(serve, name="s")
