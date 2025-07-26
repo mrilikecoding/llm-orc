@@ -79,7 +79,7 @@ warn_unused_configs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--cov=llm_orc --cov-report=term-missing"
+addopts = "--cov=llm_orc --cov-report=term-missing --cov-fail-under=95"
 markers = [
     "asyncio: marks tests as requiring asyncio"
 ]
