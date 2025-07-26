@@ -8,7 +8,11 @@ from llm_orc.cli_commands import (
     list_profiles_command,
     serve_ensemble,
 )
-from llm_orc.cli_completion import complete_ensemble_names, complete_providers
+from llm_orc.cli_completion import (
+    complete_ensemble_names,
+    complete_library_ensemble_paths,
+    complete_providers,
+)
 from llm_orc.cli_library.library import (
     browse_library,
     copy_ensemble,
@@ -274,7 +278,7 @@ def browse(category: str | None) -> None:
 
 
 @library.command()
-@click.argument("ensemble_path")
+@click.argument("ensemble_path", shell_complete=complete_library_ensemble_paths)
 @click.option(
     "--global", "is_global", is_flag=True, help="Copy to global config instead of local"
 )
@@ -290,7 +294,7 @@ def categories() -> None:
 
 
 @library.command()
-@click.argument("ensemble_path")
+@click.argument("ensemble_path", shell_complete=complete_library_ensemble_paths)
 def show(ensemble_path: str) -> None:
     """Show detailed information about an ensemble."""
     show_ensemble_info(ensemble_path)
