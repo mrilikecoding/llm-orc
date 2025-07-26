@@ -233,6 +233,9 @@ class TestLibraryIntegration:
                 "llm_orc.cli_library.library.ensure_local_ensembles_dir"
             ) as mock_ensure_dir,
             patch("builtins.open", mock_open()),
+            patch(
+                "llm_orc.cli_library.library.ensemble_exists", return_value=False
+            ),  # Mock ensemble doesn't exist
         ):
             mock_fetch.return_value = ensemble_content
             mock_ensure_dir.return_value = ".llm-orc/ensembles"
