@@ -205,6 +205,32 @@ llm-orc config reset-local --reset-ensembles --no-backup   # Reset including ens
 
 ```
 
+## Ensemble Library
+
+Looking for pre-built ensembles? Check out the [LLM Orchestra Library](https://github.com/mrilikecoding/llm-orchestra-library) - a curated collection of analytical ensembles for code review, research analysis, decision support, and more.
+
+### Library CLI Commands
+
+LLM Orchestra includes built-in commands to browse and copy ensembles from the library:
+
+```bash
+# Browse all available categories
+llm-orc library categories
+llm-orc l categories  # Using alias
+
+# Browse ensembles in a specific category
+llm-orc library browse code-analysis
+
+# Show detailed information about an ensemble
+llm-orc library show code-analysis/security-review
+
+# Copy an ensemble to your local configuration
+llm-orc library copy code-analysis/security-review
+
+# Copy an ensemble to your global configuration
+llm-orc library copy code-analysis/security-review --global
+```
+
 ## Use Cases
 
 ### Code Review

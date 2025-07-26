@@ -145,8 +145,8 @@ class TestConfigurationManager:
                 with open(config_file) as f:
                     config_data = yaml.safe_load(f)
                     assert "model_profiles" in config_data
-                    assert "free-local" in config_data["model_profiles"]
-                    assert "default-claude" in config_data["model_profiles"]
+                    assert "micro-local" in config_data["model_profiles"]
+                    assert "default" in config_data["model_profiles"]
                     assert "validate-anthropic-api" in config_data["model_profiles"]
 
     def test_init_local_config_from_templates(self) -> None:
@@ -175,7 +175,8 @@ class TestConfigurationManager:
                     assert config_data["project"]["name"] == "test-project"
                     assert "test" in config_data["project"]["default_models"]
                     assert (
-                        config_data["project"]["default_models"]["test"] == "free-local"
+                        config_data["project"]["default_models"]["test"]
+                        == "micro-local"
                     )
                     # Only test fallback should exist now
                     assert len(config_data["project"]["default_models"]) == 1
