@@ -164,6 +164,127 @@ def copy_ensemble(ensemble_path: str, is_global: bool = False) -> None:
         raise click.ClickException(str(e)) from e
 
 
+def _analyze_ensemble_metadata(
+    agents: list[dict[str, Any]],
+) -> tuple[set[str], list[tuple[str, str]], set[str]]:
+    """Analyze ensemble metadata from agents list."""
+    model_profiles = set()
+    dependencies = []
+    output_formats = set()
+
+    for agent in agents:
+        # Collect model profiles
+        profile = agent.get("model_profile", "default")
+        model_profiles.add(profile)
+
+        # Collect dependencies
+        if "depends_on" in agent:
+            deps = agent["depends_on"]
+            if isinstance(deps, list):
+                dependencies.extend([(agent["name"], dep) for dep in deps])
+            else:
+                dependencies.append((agent["name"], deps))
+
+        # Collect output formats
+        if "output_format" in agent:
+            output_formats.add(agent["output_format"])
+
+    return model_profiles, dependencies, output_formats
+
+
+def _display_agent_details(agents: list[dict[str, Any]]) -> None:
+    """Display detailed information about each agent."""
+    click.echo("👤 Agent Details:")
+    for agent in agents:
+        agent_name = agent.get("name", "unnamed")
+        profile = agent.get("model_profile", "default")
+        click.echo(f"  • {agent_name} ({profile})")
+
+        # Show dependencies
+        if "depends_on" in agent:
+            deps = agent["depends_on"]
+            if isinstance(deps, list):
+                deps_str = ", ".join(deps)
+            else:
+                deps_str = str(deps)
+            click.echo(f"    ↳ depends on: {deps_str}")
+
+        # Show special features
+        if "output_format" in agent:
+            click.echo(f"    ↳ output format: {agent['output_format']}")
+
+
+def _display_execution_flow(
+    agents: list[dict[str, Any]], dependencies: list[tuple[str, str]]
+) -> None:
+    """Display execution flow information."""
+    if not dependencies:
+        return
+
+    click.echo()
+    click.echo("🔄 Execution Flow:")
+
+    # Simple dependency display
+    independent_agents = []
+    dependent_agents = []
+
+    for agent in agents:
+        if "depends_on" not in agent:
+            independent_agents.append(agent["name"])
+        else:
+            dependent_agents.append(agent["name"])
+
+    if independent_agents:
+        click.echo(f"  1. Parallel: {', '.join(independent_agents)}")
+    if dependent_agents:
+        click.echo(f"  2. Sequential: {', '.join(dependent_agents)}")
+
+
+def show_ensemble_info(ensemble_path: str) -> None:
+    """Show detailed information about an ensemble."""
+    try:
+        # Fetch ensemble content
+        content = fetch_ensemble_content(ensemble_path)
+        ensemble_data = yaml.safe_load(content)
+
+        # Extract basic info
+        name = ensemble_data.get("name", "Unknown")
+        description = ensemble_data.get("description", "No description available")
+        agents = ensemble_data.get("agents", [])
+
+        # Display basic info
+        click.echo(f"📋 Ensemble: {name}")
+        click.echo(f"📝 Description: {description}")
+        click.echo(f"👥 Agents: {len(agents)}")
+        click.echo()
+
+        # Analyze metadata
+        model_profiles, dependencies, output_formats = _analyze_ensemble_metadata(
+            agents
+        )
+
+        # Display model profiles
+        click.echo("🤖 Model Profiles:")
+        for profile in sorted(model_profiles):
+            click.echo(f"  • {profile}")
+        click.echo()
+
+        # Display agent details
+        _display_agent_details(agents)
+
+        # Display execution flow
+        _display_execution_flow(agents, dependencies)
+
+        click.echo()
+
+    except FileNotFoundError as e:
+        click.echo(f"Error: {e}", err=True)
+        raise click.ClickException(str(e)) from e
+    except yaml.YAMLError as e:
+        click.echo(f"Error: Invalid YAML in ensemble: {e}", err=True)
+        raise click.ClickException(f"Invalid YAML: {e}") from e
+
+
 def list_categories() -> None:
     """List all available categories with descriptions."""
     categories = get_library_categories_with_descriptions()

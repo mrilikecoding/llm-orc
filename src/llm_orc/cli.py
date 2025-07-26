@@ -13,6 +13,7 @@ from llm_orc.cli_library.library import (
     browse_library,
     copy_ensemble,
     list_categories,
+    show_ensemble_info,
 )
 from llm_orc.cli_modules.commands.auth_commands import (
     add_auth_provider,
@@ -286,6 +287,13 @@ def copy(ensemble_path: str, is_global: bool) -> None:
 def categories() -> None:
     """List all available ensemble categories."""
     list_categories()
+
+
+@library.command()
+@click.argument("ensemble_path")
+def show(ensemble_path: str) -> None:
+    """Show detailed information about an ensemble."""
+    show_ensemble_info(ensemble_path)
 
 
 @auth.command("add")
