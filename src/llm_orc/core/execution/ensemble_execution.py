@@ -373,18 +373,10 @@ class EnsembleExecutor:
 
         return phase_results
 
-    async def _execute_llm_agents(
-        self,
-        config: EnsembleConfig,
-        input_data: str,
-        context_data: dict[str, Any],
-        results_dict: dict[str, Any],
-    ) -> bool:
-        """Execute LLM agents with dependency-aware phasing."""
-        has_errors = False
-        llm_agents = [a for a in config.agents if a.get("type") != "script"]
-
-        # Prepare enhanced input for LLM agents
+    def _prepare_enhanced_input(
+        self, input_data: str, config: EnsembleConfig, context_data: dict[str, Any]
+    ) -> str:
+        """Prepare enhanced input for LLM agents with context data."""
         # CLI input overrides config default_task when provided
         # Fall back to config.default_task or config.task (backward compatibility)
         if input_data and input_data.strip() and input_data != "Please analyze this.":
@@ -397,12 +389,87 @@ class EnsembleExecutor:
                 or getattr(config, "task", None)
                 or input_data
             )
+
         enhanced_input = task_input
         if context_data:
             context_text = "\n\n".join(
                 [f"=== {name} ===\n{data}" for name, data in context_data.items()]
             )
             enhanced_input = f"{task_input}\n\n{context_text}"
+
+        return enhanced_input
+
+    def _process_phase_results(
+        self,
+        phase_results: dict[str, Any],
+        results_dict: dict[str, Any],
+    ) -> bool:
+        """Process parallel execution results and return if any errors occurred."""
+        has_errors = False
+
+        for agent_name, agent_result in phase_results.items():
+            # Store result in results_dict
+            results_dict[agent_name] = {
+                "response": agent_result.get("response"),
+                "status": agent_result["status"],
+            }
+
+            # Handle errors
+            if agent_result["status"] == "failed":
+                has_errors = True
+                results_dict[agent_name]["error"] = agent_result["error"]
+
+            # Collect usage for successful agents
+            if (
+                agent_result["status"] == "success"
+                and agent_result["model_instance"] is not None
+            ):
+                self._usage_collector.collect_agent_usage(
+                    agent_name, agent_result["model_instance"]
+                )
+
+        return has_errors
+
+    def _emit_phase_completed_event(
+        self,
+        phase_index: int,
+        phase_agents: list[dict[str, Any]],
+        results_dict: dict[str, Any],
+    ) -> None:
+        """Emit phase completion event with success/failure counts."""
+        successful_agents = [
+            a
+            for a in phase_agents
+            if results_dict.get(a["name"], {}).get("status") == "success"
+        ]
+        failed_agents = [
+            a
+            for a in phase_agents
+            if results_dict.get(a["name"], {}).get("status") == "failed"
+        ]
+
+        self._emit_performance_event(
+            "phase_completed",
+            {
+                "phase_index": phase_index,
+                "successful_agents": len(successful_agents),
+                "failed_agents": len(failed_agents),
+            },
+        )
+
+    async def _execute_llm_agents(
+        self,
+        config: EnsembleConfig,
+        input_data: str,
+        context_data: dict[str, Any],
+        results_dict: dict[str, Any],
+    ) -> bool:
+        """Execute LLM agents with dependency-aware phasing."""
+        has_errors = False
+        llm_agents = [a for a in config.agents if a.get("type") != "script"]
+
+        # Prepare enhanced input for LLM agents
+        enhanced_input = self._prepare_enhanced_input(input_data, config, context_data)
 
         # Use enhanced dependency analysis for multi-level execution
         if llm_agents:
@@ -442,48 +509,14 @@ class EnsembleExecutor:
                 )
 
                 # Process parallel execution results
-                for agent_name, agent_result in phase_results.items():
-                    # Store result in results_dict
-                    results_dict[agent_name] = {
-                        "response": agent_result.get("response"),
-                        "status": agent_result["status"],
-                    }
+                phase_has_errors = self._process_phase_results(
+                    phase_results, results_dict
+                )
+                has_errors = has_errors or phase_has_errors
 
-                    # Handle errors
-                    if agent_result["status"] == "failed":
-                        has_errors = True
-                        results_dict[agent_name]["error"] = agent_result["error"]
-
-                    # Collect usage for successful agents
-                    if (
-                        agent_result["status"] == "success"
-                        and agent_result["model_instance"] is not None
-                    ):
-                        self._usage_collector.collect_agent_usage(
-                            agent_name, agent_result["model_instance"]
-                        )
-
-                self._emit_performance_event(
-                    "phase_completed",
-                    {
-                        "phase_index": phase_index,
-                        "successful_agents": len(
-                            [
-                                a
-                                for a in phase_agents
-                                if results_dict.get(a["name"], {}).get("status")
-                                == "success"
-                            ]
-                        ),
-                        "failed_agents": len(
-                            [
-                                a
-                                for a in phase_agents
-                                if results_dict.get(a["name"], {}).get("status")
-                                == "failed"
-                            ]
-                        ),
-                    },
+                # Emit phase completion event
+                self._emit_phase_completed_event(
+                    phase_index, phase_agents, results_dict
                 )
 
         return has_errors
