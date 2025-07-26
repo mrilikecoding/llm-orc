@@ -317,6 +317,26 @@ def show_ensemble_info(ensemble_path: str) -> None:
         raise click.ClickException(f"Invalid YAML: {e}") from e
 
 
+def get_template_content(template_name: str) -> str:
+    """Fetch template content from GitHub repository."""
+    base_url = (
+        "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main"
+    )
+
+    # Ensure template has .yaml extension if not already present
+    if not template_name.endswith(".yaml"):
+        template_name += ".yaml"
+
+    url = f"{base_url}/templates/{template_name}"
+
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return response.text
+    except requests.RequestException as e:
+        raise FileNotFoundError(f"Template not found: {template_name}") from e
+
+
 def list_categories() -> None:
     """List all available categories with descriptions."""
     categories = get_library_categories_with_descriptions()
