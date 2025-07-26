@@ -1,0 +1,3 @@
+[submodule "llm-orchestra-library"]
+	path = llm-orchestra-library
+	url = https://github.com/mrilikecoding/llm-orchestra-library.git

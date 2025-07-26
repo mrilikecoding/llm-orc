@@ -77,3 +77,58 @@ def complete_providers(
         return sorted(matches)
     except Exception:
         return []
+
+
+def complete_library_ensemble_paths(
+    ctx: click.Context, _param: click.Parameter, incomplete: str
+) -> list[str]:
+    """Complete library ensemble paths (e.g., 'code-analysis/security-review').
+
+    Args:
+        ctx: Click context containing command arguments
+        _param: Click parameter being completed (unused)
+        incomplete: Partial input to complete
+
+    Returns:
+        List of matching library ensemble paths
+    """
+    try:
+        # Import here to avoid circular imports
+        from llm_orc.cli_library.library import get_library_categories
+
+        # Get available categories
+        categories = get_library_categories()
+
+        # If incomplete doesn't contain '/', suggest categories
+        if "/" not in incomplete:
+            matches = [f"{cat}/" for cat in categories if cat.startswith(incomplete)]
+            return sorted(matches)
+
+        # If incomplete contains '/', try to complete ensemble names within category
+        try:
+            category, partial_ensemble = incomplete.split("/", 1)
+            if category in categories:
+                # For now, return common ensemble patterns
+                # In a full implementation, we'd fetch from GitHub API
+                common_ensembles = [
+                    "security-review",
+                    "code-review",
+                    "architecture-analysis",
+                    "performance-audit",
+                ]
+
+                matches = [
+                    f"{category}/{ensemble}"
+                    for ensemble in common_ensembles
+                    if ensemble.startswith(partial_ensemble)
+                ]
+                return sorted(matches)
+        except ValueError:
+            # Invalid format, return empty
+            return []
+
+        return []
+
+    except Exception:
+        # Return empty list on any error to avoid breaking completion
+        return []
