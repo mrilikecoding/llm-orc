@@ -100,5 +100,6 @@ dev = [
     "complexipy>=3.3.0",
     "bandit>=1.8.6",
     "vulture>=2.14",
+    "psutil>=6.1.0",
 ]
 
