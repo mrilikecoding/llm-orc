@@ -60,21 +60,21 @@ class ConfigurationManager:
         self._setup_default_ensembles()
 
     def _setup_default_config(self) -> None:
-        """Set up default global config.yaml by copying template file."""
+        """Set up default global config.yaml by copying template content."""
         config_file = self._global_config_dir / "config.yaml"
 
         # Only create if doesn't exist (don't overwrite user configurations)
         if config_file.exists():
             return
 
-        # Get the template config file
-        template_file = self._get_template_config_file("global-config.yaml")
-
-        if template_file.exists():
-            shutil.copy2(template_file, config_file)
-        else:
+        try:
+            # Get the template config content from library
+            template_content = self._get_template_config_content("global-config.yaml")
+            with open(config_file, "w", encoding="utf-8") as f:
+                f.write(template_content)
+        except FileNotFoundError:
             # Fallback to empty config if template not found
-            with open(config_file, "w") as f:
+            with open(config_file, "w", encoding="utf-8") as f:
                 yaml.dump({"model_profiles": {}}, f, default_flow_style=False, indent=2)
 
     def _setup_default_ensembles(self) -> None:
@@ -101,11 +101,22 @@ class ConfigurationManager:
         package_dir = Path(__file__).parent.parent.parent
         return package_dir / "templates" / "ensembles"
 
-    def _get_template_config_file(self, filename: str) -> Path:
-        """Get the template config file path."""
-        # Get the llm_orc package directory (parent of core)
-        package_dir = Path(__file__).parent.parent.parent
-        return package_dir / "templates" / filename
+    def _get_template_config_content(self, filename: str) -> str:
+        """Get template config content from library repository."""
+        from llm_orc.cli_library.library import get_template_content
+
+        try:
+            return get_template_content(filename)
+        except FileNotFoundError:
+            # Fallback to local template if library template not found
+            package_dir = Path(__file__).parent.parent.parent
+            local_template_path = package_dir / "templates" / filename
+
+            if local_template_path.exists():
+                with open(local_template_path, encoding="utf-8") as f:
+                    return f.read()
+            else:
+                raise FileNotFoundError(f"Template not found: {filename}") from None
 
     @property
     def local_config_dir(self) -> Path | None:
@@ -224,13 +235,11 @@ class ConfigurationManager:
         (local_dir / "scripts").mkdir()
 
         # Create config file from template
-        template_file = self._get_template_config_file("local-config.yaml")
         config_file = local_dir / "config.yaml"
 
-        if template_file.exists():
-            # Read template and substitute project name
-            with open(template_file) as f:
-                template_content = f.read()
+        try:
+            # Get template content from library
+            template_content = self._get_template_config_content("local-config.yaml")
 
             # Replace placeholder with actual project name
             actual_project_name = project_name or Path.cwd().name
@@ -238,25 +247,36 @@ class ConfigurationManager:
                 "{project_name}", actual_project_name
             )
 
-            with open(config_file, "w") as f:
+            with open(config_file, "w", encoding="utf-8") as f:
                 f.write(config_content)
-        else:
+        except FileNotFoundError:
             # Fallback to minimal config if template not found
             config_data = {
                 "project": {"name": project_name or Path.cwd().name},
                 "model_profiles": {},
             }
-            with open(config_file, "w") as f:
+            with open(config_file, "w", encoding="utf-8") as f:
                 yaml.dump(config_data, f, default_flow_style=False, indent=2)
 
         # Copy example ensemble template to local ensembles directory
-        template_ensemble_dir = self._get_template_ensembles_dir()
-        example_template = template_ensemble_dir / "example-local-ensemble.yaml"
-        if example_template.exists():
+        try:
+            example_template_content = self._get_template_config_content(
+                "example-local-ensemble.yaml"
+            )
             local_ensemble_file = (
                 local_dir / "ensembles" / "example-local-ensemble.yaml"
             )
-            shutil.copy2(example_template, local_ensemble_file)
+            with open(local_ensemble_file, "w", encoding="utf-8") as f:
+                f.write(example_template_content)
+        except FileNotFoundError:
+            # If template not found in library, try local fallback
+            template_ensemble_dir = self._get_template_ensembles_dir()
+            example_template = template_ensemble_dir / "example-local-ensemble.yaml"
+            if example_template.exists():
+                local_ensemble_file = (
+                    local_dir / "ensembles" / "example-local-ensemble.yaml"
+                )
+                shutil.copy2(example_template, local_ensemble_file)
 
         # Create .gitignore for credentials if they are stored locally
         gitignore_file = local_dir / ".gitignore"

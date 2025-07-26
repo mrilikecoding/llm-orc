@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2025-07-26
+
+### Added
+- **Dynamic Template Fetching** - Configuration templates now fetched dynamically from LLM Orchestra Library
+  - Templates moved from local package to centralized library repository
+  - Automatic fetching during `llm-orc init` and global config setup
+  - Graceful fallback to local templates when library unavailable
+  - Templates include: `global-config.yaml`, `local-config.yaml`, `example-local-ensemble.yaml`
+  - Validation ensemble templates for testing authentication
+- **Template Library Integration** - Added comprehensive template management to library repository
+  - Templates available at: `https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main/templates/`
+  - Follows same dynamic fetching pattern as ensemble commands
+  - Enhanced configuration system with centralized template management
+
+### Technical
+- Enhanced `ConfigurationManager` with dynamic template content fetching
+- Added `get_template_content()` function in library module with error handling
+- Comprehensive test coverage for template fetching and fallback mechanisms
+- Integration tests for configuration manager template usage
+- Templates can be updated independently from main package releases
+
 ## [0.9.0] - 2025-07-26
 
 ### Added
