@@ -37,18 +37,50 @@ def get_library_categories_with_descriptions() -> list[tuple[str, str]]:
 
 
 def get_category_ensembles(category: str) -> list[dict[str, Any]]:
-    """Get ensembles for a specific category."""
-    # For now, return hardcoded example data
-    # TODO: Implement actual GitHub API fetching
-    if category == "code-analysis":
-        return [
-            {
-                "name": "security-review",
-                "description": "Multi-perspective security analysis ensemble",
-                "path": "code-analysis/security-review.yaml",
-            }
-        ]
-    return []
+    """Get ensembles for a specific category by fetching from GitHub API."""
+    base_api_url = (
+        "https://api.github.com/repos/mrilikecoding/llm-orchestra-library/contents"
+    )
+
+    try:
+        # Fetch directory contents from GitHub API
+        response = requests.get(f"{base_api_url}/{category}", timeout=10)
+        response.raise_for_status()
+
+        files = response.json()
+        ensembles = []
+
+        for file_info in files:
+            # Only process .yaml files (skip README.md and other files)
+            if file_info.get("type") == "file" and file_info.get("name", "").endswith(
+                ".yaml"
+            ):
+                ensemble_name = file_info["name"].replace(".yaml", "")
+                ensemble_path = f"{category}/{file_info['name']}"
+
+                # Try to fetch ensemble content to get description
+                try:
+                    content = fetch_ensemble_content(ensemble_path)
+                    ensemble_data = yaml.safe_load(content)
+                    description = ensemble_data.get(
+                        "description", "No description available"
+                    )
+                except (requests.RequestException, yaml.YAMLError):
+                    description = "No description available"
+
+                ensembles.append(
+                    {
+                        "name": ensemble_name,
+                        "description": description,
+                        "path": ensemble_path,
+                    }
+                )
+
+        return ensembles
+
+    except requests.RequestException:
+        # Fallback to empty list if GitHub API is unavailable
+        return []
 
 
 def fetch_ensemble_content(ensemble_path: str) -> str:

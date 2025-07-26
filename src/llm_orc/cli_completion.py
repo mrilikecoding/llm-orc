@@ -108,19 +108,14 @@ def complete_library_ensemble_paths(
         try:
             category, partial_ensemble = incomplete.split("/", 1)
             if category in categories:
-                # For now, return common ensemble patterns
-                # In a full implementation, we'd fetch from GitHub API
-                common_ensembles = [
-                    "security-review",
-                    "code-review",
-                    "architecture-analysis",
-                    "performance-audit",
-                ]
+                # Fetch actual ensembles from GitHub API
+                from llm_orc.cli_library.library import get_category_ensembles
 
+                ensembles = get_category_ensembles(category)
                 matches = [
-                    f"{category}/{ensemble}"
-                    for ensemble in common_ensembles
-                    if ensemble.startswith(partial_ensemble)
+                    f"{category}/{ensemble['name']}"
+                    for ensemble in ensembles
+                    if ensemble["name"].startswith(partial_ensemble)
                 ]
                 return sorted(matches)
         except ValueError:

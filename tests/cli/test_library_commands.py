@@ -201,6 +201,86 @@ class TestLibraryCategoriesCommand:
             assert "idea-exploration" in result.output
 
 
+class TestLibraryDynamicFetching:
+    """Test dynamic fetching from GitHub repository."""
+
+    def test_get_category_ensembles_fetches_dynamically(self) -> None:
+        """Should fetch ensembles from GitHub API for all categories."""
+        from llm_orc.cli_library.library import get_category_ensembles
+
+        with patch("requests.get") as mock_get:
+            # Mock API response
+            mock_response = mock_get.return_value
+            mock_response.raise_for_status.return_value = None
+            mock_response.json.return_value = [
+                {
+                    "name": "concept-mapper.yaml",
+                    "type": "file",
+                    "download_url": "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main/idea-exploration/concept-mapper.yaml",
+                },
+                {
+                    "name": "README.md",
+                    "type": "file",
+                    "download_url": "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main/idea-exploration/README.md",
+                },
+            ]
+
+            # Mock fetching ensemble content to get description
+            with patch(
+                "llm_orc.cli_library.library.fetch_ensemble_content"
+            ) as mock_fetch:
+                mock_fetch.return_value = """
+name: concept-mapper
+description: Concept mapping and perspective taking ensemble
+agents:
+  - name: mapper
+    model_profile: default
+"""
+
+                ensembles = get_category_ensembles("idea-exploration")
+
+                assert len(ensembles) == 1
+                assert ensembles[0]["name"] == "concept-mapper"
+                assert "concept mapping" in ensembles[0]["description"].lower()
+                assert ensembles[0]["path"] == "idea-exploration/concept-mapper.yaml"
+
+    def test_complete_library_ensemble_paths_uses_dynamic_fetching(self) -> None:
+        """Should complete ensemble paths using dynamic GitHub API fetching."""
+        import click
+
+        from llm_orc.cli_completion import complete_library_ensemble_paths
+
+        # Mock click context and parameter
+        ctx = click.Context(click.Command("test"))
+        param = click.Argument(["test"])
+
+        with patch(
+            "llm_orc.cli_library.library.get_category_ensembles"
+        ) as mock_get_ensembles:
+            mock_get_ensembles.return_value = [
+                {
+                    "name": "concept-mapper",
+                    "description": "Concept mapping ensemble",
+                    "path": "idea-exploration/concept-mapper.yaml",
+                },
+                {
+                    "name": "perspective-taker",
+                    "description": "Perspective taking ensemble",
+                    "path": "idea-exploration/perspective-taker.yaml",
+                },
+            ]
+
+            # Test completing ensemble names within a category
+            completions = complete_library_ensemble_paths(
+                ctx, param, "idea-exploration/con"
+            )
+
+            assert "idea-exploration/concept-mapper" in completions
+            assert (
+                "idea-exploration/perspective-taker" not in completions
+            )  # doesn't match "con"
+
+
 class TestLibraryIntegration:
     """Integration tests for library commands."""
 
