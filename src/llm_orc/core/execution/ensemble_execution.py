@@ -273,18 +273,110 @@ class EnsembleExecutor:
 
         return context_data, has_errors
 
-    async def _execute_llm_agents(
-        self,
-        config: EnsembleConfig,
-        input_data: str,
-        context_data: dict[str, Any],
-        results_dict: dict[str, Any],
-    ) -> bool:
-        """Execute LLM agents with dependency-aware phasing."""
-        has_errors = False
-        llm_agents = [a for a in config.agents if a.get("type") != "script"]
+    async def _execute_agents_in_phase_parallel(
+        self, phase_agents: list[dict[str, Any]], phase_input: str | dict[str, str]
+    ) -> dict[str, Any]:
+        """Execute agents in parallel within a phase.
 
-        # Prepare enhanced input for LLM agents
+        Based on Issue #43 analysis, this provides 3-15x performance improvement
+        for I/O bound LLM API calls using asyncio.gather().
+        """
+
+        async def execute_single_agent(
+            agent_config: dict[str, Any],
+        ) -> tuple[str, dict[str, Any]]:
+            """Execute a single agent and return (name, result)."""
+            agent_name = agent_config["name"]
+
+            try:
+                agent_start_time = time.time()
+
+                # Emit agent started event
+                self._emit_performance_event(
+                    "agent_started",
+                    {"agent_name": agent_name, "timestamp": agent_start_time},
+                )
+
+                # Get agent input
+                agent_input = self._input_enhancer.get_agent_input(
+                    phase_input, agent_name
+                )
+
+                # Get timeout from enhanced config
+                enhanced_config = await self._resolve_model_profile_to_config(
+                    agent_config
+                )
+                timeout = enhanced_config.get("timeout_seconds") or (
+                    self._performance_config.get("execution", {}).get(
+                        "default_timeout", 60
+                    )
+                )
+
+                # Execute agent with timeout coordination
+                coordinator = self._execution_coordinator
+                response, model_instance = await coordinator.execute_agent_with_timeout(
+                    agent_config, agent_input, timeout
+                )
+
+                # Emit agent completed event with duration
+                agent_end_time = time.time()
+                duration_ms = int((agent_end_time - agent_start_time) * 1000)
+                self._emit_performance_event(
+                    "agent_completed",
+                    {
+                        "agent_name": agent_name,
+                        "timestamp": agent_end_time,
+                        "duration_ms": duration_ms,
+                    },
+                )
+
+                return agent_name, {
+                    "response": response,
+                    "status": "success",
+                    "model_instance": model_instance,
+                }
+
+            except Exception as e:
+                # Handle agent failure
+                agent_end_time = time.time()
+                duration_ms = int((agent_end_time - agent_start_time) * 1000)
+                self._emit_performance_event(
+                    "agent_completed",
+                    {
+                        "agent_name": agent_name,
+                        "timestamp": agent_end_time,
+                        "duration_ms": duration_ms,
+                        "error": str(e),
+                    },
+                )
+
+                return agent_name, {
+                    "error": str(e),
+                    "status": "failed",
+                    "model_instance": None,
+                }
+
+        # Execute all agents in parallel using asyncio.gather
+        tasks = [execute_single_agent(agent_config) for agent_config in phase_agents]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Process results
+        phase_results: dict[str, Any] = {}
+        for result in results:
+            if isinstance(result, BaseException):
+                # Handle unexpected errors during gather
+                # This should not happen since we catch exceptions in execute_single_agent  # noqa: E501
+                continue
+            # At this point, result should be a tuple[str, dict[str, Any]]
+            agent_name, agent_result = result
+            phase_results[agent_name] = agent_result
+
+        return phase_results
+
+    def _prepare_enhanced_input(
+        self, input_data: str, config: EnsembleConfig, context_data: dict[str, Any]
+    ) -> str:
+        """Prepare enhanced input for LLM agents with context data."""
         # CLI input overrides config default_task when provided
         # Fall back to config.default_task or config.task (backward compatibility)
         if input_data and input_data.strip() and input_data != "Please analyze this.":
@@ -297,12 +389,87 @@ class EnsembleExecutor:
                 or getattr(config, "task", None)
                 or input_data
             )
+
         enhanced_input = task_input
         if context_data:
             context_text = "\n\n".join(
                 [f"=== {name} ===\n{data}" for name, data in context_data.items()]
             )
             enhanced_input = f"{task_input}\n\n{context_text}"
+
+        return enhanced_input
+
+    def _process_phase_results(
+        self,
+        phase_results: dict[str, Any],
+        results_dict: dict[str, Any],
+    ) -> bool:
+        """Process parallel execution results and return if any errors occurred."""
+        has_errors = False
+
+        for agent_name, agent_result in phase_results.items():
+            # Store result in results_dict
+            results_dict[agent_name] = {
+                "response": agent_result.get("response"),
+                "status": agent_result["status"],
+            }
+
+            # Handle errors
+            if agent_result["status"] == "failed":
+                has_errors = True
+                results_dict[agent_name]["error"] = agent_result["error"]
+
+            # Collect usage for successful agents
+            if (
+                agent_result["status"] == "success"
+                and agent_result["model_instance"] is not None
+            ):
+                self._usage_collector.collect_agent_usage(
+                    agent_name, agent_result["model_instance"]
+                )
+
+        return has_errors
+
+    def _emit_phase_completed_event(
+        self,
+        phase_index: int,
+        phase_agents: list[dict[str, Any]],
+        results_dict: dict[str, Any],
+    ) -> None:
+        """Emit phase completion event with success/failure counts."""
+        successful_agents = [
+            a
+            for a in phase_agents
+            if results_dict.get(a["name"], {}).get("status") == "success"
+        ]
+        failed_agents = [
+            a
+            for a in phase_agents
+            if results_dict.get(a["name"], {}).get("status") == "failed"
+        ]
+
+        self._emit_performance_event(
+            "phase_completed",
+            {
+                "phase_index": phase_index,
+                "successful_agents": len(successful_agents),
+                "failed_agents": len(failed_agents),
+            },
+        )
+
+    async def _execute_llm_agents(
+        self,
+        config: EnsembleConfig,
+        input_data: str,
+        context_data: dict[str, Any],
+        results_dict: dict[str, Any],
+    ) -> bool:
+        """Execute LLM agents with dependency-aware phasing."""
+        has_errors = False
+        llm_agents = [a for a in config.agents if a.get("type") != "script"]
+
+        # Prepare enhanced input for LLM agents
+        enhanced_input = self._prepare_enhanced_input(input_data, config, context_data)
 
         # Use enhanced dependency analysis for multi-level execution
         if llm_agents:
@@ -336,108 +503,20 @@ class EnsembleExecutor:
                         )
                     )
 
-                # Execute agents in this phase individually with proper coordination
-                for agent_config in phase_agents:
-                    try:
-                        agent_name = agent_config["name"]
-                        agent_start_time = time.time()
+                # Execute agents in this phase in parallel (Issue #43 implementation)
+                phase_results = await self._execute_agents_in_phase_parallel(
+                    phase_agents, phase_input
+                )
 
-                        # Emit agent started event
-                        self._emit_performance_event(
-                            "agent_started",
-                            {"agent_name": agent_name, "timestamp": agent_start_time},
-                        )
+                # Process parallel execution results
+                phase_has_errors = self._process_phase_results(
+                    phase_results, results_dict
+                )
+                has_errors = has_errors or phase_has_errors
 
-                        # Get agent input
-                        agent_input = self._input_enhancer.get_agent_input(
-                            phase_input, agent_name
-                        )
-
-                        # Get timeout from enhanced config (same as script agents)
-                        enhanced_config = await self._resolve_model_profile_to_config(
-                            agent_config
-                        )
-                        timeout = enhanced_config.get("timeout_seconds") or (
-                            self._performance_config.get("execution", {}).get(
-                                "default_timeout", 60
-                            )
-                        )
-
-                        # Execute agent with timeout coordination
-                        coordinator = self._execution_coordinator
-                        (
-                            response,
-                            model_instance,
-                        ) = await coordinator.execute_agent_with_timeout(
-                            agent_config, agent_input, timeout
-                        )
-
-                        # Store successful result
-                        results_dict[agent_name] = {
-                            "response": response,
-                            "status": "success",
-                        }
-
-                        # Collect usage
-                        self._usage_collector.collect_agent_usage(
-                            agent_name, model_instance
-                        )
-
-                        # Emit agent completed event with duration
-                        agent_end_time = time.time()
-                        duration_ms = int((agent_end_time - agent_start_time) * 1000)
-                        self._emit_performance_event(
-                            "agent_completed",
-                            {
-                                "agent_name": agent_name,
-                                "timestamp": agent_end_time,
-                                "duration_ms": duration_ms,
-                            },
-                        )
-
-                    except Exception as e:
-                        # Handle agent failure
-                        agent_name = agent_config["name"]
-                        results_dict[agent_name] = {
-                            "error": str(e),
-                            "status": "failed",
-                        }
-                        has_errors = True
-
-                        # Emit agent completed event with error
-                        agent_end_time = time.time()
-                        duration_ms = int((agent_end_time - agent_start_time) * 1000)
-                        self._emit_performance_event(
-                            "agent_completed",
-                            {
-                                "agent_name": agent_name,
-                                "timestamp": agent_end_time,
-                                "duration_ms": duration_ms,
-                                "error": str(e),
-                            },
-                        )
-
-                self._emit_performance_event(
-                    "phase_completed",
-                    {
-                        "phase_index": phase_index,
-                        "successful_agents": len(
-                            [
-                                a
-                                for a in phase_agents
-                                if results_dict.get(a["name"], {}).get("status")
-                                == "success"
-                            ]
-                        ),
-                        "failed_agents": len(
-                            [
-                                a
-                                for a in phase_agents
-                                if results_dict.get(a["name"], {}).get("status")
-                                == "failed"
-                            ]
-                        ),
-                    },
+                # Emit phase completion event
+                self._emit_phase_completed_event(
+                    phase_index, phase_agents, results_dict
                 )
 
         return has_errors

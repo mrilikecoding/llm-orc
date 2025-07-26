@@ -1191,3 +1191,80 @@ class TestEnsembleExecutor:
         enhanced = await executor._resolve_model_profile_to_config(agent_config)
         assert enhanced == agent_config
         assert enhanced is not agent_config  # Should be a copy
+
+    @pytest.mark.asyncio
+    async def test_parallel_execution_performance(self) -> None:
+        """Test that parallel execution is significantly faster than sequential.
+
+        RED: This test should fail until we implement parallel execution.
+        """
+        import time
+
+        # Create ensemble with multiple agents that have simulated latency
+        config = EnsembleConfig(
+            name="parallel_test",
+            description="Test parallel execution performance",
+            agents=[
+                {"name": "agent1", "role": "analyst", "model": "mock-model"},
+                {"name": "agent2", "role": "reviewer", "model": "mock-model"},
+                {"name": "agent3", "role": "synthesizer", "model": "mock-model"},
+            ],
+        )
+
+        # Create mock model with simulated latency
+        mock_model = AsyncMock(spec=ModelInterface)
+
+        async def slow_response(*args: Any, **kwargs: Any) -> str:
+            # Simulate 0.5 second LLM API call latency
+            await asyncio.sleep(0.5)
+            return "Agent response after delay"
+
+        mock_model.generate_response = slow_response
+        mock_model.get_last_usage.return_value = {
+            "total_tokens": 30,
+            "input_tokens": 20,
+            "output_tokens": 10,
+            "cost_usd": 0.005,
+            "duration_ms": 500,
+        }
+
+        role = RoleDefinition(name="test", prompt="Test role")
+        executor = EnsembleExecutor()
+
+        # Mock dependencies
+        with (
+            patch.object(
+                executor, "_load_role_from_config", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
+            ) as mock_load_model,
+        ):
+            mock_load_role.return_value = role
+            mock_load_model.return_value = mock_model
+
+            # Measure execution time
+            start_time = time.time()
+            result = await executor.execute(config, "Test input")
+            execution_time = time.time() - start_time
+
+        # Verify results
+        assert result["status"] == "completed"
+        assert len(result["results"]) == 3
+
+        # With 3 agents each taking 0.5s:
+        # - Sequential execution should take ~1.5s
+        # - Parallel execution should take ~0.5s
+        # We expect execution time to be closer to parallel time (< 1.0s)
+        expected_parallel_time = 0.5
+        expected_sequential_time = 1.5
+
+        # RED: This assertion should fail with current sequential implementation
+        # The test expects parallel execution performance
+        assert execution_time < (expected_parallel_time + 0.3), (
+            f"Execution took {execution_time:.2f}s, "
+            f"expected ~{expected_parallel_time:.2f}s for parallel execution "
+            f"(sequential would take ~{expected_sequential_time:.2f}s)"
+        )
