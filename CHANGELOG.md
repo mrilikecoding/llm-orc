@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2025-07-26
+
+### Added
+- **Library CLI Commands** - Complete system for browsing and managing ensembles from the LLM Orchestra Library
+  - `llm-orc library categories` - List all available ensemble categories with descriptions
+  - `llm-orc library browse <category>` - Browse ensembles within a specific category
+  - `llm-orc library show <ensemble>` - Display comprehensive ensemble metadata including model profiles, agent details, dependencies, and execution flow
+  - `llm-orc library copy <ensemble>` - Copy ensembles from GitHub to local or global configuration with conflict handling
+  - Library commands integrated into help system with 'l' alias shortcut
+  - Comprehensive tab completion for category names and ensemble paths
+  - Rich emoji-based UI for better user experience
+  - Graceful error handling for network requests and invalid YAML
+- **Enhanced Documentation** - Updated README.md with library CLI commands usage examples
+
+### Technical
+- Added `cli_library/` module with complete library management functionality
+- Extended `cli_completion.py` with library ensemble path completion
+- Comprehensive test coverage for all library commands (15 tests)
+- Full integration with existing configuration system
+- TDD implementation following project standards
+
 ## [0.8.1] - 2025-07-25
 
 ### Added
