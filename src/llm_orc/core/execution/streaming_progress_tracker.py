@@ -72,11 +72,12 @@ class StreamingProgressTracker:
                 # Check for new fallback events and forward them
                 fallback_event_types = [
                     "agent_fallback_started",
-                    "agent_fallback_completed", 
-                    "agent_fallback_failed"
+                    "agent_fallback_completed",
+                    "agent_fallback_failed",
                 ]
                 fallback_events = [
-                    e for e in self._progress_events
+                    e
+                    for e in self._progress_events
                     if e["type"] in fallback_event_types
                 ]
                 fallback_count = len(fallback_events)

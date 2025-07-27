@@ -430,6 +430,64 @@ def _process_execution_completed_event(
     return True
 
 
+def _handle_fallback_started_event(
+    console: Console, event_data: dict[str, Any]
+) -> None:
+    """Handle agent_fallback_started event display."""
+    agent_name = event_data["agent_name"]
+    failure_type = event_data.get("failure_type", "unknown")
+    error_msg = event_data["original_error"]
+    original_profile = event_data.get("original_model_profile", "unknown")
+    fallback_model = event_data.get("fallback_model_name", "unknown")
+
+    # Enhanced display with failure type
+    if failure_type == "oauth_error":
+        failure_emoji = "🔐"
+    elif failure_type == "authentication_error":
+        failure_emoji = "🔑"
+    else:
+        failure_emoji = "⚠️"
+
+    console.print(
+        f"\n{failure_emoji} Model profile '{original_profile}' "
+        f"failed for agent '{agent_name}' ({failure_type}): {error_msg}"
+    )
+    console.print(
+        f"🔄 Using fallback model '{fallback_model}' for "
+        f"agent '{agent_name}'..."
+    )
+
+
+def _handle_fallback_completed_event(
+    console: Console, event_data: dict[str, Any]
+) -> None:
+    """Handle agent_fallback_completed event display."""
+    agent_name = event_data["agent_name"]
+    fallback_model = event_data["fallback_model_name"]
+    response_preview = event_data.get("response_preview", "")
+
+    console.print(
+        f"✅ Fallback successful for agent '{agent_name}' using {fallback_model}"
+    )
+    if response_preview:
+        console.print(f"   Preview: {response_preview}")
+
+
+def _handle_fallback_failed_event(
+    console: Console, event_data: dict[str, Any]
+) -> None:
+    """Handle agent_fallback_failed event display."""
+    agent_name = event_data["agent_name"]
+    failure_type = event_data.get("failure_type", "unknown")
+    fallback_error = event_data["fallback_error"]
+    fallback_model = event_data.get("fallback_model_name", "unknown")
+
+    console.print(
+        f"❌ Fallback model '{fallback_model}' also failed for "
+        f"agent '{agent_name}' ({failure_type}): {fallback_error}"
+    )
+
+
 async def run_streaming_execution(
     executor: Any,
     ensemble_config: EnsembleConfig,
@@ -472,40 +530,13 @@ async def run_streaming_execution(
                     status.update(current_tree)
 
                 elif event_type == "agent_fallback_started":
-                    # Show fallback started message with model profile and fallback info
-                    agent_name = event["data"]["agent_name"]
-                    error_msg = event["data"]["original_error"]
-                    original_profile = event["data"].get(
-                        "original_model_profile", "unknown"
-                    )
-                    fallback_model = event["data"].get("fallback_model", "unknown")
-
-                    console.print(
-                        f"\n⚠️  Model profile '{original_profile}' failed for "
-                        f"agent '{agent_name}': {error_msg}"
-                    )
-                    console.print(
-                        f"🔄 Using fallback model '{fallback_model}' for "
-                        f"agent '{agent_name}'..."
-                    )
+                    _handle_fallback_started_event(console, event["data"])
 
                 elif event_type == "agent_fallback_completed":
-                    # Show fallback success message
-                    agent_name = event["data"]["agent_name"]
-                    fallback_model = event["data"]["fallback_model"]
-                    console.print(
-                        f"✅ Fallback successful for agent '{agent_name}' "
-                        f"using {fallback_model}"
-                    )
+                    _handle_fallback_completed_event(console, event["data"])
 
                 elif event_type == "agent_fallback_failed":
-                    # Show fallback failure message
-                    agent_name = event["data"]["agent_name"]
-                    fallback_error = event["data"]["fallback_error"]
-                    console.print(
-                        f"❌ Fallback also failed for agent '{agent_name}': "
-                        f"{fallback_error}"
-                    )
+                    _handle_fallback_failed_event(console, event["data"])
 
                 elif event_type == "execution_completed":
                     # Process execution completed event using helper method

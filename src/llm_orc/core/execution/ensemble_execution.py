@@ -102,6 +102,32 @@ class EnsembleExecutor:
                 # Silently ignore hook failures to avoid breaking execution
                 pass
 
+    def _classify_failure_type(self, error_message: str) -> str:
+        """Classify failure type based on error message for enhanced events.
+
+        Args:
+            error_message: The error message to classify
+
+        Returns:
+            Failure type: 'oauth_error', 'authentication_error', or 'runtime_error'
+        """
+        error_lower = error_message.lower()
+
+        # OAuth-specific errors
+        if any(oauth_term in error_lower for oauth_term in [
+            "oauth", "token refresh", "invalid_grant", "refresh token"
+        ]):
+            return "oauth_error"
+
+        # Authentication errors (API keys, etc.)
+        if any(auth_term in error_lower for auth_term in [
+            "authentication", "invalid x-api-key", "unauthorized", "401"
+        ]):
+            return "authentication_error"
+
+        # Default to runtime error
+        return "runtime_error"
+
     async def execute_streaming(
         self, config: EnsembleConfig, input_data: str
     ) -> AsyncGenerator[dict[str, Any], None]:
@@ -186,16 +212,18 @@ class EnsembleExecutor:
                 )
                 fallback_model_name = getattr(fallback_model, "model_name", "unknown")
 
-                # Emit fallback event for model loading failure
+                # Emit enhanced fallback event for model loading failure
                 self._emit_performance_event(
                     "agent_fallback_started",
                     {
                         "agent_name": agent_config["name"],
+                        "failure_type": "model_loading",
                         "original_error": str(model_loading_error),
                         "original_model_profile": agent_config.get(
                             "model_profile", "unknown"
                         ),
-                        "fallback_model": fallback_model_name,
+                        "fallback_model_profile": None,  # No configurable fallback
+                        "fallback_model_name": fallback_model_name,
                     },
                 )
 
@@ -217,16 +245,19 @@ class EnsembleExecutor:
                 )
                 fallback_model_name = getattr(fallback_model, "model_name", "unknown")
 
-                # Emit fallback event for Rich console display
+                # Emit enhanced fallback event for runtime failure
+                failure_type = self._classify_failure_type(str(e))
                 self._emit_performance_event(
                     "agent_fallback_started",
                     {
                         "agent_name": agent_config["name"],
+                        "failure_type": failure_type,
                         "original_error": str(e),
                         "original_model_profile": agent_config.get(
                             "model_profile", "unknown"
                         ),
-                        "fallback_model": fallback_model_name,
+                        "fallback_model_profile": None,  # No configurable fallback
+                        "fallback_model_name": fallback_model_name,
                     },
                 )
 
@@ -237,25 +268,34 @@ class EnsembleExecutor:
                 try:
                     response = await fallback_agent.respond_to_message(input_data)
 
-                    # Emit success event
+                    # Emit enhanced success event with response preview
                     fallback_model_name = getattr(
                         fallback_model, "model_name", "unknown"
+                    )
+                    response_preview = (
+                        response[:100] + "..." if len(response) > 100 else response
                     )
                     self._emit_performance_event(
                         "agent_fallback_completed",
                         {
                             "agent_name": agent_config["name"],
-                            "fallback_model": fallback_model_name,
+                            "fallback_model_name": fallback_model_name,
+                            "response_preview": response_preview,
                         },
                     )
                     return response, fallback_model
                 except Exception as fallback_error:
-                    # Even fallback failed
+                    # Even fallback failed - emit enhanced failure event
+                    fallback_failure_type = self._classify_failure_type(
+                        str(fallback_error)
+                    )
                     self._emit_performance_event(
                         "agent_fallback_failed",
                         {
                             "agent_name": agent_config["name"],
+                            "failure_type": fallback_failure_type,
                             "fallback_error": str(fallback_error),
+                            "fallback_model_name": fallback_model_name,
                         },
                     )
                     raise fallback_error
