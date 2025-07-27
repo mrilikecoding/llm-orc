@@ -103,15 +103,9 @@ class ModelFactory:
             )
 
         except Exception as e:
-            # Fallback: use configured default model or treat as Ollama
-            click.echo(f"⚠️  Failed to load model '{model_name}': {str(e)}")
-            if model_name in ["llama3", "llama2"]:  # Known local models
-                click.echo(f"🔄 Treating '{model_name}' as local Ollama model")
-                return OllamaModel(model_name=model_name)
-            else:
-                # For unknown models, use configured fallback
-                click.echo(f"🔄 Using configured fallback instead of '{model_name}'")
-                return await self.get_fallback_model("general")
+            # Let EnsembleExecutor handle all fallback logic with structured events
+            # This ensures consistent user experience across all output formats
+            raise e
 
     async def get_fallback_model(
         self, context: str = "general", original_profile: str | None = None
