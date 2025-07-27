@@ -207,3 +207,65 @@ model_profiles:
     provider: anthropic-claude-pro-max
     system_prompt: "You are a research synthesist who loves connecting dots across disciplines to reveal surprising insights about human nature and society."
     timeout_seconds: 60
+    
+  # Cascading fallback demonstration profiles
+  # These demonstrate the configurable fallback system with A → B → C → system default chains
+  
+  premium-claude:
+    model: claude-sonnet-4-20250514
+    provider: anthropic-claude-pro-max
+    cost_per_token: 0.03
+    system_prompt: "You are a premium AI analyst with access to the most advanced reasoning capabilities."
+    timeout_seconds: 120
+    fallback_model_profile: "standard-claude"  # Falls back to standard-claude if this fails
+    
+  standard-claude:
+    model: claude-3-5-sonnet-20241022
+    provider: anthropic-claude-pro-max
+    cost_per_token: 0.015
+    system_prompt: "You are a standard AI analyst providing thorough analysis."
+    timeout_seconds: 90
+    fallback_model_profile: "micro-claude"  # Falls back to micro-claude if this fails
+    
+  micro-claude:
+    model: claude-3-haiku-20240307
+    provider: anthropic-api
+    cost_per_token: 0.0025
+    system_prompt: "You are a fast, efficient AI analyst providing concise analysis."
+    timeout_seconds: 60
+    fallback_model_profile: "local-llama"  # Falls back to local model if this fails
+    
+  local-llama:
+    model: llama3:latest
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: "You are a capable local AI analyst running on local hardware."
+    timeout_seconds: 60
+    # No fallback_model_profile - will use system default (legacy fallback)
+    
+  # Profile that demonstrates cycle detection (should be prevented)
+  # Using real ollama models but with forced failures to test cycle detection
+  cycle-test-a:
+    model: llama3:latest
+    provider: ollama
+    system_prompt: "This profile will be forced to fail to test cycle detection."
+    fallback_model_profile: "cycle-test-b"
+    
+  cycle-test-b:
+    model: llama3:latest
+    provider: ollama
+    system_prompt: "This profile will be forced to fail to test cycle detection."
+    fallback_model_profile: "cycle-test-c"
+    
+  cycle-test-c:
+    model: llama3:latest
+    provider: ollama
+    system_prompt: "This profile will be forced to fail to test cycle detection."
+    fallback_model_profile: "cycle-test-a"  # Creates cycle: A → B → C → A
+    
+  # Profile that demonstrates a model that will definitely fail for testing
+  guaranteed-fail:
+    model: this-model-definitely-does-not-exist
+    provider: nonexistent-provider
+    system_prompt: "This profile is designed to fail and demonstrate fallback behavior."
+    fallback_model_profile: "local-llama"
