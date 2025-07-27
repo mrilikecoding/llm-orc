@@ -1,7 +1,7 @@
 project:
   name: LLM Orchestra Test Project
   default_models:
-    test: local-free    # Fallback model for reliability and testing
+    test: micro-local    # Fallback model for reliability and testing
 
 performance:
   max_concurrent: 5
@@ -9,10 +9,27 @@ performance:
   timeout_seconds: 120
 
 model_profiles:
+  # Ultra-fast micro model for fallback reliability
+  micro-local:
+    model: qwen3:0.6b
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: You are a quick analyst for rapid local analysis.
+    timeout_seconds: 60
+  
+  # Standard local model
   local-free:
     model: llama3
     provider: ollama
     cost_per_token: 0.0
+    
+  # Reliable default local model  
+  default-local:
+    model: llama3:latest
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: You are a capable analyst for thorough local analysis.
+    timeout_seconds: 60
   
   quality:
     model: claude-sonnet-4-20250514

@@ -58,26 +58,44 @@ class StreamingProgressTracker:
         try:
             # Monitor progress while execution runs
             last_progress_count = 0
+            last_started_count = 0
             while not execution_task.done():
                 # Check for new progress events
                 completed_count = len(
                     [e for e in self._progress_events if e["type"] == "agent_completed"]
                 )
+                started_count = len(
+                    [e for e in self._progress_events if e["type"] == "agent_started"]
+                )
 
-                # Emit progress update if we have new completions
-                if completed_count > last_progress_count:
+                # Emit progress update if we have new completions or new starts
+                if completed_count > last_progress_count or started_count > last_started_count:
+                    # Get which agents have started and completed
+                    started_agents = [
+                        e["data"]["agent_name"] for e in self._progress_events 
+                        if e["type"] == "agent_started"
+                    ]
+                    completed_agents = [
+                        e["data"]["agent_name"] for e in self._progress_events 
+                        if e["type"] == "agent_completed"
+                    ]
+                    
                     yield {
                         "type": "agent_progress",
                         "data": {
                             "completed_agents": completed_count,
+                            "started_agents": started_count,
                             "total_agents": len(config.agents),
                             "progress_percentage": (
                                 completed_count / len(config.agents) * 100
                             ),
                             "timestamp": time.time(),
+                            "started_agent_names": started_agents,
+                            "completed_agent_names": completed_agents,
                         },
                     }
                     last_progress_count = completed_count
+                    last_started_count = started_count
 
                 # Small delay to avoid busy waiting
                 await asyncio.sleep(0.05)

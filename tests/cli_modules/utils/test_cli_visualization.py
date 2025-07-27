@@ -576,7 +576,8 @@ class TestDisplayResultsHelperMethods:
         # When
         from llm_orc.cli_modules.utils.visualization import _process_agent_results
 
-        markdown_content = _process_agent_results(results)
+        metadata = {"usage": {"agents": {}}}
+        markdown_content = _process_agent_results(results, metadata)
 
         # Then
         combined_content = "".join(markdown_content)

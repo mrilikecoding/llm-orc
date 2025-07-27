@@ -18,12 +18,18 @@ class UsageCollector:
         self._agent_usage.clear()
 
     def collect_agent_usage(
-        self, agent_name: str, model_instance: ModelInterface | None
+        self, 
+        agent_name: str, 
+        model_instance: ModelInterface | None,
+        model_profile: str | None = None,
     ) -> None:
         """Collect usage metrics from a model instance."""
         if model_instance is not None and hasattr(model_instance, "get_last_usage"):
             usage = model_instance.get_last_usage()
             if usage:
+                # Add model profile information to usage data
+                if model_profile is not None:
+                    usage["model_profile"] = model_profile
                 self._agent_usage[agent_name] = usage
 
     def get_agent_usage(self) -> dict[str, Any]:
