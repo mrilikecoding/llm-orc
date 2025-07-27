@@ -261,8 +261,9 @@ class EnsembleExecutor:
                 context_data[agent_config["name"]] = agent_result
 
                 # Collect usage for script agents
+                model_profile = agent_config.get("model_profile", "unknown")
                 self._usage_collector.collect_agent_usage(
-                    agent_config["name"], model_instance
+                    agent_config["name"], model_instance, model_profile
                 )
             except Exception as e:
                 results_dict[agent_config["name"]] = {
@@ -403,9 +404,13 @@ class EnsembleExecutor:
         self,
         phase_results: dict[str, Any],
         results_dict: dict[str, Any],
+        phase_agents: list[dict[str, Any]],
     ) -> bool:
         """Process parallel execution results and return if any errors occurred."""
         has_errors = False
+
+        # Create agent lookup for model profile information
+        agent_configs = {agent["name"]: agent for agent in phase_agents}
 
         for agent_name, agent_result in phase_results.items():
             # Store result in results_dict
@@ -424,8 +429,12 @@ class EnsembleExecutor:
                 agent_result["status"] == "success"
                 and agent_result["model_instance"] is not None
             ):
+                # Get model profile from agent config
+                agent_config = agent_configs.get(agent_name, {})
+                model_profile = agent_config.get("model_profile", "unknown")
+                
                 self._usage_collector.collect_agent_usage(
-                    agent_name, agent_result["model_instance"]
+                    agent_name, agent_result["model_instance"], model_profile
                 )
 
         return has_errors
@@ -510,7 +519,7 @@ class EnsembleExecutor:
 
                 # Process parallel execution results
                 phase_has_errors = self._process_phase_results(
-                    phase_results, results_dict
+                    phase_results, results_dict, phase_agents
                 )
                 has_errors = has_errors or phase_has_errors
 
