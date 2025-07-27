@@ -382,9 +382,8 @@ class TestModelFactory:
                 "🔄 Using configured fallback instead of 'unknown-model'"
             )
 
-    @patch("llm_orc.core.models.model_factory.click.echo")
     async def test_get_fallback_model_with_configured_test_profile_ollama(
-        self, mock_echo: Mock, model_factory: ModelFactory, mock_config_manager: Mock
+        self, model_factory: ModelFactory, mock_config_manager: Mock
     ) -> None:
         """Test fallback model with configured test profile using ollama."""
         mock_config_manager.load_project_config.return_value = {
@@ -401,13 +400,9 @@ class TestModelFactory:
                 "test-local"
             )
             mock_load.assert_called_once_with("llama3", "ollama")
-            mock_echo.assert_any_call(
-                "⚠️  Falling back to free local model for test-context"
-            )
 
-    @patch("llm_orc.core.models.model_factory.click.echo")
     async def test_get_fallback_model_with_configured_test_profile_non_ollama(
-        self, mock_echo: Mock, model_factory: ModelFactory, mock_config_manager: Mock
+        self, model_factory: ModelFactory, mock_config_manager: Mock
     ) -> None:
         """Test fallback when configured test profile uses non-ollama provider."""
         mock_config_manager.load_project_config.return_value = {
@@ -424,17 +419,11 @@ class TestModelFactory:
             await model_factory.get_fallback_model()
 
             # Should skip the anthropic profile and use hardcoded fallback
-            mock_echo.assert_any_call(
-                "⚠️  Configured test profile 'expensive-model' uses "
-                "anthropic, not ollama"
-            )
-            mock_echo.assert_any_call("🔄 Using hardcoded fallback: llama3 via ollama")
             # Final load_model call should be for hardcoded fallback
             assert mock_load.call_args_list[-1] == (("llama3", "ollama"),)
 
-    @patch("llm_orc.core.models.model_factory.click.echo")
     async def test_get_fallback_model_no_configured_profile(
-        self, mock_echo: Mock, model_factory: ModelFactory, mock_config_manager: Mock
+        self, model_factory: ModelFactory, mock_config_manager: Mock
     ) -> None:
         """Test fallback when no test profile configured."""
         mock_config_manager.load_project_config.return_value = {"project": {}}
@@ -444,12 +433,10 @@ class TestModelFactory:
         ) as mock_load:
             await model_factory.get_fallback_model()
 
-            mock_echo.assert_any_call("🔄 Using hardcoded fallback: llama3 via ollama")
             mock_load.assert_called_with("llama3", "ollama")
 
-    @patch("llm_orc.core.models.model_factory.click.echo")
     async def test_get_fallback_model_hardcoded_fallback_fails(
-        self, mock_echo: Mock, model_factory: ModelFactory, mock_config_manager: Mock
+        self, model_factory: ModelFactory, mock_config_manager: Mock
     ) -> None:
         """Test last resort when even hardcoded fallback fails."""
         mock_config_manager.load_project_config.return_value = {"project": {}}
@@ -461,10 +448,149 @@ class TestModelFactory:
 
             assert isinstance(model, OllamaModel)
             assert model.model_name == "llama3"
-            mock_echo.assert_any_call(
-                "❌ Hardcoded fallback model 'llama3' failed: Ollama not available"
+
+    async def test_get_fallback_model_with_configurable_fallback_profile(
+        self, model_factory: ModelFactory, mock_config_manager: Mock
+    ) -> None:
+        """Test fallback using configurable fallback_model_profile."""
+        # Mock the original model profile to have a fallback_model_profile
+        mock_config_manager.get_model_profile.return_value = {
+            "model": "claude-sonnet-4",
+            "provider": "anthropic-claude-pro-max",
+            "fallback_model_profile": "micro-local",
+        }
+
+        # Mock the fallback model profile
+        mock_config_manager.resolve_model_profile.return_value = (
+            "qwen3:0.6b",
+            "ollama",
+        )
+
+        with patch.object(
+            model_factory, "load_model", return_value=OllamaModel("qwen3:0.6b")
+        ) as mock_load:
+            model = await model_factory.get_fallback_model(
+                context="agent_test", original_profile="claude-pro-max"
             )
-            mock_echo.assert_any_call("🆘 Creating basic Ollama model as last resort")
+
+            # Should resolve the fallback profile and load that model
+            mock_config_manager.get_model_profile.assert_called_with("claude-pro-max")
+            mock_config_manager.resolve_model_profile.assert_called_with("micro-local")
+            mock_load.assert_called_with("qwen3:0.6b", "ollama")
+            assert isinstance(model, OllamaModel)
+
+    async def test_get_fallback_model_with_cascading_fallbacks(
+        self, model_factory: ModelFactory, mock_config_manager: Mock
+    ) -> None:
+        """Test cascading fallbacks: A → B → C → system default."""
+        # Mock profile chain: claude-pro-max → micro-local → tiny-local
+        profile_configs = {
+            "claude-pro-max": {
+                "model": "claude-sonnet-4",
+                "provider": "anthropic-claude-pro-max",
+                "fallback_model_profile": "micro-local",
+            },
+            "micro-local": {
+                "model": "qwen3:0.6b",
+                "provider": "ollama",
+                "fallback_model_profile": "tiny-local",
+            },
+            "tiny-local": {
+                "model": "llama3",
+                "provider": "ollama",
+            },
+        }
+
+        mock_config_manager.get_model_profile.side_effect = (
+            lambda profile: profile_configs.get(profile)
+        )
+
+        # Mock the legacy fallback path to avoid StopIteration
+        mock_config_manager.load_project_config.return_value = {"project": {}}
+
+        # Mock first two models to fail, third (system default) to succeed
+        model_load_calls: list[tuple[str, str]] = []
+
+        def mock_load_side_effect(model: str, provider: str) -> OllamaModel:
+            model_load_calls.append((model, provider))
+            if len(model_load_calls) <= 2:
+                raise Exception("Model failed")
+            return OllamaModel("llama3")
+
+        resolve_calls: list[str] = []
+
+        def mock_resolve_side_effect(profile: str) -> tuple[str, str]:
+            resolve_calls.append(profile)
+            if profile == "micro-local":
+                return ("qwen3:0.6b", "ollama")
+            elif profile == "tiny-local":
+                return ("llama3", "ollama")
+            else:
+                raise ValueError(f"Unknown profile: {profile}")
+
+        mock_config_manager.resolve_model_profile.side_effect = mock_resolve_side_effect
+
+        with patch.object(
+            model_factory, "load_model", side_effect=mock_load_side_effect
+        ):
+            model = await model_factory.get_fallback_model(
+                context="agent_test", original_profile="claude-pro-max"
+            )
+
+            # Should try micro-local, then tiny-local, then system default (llama3)
+            assert len(model_load_calls) == 3
+            assert model_load_calls[0] == ("qwen3:0.6b", "ollama")  # micro-local failed
+            assert model_load_calls[1] == ("llama3", "ollama")  # tiny-local failed
+            assert model_load_calls[2] == (
+                "llama3",
+                "ollama",
+            )  # system default succeeded
+            assert isinstance(model, OllamaModel)
+
+    async def test_get_fallback_model_prevents_cycles(
+        self, model_factory: ModelFactory, mock_config_manager: Mock
+    ) -> None:
+        """Test that fallback cycles are detected and prevented."""
+        # Create a cycle: A → B → C → A
+        profile_configs = {
+            "profile-a": {
+                "model": "model-a",
+                "provider": "provider-a",
+                "fallback_model_profile": "profile-b",
+            },
+            "profile-b": {
+                "model": "model-b",
+                "provider": "provider-b",
+                "fallback_model_profile": "profile-c",
+            },
+            "profile-c": {
+                "model": "model-c",
+                "provider": "provider-c",
+                "fallback_model_profile": "profile-a",  # Creates cycle
+            },
+        }
+
+        mock_config_manager.get_model_profile.side_effect = (
+            lambda profile: profile_configs.get(profile)
+        )
+
+        # Mock resolve_model_profile to return valid tuples
+        def mock_resolve_side_effect(profile: str) -> tuple[str, str]:
+            config = profile_configs.get(profile)
+            if config:
+                return (config["model"], config["provider"])
+            raise ValueError(f"Profile {profile} not found")
+
+        mock_config_manager.resolve_model_profile.side_effect = mock_resolve_side_effect
+
+        # Mock load_model to always fail (forcing fallback chain traversal)
+        with patch.object(
+            model_factory, "load_model", side_effect=Exception("Model load failed")
+        ):
+            with pytest.raises(ValueError, match="Cycle detected in fallback chain"):
+                await model_factory.get_fallback_model(
+                    context="agent_test", original_profile="profile-a"
+                )
 
     def test_setup_authentication_anthropic_api(
         self, model_factory: ModelFactory

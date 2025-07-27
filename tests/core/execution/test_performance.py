@@ -1708,10 +1708,28 @@ class TestPerformanceBenchmarks:
             call_count += 1
             return create_tracked_model(agent_name)
 
-        with patch.object(
-            executor._model_factory,
-            "load_model_from_agent_config",
-            side_effect=mock_load_model,
+        # Mock fallback model to prevent real model calls during tests
+        mock_fallback_model = AsyncMock(spec=ModelInterface)
+        mock_fallback_model.generate_response.return_value = "Fallback response"
+        mock_fallback_model.get_last_usage.return_value = {
+            "total_tokens": 25,
+            "input_tokens": 15,
+            "output_tokens": 10,
+            "cost_usd": 0.0,
+            "duration_ms": 100,
+        }
+
+        with (
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                side_effect=mock_load_model,
+            ),
+            patch.object(
+                executor._model_factory,
+                "get_fallback_model",
+                return_value=mock_fallback_model,
+            ),
         ):
             # Act - Execute with concurrency control
             start_time = time.time()

@@ -113,23 +113,83 @@ class ModelFactory:
                 click.echo(f"🔄 Using configured fallback instead of '{model_name}'")
                 return await self.get_fallback_model("general")
 
-    async def get_fallback_model(self, context: str = "general") -> ModelInterface:
-        """Get a fallback model - always use free local model for reliability.
+    async def get_fallback_model(
+        self, context: str = "general", original_profile: str | None = None
+    ) -> ModelInterface:
+        """Get a fallback model with configurable fallback support.
 
         Args:
             context: Context for fallback (for logging)
+            original_profile: Original model profile that failed (for configurable
+                fallbacks)
 
         Returns:
             Fallback model interface
+        """
+        # First try configurable fallback if original_profile is provided
+        if original_profile:
+            model = await self._try_configurable_fallback(original_profile)
+            if model:
+                return model
+
+        # Fall back to legacy fallback system
+        return await self._try_legacy_fallback()
+
+    async def _try_configurable_fallback(
+        self, original_profile: str
+    ) -> ModelInterface | None:
+        """Try configurable fallback chain for a given profile.
+
+        Args:
+            original_profile: The original profile that failed
+
+        Returns:
+            Model if successful, None if fallback chain exhausted
+        """
+        fallback_chain_visited: set[str] = set()
+        current_profile = original_profile
+
+        while current_profile:
+            # Check for cycles
+            if current_profile in fallback_chain_visited:
+                raise ValueError(
+                    f"Cycle detected in fallback chain: {fallback_chain_visited}"
+                )
+            fallback_chain_visited.add(current_profile)
+
+            # Get the profile configuration
+            profile_config = self._config_manager.get_model_profile(current_profile)
+            if not profile_config:
+                break
+
+            # Check if this profile has a fallback_model_profile
+            fallback_profile_name = profile_config.get("fallback_model_profile")
+            if not fallback_profile_name:
+                break
+
+            try:
+                # Try to load the fallback model profile
+                resolved_model, resolved_provider = (
+                    self._config_manager.resolve_model_profile(fallback_profile_name)
+                )
+                return await self.load_model(resolved_model, resolved_provider)
+            except Exception:
+                # This fallback failed, try its fallback
+                current_profile = fallback_profile_name
+                continue
+
+        return None
+
+    async def _try_legacy_fallback(self) -> ModelInterface:
+        """Try legacy fallback system (project config + hardcoded fallback).
+
+        Returns:
+            Model interface (guaranteed to return something)
         """
         # Load project configuration to get default models
         project_config = self._config_manager.load_project_config()
         default_models = project_config.get("project", {}).get("default_models", {})
 
-        # Log that we're falling back
-        click.echo(f"⚠️  Falling back to free local model for {context}")
-
-        # Always prefer free local models for fallback reliability
         # Look for a "test" profile first (typically free/local)
         fallback_profile = default_models.get("test")
 
@@ -141,37 +201,21 @@ class ModelFactory:
                 )
                 # Only use if it's a local/free provider (ollama)
                 if resolved_provider == "ollama":
-                    click.echo(
-                        f"🔄 Using configured free local model '{fallback_profile}' "
-                        f"→ {resolved_model}"
-                    )
                     try:
                         return await self.load_model(resolved_model, resolved_provider)
-                    except Exception as e:
-                        click.echo(
-                            f"❌ Failed to load configured fallback "
-                            f"'{fallback_profile}': {e}"
-                        )
-                        # Don't raise immediately, try hardcoded fallback first
-                else:
-                    click.echo(
-                        f"⚠️  Configured test profile '{fallback_profile}' uses "
-                        f"{resolved_provider}, not ollama"
-                    )
-            except (ValueError, KeyError) as e:
-                click.echo(
-                    f"⚠️  Configured test profile '{fallback_profile}' not found: {e}"
-                )
+                    except Exception:
+                        # Failed to load configured fallback, try hardcoded fallback
+                        pass
+            except (ValueError, KeyError):
+                # Configured test profile not found, will try hardcoded fallback
+                pass
 
         # Last resort: hardcoded free local fallback
-        click.echo("🔄 Using hardcoded fallback: llama3 via ollama")
         try:
             return await self.load_model("llama3", "ollama")
-        except Exception as e:
-            click.echo(f"❌ Hardcoded fallback model 'llama3' failed: {e}")
+        except Exception:
             # For tests and when Ollama is not available, return basic model
             # In production, this would indicate a serious configuration issue
-            click.echo("🆘 Creating basic Ollama model as last resort")
             return OllamaModel(model_name="llama3")
 
     def setup_authentication(self, model_name: str, storage: CredentialStorage) -> bool:

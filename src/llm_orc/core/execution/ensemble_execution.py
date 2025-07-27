@@ -177,9 +177,60 @@ class EnsembleExecutor:
             # Create agent
             agent = Agent(agent_config["name"], role, model)
 
-            # Generate response
-            response = await agent.respond_to_message(input_data)
-            return response, model
+            # Generate response with fallback handling
+            try:
+                response = await agent.respond_to_message(input_data)
+                return response, model
+            except Exception as e:
+                # Model failed during generation - try fallback
+                # Get fallback model information
+                fallback_model = await self._model_factory.get_fallback_model(
+                    context=f"agent_{agent_config['name']}"
+                )
+                fallback_model_name = getattr(fallback_model, "model_name", "unknown")
+
+                # Emit fallback event for Rich console display
+                self._emit_performance_event(
+                    "agent_fallback_started",
+                    {
+                        "agent_name": agent_config["name"],
+                        "original_error": str(e),
+                        "original_model_profile": agent_config.get(
+                            "model_profile", "unknown"
+                        ),
+                        "fallback_model": fallback_model_name,
+                    },
+                )
+
+                # Create new agent with fallback model
+                fallback_agent = Agent(agent_config["name"], role, fallback_model)
+
+                # Try with fallback model
+                try:
+                    response = await fallback_agent.respond_to_message(input_data)
+
+                    # Emit success event
+                    fallback_model_name = getattr(
+                        fallback_model, "model_name", "unknown"
+                    )
+                    self._emit_performance_event(
+                        "agent_fallback_completed",
+                        {
+                            "agent_name": agent_config["name"],
+                            "fallback_model": fallback_model_name,
+                        },
+                    )
+                    return response, fallback_model
+                except Exception as fallback_error:
+                    # Even fallback failed
+                    self._emit_performance_event(
+                        "agent_fallback_failed",
+                        {
+                            "agent_name": agent_config["name"],
+                            "fallback_error": str(fallback_error),
+                        },
+                    )
+                    raise fallback_error
 
     async def _load_role_from_config(
         self, agent_config: dict[str, Any]

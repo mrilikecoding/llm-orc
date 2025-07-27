@@ -471,6 +471,42 @@ async def run_streaming_execution(
                     )
                     status.update(current_tree)
 
+                elif event_type == "agent_fallback_started":
+                    # Show fallback started message with model profile and fallback info
+                    agent_name = event["data"]["agent_name"]
+                    error_msg = event["data"]["original_error"]
+                    original_profile = event["data"].get(
+                        "original_model_profile", "unknown"
+                    )
+                    fallback_model = event["data"].get("fallback_model", "unknown")
+
+                    console.print(
+                        f"\n⚠️  Model profile '{original_profile}' failed for "
+                        f"agent '{agent_name}': {error_msg}"
+                    )
+                    console.print(
+                        f"🔄 Using fallback model '{fallback_model}' for "
+                        f"agent '{agent_name}'..."
+                    )
+
+                elif event_type == "agent_fallback_completed":
+                    # Show fallback success message
+                    agent_name = event["data"]["agent_name"]
+                    fallback_model = event["data"]["fallback_model"]
+                    console.print(
+                        f"✅ Fallback successful for agent '{agent_name}' "
+                        f"using {fallback_model}"
+                    )
+
+                elif event_type == "agent_fallback_failed":
+                    # Show fallback failure message
+                    agent_name = event["data"]["agent_name"]
+                    fallback_error = event["data"]["fallback_error"]
+                    console.print(
+                        f"❌ Fallback also failed for agent '{agent_name}': "
+                        f"{fallback_error}"
+                    )
+
                 elif event_type == "execution_completed":
                     # Process execution completed event using helper method
                     if _process_execution_completed_event(

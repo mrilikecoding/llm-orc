@@ -187,9 +187,21 @@ class TestEnsembleExecutor:
                 "load_model_from_agent_config",
                 new_callable=AsyncMock,
             ) as mock_load_model,
+            patch.object(
+                executor._model_factory,
+                "get_fallback_model",
+                new_callable=AsyncMock,
+            ) as mock_fallback_model,
         ):
             mock_load_role.return_value = role
             mock_load_model.side_effect = [working_model, failing_model]
+
+            # Make fallback also fail to test original error handling
+            fallback_model = AsyncMock(spec=ModelInterface)
+            fallback_model.generate_response.side_effect = Exception(
+                "Fallback also failed"
+            )
+            mock_fallback_model.return_value = fallback_model
 
             result = await executor.execute(config, input_data="Test input")
 

@@ -324,3 +324,15 @@ class ConfigurationManager:
             )
 
         return model, provider
+
+    def get_model_profile(self, profile_name: str) -> dict[str, Any] | None:
+        """Get a specific model profile configuration.
+
+        Args:
+            profile_name: Name of the model profile to retrieve
+
+        Returns:
+            Model profile configuration dict or None if not found
+        """
+        profiles = self.get_model_profiles()
+        return profiles.get(profile_name)

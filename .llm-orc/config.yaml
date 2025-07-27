@@ -9,6 +9,14 @@ performance:
   timeout_seconds: 120
 
 model_profiles:
+  # Test profile with non-existent model to test fallbacks
+  test-fallback:
+    model: nonexistent-model:999b
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: This model doesn't exist - should fallback!
+    timeout_seconds: 30
+    
   # Ultra-fast micro model for fallback reliability
   micro-local:
     model: qwen3:0.6b

@@ -1,0 +1,51 @@
+name: parallelism-test-ensemble
+description: Tests async parallelism with multiple independent agents and fallback behavior
+
+agents:
+  # Phase 1: These agents run in PARALLEL (no dependencies) - will test async parallelism
+  - name: content_analyzer
+    model_profile: micro-local  # Ultra-fast micro model for testing parallelism
+    system_prompt: |
+      You are a content analysis expert. Analyze the content structure, main themes, 
+      and key insights from the provided input. Focus on identifying core concepts 
+      and organizational patterns.
+    
+  - name: technical_reviewer
+    model_profile: micro-local  # Ultra-fast micro model for testing parallelism
+    system_prompt: |
+      You are a technical expert. Review the technical aspects, accuracy, and 
+      implementation details. Focus on technical feasibility, best practices, 
+      and potential technical challenges.
+    
+  - name: creative_writer
+    model_profile: micro-local  # Ultra-fast micro model for testing parallelism
+    system_prompt: |
+      You are a creative consultant. Provide creative insights, alternative viewpoints, 
+      and innovative ideas. Focus on creative solutions and out-of-the-box thinking.
+    
+  - name: efficiency_expert
+    model_profile: micro-local  # Ultra-fast micro model for testing parallelism
+    system_prompt: |
+      You are an efficiency consultant. Analyze efficiency, optimization opportunities, 
+      and resource utilization. Focus on performance improvements and streamlining.
+    
+  - name: user_experience_advocate
+    model_profile: micro-local  # Ultra-fast micro model for testing parallelism
+    system_prompt: |
+      You are a UX expert. Evaluate user experience, accessibility, and usability aspects. 
+      Focus on user-centric design and ease of use.
+    
+  # Phase 2: Synthesis agent (depends on ALL parallel results) - tests dependency handling
+  - name: synthesis_coordinator
+    model_profile: default-local  # Reliable local model
+    depends_on: [content_analyzer, technical_reviewer, creative_writer, efficiency_expert, user_experience_advocate]
+    system_prompt: |
+      You are a synthesis coordinator. Combine all the previous analyses into a comprehensive, 
+      unified summary. Integrate insights from all perspectives:
+      - Content Analysis findings
+      - Technical Review conclusions  
+      - Creative Perspective ideas
+      - Efficiency Analysis recommendations
+      - UX Evaluation insights
+      
+      Provide a cohesive, actionable summary that leverages all viewpoints.
