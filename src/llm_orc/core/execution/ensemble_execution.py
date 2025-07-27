@@ -170,14 +170,42 @@ class EnsembleExecutor:
             return response, None  # Script agents don't have model instances
         else:
             # Execute LLM agent
-            # Load role and model for this agent
+            # Load role for this agent
             role = await self._load_role_from_config(agent_config)
-            model = await self._model_factory.load_model_from_agent_config(agent_config)
+
+            # Try to load the model, with fallback handling for loading failures
+            try:
+                model = await self._model_factory.load_model_from_agent_config(
+                    agent_config
+                )
+            except Exception as model_loading_error:
+                # Model failed to load - try fallback
+                fallback_model = await self._model_factory.get_fallback_model(
+                    context=f"agent_{agent_config['name']}",
+                    original_profile=agent_config.get("model_profile"),
+                )
+                fallback_model_name = getattr(fallback_model, "model_name", "unknown")
+
+                # Emit fallback event for model loading failure
+                self._emit_performance_event(
+                    "agent_fallback_started",
+                    {
+                        "agent_name": agent_config["name"],
+                        "original_error": str(model_loading_error),
+                        "original_model_profile": agent_config.get(
+                            "model_profile", "unknown"
+                        ),
+                        "fallback_model": fallback_model_name,
+                    },
+                )
+
+                # Use fallback model instead
+                model = fallback_model
 
             # Create agent
             agent = Agent(agent_config["name"], role, model)
 
-            # Generate response with fallback handling
+            # Generate response with fallback handling for runtime failures
             try:
                 response = await agent.respond_to_message(input_data)
                 return response, model

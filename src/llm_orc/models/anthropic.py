@@ -8,7 +8,7 @@ from typing import Any
 
 from anthropic import AsyncAnthropic
 
-from llm_orc.core.auth.oauth_client import OAuthClaudeClient
+from llm_orc.core.auth.oauth_client import OAuthClaudeClient, OAuthTokenRefreshError
 from llm_orc.models.base import HTTPConnectionPool, ModelInterface
 
 
@@ -30,8 +30,8 @@ def _handle_proactive_token_refresh(model: "OAuthClaudeModel") -> bool:
     ):
         return True  # No refresh needed or not possible
 
-    print("🔄 Proactively refreshing token (expires soon)")
-    if model.client.refresh_access_token(model.client_id):
+    try:
+        model.client.refresh_access_token(model.client_id)
         # Update stored credentials and local references
         if model._credential_storage and model._provider_key:
             new_expires_at = int(time.time()) + 3600  # Default 1 hour expiry
@@ -46,10 +46,9 @@ def _handle_proactive_token_refresh(model: "OAuthClaudeModel") -> bool:
 
         model.access_token = model.client.access_token
         model.refresh_token = model.client.refresh_token
-        print("✅ Token refreshed proactively")
         return True
-    else:
-        print("❌ Proactive token refresh failed")
+    except OAuthTokenRefreshError:
+        # Token refresh failed - let calling code handle it
         return False
 
 
@@ -166,7 +165,8 @@ def _handle_oauth_token_refresh_error(
         raise error
 
     # Attempt token refresh
-    if model.client.refresh_access_token(model.client_id):
+    try:
+        model.client.refresh_access_token(model.client_id)
         # Update stored credentials if credential storage is available
         if model._credential_storage and model._provider_key:
             expires_at = int(time.time()) + 3600  # Default 1 hour expiry
@@ -189,8 +189,9 @@ def _handle_oauth_token_refresh_error(
         ):
             model._conversation_history.pop()
         return model.generate_response(message, role_prompt)
-
-    raise error
+    except OAuthTokenRefreshError as refresh_error:
+        # Wrap the OAuth error with the original error context
+        raise Exception(f"OAuth token refresh failed: {str(refresh_error)}") from error
 
 
 class ClaudeModel(ModelInterface):

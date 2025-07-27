@@ -1280,3 +1280,214 @@ class TestEnsembleExecutor:
             f"expected ~{expected_parallel_time:.2f}s for parallel execution "
             f"(sequential would take ~{expected_sequential_time:.2f}s)"
         )
+
+    @pytest.mark.asyncio
+    async def test_oauth_fallback_display_enhancement(self) -> None:
+        """Test enhanced OAuth fallback display with specific error messaging.
+
+        This test ensures that OAuth token refresh failures are properly caught
+        and displayed with clear model profile and fallback information.
+        """
+        from unittest.mock import AsyncMock, Mock, patch
+
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+        from llm_orc.models.anthropic import OAuthClaudeModel
+
+        executor = EnsembleExecutor()
+
+        # Create test ensemble config with OAuth model
+        config = EnsembleConfig(
+            name="oauth-fallback-test",
+            description="Test OAuth fallback display enhancement",
+            agents=[
+                {
+                    "name": "oauth-agent",
+                    "model_profile": "premium-claude",  # Uses OAuth authentication
+                    "system_prompt": "You are a test agent.",
+                }
+            ],
+        )
+
+        # Create mock OAuth model that will fail with token refresh error
+        mock_oauth_model = Mock(spec=OAuthClaudeModel)
+        mock_oauth_model.generate_response = AsyncMock()
+        mock_oauth_model.generate_response.side_effect = Exception(
+            "OAuth token refresh failed with status 400: "
+            '{"error": "invalid_grant", "error_description": "Refresh token not found"}'
+        )
+        # Mock the usage collection method to avoid TypeError
+        mock_oauth_model.get_last_usage.return_value = {
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "duration_ms": 100,
+            "cost_usd": 0.01,
+        }
+
+        # Create mock fallback model that succeeds
+        mock_fallback_model = Mock()
+        mock_fallback_model.generate_response = AsyncMock(
+            return_value="Fallback response"
+        )
+        mock_fallback_model.model_name = "llama3"
+        mock_fallback_model.get_last_usage.return_value = {
+            "input_tokens": 15,
+            "output_tokens": 10,
+            "duration_ms": 200,
+            "cost_usd": 0.02,
+        }
+
+        # Track emitted performance events
+        emitted_events: list[tuple[str, dict[str, Any]]] = []
+
+        def capture_events(event_type: str, data: dict[str, Any]) -> None:
+            emitted_events.append((event_type, data))
+
+        executor.register_performance_hook(capture_events)
+
+        with (
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                return_value=mock_oauth_model,
+            ),
+            patch.object(
+                executor._model_factory,
+                "get_fallback_model",
+                return_value=mock_fallback_model,
+            ),
+            patch.object(
+                executor,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
+                return_value=Mock(name="oauth-agent", prompt="Test prompt"),
+            ),
+        ):
+            result = await executor.execute(config, "Test OAuth fallback")
+
+        # Verify the ensemble completed successfully with fallback
+        assert result["status"] == "completed"
+        assert result["results"]["oauth-agent"]["status"] == "success"
+        assert result["results"]["oauth-agent"]["response"] == "Fallback response"
+
+        # RED: This assertion should fail because current implementation
+        # doesn't emit structured events for OAuth failures
+        oauth_fallback_events = [
+            (event_type, data)
+            for event_type, data in emitted_events
+            if event_type == "agent_fallback_started"
+        ]
+
+        assert len(oauth_fallback_events) == 1, (
+            f"Expected 1 OAuth fallback event, got {len(oauth_fallback_events)}. "
+            f"Events: {emitted_events}"
+        )
+
+        event_type, event_data = oauth_fallback_events[0]
+
+        # Verify enhanced OAuth fallback event contains detailed information
+        assert event_data["agent_name"] == "oauth-agent"
+        assert event_data["original_model_profile"] == "premium-claude"
+        assert event_data["fallback_model"] == "llama3"
+        assert "OAuth token refresh failed" in event_data["original_error"]
+        assert "invalid_grant" in event_data["original_error"]
+
+    @pytest.mark.asyncio
+    async def test_model_loading_fallback_display_enhancement(self) -> None:
+        """Test enhanced model loading fallback display with specific error messaging.
+
+        This test ensures that model loading failures (provider unavailable,
+        model not found, etc.) are properly caught and displayed with clear
+        model profile and fallback information.
+        """
+        from unittest.mock import AsyncMock, Mock, patch
+
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+
+        executor = EnsembleExecutor()
+
+        # Create test ensemble config with model that will fail to load
+        config = EnsembleConfig(
+            name="model-loading-fallback-test",
+            description="Test model loading fallback display enhancement",
+            agents=[
+                {
+                    "name": "failing-agent",
+                    "model_profile": "guaranteed-fail",  # Profile designed to fail
+                    "system_prompt": "You are a test agent.",
+                }
+            ],
+        )
+
+        # Create mock fallback model that succeeds
+        mock_fallback_model = Mock()
+        mock_fallback_model.generate_response = AsyncMock(
+            return_value="Model loading fallback response"
+        )
+        mock_fallback_model.model_name = "llama3"
+        mock_fallback_model.get_last_usage.return_value = {
+            "input_tokens": 15,
+            "output_tokens": 10,
+            "duration_ms": 200,
+            "cost_usd": 0.02,
+        }
+
+        # Track emitted performance events
+        emitted_events: list[tuple[str, dict[str, Any]]] = []
+
+        def capture_events(event_type: str, data: dict[str, Any]) -> None:
+            emitted_events.append((event_type, data))
+
+        executor.register_performance_hook(capture_events)
+
+        with (
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                side_effect=Exception(
+                    "Model provider 'nonexistent-provider' not available. "
+                    "Model 'this-model-definitely-does-not-exist' not found."
+                ),
+            ),
+            patch.object(
+                executor._model_factory,
+                "get_fallback_model",
+                return_value=mock_fallback_model,
+            ),
+            patch.object(
+                executor,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
+                return_value=Mock(name="failing-agent", prompt="Test prompt"),
+            ),
+        ):
+            result = await executor.execute(config, "Test model loading fallback")
+
+        # Verify the ensemble completed successfully with fallback
+        assert result["status"] == "completed"
+        assert result["results"]["failing-agent"]["status"] == "success"
+        assert (
+            result["results"]["failing-agent"]["response"]
+            == "Model loading fallback response"
+        )
+
+        # RED: This assertion should fail because current implementation
+        # doesn't emit structured events for model loading failures
+        loading_fallback_events = [
+            (event_type, data)
+            for event_type, data in emitted_events
+            if event_type == "agent_fallback_started"
+        ]
+
+        assert len(loading_fallback_events) == 1, (
+            f"Expected 1 model loading fallback event, "
+            f"got {len(loading_fallback_events)}. Events: {emitted_events}"
+        )
+
+        event_type, event_data = loading_fallback_events[0]
+
+        # Verify enhanced model loading fallback event contains detailed information
+        assert event_data["agent_name"] == "failing-agent"
+        assert event_data["original_model_profile"] == "guaranteed-fail"
+        assert event_data["fallback_model"] == "llama3"
+        assert "Model provider" in event_data["original_error"]
+        assert "not available" in event_data["original_error"]
