@@ -432,7 +432,7 @@ class EnsembleExecutor:
                 # Get model profile from agent config
                 agent_config = agent_configs.get(agent_name, {})
                 model_profile = agent_config.get("model_profile", "unknown")
-                
+
                 self._usage_collector.collect_agent_usage(
                     agent_name, agent_result["model_instance"], model_profile
                 )

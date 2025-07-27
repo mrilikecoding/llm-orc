@@ -18,8 +18,8 @@ class UsageCollector:
         self._agent_usage.clear()
 
     def collect_agent_usage(
-        self, 
-        agent_name: str, 
+        self,
+        agent_name: str,
         model_instance: ModelInterface | None,
         model_profile: str | None = None,
     ) -> None:

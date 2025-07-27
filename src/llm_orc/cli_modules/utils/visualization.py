@@ -149,7 +149,9 @@ def _calculate_agent_level(
     return max_dep_level + 1
 
 
-def _process_agent_results(results: dict[str, Any], metadata: dict[str, Any]) -> list[str]:
+def _process_agent_results(
+    results: dict[str, Any], metadata: dict[str, Any]
+) -> list[str]:
     """Process agent results and generate markdown content.
 
     Args:
@@ -169,14 +171,14 @@ def _process_agent_results(results: dict[str, Any], metadata: dict[str, Any]) ->
         agent_usage = agents_usage.get(agent_name, {})
         model = agent_usage.get("model", "")
         model_profile = agent_usage.get("model_profile", "")
-        
+
         # Create model display string
         model_display = ""
         if model_profile and model:
             model_display = f" ({model_profile} → {model})"
         elif model:
             model_display = f" ({model})"
-        
+
         if result.get("status") == "success":
             markdown_content.append(f"## {agent_name}{model_display}\n")
             # Format the response as a code block if it looks like code,
@@ -231,10 +233,12 @@ def _format_performance_metrics(metadata: dict[str, Any]) -> list[str]:
             duration = agent_usage.get("duration_ms", 0)
             model = agent_usage.get("model", "unknown")
             model_profile = agent_usage.get("model_profile", "unknown")
-            
+
             # Show both model profile and actual model to detect fallbacks
-            model_display = f"{model_profile} → {model}" if model_profile != "unknown" else model
-            
+            model_display = (
+                f"{model_profile} → {model}" if model_profile != "unknown" else model
+            )
+
             markdown_content.append(
                 f"- **{agent_name}** ({model_display}): {tokens:,} tokens, "
                 f"${cost:.4f}, {duration}ms\n"
@@ -379,7 +383,7 @@ def _update_agent_status_by_names(
     # Convert to sets for faster lookup
     started_set = set(started_agent_names)
     completed_set = set(completed_agent_names)
-    
+
     for agent in agents:
         agent_name = agent["name"]
         if agent_name in completed_set:
@@ -449,7 +453,9 @@ async def run_streaming_execution(
                 if event_type == "agent_progress":
                     # Extract detailed agent status from progress data
                     started_agent_names = event["data"].get("started_agent_names", [])
-                    completed_agent_names = event["data"].get("completed_agent_names", [])
+                    completed_agent_names = event["data"].get(
+                        "completed_agent_names", []
+                    )
 
                     # Update agent statuses based on actual agent states
                     _update_agent_status_by_names(

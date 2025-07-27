@@ -576,7 +576,7 @@ class TestDisplayResultsHelperMethods:
         # When
         from llm_orc.cli_modules.utils.visualization import _process_agent_results
 
-        metadata = {"usage": {"agents": {}}}
+        metadata: dict[str, Any] = {"usage": {"agents": {}}}
         markdown_content = _process_agent_results(results, metadata)
 
         # Then

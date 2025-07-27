@@ -69,17 +69,22 @@ class StreamingProgressTracker:
                 )
 
                 # Emit progress update if we have new completions or new starts
-                if completed_count > last_progress_count or started_count > last_started_count:
+                if (
+                    completed_count > last_progress_count
+                    or started_count > last_started_count
+                ):
                     # Get which agents have started and completed
                     started_agents = [
-                        e["data"]["agent_name"] for e in self._progress_events 
+                        e["data"]["agent_name"]
+                        for e in self._progress_events
                         if e["type"] == "agent_started"
                     ]
                     completed_agents = [
-                        e["data"]["agent_name"] for e in self._progress_events 
+                        e["data"]["agent_name"]
+                        for e in self._progress_events
                         if e["type"] == "agent_completed"
                     ]
-                    
+
                     yield {
                         "type": "agent_progress",
                         "data": {
