@@ -807,41 +807,6 @@ class TestEnsembleExecutor:
         assert result["synthesis"] is None
 
     @pytest.mark.asyncio
-    async def test_performance_hook_exception_handling(self) -> None:
-        """Test that performance hook exceptions are silently ignored."""
-        executor = EnsembleExecutor()
-
-        # Add a hook that always raises an exception
-        def failing_hook(event_type: str, data: dict[str, Any]) -> None:
-            raise RuntimeError("Hook failure")
-
-        executor.register_performance_hook(failing_hook)
-
-        # This should not raise an exception despite the failing hook
-        executor._emit_performance_event("test_event", {"test": "data"})
-
-        # Verify the hook was registered
-        assert len(executor._performance_hooks) == 1
-        assert failing_hook in executor._performance_hooks
-
-    def test_register_multiple_performance_hooks(self) -> None:
-        """Test registering multiple performance hooks."""
-        executor = EnsembleExecutor()
-
-        def hook1(event_type: str, data: dict[str, Any]) -> None:
-            pass
-
-        def hook2(event_type: str, data: dict[str, Any]) -> None:
-            pass
-
-        executor.register_performance_hook(hook1)
-        executor.register_performance_hook(hook2)
-
-        assert len(executor._performance_hooks) == 2
-        assert hook1 in executor._performance_hooks
-        assert hook2 in executor._performance_hooks
-
-    @pytest.mark.asyncio
     async def test_load_model_from_agent_config_delegation(self) -> None:
         """Test _load_model_from_agent_config delegates to model factory."""
         executor = EnsembleExecutor()
@@ -918,12 +883,16 @@ class TestEnsembleExecutor:
         assert start_event["data"]["ensemble"] == "streaming_test"
         assert start_event["data"]["total_agents"] == 2
 
-        # Check final completion event
-        final_event = events[-1]
-        assert final_event["type"] == "execution_completed"
-        assert final_event["data"]["ensemble"] == "streaming_test"
-        assert final_event["data"]["status"] == "completed"
-        assert "results" in final_event["data"]
+        # Check execution completed event (may not be last due to performance events)
+        completion_events = [e for e in events if e["type"] == "execution_completed"]
+        assert len(completion_events) == 1, (
+            f"Expected 1 execution_completed event, got {len(completion_events)}"
+        )
+
+        completion_event = completion_events[0]
+        assert completion_event["data"]["ensemble"] == "streaming_test"
+        assert completion_event["data"]["status"] == "completed"
+        assert "results" in completion_event["data"]
 
     @pytest.mark.asyncio
     async def test_resolve_model_profile_to_config(self) -> None:
@@ -1336,13 +1305,8 @@ class TestEnsembleExecutor:
             "cost_usd": 0.02,
         }
 
-        # Track emitted performance events
-        emitted_events: list[tuple[str, dict[str, Any]]] = []
-
-        def capture_events(event_type: str, data: dict[str, Any]) -> None:
-            emitted_events.append((event_type, data))
-
-        executor.register_performance_hook(capture_events)
+        # Track streaming events (Phase 5: unified event system)
+        streaming_events: list[dict[str, Any]] = []
 
         with (
             patch.object(
@@ -1362,34 +1326,41 @@ class TestEnsembleExecutor:
                 return_value=Mock(name="oauth-agent", prompt="Test prompt"),
             ),
         ):
-            result = await executor.execute(config, "Test OAuth fallback")
+            # Use streaming execution to capture events (Phase 5: unified event system)
+            async for event in executor.execute_streaming(
+                config, "Test OAuth fallback"
+            ):
+                streaming_events.append(event)
 
         # Verify the ensemble completed successfully with fallback
+        completion_events = [
+            e for e in streaming_events if e["type"] == "execution_completed"
+        ]
+        assert len(completion_events) == 1
+        result = completion_events[0]["data"]
         assert result["status"] == "completed"
         assert result["results"]["oauth-agent"]["status"] == "success"
         assert result["results"]["oauth-agent"]["response"] == "Fallback response"
 
-        # RED: This assertion should fail because current implementation
-        # doesn't emit structured events for OAuth failures
+        # Verify enhanced OAuth fallback event was emitted through unified system
         oauth_fallback_events = [
-            (event_type, data)
-            for event_type, data in emitted_events
-            if event_type == "agent_fallback_started"
+            e for e in streaming_events if e["type"] == "agent_fallback_started"
         ]
 
         assert len(oauth_fallback_events) == 1, (
             f"Expected 1 OAuth fallback event, got {len(oauth_fallback_events)}. "
-            f"Events: {emitted_events}"
+            f"Events: {[e['type'] for e in streaming_events]}"
         )
 
-        event_type, event_data = oauth_fallback_events[0]
+        event_data = oauth_fallback_events[0]["data"]
 
         # Verify enhanced OAuth fallback event contains detailed information
         assert event_data["agent_name"] == "oauth-agent"
         assert event_data["original_model_profile"] == "premium-claude"
-        assert event_data["fallback_model"] == "llama3"
+        assert event_data["fallback_model_name"] == "llama3"
         assert "OAuth token refresh failed" in event_data["original_error"]
         assert "invalid_grant" in event_data["original_error"]
+        assert event_data["failure_type"] == "oauth_error"
 
     @pytest.mark.asyncio
     async def test_model_loading_fallback_display_enhancement(self) -> None:
@@ -1431,13 +1402,8 @@ class TestEnsembleExecutor:
             "cost_usd": 0.02,
         }
 
-        # Track emitted performance events
-        emitted_events: list[tuple[str, dict[str, Any]]] = []
-
-        def capture_events(event_type: str, data: dict[str, Any]) -> None:
-            emitted_events.append((event_type, data))
-
-        executor.register_performance_hook(capture_events)
+        # Track streaming events (Phase 5: unified event system)
+        streaming_events: list[dict[str, Any]] = []
 
         with (
             patch.object(
@@ -1460,9 +1426,18 @@ class TestEnsembleExecutor:
                 return_value=Mock(name="failing-agent", prompt="Test prompt"),
             ),
         ):
-            result = await executor.execute(config, "Test model loading fallback")
+            # Use streaming execution to capture events (Phase 5: unified event system)
+            async for event in executor.execute_streaming(
+                config, "Test model loading fallback"
+            ):
+                streaming_events.append(event)
 
         # Verify the ensemble completed successfully with fallback
+        completion_events = [
+            e for e in streaming_events if e["type"] == "execution_completed"
+        ]
+        assert len(completion_events) == 1
+        result = completion_events[0]["data"]
         assert result["status"] == "completed"
         assert result["results"]["failing-agent"]["status"] == "success"
         assert (
@@ -1470,24 +1445,24 @@ class TestEnsembleExecutor:
             == "Model loading fallback response"
         )
 
-        # RED: This assertion should fail because current implementation
-        # doesn't emit structured events for model loading failures
+        # Verify enhanced model loading fallback event was emitted through unified
+        # system
         loading_fallback_events = [
-            (event_type, data)
-            for event_type, data in emitted_events
-            if event_type == "agent_fallback_started"
+            e for e in streaming_events if e["type"] == "agent_fallback_started"
         ]
 
         assert len(loading_fallback_events) == 1, (
             f"Expected 1 model loading fallback event, "
-            f"got {len(loading_fallback_events)}. Events: {emitted_events}"
+            f"got {len(loading_fallback_events)}. "
+            f"Events: {[e['type'] for e in streaming_events]}"
         )
 
-        event_type, event_data = loading_fallback_events[0]
+        event_data = loading_fallback_events[0]["data"]
 
         # Verify enhanced model loading fallback event contains detailed information
         assert event_data["agent_name"] == "failing-agent"
         assert event_data["original_model_profile"] == "guaranteed-fail"
-        assert event_data["fallback_model"] == "llama3"
+        assert event_data["fallback_model_name"] == "llama3"
         assert "Model provider" in event_data["original_error"]
         assert "not available" in event_data["original_error"]
+        assert event_data["failure_type"] == "model_loading"

@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from llm_orc.agents.script_agent import ScriptAgent
@@ -36,8 +36,8 @@ class EnsembleExecutor:
         # Load performance configuration
         self._performance_config = self._config_manager.load_performance_config()
 
-        # Performance monitoring hooks for Issue #27 visualization integration
-        self._performance_hooks: list[Callable[[str, dict[str, Any]], None]] = []
+        # Phase 5: Unified event system - shared event queue for streaming
+        self._streaming_event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         # Initialize extracted components
         self._model_factory = ModelFactory(
@@ -48,9 +48,7 @@ class EnsembleExecutor:
         self._input_enhancer = InputEnhancer()
         self._usage_collector = UsageCollector()
         self._results_processor = ResultsProcessor()
-        self._streaming_progress_tracker = StreamingProgressTracker(
-            self.register_performance_hook, self._remove_performance_hook
-        )
+        self._streaming_progress_tracker = StreamingProgressTracker()
 
         # Initialize execution coordinator with agent executor function
         # Use a wrapper to avoid circular dependency with _execute_agent_with_timeout
@@ -80,27 +78,25 @@ class EnsembleExecutor:
         """Delegate to model factory."""
         return await self._model_factory.load_model_from_agent_config(agent_config)
 
-    def register_performance_hook(
-        self, hook: Callable[[str, dict[str, Any]], None]
-    ) -> None:
-        """Register a performance monitoring hook for Issue #27 visualization."""
-        self._performance_hooks.append(hook)
-
-    def _remove_performance_hook(
-        self, hook: Callable[[str, dict[str, Any]], None]
-    ) -> None:
-        """Remove a performance monitoring hook."""
-        if hook in self._performance_hooks:
-            self._performance_hooks.remove(hook)
+    # Phase 5: Performance hooks system removed - events go directly to streaming queue
 
     def _emit_performance_event(self, event_type: str, data: dict[str, Any]) -> None:
-        """Emit performance monitoring events to registered hooks."""
-        for hook in self._performance_hooks:
-            try:
-                hook(event_type, data)
-            except Exception:
-                # Silently ignore hook failures to avoid breaking execution
-                pass
+        """Emit performance monitoring events to unified streaming queue.
+
+        Phase 5: Events go directly to streaming queue instead of hooks.
+        This eliminates the dual event system architecture.
+        """
+        event = {
+            "type": event_type,
+            "data": data,
+        }
+
+        # Put event in queue (non-blocking)
+        try:
+            self._streaming_event_queue.put_nowait(event)
+        except asyncio.QueueFull:
+            # Silently ignore if queue is full to avoid breaking execution
+            pass
 
     def _classify_failure_type(self, error_message: str) -> str:
         """Classify failure type based on error message for enhanced events.
@@ -146,16 +142,65 @@ class EnsembleExecutor:
         """Execute ensemble with streaming progress updates.
 
         Yields progress events during execution for real-time monitoring.
-        Events include: execution_started, agent_progress, execution_completed.
+        Events include: execution_started, agent_progress, execution_completed,
+        agent_fallback_started, agent_fallback_completed, agent_fallback_failed.
+
+        Phase 5: Unified event system - merges progress and performance events.
         """
-        # Use StreamingProgressTracker for streaming execution
+        # Clear the event queue before starting
+        while not self._streaming_event_queue.empty():
+            try:
+                self._streaming_event_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+        # Use StreamingProgressTracker for execution tracking
         start_time = time.time()
         execution_task = asyncio.create_task(self.execute(config, input_data))
 
-        async for event in self._streaming_progress_tracker.track_execution_progress(
-            config, execution_task, start_time
+        # Merge events from progress tracker and performance queue
+        async for event in self._merge_streaming_events(
+            self._streaming_progress_tracker.track_execution_progress(
+                config, execution_task, start_time
+            )
         ):
             yield event
+
+    async def _merge_streaming_events(
+        self, progress_events: AsyncGenerator[dict[str, Any], None]
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Merge progress events with performance events from the unified queue.
+
+        Phase 5: This eliminates the dual event system by combining both streams.
+        """
+
+        try:
+            async for progress_event in progress_events:
+                # Yield the progress event
+                yield progress_event
+
+                # Check for any performance events that accumulated
+                while not self._streaming_event_queue.empty():
+                    try:
+                        performance_event = self._streaming_event_queue.get_nowait()
+                        yield performance_event
+                    except asyncio.QueueEmpty:
+                        break
+
+                # If execution is completed, mark progress as done
+                if progress_event.get("type") == "execution_completed":
+                    break
+
+        except Exception:
+            pass
+
+        # After progress is done, yield any remaining performance events
+        while not self._streaming_event_queue.empty():
+            try:
+                performance_event = self._streaming_event_queue.get_nowait()
+                yield performance_event
+            except asyncio.QueueEmpty:
+                break
 
     async def execute(self, config: EnsembleConfig, input_data: str) -> dict[str, Any]:
         """Execute an ensemble and return structured results."""

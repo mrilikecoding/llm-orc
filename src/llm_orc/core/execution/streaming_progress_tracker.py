@@ -2,33 +2,22 @@
 
 import asyncio
 import time
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 
 
 class StreamingProgressTracker:
-    """Tracks and yields progress events during ensemble execution."""
+    """Tracks and yields progress events during ensemble execution.
 
-    def __init__(
-        self,
-        hook_registrar: Callable[[Callable[[str, dict[str, Any]], None]], None],
-        hook_unregistrar: Callable[[Callable[[str, dict[str, Any]], None]], None],
-    ) -> None:
-        """Initialize progress tracker with hook management functions."""
-        self._register_hook = hook_registrar
-        self._unregister_hook = hook_unregistrar
-        self._progress_events: list[dict[str, Any]] = []
-        self._progress_hook: Callable[[str, dict[str, Any]], None] | None = None
+    Phase 5: Simplified to focus only on execution progress tracking.
+    Performance events now flow through the unified event queue.
+    """
 
-    def _create_progress_hook(self) -> Callable[[str, dict[str, Any]], None]:
-        """Create progress hook to capture streaming events."""
-
-        def progress_hook(event_type: str, data: dict[str, Any]) -> None:
-            self._progress_events.append({"type": event_type, "data": data})
-
-        return progress_hook
+    def __init__(self) -> None:
+        """Initialize progress tracker."""
+        pass
 
     async def track_execution_progress(
         self,
@@ -38,7 +27,9 @@ class StreamingProgressTracker:
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Track progress and yield events during execution.
 
-        Yields progress events: execution_started, agent_progress, execution_completed.
+        Phase 5: Simplified progress tracking - no hooks, no event forwarding.
+        Only yields execution lifecycle events: started, progress, completed.
+        All other events (fallbacks, performance) flow through unified queue.
         """
         # Emit execution started event
         yield {
@@ -50,83 +41,9 @@ class StreamingProgressTracker:
             },
         }
 
-        # Set up progress tracking
-        self._progress_events = []
-        self._progress_hook = self._create_progress_hook()
-        self._register_hook(self._progress_hook)
-
+        # Monitor execution task for completion
         try:
-            # Monitor progress while execution runs
-            last_progress_count = 0
-            last_started_count = 0
-            last_fallback_count = 0
-            while not execution_task.done():
-                # Check for new progress events
-                completed_count = len(
-                    [e for e in self._progress_events if e["type"] == "agent_completed"]
-                )
-                started_count = len(
-                    [e for e in self._progress_events if e["type"] == "agent_started"]
-                )
-
-                # Check for new fallback events and forward them
-                fallback_event_types = [
-                    "agent_fallback_started",
-                    "agent_fallback_completed",
-                    "agent_fallback_failed",
-                ]
-                fallback_events = [
-                    e
-                    for e in self._progress_events
-                    if e["type"] in fallback_event_types
-                ]
-                fallback_count = len(fallback_events)
-
-                # Forward any new fallback events
-                if fallback_count > last_fallback_count:
-                    new_fallback_events = fallback_events[last_fallback_count:]
-                    for event in new_fallback_events:
-                        yield event
-                    last_fallback_count = fallback_count
-
-                # Emit progress update if we have new completions or new starts
-                if (
-                    completed_count > last_progress_count
-                    or started_count > last_started_count
-                ):
-                    # Get which agents have started and completed
-                    started_agents = [
-                        e["data"]["agent_name"]
-                        for e in self._progress_events
-                        if e["type"] == "agent_started"
-                    ]
-                    completed_agents = [
-                        e["data"]["agent_name"]
-                        for e in self._progress_events
-                        if e["type"] == "agent_completed"
-                    ]
-
-                    yield {
-                        "type": "agent_progress",
-                        "data": {
-                            "completed_agents": completed_count,
-                            "started_agents": started_count,
-                            "total_agents": len(config.agents),
-                            "progress_percentage": (
-                                completed_count / len(config.agents) * 100
-                            ),
-                            "timestamp": time.time(),
-                            "started_agent_names": started_agents,
-                            "completed_agent_names": completed_agents,
-                        },
-                    }
-                    last_progress_count = completed_count
-                    last_started_count = started_count
-
-                # Small delay to avoid busy waiting
-                await asyncio.sleep(0.05)
-
-            # Get final results
+            # Wait for execution to complete
             final_result = await execution_task
 
             # Emit execution completed event with full results
@@ -142,8 +59,14 @@ class StreamingProgressTracker:
                 },
             }
 
-        finally:
-            # Clean up the progress hook
-            if self._progress_hook is not None:
-                self._unregister_hook(self._progress_hook)
-                self._progress_hook = None
+        except Exception as e:
+            # Handle execution failures
+            yield {
+                "type": "execution_failed",
+                "data": {
+                    "ensemble": config.name,
+                    "timestamp": time.time(),
+                    "duration": time.time() - start_time,
+                    "error": str(e),
+                },
+            }
