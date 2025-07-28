@@ -41,9 +41,24 @@ class StreamingProgressTracker:
             },
         }
 
-        # Monitor execution task for completion
+        # Monitor execution task for completion with periodic progress checks
         try:
-            # Wait for execution to complete
+            # Poll execution task completion with small intervals
+            # This ensures frequent queue checks in _merge_streaming_events
+            while not execution_task.done():
+                await asyncio.sleep(0.1)  # Check every 100ms
+                
+                # Yield periodic progress event to trigger queue processing
+                yield {
+                    "type": "execution_progress",
+                    "data": {
+                        "ensemble": config.name,
+                        "timestamp": time.time(),
+                        "elapsed": time.time() - start_time,
+                    },
+                }
+            
+            # Get final result
             final_result = await execution_task
 
             # Emit execution completed event with full results

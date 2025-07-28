@@ -202,6 +202,17 @@ class EnsembleExecutor:
                     except asyncio.QueueEmpty:
                         break
 
+                # Small delay to allow any concurrent performance events to be queued
+                await asyncio.sleep(0.001)
+                
+                # Check for performance events again after delay
+                while not self._streaming_event_queue.empty():
+                    try:
+                        performance_event = self._streaming_event_queue.get_nowait()
+                        yield performance_event
+                    except asyncio.QueueEmpty:
+                        break
+
                 # If execution is completed, mark progress as done
                 if progress_event.get("type") == "execution_completed":
                     break

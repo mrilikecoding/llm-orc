@@ -465,11 +465,12 @@ def _handle_fallback_completed_event(
     fallback_model = event_data["fallback_model_name"]
     response_preview = event_data.get("response_preview", "")
 
-    console.print(
-        f"✅ Fallback successful for agent '{agent_name}' using {fallback_model}"
+    # Use print() to bypass Rich buffering and show immediately
+    print(
+        f"✅ SUCCESS: Fallback model '{fallback_model}' succeeded for agent '{agent_name}'"
     )
     if response_preview:
-        console.print(f"   Preview: {response_preview}")
+        print(f"   Preview: {response_preview}")
 
 
 def _handle_fallback_failed_event(console: Console, event_data: dict[str, Any]) -> None:
@@ -479,8 +480,9 @@ def _handle_fallback_failed_event(console: Console, event_data: dict[str, Any]) 
     fallback_error = event_data["fallback_error"]
     fallback_model = event_data.get("fallback_model_name", "unknown")
 
-    console.print(
-        f"❌ Fallback model '{fallback_model}' also failed for "
+    # Use print() to bypass Rich buffering and show immediately
+    print(
+        f"❌ FAILED: Fallback model '{fallback_model}' also failed for "
         f"agent '{agent_name}' ({failure_type}): {fallback_error}"
     )
 
@@ -599,13 +601,31 @@ async def run_streaming_execution(
                     status.update(current_tree)
 
                 elif event_type == "agent_fallback_started":
-                    _handle_fallback_started_event(console, event["data"])
+                    # Show fallback message in status temporarily, then print permanently
+                    event_data = event["data"]
+                    agent_name = event_data["agent_name"]
+                    failure_type = event_data.get("failure_type", "unknown")
+                    fallback_model = event_data.get("fallback_model_name", "unknown")
+                    
+                    # Update status to show fallback in progress
+                    status.update(f"🔄 Agent '{agent_name}' using fallback model '{fallback_model}'...")
+                    
+                    # Also print the message outside status context
+                    status.stop()
+                    _handle_fallback_started_event(console, event_data)
+                    status.start()
 
                 elif event_type == "agent_fallback_completed":
+                    # Print fallback success message
+                    status.stop()
                     _handle_fallback_completed_event(console, event["data"])
+                    status.start()
 
                 elif event_type == "agent_fallback_failed":
+                    # Print fallback failure message
+                    status.stop()
                     _handle_fallback_failed_event(console, event["data"])
+                    status.start()
 
                 elif event_type == "execution_completed":
                     # Process execution completed event using helper method
