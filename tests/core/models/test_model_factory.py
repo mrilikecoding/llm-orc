@@ -143,29 +143,18 @@ class TestModelFactory:
         assert isinstance(model, OllamaModel)
         assert model.model_name == "llama3"
 
-    @patch("llm_orc.core.models.model_factory.click.echo")
-    async def test_load_model_no_auth_other_provider_fallback(
+    async def test_load_model_no_auth_other_provider_exception(
         self,
-        mock_echo: Mock,
         model_factory: ModelFactory,
         mock_credential_storage: Mock,
     ) -> None:
-        """Test fallback when no auth configured for non-ollama provider."""
+        """Test exception when no auth configured for non-ollama provider."""
         mock_credential_storage.get_auth_method.return_value = None
 
-        # Mock fallback model to avoid deep recursion
-        with patch.object(
-            model_factory, "get_fallback_model", return_value=OllamaModel("llama3")
-        ):
-            model = await model_factory.load_model("claude-3-sonnet", "anthropic")
-
-            assert isinstance(model, OllamaModel)
-            mock_echo.assert_any_call(
-                "⚠️  Failed to load model 'claude-3-sonnet': "
-                "No authentication configured for provider 'anthropic' "
-                "with model 'claude-3-sonnet'. Run 'llm-orc auth setup' "
-                "to configure authentication."
-            )
+        # Phase 1 architecture: ModelFactory should throw exceptions,
+        # not handle fallbacks (EnsembleExecutor handles all fallback logic)
+        with pytest.raises(ValueError, match=r"No authentication configured"):
+            await model_factory.load_model("claude-3-sonnet", "anthropic")
 
     @patch("llm_orc.core.models.model_factory.click.echo")
     async def test_load_model_no_auth_no_provider_fallback_ollama(
@@ -239,28 +228,19 @@ class TestModelFactory:
         assert isinstance(model, ClaudeModel)
         mock_credential_storage.get_api_key.assert_called_with("anthropic")
 
-    @patch("llm_orc.core.models.model_factory.click.echo")
     async def test_load_model_api_key_auth_missing_key(
         self,
-        mock_echo: Mock,
         model_factory: ModelFactory,
         mock_credential_storage: Mock,
     ) -> None:
-        """Test fallback when API key auth configured but key not found."""
+        """Test exception when API key auth configured but key not found."""
         mock_credential_storage.get_auth_method.return_value = "api_key"
         mock_credential_storage.get_api_key.return_value = None
 
-        # Mock fallback model to avoid deep recursion
-        with patch.object(
-            model_factory, "get_fallback_model", return_value=OllamaModel("llama3")
-        ):
-            model = await model_factory.load_model("claude-3-sonnet", "anthropic")
-
-            assert isinstance(model, OllamaModel)
-            mock_echo.assert_any_call(
-                "⚠️  Failed to load model 'claude-3-sonnet': "
-                "No API key found for anthropic"
-            )
+        # Phase 1 architecture: ModelFactory should throw exceptions,
+        # not handle fallbacks (EnsembleExecutor handles all fallback logic)
+        with pytest.raises(ValueError, match=r"No API key found"):
+            await model_factory.load_model("claude-3-sonnet", "anthropic")
 
     async def test_load_model_oauth_auth_with_client_id(
         self, model_factory: ModelFactory, mock_credential_storage: Mock
@@ -296,91 +276,58 @@ class TestModelFactory:
         assert isinstance(model, OAuthClaudeModel)
         assert model.client_id == "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
-    @patch("llm_orc.core.models.model_factory.click.echo")
     async def test_load_model_oauth_auth_missing_token(
         self,
-        mock_echo: Mock,
         model_factory: ModelFactory,
         mock_credential_storage: Mock,
     ) -> None:
-        """Test fallback when OAuth auth configured but token not found."""
+        """Test exception when OAuth auth configured but token not found."""
         mock_credential_storage.get_auth_method.return_value = "oauth"
         mock_credential_storage.get_oauth_token.return_value = None
 
-        # Mock fallback model to avoid deep recursion
-        with patch.object(
-            model_factory, "get_fallback_model", return_value=OllamaModel("llama3")
-        ):
-            model = await model_factory.load_model("claude-pro", "anthropic")
+        # Phase 1 architecture: ModelFactory should throw exceptions,
+        # not handle fallbacks (EnsembleExecutor handles all fallback logic)
+        with pytest.raises(ValueError, match=r"No OAuth token found"):
+            await model_factory.load_model("claude-pro", "anthropic")
 
-            assert isinstance(model, OllamaModel)
-            mock_echo.assert_any_call(
-                "⚠️  Failed to load model 'claude-pro': "
-                "No OAuth token found for anthropic"
-            )
-
-    @patch("llm_orc.core.models.model_factory.click.echo")
     async def test_load_model_unknown_auth_method(
         self,
-        mock_echo: Mock,
         model_factory: ModelFactory,
         mock_credential_storage: Mock,
     ) -> None:
-        """Test fallback with unknown authentication method."""
+        """Test exception with unknown authentication method."""
         mock_credential_storage.get_auth_method.return_value = "unknown-auth"
 
-        # Mock fallback model to avoid deep recursion
-        with patch.object(
-            model_factory, "get_fallback_model", return_value=OllamaModel("llama3")
-        ):
-            model = await model_factory.load_model("some-model")
+        # Phase 1 architecture: ModelFactory should throw exceptions,
+        # not handle fallbacks (EnsembleExecutor handles all fallback logic)
+        with pytest.raises(ValueError, match=r"Unknown authentication method"):
+            await model_factory.load_model("some-model")
 
-            assert isinstance(model, OllamaModel)
-            mock_echo.assert_any_call(
-                "⚠️  Failed to load model 'some-model': "
-                "Unknown authentication method: unknown-auth"
-            )
-
-    @patch("llm_orc.core.models.model_factory.click.echo")
-    async def test_load_model_exception_fallback_known_local(
+    async def test_load_model_exception_known_local(
         self,
-        mock_echo: Mock,
         model_factory: ModelFactory,
         mock_credential_storage: Mock,
     ) -> None:
-        """Test fallback to ollama for known local models when exception occurs."""
+        """Test that exceptions are properly propagated for known local models."""
         mock_credential_storage.get_auth_method.side_effect = Exception("Auth error")
 
-        model = await model_factory.load_model("llama3")
+        # Phase 1 architecture: ModelFactory should throw exceptions,
+        # not handle fallbacks (EnsembleExecutor handles all fallback logic)
+        with pytest.raises(Exception, match=r"Auth error"):
+            await model_factory.load_model("llama3")
 
-        assert isinstance(model, OllamaModel)
-        assert model.model_name == "llama3"
-        mock_echo.assert_any_call("⚠️  Failed to load model 'llama3': Auth error")
-        mock_echo.assert_any_call("🔄 Treating 'llama3' as local Ollama model")
-
-    @patch("llm_orc.core.models.model_factory.click.echo")
-    async def test_load_model_exception_fallback_unknown_model(
+    async def test_load_model_exception_unknown_model(
         self,
-        mock_echo: Mock,
         model_factory: ModelFactory,
         mock_credential_storage: Mock,
     ) -> None:
-        """Test fallback to get_fallback_model for unknown models."""
+        """Test that exceptions are properly propagated for unknown models."""
         mock_credential_storage.get_auth_method.side_effect = Exception("Auth error")
 
-        with patch.object(
-            model_factory, "get_fallback_model", return_value=AsyncMock()
-        ) as mock_fallback:
-            model = await model_factory.load_model("unknown-model")
-
-            assert model is not None
-            mock_fallback.assert_called_once_with("general")
-            mock_echo.assert_any_call(
-                "⚠️  Failed to load model 'unknown-model': Auth error"
-            )
-            mock_echo.assert_any_call(
-                "🔄 Using configured fallback instead of 'unknown-model'"
-            )
+        # Phase 1 architecture: ModelFactory should throw exceptions,
+        # not handle fallbacks (EnsembleExecutor handles all fallback logic)
+        with pytest.raises(Exception, match=r"Auth error"):
+            await model_factory.load_model("unknown-model")
 
     async def test_get_fallback_model_with_configured_test_profile_ollama(
         self, model_factory: ModelFactory, mock_config_manager: Mock
