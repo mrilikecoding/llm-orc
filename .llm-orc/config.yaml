@@ -246,20 +246,20 @@ model_profiles:
   # Profile that demonstrates cycle detection (should be prevented)
   # Using real ollama models but with forced failures to test cycle detection
   cycle-test-a:
-    model: llama3:latest
-    provider: ollama
+    model: invalid-model-a-that-does-not-exist
+    provider: nonexistent-provider
     system_prompt: "This profile will be forced to fail to test cycle detection."
     fallback_model_profile: "cycle-test-b"
     
   cycle-test-b:
-    model: llama3:latest
-    provider: ollama
+    model: invalid-model-b-that-does-not-exist
+    provider: nonexistent-provider
     system_prompt: "This profile will be forced to fail to test cycle detection."
     fallback_model_profile: "cycle-test-c"
     
   cycle-test-c:
-    model: llama3:latest
-    provider: ollama
+    model: invalid-model-c-that-does-not-exist
+    provider: nonexistent-provider
     system_prompt: "This profile will be forced to fail to test cycle detection."
     fallback_model_profile: "cycle-test-a"  # Creates cycle: A → B → C → A
     
