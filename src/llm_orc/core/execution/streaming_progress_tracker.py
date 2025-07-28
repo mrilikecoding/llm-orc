@@ -47,7 +47,7 @@ class StreamingProgressTracker:
             # This ensures frequent queue checks in _merge_streaming_events
             while not execution_task.done():
                 await asyncio.sleep(0.1)  # Check every 100ms
-                
+
                 # Yield periodic progress event to trigger queue processing
                 yield {
                     "type": "execution_progress",
@@ -57,7 +57,7 @@ class StreamingProgressTracker:
                         "elapsed": time.time() - start_time,
                     },
                 }
-            
+
             # Get final result
             final_result = await execution_task
 

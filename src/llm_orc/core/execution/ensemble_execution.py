@@ -204,7 +204,7 @@ class EnsembleExecutor:
 
                 # Small delay to allow any concurrent performance events to be queued
                 await asyncio.sleep(0.001)
-                
+
                 # Check for performance events again after delay
                 while not self._streaming_event_queue.empty():
                     try:

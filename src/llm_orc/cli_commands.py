@@ -180,8 +180,8 @@ def invoke_ensemble(
         # Apply concurrency limit to executor configuration
         pass  # This would be implemented as needed
 
-    # Show performance configuration for text output
-    if output_format == "text":
+    # Show performance configuration only for default Rich interface (not text/json)
+    if output_format is None:  # Default Rich interface
         try:
             performance_config = config_manager.load_performance_config()
             coordinator = executor._execution_coordinator
@@ -211,11 +211,16 @@ def invoke_ensemble(
 
     # Determine effective streaming setting
     performance_config = config_manager.load_performance_config()
-    effective_streaming = (
-        streaming
-        or performance_config.get("streaming_enabled", False)
-        or output_format in ["json", "text"]  # Always use streaming to capture events
-    )
+    
+    # For text/JSON output, use standard execution for clean piping output
+    # Only use streaming for Rich interface (default) or when explicitly requested
+    if output_format in ["json", "text"]:
+        effective_streaming = False  # Clean, non-streaming output for piping
+    else:
+        # Default Rich interface - use streaming
+        effective_streaming = (
+            streaming or performance_config.get("streaming_enabled", True)
+        )
 
     # Execute the ensemble
     try:
