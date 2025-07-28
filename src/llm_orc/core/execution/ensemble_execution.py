@@ -105,7 +105,8 @@ class EnsembleExecutor:
             error_message: The error message to classify
 
         Returns:
-            Failure type: 'oauth_error', 'authentication_error', or 'runtime_error'
+            Failure type: 'oauth_error', 'authentication_error', 'model_loading',
+            or 'runtime_error'
         """
         error_lower = error_message.lower()
 
@@ -132,6 +133,20 @@ class EnsembleExecutor:
             ]
         ):
             return "authentication_error"
+
+        # Model loading errors
+        if any(
+            loading_term in error_lower
+            for loading_term in [
+                "model loading",
+                "failed to load model",
+                "network error",
+                "connection failed",
+                "timeout",
+                "model not found",
+            ]
+        ):
+            return "model_loading"
 
         # Default to runtime error
         return "runtime_error"
@@ -270,11 +285,12 @@ class EnsembleExecutor:
                 fallback_model_name = getattr(fallback_model, "model_name", "unknown")
 
                 # Emit enhanced fallback event for model loading failure
+                failure_type = self._classify_failure_type(str(model_loading_error))
                 self._emit_performance_event(
                     "agent_fallback_started",
                     {
                         "agent_name": agent_config["name"],
-                        "failure_type": "model_loading",
+                        "failure_type": failure_type,
                         "original_error": str(model_loading_error),
                         "original_model_profile": agent_config.get(
                             "model_profile", "unknown"
