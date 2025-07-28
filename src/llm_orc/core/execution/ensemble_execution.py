@@ -114,15 +114,27 @@ class EnsembleExecutor:
         error_lower = error_message.lower()
 
         # OAuth-specific errors
-        if any(oauth_term in error_lower for oauth_term in [
-            "oauth", "token refresh", "invalid_grant", "refresh token"
-        ]):
+        if any(
+            oauth_term in error_lower
+            for oauth_term in [
+                "oauth",
+                "token refresh",
+                "invalid_grant",
+                "refresh token",
+            ]
+        ):
             return "oauth_error"
 
         # Authentication errors (API keys, etc.)
-        if any(auth_term in error_lower for auth_term in [
-            "authentication", "invalid x-api-key", "unauthorized", "401"
-        ]):
+        if any(
+            auth_term in error_lower
+            for auth_term in [
+                "authentication",
+                "invalid x-api-key",
+                "unauthorized",
+                "401",
+            ]
+        ):
             return "authentication_error"
 
         # Default to runtime error

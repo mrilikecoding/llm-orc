@@ -453,8 +453,7 @@ def _handle_fallback_started_event(
         f"failed for agent '{agent_name}' ({failure_type}): {error_msg}"
     )
     console.print(
-        f"🔄 Using fallback model '{fallback_model}' for "
-        f"agent '{agent_name}'..."
+        f"🔄 Using fallback model '{fallback_model}' for agent '{agent_name}'..."
     )
 
 
@@ -473,9 +472,7 @@ def _handle_fallback_completed_event(
         console.print(f"   Preview: {response_preview}")
 
 
-def _handle_fallback_failed_event(
-    console: Console, event_data: dict[str, Any]
-) -> None:
+def _handle_fallback_failed_event(console: Console, event_data: dict[str, Any]) -> None:
     """Handle agent_fallback_failed event display."""
     agent_name = event_data["agent_name"]
     failure_type = event_data.get("failure_type", "unknown")
@@ -486,6 +483,76 @@ def _handle_fallback_failed_event(
         f"❌ Fallback model '{fallback_model}' also failed for "
         f"agent '{agent_name}' ({failure_type}): {fallback_error}"
     )
+
+
+def _handle_text_fallback_started(event_data: dict[str, Any]) -> None:
+    """Handle agent_fallback_started event for text output."""
+    agent_name = event_data["agent_name"]
+    failure_type = event_data.get("failure_type", "unknown")
+    error_msg = event_data["original_error"]
+    original_profile = event_data.get("original_model_profile", "unknown")
+    fallback_model = event_data.get("fallback_model_name", "unknown")
+
+    click.echo(
+        f"WARNING: Model profile '{original_profile}' failed for "
+        f"agent '{agent_name}' ({failure_type}): {error_msg}"
+    )
+    click.echo(f"Using fallback model '{fallback_model}' for agent '{agent_name}'...")
+
+
+def _handle_text_fallback_completed(event_data: dict[str, Any]) -> None:
+    """Handle agent_fallback_completed event for text output."""
+    agent_name = event_data["agent_name"]
+    fallback_model = event_data["fallback_model_name"]
+    response_preview = event_data.get("response_preview", "")
+
+    click.echo(
+        f"SUCCESS: Fallback model '{fallback_model}' succeeded for agent '{agent_name}'"
+    )
+    if response_preview:
+        click.echo(f"Preview: {response_preview}")
+
+
+def _handle_text_fallback_failed(event_data: dict[str, Any]) -> None:
+    """Handle agent_fallback_failed event for text output."""
+    agent_name = event_data["agent_name"]
+    failure_type = event_data.get("failure_type", "unknown")
+    fallback_error = event_data["fallback_error"]
+    fallback_model = event_data.get("fallback_model_name", "unknown")
+
+    click.echo(
+        f"ERROR: Fallback model '{fallback_model}' also failed for "
+        f"agent '{agent_name}' ({failure_type}): {fallback_error}"
+    )
+
+
+async def _run_text_json_execution(
+    executor: Any,
+    ensemble_config: EnsembleConfig,
+    input_data: str,
+    output_format: str,
+    detailed: bool,
+) -> None:
+    """Run execution with text or JSON output (no Rich interface)."""
+    async for event in executor.execute_streaming(ensemble_config, input_data):
+        if output_format == "json":
+            import json
+
+            click.echo(json.dumps(event, indent=2))
+        elif output_format == "text":
+            # Handle text output for fallback events only (no Rich interface)
+            event_type = event["type"]
+            if event_type == "agent_fallback_started":
+                _handle_text_fallback_started(event["data"])
+            elif event_type == "agent_fallback_completed":
+                _handle_text_fallback_completed(event["data"])
+            elif event_type == "agent_fallback_failed":
+                _handle_text_fallback_failed(event["data"])
+            elif event_type == "execution_completed":
+                # Show final results for text output
+                display_results(
+                    event["data"]["results"], event["data"]["metadata"], detailed
+                )
 
 
 async def run_streaming_execution(
@@ -499,14 +566,16 @@ async def run_streaming_execution(
     console = Console(soft_wrap=True, width=None, force_terminal=True)
     agent_statuses: dict[str, str] = {}
 
-    # Initialize with Rich status
-    with console.status("Starting execution...", spinner="dots") as status:
-        async for event in executor.execute_streaming(ensemble_config, input_data):
-            if output_format == "json":
-                import json
-
-                click.echo(json.dumps(event, indent=2))
-            else:
+    # Initialize with Rich status (only for Rich output, not text/json)
+    if output_format in ["json", "text"]:
+        # Direct processing without Rich status for JSON/text output
+        await _run_text_json_execution(
+            executor, ensemble_config, input_data, output_format, detailed
+        )
+    else:
+        # Rich interface for default output
+        with console.status("Starting execution...", spinner="dots") as status:
+            async for event in executor.execute_streaming(ensemble_config, input_data):
                 event_type = event["type"]
                 if event_type == "agent_progress":
                     # Extract detailed agent status from progress data

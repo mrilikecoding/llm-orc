@@ -35,7 +35,13 @@
 - Other fallback messages should show as structured Rich output (EnsembleExecutor events)
 - No coordination between the two systems
 
-**Issue 3: Output Format Inconsistency**
+**Issue 3: Dual Event Systems Architecture Problem**
+- Performance hooks system (`_emit_performance_event()`) - Used by EnsembleExecutor
+- Streaming events system (`execute_streaming()` yields) - Used by CLI visualization  
+- Events must be forwarded between systems (band-aid solution in StreamingProgressTracker)
+- Creates complexity and potential for events to be lost or duplicated
+
+**Issue 4: Output Format Inconsistency**
 - Enhanced fallback events work with Rich/streaming output
 - But not properly handled for JSON or plain text output formats
 - User experience varies based on output format choice
@@ -53,7 +59,12 @@
    - Consistent data structure regardless of failure type (OAuth, model loading, runtime)
    - Events can be consumed by different output formatters
 
-3. **Output Format Agnostic**: Same fallback information works for all output types
+3. **Unified Event System**: Single event flow for all execution information  
+   - Eliminate dual event systems (performance hooks + streaming events)
+   - All events flow through the same streaming mechanism
+   - Performance monitoring integrates with execution events seamlessly
+
+4. **Output Format Agnostic**: Same fallback information works for all output types
    - Rich/streaming: Real-time visual feedback
    - JSON: Structured data with fallback events included
    - Text: Simple formatted messages
@@ -120,6 +131,43 @@ agent_fallback_failed:
 - Fallback information included in plain text
 - Suitable for scripts and basic terminals
 
+## Unified Event System Architecture
+
+### Current Dual System Problems
+```
+EnsembleExecutor → _emit_performance_event() → Performance Hooks → [Lost for CLI]
+                                                                 ↓
+StreamingProgressTracker → [Forward fallback events] → Streaming Events → CLI Visualization
+
+EnsembleExecutor → execute_streaming() → Streaming Events → CLI Visualization  
+                                      ↓
+                   [Direct events: agent_started, agent_completed, execution_completed]
+```
+
+### Proposed Unified System
+```
+EnsembleExecutor → execute_streaming() → Single Event Stream → Output Formatters
+                                      ↓                    ↓
+                   [All events: fallback, progress, performance, completion]
+                                                           ↓
+                                              ┌─ Rich/Streaming Display
+                                              ├─ JSON Output  
+                                              └─ Text Output
+```
+
+### Benefits of Unified System
+1. **Simplicity**: Single event flow eliminates forwarding complexity
+2. **Consistency**: All events available to all output formats automatically  
+3. **Performance**: No duplicate event processing or forwarding overhead
+4. **Extensibility**: New event types automatically work across all formats
+5. **Debugging**: Single event stream easier to trace and debug
+
+### Migration Strategy
+1. **Phase 1**: Move all `_emit_performance_event()` calls to direct streaming yields
+2. **Phase 2**: Remove performance hooks system entirely
+3. **Phase 3**: Enhance streaming event consumers for JSON/text output
+4. **Phase 4**: Remove StreamingProgressTracker forwarding logic
+
 ## Implementation Strategy
 
 ### Phase 1: Clean Separation
@@ -141,6 +189,13 @@ agent_fallback_failed:
 1. Test all failure scenarios (OAuth, model loading, runtime)
 2. Verify output consistency across formats
 3. Test configurable fallback chains and cycle detection
+
+### Phase 5: Unify Event Systems (Architectural Improvement)
+1. **Move performance events to streaming**: Replace all `_emit_performance_event()` calls with direct `yield` statements in `execute_streaming()`
+2. **Remove performance hooks system**: Delete `_performance_hooks`, `register_performance_hook()`, `_emit_performance_event()`
+3. **Simplify StreamingProgressTracker**: Remove event forwarding logic, focus on progress tracking only
+4. **Enhance output formatters**: JSON and text outputs automatically get all events from unified stream
+5. **Test unified architecture**: Verify all events work across all output formats seamlessly
 
 ## Success Criteria
 

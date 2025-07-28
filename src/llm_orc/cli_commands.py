@@ -211,8 +211,10 @@ def invoke_ensemble(
 
     # Determine effective streaming setting
     performance_config = config_manager.load_performance_config()
-    effective_streaming = streaming or performance_config.get(
-        "streaming_enabled", False
+    effective_streaming = (
+        streaming
+        or performance_config.get("streaming_enabled", False)
+        or output_format in ["json", "text"]  # Always use streaming to capture events
     )
 
     # Execute the ensemble
