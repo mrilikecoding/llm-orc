@@ -211,15 +211,15 @@ def invoke_ensemble(
 
     # Determine effective streaming setting
     performance_config = config_manager.load_performance_config()
-    
+
     # For text/JSON output, use standard execution for clean piping output
     # Only use streaming for Rich interface (default) or when explicitly requested
     if output_format in ["json", "text"]:
         effective_streaming = False  # Clean, non-streaming output for piping
     else:
         # Default Rich interface - use streaming
-        effective_streaming = (
-            streaming or performance_config.get("streaming_enabled", True)
+        effective_streaming = streaming or performance_config.get(
+            "streaming_enabled", True
         )
 
     # Execute the ensemble
