@@ -81,6 +81,54 @@ def _group_agents_by_dependency_level(
     return agents_by_level
 
 
+def _create_plain_text_dependency_graph(
+    agents: list[dict[str, Any]], agent_statuses: dict[str, str]
+) -> str:
+    """Create plain text dependency graph without Rich formatting."""
+    # Group agents by dependency level
+    agents_by_level: dict[int, list[dict[str, Any]]] = {}
+
+    for agent in agents:
+        dependencies = agent.get("depends_on", [])
+        level = _calculate_agent_level(agent["name"], dependencies, agents)
+
+        if level not in agents_by_level:
+            agents_by_level[level] = []
+        agents_by_level[level].append(agent)
+
+    # Build horizontal graph: A,B,C → D → E,F → G
+    graph_parts = []
+    max_level = max(agents_by_level.keys()) if agents_by_level else 0
+
+    for level in range(max_level + 1):
+        if level not in agents_by_level:
+            continue
+
+        level_agents = agents_by_level[level]
+        agent_displays = []
+
+        for agent in level_agents:
+            name = agent["name"]
+            status = agent_statuses.get(name, "pending")
+
+            # Status indicators with plain text symbols
+            if status == "running":
+                agent_displays.append(f"◐ {name}")
+            elif status == "completed":
+                agent_displays.append(f"✓ {name}")
+            elif status == "failed":
+                agent_displays.append(f"✗ {name}")
+            else:
+                agent_displays.append(f"○ {name}")
+
+        # Join agents at same level with commas
+        level_text = ", ".join(agent_displays)
+        graph_parts.append(level_text)
+
+    # Join levels with arrows
+    return " → ".join(graph_parts)
+
+
 def create_dependency_graph_with_status(
     agents: list[dict[str, Any]], agent_statuses: dict[str, str]
 ) -> str:
@@ -272,6 +320,115 @@ def display_results(
         display_simplified_results(results, metadata)
 
 
+def _display_plain_text_dependency_graph(
+    agents: list[dict[str, Any]], results: dict[str, Any]
+) -> None:
+    """Display dependency graph for plain text output."""
+    # Create agent status based on results (completed/failed)
+    agent_statuses = {}
+    for agent in agents:
+        agent_name = agent["name"]
+        if agent_name in results:
+            status = results[agent_name].get("status", "pending")
+            agent_statuses[agent_name] = (
+                "completed" if status == "success" else "failed"
+            )
+        else:
+            agent_statuses[agent_name] = "pending"
+
+    # Show dependency graph (plain text version without Rich formatting)
+    dependency_graph = _create_plain_text_dependency_graph(agents, agent_statuses)
+    click.echo("Dependency Graph:")
+    click.echo(dependency_graph)
+    click.echo()
+
+
+def _display_detailed_plain_text(
+    results: dict[str, Any], metadata: dict[str, Any]
+) -> None:
+    """Display detailed plain text results."""
+    click.echo("Results")
+    click.echo("=======")
+    click.echo()
+
+    # Show agent results
+    for agent_name, result in results.items():
+        if result.get("status") == "success":
+            click.echo(f"{agent_name}:")
+            click.echo("-" * len(agent_name) + ":")
+            click.echo(result["response"])
+            click.echo()
+        else:
+            click.echo(f"❌ {agent_name}:")
+            click.echo("-" * (len(agent_name) + 3) + ":")
+            error_msg = result.get("error", "Unknown error")
+            click.echo(f"Error: {error_msg}")
+            click.echo()
+
+    # Show performance metrics
+    if "usage" in metadata:
+        usage = metadata["usage"]
+        totals = usage.get("totals", {})
+
+        click.echo("Performance Metrics")
+        click.echo("==================")
+        click.echo(f"Duration: {metadata['duration']}")
+        click.echo(f"Total tokens: {totals.get('total_tokens', 0):,}")
+        click.echo(f"Total cost: ${totals.get('total_cost_usd', 0.0):.4f}")
+        click.echo(f"Agents: {totals.get('agents_count', 0)}")
+
+
+def _display_simplified_plain_text(
+    results: dict[str, Any], metadata: dict[str, Any]
+) -> None:
+    """Display simplified plain text results."""
+    final_agent = find_final_agent(results)
+
+    if final_agent and results[final_agent].get("status") == "success":
+        response = results[final_agent]["response"]
+        click.echo(response)
+    else:
+        # Fallback: show last successful agent
+        successful_agents = [
+            name
+            for name, result in results.items()
+            if result.get("status") == "success"
+        ]
+        if successful_agents:
+            last_agent = successful_agents[-1]
+            response = results[last_agent]["response"]
+            click.echo(f"Result from {last_agent}:")
+            click.echo(response)
+        else:
+            click.echo("❌ No successful results found")
+
+    # Show minimal performance summary
+    if "usage" in metadata:
+        totals = metadata["usage"].get("totals", {})
+        agents_count = totals.get("agents_count", 0)
+        duration = metadata.get("duration", "unknown")
+        click.echo()
+        click.echo(f"⚡ {agents_count} agents completed in {duration}")
+        click.echo("Use --detailed flag for full results and metrics")
+
+
+def display_plain_text_results(
+    results: dict[str, Any],
+    metadata: dict[str, Any],
+    detailed: bool = False,
+    agents: list[dict[str, Any]] | None = None,
+) -> None:
+    """Display results in plain text format without Rich formatting."""
+    # Show dependency graph if agents provided
+    if agents:
+        _display_plain_text_dependency_graph(agents, results)
+
+    if detailed:
+        _display_detailed_plain_text(results, metadata)
+    else:
+        _display_simplified_plain_text(results, metadata)
+
+
 def display_simplified_results(
     results: dict[str, Any], metadata: dict[str, Any]
 ) -> None:
@@ -281,10 +438,16 @@ def display_simplified_results(
     # Find the final agent (the one with no dependents)
     final_agent = find_final_agent(results)
 
+    # Debug: print to see what's happening
+    # print(f"DEBUG: final_agent={final_agent}, results keys={list(results.keys())}")
+    # Uncomment for debugging
+
     markdown_content = []
 
     if final_agent and results[final_agent].get("status") == "success":
         response = results[final_agent]["response"]
+        # Add a clear header to indicate this is the final result
+        markdown_content.append("## Result\n\n")
         # Format as code block if it looks like code, otherwise as regular text
         code_keywords = ["def ", "class ", "```", "import ", "function"]
         if any(keyword in response.lower() for keyword in code_keywords):
@@ -325,6 +488,70 @@ def display_simplified_results(
         console.print(
             Markdown(markdown_text), overflow="ellipsis", crop=True, no_wrap=False
         )
+
+
+def _create_structured_dependency_info(
+    agents: list[dict[str, Any]], results: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Create structured dependency information for JSON output."""
+    # Group agents by dependency level
+    agents_by_level = _group_agents_by_dependency_level(agents)
+
+    # Create agent status if results provided
+    agent_statuses = _create_agent_statuses(agents, results) if results else {}
+
+    # Build structured dependency info
+    dependency_levels = _build_dependency_levels(
+        agents_by_level, agent_statuses, results
+    )
+
+    return {
+        "dependency_levels": dependency_levels,
+        "dependency_graph": (
+            _create_plain_text_dependency_graph(agents, agent_statuses)
+            if results
+            else create_dependency_graph(agents)
+        ),
+    }
+
+
+def _create_agent_statuses(
+    agents: list[dict[str, Any]], results: dict[str, Any]
+) -> dict[str, str]:
+    """Create agent status dictionary from results."""
+    agent_statuses = {}
+    for agent in agents:
+        agent_name = agent["name"]
+        if agent_name in results:
+            status = results[agent_name].get("status", "pending")
+            agent_statuses[agent_name] = (
+                "completed" if status == "success" else "failed"
+            )
+        else:
+            agent_statuses[agent_name] = "pending"
+    return agent_statuses
+
+
+def _build_dependency_levels(
+    agents_by_level: dict[int, list[dict[str, Any]]],
+    agent_statuses: dict[str, str],
+    results: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Build dependency levels structure."""
+    dependency_levels = []
+    for level in sorted(agents_by_level.keys()):
+        level_agents = []
+        for agent in agents_by_level[level]:
+            agent_info = {
+                "name": agent["name"],
+                "dependencies": agent.get("depends_on", []),
+            }
+            if results and agent["name"] in agent_statuses:
+                agent_info["status"] = agent_statuses[agent["name"]]
+            level_agents.append(agent_info)
+
+        dependency_levels.append({"level": level, "agents": level_agents})
+    return dependency_levels
 
 
 def find_final_agent(results: dict[str, Any]) -> str | None:
@@ -424,10 +651,305 @@ def _process_execution_completed_event(
     console.print(final_tree)
     console.print(f"Completed in {event_data['duration']:.2f}s")
 
-    if output_format == "text":
-        display_results(event_data["results"], event_data["metadata"], detailed)
+    # Always display results for Rich interface (output_format is None or "rich")
+    # The text/JSON outputs are handled separately in _run_text_json_execution
+    display_results(event_data["results"], event_data["metadata"], detailed)
 
     return True
+
+
+def _handle_fallback_started_event(
+    console: Console, event_data: dict[str, Any]
+) -> None:
+    """Handle agent_fallback_started event display."""
+    agent_name = event_data["agent_name"]
+    failure_type = event_data.get("failure_type", "unknown")
+    error_msg = event_data["original_error"]
+    original_profile = event_data.get("original_model_profile", "unknown")
+    fallback_model = event_data.get("fallback_model_name", "unknown")
+
+    # Enhanced display with failure type
+    if failure_type == "oauth_error":
+        failure_emoji = "🔐"
+    elif failure_type == "authentication_error":
+        failure_emoji = "🔑"
+    else:
+        failure_emoji = "⚠️"
+
+    console.print(
+        f"{failure_emoji} Model profile '{original_profile}' "
+        f"failed for agent '{agent_name}' ({failure_type}): {error_msg}"
+    )
+    console.print(
+        f"🔄 Using fallback model '{fallback_model}' for agent '{agent_name}'..."
+    )
+    console.print("─" * 50)
+
+
+def _handle_fallback_completed_event(
+    console: Console, event_data: dict[str, Any]
+) -> None:
+    """Handle agent_fallback_completed event display."""
+    agent_name = event_data["agent_name"]
+    fallback_model = event_data["fallback_model_name"]
+
+    # Use print() to bypass Rich buffering and show immediately
+    print(
+        f"✅ SUCCESS: Fallback model '{fallback_model}' succeeded for "
+        f"agent '{agent_name}'"
+    )
+
+
+def _handle_fallback_failed_event(console: Console, event_data: dict[str, Any]) -> None:
+    """Handle agent_fallback_failed event display."""
+    agent_name = event_data["agent_name"]
+    failure_type = event_data.get("failure_type", "unknown")
+    fallback_error = event_data["fallback_error"]
+    fallback_model = event_data.get("fallback_model_name", "unknown")
+
+    # Use print() to bypass Rich buffering and show immediately
+    print(
+        f"❌ FAILED: Fallback model '{fallback_model}' also failed for "
+        f"agent '{agent_name}' ({failure_type}): {fallback_error}"
+    )
+
+
+def _handle_text_fallback_started(event_data: dict[str, Any]) -> None:
+    """Handle agent_fallback_started event for text output."""
+    agent_name = event_data["agent_name"]
+    failure_type = event_data.get("failure_type", "unknown")
+    error_msg = event_data["original_error"]
+    original_profile = event_data.get("original_model_profile", "unknown")
+    fallback_model = event_data.get("fallback_model_name", "unknown")
+
+    click.echo(
+        f"WARNING: Model profile '{original_profile}' failed for "
+        f"agent '{agent_name}' ({failure_type}): {error_msg}"
+    )
+    click.echo(f"Using fallback model '{fallback_model}' for agent '{agent_name}'...")
+    click.echo("─" * 50)
+
+
+def _handle_text_fallback_completed(event_data: dict[str, Any]) -> None:
+    """Handle agent_fallback_completed event for text output."""
+    agent_name = event_data["agent_name"]
+    fallback_model = event_data["fallback_model_name"]
+
+    click.echo(
+        f"SUCCESS: Fallback model '{fallback_model}' succeeded for agent '{agent_name}'"
+    )
+
+
+def _handle_streaming_event(
+    event_type: str,
+    event: dict[str, Any],
+    agent_statuses: dict[str, str],
+    ensemble_config: EnsembleConfig,
+    status: Any,
+    console: Console,
+    output_format: str = "rich",
+    detailed: bool = False,
+) -> bool:
+    """Handle a single streaming event and update status display.
+
+    Returns True if execution should continue, False if it should break.
+    """
+    if event_type == "agent_progress":
+        # Extract detailed agent status from progress data
+        started_agent_names = event["data"].get("started_agent_names", [])
+        completed_agent_names = event["data"].get("completed_agent_names", [])
+
+        # Update agent statuses based on actual agent states
+        _update_agent_status_by_names(
+            ensemble_config.agents,
+            started_agent_names,
+            completed_agent_names,
+            agent_statuses,
+        )
+
+        # Update status display with current dependency tree
+        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+        status.update(current_tree)
+
+    elif event_type == "execution_started":
+        # Show initial dependency tree when execution starts
+        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+        status.update(current_tree)
+
+    elif event_type == "agent_started":
+        # Agent has started execution
+        event_data = event["data"]
+        agent_name = event_data["agent_name"]
+        agent_statuses[agent_name] = "running"
+
+        # Update status display with current dependency tree
+        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+        status.update(current_tree)
+
+    elif event_type == "agent_completed":
+        # Agent has completed execution
+        event_data = event["data"]
+        agent_name = event_data["agent_name"]
+        agent_statuses[agent_name] = "completed"
+
+        # Update status display with current dependency tree
+        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+        status.update(current_tree)
+
+    elif event_type == "execution_progress":
+        # Just update the tree without elapsed time overlay to avoid flickering
+        # The elapsed time will be shown in the final completion message
+        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+        status.update(current_tree)
+
+    elif event_type == "agent_fallback_started":
+        # Show fallback message without disrupting the tree display
+        event_data = event["data"]
+        agent_name = event_data["agent_name"]
+
+        # Update agent status to running (attempting fallback)
+        agent_statuses[agent_name] = "running"
+
+        # Update status display with current dependency tree
+        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+        status.update(current_tree)
+
+        _handle_fallback_started_event(console, event_data)
+
+    elif event_type == "agent_fallback_completed":
+        # Update agent status to completed
+        event_data = event["data"]
+        agent_name = event_data["agent_name"]
+        agent_statuses[agent_name] = "completed"
+
+        # Update status display with current dependency tree
+        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+        status.update(current_tree)
+
+    elif event_type == "agent_fallback_failed":
+        # Update agent status to failed
+        event_data = event["data"]
+        agent_name = event_data["agent_name"]
+        agent_statuses[agent_name] = "failed"
+
+        # Update status with current tree
+        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+        status.update(current_tree)
+
+        _handle_fallback_failed_event(console, event_data)
+
+    elif event_type == "execution_completed":
+        # Process execution completed event using helper method
+        return _process_execution_completed_event(
+            console,
+            status,
+            ensemble_config.agents,
+            event["data"],
+            output_format,
+            detailed,
+        )
+
+    return True
+
+
+def _handle_text_fallback_failed(event_data: dict[str, Any]) -> None:
+    """Handle agent_fallback_failed event for text output."""
+    agent_name = event_data["agent_name"]
+    failure_type = event_data.get("failure_type", "unknown")
+    fallback_error = event_data["fallback_error"]
+    fallback_model = event_data.get("fallback_model_name", "unknown")
+
+    click.echo(
+        f"ERROR: Fallback model '{fallback_model}' also failed for "
+        f"agent '{agent_name}' ({failure_type}): {fallback_error}"
+    )
+
+
+async def _run_text_json_execution(
+    executor: Any,
+    ensemble_config: EnsembleConfig,
+    input_data: str,
+    output_format: str,
+    detailed: bool,
+) -> None:
+    """Run execution with text or JSON output (no Rich interface)."""
+    if output_format == "json":
+        await _run_json_execution(executor, ensemble_config, input_data)
+    else:
+        await _run_text_execution(executor, ensemble_config, input_data, detailed)
+
+
+async def _run_json_execution(
+    executor: Any,
+    ensemble_config: EnsembleConfig,
+    input_data: str,
+) -> None:
+    """Handle JSON output execution."""
+    import json
+
+    # For JSON output, collect all meaningful events and output as single JSON
+    collected_events: list[dict[str, Any]] = []
+    meaningful_events = {
+        "execution_started",
+        "execution_completed",
+        "agent_started",
+        "agent_completed",
+        "agent_fallback_started",
+        "agent_fallback_completed",
+        "agent_fallback_failed",
+        "phase_started",
+        "phase_completed",
+    }
+
+    final_result = None
+    async for event in executor.execute_streaming(ensemble_config, input_data):
+        event_type = event["type"]
+
+        if event_type in meaningful_events:
+            collected_events.append(event)
+
+        # Store final result for consolidated output
+        if event_type == "execution_completed":
+            final_result = event["data"]
+
+    # Add structured dependency information
+    dependency_info = _create_structured_dependency_info(
+        ensemble_config.agents, final_result["results"] if final_result else None
+    )
+
+    # Output consolidated JSON structure
+    output_data = {
+        "events": collected_events,
+        "result": final_result,
+        "dependency_info": dependency_info,
+    }
+    click.echo(json.dumps(output_data, indent=2))
+
+
+async def _run_text_execution(
+    executor: Any,
+    ensemble_config: EnsembleConfig,
+    input_data: str,
+    detailed: bool,
+) -> None:
+    """Handle text output execution."""
+    # Handle text output - stream events as they come
+    async for event in executor.execute_streaming(ensemble_config, input_data):
+        event_type = event["type"]
+        if event_type == "agent_fallback_started":
+            _handle_text_fallback_started(event["data"])
+        elif event_type == "agent_fallback_completed":
+            _handle_text_fallback_completed(event["data"])
+        elif event_type == "agent_fallback_failed":
+            _handle_text_fallback_failed(event["data"])
+        elif event_type == "execution_completed":
+            # Show final results for text output using plain text formatting
+            display_plain_text_results(
+                event["data"]["results"],
+                event["data"]["metadata"],
+                detailed,
+                ensemble_config.agents,
+            )
 
 
 async def run_streaming_execution(
@@ -441,47 +963,90 @@ async def run_streaming_execution(
     console = Console(soft_wrap=True, width=None, force_terminal=True)
     agent_statuses: dict[str, str] = {}
 
-    # Initialize with Rich status
-    with console.status("Starting execution...", spinner="dots") as status:
-        async for event in executor.execute_streaming(ensemble_config, input_data):
-            if output_format == "json":
-                import json
+    # Use Rich interface by default (None), but simple processing for explicit text/json
+    if output_format in ["json", "text"]:
+        # Direct processing without Rich status for JSON/text output
+        await _run_text_json_execution(
+            executor, ensemble_config, input_data, output_format, detailed
+        )
+    else:
+        # Rich interface for default output (None = streaming)
+        # Initialize with dependency tree in status display
+        initial_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
 
-                click.echo(json.dumps(event, indent=2))
-            else:
+        with console.status(initial_tree, spinner="dots") as status:
+            async for event in executor.execute_streaming(ensemble_config, input_data):
                 event_type = event["type"]
-                if event_type == "agent_progress":
-                    # Extract detailed agent status from progress data
-                    started_agent_names = event["data"].get("started_agent_names", [])
-                    completed_agent_names = event["data"].get(
-                        "completed_agent_names", []
-                    )
 
-                    # Update agent statuses based on actual agent states
-                    _update_agent_status_by_names(
-                        ensemble_config.agents,
-                        started_agent_names,
-                        completed_agent_names,
-                        agent_statuses,
-                    )
+                # Handle the event and check if execution should continue
+                should_continue = _handle_streaming_event(
+                    event_type,
+                    event,
+                    agent_statuses,
+                    ensemble_config,
+                    status,
+                    console,
+                    output_format,
+                    detailed,
+                )
 
-                    # Update status display with current dependency tree
-                    current_tree = create_dependency_tree(
-                        ensemble_config.agents, agent_statuses
-                    )
-                    status.update(current_tree)
+                # If event handler returns False, break the loop
+                if not should_continue:
+                    break
 
-                elif event_type == "execution_completed":
-                    # Process execution completed event using helper method
-                    if _process_execution_completed_event(
-                        console,
-                        status,
-                        ensemble_config.agents,
-                        event["data"],
-                        output_format,
-                        detailed,
-                    ):
-                        break
+
+def _setup_fallback_monitoring(
+    executor: Any,
+) -> tuple[list[dict[str, Any]], Any]:
+    """Set up fallback event monitoring and return events list and original emit."""
+    fallback_events: list[dict[str, Any]] = []
+
+    def capture_fallback_event(event_type: str, data: dict[str, Any]) -> None:
+        """Capture fallback events during standard execution."""
+        if event_type in [
+            "agent_fallback_started",
+            "agent_fallback_completed",
+            "agent_fallback_failed",
+        ]:
+            fallback_events.append({"type": event_type, "data": data})
+
+    # Temporarily replace the event emission to capture fallback events
+    original_emit = executor._emit_performance_event
+    executor._emit_performance_event = capture_fallback_event
+
+    return fallback_events, original_emit
+
+
+def _process_fallback_events_for_text(fallback_events: list[dict[str, Any]]) -> None:
+    """Process captured fallback events for text output."""
+    for event in fallback_events:
+        event_type = event["type"]
+        event_data = event["data"]
+        if event_type == "agent_fallback_started":
+            _handle_text_fallback_started(event_data)
+        elif event_type == "agent_fallback_failed":
+            _handle_text_fallback_failed(event_data)
+
+
+def _display_json_results(
+    result: dict[str, Any],
+    ensemble_config: EnsembleConfig,
+    fallback_events: list[dict[str, Any]],
+) -> None:
+    """Display results in JSON format with dependency info and fallback events."""
+    import json
+
+    # Add structured dependency information
+    dependency_info = _create_structured_dependency_info(
+        ensemble_config.agents, result["results"]
+    )
+
+    # Include fallback events and dependency info in JSON output
+    output_data = result.copy()
+    output_data["dependency_info"] = dependency_info
+    if fallback_events:
+        output_data["fallback_events"] = fallback_events
+    click.echo(json.dumps(output_data, indent=2))
 
 
 async def run_standard_execution(
@@ -491,11 +1056,29 @@ async def run_standard_execution(
     output_format: str,
     detailed: bool,
 ) -> None:
-    """Run standard execution without streaming."""
-    result = await executor.execute(ensemble_config, input_data)
-    if output_format == "json":
-        import json
+    """Run standard execution without streaming but with fallback event monitoring."""
+    # Set up fallback event monitoring for text/JSON output
+    fallback_events, original_emit = _setup_fallback_monitoring(executor)
 
-        click.echo(json.dumps(result, indent=2))
-    else:
-        display_results(result["results"], result["metadata"], detailed)
+    try:
+        result = await executor.execute(ensemble_config, input_data)
+
+        # Process any captured fallback events for text output
+        if fallback_events and output_format == "text":
+            _process_fallback_events_for_text(fallback_events)
+
+        # Display results based on output format
+        if output_format == "json":
+            _display_json_results(result, ensemble_config, fallback_events)
+        elif output_format == "text":
+            # Use plain text output for clean piping
+            display_plain_text_results(
+                result["results"], result["metadata"], detailed, ensemble_config.agents
+            )
+        else:
+            # Use Rich formatting for default output
+            display_results(result["results"], result["metadata"], detailed)
+
+    finally:
+        # Restore original event emission
+        executor._emit_performance_event = original_emit

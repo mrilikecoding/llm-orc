@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 import pytest
 import requests
 
-from llm_orc.core.auth.oauth_client import OAuthClaudeClient
+from llm_orc.core.auth.oauth_client import OAuthClaudeClient, OAuthTokenRefreshError
 
 
 class TestOAuthClaudeClient:
@@ -142,10 +142,7 @@ class TestOAuthClaudeClient:
         assert client.refresh_token == "refresh-token"  # Unchanged
 
     @patch("requests.post")
-    @patch("builtins.print")
-    def test_refresh_access_token_http_error(
-        self, mock_print: Mock, mock_post: Mock
-    ) -> None:
+    def test_refresh_access_token_http_error(self, mock_post: Mock) -> None:
         """Test token refresh with HTTP error."""
         client = OAuthClaudeClient("old-token", "refresh-token")
 
@@ -155,46 +152,43 @@ class TestOAuthClaudeClient:
         mock_response.text = "Bad request"
         mock_post.return_value = mock_response
 
-        result = client.refresh_access_token("client-id")
+        # Should raise OAuthTokenRefreshError instead of returning False
+        with pytest.raises(OAuthTokenRefreshError) as exc_info:
+            client.refresh_access_token("client-id")
 
-        assert result is False
+        assert exc_info.value.status_code == 400
+        assert "Bad request" in str(exc_info.value)
         assert client.access_token == "old-token"  # Unchanged
-        mock_print.assert_called_once()
-        assert "Token refresh error" in mock_print.call_args[0][0]
 
     @patch("requests.post")
-    @patch("builtins.print")
-    def test_refresh_access_token_network_error(
-        self, mock_print: Mock, mock_post: Mock
-    ) -> None:
+    def test_refresh_access_token_network_error(self, mock_post: Mock) -> None:
         """Test token refresh with network error."""
         client = OAuthClaudeClient("old-token", "refresh-token")
 
         # Mock network error
         mock_post.side_effect = requests.exceptions.RequestException("Network error")
 
-        result = client.refresh_access_token("client-id")
+        # Should raise OAuthTokenRefreshError instead of returning False
+        with pytest.raises(OAuthTokenRefreshError) as exc_info:
+            client.refresh_access_token("client-id")
 
-        assert result is False
-        mock_print.assert_called_once()
-        assert "Token refresh network error" in mock_print.call_args[0][0]
+        assert exc_info.value.status_code == 0
+        assert "Network error" in str(exc_info.value)
 
     @patch("requests.post")
-    @patch("builtins.print")
-    def test_refresh_access_token_unexpected_error(
-        self, mock_print: Mock, mock_post: Mock
-    ) -> None:
+    def test_refresh_access_token_unexpected_error(self, mock_post: Mock) -> None:
         """Test token refresh with unexpected error."""
         client = OAuthClaudeClient("old-token", "refresh-token")
 
         # Mock unexpected error
         mock_post.side_effect = Exception("Unexpected error")
 
-        result = client.refresh_access_token("client-id")
+        # Should raise OAuthTokenRefreshError instead of returning False
+        with pytest.raises(OAuthTokenRefreshError) as exc_info:
+            client.refresh_access_token("client-id")
 
-        assert result is False
-        mock_print.assert_called_once()
-        assert "Token refresh unexpected error" in mock_print.call_args[0][0]
+        assert exc_info.value.status_code == 0
+        assert "Unexpected error" in str(exc_info.value)
 
     def test_revoke_token_no_token(self) -> None:
         """Test token revocation when no token available."""

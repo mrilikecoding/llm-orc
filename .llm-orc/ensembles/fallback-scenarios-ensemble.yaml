@@ -1,0 +1,48 @@
+name: "fallback-scenarios-ensemble"
+description: "Comprehensive demonstration of configurable fallback scenarios"
+
+# COMPREHENSIVE FALLBACK SCENARIOS DEMONSTRATION
+#
+# This ensemble tests multiple fallback scenarios in a single run to show
+# the robustness and flexibility of the configurable fallback system.
+#
+# USAGE:
+#   llm-orc invoke fallback-scenarios-ensemble "Explain system resilience patterns"
+#
+# SCENARIOS DEMONSTRATED:
+#
+# 1. CASCADE-DEMO AGENT:
+#    - Uses premium-claude profile with full cascading chain
+#    - Chain: premium-claude → standard-claude → micro-claude → local-llama
+#    - Shows how expensive models gracefully degrade to cheaper alternatives
+#
+# 2. DIRECT-FALLBACK-DEMO AGENT:  
+#    - Uses guaranteed-fail profile (nonexistent model/provider)
+#    - Direct fallback: guaranteed-fail → local-llama
+#    - Shows single-hop fallback to reliable local model
+#
+# 3. WORKING-BASELINE AGENT:
+#    - Uses local-llama profile (should always work)
+#    - Provides reliable baseline comparison
+#    - Shows normal operation without fallbacks
+#
+# WHAT TO OBSERVE:
+# - Different agents may end up using different actual models
+# - Clear messaging about which profiles failed and which fallbacks were used
+# - All agents should eventually produce responses despite failures
+# - Performance comparison between fallback vs baseline agents
+
+agents:
+  - name: "cascade-demo"
+    model_profile: "premium-claude"
+    system_prompt: "Analyze the given topic using the most advanced reasoning available."
+    
+  - name: "direct-fallback-demo"
+    model_profile: "guaranteed-fail"
+    system_prompt: "This will fail and demonstrate direct fallback to local model."
+    
+  - name: "working-baseline"
+    model_profile: "local-llama"
+    system_prompt: "Provide baseline analysis using reliable local model."
+
+default_task: "Explain the concept of resilience in complex systems. Consider how systems adapt to failures and maintain functionality through redundancy and graceful degradation."

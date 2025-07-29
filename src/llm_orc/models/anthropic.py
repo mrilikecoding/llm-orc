@@ -3,12 +3,11 @@
 import asyncio
 import subprocess
 import time
-from collections.abc import Awaitable
 from typing import Any
 
 from anthropic import AsyncAnthropic
 
-from llm_orc.core.auth.oauth_client import OAuthClaudeClient
+from llm_orc.core.auth.oauth_client import OAuthClaudeClient, OAuthTokenRefreshError
 from llm_orc.models.base import HTTPConnectionPool, ModelInterface
 
 
@@ -30,8 +29,8 @@ def _handle_proactive_token_refresh(model: "OAuthClaudeModel") -> bool:
     ):
         return True  # No refresh needed or not possible
 
-    print("🔄 Proactively refreshing token (expires soon)")
-    if model.client.refresh_access_token(model.client_id):
+    try:
+        model.client.refresh_access_token(model.client_id)
         # Update stored credentials and local references
         if model._credential_storage and model._provider_key:
             new_expires_at = int(time.time()) + 3600  # Default 1 hour expiry
@@ -46,10 +45,9 @@ def _handle_proactive_token_refresh(model: "OAuthClaudeModel") -> bool:
 
         model.access_token = model.client.access_token
         model.refresh_token = model.client.refresh_token
-        print("✅ Token refreshed proactively")
         return True
-    else:
-        print("❌ Proactive token refresh failed")
+    except OAuthTokenRefreshError:
+        # Token refresh failed - let calling code handle it
         return False
 
 
@@ -145,7 +143,7 @@ def _process_oauth_response(
 
 def _handle_oauth_token_refresh_error(
     model: "OAuthClaudeModel", error: Exception, message: str, role_prompt: str
-) -> Awaitable[str] | None:
+) -> bool:
     """Handle OAuth token refresh error and potentially retry.
 
     Args:
@@ -155,7 +153,7 @@ def _handle_oauth_token_refresh_error(
         role_prompt: Original role prompt
 
     Returns:
-        Coroutine for retry if successful refresh, None if not a token error
+        True if token refresh succeeded and retry is possible, False otherwise
 
     Raises:
         Exception: Re-raises the original error if not recoverable
@@ -163,10 +161,11 @@ def _handle_oauth_token_refresh_error(
     if "Token expired" not in str(error) or not (
         model.refresh_token and model.client_id
     ):
-        raise error
+        return False
 
     # Attempt token refresh
-    if model.client.refresh_access_token(model.client_id):
+    try:
+        model.client.refresh_access_token(model.client_id)
         # Update stored credentials if credential storage is available
         if model._credential_storage and model._provider_key:
             expires_at = int(time.time()) + 3600  # Default 1 hour expiry
@@ -182,15 +181,17 @@ def _handle_oauth_token_refresh_error(
         model.access_token = model.client.access_token
         model.refresh_token = model.client.refresh_token
 
-        # Retry request - remove last user message since we'll add it again
+        # Remove last user message since we'll add it again on retry
         if (
             model._conversation_history
             and model._conversation_history[-1]["role"] == "user"
         ):
             model._conversation_history.pop()
-        return model.generate_response(message, role_prompt)
 
-    raise error
+        return True  # Indicate retry is possible
+    except OAuthTokenRefreshError as refresh_error:
+        # Wrap the OAuth error with the original error context
+        raise Exception(f"OAuth token refresh failed: {str(refresh_error)}") from error
 
 
 class ClaudeModel(ModelInterface):
@@ -280,35 +281,45 @@ class OAuthClaudeModel(ModelInterface):
 
     async def generate_response(self, message: str, role_prompt: str) -> str:
         """Generate response using OAuth-authenticated Claude API."""
-        start_time = time.time()
+        max_retries = 1  # Allow one retry for token refresh
 
-        # Handle proactive token refresh if needed
-        _handle_proactive_token_refresh(self)
+        for attempt in range(max_retries + 1):
+            start_time = time.time()
 
-        try:
-            # Handle role injection before adding user message
-            self._inject_role_if_needed(role_prompt)
+            # Handle proactive token refresh if needed
+            _handle_proactive_token_refresh(self)
 
-            # Add current user message to conversation history
-            self.add_to_conversation("user", message)
+            try:
+                # Handle role injection before adding user message
+                self._inject_role_if_needed(role_prompt)
 
-            # Prepare request parameters
-            request_params = _prepare_oauth_message_request(self, role_prompt)
+                # Add current user message to conversation history
+                self.add_to_conversation("user", message)
 
-            # Execute API call
-            response = await _execute_oauth_api_call(self, request_params)
+                # Prepare request parameters
+                request_params = _prepare_oauth_message_request(self, role_prompt)
 
-            # Process response and return result
-            return _process_oauth_response(self, response, start_time)
+                # Execute API call
+                response = await _execute_oauth_api_call(self, request_params)
 
-        except Exception as e:
-            # Handle token refresh errors and retry if possible
-            retry_result = _handle_oauth_token_refresh_error(
-                self, e, message, role_prompt
-            )
-            if retry_result is not None:
-                return await retry_result
-            raise e
+                # Process response and return result
+                return _process_oauth_response(self, response, start_time)
+
+            except Exception as e:
+                # On last attempt or if refresh not possible, raise the error
+                if attempt == max_retries:
+                    raise e
+
+                # Handle token refresh errors and retry if possible
+                should_retry = _handle_oauth_token_refresh_error(
+                    self, e, message, role_prompt
+                )
+                if not should_retry:
+                    raise e
+                # If should_retry is True, continue to the next iteration
+
+        # This should never be reached, but added for type safety
+        raise RuntimeError("Unexpected end of generate_response method")
 
     def _inject_role_if_needed(self, role_prompt: str) -> None:
         """Inject role establishment into conversation if needed."""

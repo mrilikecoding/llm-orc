@@ -8,6 +8,17 @@ import requests
 from llm_orc import __version__
 
 
+class OAuthTokenRefreshError(Exception):
+    """Exception raised when OAuth token refresh fails."""
+
+    def __init__(self, status_code: int, error_message: str) -> None:
+        self.status_code = status_code
+        self.error_message = error_message
+        super().__init__(
+            f"OAuth token refresh failed with status {status_code}: {error_message}"
+        )
+
+
 class OAuthClaudeClient:
     """OAuth-enabled Claude client that bypasses anthropic client authentication."""
 
@@ -70,20 +81,23 @@ class OAuthClaudeClient:
                     self.refresh_token = tokens["refresh_token"]
                 return True
             else:
-                # Log detailed error information for debugging
-                error_msg = (
-                    f"Token refresh failed with status {response.status_code}: "
-                    f"{response.text}"
+                # Raise structured exception instead of printing
+                raise OAuthTokenRefreshError(
+                    status_code=response.status_code,
+                    error_message=response.text,
                 )
-                print(f"🔄 Token refresh error: {error_msg}")
-                return False
 
         except requests.exceptions.RequestException as e:
-            print(f"🔄 Token refresh network error: {str(e)}")
-            return False
+            raise OAuthTokenRefreshError(
+                status_code=0, error_message=f"Network error: {str(e)}"
+            ) from e
+        except OAuthTokenRefreshError:
+            # Re-raise our custom exceptions
+            raise
         except Exception as e:
-            print(f"🔄 Token refresh unexpected error: {str(e)}")
-            return False
+            raise OAuthTokenRefreshError(
+                status_code=0, error_message=f"Unexpected error: {str(e)}"
+            ) from e
 
     def revoke_token(self, client_id: str, token_type: str = "access_token") -> bool:
         """Revoke the access or refresh token.

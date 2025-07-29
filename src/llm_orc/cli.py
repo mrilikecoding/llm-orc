@@ -105,8 +105,8 @@ def completion(shell: str | None) -> None:
 @click.option(
     "--output-format",
     type=click.Choice(["json", "text"]),
-    default="text",
-    help="Output format for results",
+    default=None,
+    help="Output format for results (default: rich streaming interface)",
 )
 @click.option(
     "--streaming",

@@ -45,8 +45,9 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
         self.current_stream = self.stream_manager.create_stream(execution_id)
 
         try:
-            # Set up visualization hook
-            self.register_performance_hook(self._visualization_hook)
+            # Phase 5: TODO - Update visualization to use unified streaming events
+            # instead of the removed hook system. For now, visualization events
+            # will not be emitted until this is updated.
 
             # Start visualization based on mode
             if mode == "simple":

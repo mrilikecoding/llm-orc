@@ -1,0 +1,10 @@
+name: "test-fallback-display"
+description: "Test ensemble to demonstrate enhanced fallback display"
+
+# This ensemble uses a profile that will fail and demonstrate fallback behavior
+agents:
+  - name: "failing-agent"
+    model_profile: "guaranteed-fail"  # Profile designed to fail
+    system_prompt: "You are a test agent that should trigger fallback behavior."
+
+default_task: "This task will trigger fallback behavior to demonstrate the enhanced display."

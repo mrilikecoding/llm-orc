@@ -42,7 +42,7 @@ class TestMainCLI:
                 None,  # input_data
                 None,  # config_dir
                 None,  # input_data_option
-                "text",  # output_format (default)
+                None,  # output_format (default - Rich interface)
                 False,  # streaming (default)
                 None,  # max_concurrent (default)
                 False,  # detailed (default)
@@ -107,7 +107,7 @@ class TestMainCLI:
                 "positional_input",  # positional takes precedence
                 None,  # config_dir
                 "option_input",  # input_data_option
-                "text",  # output_format (default)
+                None,  # output_format (default - Rich interface)
                 False,  # streaming (default)
                 None,  # max_concurrent (default)
                 False,  # detailed (default)

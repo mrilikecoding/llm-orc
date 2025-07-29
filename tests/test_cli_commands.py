@@ -50,7 +50,11 @@ class TestInvokeEnsemble:
         config = Mock()
         config.name = "test_ensemble"
         config.description = "Test ensemble for testing"
-        config.agents = [Mock(), Mock()]  # 2 agents
+        # Mock agents as dictionaries with required fields
+        config.agents = [
+            {"name": "agent_1", "depends_on": []},
+            {"name": "agent_2", "depends_on": ["agent_1"]},
+        ]
         return config
 
     @pytest.fixture
@@ -79,7 +83,9 @@ class TestInvokeEnsemble:
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
             return_value={
-                "results": {"test_agent": "Test response"},
+                "results": {
+                    "test_agent": {"status": "success", "response": "Test response"}
+                },
                 "metadata": {"execution_time": 1.5},
             }
         )
@@ -130,7 +136,9 @@ class TestInvokeEnsemble:
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
             return_value={
-                "results": {"test_agent": "Test response"},
+                "results": {
+                    "test_agent": {"status": "success", "response": "Test response"}
+                },
                 "metadata": {"execution_time": 1.5},
             }
         )
@@ -232,7 +240,9 @@ class TestInvokeEnsemble:
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
             return_value={
-                "results": {"test_agent": "Test response"},
+                "results": {
+                    "test_agent": {"status": "success", "response": "Test response"}
+                },
                 "metadata": {"execution_time": 1.5},
             }
         )
@@ -275,7 +285,9 @@ class TestInvokeEnsemble:
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
             return_value={
-                "results": {"test_agent": "Test response"},
+                "results": {
+                    "test_agent": {"status": "success", "response": "Test response"}
+                },
                 "metadata": {"execution_time": 1.5},
             }
         )
@@ -318,7 +330,9 @@ class TestInvokeEnsemble:
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
             return_value={
-                "results": {"test_agent": "Test response"},
+                "results": {
+                    "test_agent": {"status": "success", "response": "Test response"}
+                },
                 "metadata": {"execution_time": 1.5},
             }
         )
@@ -367,7 +381,9 @@ class TestInvokeEnsemble:
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
             return_value={
-                "results": {"test_agent": "Test response"},
+                "results": {
+                    "test_agent": {"status": "success", "response": "Test response"}
+                },
                 "metadata": {"execution_time": 1.5},
             }
         )
@@ -430,7 +446,7 @@ class TestInvokeEnsemble:
                 input_data="test input",
                 config_dir=None,
                 input_data_option=None,
-                output_format="json",
+                output_format="rich",  # Use Rich interface to enable streaming
                 streaming=True,  # Enable streaming
                 max_concurrent=None,
                 detailed=False,
@@ -475,7 +491,7 @@ class TestInvokeEnsemble:
                 input_data="test input",
                 config_dir=None,
                 input_data_option=None,
-                output_format="json",
+                output_format="rich",  # Use Rich interface to respect config
                 streaming=False,  # CLI flag disabled
                 max_concurrent=None,
                 detailed=False,
@@ -497,7 +513,9 @@ class TestInvokeEnsemble:
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
             return_value={
-                "results": {"test_agent": "Test response"},
+                "results": {
+                    "test_agent": {"status": "success", "response": "Test response"}
+                },
                 "metadata": {"execution_time": 1.5, "agents_used": 1},
             }
         )
@@ -517,9 +535,6 @@ class TestInvokeEnsemble:
             ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
-            patch(
-                "llm_orc.cli_commands.run_standard_execution", new_callable=AsyncMock
-            ),
             patch("llm_orc.cli_commands.click.echo") as mock_echo,
         ):
             invoke_ensemble(
@@ -535,12 +550,17 @@ class TestInvokeEnsemble:
 
             # Should print performance information
             mock_echo.assert_called()
-            echo_calls = [call[0][0] for call in mock_echo.call_args_list]
+            echo_calls = []
+            for call in mock_echo.call_args_list:
+                if call.args:  # Check if positional args exist
+                    echo_calls.append(str(call.args[0]))
             echo_output = " ".join(echo_calls)
 
-            assert "test_ensemble" in echo_output
-            assert "agents" in echo_output
-            assert "Performance" in echo_output
+            # Text output should show dependency graph and results
+            assert "Dependency Graph:" in echo_output
+            assert "agent_1" in echo_output
+            assert "agent_2" in echo_output
+            assert "Test response" in echo_output
 
     def test_invoke_ensemble_text_output_performance_fallback(
         self,
@@ -549,28 +569,18 @@ class TestInvokeEnsemble:
         mock_loader: Mock,
         mock_executor: Mock,
     ) -> None:
-        """Test text output fallback when first performance config call fails."""
+        """Test text output works without calling performance config."""
         mock_loader.find_ensemble.return_value = mock_ensemble_config
 
-        # Mock load_performance_config to fail on first call but succeed on second
-        call_count = 0
-
-        def performance_config_side_effect() -> dict[str, bool]:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:  # First call (text output) fails
-                raise Exception("Config error")
-            else:  # Second call (streaming decision) succeeds
-                return {"streaming_enabled": False}
-
-        mock_config_manager.load_performance_config.side_effect = (
-            performance_config_side_effect
-        )
+        # Text output should not call load_performance_config at all
+        # So we don't need to mock it
 
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
             return_value={
-                "results": {"test_agent": "Test response"},
+                "results": {
+                    "test_agent": {"status": "success", "response": "Test response"}
+                },
                 "metadata": {"execution_time": 1.5, "agents_used": 1},
             }
         )
@@ -582,9 +592,6 @@ class TestInvokeEnsemble:
             ),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
             patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
-            patch(
-                "llm_orc.cli_commands.run_standard_execution", new_callable=AsyncMock
-            ),
             patch("llm_orc.cli_commands.click.echo") as mock_echo,
         ):
             invoke_ensemble(
@@ -599,11 +606,17 @@ class TestInvokeEnsemble:
             )
 
             # Should print fallback information
-            echo_calls = [call[0][0] for call in mock_echo.call_args_list]
+            echo_calls = []
+            for call in mock_echo.call_args_list:
+                if call.args:  # Check if positional args exist
+                    echo_calls.append(str(call.args[0]))
             echo_output = " ".join(echo_calls)
 
-            assert "test_ensemble" in echo_output
-            assert "Test ensemble for testing" in echo_output  # Description
+            # Text output should show dependency graph and results
+            assert "Dependency Graph:" in echo_output
+            assert "agent_1" in echo_output
+            assert "agent_2" in echo_output
+            assert "Test response" in echo_output
 
     def test_invoke_ensemble_execution_failure(
         self,
@@ -661,7 +674,9 @@ class TestInvokeEnsemble:
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
             return_value={
-                "results": {"test_agent": "Test response"},
+                "results": {
+                    "test_agent": {"status": "success", "response": "Test response"}
+                },
                 "metadata": {"execution_time": 1.5, "agents_used": 1},
             }
         )

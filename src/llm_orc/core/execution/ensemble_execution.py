@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator
 from typing import Any
 
 from llm_orc.agents.script_agent import ScriptAgent
@@ -36,8 +36,8 @@ class EnsembleExecutor:
         # Load performance configuration
         self._performance_config = self._config_manager.load_performance_config()
 
-        # Performance monitoring hooks for Issue #27 visualization integration
-        self._performance_hooks: list[Callable[[str, dict[str, Any]], None]] = []
+        # Phase 5: Unified event system - shared event queue for streaming
+        self._streaming_event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
         # Initialize extracted components
         self._model_factory = ModelFactory(
@@ -48,9 +48,7 @@ class EnsembleExecutor:
         self._input_enhancer = InputEnhancer()
         self._usage_collector = UsageCollector()
         self._results_processor = ResultsProcessor()
-        self._streaming_progress_tracker = StreamingProgressTracker(
-            self.register_performance_hook, self._remove_performance_hook
-        )
+        self._streaming_progress_tracker = StreamingProgressTracker()
 
         # Initialize execution coordinator with agent executor function
         # Use a wrapper to avoid circular dependency with _execute_agent_with_timeout
@@ -80,27 +78,80 @@ class EnsembleExecutor:
         """Delegate to model factory."""
         return await self._model_factory.load_model_from_agent_config(agent_config)
 
-    def register_performance_hook(
-        self, hook: Callable[[str, dict[str, Any]], None]
-    ) -> None:
-        """Register a performance monitoring hook for Issue #27 visualization."""
-        self._performance_hooks.append(hook)
-
-    def _remove_performance_hook(
-        self, hook: Callable[[str, dict[str, Any]], None]
-    ) -> None:
-        """Remove a performance monitoring hook."""
-        if hook in self._performance_hooks:
-            self._performance_hooks.remove(hook)
+    # Phase 5: Performance hooks system removed - events go directly to streaming queue
 
     def _emit_performance_event(self, event_type: str, data: dict[str, Any]) -> None:
-        """Emit performance monitoring events to registered hooks."""
-        for hook in self._performance_hooks:
-            try:
-                hook(event_type, data)
-            except Exception:
-                # Silently ignore hook failures to avoid breaking execution
-                pass
+        """Emit performance monitoring events to unified streaming queue.
+
+        Phase 5: Events go directly to streaming queue instead of hooks.
+        This eliminates the dual event system architecture.
+        """
+        event = {
+            "type": event_type,
+            "data": data,
+        }
+
+        # Put event in queue (non-blocking)
+        try:
+            self._streaming_event_queue.put_nowait(event)
+        except asyncio.QueueFull:
+            # Silently ignore if queue is full to avoid breaking execution
+            pass
+
+    def _classify_failure_type(self, error_message: str) -> str:
+        """Classify failure type based on error message for enhanced events.
+
+        Args:
+            error_message: The error message to classify
+
+        Returns:
+            Failure type: 'oauth_error', 'authentication_error', 'model_loading',
+            or 'runtime_error'
+        """
+        error_lower = error_message.lower()
+
+        # OAuth-specific errors
+        if any(
+            oauth_term in error_lower
+            for oauth_term in [
+                "oauth",
+                "token refresh",
+                "invalid_grant",
+                "refresh token",
+            ]
+        ):
+            return "oauth_error"
+
+        # Authentication errors (API keys, etc.)
+        if any(
+            auth_term in error_lower
+            for auth_term in [
+                "authentication",
+                "invalid x-api-key",
+                "unauthorized",
+                "401",
+            ]
+        ):
+            return "authentication_error"
+
+        # Model loading errors
+        if any(
+            loading_term in error_lower
+            for loading_term in [
+                "model loading",
+                "failed to load model",
+                "network error",
+                "connection failed",
+                "timeout",
+                "not found",
+                "not available",
+                "model provider",
+            ]
+        ):
+            return "model_loading"
+
+        # Default to runtime error
+        return "runtime_error"
 
     async def execute_streaming(
         self, config: EnsembleConfig, input_data: str
@@ -108,16 +159,72 @@ class EnsembleExecutor:
         """Execute ensemble with streaming progress updates.
 
         Yields progress events during execution for real-time monitoring.
-        Events include: execution_started, agent_progress, execution_completed.
+        Events include: execution_started, agent_progress, execution_completed,
+        agent_fallback_started, agent_fallback_completed, agent_fallback_failed.
+
+        Phase 5: Unified event system - merges progress and performance events.
         """
-        # Use StreamingProgressTracker for streaming execution
+        # Clear the event queue before starting
+        while not self._streaming_event_queue.empty():
+            try:
+                self._streaming_event_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+        # Use StreamingProgressTracker for execution tracking
         start_time = time.time()
         execution_task = asyncio.create_task(self.execute(config, input_data))
 
-        async for event in self._streaming_progress_tracker.track_execution_progress(
-            config, execution_task, start_time
+        # Merge events from progress tracker and performance queue
+        async for event in self._merge_streaming_events(
+            self._streaming_progress_tracker.track_execution_progress(
+                config, execution_task, start_time
+            )
         ):
             yield event
+
+    async def _merge_streaming_events(
+        self, progress_events: AsyncGenerator[dict[str, Any], None]
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Merge progress events with performance events from the unified queue.
+
+        Phase 5: This eliminates the dual event system by combining both streams.
+        """
+        try:
+            async for progress_event in progress_events:
+                yield progress_event
+
+                # Yield any accumulated performance events
+                async for perf_event in self._yield_queued_performance_events():
+                    yield perf_event
+
+                # Small delay to allow any concurrent performance events to be queued
+                await asyncio.sleep(0.001)
+
+                # Yield performance events again after delay
+                async for perf_event in self._yield_queued_performance_events():
+                    yield perf_event
+
+                # If execution is completed, mark progress as done
+                if progress_event.get("type") == "execution_completed":
+                    break
+        except Exception:
+            pass
+
+        # After progress is done, yield any remaining performance events
+        async for perf_event in self._yield_queued_performance_events():
+            yield perf_event
+
+    async def _yield_queued_performance_events(
+        self,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Yield all currently queued performance events."""
+        while not self._streaming_event_queue.empty():
+            try:
+                performance_event = self._streaming_event_queue.get_nowait()
+                yield performance_event
+            except asyncio.QueueEmpty:
+                break
 
     async def execute(self, config: EnsembleConfig, input_data: str) -> dict[str, Any]:
         """Execute an ensemble and return structured results."""
@@ -164,22 +271,143 @@ class EnsembleExecutor:
         agent_type = agent_config.get("type", "llm")
 
         if agent_type == "script":
-            # Execute script agent
-            script_agent = ScriptAgent(agent_config["name"], agent_config)
-            response = await script_agent.execute(input_data)
-            return response, None  # Script agents don't have model instances
+            return await self._execute_script_agent(agent_config, input_data)
         else:
-            # Execute LLM agent
-            # Load role and model for this agent
-            role = await self._load_role_from_config(agent_config)
-            model = await self._model_factory.load_model_from_agent_config(agent_config)
+            return await self._execute_llm_agent(agent_config, input_data)
 
-            # Create agent
-            agent = Agent(agent_config["name"], role, model)
+    async def _execute_script_agent(
+        self, agent_config: dict[str, Any], input_data: str
+    ) -> tuple[str, ModelInterface | None]:
+        """Execute script agent."""
+        script_agent = ScriptAgent(agent_config["name"], agent_config)
+        response = await script_agent.execute(input_data)
+        return response, None  # Script agents don't have model instances
 
-            # Generate response
+    async def _execute_llm_agent(
+        self, agent_config: dict[str, Any], input_data: str
+    ) -> tuple[str, ModelInterface | None]:
+        """Execute LLM agent with fallback handling."""
+        role = await self._load_role_from_config(agent_config)
+        model = await self._load_model_with_fallback(agent_config)
+        agent = Agent(agent_config["name"], role, model)
+
+        # Generate response with fallback handling for runtime failures
+        try:
             response = await agent.respond_to_message(input_data)
             return response, model
+        except Exception as e:
+            return await self._handle_runtime_fallback(
+                agent_config, role, input_data, e
+            )
+
+    async def _load_model_with_fallback(
+        self, agent_config: dict[str, Any]
+    ) -> ModelInterface:
+        """Load model with fallback handling for loading failures."""
+        try:
+            return await self._model_factory.load_model_from_agent_config(agent_config)
+        except Exception as model_loading_error:
+            return await self._handle_model_loading_fallback(
+                agent_config, model_loading_error
+            )
+
+    async def _handle_model_loading_fallback(
+        self, agent_config: dict[str, Any], model_loading_error: Exception
+    ) -> ModelInterface:
+        """Handle model loading failure with fallback."""
+        fallback_model = await self._model_factory.get_fallback_model(
+            context=f"agent_{agent_config['name']}",
+            original_profile=agent_config.get("model_profile"),
+        )
+        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
+
+        # Emit enhanced fallback event for model loading failure
+        failure_type = self._classify_failure_type(str(model_loading_error))
+        self._emit_performance_event(
+            "agent_fallback_started",
+            {
+                "agent_name": agent_config["name"],
+                "failure_type": failure_type,
+                "original_error": str(model_loading_error),
+                "original_model_profile": agent_config.get("model_profile", "unknown"),
+                "fallback_model_profile": None,  # No configurable fallback
+                "fallback_model_name": fallback_model_name,
+            },
+        )
+        return fallback_model
+
+    async def _handle_runtime_fallback(
+        self,
+        agent_config: dict[str, Any],
+        role: RoleDefinition,
+        input_data: str,
+        error: Exception,
+    ) -> tuple[str, ModelInterface]:
+        """Handle runtime failure with fallback model."""
+        fallback_model = await self._model_factory.get_fallback_model(
+            context=f"agent_{agent_config['name']}"
+        )
+        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
+
+        # Emit enhanced fallback event for runtime failure
+        failure_type = self._classify_failure_type(str(error))
+        self._emit_performance_event(
+            "agent_fallback_started",
+            {
+                "agent_name": agent_config["name"],
+                "failure_type": failure_type,
+                "original_error": str(error),
+                "original_model_profile": agent_config.get("model_profile", "unknown"),
+                "fallback_model_profile": None,  # No configurable fallback
+                "fallback_model_name": fallback_model_name,
+            },
+        )
+
+        # Create new agent with fallback model
+        fallback_agent = Agent(agent_config["name"], role, fallback_model)
+
+        # Try with fallback model
+        try:
+            response = await fallback_agent.respond_to_message(input_data)
+            self._emit_fallback_success_event(
+                agent_config["name"], fallback_model, response
+            )
+            return response, fallback_model
+        except Exception as fallback_error:
+            self._emit_fallback_failure_event(
+                agent_config["name"], fallback_model_name, fallback_error
+            )
+            raise fallback_error
+
+    def _emit_fallback_success_event(
+        self, agent_name: str, fallback_model: ModelInterface, response: str
+    ) -> None:
+        """Emit fallback success event."""
+        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
+        response_preview = response[:100] + "..." if len(response) > 100 else response
+        self._emit_performance_event(
+            "agent_fallback_completed",
+            {
+                "agent_name": agent_name,
+                "fallback_model_name": fallback_model_name,
+                "response_preview": response_preview,
+            },
+        )
+
+    def _emit_fallback_failure_event(
+        self, agent_name: str, fallback_model_name: str, fallback_error: Exception
+    ) -> None:
+        """Emit fallback failure event."""
+        fallback_failure_type = self._classify_failure_type(str(fallback_error))
+        self._emit_performance_event(
+            "agent_fallback_failed",
+            {
+                "agent_name": agent_name,
+                "failure_type": fallback_failure_type,
+                "fallback_error": str(fallback_error),
+                "fallback_model_name": fallback_model_name,
+            },
+        )
 
     async def _load_role_from_config(
         self, agent_config: dict[str, Any]

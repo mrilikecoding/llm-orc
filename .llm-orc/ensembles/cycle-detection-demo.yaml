@@ -1,0 +1,32 @@
+name: "cycle-detection-demo"
+description: "Demonstrates cycle detection in fallback chains"
+
+# CYCLE DETECTION SAFETY DEMONSTRATION
+#
+# This ensemble demonstrates the cycle detection safety feature that prevents
+# infinite loops in misconfigured fallback chains.
+#
+# USAGE:
+#   llm-orc invoke cycle-detection-demo "Test cycle detection"
+#
+# CYCLE DEMONSTRATED:
+#   cycle-test-a → cycle-test-b → cycle-test-c → cycle-test-a (CYCLE!)
+#
+# EXPECTED BEHAVIOR:
+# - The system detects the cycle before it causes an infinite loop
+# - A clear error message is displayed: "Cycle detected in fallback chain"
+# - The agent falls back to the system default (legacy fallback)
+# - The ensemble continues to work despite the configuration error
+#
+# SAFETY BENEFIT:
+# - Prevents infinite recursion that could crash the system
+# - Provides clear diagnostic information for debugging
+# - Gracefully handles misconfigured fallback chains
+# - Maintains system stability even with configuration errors
+
+agents:
+  - name: "cycle-test-agent"
+    model_profile: "cycle-test-a"
+    system_prompt: "This agent will trigger cycle detection in the fallback chain."
+
+default_task: "This task will trigger a cycle detection error, demonstrating the safety mechanism."
