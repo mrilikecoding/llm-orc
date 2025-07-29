@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import yaml
 
 from llm_orc.core.config.config_manager import ConfigurationManager
@@ -197,3 +198,219 @@ class TestConfigurationManager:
                 # Check gitignore was created
                 gitignore_file = local_dir / ".gitignore"
                 assert gitignore_file.exists()
+
+    def test_setup_default_config_template_not_found(self) -> None:
+        """Test config setup falls back gracefully when template not found."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Mock global config directory and template methods to fail
+            with patch.object(
+                ConfigurationManager, "_get_global_config_dir", return_value=temp_path
+            ):
+                with patch.object(
+                    ConfigurationManager,
+                    "_get_template_config_content",
+                    side_effect=FileNotFoundError(),
+                ):
+                    ConfigurationManager()
+
+                    # Check that config.yaml was created with fallback content
+                    config_file = temp_path / "config.yaml"
+                    assert config_file.exists()
+
+                    # Verify the file contains fallback YAML
+                    with open(config_file) as f:
+                        config_data = yaml.safe_load(f)
+                        assert "model_profiles" in config_data
+                        assert config_data["model_profiles"] == {}
+
+    def test_load_project_config_yaml_error(self) -> None:
+        """Test loading project config with corrupted YAML file."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create local config directory with corrupted config file
+            local_dir = temp_path / ".llm-orc"
+            local_dir.mkdir()
+
+            config_file = local_dir / "config.yaml"
+            with open(config_file, "w") as f:
+                f.write("invalid: yaml: content: [")  # Corrupted YAML
+
+            # Mock cwd to find the local config
+            with patch("pathlib.Path.cwd", return_value=temp_path):
+                config_manager = ConfigurationManager()
+                loaded_config = config_manager.load_project_config()
+
+                # Should return empty dict on YAML error
+                assert loaded_config == {}
+
+    def test_load_global_config_yaml_error(self) -> None:
+        """Test loading global config with corrupted YAML file."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create config file with corrupted YAML
+            config_file = temp_path / "config.yaml"
+            with open(config_file, "w") as f:
+                f.write("invalid: yaml: content: [")  # Corrupted YAML
+
+            # Mock global config directory
+            with patch.object(
+                ConfigurationManager, "_get_global_config_dir", return_value=temp_path
+            ):
+                config_manager = ConfigurationManager()
+                global_config = config_manager._load_global_config()
+
+                # Should return empty dict on YAML error
+                assert global_config == {}
+
+    def test_discover_local_config_with_existing_dir(self) -> None:
+        """Test local config discovery finds existing .llm-orc directory."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create .llm-orc directory
+            llm_orc_dir = temp_path / ".llm-orc"
+            llm_orc_dir.mkdir()
+
+            # Mock cwd to point to temp directory
+            with patch("pathlib.Path.cwd", return_value=temp_path):
+                with patch.object(ConfigurationManager, "_setup_default_config"):
+                    with patch.object(ConfigurationManager, "_setup_default_ensembles"):
+                        config_manager = ConfigurationManager()
+                        # Should find the .llm-orc directory
+                        assert config_manager.local_config_dir == llm_orc_dir
+
+    def test_config_manager_initialization_with_existing_config(self) -> None:
+        """Test config manager doesn't overwrite existing global config."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create existing config file
+            config_file = temp_path / "config.yaml"
+            existing_content = "existing: configuration"
+            with open(config_file, "w") as f:
+                f.write(existing_content)
+
+            # Mock global config directory
+            with patch.object(
+                ConfigurationManager, "_get_global_config_dir", return_value=temp_path
+            ):
+                ConfigurationManager()
+
+                # Should not overwrite existing config
+                with open(config_file) as f:
+                    content = f.read()
+                    assert content == existing_content
+
+    def test_get_template_config_content_not_found(self) -> None:
+        """Test template config content raises error when file not found."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            with patch.object(
+                ConfigurationManager, "_get_global_config_dir", return_value=temp_path
+            ):
+                with patch(
+                    "llm_orc.cli_library.library.get_template_content",
+                    side_effect=FileNotFoundError(),
+                ):
+                    config_manager = ConfigurationManager()
+
+                    with pytest.raises(
+                        FileNotFoundError, match="Template not found: nonexistent.yaml"
+                    ):
+                        config_manager._get_template_config_content("nonexistent.yaml")
+
+    def test_get_model_profile_existing(self) -> None:
+        """Test getting an existing model profile."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create config with model profiles
+            config_data = {
+                "model_profiles": {
+                    "test-profile": {"model": "test-model", "provider": "test-provider"}
+                }
+            }
+
+            config_file = temp_path / "config.yaml"
+            with open(config_file, "w") as f:
+                yaml.dump(config_data, f)
+
+            with patch.object(
+                ConfigurationManager, "_get_global_config_dir", return_value=temp_path
+            ):
+                config_manager = ConfigurationManager()
+                profile = config_manager.get_model_profile("test-profile")
+                assert profile is not None
+                assert profile["model"] == "test-model"
+                assert profile["provider"] == "test-provider"
+
+    def test_get_model_profile_not_found(self) -> None:
+        """Test getting a non-existent model profile returns None."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            with patch.object(
+                ConfigurationManager, "_get_global_config_dir", return_value=temp_path
+            ):
+                config_manager = ConfigurationManager()
+                profile = config_manager.get_model_profile("nonexistent-profile")
+                assert profile is None
+
+    def test_resolve_model_profile_missing_model(self) -> None:
+        """Test resolving a model profile with missing model field."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create config with incomplete model profile
+            config_data = {
+                "model_profiles": {
+                    "incomplete-profile": {
+                        "provider": "test-provider"
+                        # Missing "model" field
+                    }
+                }
+            }
+
+            config_file = temp_path / "config.yaml"
+            with open(config_file, "w") as f:
+                yaml.dump(config_data, f)
+
+            with patch.object(
+                ConfigurationManager, "_get_global_config_dir", return_value=temp_path
+            ):
+                config_manager = ConfigurationManager()
+
+                with pytest.raises(ValueError, match="is incomplete.*Both.*required"):
+                    config_manager.resolve_model_profile("incomplete-profile")
+
+    def test_resolve_model_profile_missing_provider(self) -> None:
+        """Test resolving a model profile with missing provider field."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create config with incomplete model profile
+            config_data = {
+                "model_profiles": {
+                    "incomplete-profile": {
+                        "model": "test-model"
+                        # Missing "provider" field
+                    }
+                }
+            }
+
+            config_file = temp_path / "config.yaml"
+            with open(config_file, "w") as f:
+                yaml.dump(config_data, f)
+
+            with patch.object(
+                ConfigurationManager, "_get_global_config_dir", return_value=temp_path
+            ):
+                config_manager = ConfigurationManager()
+
+                with pytest.raises(ValueError, match="is incomplete.*Both.*required"):
+                    config_manager.resolve_model_profile("incomplete-profile")
