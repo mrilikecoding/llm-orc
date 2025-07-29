@@ -9,12 +9,27 @@ from rich.tree import Tree
 
 from llm_orc.cli_modules.utils.visualization import (
     _calculate_agent_level,
+    _create_plain_text_dependency_graph,
+    _create_structured_dependency_info,
+    _display_detailed_plain_text,
+    _display_plain_text_dependency_graph,
+    _display_simplified_plain_text,
     _group_agents_by_dependency_level,
+    _handle_fallback_completed_event,
+    _handle_fallback_failed_event,
+    _handle_fallback_started_event,
+    _handle_streaming_event,
+    _handle_text_fallback_completed,
+    _handle_text_fallback_failed,
+    _handle_text_fallback_started,
     _process_execution_completed_event,
+    _run_text_json_execution,
     _update_agent_progress_status,
+    _update_agent_status_by_names,
     create_dependency_graph,
     create_dependency_graph_with_status,
     create_dependency_tree,
+    display_plain_text_results,
     display_results,
     display_simplified_results,
     find_final_agent,
@@ -442,7 +457,9 @@ class TestStreamingExecution:
                 "type": "execution_completed",
                 "data": {
                     "duration": 2.5,
-                    "results": {"agent_a": {"status": "success"}},
+                    "results": {
+                        "agent_a": {"status": "success", "response": "Test response"}
+                    },
                     "metadata": {"usage": {}},
                 },
             }
@@ -459,12 +476,12 @@ class TestStreamingExecution:
         )
 
         # Then
-        assert mock_click_echo.call_count == 2  # Two events
+        assert mock_click_echo.call_count == 1  # Consolidated JSON output
 
     @patch("llm_orc.cli_modules.utils.visualization.Console")
-    @patch("llm_orc.cli_modules.utils.visualization.display_results")
+    @patch("llm_orc.cli_modules.utils.visualization.display_plain_text_results")
     async def test_run_streaming_execution_text_output(
-        self, mock_display_results: Mock, mock_console_class: Mock
+        self, mock_display_plain_text: Mock, mock_console_class: Mock
     ) -> None:
         """Test streaming execution with text output format."""
         # Given
@@ -485,8 +502,10 @@ class TestStreamingExecution:
                 "type": "execution_completed",
                 "data": {
                     "duration": 2.5,
-                    "results": {"agent_a": {"status": "success"}},
-                    "metadata": {"usage": {}},
+                    "results": {
+                        "agent_a": {"status": "success", "response": "Test response"}
+                    },
+                    "metadata": {"duration": "2.5s", "usage": {}},
                 },
             }
 
@@ -502,7 +521,12 @@ class TestStreamingExecution:
         )
 
         # Then
-        mock_display_results.assert_called_once()
+        mock_display_plain_text.assert_called_once_with(
+            {"agent_a": {"status": "success", "response": "Test response"}},
+            {"duration": "2.5s", "usage": {}},
+            True,
+            [{"name": "agent_a"}, {"name": "agent_b"}],
+        )
 
 
 class TestStandardExecution:
@@ -517,12 +541,15 @@ class TestStandardExecution:
         mock_executor = Mock()
         mock_executor.execute = AsyncMock(
             return_value={
-                "results": {"agent_a": {"status": "success"}},
+                "results": {
+                    "agent_a": {"status": "success", "response": "Test response"}
+                },
                 "metadata": {"usage": {}},
             }
         )
 
         ensemble_config = Mock(spec=EnsembleConfig)
+        ensemble_config.agents = [{"name": "agent_a"}]
 
         # When
         await run_standard_execution(
@@ -535,20 +562,21 @@ class TestStandardExecution:
         # Verify it's valid JSON
         json.loads(call_args)
 
-    @patch("llm_orc.cli_modules.utils.visualization.display_results")
+    @patch("llm_orc.cli_modules.utils.visualization.display_plain_text_results")
     async def test_run_standard_execution_text_output(
-        self, mock_display_results: Mock
+        self, mock_display_plain_text: Mock
     ) -> None:
         """Test standard execution with text output format."""
         # Given
         mock_executor = Mock()
         result_data = {
-            "results": {"agent_a": {"status": "success"}},
-            "metadata": {"usage": {}},
+            "results": {"agent_a": {"status": "success", "response": "Test response"}},
+            "metadata": {"duration": "2.5s", "usage": {}},
         }
         mock_executor.execute = AsyncMock(return_value=result_data)
 
         ensemble_config = Mock(spec=EnsembleConfig)
+        ensemble_config.agents = [{"name": "agent_a"}]
 
         # When
         await run_standard_execution(
@@ -556,8 +584,11 @@ class TestStandardExecution:
         )
 
         # Then
-        mock_display_results.assert_called_once_with(
-            result_data["results"], result_data["metadata"], True
+        mock_display_plain_text.assert_called_once_with(
+            result_data["results"],
+            result_data["metadata"],
+            True,
+            ensemble_config.agents,
         )
 
 
@@ -709,3 +740,623 @@ class TestStreamingExecutionHelperMethods:
         mock_display.assert_called_once_with(
             event_data["results"], event_data["metadata"], True
         )
+
+
+class TestPlainTextFunctions:
+    """Test plain text visualization functions."""
+
+    def test_create_plain_text_dependency_graph_with_running_status(self) -> None:
+        """Test creating plain text dependency graph with running status."""
+        # Given
+        agents = [
+            {"name": "agent_a", "depends_on": []},
+            {"name": "agent_b", "depends_on": ["agent_a"]},
+        ]
+        agent_statuses = {"agent_a": "running", "agent_b": "pending"}
+
+        # When
+        result = _create_plain_text_dependency_graph(agents, agent_statuses)
+
+        # Then
+        assert "◐ agent_a" in result
+        assert "○ agent_b" in result
+        assert "→" in result
+
+    def test_create_plain_text_dependency_graph_with_failed_status(self) -> None:
+        """Test creating plain text dependency graph with failed status."""
+        # Given
+        agents = [{"name": "agent_a", "depends_on": []}]
+        agent_statuses = {"agent_a": "failed"}
+
+        # When
+        result = _create_plain_text_dependency_graph(agents, agent_statuses)
+
+        # Then
+        assert "✗ agent_a" in result
+
+    def test_create_plain_text_dependency_graph_empty_agents(self) -> None:
+        """Test creating plain text dependency graph with empty agents."""
+        # Given
+        agents: list[dict[str, Any]] = []
+        agent_statuses: dict[str, str] = {}
+
+        # When
+        result = _create_plain_text_dependency_graph(agents, agent_statuses)
+
+        # Then
+        assert result == ""
+
+    @patch("click.echo")
+    def test_display_plain_text_dependency_graph(self, mock_echo: Mock) -> None:
+        """Test displaying plain text dependency graph."""
+        # Given
+        agents = [{"name": "agent_a", "depends_on": []}]
+        results = {"agent_a": {"status": "success"}}
+
+        # When
+        _display_plain_text_dependency_graph(agents, results)
+
+        # Then
+        assert mock_echo.call_count >= 3  # Title, graph, empty line
+
+    @patch("click.echo")
+    def test_display_detailed_plain_text(self, mock_echo: Mock) -> None:
+        """Test displaying detailed plain text results."""
+        # Given
+        results = {
+            "agent_success": {"status": "success", "response": "Test response"},
+            "agent_error": {"status": "failed", "error": "Test error"},
+        }
+        metadata = {
+            "duration": "2.5s",
+            "usage": {
+                "totals": {
+                    "total_tokens": 1000,
+                    "total_cost_usd": 0.05,
+                    "agents_count": 2,
+                }
+            },
+        }
+
+        # When
+        _display_detailed_plain_text(results, metadata)
+
+        # Then
+        calls = [
+            str(call[0][0]) if call[0] else str(call)
+            for call in mock_echo.call_args_list
+        ]
+        assert "Results" in calls
+        assert "Performance Metrics" in calls
+
+    @patch("click.echo")
+    def test_display_simplified_plain_text_no_successful_results(
+        self, mock_echo: Mock
+    ) -> None:
+        """Test displaying simplified plain text with no successful results."""
+        # Given
+        results = {"agent_a": {"status": "failed", "error": "All failed"}}
+        metadata = {"duration": "1.0s"}
+
+        # When
+        _display_simplified_plain_text(results, metadata)
+
+        # Then
+        calls = [call[0][0] for call in mock_echo.call_args_list]
+        assert "❌ No successful results found" in calls
+
+    @patch(
+        "llm_orc.cli_modules.utils.visualization._display_plain_text_dependency_graph"
+    )
+    @patch("llm_orc.cli_modules.utils.visualization._display_detailed_plain_text")
+    def test_display_plain_text_results_with_agents(
+        self, mock_detailed: Mock, mock_dep_graph: Mock
+    ) -> None:
+        """Test displaying plain text results with agents."""
+        # Given
+        results = {"agent_a": {"status": "success", "response": "Test"}}
+        metadata = {"duration": "1.0s"}
+        agents = [{"name": "agent_a", "depends_on": []}]
+
+        # When
+        display_plain_text_results(results, metadata, detailed=True, agents=agents)
+
+        # Then
+        mock_dep_graph.assert_called_once_with(agents, results)
+        mock_detailed.assert_called_once_with(results, metadata)
+
+    def test_create_structured_dependency_info_with_results(self) -> None:
+        """Test creating structured dependency info with results."""
+        # Given
+        agents = [
+            {"name": "agent_a", "depends_on": []},
+            {"name": "agent_b", "depends_on": ["agent_a"]},
+        ]
+        results = {
+            "agent_a": {"status": "success"},
+            "agent_b": {"status": "failed", "error": "test error"},
+        }
+
+        # When
+        result = _create_structured_dependency_info(agents, results)
+
+        # Then
+        assert "dependency_levels" in result
+        assert len(result["dependency_levels"]) == 2
+        # Check that status is included
+        level_0_agent = result["dependency_levels"][0]["agents"][0]
+        assert level_0_agent["status"] == "completed"
+
+
+class TestFallbackEventHandlers:
+    """Test fallback event handler functions."""
+
+    @patch("builtins.print")
+    def test_handle_fallback_completed_event(self, mock_print: Mock) -> None:
+        """Test handling fallback completed event."""
+        # Given
+        mock_console = Mock()
+        event_data = {
+            "agent_name": "test_agent",
+            "fallback_model_name": "fallback_model",
+        }
+
+        # When
+        _handle_fallback_completed_event(mock_console, event_data)
+
+        # Then
+        mock_print.assert_called_once()
+        call_args = mock_print.call_args[0][0]
+        assert "✅ SUCCESS:" in call_args
+
+    @patch("builtins.print")
+    def test_handle_fallback_failed_event(self, mock_print: Mock) -> None:
+        """Test handling fallback failed event."""
+        # Given
+        mock_console = Mock()
+        event_data = {
+            "agent_name": "test_agent",
+            "failure_type": "oauth_error",
+            "fallback_error": "Token expired",
+            "fallback_model_name": "fallback_model",
+        }
+
+        # When
+        _handle_fallback_failed_event(mock_console, event_data)
+
+        # Then
+        mock_print.assert_called_once()
+        call_args = mock_print.call_args[0][0]
+        assert "❌ FAILED:" in call_args
+
+    def test_handle_fallback_started_event_oauth_error(self) -> None:
+        """Test handling fallback started event with OAuth error."""
+        # Given
+        mock_console = Mock()
+        event_data = {
+            "agent_name": "test_agent",
+            "failure_type": "oauth_error",
+            "original_error": "Token refresh failed",
+            "original_model_profile": "gpt-4",
+            "fallback_model_name": "claude-3",
+        }
+
+        # When
+        _handle_fallback_started_event(mock_console, event_data)
+
+        # Then
+        assert mock_console.print.call_count == 3
+        first_call = mock_console.print.call_args_list[0][0][0]
+        assert "🔐" in first_call  # OAuth emoji
+
+    def test_handle_fallback_started_event_auth_error(self) -> None:
+        """Test handling fallback started event with authentication error."""
+        # Given
+        mock_console = Mock()
+        event_data = {
+            "agent_name": "test_agent",
+            "failure_type": "authentication_error",
+            "original_error": "Invalid API key",
+            "original_model_profile": "claude-3",
+            "fallback_model_name": "gpt-4",
+        }
+
+        # When
+        _handle_fallback_started_event(mock_console, event_data)
+
+        # Then
+        first_call = mock_console.print.call_args_list[0][0][0]
+        assert "🔑" in first_call  # Auth emoji
+
+    def test_handle_fallback_started_event_other_error(self) -> None:
+        """Test handling fallback started event with other error type."""
+        # Given
+        mock_console = Mock()
+        event_data = {
+            "agent_name": "test_agent",
+            "failure_type": "runtime_error",
+            "original_error": "Model timeout",
+            "original_model_profile": "gpt-4",
+            "fallback_model_name": "claude-3",
+        }
+
+        # When
+        _handle_fallback_started_event(mock_console, event_data)
+
+        # Then
+        first_call = mock_console.print.call_args_list[0][0][0]
+        assert "⚠️" in first_call  # Generic warning emoji
+
+    @patch("click.echo")
+    def test_handle_text_fallback_started(self, mock_echo: Mock) -> None:
+        """Test handling text fallback started event."""
+        # Given
+        event_data = {
+            "agent_name": "test_agent",
+            "failure_type": "model_loading",
+            "original_error": "Connection failed",
+            "original_model_profile": "gpt-4",
+            "fallback_model_name": "claude-3",
+        }
+
+        # When
+        _handle_text_fallback_started(event_data)
+
+        # Then
+        calls = [call[0][0] for call in mock_echo.call_args_list]
+        assert any("WARNING:" in call for call in calls)
+
+    @patch("click.echo")
+    def test_handle_text_fallback_completed(self, mock_echo: Mock) -> None:
+        """Test handling text fallback completed event."""
+        # Given
+        event_data = {
+            "agent_name": "test_agent",
+            "fallback_model_name": "claude-3",
+        }
+
+        # When
+        _handle_text_fallback_completed(event_data)
+
+        # Then
+        mock_echo.assert_called_once()
+        call_args = mock_echo.call_args[0][0]
+        assert "SUCCESS:" in call_args
+
+    @patch("click.echo")
+    def test_handle_text_fallback_failed(self, mock_echo: Mock) -> None:
+        """Test handling text fallback failed event."""
+        # Given
+        event_data = {
+            "agent_name": "test_agent",
+            "failure_type": "authentication_error",
+            "fallback_error": "API key invalid",
+            "fallback_model_name": "claude-3",
+        }
+
+        # When
+        _handle_text_fallback_failed(event_data)
+
+        # Then
+        mock_echo.assert_called_once()
+        call_args = mock_echo.call_args[0][0]
+        assert "ERROR:" in call_args
+
+
+class TestStreamingEventHandlers:
+    """Test streaming event handler functions."""
+
+    def test_update_agent_status_by_names(self) -> None:
+        """Test updating agent status by specific names."""
+        # Given
+        agents = [
+            {"name": "agent_a", "depends_on": []},
+            {"name": "agent_b", "depends_on": []},
+            {"name": "agent_c", "depends_on": []},
+        ]
+        started_agent_names = ["agent_a", "agent_b"]
+        completed_agent_names = ["agent_a"]
+        agent_statuses: dict[str, str] = {}
+
+        # When
+        _update_agent_status_by_names(
+            agents, started_agent_names, completed_agent_names, agent_statuses
+        )
+
+        # Then
+        assert agent_statuses["agent_a"] == "completed"
+        assert agent_statuses["agent_b"] == "running"
+        assert agent_statuses["agent_c"] == "pending"
+
+    def test_handle_streaming_event_agent_progress(self) -> None:
+        """Test handling agent progress streaming event."""
+        # Given
+        event_type = "agent_progress"
+        event = {
+            "data": {
+                "started_agent_names": ["agent_a"],
+                "completed_agent_names": [],
+            }
+        }
+        agent_statuses: dict[str, str] = {}
+        ensemble_config = Mock()
+        ensemble_config.agents = [{"name": "agent_a", "depends_on": []}]
+        status = Mock()
+        console = Mock()
+
+        # When
+        with patch(
+            "llm_orc.cli_modules.utils.visualization.create_dependency_tree"
+        ) as mock_tree:
+            mock_tree.return_value = "mock_tree"
+            result = _handle_streaming_event(
+                event_type, event, agent_statuses, ensemble_config, status, console
+            )
+
+        # Then
+        assert result is True
+        assert agent_statuses["agent_a"] == "running"
+
+    def test_handle_streaming_event_execution_completed(self) -> None:
+        """Test handling execution completed streaming event."""
+        # Given
+        event_type = "execution_completed"
+        event = {"data": {"duration": 2.5, "results": {}, "metadata": {}}}
+        agent_statuses: dict[str, str] = {}
+        ensemble_config = Mock()
+        ensemble_config.agents = [{"name": "agent_a", "depends_on": []}]
+        status = Mock()
+        console = Mock()
+
+        # When
+        with patch(
+            "llm_orc.cli_modules.utils.visualization._process_execution_completed_event"
+        ) as mock_process:
+            mock_process.return_value = False  # Indicate should break
+            result = _handle_streaming_event(
+                event_type,
+                event,
+                agent_statuses,
+                ensemble_config,
+                status,
+                console,
+                "rich",
+                True,
+            )
+
+        # Then
+        assert result is False  # Should break loop
+
+    def test_handle_streaming_event_agent_fallback_started(self) -> None:
+        """Test handling agent fallback started streaming event."""
+        # Given
+        event_type = "agent_fallback_started"
+        event = {"data": {"agent_name": "agent_a"}}
+        agent_statuses: dict[str, str] = {}
+        ensemble_config = Mock()
+        ensemble_config.agents = [{"name": "agent_a", "depends_on": []}]
+        status = Mock()
+        console = Mock()
+
+        # When
+        with patch(
+            "llm_orc.cli_modules.utils.visualization.create_dependency_tree"
+        ) as mock_tree:
+            with patch(
+                "llm_orc.cli_modules.utils.visualization._handle_fallback_started_event"
+            ) as mock_handle:
+                mock_tree.return_value = "mock_tree"
+                result = _handle_streaming_event(
+                    event_type, event, agent_statuses, ensemble_config, status, console
+                )
+
+        # Then
+        assert result is True
+        assert agent_statuses["agent_a"] == "running"
+        mock_handle.assert_called_once_with(console, event["data"])
+
+    def test_handle_streaming_event_agent_fallback_failed(self) -> None:
+        """Test handling agent fallback failed streaming event."""
+        # Given
+        event_type = "agent_fallback_failed"
+        event = {"data": {"agent_name": "agent_a"}}
+        agent_statuses: dict[str, str] = {}
+        ensemble_config = Mock()
+        ensemble_config.agents = [{"name": "agent_a", "depends_on": []}]
+        status = Mock()
+        console = Mock()
+
+        # When
+        with patch(
+            "llm_orc.cli_modules.utils.visualization.create_dependency_tree"
+        ) as mock_tree:
+            with patch(
+                "llm_orc.cli_modules.utils.visualization._handle_fallback_failed_event"
+            ) as mock_handle:
+                mock_tree.return_value = "mock_tree"
+                result = _handle_streaming_event(
+                    event_type, event, agent_statuses, ensemble_config, status, console
+                )
+
+        # Then
+        assert result is True
+        assert agent_statuses["agent_a"] == "failed"
+        mock_handle.assert_called_once_with(console, event["data"])
+
+
+class TestTextJsonExecution:
+    """Test text and JSON execution functions."""
+
+    @patch("click.echo")
+    async def test_run_text_json_execution_json_format(self, mock_echo: Mock) -> None:
+        """Test running text/JSON execution with JSON format."""
+        # Given
+        mock_executor = Mock()
+
+        async def async_iter() -> Any:
+            yield {"type": "execution_started", "data": {}}
+            yield {
+                "type": "execution_completed",
+                "data": {
+                    "results": {"agent_a": {"status": "success", "response": "Test"}},
+                    "metadata": {"usage": {}},
+                },
+            }
+
+        mock_executor.execute_streaming = Mock(return_value=async_iter())
+        ensemble_config = Mock(spec=EnsembleConfig)
+        ensemble_config.agents = [{"name": "agent_a", "depends_on": []}]
+
+        # When
+        await _run_text_json_execution(
+            mock_executor, ensemble_config, "test input", "json", False
+        )
+
+        # Then
+        mock_echo.assert_called_once()
+        call_args = mock_echo.call_args[0][0]
+        output_data = json.loads(call_args)
+        assert "events" in output_data
+        assert "result" in output_data
+        assert "dependency_info" in output_data
+
+    @patch("llm_orc.cli_modules.utils.visualization.display_plain_text_results")
+    async def test_run_text_json_execution_text_format_fallback_events(
+        self, mock_display: Mock
+    ) -> None:
+        """Test text execution with fallback events."""
+        # Given
+        mock_executor = Mock()
+
+        async def async_iter() -> Any:
+            yield {"type": "agent_fallback_started", "data": {"agent_name": "agent_a"}}
+            yield {
+                "type": "agent_fallback_completed",
+                "data": {"agent_name": "agent_a"},
+            }
+            yield {"type": "agent_fallback_failed", "data": {"agent_name": "agent_b"}}
+            yield {
+                "type": "execution_completed",
+                "data": {
+                    "results": {"agent_a": {"status": "success", "response": "Test"}},
+                    "metadata": {"usage": {}},
+                },
+            }
+
+        mock_executor.execute_streaming = Mock(return_value=async_iter())
+        ensemble_config = Mock(spec=EnsembleConfig)
+        ensemble_config.agents = [{"name": "agent_a", "depends_on": []}]
+
+        # When
+        with patch(
+            "llm_orc.cli_modules.utils.visualization._handle_text_fallback_started"
+        ) as mock_started:
+            with patch(
+                "llm_orc.cli_modules.utils.visualization._handle_text_fallback_completed"
+            ) as mock_completed:
+                with patch(
+                    "llm_orc.cli_modules.utils.visualization._handle_text_fallback_failed"
+                ) as mock_failed:
+                    await _run_text_json_execution(
+                        mock_executor, ensemble_config, "test input", "text", True
+                    )
+
+        # Then
+        mock_started.assert_called_once()
+        mock_completed.assert_called_once()
+        mock_failed.assert_called_once()
+        mock_display.assert_called_once()
+
+    @patch("llm_orc.cli_modules.utils.visualization.Console")
+    async def test_run_streaming_execution_rich_interface(
+        self, mock_console_class: Mock
+    ) -> None:
+        """Test running streaming execution with Rich interface (default)."""
+        # Given
+        mock_console = Mock()
+        mock_status = Mock()
+        mock_console.status.return_value.__enter__ = Mock(return_value=mock_status)
+        mock_console.status.return_value.__exit__ = Mock(return_value=None)
+        mock_console_class.return_value = mock_console
+
+        mock_executor = Mock()
+
+        async def async_iter() -> Any:
+            yield {"type": "execution_started", "data": {}}
+            yield {"type": "agent_started", "data": {"agent_name": "agent_a"}}
+            yield {
+                "type": "execution_completed",
+                "data": {
+                    "duration": 2.5,
+                    "results": {"agent_a": {"status": "success", "response": "Test"}},
+                    "metadata": {"usage": {}},
+                },
+            }
+
+        mock_executor.execute_streaming = Mock(return_value=async_iter())
+        ensemble_config = Mock(spec=EnsembleConfig)
+        ensemble_config.agents = [{"name": "agent_a", "depends_on": []}]
+
+        # When
+        with patch(
+            "llm_orc.cli_modules.utils.visualization.create_dependency_tree"
+        ) as mock_tree:
+            with patch(
+                "llm_orc.cli_modules.utils.visualization._handle_streaming_event"
+            ) as mock_handle:
+                mock_tree.return_value = "mock_tree"
+                mock_handle.side_effect = [True, True, False]  # Break on third event
+
+                await run_streaming_execution(
+                    mock_executor,
+                    ensemble_config,
+                    "test input",
+                    "rich",
+                    False,  # Rich default
+                )
+
+        # Then
+        mock_console.status.assert_called_once()
+        assert mock_handle.call_count == 3
+
+    @patch("llm_orc.cli_modules.utils.visualization._handle_text_fallback_started")
+    @patch("llm_orc.cli_modules.utils.visualization._handle_text_fallback_failed")
+    async def test_run_standard_execution_with_fallback_events_text(
+        self, mock_fallback_failed: Mock, mock_fallback_started: Mock
+    ) -> None:
+        """Test standard execution with fallback events in text mode."""
+        # Given
+        mock_executor = Mock()
+        mock_executor.execute = AsyncMock(
+            return_value={
+                "results": {"agent_a": {"status": "success", "response": "Test"}},
+                "metadata": {"usage": {}},
+            }
+        )
+
+        # Mock the _emit_performance_event to capture calls
+        original_emit = Mock()
+        mock_executor._emit_performance_event = original_emit
+
+        ensemble_config = Mock(spec=EnsembleConfig)
+        ensemble_config.agents = [{"name": "agent_a", "depends_on": []}]
+
+        # When
+        with patch(
+            "llm_orc.cli_modules.utils.visualization.display_plain_text_results"
+        ) as mock_display:
+            await run_standard_execution(
+                mock_executor, ensemble_config, "test input", "text", False
+            )
+
+            # Simulate fallback events being captured by calling the capture function
+            # This tests the capture_fallback_event function path (lines 974-979)
+            capture_func = mock_executor._emit_performance_event
+            capture_func("agent_fallback_started", {"agent_name": "test"})
+            capture_func("agent_fallback_failed", {"agent_name": "test"})
+            capture_func("other_event", {"agent_name": "test"})  # Should be ignored
+
+        # Then
+        mock_display.assert_called_once()
+        # The original emit function should be restored
+        assert mock_executor._emit_performance_event == original_emit

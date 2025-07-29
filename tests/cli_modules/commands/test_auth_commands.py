@@ -896,20 +896,24 @@ class TestTokenRefresh:
         ):
             AuthCommands.test_token_refresh("test-provider")
 
+    @patch("llm_orc.core.auth.oauth_client.OAuthClaudeClient")
     @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
     @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
     def test_refresh_token_info_display(
         self,
         mock_storage_class: Mock,
         mock_config_class: Mock,
+        mock_oauth_client_class: Mock,
     ) -> None:
         """Test token info display for OAuth provider."""
         # Given
         mock_config = Mock()
         mock_storage = Mock()
+        mock_oauth_client = Mock()
 
         mock_config_class.return_value = mock_config
         mock_storage_class.return_value = mock_storage
+        mock_oauth_client_class.return_value = mock_oauth_client
 
         mock_storage.list_providers.return_value = ["test-provider"]
         oauth_token = {
@@ -919,6 +923,9 @@ class TestTokenRefresh:
             "expires_at": time.time() + 3600,  # Expires in 1 hour
         }
         mock_storage.get_oauth_token.return_value = oauth_token
+
+        # Mock successful token refresh
+        mock_oauth_client.refresh_access_token.return_value = True
 
         # When
         with patch("click.echo") as mock_echo:

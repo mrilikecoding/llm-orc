@@ -53,8 +53,8 @@ class TestStreamingProgressTrackerSimplified:
         ):
             events.append(event)
 
-        # Verify events
-        assert len(events) == 2  # Started and completed
+        # Verify events (now includes progress event)
+        assert len(events) == 3  # Started, progress, and completed
 
         # Check started event
         started_event = events[0]
@@ -63,8 +63,14 @@ class TestStreamingProgressTrackerSimplified:
         assert started_event["data"]["total_agents"] == 2
         assert started_event["data"]["timestamp"] == start_time
 
+        # Check progress event
+        progress_event = events[1]
+        assert progress_event["type"] == "execution_progress"
+        assert progress_event["data"]["ensemble"] == "test_ensemble"
+        assert "elapsed" in progress_event["data"]
+
         # Check completed event
-        completed_event = events[1]
+        completed_event = events[2]
         assert completed_event["type"] == "execution_completed"
         assert completed_event["data"]["ensemble"] == "test_ensemble"
         assert completed_event["data"]["results"] == final_result["results"]
@@ -97,16 +103,21 @@ class TestStreamingProgressTrackerSimplified:
         ):
             events.append(event)
 
-        # Should get started and failed events
-        assert len(events) == 2
+        # Should get started, progress, and failed events
+        assert len(events) == 3
 
         # Check started event
         started_event = events[0]
         assert started_event["type"] == "execution_started"
         assert started_event["data"]["ensemble"] == "test_ensemble"
 
+        # Check progress event
+        progress_event = events[1]
+        assert progress_event["type"] == "execution_progress"
+        assert progress_event["data"]["ensemble"] == "test_ensemble"
+
         # Check failed event
-        failed_event = events[1]
+        failed_event = events[2]
         assert failed_event["type"] == "execution_failed"
         assert failed_event["data"]["ensemble"] == "test_ensemble"
         assert "error" in failed_event["data"]
@@ -142,11 +153,12 @@ class TestStreamingProgressTrackerSimplified:
         ):
             events.append(event)
 
-        # Should get started and completed events
-        assert len(events) == 2
+        # Should get started, progress, and completed events
+        assert len(events) == 3
         assert events[0]["type"] == "execution_started"
         assert events[0]["data"]["total_agents"] == 0
-        assert events[1]["type"] == "execution_completed"
+        assert events[1]["type"] == "execution_progress"
+        assert events[2]["type"] == "execution_completed"
 
     @pytest.mark.asyncio
     async def test_track_execution_progress_single_agent(self) -> None:
@@ -177,9 +189,10 @@ class TestStreamingProgressTrackerSimplified:
         ):
             events.append(event)
 
-        # Should get started and completed events
-        assert len(events) == 2
+        # Should get started, progress, and completed events
+        assert len(events) == 3
         assert events[0]["type"] == "execution_started"
         assert events[0]["data"]["total_agents"] == 1
-        assert events[1]["type"] == "execution_completed"
-        assert events[1]["data"]["results"] == {"solo_agent": "result"}
+        assert events[1]["type"] == "execution_progress"
+        assert events[2]["type"] == "execution_completed"
+        assert events[2]["data"]["results"] == {"solo_agent": "result"}

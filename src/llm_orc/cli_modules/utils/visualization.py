@@ -498,19 +498,46 @@ def _create_structured_dependency_info(
     agents_by_level = _group_agents_by_dependency_level(agents)
 
     # Create agent status if results provided
-    agent_statuses = {}
-    if results:
-        for agent in agents:
-            agent_name = agent["name"]
-            if agent_name in results:
-                status = results[agent_name].get("status", "pending")
-                agent_statuses[agent_name] = (
-                    "completed" if status == "success" else "failed"
-                )
-            else:
-                agent_statuses[agent_name] = "pending"
+    agent_statuses = _create_agent_statuses(agents, results) if results else {}
 
     # Build structured dependency info
+    dependency_levels = _build_dependency_levels(
+        agents_by_level, agent_statuses, results
+    )
+
+    return {
+        "dependency_levels": dependency_levels,
+        "dependency_graph": (
+            _create_plain_text_dependency_graph(agents, agent_statuses)
+            if results
+            else create_dependency_graph(agents)
+        ),
+    }
+
+
+def _create_agent_statuses(
+    agents: list[dict[str, Any]], results: dict[str, Any]
+) -> dict[str, str]:
+    """Create agent status dictionary from results."""
+    agent_statuses = {}
+    for agent in agents:
+        agent_name = agent["name"]
+        if agent_name in results:
+            status = results[agent_name].get("status", "pending")
+            agent_statuses[agent_name] = (
+                "completed" if status == "success" else "failed"
+            )
+        else:
+            agent_statuses[agent_name] = "pending"
+    return agent_statuses
+
+
+def _build_dependency_levels(
+    agents_by_level: dict[int, list[dict[str, Any]]],
+    agent_statuses: dict[str, str],
+    results: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Build dependency levels structure."""
     dependency_levels = []
     for level in sorted(agents_by_level.keys()):
         level_agents = []
@@ -524,15 +551,7 @@ def _create_structured_dependency_info(
             level_agents.append(agent_info)
 
         dependency_levels.append({"level": level, "agents": level_agents})
-
-    return {
-        "dependency_levels": dependency_levels,
-        "dependency_graph": (
-            _create_plain_text_dependency_graph(agents, agent_statuses)
-            if results
-            else create_dependency_graph(agents)
-        ),
-    }
+    return dependency_levels
 
 
 def find_final_agent(results: dict[str, Any]) -> str | None:
@@ -855,64 +874,82 @@ async def _run_text_json_execution(
 ) -> None:
     """Run execution with text or JSON output (no Rich interface)."""
     if output_format == "json":
-        import json
-
-        # For JSON output, collect all meaningful events and output as single JSON
-        collected_events: list[dict[str, Any]] = []
-        meaningful_events = {
-            "execution_started",
-            "execution_completed",
-            "agent_started",
-            "agent_completed",
-            "agent_fallback_started",
-            "agent_fallback_completed",
-            "agent_fallback_failed",
-            "phase_started",
-            "phase_completed",
-        }
-
-        final_result = None
-        async for event in executor.execute_streaming(ensemble_config, input_data):
-            event_type = event["type"]
-
-            if event_type in meaningful_events:
-                collected_events.append(event)
-
-            # Store final result for consolidated output
-            if event_type == "execution_completed":
-                final_result = event["data"]
-
-        # Add structured dependency information
-        dependency_info = _create_structured_dependency_info(
-            ensemble_config.agents, final_result["results"] if final_result else None
-        )
-
-        # Output consolidated JSON structure
-        output_data = {
-            "events": collected_events,
-            "result": final_result,
-            "dependency_info": dependency_info,
-        }
-        click.echo(json.dumps(output_data, indent=2))
-
+        await _run_json_execution(executor, ensemble_config, input_data)
     else:
-        # Handle text output - stream events as they come
-        async for event in executor.execute_streaming(ensemble_config, input_data):
-            event_type = event["type"]
-            if event_type == "agent_fallback_started":
-                _handle_text_fallback_started(event["data"])
-            elif event_type == "agent_fallback_completed":
-                _handle_text_fallback_completed(event["data"])
-            elif event_type == "agent_fallback_failed":
-                _handle_text_fallback_failed(event["data"])
-            elif event_type == "execution_completed":
-                # Show final results for text output using plain text formatting
-                display_plain_text_results(
-                    event["data"]["results"],
-                    event["data"]["metadata"],
-                    detailed,
-                    ensemble_config.agents,
-                )
+        await _run_text_execution(executor, ensemble_config, input_data, detailed)
+
+
+async def _run_json_execution(
+    executor: Any,
+    ensemble_config: EnsembleConfig,
+    input_data: str,
+) -> None:
+    """Handle JSON output execution."""
+    import json
+
+    # For JSON output, collect all meaningful events and output as single JSON
+    collected_events: list[dict[str, Any]] = []
+    meaningful_events = {
+        "execution_started",
+        "execution_completed",
+        "agent_started",
+        "agent_completed",
+        "agent_fallback_started",
+        "agent_fallback_completed",
+        "agent_fallback_failed",
+        "phase_started",
+        "phase_completed",
+    }
+
+    final_result = None
+    async for event in executor.execute_streaming(ensemble_config, input_data):
+        event_type = event["type"]
+
+        if event_type in meaningful_events:
+            collected_events.append(event)
+
+        # Store final result for consolidated output
+        if event_type == "execution_completed":
+            final_result = event["data"]
+
+    # Add structured dependency information
+    dependency_info = _create_structured_dependency_info(
+        ensemble_config.agents, final_result["results"] if final_result else None
+    )
+
+    # Output consolidated JSON structure
+    output_data = {
+        "events": collected_events,
+        "result": final_result,
+        "dependency_info": dependency_info,
+    }
+    click.echo(json.dumps(output_data, indent=2))
+
+
+async def _run_text_execution(
+    executor: Any,
+    ensemble_config: EnsembleConfig,
+    input_data: str,
+    detailed: bool,
+) -> None:
+    """Handle text output execution."""
+    # Handle text output - stream events as they come
+    async for event in executor.execute_streaming(ensemble_config, input_data):
+        event_type = event["type"]
+        if event_type == "agent_fallback_started":
+            _handle_text_fallback_started(event["data"])
+        elif event_type == "agent_fallback_completed":
+            _handle_text_fallback_completed(event["data"])
+        elif event_type == "agent_fallback_failed":
+            _handle_text_fallback_failed(event["data"])
+        elif event_type == "execution_completed":
+            # Show final results for text output using plain text formatting
+            display_plain_text_results(
+                event["data"]["results"],
+                event["data"]["metadata"],
+                detailed,
+                ensemble_config.agents,
+            )
 
 
 async def run_streaming_execution(
@@ -958,15 +995,10 @@ async def run_streaming_execution(
                     break
 
 
-async def run_standard_execution(
+def _setup_fallback_monitoring(
     executor: Any,
-    ensemble_config: EnsembleConfig,
-    input_data: str,
-    output_format: str,
-    detailed: bool,
-) -> None:
-    """Run standard execution without streaming but with fallback event monitoring."""
-    # Set up fallback event monitoring for text/JSON output
+) -> tuple[list[dict[str, Any]], Any]:
+    """Set up fallback event monitoring and return events list and original emit."""
     fallback_events: list[dict[str, Any]] = []
 
     def capture_fallback_event(event_type: str, data: dict[str, Any]) -> None:
@@ -982,34 +1014,62 @@ async def run_standard_execution(
     original_emit = executor._emit_performance_event
     executor._emit_performance_event = capture_fallback_event
 
+    return fallback_events, original_emit
+
+
+def _process_fallback_events_for_text(fallback_events: list[dict[str, Any]]) -> None:
+    """Process captured fallback events for text output."""
+    for event in fallback_events:
+        event_type = event["type"]
+        event_data = event["data"]
+        if event_type == "agent_fallback_started":
+            _handle_text_fallback_started(event_data)
+        elif event_type == "agent_fallback_failed":
+            _handle_text_fallback_failed(event_data)
+
+
+def _display_json_results(
+    result: dict[str, Any],
+    ensemble_config: EnsembleConfig,
+    fallback_events: list[dict[str, Any]],
+) -> None:
+    """Display results in JSON format with dependency info and fallback events."""
+    import json
+
+    # Add structured dependency information
+    dependency_info = _create_structured_dependency_info(
+        ensemble_config.agents, result["results"]
+    )
+
+    # Include fallback events and dependency info in JSON output
+    output_data = result.copy()
+    output_data["dependency_info"] = dependency_info
+    if fallback_events:
+        output_data["fallback_events"] = fallback_events
+    click.echo(json.dumps(output_data, indent=2))
+
+
+async def run_standard_execution(
+    executor: Any,
+    ensemble_config: EnsembleConfig,
+    input_data: str,
+    output_format: str,
+    detailed: bool,
+) -> None:
+    """Run standard execution without streaming but with fallback event monitoring."""
+    # Set up fallback event monitoring for text/JSON output
+    fallback_events, original_emit = _setup_fallback_monitoring(executor)
+
     try:
         result = await executor.execute(ensemble_config, input_data)
 
-        # Process any captured fallback events
+        # Process any captured fallback events for text output
         if fallback_events and output_format == "text":
-            for event in fallback_events:
-                event_type = event["type"]
-                event_data = event["data"]
-                if event_type == "agent_fallback_started":
-                    _handle_text_fallback_started(event_data)
-                elif event_type == "agent_fallback_failed":
-                    _handle_text_fallback_failed(event_data)
+            _process_fallback_events_for_text(fallback_events)
 
-        # Display results
+        # Display results based on output format
         if output_format == "json":
-            import json
-
-            # Add structured dependency information
-            dependency_info = _create_structured_dependency_info(
-                ensemble_config.agents, result["results"]
-            )
-
-            # Include fallback events and dependency info in JSON output
-            output_data = result.copy()
-            output_data["dependency_info"] = dependency_info
-            if fallback_events:
-                output_data["fallback_events"] = fallback_events
-            click.echo(json.dumps(output_data, indent=2))
+            _display_json_results(result, ensemble_config, fallback_events)
         elif output_format == "text":
             # Use plain text output for clean piping
             display_plain_text_results(

@@ -183,12 +183,7 @@ class TestOAuthGenerateResponseHelperMethods:
 
         result = _handle_oauth_token_refresh_error(model, error, "Hello", "Role")
 
-        assert result is not None  # Should return a coroutine for retry
-        # Check that it's an awaitable object and close it to prevent warning
-        import inspect
-
-        assert inspect.iscoroutine(result)
-        result.close()  # Close the coroutine to prevent warning
+        assert result is True  # Should return True indicating retry is possible
 
     def test_handle_oauth_token_refresh_error_not_token_error(self) -> None:
         """Test handling OAuth error that is not a token error."""
@@ -197,8 +192,8 @@ class TestOAuthGenerateResponseHelperMethods:
         model = OAuthClaudeModel(access_token="token")
         error = Exception("Some other error")
 
-        with pytest.raises(Exception, match="Some other error"):
-            _handle_oauth_token_refresh_error(model, error, "Hello", "Role")
+        result = _handle_oauth_token_refresh_error(model, error, "Hello", "Role")
+        assert result is False  # Should return False for non-token errors
 
     def test_handle_oauth_token_refresh_error_refresh_fails(self) -> None:
         """Test handling OAuth token refresh error when refresh fails."""
@@ -210,11 +205,15 @@ class TestOAuthGenerateResponseHelperMethods:
             client_id="client_id",
         )
 
+        from llm_orc.core.auth.oauth_client import OAuthTokenRefreshError
+
         mock_client = Mock()
-        mock_client.refresh_access_token.return_value = False
+        mock_client.refresh_access_token.side_effect = OAuthTokenRefreshError(
+            400, "Bad request"
+        )
         model.client = mock_client
 
         error = Exception("Token expired - refresh needed")
 
-        with pytest.raises(Exception, match="Token expired"):
+        with pytest.raises(Exception, match="OAuth token refresh failed"):
             _handle_oauth_token_refresh_error(model, error, "Hello", "Role")

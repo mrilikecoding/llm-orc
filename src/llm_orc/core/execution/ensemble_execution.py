@@ -143,7 +143,9 @@ class EnsembleExecutor:
                 "network error",
                 "connection failed",
                 "timeout",
-                "model not found",
+                "not found",
+                "not available",
+                "model provider",
             ]
         ):
             return "model_loading"
@@ -188,39 +190,35 @@ class EnsembleExecutor:
 
         Phase 5: This eliminates the dual event system by combining both streams.
         """
-
         try:
             async for progress_event in progress_events:
-                # Yield the progress event
                 yield progress_event
 
-                # Check for any performance events that accumulated
-                while not self._streaming_event_queue.empty():
-                    try:
-                        performance_event = self._streaming_event_queue.get_nowait()
-                        yield performance_event
-                    except asyncio.QueueEmpty:
-                        break
+                # Yield any accumulated performance events
+                async for perf_event in self._yield_queued_performance_events():
+                    yield perf_event
 
                 # Small delay to allow any concurrent performance events to be queued
                 await asyncio.sleep(0.001)
 
-                # Check for performance events again after delay
-                while not self._streaming_event_queue.empty():
-                    try:
-                        performance_event = self._streaming_event_queue.get_nowait()
-                        yield performance_event
-                    except asyncio.QueueEmpty:
-                        break
+                # Yield performance events again after delay
+                async for perf_event in self._yield_queued_performance_events():
+                    yield perf_event
 
                 # If execution is completed, mark progress as done
                 if progress_event.get("type") == "execution_completed":
                     break
-
         except Exception:
             pass
 
         # After progress is done, yield any remaining performance events
+        async for perf_event in self._yield_queued_performance_events():
+            yield perf_event
+
+    async def _yield_queued_performance_events(
+        self,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Yield all currently queued performance events."""
         while not self._streaming_event_queue.empty():
             try:
                 performance_event = self._streaming_event_queue.get_nowait()
@@ -273,116 +271,143 @@ class EnsembleExecutor:
         agent_type = agent_config.get("type", "llm")
 
         if agent_type == "script":
-            # Execute script agent
-            script_agent = ScriptAgent(agent_config["name"], agent_config)
-            response = await script_agent.execute(input_data)
-            return response, None  # Script agents don't have model instances
+            return await self._execute_script_agent(agent_config, input_data)
         else:
-            # Execute LLM agent
-            # Load role for this agent
-            role = await self._load_role_from_config(agent_config)
+            return await self._execute_llm_agent(agent_config, input_data)
 
-            # Try to load the model, with fallback handling for loading failures
-            try:
-                model = await self._model_factory.load_model_from_agent_config(
-                    agent_config
-                )
-            except Exception as model_loading_error:
-                # Model failed to load - try fallback
-                fallback_model = await self._model_factory.get_fallback_model(
-                    context=f"agent_{agent_config['name']}",
-                    original_profile=agent_config.get("model_profile"),
-                )
-                fallback_model_name = getattr(fallback_model, "model_name", "unknown")
+    async def _execute_script_agent(
+        self, agent_config: dict[str, Any], input_data: str
+    ) -> tuple[str, ModelInterface | None]:
+        """Execute script agent."""
+        script_agent = ScriptAgent(agent_config["name"], agent_config)
+        response = await script_agent.execute(input_data)
+        return response, None  # Script agents don't have model instances
 
-                # Emit enhanced fallback event for model loading failure
-                failure_type = self._classify_failure_type(str(model_loading_error))
-                self._emit_performance_event(
-                    "agent_fallback_started",
-                    {
-                        "agent_name": agent_config["name"],
-                        "failure_type": failure_type,
-                        "original_error": str(model_loading_error),
-                        "original_model_profile": agent_config.get(
-                            "model_profile", "unknown"
-                        ),
-                        "fallback_model_profile": None,  # No configurable fallback
-                        "fallback_model_name": fallback_model_name,
-                    },
-                )
+    async def _execute_llm_agent(
+        self, agent_config: dict[str, Any], input_data: str
+    ) -> tuple[str, ModelInterface | None]:
+        """Execute LLM agent with fallback handling."""
+        role = await self._load_role_from_config(agent_config)
+        model = await self._load_model_with_fallback(agent_config)
+        agent = Agent(agent_config["name"], role, model)
 
-                # Use fallback model instead
-                model = fallback_model
+        # Generate response with fallback handling for runtime failures
+        try:
+            response = await agent.respond_to_message(input_data)
+            return response, model
+        except Exception as e:
+            return await self._handle_runtime_fallback(
+                agent_config, role, input_data, e
+            )
 
-            # Create agent
-            agent = Agent(agent_config["name"], role, model)
+    async def _load_model_with_fallback(
+        self, agent_config: dict[str, Any]
+    ) -> ModelInterface:
+        """Load model with fallback handling for loading failures."""
+        try:
+            return await self._model_factory.load_model_from_agent_config(agent_config)
+        except Exception as model_loading_error:
+            return await self._handle_model_loading_fallback(
+                agent_config, model_loading_error
+            )
 
-            # Generate response with fallback handling for runtime failures
-            try:
-                response = await agent.respond_to_message(input_data)
-                return response, model
-            except Exception as e:
-                # Model failed during generation - try fallback
-                # Get fallback model information
-                fallback_model = await self._model_factory.get_fallback_model(
-                    context=f"agent_{agent_config['name']}"
-                )
-                fallback_model_name = getattr(fallback_model, "model_name", "unknown")
+    async def _handle_model_loading_fallback(
+        self, agent_config: dict[str, Any], model_loading_error: Exception
+    ) -> ModelInterface:
+        """Handle model loading failure with fallback."""
+        fallback_model = await self._model_factory.get_fallback_model(
+            context=f"agent_{agent_config['name']}",
+            original_profile=agent_config.get("model_profile"),
+        )
+        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
 
-                # Emit enhanced fallback event for runtime failure
-                failure_type = self._classify_failure_type(str(e))
-                self._emit_performance_event(
-                    "agent_fallback_started",
-                    {
-                        "agent_name": agent_config["name"],
-                        "failure_type": failure_type,
-                        "original_error": str(e),
-                        "original_model_profile": agent_config.get(
-                            "model_profile", "unknown"
-                        ),
-                        "fallback_model_profile": None,  # No configurable fallback
-                        "fallback_model_name": fallback_model_name,
-                    },
-                )
+        # Emit enhanced fallback event for model loading failure
+        failure_type = self._classify_failure_type(str(model_loading_error))
+        self._emit_performance_event(
+            "agent_fallback_started",
+            {
+                "agent_name": agent_config["name"],
+                "failure_type": failure_type,
+                "original_error": str(model_loading_error),
+                "original_model_profile": agent_config.get("model_profile", "unknown"),
+                "fallback_model_profile": None,  # No configurable fallback
+                "fallback_model_name": fallback_model_name,
+            },
+        )
+        return fallback_model
 
-                # Create new agent with fallback model
-                fallback_agent = Agent(agent_config["name"], role, fallback_model)
+    async def _handle_runtime_fallback(
+        self,
+        agent_config: dict[str, Any],
+        role: RoleDefinition,
+        input_data: str,
+        error: Exception,
+    ) -> tuple[str, ModelInterface]:
+        """Handle runtime failure with fallback model."""
+        fallback_model = await self._model_factory.get_fallback_model(
+            context=f"agent_{agent_config['name']}"
+        )
+        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
 
-                # Try with fallback model
-                try:
-                    response = await fallback_agent.respond_to_message(input_data)
+        # Emit enhanced fallback event for runtime failure
+        failure_type = self._classify_failure_type(str(error))
+        self._emit_performance_event(
+            "agent_fallback_started",
+            {
+                "agent_name": agent_config["name"],
+                "failure_type": failure_type,
+                "original_error": str(error),
+                "original_model_profile": agent_config.get("model_profile", "unknown"),
+                "fallback_model_profile": None,  # No configurable fallback
+                "fallback_model_name": fallback_model_name,
+            },
+        )
 
-                    # Emit enhanced success event with response preview
-                    fallback_model_name = getattr(
-                        fallback_model, "model_name", "unknown"
-                    )
-                    response_preview = (
-                        response[:100] + "..." if len(response) > 100 else response
-                    )
-                    self._emit_performance_event(
-                        "agent_fallback_completed",
-                        {
-                            "agent_name": agent_config["name"],
-                            "fallback_model_name": fallback_model_name,
-                            "response_preview": response_preview,
-                        },
-                    )
-                    return response, fallback_model
-                except Exception as fallback_error:
-                    # Even fallback failed - emit enhanced failure event
-                    fallback_failure_type = self._classify_failure_type(
-                        str(fallback_error)
-                    )
-                    self._emit_performance_event(
-                        "agent_fallback_failed",
-                        {
-                            "agent_name": agent_config["name"],
-                            "failure_type": fallback_failure_type,
-                            "fallback_error": str(fallback_error),
-                            "fallback_model_name": fallback_model_name,
-                        },
-                    )
-                    raise fallback_error
+        # Create new agent with fallback model
+        fallback_agent = Agent(agent_config["name"], role, fallback_model)
+
+        # Try with fallback model
+        try:
+            response = await fallback_agent.respond_to_message(input_data)
+            self._emit_fallback_success_event(
+                agent_config["name"], fallback_model, response
+            )
+            return response, fallback_model
+        except Exception as fallback_error:
+            self._emit_fallback_failure_event(
+                agent_config["name"], fallback_model_name, fallback_error
+            )
+            raise fallback_error
+
+    def _emit_fallback_success_event(
+        self, agent_name: str, fallback_model: ModelInterface, response: str
+    ) -> None:
+        """Emit fallback success event."""
+        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
+        response_preview = response[:100] + "..." if len(response) > 100 else response
+        self._emit_performance_event(
+            "agent_fallback_completed",
+            {
+                "agent_name": agent_name,
+                "fallback_model_name": fallback_model_name,
+                "response_preview": response_preview,
+            },
+        )
+
+    def _emit_fallback_failure_event(
+        self, agent_name: str, fallback_model_name: str, fallback_error: Exception
+    ) -> None:
+        """Emit fallback failure event."""
+        fallback_failure_type = self._classify_failure_type(str(fallback_error))
+        self._emit_performance_event(
+            "agent_fallback_failed",
+            {
+                "agent_name": agent_name,
+                "failure_type": fallback_failure_type,
+                "fallback_error": str(fallback_error),
+                "fallback_model_name": fallback_model_name,
+            },
+        )
 
     async def _load_role_from_config(
         self, agent_config: dict[str, Any]
