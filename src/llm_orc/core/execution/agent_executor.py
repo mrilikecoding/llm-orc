@@ -6,6 +6,10 @@ from collections.abc import Callable
 from typing import Any
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.execution.adaptive_resource_manager import (
+    AdaptiveResourceManager,
+    SystemResourceMonitor,
+)
 
 
 class AgentExecutor:
@@ -33,6 +37,11 @@ class AgentExecutor:
         self._resolve_model_profile_to_config = resolve_model_profile_to_config
         self._execute_agent_with_timeout = execute_agent_with_timeout
         self._get_agent_input = get_agent_input
+        
+        # Initialize adaptive resource manager if enabled
+        self.adaptive_manager: AdaptiveResourceManager | None = None
+        if self._is_adaptive_enabled():
+            self._init_adaptive_manager()
 
     async def execute_agents_parallel(
         self,
@@ -56,7 +65,7 @@ class AgentExecutor:
             return
 
         # Get concurrency limit from performance config or use sensible default
-        max_concurrent = self.get_effective_concurrency_limit(len(agents))
+        max_concurrent = await self._get_concurrency_limit(len(agents))
 
         # For small ensembles, run all in parallel
         # For large ensembles, use semaphore to limit concurrent execution
@@ -340,3 +349,47 @@ class AgentExecutor:
                     usage = model_instance.get_last_usage()
                     if usage:
                         agent_usage[agent_name] = usage
+
+    def _is_adaptive_enabled(self) -> bool:
+        """Check if adaptive resource management is enabled."""
+        return (
+            self._performance_config.get("concurrency", {})
+            .get("adaptive_enabled", False)
+        )
+
+    def _init_adaptive_manager(self) -> None:
+        """Initialize the adaptive resource manager."""
+        concurrency_config = self._performance_config.get("concurrency", {})
+        
+        # Create system resource monitor
+        monitor = SystemResourceMonitor(polling_interval=0.1)
+        
+        # Create adaptive resource manager
+        self.adaptive_manager = AdaptiveResourceManager(
+            base_limit=concurrency_config.get("base_limit", 5),
+            monitor=monitor,
+            min_limit=concurrency_config.get("min_limit", 1),
+            max_limit=concurrency_config.get("max_limit", 10),
+        )
+
+    async def _get_concurrency_limit(self, agent_count: int) -> int:
+        """Get concurrency limit using adaptive or static method."""
+        if self.adaptive_manager is not None:
+            return await self.get_adaptive_concurrency_limit(agent_count)
+        else:
+            return self.get_effective_concurrency_limit(agent_count)
+
+    async def get_adaptive_concurrency_limit(self, agent_count: int) -> int:
+        """Get adaptive concurrency limit based on system resources."""
+        if self.adaptive_manager is None:
+            # Fallback to static if adaptive manager not initialized
+            return self.get_effective_concurrency_limit(agent_count)
+        
+        # Get adaptive limit from resource manager
+        adaptive_limit = await self.adaptive_manager.get_adaptive_limit()
+        
+        # For very small ensembles, don't limit below agent count
+        if agent_count <= 2:
+            return max(adaptive_limit, agent_count)
+        
+        return adaptive_limit

@@ -1,8 +1,6 @@
 """Adaptive resource management system with circuit breaker patterns."""
 
-import asyncio
 import time
-from typing import Any
 
 import psutil
 
@@ -12,7 +10,7 @@ class ResourceMonitoringCircuitBreaker:
 
     def __init__(self, failure_threshold: int = 5, reset_timeout: int = 60) -> None:
         """Initialize the circuit breaker.
-        
+
         Args:
             failure_threshold: Number of failures before opening circuit
             reset_timeout: Seconds to wait before attempting reset
@@ -41,7 +39,7 @@ class SystemResourceMonitor:
 
     def __init__(self, polling_interval: float = 0.1) -> None:
         """Initialize the resource monitor.
-        
+
         Args:
             polling_interval: Seconds between polling attempts
         """
@@ -50,18 +48,15 @@ class SystemResourceMonitor:
 
     async def get_current_metrics(self) -> dict[str, float]:
         """Get current system resource metrics.
-        
+
         Returns:
             Dictionary containing cpu_percent and memory_percent
         """
         # Using psutil for system metrics - minimal overhead
         cpu_percent = psutil.cpu_percent(interval=None)  # Non-blocking
         memory_info = psutil.virtual_memory()
-        
-        return {
-            "cpu_percent": cpu_percent,
-            "memory_percent": memory_info.percent
-        }
+
+        return {"cpu_percent": cpu_percent, "memory_percent": memory_info.percent}
 
 
 class AdaptiveResourceManager:
@@ -72,10 +67,10 @@ class AdaptiveResourceManager:
         base_limit: int,
         monitor: SystemResourceMonitor,
         min_limit: int = 1,
-        max_limit: int = 10
+        max_limit: int = 10,
     ) -> None:
         """Initialize the adaptive resource manager.
-        
+
         Args:
             base_limit: Default limit when adaptive management fails
             monitor: System resource monitor instance
@@ -90,7 +85,7 @@ class AdaptiveResourceManager:
 
     async def get_adaptive_limit(self) -> int:
         """Calculate adaptive resource limit based on system conditions.
-        
+
         Returns:
             Calculated resource limit within configured bounds
         """
@@ -101,14 +96,14 @@ class AdaptiveResourceManager:
         try:
             metrics = await self.monitor.get_current_metrics()
             self.circuit_breaker.record_success()
-            
+
             # Simple adaptive algorithm: reduce limit when resources are high
             cpu_percent = metrics["cpu_percent"]
             memory_percent = metrics["memory_percent"]
-            
+
             # Calculate adjustment factor based on resource usage
             resource_pressure = max(cpu_percent, memory_percent) / 100.0
-            
+
             if resource_pressure > 0.8:
                 # High pressure: reduce limit
                 adjusted_limit = int(self.base_limit * 0.7)
@@ -118,10 +113,10 @@ class AdaptiveResourceManager:
             else:
                 # Normal pressure: use base limit
                 adjusted_limit = self.base_limit
-            
+
             # Ensure within bounds
             return max(self.min_limit, min(adjusted_limit, self.max_limit))
-            
+
         except Exception:
             # Monitoring failed - record failure and fall back
             self.circuit_breaker.record_failure()
