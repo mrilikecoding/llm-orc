@@ -185,6 +185,35 @@ llm-orc invoke code-review --config-dir ./custom-config
 llm-orc invoke code-review --streaming
 ```
 
+### Output Formats
+
+LLM Orchestra supports three output formats for different use cases:
+
+#### Rich Interface (Default)
+Interactive format with real-time progress updates and visual dependency graphs:
+
+```bash
+llm-orc invoke code-review --input "def add(a, b): return a + b"
+```
+
+#### JSON Output
+Structured data format for integration and automation:
+
+```bash
+llm-orc invoke code-review --output-format json --input "code to review"
+```
+
+Returns complete execution data including events, results, metadata, and dependency information.
+
+#### Text Output  
+Clean, pipe-friendly format for command-line workflows:
+
+```bash
+llm-orc invoke code-review --output-format text --input "code to review"
+```
+
+Plain text results perfect for piping and scripting: `llm-orc invoke ... | grep "security"`
+
 #### Configuration Management
 ```bash
 # Initialize local project configuration
