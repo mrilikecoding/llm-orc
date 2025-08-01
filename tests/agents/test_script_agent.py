@@ -43,6 +43,38 @@ class TestScriptAgent:
         assert agent.timeout == 30
 
     @pytest.mark.asyncio
+    async def test_script_agent_invalid_command_syntax(self) -> None:
+        """Test script agent with invalid command syntax."""
+        config = {"command": "echo 'unclosed quote"}
+        agent = ScriptAgent("test_agent", config)
+
+        with pytest.raises(RuntimeError, match="Invalid command syntax"):
+            await agent.execute("test input")
+
+    @pytest.mark.asyncio
+    async def test_script_agent_empty_command(self) -> None:
+        """Test script agent with empty command after parsing."""
+        # This test needs to cover line 103: empty command after shlex.split
+        # We'll patch shlex.split to return an empty list to trigger the error
+        from unittest.mock import patch
+
+        config = {"command": "echo test"}
+        agent = ScriptAgent("test_agent", config)
+
+        with patch("shlex.split", return_value=[]):
+            with pytest.raises(RuntimeError, match="Empty command provided"):
+                await agent.execute("test input")
+
+    @pytest.mark.asyncio
+    async def test_script_agent_dangerous_command_blocked(self) -> None:
+        """Test that dangerous commands are blocked."""
+        config = {"command": "rm -rf /"}
+        agent = ScriptAgent("test_agent", config)
+
+        with pytest.raises(RuntimeError, match="Blocked dangerous command"):
+            await agent.execute("test input")
+
+    @pytest.mark.asyncio
     async def test_script_agent_execute_simple_script(self) -> None:
         """Test script agent execution with simple script."""
         config = {"script": "echo 'Hello World'"}

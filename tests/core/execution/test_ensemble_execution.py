@@ -1466,3 +1466,21 @@ class TestEnsembleExecutor:
         assert "Model provider" in event_data["original_error"]
         assert "not available" in event_data["original_error"]
         assert event_data["failure_type"] == "model_loading"
+
+    @pytest.mark.asyncio
+    async def test_emit_performance_event_queue_full_exception(self) -> None:
+        """Test _emit_performance_event handles QueueFull exception gracefully.
+
+        This covers lines 97-99.
+        """
+        executor = EnsembleExecutor()
+
+        # Mock the streaming event queue to be full
+        with patch.object(executor, "_streaming_event_queue") as mock_queue:
+            mock_queue.put_nowait.side_effect = asyncio.QueueFull("Queue is full")
+
+            # Should not raise exception, should silently ignore
+            executor._emit_performance_event("test_event", {"test": "data"})
+
+            # Verify that put_nowait was attempted
+            mock_queue.put_nowait.assert_called_once()

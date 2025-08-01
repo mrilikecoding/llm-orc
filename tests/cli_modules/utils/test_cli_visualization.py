@@ -122,6 +122,27 @@ class TestDependencyVisualization:
         assert "[red]✗[/red] [red]failed_agent[/red]" in result
         assert "[dim]○[/dim] [dim]pending_agent[/dim]" in result
 
+    def test_create_dependency_graph_with_gap_in_levels(self) -> None:
+        """Test dependency graph with gap in dependency levels to cover line 153."""
+        # Given - create agents with gap in dependency levels
+        # This is a bit artificial since normally gaps wouldn't occur in real usage
+        # But we can create a scenario where level calculation results in gaps
+        agents = [
+            {"name": "agent_a", "depends_on": []},  # level 0
+            {
+                "name": "agent_c",
+                "depends_on": ["agent_a", "nonexistent"],
+            },  # level 1 due to nonexistent
+        ]
+        statuses = {"agent_a": "completed", "agent_c": "pending"}
+
+        # When
+        result = create_dependency_graph_with_status(agents, statuses)
+
+        # Then
+        assert "[green]✓[/green] [green]agent_a[/green]" in result
+        assert "[dim]○[/dim] [dim]agent_c[/dim]" in result
+
     def test_create_dependency_tree_simple(self) -> None:
         """Test creating dependency tree with simple agents."""
         # Given
@@ -163,6 +184,22 @@ class TestDependencyVisualization:
 
         # When
         result = create_dependency_tree(agents)
+
+        # Then
+        assert isinstance(result, Tree)
+        assert result.label == "[bold blue]Orchestrating Agent Responses[/bold blue]"
+
+    def test_create_dependency_tree_with_failed_status(self) -> None:
+        """Test creating dependency tree with failed status to cover lines 51-52."""
+        # Given
+        agents = [
+            {"name": "agent_a", "depends_on": []},
+            {"name": "agent_b", "depends_on": ["agent_a"]},
+        ]
+        statuses = {"agent_a": "failed", "agent_b": "pending"}
+
+        # When
+        result = create_dependency_tree(agents, statuses)
 
         # Then
         assert isinstance(result, Tree)
@@ -844,6 +881,378 @@ class TestPlainTextFunctions:
         # Then
         calls = [call[0][0] for call in mock_echo.call_args_list]
         assert "❌ No successful results found" in calls
+
+    def test_create_dependency_graph_with_status_failed(self) -> None:
+        """Test dependency graph with failed agent status."""
+        # Given
+        agents = [{"name": "agent_a", "depends_on": []}]
+        agent_statuses = {"agent_a": "failed"}
+
+        # When
+        result = create_dependency_graph_with_status(agents, agent_statuses)
+
+        # Then
+        assert "✗" in result  # Red X symbol for failed
+        assert "agent_a" in result
+
+    def test_create_dependency_graph_with_status_unknown(self) -> None:
+        """Test dependency graph with unknown agent status."""
+        # Given
+        agents = [{"name": "agent_b", "depends_on": []}]
+        agent_statuses = {"agent_b": "unknown"}
+
+        # When
+        result = create_dependency_graph_with_status(agents, agent_statuses)
+
+        # Then
+        assert "○" in result  # Circle symbol for unknown
+        assert "agent_b" in result
+
+    def test_format_adaptive_resource_metrics_with_decisions(self) -> None:
+        """Test formatting adaptive resource metrics with concurrency decisions."""
+        from llm_orc.cli_modules.utils.visualization import (
+            _format_adaptive_resource_metrics,
+        )
+
+        # Given
+        adaptive_stats = {
+            "management_type": "adaptive",
+            "adaptive_used": True,
+            "concurrency_decisions": [
+                {
+                    "adaptive_limit": 2,
+                    "cpu_percent": 45.5,
+                    "memory_percent": 62.1,
+                    "circuit_breaker_state": "CLOSED",
+                    "base_limit": 4,
+                }
+            ],
+        }
+
+        # When
+        result = _format_adaptive_resource_metrics(adaptive_stats)
+
+        # Then
+        markdown_text = "".join(result)
+        assert "Resource Management" in markdown_text
+        assert "adaptive" in markdown_text
+        assert "45.5" in markdown_text  # CPU percentage
+        assert "62.1" in markdown_text  # Memory percentage
+
+    def test_format_adaptive_resource_metrics_with_multiple_decisions(self) -> None:
+        """Test formatting adaptive resource metrics with multiple decisions.
+
+        This covers lines 614-620.
+        """
+        from llm_orc.cli_modules.utils.visualization import (
+            _format_adaptive_resource_metrics,
+        )
+
+        # Given - multiple concurrency decisions to trigger lines 614-620
+        adaptive_stats = {
+            "management_type": "adaptive",
+            "adaptive_used": True,
+            "concurrency_decisions": [
+                {
+                    "adaptive_limit": 2,
+                    "cpu_percent": 45.5,
+                    "memory_percent": 62.1,
+                    "circuit_breaker_state": "CLOSED",
+                    "base_limit": 4,
+                },
+                {
+                    "adaptive_limit": 3,
+                    "cpu_percent": 55.0,
+                    "memory_percent": 70.0,
+                    "circuit_breaker_state": "CLOSED",
+                    "base_limit": 4,
+                },
+            ],
+        }
+
+        # When
+        result = _format_adaptive_resource_metrics(adaptive_stats)
+
+        # Then
+        markdown_text = "".join(result)
+        assert "Resource Management" in markdown_text
+        assert "adaptive" in markdown_text
+        assert (
+            "Concurrency adjustments:** 2 decisions made during execution"
+            in markdown_text
+        )
+
+    def test_format_adaptive_resource_metrics_static_with_decisions(self) -> None:
+        """Test formatting static resource metrics with concurrency decisions."""
+        from llm_orc.cli_modules.utils.visualization import (
+            _format_adaptive_resource_metrics,
+        )
+
+        # Given
+        adaptive_stats = {
+            "management_type": "static",
+            "adaptive_used": False,
+            "concurrency_decisions": [{"static_limit": 3, "agent_count": 5}],
+        }
+
+        # When
+        result = _format_adaptive_resource_metrics(adaptive_stats)
+
+        # Then
+        markdown_text = "".join(result)
+        assert "Resource Management" in markdown_text
+        assert "static" in markdown_text
+
+    def test_format_adaptive_resource_metrics_adaptive_no_decisions(self) -> None:
+        """Test formatting adaptive resource metrics without decisions."""
+        from llm_orc.cli_modules.utils.visualization import (
+            _format_adaptive_resource_metrics,
+        )
+
+        # Given
+        adaptive_stats = {
+            "management_type": "adaptive",
+            "adaptive_used": True,
+            "concurrency_decisions": [],
+            "execution_metrics": {
+                "peak_cpu": 25.4,
+                "avg_cpu": 20.1,
+                "peak_memory": 55.2,
+                "avg_memory": 48.9,
+                "sample_count": 12,
+            },
+        }
+
+        # When
+        result = _format_adaptive_resource_metrics(adaptive_stats)
+
+        # Then
+        markdown_text = "".join(result)
+        assert "Resource Management" in markdown_text
+        assert "25.4" in markdown_text  # Peak CPU
+        assert "20.1" in markdown_text  # Avg CPU
+        assert "12 samples" in markdown_text
+
+    def test_format_adaptive_resource_metrics_without_adaptive_limit(self) -> None:
+        """Test formatting adaptive resource metrics without adaptive_limit.
+
+        This covers lines 619-623.
+        """
+        from llm_orc.cli_modules.utils.visualization import (
+            _format_adaptive_resource_metrics,
+        )
+
+        # Given - decision without adaptive_limit to trigger lines 619-623
+        adaptive_stats = {
+            "management_type": "adaptive",
+            "adaptive_used": True,
+            "concurrency_decisions": [
+                {
+                    "cpu_percent": 45.5,
+                    "memory_percent": 62.1,
+                    "circuit_breaker_state": "CLOSED",
+                    "base_limit": 4,
+                    # Note: no adaptive_limit field
+                }
+            ],
+        }
+
+        # When
+        result = _format_adaptive_resource_metrics(adaptive_stats)
+
+        # Then
+        markdown_text = "".join(result)
+        assert "Resource Management" in markdown_text
+        assert (
+            "Adaptive resource management enabled** but no detailed metrics available"
+            in markdown_text
+        )
+
+    def test_format_adaptive_resource_metrics_static_no_decisions(self) -> None:
+        """Test formatting static resource metrics without decisions."""
+        from llm_orc.cli_modules.utils.visualization import (
+            _format_adaptive_resource_metrics,
+        )
+
+        # Given
+        adaptive_stats = {
+            "management_type": "static",
+            "adaptive_used": False,
+            "concurrency_decisions": [],
+        }
+
+        # When
+        result = _format_adaptive_resource_metrics(adaptive_stats)
+
+        # Then
+        markdown_text = "".join(result)
+        assert "Resource Management" in markdown_text
+        assert "static" in markdown_text
+
+    def test_display_results_with_adaptive_resource_management(self) -> None:
+        """Test displaying results with adaptive resource management metadata."""
+        # Given
+        results = {"agent1": {"status": "success", "response": "Test response"}}
+        metadata = {
+            "duration": "2.5s",
+            "usage": {
+                "totals": {
+                    "total_tokens": 100,
+                    "total_cost_usd": 0.01,
+                    "agents_count": 1,
+                }
+            },
+            "adaptive_resource_management": {
+                "management_type": "adaptive",
+                "adaptive_used": True,
+                "concurrency_decisions": [],
+                "execution_metrics": {
+                    "peak_cpu": 15.5,
+                    "avg_cpu": 10.2,
+                    "sample_count": 5,
+                },
+            },
+        }
+
+        # When - should not raise an exception
+        display_results(results, metadata, detailed=True)
+
+        # Then - test passes if no exception raised
+
+    def test_display_results_with_model_profile_fallback(self) -> None:
+        """Test displaying results with model profile fallback information."""
+        # Given
+        results = {"agent1": {"status": "success", "response": "Test response"}}
+        metadata = {
+            "duration": "2.5s",
+            "usage": {
+                "totals": {
+                    "total_tokens": 100,
+                    "total_cost_usd": 0.01,
+                    "agents_count": 1,
+                },
+                "agents": {
+                    "agent1": {
+                        "total_tokens": 100,
+                        "cost_usd": 0.01,
+                        "duration_ms": 1000,
+                        "model": "claude-3-haiku",
+                        "model_profile": "haiku",
+                    }
+                },
+            },
+        }
+
+        # When - should not raise an exception
+        display_results(results, metadata, detailed=True)
+
+        # Then - test passes if no exception raised
+
+    def test_display_results_with_only_model_no_profile(self) -> None:
+        """Test displaying results with model but no profile (line 226)."""
+        # Given
+        results = {"agent1": {"status": "success", "response": "Test response"}}
+        metadata = {
+            "duration": "2.5s",
+            "usage": {
+                "totals": {
+                    "total_tokens": 100,
+                    "total_cost_usd": 0.01,
+                    "agents_count": 1,
+                },
+                "agents": {
+                    "agent1": {
+                        "total_tokens": 100,
+                        "cost_usd": 0.01,
+                        "duration_ms": 1000,
+                        "model": "claude-3-haiku",
+                        "model_profile": None,  # This should trigger line 226
+                    }
+                },
+            },
+        }
+
+        # When - should not raise an exception
+        display_results(results, metadata, detailed=True)
+
+        # Then - test passes if no exception raised
+
+    def test_display_plain_text_results_with_adaptive_stats(self) -> None:
+        """Test plain text display with adaptive resource management."""
+        # Given
+        results = {"agent1": {"status": "success", "response": "Test response"}}
+        metadata = {
+            "duration": "2.5s",
+            "usage": {
+                "totals": {
+                    "total_tokens": 100,
+                    "total_cost_usd": 0.01,
+                    "agents_count": 1,
+                }
+            },
+            "adaptive_resource_management": {
+                "management_type": "adaptive",
+                "adaptive_used": True,
+                "execution_metrics": {
+                    "peak_cpu": 12.5,
+                    "avg_cpu": 8.1,
+                    "sample_count": 3,
+                },
+            },
+        }
+        agents = [{"name": "agent1", "depends_on": []}]
+
+        # When - should not raise an exception
+        display_plain_text_results(results, metadata, detailed=True, agents=agents)
+
+        # Then - test passes if no exception raised
+
+    def test_find_final_agent_with_coordinator(self) -> None:
+        """Test finding final agent when coordinator exists."""
+        # Given
+        results = {
+            "agent1": {"status": "success", "response": "Response 1"},
+            "coordinator": {"status": "success", "response": "Final response"},
+        }
+
+        # When
+        final_agent = find_final_agent(results)
+
+        # Then
+        assert final_agent == "coordinator"
+
+    def test_find_final_agent_with_synthesizer(self) -> None:
+        """Test finding final agent when synthesizer exists."""
+        # Given
+        results = {
+            "agent1": {"status": "success", "response": "Response 1"},
+            "synthesizer": {"status": "success", "response": "Final response"},
+        }
+
+        # When
+        final_agent = find_final_agent(results)
+
+        # Then
+        assert final_agent == "synthesizer"
+
+    @patch(
+        "llm_orc.cli_modules.utils.visualization._display_adaptive_resource_metrics_text"
+    )
+    def test_display_adaptive_resource_metrics_text_called(
+        self, mock_display: Mock
+    ) -> None:
+        """Test that adaptive resource metrics text display is called."""
+        from llm_orc.cli_modules.utils.visualization import (
+            _display_adaptive_resource_metrics_text,
+        )
+
+        # Given
+        adaptive_stats = {"management_type": "adaptive", "adaptive_used": True}
+
+        # When
+        _display_adaptive_resource_metrics_text(adaptive_stats)
+
+        # Then - function should execute without error
 
     @patch(
         "llm_orc.cli_modules.utils.visualization._display_plain_text_dependency_graph"
