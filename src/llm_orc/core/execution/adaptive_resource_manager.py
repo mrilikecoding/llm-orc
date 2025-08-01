@@ -1,5 +1,6 @@
 """Adaptive resource management system with circuit breaker patterns."""
 
+import asyncio
 import time
 
 import psutil
@@ -45,6 +46,10 @@ class SystemResourceMonitor:
         """
         self.polling_interval = polling_interval
         self.is_monitoring = False
+        self._baseline_established = False
+        self._monitoring_task: asyncio.Task[None] | None = None
+        self._execution_samples: list[dict[str, float]] = []
+        self._stop_monitoring = asyncio.Event()
 
     async def get_current_metrics(self) -> dict[str, float]:
         """Get current system resource metrics.
@@ -52,11 +57,112 @@ class SystemResourceMonitor:
         Returns:
             Dictionary containing cpu_percent and memory_percent
         """
-        # Using psutil for system metrics - minimal overhead
-        cpu_percent = psutil.cpu_percent(interval=None)  # Non-blocking
+        # For more accurate CPU measurement, use a small blocking interval
+        # This is more reliable than the baseline approach for short-lived processes
+        cpu_percent = psutil.cpu_percent(interval=0.1)  # 100ms blocking measurement
         memory_info = psutil.virtual_memory()
 
         return {"cpu_percent": cpu_percent, "memory_percent": memory_info.percent}
+
+    async def start_execution_monitoring(self) -> None:
+        """Start continuous resource monitoring during agent execution."""
+        if self.is_monitoring:
+            return  # Already monitoring
+
+        self.is_monitoring = True
+        self._stop_monitoring.clear()
+        self._execution_samples = []
+
+        # Start background monitoring task
+        self._monitoring_task = asyncio.create_task(self._continuous_monitoring_loop())
+
+    async def stop_execution_monitoring(self) -> dict[str, float]:
+        """Stop monitoring and return aggregated execution metrics."""
+        if not self.is_monitoring:
+            empty_metrics: dict[str, float] = {
+                "peak_cpu": 0.0,
+                "avg_cpu": 0.0,
+                "peak_memory": 0.0,
+                "avg_memory": 0.0,
+                "sample_count": 0,
+            }
+            return empty_metrics
+
+        # Signal monitoring to stop
+        self._stop_monitoring.set()
+
+        # Wait for monitoring task to finish
+        if self._monitoring_task:
+            await self._monitoring_task
+            self._monitoring_task = None
+
+        self.is_monitoring = False
+
+        # Aggregate metrics from execution samples
+        return self._aggregate_execution_metrics()
+
+    async def _continuous_monitoring_loop(self) -> None:
+        """Background loop that continuously samples resources during execution."""
+        try:
+            # Initialize baseline for continuous monitoring
+            psutil.cpu_percent(interval=None)  # Establish baseline
+            await asyncio.sleep(0.1)  # Let baseline settle
+
+            while not self._stop_monitoring.is_set():
+                # Sample current resources with blocking interval for measurement
+                # Use a short blocking interval to get meaningful CPU readings
+                cpu_percent = psutil.cpu_percent(interval=0.1)
+                memory_info = psutil.virtual_memory()
+
+                sample = {
+                    "cpu_percent": cpu_percent,
+                    "memory_percent": memory_info.percent,
+                    "timestamp": asyncio.get_event_loop().time(),
+                }
+                self._execution_samples.append(sample)
+
+                # Wait for next sampling interval - 100ms to match CPU sampling
+                try:
+                    await asyncio.wait_for(self._stop_monitoring.wait(), timeout=0.1)
+                    break  # Stop signal received
+                except TimeoutError:
+                    continue  # Continue sampling
+        except Exception:
+            # Gracefully handle any monitoring errors
+            pass
+
+    def _aggregate_execution_metrics(self) -> dict[str, float]:
+        """Aggregate execution samples into summary metrics."""
+        if not self._execution_samples:
+            empty_metrics: dict[str, float] = {
+                "peak_cpu": 0.0,
+                "avg_cpu": 0.0,
+                "peak_memory": 0.0,
+                "avg_memory": 0.0,
+                "sample_count": 0,
+            }
+            return empty_metrics
+
+        cpu_values = [sample["cpu_percent"] for sample in self._execution_samples]
+        memory_values = [sample["memory_percent"] for sample in self._execution_samples]
+
+        metrics: dict[str, float] = {
+            "peak_cpu": max(cpu_values) if cpu_values else 0.0,
+            "avg_cpu": sum(cpu_values) / len(cpu_values) if cpu_values else 0.0,
+            "peak_memory": max(memory_values) if memory_values else 0.0,
+            "avg_memory": (
+                sum(memory_values) / len(memory_values) if memory_values else 0.0
+            ),
+            "sample_count": len(self._execution_samples),
+        }
+
+        # For research purposes, include raw samples for debugging
+        if cpu_values:
+            # Type ignore because we're adding list values to a float dict
+            metrics["raw_cpu_samples"] = cpu_values[:10]  # type: ignore[assignment]
+            metrics["raw_memory_samples"] = memory_values[:10]  # type: ignore[assignment]
+
+        return metrics
 
 
 class AdaptiveResourceManager:
@@ -104,10 +210,11 @@ class AdaptiveResourceManager:
             # Calculate adjustment factor based on resource usage
             resource_pressure = max(cpu_percent, memory_percent) / 100.0
 
-            if resource_pressure > 0.8:
+            # Temporarily lowered thresholds to demo adaptive behavior
+            if resource_pressure > 0.5:  # Lowered from 0.8 to 0.5 (50%)
                 # High pressure: reduce limit
                 adjusted_limit = int(self.base_limit * 0.7)
-            elif resource_pressure < 0.3:
+            elif resource_pressure < 0.2:  # Lowered from 0.3 to 0.2 (20%)
                 # Low pressure: increase limit
                 adjusted_limit = int(self.base_limit * 1.3)
             else:

@@ -258,10 +258,11 @@ class EnsembleExecutor:
         )
         has_errors = has_errors or llm_agent_errors
 
-        # Get collected usage and finalize result using ResultsProcessor
+        # Get collected usage and adaptive stats, then finalize result using processor
         agent_usage = self._usage_collector.get_agent_usage()
+        adaptive_stats = self._agent_executor.get_adaptive_stats()
         return self._results_processor.finalize_result(
-            result, agent_usage, has_errors, start_time
+            result, agent_usage, has_errors, start_time, adaptive_stats
         )
 
     async def _execute_agent(

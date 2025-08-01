@@ -4,9 +4,13 @@ project:
     test: micro-local    # Fallback model for reliability and testing
 
 performance:
-  max_concurrent: 5
   streaming_enabled: true
   timeout_seconds: 120
+  concurrency:
+    adaptive_enabled: true
+    base_limit: 1
+    min_limit: 1
+    max_limit: 3
 
 model_profiles:
   # Test profile with non-existent model to test fallbacks

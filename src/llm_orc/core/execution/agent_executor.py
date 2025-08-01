@@ -37,11 +37,21 @@ class AgentExecutor:
         self._resolve_model_profile_to_config = resolve_model_profile_to_config
         self._execute_agent_with_timeout = execute_agent_with_timeout
         self._get_agent_input = get_agent_input
-        
+
         # Initialize adaptive resource manager if enabled
         self.adaptive_manager: AdaptiveResourceManager | None = None
         if self._is_adaptive_enabled():
             self._init_adaptive_manager()
+
+        # Track adaptive resource management statistics for this execution
+        self.adaptive_stats: dict[str, Any] = {
+            "adaptive_used": self.adaptive_manager is not None,
+            "management_type": (
+                "adaptive" if self.adaptive_manager is not None else "static"
+            ),
+            "concurrency_decisions": [],
+            "resource_metrics": [],
+        }
 
     async def execute_agents_parallel(
         self,
@@ -61,11 +71,58 @@ class AgentExecutor:
             results_dict: Dictionary to store results
             agent_usage: Dictionary to store usage metrics
         """
+        # Debug: Track that parallel execution started
         if not agents:
             return
 
+        # Establish resource monitoring baseline before execution
+        if self.adaptive_manager is not None:
+            # Ensure baseline is established before getting limits or executing
+            await self.adaptive_manager.monitor.get_current_metrics()
+
         # Get concurrency limit from performance config or use sensible default
         max_concurrent = await self._get_concurrency_limit(len(agents))
+
+        # Start continuous monitoring for ALL executions (research purposes)
+        if self.adaptive_manager is not None:
+            await self.adaptive_manager.monitor.start_execution_monitoring()
+
+        # Show resource management approach in output and record decision
+        if self.adaptive_manager is not None:
+            print(
+                f"🔧 Using adaptive resource management: {max_concurrent} "
+                "concurrent agents (adaptive limit based on system resources)"
+            )
+
+            self._emit_performance_event(
+                "using_adaptive_resource_management",
+                {
+                    "total_agents": len(agents),
+                    "concurrency_limit": max_concurrent,
+                    "management_type": "adaptive",
+                },
+            )
+        else:
+            print(
+                f"📊 Using static resource management: {max_concurrent} "
+                "concurrent agents (static limit)"
+            )
+            # Record static resource management decision
+            self.adaptive_stats["concurrency_decisions"].append(
+                {
+                    "agent_count": len(agents),
+                    "static_limit": max_concurrent,
+                    "management_type": "static",
+                }
+            )
+            self._emit_performance_event(
+                "using_static_resource_management",
+                {
+                    "total_agents": len(agents),
+                    "concurrency_limit": max_concurrent,
+                    "management_type": "static",
+                },
+            )
 
         # For small ensembles, run all in parallel
         # For large ensembles, use semaphore to limit concurrent execution
@@ -76,6 +133,71 @@ class AgentExecutor:
         else:
             await self.execute_agents_with_semaphore(
                 agents, input_data, config, results_dict, agent_usage, max_concurrent
+            )
+
+        # ALWAYS collect execution metrics for research purposes
+        try:
+            if self.adaptive_manager is not None:
+                # Stop monitoring and get aggregated execution metrics
+                execution_metrics = (
+                    await self.adaptive_manager.monitor.stop_execution_monitoring()
+                )
+
+                # Add detailed execution metrics to adaptive stats
+                self.adaptive_stats["execution_metrics"] = execution_metrics
+
+                # Also add a summary resource metrics entry for backward compatibility
+                self.adaptive_stats["resource_metrics"].append(
+                    {
+                        "peak_cpu": execution_metrics["peak_cpu"],
+                        "avg_cpu": execution_metrics["avg_cpu"],
+                        "peak_memory": execution_metrics["peak_memory"],
+                        "avg_memory": execution_metrics["avg_memory"],
+                        "sample_count": execution_metrics["sample_count"],
+                        "circuit_breaker_state": (
+                            self.adaptive_manager.circuit_breaker.state
+                        ),
+                        "measurement_point": "execution_summary",
+                    }
+                )
+            else:
+                # No adaptive manager, but still collect basic metrics for research
+                import psutil
+
+                current_cpu = psutil.cpu_percent(interval=0.1)
+                current_memory = psutil.virtual_memory().percent
+
+                basic_metrics = {
+                    "cpu_percent": current_cpu,
+                    "memory_percent": current_memory,
+                    "circuit_breaker_state": "N/A",
+                    "measurement_point": "basic_measurement",
+                }
+                self.adaptive_stats["resource_metrics"].append(basic_metrics)
+                self.adaptive_stats["execution_metrics"] = {
+                    "peak_cpu": current_cpu,
+                    "avg_cpu": current_cpu,
+                    "peak_memory": current_memory,
+                    "avg_memory": current_memory,
+                    "sample_count": 1,
+                }
+        except Exception as e:
+            # Final fallback - always provide SOME data for research
+            print(f"⚠️  WARNING: All monitoring failed: {e}")
+            self.adaptive_stats["execution_metrics"] = {
+                "peak_cpu": 0.0,
+                "avg_cpu": 0.0,
+                "peak_memory": 0.0,
+                "avg_memory": 0.0,
+                "sample_count": 0,
+            }
+            self.adaptive_stats["resource_metrics"].append(
+                {
+                    "cpu_percent": 0.0,
+                    "memory_percent": 0.0,
+                    "circuit_breaker_state": "ERROR",
+                    "measurement_point": "fallback_error",
+                }
             )
 
     def get_effective_concurrency_limit(self, agent_count: int) -> int:
@@ -352,18 +474,17 @@ class AgentExecutor:
 
     def _is_adaptive_enabled(self) -> bool:
         """Check if adaptive resource management is enabled."""
-        return (
-            self._performance_config.get("concurrency", {})
-            .get("adaptive_enabled", False)
-        )
+        concurrency_config = self._performance_config.get("concurrency", {})
+        adaptive_enabled = concurrency_config.get("adaptive_enabled", False)
+        return bool(adaptive_enabled)
 
     def _init_adaptive_manager(self) -> None:
         """Initialize the adaptive resource manager."""
         concurrency_config = self._performance_config.get("concurrency", {})
-        
+
         # Create system resource monitor
         monitor = SystemResourceMonitor(polling_interval=0.1)
-        
+
         # Create adaptive resource manager
         self.adaptive_manager = AdaptiveResourceManager(
             base_limit=concurrency_config.get("base_limit", 5),
@@ -377,19 +498,129 @@ class AgentExecutor:
         if self.adaptive_manager is not None:
             return await self.get_adaptive_concurrency_limit(agent_count)
         else:
-            return self.get_effective_concurrency_limit(agent_count)
+            # For static management, still record the decision
+            static_limit = self.get_effective_concurrency_limit(agent_count)
+            # Also collect current resource metrics for display purposes
+            try:
+                # Use a simple resource check without the adaptive manager
+                import psutil
+
+                cpu_percent = psutil.cpu_percent(interval=0.1)
+                memory_percent = psutil.virtual_memory().percent
+                self.adaptive_stats["resource_metrics"].append(
+                    {
+                        "cpu_percent": cpu_percent,
+                        "memory_percent": memory_percent,
+                        "circuit_breaker_state": "N/A",
+                    }
+                )
+            except Exception:
+                pass  # Silently ignore if psutil is not available
+            return static_limit
 
     async def get_adaptive_concurrency_limit(self, agent_count: int) -> int:
         """Get adaptive concurrency limit based on system resources."""
         if self.adaptive_manager is None:
             # Fallback to static if adaptive manager not initialized
             return self.get_effective_concurrency_limit(agent_count)
-        
+
+        # Get current system metrics for logging
+        try:
+            metrics = await self.adaptive_manager.monitor.get_current_metrics()
+            cpu_percent = metrics["cpu_percent"]
+            memory_percent = metrics["memory_percent"]
+        except Exception:
+            cpu_percent = 0.0
+            memory_percent = 0.0
+
         # Get adaptive limit from resource manager
         adaptive_limit = await self.adaptive_manager.get_adaptive_limit()
-        
+
+        # Show adaptive decision in output
+        print(
+            f"⚡ Adaptive limit calculated: {adaptive_limit} "
+            f"(CPU: {cpu_percent:.1f}%, Memory: {memory_percent:.1f}%, "
+            f"Circuit: {self.adaptive_manager.circuit_breaker.state})"
+        )
+
+        # Store adaptive decision data for metadata
+        adaptive_decision = {
+            "agent_count": agent_count,
+            "adaptive_limit": adaptive_limit,
+            "cpu_percent": cpu_percent,
+            "memory_percent": memory_percent,
+            "circuit_breaker_state": self.adaptive_manager.circuit_breaker.state,
+            "base_limit": self.adaptive_manager.base_limit,
+        }
+        self.adaptive_stats["concurrency_decisions"].append(adaptive_decision)
+        self.adaptive_stats["resource_metrics"].append(
+            {
+                "cpu_percent": cpu_percent,
+                "memory_percent": memory_percent,
+                "circuit_breaker_state": self.adaptive_manager.circuit_breaker.state,
+            }
+        )
+
+        # Emit performance event with adaptive decision
+        self._emit_performance_event(
+            "adaptive_concurrency_calculated", adaptive_decision
+        )
+
         # For very small ensembles, don't limit below agent count
         if agent_count <= 2:
-            return max(adaptive_limit, agent_count)
-        
-        return adaptive_limit
+            final_limit = max(adaptive_limit, agent_count)
+        else:
+            final_limit = adaptive_limit
+
+        # Emit final decision
+        if final_limit != adaptive_limit:
+            self._emit_performance_event(
+                "adaptive_limit_adjusted",
+                {
+                    "original_limit": adaptive_limit,
+                    "final_limit": final_limit,
+                    "reason": "small_ensemble_protection",
+                },
+            )
+
+        return final_limit
+
+    def get_adaptive_stats(self) -> dict[str, Any]:
+        """Get adaptive resource management statistics for this execution."""
+        # Ensure we ALWAYS have execution_metrics for research purposes
+        if "execution_metrics" not in self.adaptive_stats:
+            try:
+                import psutil
+
+                current_cpu = psutil.cpu_percent(interval=0.1)
+                current_memory = psutil.virtual_memory().percent
+                self.adaptive_stats["execution_metrics"] = {
+                    "peak_cpu": current_cpu,
+                    "avg_cpu": current_cpu,
+                    "peak_memory": current_memory,
+                    "avg_memory": current_memory,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [current_cpu],
+                    "raw_memory_samples": [current_memory],
+                }
+                # Also ensure resource_metrics has at least one entry
+                if not self.adaptive_stats["resource_metrics"]:
+                    self.adaptive_stats["resource_metrics"].append(
+                        {
+                            "cpu_percent": current_cpu,
+                            "memory_percent": current_memory,
+                            "circuit_breaker_state": "N/A",
+                            "measurement_point": "final_fallback",
+                        }
+                    )
+            except Exception:
+                # Absolute fallback
+                self.adaptive_stats["execution_metrics"] = {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 0.0,
+                    "avg_memory": 0.0,
+                    "sample_count": 0,
+                }
+
+        return self.adaptive_stats.copy()

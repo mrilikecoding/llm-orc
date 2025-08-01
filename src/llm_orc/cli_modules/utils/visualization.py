@@ -271,6 +271,11 @@ def _format_performance_metrics(metadata: dict[str, Any]) -> list[str]:
     markdown_content.append(f"- **Total cost:** ${total_cost:.4f}\n")
     markdown_content.append(f"- **Agents:** {totals.get('agents_count', 0)}\n")
 
+    # Show adaptive resource management statistics if available
+    adaptive_stats = metadata.get("adaptive_resource_management")
+    if adaptive_stats:
+        markdown_content.extend(_format_adaptive_resource_metrics(adaptive_stats))
+
     # Show per-agent usage
     agents_usage = usage.get("agents", {})
     if agents_usage:
@@ -376,6 +381,11 @@ def _display_detailed_plain_text(
         click.echo(f"Total tokens: {totals.get('total_tokens', 0):,}")
         click.echo(f"Total cost: ${totals.get('total_cost_usd', 0.0):.4f}")
         click.echo(f"Agents: {totals.get('agents_count', 0)}")
+
+        # Show adaptive resource management statistics for text output
+        adaptive_stats = metadata.get("adaptive_resource_management")
+        if adaptive_stats:
+            _display_adaptive_resource_metrics_text(adaptive_stats)
 
 
 def _display_simplified_plain_text(
@@ -552,6 +562,206 @@ def _build_dependency_levels(
 
         dependency_levels.append({"level": level, "agents": level_agents})
     return dependency_levels
+
+
+def _format_adaptive_resource_metrics(adaptive_stats: dict[str, Any]) -> list[str]:
+    """Format adaptive resource management metrics into markdown content.
+
+    Args:
+        adaptive_stats: Adaptive resource management statistics
+
+    Returns:
+        List of markdown content strings for adaptive resource metrics
+    """
+    markdown_content: list[str] = []
+    management_type = adaptive_stats.get("management_type", "unknown")
+    adaptive_used = adaptive_stats.get("adaptive_used", False)
+    concurrency_decisions = adaptive_stats.get("concurrency_decisions", [])
+
+    markdown_content.append("\n### Resource Management\n")
+
+    if adaptive_used and concurrency_decisions:
+        markdown_content.extend(
+            _format_adaptive_with_decisions(management_type, concurrency_decisions)
+        )
+    elif concurrency_decisions:
+        markdown_content.extend(
+            _format_static_with_decisions(management_type, concurrency_decisions)
+        )
+    elif adaptive_used:
+        markdown_content.extend(
+            _format_adaptive_no_decisions(management_type, adaptive_stats)
+        )
+    else:
+        markdown_content.extend(_format_static_no_decisions(management_type))
+
+    return markdown_content
+
+
+def _format_adaptive_with_decisions(
+    management_type: str, concurrency_decisions: list[dict[str, Any]]
+) -> list[str]:
+    """Format adaptive resource metrics with concurrency decisions."""
+    content = [
+        f"- **Type:** {management_type} (adaptive limits based on system resources)\n"
+    ]
+
+    final_decision = concurrency_decisions[-1]
+
+    if "adaptive_limit" in final_decision:
+        content.extend(_format_adaptive_decision_details(final_decision))
+        if len(concurrency_decisions) > 1:
+            count = len(concurrency_decisions)
+            content.append(
+                f"- **Concurrency adjustments:** {count} "
+                "decisions made during execution\n"
+            )
+    else:
+        content.append(
+            "- **Adaptive resource management enabled** "
+            "but no detailed metrics available\n"
+        )
+
+    return content
+
+
+def _format_adaptive_decision_details(final_decision: dict[str, Any]) -> list[str]:
+    """Format detailed adaptive decision metrics."""
+    adaptive_limit = final_decision.get("adaptive_limit", "unknown")
+    cpu_percent = final_decision.get("cpu_percent", 0.0)
+    memory_percent = final_decision.get("memory_percent", 0.0)
+    circuit_state = final_decision.get("circuit_breaker_state", "unknown")
+    base_limit = final_decision.get("base_limit", "unknown")
+
+    return [
+        f"- **⚡ Adaptive limit calculated:** {adaptive_limit} "
+        f"(CPU: {cpu_percent:.1f}%, Memory: {memory_percent:.1f}%, "
+        f"Circuit: {circuit_state})\n",
+        f"- **Base limit:** {base_limit}\n",
+    ]
+
+
+def _format_static_with_decisions(
+    management_type: str, concurrency_decisions: list[dict[str, Any]]
+) -> list[str]:
+    """Format static resource metrics with concurrency decisions."""
+    content = [f"- **Type:** {management_type} (fixed concurrency limits)\n"]
+    final_decision = concurrency_decisions[-1]
+
+    if "static_limit" in final_decision:
+        static_limit = final_decision.get("static_limit", "unknown")
+        agent_count = final_decision.get("agent_count", "unknown")
+        content.append(
+            f"- **📊 Static limit applied:** {static_limit} "
+            f"concurrent agents (for {agent_count} total agents)\n"
+        )
+
+    return content
+
+
+def _format_adaptive_no_decisions(
+    management_type: str, adaptive_stats: dict[str, Any]
+) -> list[str]:
+    """Format adaptive metrics when no concurrency decisions were needed."""
+    content = [
+        f"- **Type:** {management_type} (adaptive limits based on system resources)\n",
+        "- **No adaptive limit needed:** All agents ran in parallel successfully\n",
+    ]
+
+    execution_metrics = adaptive_stats.get("execution_metrics", {})
+    if execution_metrics:
+        content.extend(_format_execution_metrics(execution_metrics, adaptive_stats))
+    else:
+        content.extend(_format_fallback_metrics(adaptive_stats))
+
+    return content
+
+
+def _format_execution_metrics(
+    execution_metrics: dict[str, Any], adaptive_stats: dict[str, Any]
+) -> list[str]:
+    """Format detailed execution metrics for research analysis."""
+    content = []
+    peak_cpu = execution_metrics.get("peak_cpu", 0.0)
+    avg_cpu = execution_metrics.get("avg_cpu", 0.0)
+    peak_memory = execution_metrics.get("peak_memory", 0.0)
+    avg_memory = execution_metrics.get("avg_memory", 0.0)
+    sample_count = execution_metrics.get("sample_count", 0)
+
+    # Get circuit state from resource metrics if available
+    circuit_state = "unknown"
+    resource_metrics = adaptive_stats.get("resource_metrics", [])
+    if resource_metrics:
+        circuit_state = resource_metrics[-1].get("circuit_breaker_state", "unknown")
+
+    content.extend(
+        [
+            f"- **Peak resource usage during execution:** "
+            f"CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%\n",
+            f"- **Average resource usage during execution:** "
+            f"CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%\n",
+            f"- **Monitoring details:** {sample_count} samples collected, "
+            f"Circuit: {circuit_state}\n",
+        ]
+    )
+
+    # Show raw samples for research purposes
+    raw_cpu_samples = execution_metrics.get("raw_cpu_samples")
+    raw_memory_samples = execution_metrics.get("raw_memory_samples")
+    if raw_cpu_samples and raw_memory_samples:
+        cpu_str = ", ".join(f"{s:.1f}" for s in raw_cpu_samples)
+        memory_str = ", ".join(
+            f"{s:.1f}" for s in raw_memory_samples[: len(raw_cpu_samples)]
+        )
+        content.append(
+            f"- **Sample data (first 10):** CPU: [{cpu_str}]%, "
+            f"Memory: [{memory_str}]%\n"
+        )
+
+    if sample_count == 0:
+        content.append(
+            "- **Note:** No monitoring samples collected - "
+            "execution may have been too fast\n"
+        )
+
+    return content
+
+
+def _format_fallback_metrics(adaptive_stats: dict[str, Any]) -> list[str]:
+    """Format fallback metrics when continuous monitoring failed."""
+    cpu_percent = 0.0
+    memory_percent = 0.0
+    circuit_state = "unknown"
+
+    resource_metrics = adaptive_stats.get("resource_metrics", [])
+    concurrency_decisions = adaptive_stats.get("concurrency_decisions", [])
+
+    if resource_metrics:
+        final_metrics = resource_metrics[-1]
+        cpu_percent = final_metrics.get("cpu_percent", 0.0)
+        memory_percent = final_metrics.get("memory_percent", 0.0)
+        circuit_state = final_metrics.get("circuit_breaker_state", "unknown")
+    elif concurrency_decisions:
+        for decision in reversed(concurrency_decisions):
+            if "cpu_percent" in decision:
+                cpu_percent = decision.get("cpu_percent", 0.0)
+                memory_percent = decision.get("memory_percent", 0.0)
+                circuit_state = decision.get("circuit_breaker_state", "unknown")
+                break
+
+    return [
+        f"- **System resources during execution:** "
+        f"CPU {cpu_percent:.1f}%, Memory {memory_percent:.1f}%, "
+        f"Circuit: {circuit_state}\n"
+    ]
+
+
+def _format_static_no_decisions(management_type: str) -> list[str]:
+    """Format static management metrics when no decisions were recorded."""
+    return [
+        f"- **Type:** {management_type} (fixed concurrency limits)\n",
+        "- **All agents ran in parallel successfully**\n",
+    ]
 
 
 def find_final_agent(results: dict[str, Any]) -> str | None:
@@ -1082,3 +1292,147 @@ async def run_standard_execution(
     finally:
         # Restore original event emission
         executor._emit_performance_event = original_emit
+
+
+def _display_adaptive_with_decisions(
+    management_type: str, concurrency_decisions: list[dict[str, Any]]
+) -> None:
+    """Display adaptive resource management with concurrency decisions."""
+    click.echo(f"Type: {management_type} (adaptive limits based on system resources)")
+
+    final_decision = concurrency_decisions[-1]
+
+    if "adaptive_limit" in final_decision:
+        _display_adaptive_decision_details(final_decision, concurrency_decisions)
+    else:
+        click.echo(
+            "Adaptive resource management enabled but no detailed metrics available"
+        )
+
+
+def _display_adaptive_decision_details(
+    final_decision: dict[str, Any], concurrency_decisions: list[dict[str, Any]]
+) -> None:
+    """Display detailed adaptive decision metrics."""
+    adaptive_limit = final_decision.get("adaptive_limit", "unknown")
+    cpu_percent = final_decision.get("cpu_percent", 0.0)
+    memory_percent = final_decision.get("memory_percent", 0.0)
+    circuit_state = final_decision.get("circuit_breaker_state", "unknown")
+    base_limit = final_decision.get("base_limit", "unknown")
+
+    click.echo(
+        f"Adaptive limit calculated: {adaptive_limit} "
+        f"(CPU: {cpu_percent:.1f}%, Memory: {memory_percent:.1f}%, "
+        f"Circuit: {circuit_state})"
+    )
+    click.echo(f"Base limit: {base_limit}")
+
+    if len(concurrency_decisions) > 1:
+        decisions_count = len(concurrency_decisions)
+        click.echo(
+            f"Concurrency adjustments: {decisions_count} decisions made "
+            f"during execution"
+        )
+
+
+def _display_static_decisions(
+    management_type: str, concurrency_decisions: list[dict[str, Any]]
+) -> None:
+    """Display static resource management with decision data."""
+    click.echo(f"Type: {management_type} (fixed concurrency limits)")
+    final_decision = concurrency_decisions[-1]
+
+    if "static_limit" in final_decision:
+        static_limit = final_decision.get("static_limit", "unknown")
+        agent_count = final_decision.get("agent_count", "unknown")
+        click.echo(
+            f"Static limit applied: {static_limit} concurrent agents "
+            f"(for {agent_count} total agents)"
+        )
+
+
+def _display_execution_metrics(execution_metrics: dict[str, Any]) -> None:
+    """Display detailed execution metrics for research purposes."""
+    peak_cpu = execution_metrics.get("peak_cpu", 0.0)
+    avg_cpu = execution_metrics.get("avg_cpu", 0.0)
+    peak_memory = execution_metrics.get("peak_memory", 0.0)
+    avg_memory = execution_metrics.get("avg_memory", 0.0)
+    sample_count = execution_metrics.get("sample_count", 0)
+
+    click.echo(
+        f"Peak resource usage during execution: "
+        f"CPU {peak_cpu:.1f}%, Memory: {peak_memory:.1f}%"
+    )
+    click.echo(
+        f"Average resource usage during execution: "
+        f"CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%"
+    )
+    click.echo(f"Monitoring details: {sample_count} samples collected")
+
+    _display_raw_samples(execution_metrics)
+
+    if sample_count == 0:
+        click.echo(
+            "Note: No monitoring samples collected - execution may have been too fast"
+        )
+
+
+def _display_raw_samples(execution_metrics: dict[str, Any]) -> None:
+    """Display raw CPU and memory samples for research analysis."""
+    raw_cpu_samples = execution_metrics.get("raw_cpu_samples")
+    raw_memory_samples = execution_metrics.get("raw_memory_samples")
+
+    if raw_cpu_samples and raw_memory_samples:
+        cpu_sample_str = ", ".join(f"{s:.1f}" for s in raw_cpu_samples)
+        memory_sample_str = ", ".join(
+            f"{s:.1f}" for s in raw_memory_samples[: len(raw_cpu_samples)]
+        )
+        click.echo(
+            f"Sample data (first 10): CPU: [{cpu_sample_str}]%, "
+            f"Memory: [{memory_sample_str}]%"
+        )
+
+
+def _display_fallback_metrics(adaptive_stats: dict[str, Any]) -> None:
+    """Display fallback metrics when continuous monitoring failed."""
+    resource_metrics = adaptive_stats.get("resource_metrics", [])
+    if resource_metrics:
+        final_metrics = resource_metrics[-1]
+        cpu_percent = final_metrics.get("cpu_percent", 0.0)
+        memory_percent = final_metrics.get("memory_percent", 0.0)
+        circuit_state = final_metrics.get("circuit_breaker_state", "unknown")
+        click.echo(
+            f"System resources during execution: "
+            f"CPU {cpu_percent:.1f}%, Memory {memory_percent:.1f}%, "
+            f"Circuit: {circuit_state}"
+        )
+
+
+def _display_adaptive_resource_metrics_text(adaptive_stats: dict[str, Any]) -> None:
+    """Display adaptive resource management metrics for text output."""
+    management_type = adaptive_stats.get("management_type", "unknown")
+    adaptive_used = adaptive_stats.get("adaptive_used", False)
+    concurrency_decisions = adaptive_stats.get("concurrency_decisions", [])
+
+    click.echo()
+    click.echo("Resource Management")
+    click.echo("==================")
+
+    if adaptive_used and concurrency_decisions:
+        _display_adaptive_with_decisions(management_type, concurrency_decisions)
+    elif concurrency_decisions:
+        _display_static_decisions(management_type, concurrency_decisions)
+    elif adaptive_used:
+        click.echo(
+            f"Type: {management_type} (adaptive limits based on system resources)"
+        )
+        click.echo("No adaptive limit needed: All agents ran in parallel successfully")
+
+        execution_metrics = adaptive_stats.get("execution_metrics", {})
+        if execution_metrics:
+            _display_execution_metrics(execution_metrics)
+        else:
+            _display_fallback_metrics(adaptive_stats)
+    else:
+        click.echo(f"Type: {management_type} (fixed concurrency limits)")
+        click.echo("All agents ran in parallel successfully")
