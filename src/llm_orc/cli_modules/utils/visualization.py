@@ -595,7 +595,53 @@ def _format_adaptive_resource_metrics(adaptive_stats: dict[str, Any]) -> list[st
     else:
         markdown_content.extend(_format_static_no_decisions(management_type))
 
+    # Add per-phase metrics if available
+    phase_metrics = adaptive_stats.get("phase_metrics", [])
+    if phase_metrics:
+        markdown_content.extend(_format_per_phase_metrics(phase_metrics))
+
     return markdown_content
+
+
+def _format_per_phase_metrics(phase_metrics: list[dict[str, Any]]) -> list[str]:
+    """Format per-phase monitoring metrics."""
+    content = ["\n#### Per-Phase Performance\n"]
+
+    for phase_data in phase_metrics:
+        phase_index = phase_data.get("phase_index", "Unknown")
+        agent_count = phase_data.get("agent_count", 0)
+        agent_names = phase_data.get("agent_names", [])
+        adaptive_limit = phase_data.get("adaptive_limit", "N/A")
+        sample_count = phase_data.get("sample_count", 0)
+
+        # Get resource usage metrics
+        peak_cpu = phase_data.get("peak_cpu", 0.0)
+        avg_cpu = phase_data.get("avg_cpu", 0.0)
+        peak_memory = phase_data.get("peak_memory", 0.0)
+        avg_memory = phase_data.get("avg_memory", 0.0)
+
+        content.append(f"**Phase {phase_index}** ({agent_count} agents)\n")
+        content.append(f"- **Agents:** {', '.join(agent_names)}\n")
+        content.append(f"- **Adaptive limit:** {adaptive_limit} concurrent agents\n")
+
+        if sample_count > 0:
+            content.append(
+                f"- **Resource usage:** CPU {avg_cpu:.1f}% (peak {peak_cpu:.1f}%), "
+                f"Memory {avg_memory:.1f}% (peak {peak_memory:.1f}%)\n"
+            )
+            content.append(f"- **Monitoring:** {sample_count} samples collected\n")
+        else:
+            content.append("- **Resource usage:** No samples collected\n")
+
+        # Show raw samples if available (first few for debugging)
+        raw_cpu = phase_data.get("raw_cpu_samples", [])
+        if raw_cpu:
+            sample_preview = raw_cpu[:3]  # First 3 samples
+            content.append(f"- **Sample data:** CPU: {sample_preview}%...\n")
+
+        content.append("\n")
+
+    return content
 
 
 def _format_adaptive_with_decisions(
@@ -1338,11 +1384,23 @@ def _display_adaptive_decision_details(
 def _display_static_decisions(
     management_type: str, concurrency_decisions: list[dict[str, Any]]
 ) -> None:
-    """Display static resource management with decision data."""
-    click.echo(f"Type: {management_type} (fixed concurrency limits)")
+    """Display resource management with decision data."""
+    if management_type == "user_configured":
+        click.echo(f"Type: {management_type} (user-controlled concurrency)")
+    else:
+        click.echo(f"Type: {management_type} (fixed concurrency limits)")
+    
     final_decision = concurrency_decisions[-1]
 
-    if "static_limit" in final_decision:
+    # Handle our new user_configured format
+    if "configured_limit" in final_decision:
+        limit = final_decision.get("configured_limit", "unknown")
+        agent_count = final_decision.get("agent_count", "unknown")
+        click.echo(
+            f"Configured limit: {limit} concurrent agents "
+            f"(for {agent_count} total agents)"
+        )
+    elif "static_limit" in final_decision:
         static_limit = final_decision.get("static_limit", "unknown")
         agent_count = final_decision.get("agent_count", "unknown")
         click.echo(
@@ -1436,3 +1494,60 @@ def _display_adaptive_resource_metrics_text(adaptive_stats: dict[str, Any]) -> N
     else:
         click.echo(f"Type: {management_type} (fixed concurrency limits)")
         click.echo("All agents ran in parallel successfully")
+    
+    # Add user guidance for performance optimization
+    _display_performance_guidance(adaptive_stats)
+
+
+def _display_performance_guidance(adaptive_stats: dict[str, Any]) -> None:
+    """Display helpful guidance for optimizing performance settings."""
+    execution_metrics = adaptive_stats.get("execution_metrics", {})
+    concurrency_decisions = adaptive_stats.get("concurrency_decisions", [])
+    
+    if not execution_metrics or not concurrency_decisions:
+        return
+        
+    # Get the current configuration
+    final_decision = concurrency_decisions[-1]
+    current_limit = final_decision.get("configured_limit", final_decision.get("static_limit"))
+    agent_count = final_decision.get("agent_count", 0)
+    
+    if not current_limit:
+        return
+    
+    # Get performance metrics
+    peak_cpu = execution_metrics.get("peak_cpu", 0)
+    peak_memory = execution_metrics.get("peak_memory", 0)
+    sample_count = execution_metrics.get("sample_count", 0)
+    
+    click.echo()
+    click.echo("💡 Performance Optimization Tips:")
+    
+    # High resource usage guidance
+    if peak_cpu > 80 or peak_memory > 85:
+        click.echo(
+            f"   • High resource usage detected (CPU: {peak_cpu:.1f}%, Memory: {peak_memory:.1f}%)"
+        )
+        if current_limit > 1:
+            click.echo(f"   • Consider reducing max_concurrent from {current_limit} to {current_limit - 1}")
+        click.echo("   • Monitor system stability during execution")
+    
+    # Low resource usage guidance
+    elif peak_cpu < 20 and peak_memory < 50 and current_limit < agent_count:
+        click.echo(
+            f"   • System has capacity (CPU: {peak_cpu:.1f}%, Memory: {peak_memory:.1f}%)"
+        )
+        suggested_limit = min(agent_count, current_limit + 2)
+        click.echo(f"   • Consider increasing max_concurrent from {current_limit} to {suggested_limit}")
+        click.echo("   • This could reduce execution time")
+    
+    # Sample count guidance
+    if sample_count < 5:
+        click.echo(
+            f"   • Low monitoring samples ({sample_count}) - execution was very fast"
+        )
+        click.echo("   • Consider testing with larger ensembles for better performance data")
+    
+    # Configuration guidance
+    click.echo("   • Adjust max_concurrent in your performance configuration")
+    click.echo("   • Monitor execution time vs resource usage to find optimal settings")

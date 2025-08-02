@@ -440,14 +440,47 @@ class AgentExecutor:
                 "measurement_point": "user_configured",
             })
             
+            guidance = self._get_concurrency_guidance(limit, len(agents), cpu_percent, memory_percent)
             print(
                 f"🔧 Using configured concurrency: {limit} agents "
                 f"(Current system: CPU {cpu_percent:.1f}%, Memory {memory_percent:.1f}%)"
             )
+            if guidance:
+                print(f"💡 {guidance}")
         except Exception:
             print(f"🔧 Using configured concurrency: {limit} agents")
+            print("💡 Monitor performance and adjust max_concurrent in performance config as needed")
         
         return limit
+
+    def _get_concurrency_guidance(
+        self, 
+        limit: int, 
+        agent_count: int, 
+        cpu_percent: float, 
+        memory_percent: float
+    ) -> str | None:
+        """Provide helpful guidance for concurrency settings based on current conditions."""
+        # High resource usage - suggest reducing concurrency
+        if cpu_percent > 80 or memory_percent > 85:
+            return (
+                f"High resource usage detected - consider reducing max_concurrent "
+                f"from {limit} to {max(1, limit - 1)} for better stability"
+            )
+        
+        # Low resource usage with small limit - suggest increasing
+        if cpu_percent < 20 and memory_percent < 50 and limit < agent_count and limit < 8:
+            return (
+                f"System has capacity - consider increasing max_concurrent "
+                f"from {limit} to {min(agent_count, limit + 1)} for faster execution"
+            )
+        
+        # All agents running in parallel already
+        if limit >= agent_count:
+            return "All agents will run in parallel - optimal for this ensemble size"
+        
+        # No specific guidance needed
+        return None
 
 
     def get_adaptive_stats(self) -> dict[str, Any]:

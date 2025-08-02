@@ -1,4 +1,4 @@
-"""Integration tests for AgentExecutor with adaptive resource management."""
+"""Integration tests for AgentExecutor with simplified resource management."""
 
 from typing import Any
 from unittest.mock import AsyncMock, Mock
@@ -13,19 +13,15 @@ from llm_orc.core.execution.adaptive_resource_manager import (
 from llm_orc.core.execution.agent_executor import AgentExecutor
 
 
-class TestAgentExecutorAdaptiveIntegration:
-    """Test integration of AgentExecutor with adaptive resource management."""
+class TestAgentExecutorSimplifiedIntegration:
+    """Test integration of AgentExecutor with simplified resource management."""
 
     @pytest.fixture
     def mock_performance_config(self) -> dict[str, Any]:
         """Create mock performance configuration."""
         return {
-            "concurrency": {
-                "adaptive_enabled": True,
-                "base_limit": 5,
-                "min_limit": 1,
-                "max_limit": 10,
-            }
+            "concurrency": {"max_concurrent_agents": 5},
+            "execution": {"default_timeout": 60},
         }
 
     @pytest.fixture
@@ -41,11 +37,11 @@ class TestAgentExecutorAdaptiveIntegration:
         }
 
     @pytest.fixture
-    def adaptive_executor(
+    def simple_executor(
         self, mock_performance_config: dict[str, Any], mock_functions: dict[str, Mock]
     ) -> AgentExecutor:
-        """Create an AgentExecutor with adaptive resource management enabled."""
-        executor = AgentExecutor(
+        """Create an AgentExecutor with simplified resource management."""
+        return AgentExecutor(
             performance_config=mock_performance_config,
             emit_performance_event=mock_functions["emit_performance_event"],
             resolve_model_profile_to_config=mock_functions[
@@ -55,61 +51,46 @@ class TestAgentExecutorAdaptiveIntegration:
             get_agent_input=mock_functions["get_agent_input"],
         )
 
-        # Add adaptive resource manager
-        monitor = SystemResourceMonitor(polling_interval=0.01)
-        executor.adaptive_manager = AdaptiveResourceManager(
-            base_limit=5, monitor=monitor, min_limit=1, max_limit=10
-        )
-
-        return executor
-
     @pytest.mark.asyncio
-    async def test_adaptive_concurrency_limit_integration(
-        self, adaptive_executor: AgentExecutor, monkeypatch: pytest.MonkeyPatch
+    async def test_user_configured_concurrency_limit(
+        self, simple_executor: AgentExecutor
     ) -> None:
-        """Test that AgentExecutor uses adaptive concurrency limits."""
-        # Mock the adaptive manager to return a specific limit
-        assert adaptive_executor.adaptive_manager is not None
-        mock_get_limit = AsyncMock(return_value=3)
-        monkeypatch.setattr(
-            adaptive_executor.adaptive_manager, "get_adaptive_limit", mock_get_limit
-        )
+        """Test that AgentExecutor uses user-configured concurrency limits directly."""
+        # Test with configured limit
+        limit = await simple_executor._get_concurrency_limit(10)
+        assert limit == 5  # From config
+        
+        # Test with default behavior when no limit configured
+        simple_executor._performance_config["concurrency"]["max_concurrent_agents"] = 0
+        limit = await simple_executor._get_concurrency_limit(3)
+        assert limit == 3  # Small ensemble, all agents
+        
+        limit = await simple_executor._get_concurrency_limit(15)
+        assert limit == 8  # Large ensemble, capped
 
-        # This method should now use adaptive limit instead of static
-        limit = await adaptive_executor.get_adaptive_concurrency_limit(5)
-
-        assert limit == 3
-        mock_get_limit.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_fallback_to_static_when_adaptive_disabled(
-        self, mock_functions: dict[str, Mock]
+    def test_effective_concurrency_limit_behavior(
+        self, simple_executor: AgentExecutor
     ) -> None:
-        """Test fallback to static limits when adaptive is disabled."""
-        static_config = {"concurrency": {"adaptive_enabled": False}}
-
-        executor = AgentExecutor(
-            performance_config=static_config,
-            emit_performance_event=mock_functions["emit_performance_event"],
-            resolve_model_profile_to_config=mock_functions[
-                "resolve_model_profile_to_config"
-            ],
-            execute_agent_with_timeout=mock_functions["execute_agent_with_timeout"],
-            get_agent_input=mock_functions["get_agent_input"],
-        )
-
-        # Should use the existing static method
-        limit = executor.get_effective_concurrency_limit(5)
-        assert limit == 5  # Small ensemble, should return agent count
+        """Test effective concurrency limit calculation."""
+        # Test with configured limit
+        limit = simple_executor.get_effective_concurrency_limit(10)
+        assert limit == 5  # From config
+        
+        # Test without configured limit - smart defaults
+        simple_executor._performance_config["concurrency"]["max_concurrent_agents"] = 0
+        
+        assert simple_executor.get_effective_concurrency_limit(2) == 2  # Small
+        assert simple_executor.get_effective_concurrency_limit(5) == 5  # Medium
+        assert simple_executor.get_effective_concurrency_limit(15) == 8  # Large
+        assert simple_executor.get_effective_concurrency_limit(100) == 10  # Very large
 
     @pytest.mark.asyncio
-    async def test_adaptive_manager_integration_with_execution(
+    async def test_simplified_execution_workflow(
         self,
-        adaptive_executor: AgentExecutor,
+        simple_executor: AgentExecutor,
         mock_functions: dict[str, Mock],
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Test that adaptive manager integrates with actual agent execution."""
+        """Test that simplified execution workflow works correctly."""
         # Create test agents
         agents = [
             {"name": "agent1", "model_profile": "test"},
@@ -121,22 +102,23 @@ class TestAgentExecutorAdaptiveIntegration:
         results_dict: dict[str, Any] = {}
         agent_usage: dict[str, Any] = {}
 
-        # Mock adaptive manager to return low limit
-        assert adaptive_executor.adaptive_manager is not None
-        mock_get_limit = AsyncMock(return_value=2)
-        monkeypatch.setattr(
-            adaptive_executor.adaptive_manager, "get_adaptive_limit", mock_get_limit
-        )
-
-        # Execute agents - should use semaphore with adaptive limit
-        await adaptive_executor.execute_agents_parallel(
+        # Execute agents - should use user-configured limits
+        await simple_executor.execute_agents_parallel(
             agents, "test input", config, results_dict, agent_usage
         )
 
-        # Verify adaptive limit was called
-        mock_get_limit.assert_called()
-
-        # Verify all agents were executed (even with lower limit)
+        # Verify all agents were executed
         assert len(results_dict) == 3
         for agent in agents:
             assert agent["name"] in results_dict
+            
+        # Verify performance events were emitted
+        emit_calls = mock_functions["emit_performance_event"].call_args_list
+        event_types = [call[0][0] for call in emit_calls]
+        assert "using_configured_concurrency" in event_types
+        
+        # Verify adaptive stats were collected
+        stats = simple_executor.get_adaptive_stats()
+        assert stats["management_type"] == "user_configured"
+        assert not stats["adaptive_used"]
+        assert "execution_metrics" in stats

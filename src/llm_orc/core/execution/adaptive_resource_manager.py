@@ -2,37 +2,12 @@
 
 import asyncio
 import time
+from typing import Any
 
 import psutil
 
 
-class ResourceMonitoringCircuitBreaker:
-    """Circuit breaker for resource monitoring failures."""
-
-    def __init__(self, failure_threshold: int = 5, reset_timeout: int = 60) -> None:
-        """Initialize the circuit breaker.
-
-        Args:
-            failure_threshold: Number of failures before opening circuit
-            reset_timeout: Seconds to wait before attempting reset
-        """
-        self.failure_count = 0
-        self.failure_threshold = failure_threshold
-        self.last_failure_time: float | None = None
-        self.reset_timeout = reset_timeout
-        self.state = "CLOSED"  # CLOSED, OPEN, HALF-OPEN
-
-    def record_failure(self) -> None:
-        """Record a failure and potentially open the circuit."""
-        self.failure_count += 1
-        self.last_failure_time = time.time()
-        if self.failure_count >= self.failure_threshold:
-            self.state = "OPEN"
-
-    def record_success(self) -> None:
-        """Record a success and reset failure count."""
-        self.failure_count = 0
-        self.state = "CLOSED"
+# Removed ResourceMonitoringCircuitBreaker - no longer needed with simplified approach
 
 
 class SystemResourceMonitor:
@@ -164,9 +139,32 @@ class SystemResourceMonitor:
 
         return metrics
 
+    async def collect_phase_metrics(
+        self,
+        phase_index: int,
+        phase_name: str,
+        agent_count: int,
+    ) -> dict[str, Any]:
+        """Collect phase-specific metrics.
+
+        Args:
+            phase_index: Index of the phase
+            phase_name: Name of the phase
+            agent_count: Number of agents in the phase
+
+        Returns:
+            Phase-specific metrics dictionary
+        """
+        return {
+            "phase_index": phase_index,
+            "phase_name": phase_name,
+            "agent_count": agent_count,
+            "phase_start_time": time.time(),
+        }
+
 
 class AdaptiveResourceManager:
-    """Manages adaptive resource allocation with circuit breaker protection."""
+    """Simple monitoring collector for performance feedback (no longer adaptive)."""
 
     def __init__(
         self,
@@ -175,56 +173,16 @@ class AdaptiveResourceManager:
         min_limit: int = 1,
         max_limit: int = 10,
     ) -> None:
-        """Initialize the adaptive resource manager.
+        """Initialize the monitoring collector.
 
         Args:
-            base_limit: Default limit when adaptive management fails
+            base_limit: Kept for backward compatibility (unused)
             monitor: System resource monitor instance
-            min_limit: Minimum allowed resource limit
-            max_limit: Maximum allowed resource limit
+            min_limit: Kept for backward compatibility (unused)
+            max_limit: Kept for backward compatibility (unused)
         """
-        self.base_limit = base_limit
         self.monitor = monitor
+        # Keep these for backward compatibility but don't use them
+        self.base_limit = base_limit
         self.min_limit = min_limit
         self.max_limit = max_limit
-        self.circuit_breaker = ResourceMonitoringCircuitBreaker()
-
-    async def get_adaptive_limit(self) -> int:
-        """Calculate adaptive resource limit based on system conditions.
-
-        Returns:
-            Calculated resource limit within configured bounds
-        """
-        # If circuit breaker is open, fall back to base limit
-        if self.circuit_breaker.state == "OPEN":
-            return self.base_limit
-
-        try:
-            metrics = await self.monitor.get_current_metrics()
-            self.circuit_breaker.record_success()
-
-            # Simple adaptive algorithm: reduce limit when resources are high
-            cpu_percent = metrics["cpu_percent"]
-            memory_percent = metrics["memory_percent"]
-
-            # Calculate adjustment factor based on resource usage
-            resource_pressure = max(cpu_percent, memory_percent) / 100.0
-
-            # Temporarily lowered thresholds to demo adaptive behavior
-            if resource_pressure > 0.5:  # Lowered from 0.8 to 0.5 (50%)
-                # High pressure: reduce limit
-                adjusted_limit = int(self.base_limit * 0.7)
-            elif resource_pressure < 0.2:  # Lowered from 0.3 to 0.2 (20%)
-                # Low pressure: increase limit
-                adjusted_limit = int(self.base_limit * 1.3)
-            else:
-                # Normal pressure: use base limit
-                adjusted_limit = self.base_limit
-
-            # Ensure within bounds
-            return max(self.min_limit, min(adjusted_limit, self.max_limit))
-
-        except Exception:
-            # Monitoring failed - record failure and fall back
-            self.circuit_breaker.record_failure()
-            return self.base_limit
