@@ -718,45 +718,57 @@ class EnsembleExecutor:
             )
             phases = dependency_analysis["phases"]
 
-            # Execute each phase sequentially, with parallelization within each phase
-            for phase_index, phase_agents in enumerate(phases):
-                self._emit_performance_event(
-                    "phase_started",
-                    {
-                        "phase_index": phase_index,
-                        "phase_agents": [agent["name"] for agent in phase_agents],
-                        "total_phases": len(phases),
-                    },
-                )
+            # Execute phases with monitoring hooks
+            has_errors = await self._execute_phases_standard(phases, enhanced_input, results_dict, has_errors)
 
-                # Determine input for this phase using DependencyResolver
-                if phase_index == 0:
-                    # First phase uses the base enhanced input
-                    phase_input: str | dict[str, str] = enhanced_input
-                else:
-                    # Subsequent phases get enhanced input with dependencies
-                    phase_input = (
-                        self._dependency_resolver.enhance_input_with_dependencies(
-                            enhanced_input, phase_agents, results_dict
-                        )
+        return has_errors
+
+    async def _execute_phases_standard(
+        self,
+        phases: list[list[dict[str, Any]]],
+        enhanced_input: str,
+        results_dict: dict[str, Any],
+        has_errors: bool,
+    ) -> bool:
+        """Execute phases using standard approach without per-phase monitoring."""
+        for phase_index, phase_agents in enumerate(phases):
+            self._emit_performance_event(
+                "phase_started",
+                {
+                    "phase_index": phase_index,
+                    "phase_agents": [agent["name"] for agent in phase_agents],
+                    "total_phases": len(phases),
+                },
+            )
+
+            # Determine input for this phase using DependencyResolver
+            if phase_index == 0:
+                # First phase uses the base enhanced input
+                phase_input: str | dict[str, str] = enhanced_input
+            else:
+                # Subsequent phases get enhanced input with dependencies
+                phase_input = (
+                    self._dependency_resolver.enhance_input_with_dependencies(
+                        enhanced_input, phase_agents, results_dict
                     )
-
-                # Execute agents in this phase in parallel (Issue #43 implementation)
-                phase_results = await self._execute_agents_in_phase_parallel(
-                    phase_agents, phase_input
                 )
 
-                # Process parallel execution results
-                phase_has_errors = self._process_phase_results(
-                    phase_results, results_dict, phase_agents
-                )
-                has_errors = has_errors or phase_has_errors
+            # Execute agents in this phase in parallel (Issue #43 implementation)
+            phase_results = await self._execute_agents_in_phase_parallel(
+                phase_agents, phase_input
+            )
 
-                # Emit phase completion event
-                self._emit_phase_completed_event(
-                    phase_index, phase_agents, results_dict
-                )
+            # Process parallel execution results
+            phase_has_errors = self._process_phase_results(
+                phase_results, results_dict, phase_agents
+            )
+            has_errors = has_errors or phase_has_errors
 
+            # Emit phase completion event
+            self._emit_phase_completed_event(
+                phase_index, phase_agents, results_dict
+            )
+        
         return has_errors
 
     async def _execute_agent_with_timeout(
@@ -800,3 +812,4 @@ class EnsembleExecutor:
 
         # Fallback: convert name to readable format
         return agent_name.replace("-", " ").title()
+
