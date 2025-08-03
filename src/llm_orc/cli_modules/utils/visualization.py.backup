@@ -308,20 +308,20 @@ def display_results(
 
     if detailed:
         # Build markdown content using JSON-first architecture
-        from .json_renderer import render_json_as_markdown, transform_to_execution_json
-
+        from .json_renderer import transform_to_execution_json, render_json_as_markdown
+        
         # Get usage data from metadata (extract from performance metrics helper)
         usage_data = metadata.get("usage", {})
-
+        
         # Transform to structured JSON (single source of truth)
         execution_json = transform_to_execution_json(results, usage_data, metadata)
-
+        
         # Render as markdown
         markdown_content = ["# Results\n"]
-
+        
         # Process agent results using helper method (keep existing for now)
         markdown_content.extend(_process_agent_results(results, metadata))
-
+        
         # Use JSON-first renderer for performance metrics
         performance_markdown = render_json_as_markdown(execution_json)
         if performance_markdown.strip():
@@ -395,8 +395,8 @@ def _display_detailed_plain_text(
         click.echo(f"Agents: {totals.get('agents_count', 0)}")
 
         # Show performance statistics using JSON-first architecture
-        from .json_renderer import render_json_as_text, transform_to_execution_json
-
+        from .json_renderer import transform_to_execution_json, render_json_as_text
+        
         execution_json = transform_to_execution_json(results, usage, metadata)
         performance_text = render_json_as_text(execution_json)
         if performance_text.strip():
