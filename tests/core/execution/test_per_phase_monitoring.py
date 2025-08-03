@@ -1,4 +1,5 @@
-"""Tests verifying per-phase monitoring is not implemented in simplified architecture."""
+"""Tests verifying per-phase monitoring is not implemented in simplified
+architecture."""
 
 from unittest.mock import AsyncMock, Mock
 
@@ -76,26 +77,32 @@ class TestPerPhaseMonitoring:
         self
     ) -> None:
         """Test that per-phase monitoring is intentionally not implemented.
-        
+
         In the simplified architecture, we use user-configured limits
         and don't need complex per-phase adaptive calculations.
         """
         from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
-        
+
         # Verify that complex per-phase monitoring methods don't exist
-        assert not hasattr(EnsembleExecutor, "execute_dependency_phases_with_monitoring")
-        assert not hasattr(EnsembleExecutor, "_execute_dependency_phases_with_monitoring")
+        assert not hasattr(
+            EnsembleExecutor, "execute_dependency_phases_with_monitoring"
+        )
+        assert not hasattr(
+            EnsembleExecutor, "_execute_dependency_phases_with_monitoring"
+        )
 
     def test_adaptive_calculations_removed_by_design(
         self
     ) -> None:
         """Test that complex adaptive calculations are intentionally removed.
-        
+
         The simplified architecture trusts users to set appropriate limits
         rather than trying to predict unknown model performance.
         """
-        from llm_orc.core.execution.adaptive_resource_manager import AdaptiveResourceManager
-        
+        from llm_orc.core.execution.adaptive_resource_manager import (
+            AdaptiveResourceManager,
+        )
+
         # Verify that complex adaptive methods don't exist
         assert not hasattr(AdaptiveResourceManager, "get_adaptive_limit")
         assert not hasattr(AdaptiveResourceManager, "get_adaptive_limit_for_phase")
@@ -114,11 +121,11 @@ class TestPerPhaseMonitoring:
 
         # Test basic metrics collection (used for performance feedback)
         current_metrics = await monitor.get_current_metrics()
-        
+
         assert isinstance(current_metrics, dict)
         assert "cpu_percent" in current_metrics
         assert "memory_percent" in current_metrics
-        
+
         # Test phase metrics collection still works but is simpler
         phase_metrics = await monitor.collect_phase_metrics(
             phase_index=0,
@@ -133,17 +140,17 @@ class TestPerPhaseMonitoring:
         self
     ) -> None:
         """Test that the simplified execution workflow provides adequate monitoring.
-        
+
         Instead of complex per-phase adaptive calculations, we provide:
-        - User-controlled concurrency limits 
+        - User-controlled concurrency limits
         - Performance feedback and guidance
         - Simple resource monitoring for optimization hints
         """
         from llm_orc.core.execution.adaptive_resource_manager import (
-            AdaptiveResourceManager, 
-            SystemResourceMonitor
+            AdaptiveResourceManager,
+            SystemResourceMonitor,
         )
-        
+
         # Create simplified components
         monitor = SystemResourceMonitor(polling_interval=0.1)
         manager = AdaptiveResourceManager(
@@ -152,11 +159,11 @@ class TestPerPhaseMonitoring:
             min_limit=1,
             max_limit=10
         )
-        
+
         # Test that monitoring still works for performance feedback
         await manager.monitor.start_execution_monitoring()
         metrics = await manager.monitor.stop_execution_monitoring()
-        
+
         # Should provide basic performance data for user guidance
         assert "peak_cpu" in metrics
         assert "avg_cpu" in metrics

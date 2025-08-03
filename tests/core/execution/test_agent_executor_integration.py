@@ -6,10 +6,6 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
-from llm_orc.core.execution.adaptive_resource_manager import (
-    AdaptiveResourceManager,
-    SystemResourceMonitor,
-)
 from llm_orc.core.execution.agent_executor import AgentExecutor
 
 
@@ -59,12 +55,12 @@ class TestAgentExecutorSimplifiedIntegration:
         # Test with configured limit
         limit = await simple_executor._get_concurrency_limit(10)
         assert limit == 5  # From config
-        
+
         # Test with default behavior when no limit configured
         simple_executor._performance_config["concurrency"]["max_concurrent_agents"] = 0
         limit = await simple_executor._get_concurrency_limit(3)
         assert limit == 3  # Small ensemble, all agents
-        
+
         limit = await simple_executor._get_concurrency_limit(15)
         assert limit == 8  # Large ensemble, capped
 
@@ -75,10 +71,10 @@ class TestAgentExecutorSimplifiedIntegration:
         # Test with configured limit
         limit = simple_executor.get_effective_concurrency_limit(10)
         assert limit == 5  # From config
-        
+
         # Test without configured limit - smart defaults
         simple_executor._performance_config["concurrency"]["max_concurrent_agents"] = 0
-        
+
         assert simple_executor.get_effective_concurrency_limit(2) == 2  # Small
         assert simple_executor.get_effective_concurrency_limit(5) == 5  # Medium
         assert simple_executor.get_effective_concurrency_limit(15) == 8  # Large
@@ -111,12 +107,12 @@ class TestAgentExecutorSimplifiedIntegration:
         assert len(results_dict) == 3
         for agent in agents:
             assert agent["name"] in results_dict
-            
+
         # Verify performance events were emitted
         emit_calls = mock_functions["emit_performance_event"].call_args_list
         event_types = [call[0][0] for call in emit_calls]
         assert "using_configured_concurrency" in event_types
-        
+
         # Verify adaptive stats were collected
         stats = simple_executor.get_adaptive_stats()
         assert stats["management_type"] == "user_configured"

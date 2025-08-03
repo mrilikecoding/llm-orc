@@ -719,7 +719,9 @@ class EnsembleExecutor:
             phases = dependency_analysis["phases"]
 
             # Execute phases with monitoring hooks
-            has_errors = await self._execute_phases_standard(phases, enhanced_input, results_dict, has_errors)
+            has_errors = await self._execute_phases_standard(
+                phases, enhanced_input, results_dict, has_errors
+            )
 
         return has_errors
 
@@ -768,7 +770,7 @@ class EnsembleExecutor:
             self._emit_phase_completed_event(
                 phase_index, phase_agents, results_dict
             )
-        
+
         return has_errors
 
     async def _execute_agent_with_timeout(

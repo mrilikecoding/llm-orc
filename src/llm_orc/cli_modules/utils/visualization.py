@@ -718,7 +718,7 @@ def _format_adaptive_no_decisions(
     if execution_metrics:
         content.extend(_format_execution_metrics(execution_metrics, adaptive_stats))
     else:
-        content.extend(_format_fallback_metrics(adaptive_stats))
+        content.extend(_format_execution_summary({}))
 
     return content
 
@@ -773,32 +773,21 @@ def _format_execution_metrics(
     return content
 
 
-def _format_fallback_metrics(adaptive_stats: dict[str, Any]) -> list[str]:
-    """Format fallback metrics when continuous monitoring failed."""
-    cpu_percent = 0.0
-    memory_percent = 0.0
-    circuit_state = "unknown"
-
-    resource_metrics = adaptive_stats.get("resource_metrics", [])
-    concurrency_decisions = adaptive_stats.get("concurrency_decisions", [])
-
-    if resource_metrics:
-        final_metrics = resource_metrics[-1]
-        cpu_percent = final_metrics.get("cpu_percent", 0.0)
-        memory_percent = final_metrics.get("memory_percent", 0.0)
-        circuit_state = final_metrics.get("circuit_breaker_state", "unknown")
-    elif concurrency_decisions:
-        for decision in reversed(concurrency_decisions):
-            if "cpu_percent" in decision:
-                cpu_percent = decision.get("cpu_percent", 0.0)
-                memory_percent = decision.get("memory_percent", 0.0)
-                circuit_state = decision.get("circuit_breaker_state", "unknown")
-                break
-
+def _format_execution_summary(execution_metrics: dict[str, Any]) -> list[str]:
+    """Format execution metrics summary for markdown display."""
+    if not execution_metrics:
+        return ["- **No monitoring data collected**\n"]
+        
+    peak_cpu = execution_metrics.get("peak_cpu", 0.0)
+    avg_cpu = execution_metrics.get("avg_cpu", 0.0)
+    peak_memory = execution_metrics.get("peak_memory", 0.0)
+    avg_memory = execution_metrics.get("avg_memory", 0.0)
+    sample_count = execution_metrics.get("sample_count", 0)
+    
     return [
-        f"- **System resources during execution:** "
-        f"CPU {cpu_percent:.1f}%, Memory {memory_percent:.1f}%, "
-        f"Circuit: {circuit_state}\n"
+        f"- **Peak usage:** CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%\n",
+        f"- **Average usage:** CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%\n", 
+        f"- **Monitoring:** {sample_count} samples collected\n",
     ]
 
 
@@ -1389,7 +1378,7 @@ def _display_static_decisions(
         click.echo(f"Type: {management_type} (user-controlled concurrency)")
     else:
         click.echo(f"Type: {management_type} (fixed concurrency limits)")
-    
+
     final_decision = concurrency_decisions[-1]
 
     # Handle our new user_configured format
@@ -1451,50 +1440,46 @@ def _display_raw_samples(execution_metrics: dict[str, Any]) -> None:
         )
 
 
-def _display_fallback_metrics(adaptive_stats: dict[str, Any]) -> None:
-    """Display fallback metrics when continuous monitoring failed."""
-    resource_metrics = adaptive_stats.get("resource_metrics", [])
-    if resource_metrics:
-        final_metrics = resource_metrics[-1]
-        cpu_percent = final_metrics.get("cpu_percent", 0.0)
-        memory_percent = final_metrics.get("memory_percent", 0.0)
-        circuit_state = final_metrics.get("circuit_breaker_state", "unknown")
-        click.echo(
-            f"System resources during execution: "
-            f"CPU {cpu_percent:.1f}%, Memory {memory_percent:.1f}%, "
-            f"Circuit: {circuit_state}"
-        )
+def _display_simplified_metrics(execution_metrics: dict[str, Any]) -> None:
+    """Display simplified execution metrics for user feedback."""
+    if not execution_metrics:
+        click.echo("No monitoring data collected")
+        return
+        
+    peak_cpu = execution_metrics.get("peak_cpu", 0.0)
+    avg_cpu = execution_metrics.get("avg_cpu", 0.0)
+    peak_memory = execution_metrics.get("peak_memory", 0.0)
+    avg_memory = execution_metrics.get("avg_memory", 0.0)
+    sample_count = execution_metrics.get("sample_count", 0)
+    
+    click.echo(f"Peak usage: CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%")
+    click.echo(f"Average usage: CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%")
+    click.echo(f"Monitoring: {sample_count} samples collected")
 
 
 def _display_adaptive_resource_metrics_text(adaptive_stats: dict[str, Any]) -> None:
-    """Display adaptive resource management metrics for text output."""
-    management_type = adaptive_stats.get("management_type", "unknown")
-    adaptive_used = adaptive_stats.get("adaptive_used", False)
+    """Display simplified resource management metrics."""
+    management_type = adaptive_stats.get("management_type", "user_configured")
     concurrency_decisions = adaptive_stats.get("concurrency_decisions", [])
+    execution_metrics = adaptive_stats.get("execution_metrics", {})
 
     click.echo()
     click.echo("Resource Management")
     click.echo("==================")
-
-    if adaptive_used and concurrency_decisions:
-        _display_adaptive_with_decisions(management_type, concurrency_decisions)
-    elif concurrency_decisions:
-        _display_static_decisions(management_type, concurrency_decisions)
-    elif adaptive_used:
-        click.echo(
-            f"Type: {management_type} (adaptive limits based on system resources)"
-        )
-        click.echo("No adaptive limit needed: All agents ran in parallel successfully")
-
-        execution_metrics = adaptive_stats.get("execution_metrics", {})
-        if execution_metrics:
-            _display_execution_metrics(execution_metrics)
-        else:
-            _display_fallback_metrics(adaptive_stats)
-    else:
-        click.echo(f"Type: {management_type} (fixed concurrency limits)")
-        click.echo("All agents ran in parallel successfully")
     
+    # Show concurrency configuration
+    if concurrency_decisions:
+        _display_static_decisions(management_type, concurrency_decisions)
+    else:
+        click.echo(f"Type: {management_type} (user-controlled concurrency)")
+    
+    # Always show execution metrics when available
+    if execution_metrics:
+        click.echo()
+        _display_simplified_metrics(execution_metrics)
+    else:
+        click.echo("No monitoring data collected")
+
     # Add user guidance for performance optimization
     _display_performance_guidance(adaptive_stats)
 
@@ -1503,51 +1488,63 @@ def _display_performance_guidance(adaptive_stats: dict[str, Any]) -> None:
     """Display helpful guidance for optimizing performance settings."""
     execution_metrics = adaptive_stats.get("execution_metrics", {})
     concurrency_decisions = adaptive_stats.get("concurrency_decisions", [])
-    
+
     if not execution_metrics or not concurrency_decisions:
         return
-        
+
     # Get the current configuration
     final_decision = concurrency_decisions[-1]
-    current_limit = final_decision.get("configured_limit", final_decision.get("static_limit"))
+    current_limit = final_decision.get(
+        "configured_limit", final_decision.get("static_limit")
+    )
     agent_count = final_decision.get("agent_count", 0)
-    
+
     if not current_limit:
         return
-    
+
     # Get performance metrics
     peak_cpu = execution_metrics.get("peak_cpu", 0)
     peak_memory = execution_metrics.get("peak_memory", 0)
     sample_count = execution_metrics.get("sample_count", 0)
-    
+
     click.echo()
     click.echo("💡 Performance Optimization Tips:")
-    
+
     # High resource usage guidance
     if peak_cpu > 80 or peak_memory > 85:
         click.echo(
-            f"   • High resource usage detected (CPU: {peak_cpu:.1f}%, Memory: {peak_memory:.1f}%)"
+            f"   • High resource usage detected "
+            f"(CPU: {peak_cpu:.1f}%, Memory: {peak_memory:.1f}%)"
         )
         if current_limit > 1:
-            click.echo(f"   • Consider reducing max_concurrent from {current_limit} to {current_limit - 1}")
+            click.echo(
+                f"   • Consider reducing max_concurrent from {current_limit} "
+                f"to {current_limit - 1}"
+            )
         click.echo("   • Monitor system stability during execution")
-    
+
     # Low resource usage guidance
     elif peak_cpu < 20 and peak_memory < 50 and current_limit < agent_count:
         click.echo(
-            f"   • System has capacity (CPU: {peak_cpu:.1f}%, Memory: {peak_memory:.1f}%)"
+            f"   • System has capacity "
+            f"(CPU: {peak_cpu:.1f}%, Memory: {peak_memory:.1f}%)"
         )
         suggested_limit = min(agent_count, current_limit + 2)
-        click.echo(f"   • Consider increasing max_concurrent from {current_limit} to {suggested_limit}")
+        click.echo(
+            f"   • Consider increasing max_concurrent from {current_limit} "
+            f"to {suggested_limit}"
+        )
         click.echo("   • This could reduce execution time")
-    
+
     # Sample count guidance
     if sample_count < 5:
         click.echo(
             f"   • Low monitoring samples ({sample_count}) - execution was very fast"
         )
-        click.echo("   • Consider testing with larger ensembles for better performance data")
-    
+        click.echo(
+            "   • Consider testing with larger ensembles for better performance data"
+        )
+
     # Configuration guidance
     click.echo("   • Adjust max_concurrent in your performance configuration")
     click.echo("   • Monitor execution time vs resource usage to find optimal settings")

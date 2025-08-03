@@ -7,7 +7,6 @@ from typing import Any
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.execution.adaptive_resource_manager import (
-    AdaptiveResourceManager,
     SystemResourceMonitor,
 )
 
@@ -83,7 +82,7 @@ class AgentExecutor:
             "configured_limit": max_concurrent,
             "management_type": "user_configured",
         })
-        
+
         self._emit_performance_event("using_configured_concurrency", {
             "total_agents": len(agents),
             "concurrency_limit": max_concurrent,
@@ -415,7 +414,7 @@ class AgentExecutor:
         """Initialize resource monitoring for performance feedback."""
         # Create system resource monitor for performance feedback
         self.monitor = SystemResourceMonitor(polling_interval=0.1)
-        
+
         # Keep adaptive_manager for backward compatibility with existing code
         # But simplify it to just be a monitoring container
         self.adaptive_manager = type('SimpleMonitor', (), {
@@ -424,61 +423,72 @@ class AgentExecutor:
 
     async def _get_concurrency_limit(self, agent_count: int) -> int:
         """Get concurrency limit from user configuration."""
-        # Use the configured max_concurrent directly - trust the user to set appropriate limits
+        # Use the configured max_concurrent directly - trust the user to set
+        # appropriate limits
         limit = self.get_effective_concurrency_limit(agent_count)
-        
+
         # Collect current resource metrics for user feedback (not for decision making)
         try:
             import psutil
             cpu_percent = psutil.cpu_percent(interval=0.1)
             memory_percent = psutil.virtual_memory().percent
-            
+
             self.adaptive_stats["resource_metrics"].append({
                 "cpu_percent": cpu_percent,
                 "memory_percent": memory_percent,
                 "circuit_breaker_state": "N/A",
                 "measurement_point": "user_configured",
             })
-            
-            guidance = self._get_concurrency_guidance(limit, len(agents), cpu_percent, memory_percent)
+
+            guidance = self._get_concurrency_guidance(
+                limit, agent_count, cpu_percent, memory_percent
+            )
             print(
                 f"🔧 Using configured concurrency: {limit} agents "
-                f"(Current system: CPU {cpu_percent:.1f}%, Memory {memory_percent:.1f}%)"
+                f"(Current system: CPU {cpu_percent:.1f}%, "
+                f"Memory {memory_percent:.1f}%)"
             )
             if guidance:
                 print(f"💡 {guidance}")
         except Exception:
             print(f"🔧 Using configured concurrency: {limit} agents")
-            print("💡 Monitor performance and adjust max_concurrent in performance config as needed")
-        
+            print(
+                "💡 Monitor performance and adjust max_concurrent in performance "
+                "config as needed"
+            )
+
         return limit
 
     def _get_concurrency_guidance(
-        self, 
-        limit: int, 
-        agent_count: int, 
-        cpu_percent: float, 
+        self,
+        limit: int,
+        agent_count: int,
+        cpu_percent: float,
         memory_percent: float
     ) -> str | None:
-        """Provide helpful guidance for concurrency settings based on current conditions."""
+        """Provide helpful guidance for concurrency settings based on current
+        conditions."""
         # High resource usage - suggest reducing concurrency
         if cpu_percent > 80 or memory_percent > 85:
             return (
                 f"High resource usage detected - consider reducing max_concurrent "
                 f"from {limit} to {max(1, limit - 1)} for better stability"
             )
-        
+
         # Low resource usage with small limit - suggest increasing
-        if cpu_percent < 20 and memory_percent < 50 and limit < agent_count and limit < 8:
+        if (cpu_percent < 20 and memory_percent < 50 and
+            limit < agent_count and limit < 8):
             return (
                 f"System has capacity - consider increasing max_concurrent "
                 f"from {limit} to {min(agent_count, limit + 1)} for faster execution"
             )
-        
+
         # All agents running in parallel already
         if limit >= agent_count:
-            return "All agents will run in parallel - optimal for this ensemble size"
-        
+            return (
+                "All agents will run in parallel - optimal for this ensemble size"
+            )
+
         # No specific guidance needed
         return None
 

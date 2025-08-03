@@ -1,7 +1,7 @@
 """Tests for simplified resource management (Issue #55)."""
 
 import time
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -36,7 +36,9 @@ class TestSystemResourceMonitor:
         assert 0 <= metrics["memory_percent"] <= 100
 
     @pytest.mark.asyncio
-    async def test_execution_monitoring_lifecycle(self, monitor: SystemResourceMonitor) -> None:
+    async def test_execution_monitoring_lifecycle(
+        self, monitor: SystemResourceMonitor
+    ) -> None:
         """Test that execution monitoring can be started and stopped."""
         # Start monitoring
         await monitor.start_execution_monitoring()
@@ -45,7 +47,7 @@ class TestSystemResourceMonitor:
         # Stop monitoring and get metrics
         metrics = await monitor.stop_execution_monitoring()
         assert not monitor.is_monitoring
-        
+
         # Should have collected metrics
         assert "peak_cpu" in metrics
         assert "avg_cpu" in metrics
@@ -58,7 +60,7 @@ class TestSystemResourceMonitor:
     async def test_collect_phase_metrics(self, monitor: SystemResourceMonitor) -> None:
         """Test phase metrics collection."""
         metrics = await monitor.collect_phase_metrics(0, "test_phase", 3)
-        
+
         assert metrics["phase_index"] == 0
         assert metrics["phase_name"] == "test_phase"
         assert metrics["agent_count"] == 3
@@ -102,14 +104,20 @@ class TestAdaptiveResourceManager:
             max_limit=10
         )
 
-    def test_initialization(self, resource_manager: AdaptiveResourceManager, mock_monitor: Mock) -> None:
+    def test_initialization(
+        self,
+        resource_manager: AdaptiveResourceManager,
+        mock_monitor: Mock
+    ) -> None:
         """Test that resource manager initializes correctly."""
         assert resource_manager.monitor == mock_monitor
         assert resource_manager.base_limit == 5
         assert resource_manager.min_limit == 1
         assert resource_manager.max_limit == 10
 
-    def test_backward_compatibility_attributes(self, resource_manager: AdaptiveResourceManager) -> None:
+    def test_backward_compatibility_attributes(
+        self, resource_manager: AdaptiveResourceManager
+    ) -> None:
         """Test that backward compatibility attributes are maintained."""
         # These are kept for backward compatibility but not used in simplified approach
         assert hasattr(resource_manager, 'base_limit')
@@ -118,7 +126,11 @@ class TestAdaptiveResourceManager:
         assert hasattr(resource_manager, 'monitor')
 
     @pytest.mark.asyncio
-    async def test_monitor_delegation(self, resource_manager: AdaptiveResourceManager, mock_monitor: Mock) -> None:
+    async def test_monitor_delegation(
+        self,
+        resource_manager: AdaptiveResourceManager,
+        mock_monitor: Mock
+    ) -> None:
         """Test that the resource manager properly delegates to the monitor."""
         # Test that we can access monitor methods through the resource manager
         await resource_manager.monitor.start_execution_monitoring()
@@ -128,7 +140,9 @@ class TestAdaptiveResourceManager:
         mock_monitor.stop_execution_monitoring.assert_called_once()
         assert metrics["sample_count"] == 10
 
-        phase_metrics = await resource_manager.monitor.collect_phase_metrics(0, "test", 3)
+        phase_metrics = await resource_manager.monitor.collect_phase_metrics(
+            0, "test", 3
+        )
         mock_monitor.collect_phase_metrics.assert_called_once_with(0, "test", 3)
         assert phase_metrics["phase_name"] == "test_phase"  # Mock returns test_phase
 
@@ -141,7 +155,7 @@ class TestSimplifiedArchitecture:
         """Test that complex adaptive calculations have been removed."""
         monitor = SystemResourceMonitor()
         manager = AdaptiveResourceManager(base_limit=5, monitor=monitor)
-        
+
         # Should not have complex methods like get_adaptive_limit
         assert not hasattr(manager, 'get_adaptive_limit')
         assert not hasattr(manager, 'circuit_breaker')
@@ -151,7 +165,7 @@ class TestSimplifiedArchitecture:
         """Test that the approach is focused on monitoring, not adaptive decisions."""
         monitor = SystemResourceMonitor()
         manager = AdaptiveResourceManager(base_limit=5, monitor=monitor)
-        
+
         # Should have monitoring capabilities
         assert hasattr(manager, 'monitor')
         assert hasattr(manager.monitor, 'start_execution_monitoring')
