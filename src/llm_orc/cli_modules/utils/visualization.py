@@ -593,7 +593,13 @@ def _format_adaptive_resource_metrics(adaptive_stats: dict[str, Any]) -> list[st
             _format_adaptive_no_decisions(management_type, adaptive_stats)
         )
     else:
-        markdown_content.extend(_format_static_no_decisions(management_type))
+        # Extract concurrency limit from decisions
+        concurrency_limit = 1  # Default fallback
+        if concurrency_decisions:
+            concurrency_limit = concurrency_decisions[0].get("configured_limit", 1)
+        markdown_content.extend(
+            _format_static_no_decisions(management_type, concurrency_limit)
+        )
 
     # Add per-phase metrics if available
     phase_metrics = adaptive_stats.get("phase_metrics", [])
@@ -803,11 +809,13 @@ def _format_execution_summary(execution_metrics: dict[str, Any]) -> list[str]:
     ]
 
 
-def _format_static_no_decisions(management_type: str) -> list[str]:
+def _format_static_no_decisions(
+    management_type: str, concurrency_limit: int
+) -> list[str]:
     """Format static management metrics when no decisions were recorded."""
     return [
         f"- **Type:** {management_type} (fixed concurrency limits)\n",
-        "- **User-controlled concurrency limits applied**\n",
+        f"- **Max concurrency limit used: {concurrency_limit}**\n",
     ]
 
 
@@ -1480,7 +1488,7 @@ def _display_phase_statistics(phase_metrics: list[dict[str, Any]]) -> None:
         duration = phase_data.get("duration_seconds", 0.0)
         agent_count = phase_data.get("agent_count", len(agent_names))
 
-        click.echo(f"Phase {phase_index}: {agent_count} agents ({duration:.2f}s)")
+        click.echo(f"Phase {phase_index + 1}: {agent_count} agents ({duration:.2f}s)")
 
         if agent_names:
             agent_list = ", ".join(agent_names)
