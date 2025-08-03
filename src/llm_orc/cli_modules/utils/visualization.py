@@ -611,7 +611,6 @@ def _format_per_phase_metrics(phase_metrics: list[dict[str, Any]]) -> list[str]:
         phase_index = phase_data.get("phase_index", "Unknown")
         agent_count = phase_data.get("agent_count", 0)
         agent_names = phase_data.get("agent_names", [])
-        adaptive_limit = phase_data.get("adaptive_limit", "N/A")
         sample_count = phase_data.get("sample_count", 0)
 
         # Get resource usage metrics
@@ -622,7 +621,11 @@ def _format_per_phase_metrics(phase_metrics: list[dict[str, Any]]) -> list[str]:
 
         content.append(f"**Phase {phase_index}** ({agent_count} agents)\n")
         content.append(f"- **Agents:** {', '.join(agent_names)}\n")
-        content.append(f"- **Adaptive limit:** {adaptive_limit} concurrent agents\n")
+
+        # Show duration if available
+        duration = phase_data.get("duration_seconds")
+        if duration is not None:
+            content.append(f"- **Duration:** {duration:.2f} seconds\n")
 
         if sample_count > 0:
             content.append(
@@ -631,7 +634,16 @@ def _format_per_phase_metrics(phase_metrics: list[dict[str, Any]]) -> list[str]:
             )
             content.append(f"- **Monitoring:** {sample_count} samples collected\n")
         else:
-            content.append("- **Resource usage:** No samples collected\n")
+            # Show final resource snapshot if available
+            final_cpu = phase_data.get("final_cpu_percent")
+            final_memory = phase_data.get("final_memory_percent")
+            if final_cpu is not None and final_memory is not None:
+                content.append(
+                    f"- **Resource usage:** CPU {final_cpu:.1f}%, "
+                    f"Memory {final_memory:.1f}%\n"
+                )
+            else:
+                content.append("- **Resource usage:** No monitoring data available\n")
 
         # Show raw samples if available (first few for debugging)
         raw_cpu = phase_data.get("raw_cpu_samples", [])
@@ -711,7 +723,7 @@ def _format_adaptive_no_decisions(
     """Format adaptive metrics when no concurrency decisions were needed."""
     content = [
         f"- **Type:** {management_type} (adaptive limits based on system resources)\n",
-        "- **No adaptive limit needed:** All agents ran in parallel successfully\n",
+        "- **User-configured limits used:** No adaptive calculations needed\n",
     ]
 
     execution_metrics = adaptive_stats.get("execution_metrics", {})
@@ -777,16 +789,16 @@ def _format_execution_summary(execution_metrics: dict[str, Any]) -> list[str]:
     """Format execution metrics summary for markdown display."""
     if not execution_metrics:
         return ["- **No monitoring data collected**\n"]
-        
+
     peak_cpu = execution_metrics.get("peak_cpu", 0.0)
     avg_cpu = execution_metrics.get("avg_cpu", 0.0)
     peak_memory = execution_metrics.get("peak_memory", 0.0)
     avg_memory = execution_metrics.get("avg_memory", 0.0)
     sample_count = execution_metrics.get("sample_count", 0)
-    
+
     return [
         f"- **Peak usage:** CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%\n",
-        f"- **Average usage:** CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%\n", 
+        f"- **Average usage:** CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%\n",
         f"- **Monitoring:** {sample_count} samples collected\n",
     ]
 
@@ -795,7 +807,7 @@ def _format_static_no_decisions(management_type: str) -> list[str]:
     """Format static management metrics when no decisions were recorded."""
     return [
         f"- **Type:** {management_type} (fixed concurrency limits)\n",
-        "- **All agents ran in parallel successfully**\n",
+        "- **User-controlled concurrency limits applied**\n",
     ]
 
 
@@ -1445,16 +1457,52 @@ def _display_simplified_metrics(execution_metrics: dict[str, Any]) -> None:
     if not execution_metrics:
         click.echo("No monitoring data collected")
         return
-        
+
     peak_cpu = execution_metrics.get("peak_cpu", 0.0)
     avg_cpu = execution_metrics.get("avg_cpu", 0.0)
     peak_memory = execution_metrics.get("peak_memory", 0.0)
     avg_memory = execution_metrics.get("avg_memory", 0.0)
     sample_count = execution_metrics.get("sample_count", 0)
-    
+
     click.echo(f"Peak usage: CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%")
     click.echo(f"Average usage: CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%")
     click.echo(f"Monitoring: {sample_count} samples collected")
+
+
+def _display_phase_statistics(phase_metrics: list[dict[str, Any]]) -> None:
+    """Display per-phase execution statistics."""
+    click.echo("Per-Phase Statistics")
+    click.echo("===================")
+
+    for phase_data in phase_metrics:
+        phase_index = phase_data.get("phase_index", "?")
+        agent_names = phase_data.get("agent_names", [])
+        duration = phase_data.get("duration_seconds", 0.0)
+        agent_count = phase_data.get("agent_count", len(agent_names))
+
+        click.echo(f"Phase {phase_index}: {agent_count} agents ({duration:.2f}s)")
+
+        if agent_names:
+            agent_list = ", ".join(agent_names)
+            click.echo(f"  Agents: {agent_list}")
+
+        # Show resource usage if available
+        final_cpu = phase_data.get("final_cpu_percent")
+        final_memory = phase_data.get("final_memory_percent")
+        if final_cpu is not None and final_memory is not None:
+            click.echo(f"  Resources: CPU {final_cpu:.1f}%, Memory {final_memory:.1f}%")
+
+        # Show timing details if available
+        start_time = phase_data.get("start_time")
+        end_time = phase_data.get("end_time")
+        if start_time and end_time:
+            # Convert to relative time from start
+            relative_start = 0.0 if phase_index == 0 else start_time
+            first_start = phase_metrics[0].get("start_time", start_time)
+            relative_end = end_time - first_start
+            click.echo(f"  Timing: {relative_start:.2f}s - {relative_end:.2f}s")
+
+        click.echo()  # Empty line between phases
 
 
 def _display_adaptive_resource_metrics_text(adaptive_stats: dict[str, Any]) -> None:
@@ -1466,19 +1514,25 @@ def _display_adaptive_resource_metrics_text(adaptive_stats: dict[str, Any]) -> N
     click.echo()
     click.echo("Resource Management")
     click.echo("==================")
-    
+
     # Show concurrency configuration
     if concurrency_decisions:
         _display_static_decisions(management_type, concurrency_decisions)
     else:
         click.echo(f"Type: {management_type} (user-controlled concurrency)")
-    
+
     # Always show execution metrics when available
     if execution_metrics:
         click.echo()
         _display_simplified_metrics(execution_metrics)
     else:
         click.echo("No monitoring data collected")
+
+    # Show per-phase statistics if available
+    phase_metrics = adaptive_stats.get("phase_metrics", [])
+    if phase_metrics:
+        click.echo()
+        _display_phase_statistics(phase_metrics)
 
     # Add user guidance for performance optimization
     _display_performance_guidance(adaptive_stats)

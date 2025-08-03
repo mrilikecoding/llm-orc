@@ -48,6 +48,9 @@ class AgentExecutor:
             "resource_metrics": [],
         }
 
+        # Track per-phase metrics for detailed performance analysis
+        self._phase_metrics: list[dict[str, Any]] = []
+
     async def execute_agents_parallel(
         self,
         agents: list[dict[str, Any]],
@@ -77,17 +80,22 @@ class AgentExecutor:
         await self.monitor.start_execution_monitoring()
 
         # Record concurrency decision for metrics
-        self.adaptive_stats["concurrency_decisions"].append({
-            "agent_count": len(agents),
-            "configured_limit": max_concurrent,
-            "management_type": "user_configured",
-        })
+        self.adaptive_stats["concurrency_decisions"].append(
+            {
+                "agent_count": len(agents),
+                "configured_limit": max_concurrent,
+                "management_type": "user_configured",
+            }
+        )
 
-        self._emit_performance_event("using_configured_concurrency", {
-            "total_agents": len(agents),
-            "concurrency_limit": max_concurrent,
-            "management_type": "user_configured",
-        })
+        self._emit_performance_event(
+            "using_configured_concurrency",
+            {
+                "total_agents": len(agents),
+                "concurrency_limit": max_concurrent,
+                "management_type": "user_configured",
+            },
+        )
 
         # For small ensembles, run all in parallel
         # For large ensembles, use semaphore to limit concurrent execution
@@ -109,15 +117,17 @@ class AgentExecutor:
             self.adaptive_stats["execution_metrics"] = execution_metrics
 
             # Add summary resource metrics entry for visualization
-            self.adaptive_stats["resource_metrics"].append({
-                "peak_cpu": execution_metrics["peak_cpu"],
-                "avg_cpu": execution_metrics["avg_cpu"],
-                "peak_memory": execution_metrics["peak_memory"],
-                "avg_memory": execution_metrics["avg_memory"],
-                "sample_count": execution_metrics["sample_count"],
-                "circuit_breaker_state": "N/A",
-                "measurement_point": "execution_summary",
-            })
+            self.adaptive_stats["resource_metrics"].append(
+                {
+                    "peak_cpu": execution_metrics["peak_cpu"],
+                    "avg_cpu": execution_metrics["avg_cpu"],
+                    "peak_memory": execution_metrics["peak_memory"],
+                    "avg_memory": execution_metrics["avg_memory"],
+                    "sample_count": execution_metrics["sample_count"],
+                    "circuit_breaker_state": "N/A",
+                    "measurement_point": "execution_summary",
+                }
+            )
         except Exception as e:
             # Final fallback - always provide SOME data for research
             print(f"⚠️  WARNING: All monitoring failed: {e}")
@@ -409,7 +419,6 @@ class AgentExecutor:
                     if usage:
                         agent_usage[agent_name] = usage
 
-
     def _init_monitoring(self) -> None:
         """Initialize resource monitoring for performance feedback."""
         # Create system resource monitor for performance feedback
@@ -417,9 +426,7 @@ class AgentExecutor:
 
         # Keep adaptive_manager for backward compatibility with existing code
         # But simplify it to just be a monitoring container
-        self.adaptive_manager = type('SimpleMonitor', (), {
-            'monitor': self.monitor
-        })()
+        self.adaptive_manager = type("SimpleMonitor", (), {"monitor": self.monitor})()
 
     async def _get_concurrency_limit(self, agent_count: int) -> int:
         """Get concurrency limit from user configuration."""
@@ -430,15 +437,18 @@ class AgentExecutor:
         # Collect current resource metrics for user feedback (not for decision making)
         try:
             import psutil
+
             cpu_percent = psutil.cpu_percent(interval=0.1)
             memory_percent = psutil.virtual_memory().percent
 
-            self.adaptive_stats["resource_metrics"].append({
-                "cpu_percent": cpu_percent,
-                "memory_percent": memory_percent,
-                "circuit_breaker_state": "N/A",
-                "measurement_point": "user_configured",
-            })
+            self.adaptive_stats["resource_metrics"].append(
+                {
+                    "cpu_percent": cpu_percent,
+                    "memory_percent": memory_percent,
+                    "circuit_breaker_state": "N/A",
+                    "measurement_point": "user_configured",
+                }
+            )
 
             guidance = self._get_concurrency_guidance(
                 limit, agent_count, cpu_percent, memory_percent
@@ -460,11 +470,7 @@ class AgentExecutor:
         return limit
 
     def _get_concurrency_guidance(
-        self,
-        limit: int,
-        agent_count: int,
-        cpu_percent: float,
-        memory_percent: float
+        self, limit: int, agent_count: int, cpu_percent: float, memory_percent: float
     ) -> str | None:
         """Provide helpful guidance for concurrency settings based on current
         conditions."""
@@ -476,8 +482,12 @@ class AgentExecutor:
             )
 
         # Low resource usage with small limit - suggest increasing
-        if (cpu_percent < 20 and memory_percent < 50 and
-            limit < agent_count and limit < 8):
+        if (
+            cpu_percent < 20
+            and memory_percent < 50
+            and limit < agent_count
+            and limit < 8
+        ):
             return (
                 f"System has capacity - consider increasing max_concurrent "
                 f"from {limit} to {min(agent_count, limit + 1)} for faster execution"
@@ -485,13 +495,10 @@ class AgentExecutor:
 
         # All agents running in parallel already
         if limit >= agent_count:
-            return (
-                "All agents will run in parallel - optimal for this ensemble size"
-            )
+            return "All agents will run in parallel - optimal for this ensemble size"
 
         # No specific guidance needed
         return None
-
 
     def get_adaptive_stats(self) -> dict[str, Any]:
         """Get adaptive resource management statistics for this execution."""
@@ -533,13 +540,13 @@ class AgentExecutor:
 
         # Add phase metrics if available
         stats_copy = self.adaptive_stats.copy()
-        if hasattr(self, '_phase_metrics') and self._phase_metrics:
+        if hasattr(self, "_phase_metrics") and self._phase_metrics:
             stats_copy["phase_metrics"] = self._phase_metrics
 
         return stats_copy
 
     def get_phase_metrics(self) -> list[dict[str, Any]]:
         """Get per-phase monitoring metrics."""
-        if hasattr(self, '_phase_metrics') and isinstance(self._phase_metrics, list):
+        if hasattr(self, "_phase_metrics") and isinstance(self._phase_metrics, list):
             return self._phase_metrics
         return []

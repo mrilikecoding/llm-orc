@@ -749,27 +749,35 @@ class EnsembleExecutor:
                 phase_input: str | dict[str, str] = enhanced_input
             else:
                 # Subsequent phases get enhanced input with dependencies
-                phase_input = (
-                    self._dependency_resolver.enhance_input_with_dependencies(
-                        enhanced_input, phase_agents, results_dict
-                    )
+                phase_input = self._dependency_resolver.enhance_input_with_dependencies(
+                    enhanced_input, phase_agents, results_dict
                 )
 
-            # Execute agents in this phase in parallel (Issue #43 implementation)
-            phase_results = await self._execute_agents_in_phase_parallel(
-                phase_agents, phase_input
-            )
+            # Start per-phase monitoring for performance feedback
+            phase_start_time = time.time()
+            await self._start_phase_monitoring(phase_index, phase_agents)
 
-            # Process parallel execution results
-            phase_has_errors = self._process_phase_results(
-                phase_results, results_dict, phase_agents
-            )
-            has_errors = has_errors or phase_has_errors
+            try:
+                # Execute agents in this phase in parallel (Issue #43 implementation)
+                phase_results = await self._execute_agents_in_phase_parallel(
+                    phase_agents, phase_input
+                )
+
+                # Process parallel execution results
+                phase_has_errors = self._process_phase_results(
+                    phase_results, results_dict, phase_agents
+                )
+                has_errors = has_errors or phase_has_errors
+
+            finally:
+                # Stop per-phase monitoring and collect metrics
+                phase_duration = time.time() - phase_start_time
+                await self._stop_phase_monitoring(
+                    phase_index, phase_agents, phase_duration
+                )
 
             # Emit phase completion event
-            self._emit_phase_completed_event(
-                phase_index, phase_agents, results_dict
-            )
+            self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
 
         return has_errors
 
@@ -815,3 +823,77 @@ class EnsembleExecutor:
         # Fallback: convert name to readable format
         return agent_name.replace("-", " ").title()
 
+    async def _start_phase_monitoring(
+        self, phase_index: int, phase_agents: list[dict[str, Any]]
+    ) -> None:
+        """Start monitoring for a specific phase."""
+        # Phase metrics are always initialized in AgentExecutor
+
+        # Collect initial phase metrics
+        phase_name = f"phase_{phase_index}"
+        agent_names = [agent["name"] for agent in phase_agents]
+
+        phase_metrics = await self._agent_executor.monitor.collect_phase_metrics(
+            phase_index=phase_index,
+            phase_name=phase_name,
+            agent_count=len(phase_agents),
+        )
+
+        # Add agent details
+        phase_metrics.update({
+            "agent_names": agent_names,
+            "start_time": time.time(),
+        })
+
+        self._agent_executor._phase_metrics.append(phase_metrics)
+
+        self._emit_performance_event(
+            "phase_monitoring_started",
+            {
+                "phase_index": phase_index,
+                "agent_count": len(phase_agents),
+                "agent_names": agent_names,
+            },
+        )
+
+    async def _stop_phase_monitoring(
+        self, phase_index: int, phase_agents: list[dict[str, Any]], duration: float
+    ) -> None:
+        """Stop monitoring for a specific phase and collect final metrics."""
+
+        # Find the phase metrics entry
+        phase_metrics = None
+        for metrics in self._agent_executor._phase_metrics:
+            if metrics.get("phase_index") == phase_index:
+                phase_metrics = metrics
+                break
+
+        if phase_metrics:
+            # Update with completion data
+            phase_metrics.update({
+                "duration_seconds": duration,
+                "end_time": time.time(),
+                "agents_completed": len(phase_agents),
+            })
+
+            # Get current resource snapshot for this phase
+            try:
+                current_metrics = await (
+                    self._agent_executor.monitor.get_current_metrics()
+                )
+                phase_metrics.update({
+                    "final_cpu_percent": current_metrics.get("cpu_percent", 0.0),
+                    "final_memory_percent": current_metrics.get("memory_percent", 0.0),
+                })
+            except Exception:
+                # Fallback if monitoring fails
+                pass
+
+        self._emit_performance_event(
+            "phase_monitoring_stopped",
+            {
+                "phase_index": phase_index,
+                "duration_seconds": duration,
+                "agent_count": len(phase_agents),
+            },
+        )
