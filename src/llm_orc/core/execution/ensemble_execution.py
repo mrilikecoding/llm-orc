@@ -840,12 +840,17 @@ class EnsembleExecutor:
         )
 
         # Add agent details
-        phase_metrics.update({
-            "agent_names": agent_names,
-            "start_time": time.time(),
-        })
+        phase_metrics.update(
+            {
+                "agent_names": agent_names,
+                "start_time": time.time(),
+            }
+        )
 
         self._agent_executor._phase_metrics.append(phase_metrics)
+
+        # Start continuous monitoring for this phase
+        await self._agent_executor.monitor.start_execution_monitoring()
 
         self._emit_performance_event(
             "phase_monitoring_started",
@@ -869,25 +874,54 @@ class EnsembleExecutor:
                 break
 
         if phase_metrics:
-            # Update with completion data
-            phase_metrics.update({
-                "duration_seconds": duration,
-                "end_time": time.time(),
-                "agents_completed": len(phase_agents),
-            })
-
-            # Get current resource snapshot for this phase
+            # Stop monitoring and get aggregated metrics for this phase
             try:
-                current_metrics = await (
-                    self._agent_executor.monitor.get_current_metrics()
+                phase_execution_metrics = await (
+                    self._agent_executor.monitor.stop_execution_monitoring()
                 )
-                phase_metrics.update({
-                    "final_cpu_percent": current_metrics.get("cpu_percent", 0.0),
-                    "final_memory_percent": current_metrics.get("memory_percent", 0.0),
-                })
+
+                # Update with completion data and monitoring results
+                phase_metrics.update(
+                    {
+                        "duration_seconds": duration,
+                        "end_time": time.time(),
+                        "agents_completed": len(phase_agents),
+                        # Add aggregated monitoring data
+                        "peak_cpu": phase_execution_metrics.get("peak_cpu", 0.0),
+                        "avg_cpu": phase_execution_metrics.get("avg_cpu", 0.0),
+                        "peak_memory": phase_execution_metrics.get("peak_memory", 0.0),
+                        "avg_memory": phase_execution_metrics.get("avg_memory", 0.0),
+                        "sample_count": phase_execution_metrics.get("sample_count", 0),
+                    }
+                )
             except Exception:
-                # Fallback if monitoring fails
-                pass
+                # Fallback to current snapshot if continuous monitoring fails
+                try:
+                    current_metrics = await (
+                        self._agent_executor.monitor.get_current_metrics()
+                    )
+                    phase_metrics.update(
+                        {
+                            "duration_seconds": duration,
+                            "end_time": time.time(),
+                            "agents_completed": len(phase_agents),
+                            "final_cpu_percent": current_metrics.get(
+                                "cpu_percent", 0.0
+                            ),
+                            "final_memory_percent": current_metrics.get(
+                                "memory_percent", 0.0
+                            ),
+                        }
+                    )
+                except Exception:
+                    # Final fallback - just timing data
+                    phase_metrics.update(
+                        {
+                            "duration_seconds": duration,
+                            "end_time": time.time(),
+                            "agents_completed": len(phase_agents),
+                        }
+                    )
 
         self._emit_performance_event(
             "phase_monitoring_stopped",
