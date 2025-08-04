@@ -20,8 +20,9 @@ def normalize_performance_data(adaptive_stats: dict[str, Any]) -> dict[str, Any]
     if concurrency_decisions:
         # Use the most recent decision - could be configured_limit or static_limit
         decision = concurrency_decisions[0]
-        concurrency_limit = decision.get("configured_limit",
-                                        decision.get("static_limit", 1))
+        concurrency_limit = decision.get(
+            "configured_limit", decision.get("static_limit", 1)
+        )
 
     # Normalize phase metrics with consistent numbering (1-based for users)
     normalized_phases = []

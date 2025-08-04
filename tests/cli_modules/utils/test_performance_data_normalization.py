@@ -10,15 +10,13 @@ class TestPerformanceDataNormalization:
         """Test normalization of basic adaptive stats structure."""
         adaptive_stats = {
             "management_type": "user_configured",
-            "concurrency_decisions": [
-                {"configured_limit": 5, "agent_count": 3}
-            ],
+            "concurrency_decisions": [{"configured_limit": 5, "agent_count": 3}],
             "execution_metrics": {
                 "peak_cpu": 45.2,
                 "avg_cpu": 32.1,
                 "peak_memory": 78.5,
                 "avg_memory": 65.3,
-                "sample_count": 12
+                "sample_count": 12,
             },
             "phase_metrics": [
                 {
@@ -30,7 +28,7 @@ class TestPerformanceDataNormalization:
                     "avg_cpu": 30.0,
                     "peak_memory": 70.0,
                     "avg_memory": 60.0,
-                    "sample_count": 5
+                    "sample_count": 5,
                 },
                 {
                     "phase_index": 1,
@@ -38,9 +36,9 @@ class TestPerformanceDataNormalization:
                     "agent_count": 1,
                     "duration_seconds": 0.8,
                     "final_cpu_percent": 25.0,
-                    "final_memory_percent": 45.0
-                }
-            ]
+                    "final_memory_percent": 45.0,
+                },
+            ],
         }
 
         result = normalize_performance_data(adaptive_stats)
@@ -58,7 +56,7 @@ class TestPerformanceDataNormalization:
         # Test phase normalization with 1-based numbering
         assert len(result["phases"]) == 2
         assert result["phases"][0]["phase_number"] == 1  # 1-based for users
-        assert result["phases"][0]["phase_index"] == 0   # Keep original for internal
+        assert result["phases"][0]["phase_index"] == 0  # Keep original for internal
         assert result["phases"][1]["phase_number"] == 2
         assert result["phases"][1]["phase_index"] == 1
 
@@ -97,7 +95,7 @@ class TestPerformanceDataNormalization:
             "management_type": "user_configured",
             "concurrency_decisions": [
                 {"static_limit": 3, "agent_count": 2}  # Legacy field name
-            ]
+            ],
         }
 
         result = normalize_performance_data(adaptive_stats)
@@ -139,7 +137,7 @@ class TestConsistentRendering:
 
         adaptive_stats = {
             "management_type": "user_configured",
-            "concurrency_decisions": [{"configured_limit": 5}]
+            "concurrency_decisions": [{"configured_limit": 5}],
         }
 
         markdown_output = render_performance_markdown(adaptive_stats)
