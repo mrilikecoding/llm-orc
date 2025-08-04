@@ -72,7 +72,7 @@ def transform_to_execution_json(
             {
                 "name": agent_name,
                 "status": result.get("status", "unknown"),
-                "content": result.get("content", ""),
+                "content": result.get("response", result.get("content", "")),
             }
         )
 
@@ -148,6 +148,100 @@ def render_json_as_markdown(structured_json: dict[str, Any]) -> str:
     # Usage
     usage = structured_json.get("usage_summary", {})
     lines.append(f"**Total tokens:** {usage.get('total_tokens', 0)}")
+
+    return "\n".join(lines)
+
+
+def render_comprehensive_text(structured_json: dict[str, Any]) -> str:
+    """Render structured JSON as comprehensive plain text with full feature parity."""
+    lines = []
+
+    # Resource Management Section
+    rm = structured_json.get("resource_management", {})
+    if rm:
+        lines.append("Resource Management")
+        lines.append("==================")
+        lines.append(
+            f"Type: {rm.get('type', 'unknown')} (fixed concurrency limits)"
+        )
+        lines.append(
+            f"Max concurrency limit used: {rm.get('concurrency_limit', 1)}"
+        )
+
+        # Execution metrics
+        exec_metrics = rm.get("execution_metrics", {})
+        if exec_metrics.get("sample_count", 0) > 0:
+            peak_cpu = exec_metrics.get("peak_cpu", 0.0)
+            avg_cpu = exec_metrics.get("avg_cpu", 0.0)
+            peak_memory = exec_metrics.get("peak_memory", 0.0)
+            avg_memory = exec_metrics.get("avg_memory", 0.0)
+            sample_count = exec_metrics.get("sample_count", 0)
+
+            lines.append(
+                f"Peak usage: CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%"
+            )
+            lines.append(
+                f"Average usage: CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%"
+            )
+            lines.append(f"Monitoring: {sample_count} samples collected")
+
+    # Per-Phase Performance Section
+    phases = rm.get("phases", [])
+    if phases:
+        lines.append("")
+        lines.append("Per-Phase Performance")
+        lines.append("====================")
+
+        for phase in phases:
+            phase_num = phase.get("phase_number", 1)
+            agent_names = phase.get("agent_names", [])
+            duration = phase.get("duration_seconds", 0.0)
+            agent_count = len(agent_names)
+
+            lines.append(f"Phase {phase_num} ({agent_count} agents)")
+            if agent_names:
+                agent_list = ", ".join(agent_names)
+                lines.append(f"  Agents: {agent_list}")
+
+            lines.append(f"  Duration: {duration:.1f} seconds")
+
+            # Resource usage - prefer peak/avg, fallback to final
+            peak_cpu = phase.get("peak_cpu")
+            avg_cpu = phase.get("avg_cpu")
+            peak_memory = phase.get("peak_memory")
+            avg_memory = phase.get("avg_memory")
+            sample_count = phase.get("sample_count", 0)
+
+            if peak_cpu is not None and avg_cpu is not None and sample_count > 0:
+                lines.append(
+                    f"  Resource usage: CPU {avg_cpu:.1f}% (peak {peak_cpu:.1f}%), "
+                    f"Memory {avg_memory:.1f}% (peak {peak_memory:.1f}%)"
+                )
+                lines.append(f"  Monitoring: {sample_count} samples collected")
+            else:
+                final_cpu = phase.get("final_cpu_percent")
+                final_memory = phase.get("final_memory_percent")
+                if final_cpu is not None and final_memory is not None:
+                    lines.append(
+                        f"  Resource usage: CPU {final_cpu:.1f}%, "
+                        f"Memory {final_memory:.1f}%"
+                    )
+
+            lines.append("")
+
+    # Per-Agent Usage Section
+    usage = structured_json.get("usage_summary", {})
+    per_agent = usage.get("per_agent", [])
+    if per_agent:
+        lines.append("Per-Agent Usage")
+        lines.append("===============")
+
+        for agent in per_agent:
+            name = agent.get("name", "unknown")
+            tokens = agent.get("tokens", 0)
+            cost = agent.get("cost_usd", 0.0)
+
+            lines.append(f"{name}: {tokens:,} tokens, ${cost:.4f}")
 
     return "\n".join(lines)
 

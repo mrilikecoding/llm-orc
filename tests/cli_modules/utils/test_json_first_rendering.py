@@ -191,7 +191,7 @@ class TestRichMarkdownRendering:
             "execution_summary": {
                 "total_agents": 3,
                 "successful_agents": 3,
-                "failed_agents": 0
+                "failed_agents": 0,
             },
             "resource_management": {
                 "type": "user_configured",
@@ -201,7 +201,7 @@ class TestRichMarkdownRendering:
                     "avg_cpu": 32.1,
                     "peak_memory": 78.5,
                     "avg_memory": 65.3,
-                    "sample_count": 12
+                    "sample_count": 12,
                 },
                 "phases": [
                     {
@@ -212,16 +212,16 @@ class TestRichMarkdownRendering:
                         "avg_cpu": 30.0,
                         "peak_memory": 70.0,
                         "avg_memory": 60.0,
-                        "sample_count": 5
+                        "sample_count": 5,
                     },
                     {
                         "phase_number": 2,
                         "agent_names": ["agent3"],
                         "duration_seconds": 0.8,
                         "final_cpu_percent": 25.0,
-                        "final_memory_percent": 45.0
-                    }
-                ]
+                        "final_memory_percent": 45.0,
+                    },
+                ],
             },
             "usage_summary": {
                 "total_tokens": 450,
@@ -229,9 +229,9 @@ class TestRichMarkdownRendering:
                 "per_agent": [
                     {"name": "agent1", "tokens": 150, "cost_usd": 0.001},
                     {"name": "agent2", "tokens": 200, "cost_usd": 0.002},
-                    {"name": "agent3", "tokens": 100, "cost_usd": 0.002}
-                ]
-            }
+                    {"name": "agent3", "tokens": 100, "cost_usd": 0.002},
+                ],
+            },
         }
 
         from llm_orc.cli_modules.utils.json_renderer import (
@@ -269,9 +269,9 @@ class TestRichMarkdownRendering:
             "resource_management": {
                 "type": "user_configured",
                 "concurrency_limit": 3,
-                "phases": []  # No phase data
+                "phases": [],  # No phase data
             },
-            "usage_summary": {"total_tokens": 100, "per_agent": []}
+            "usage_summary": {"total_tokens": 100, "per_agent": []},
         }
 
         from llm_orc.cli_modules.utils.json_renderer import (

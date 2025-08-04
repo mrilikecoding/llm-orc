@@ -307,8 +307,11 @@ def display_results(
     console = Console(soft_wrap=True, width=None, force_terminal=True)
 
     if detailed:
-        # Build markdown content using JSON-first architecture
-        from .json_renderer import render_json_as_markdown, transform_to_execution_json
+        # Build markdown content using comprehensive JSON-first architecture
+        from .json_renderer import (
+            render_comprehensive_markdown,
+            transform_to_execution_json,
+        )
 
         # Get usage data from metadata (extract from performance metrics helper)
         usage_data = metadata.get("usage", {})
@@ -316,17 +319,20 @@ def display_results(
         # Transform to structured JSON (single source of truth)
         execution_json = transform_to_execution_json(results, usage_data, metadata)
 
-        # Render as markdown
+        # Render as comprehensive markdown using structured JSON
         markdown_content = ["# Results\n"]
 
-        # Process agent results using helper method (keep existing for now)
-        markdown_content.extend(_process_agent_results(results, metadata))
+        # Add agent results from structured JSON
+        agent_results = execution_json.get("agent_results", [])
+        for agent in agent_results:
+            if agent.get("status") == "success" and agent.get("content"):
+                markdown_content.append(f"## {agent['name']}\n\n")
+                markdown_content.append(f"{agent['content']}\n\n")
 
-        # Use JSON-first renderer for performance metrics
-        performance_markdown = render_json_as_markdown(execution_json)
-        if performance_markdown.strip():
-            markdown_content.append("\n## Performance Summary\n")
-            markdown_content.append(performance_markdown + "\n")
+        # Use comprehensive JSON-first renderer for all performance data
+        comprehensive_markdown = render_comprehensive_markdown(execution_json)
+        if comprehensive_markdown.strip():
+            markdown_content.append(comprehensive_markdown)
 
         # Render the markdown - Rich will handle soft wrapping
         markdown_text = "".join(markdown_content)
@@ -394,11 +400,14 @@ def _display_detailed_plain_text(
         click.echo(f"Total cost: ${totals.get('total_cost_usd', 0.0):.4f}")
         click.echo(f"Agents: {totals.get('agents_count', 0)}")
 
-        # Show performance statistics using JSON-first architecture
-        from .json_renderer import render_json_as_text, transform_to_execution_json
+        # Show comprehensive performance statistics using JSON-first architecture
+        from .json_renderer import (
+            render_comprehensive_text,
+            transform_to_execution_json,
+        )
 
         execution_json = transform_to_execution_json(results, usage, metadata)
-        performance_text = render_json_as_text(execution_json)
+        performance_text = render_comprehensive_text(execution_json)
         if performance_text.strip():
             click.echo()
             click.echo("Resource Management")
