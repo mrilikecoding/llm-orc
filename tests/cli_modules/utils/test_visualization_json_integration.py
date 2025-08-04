@@ -1,5 +1,6 @@
 """Tests for complete JSON-first integration in visualization."""
 
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
@@ -124,7 +125,7 @@ class TestJSONFirstVisualizationIntegration:
         # This test ensures we're not processing raw metadata in multiple places
         results = {"agent1": {"status": "success", "response": "Test response"}}
         usage = {"totals": {"total_tokens": 100}}
-        metadata: dict[str, dict[str, list[dict[str, str]]]] = {
+        metadata: dict[str, Any] = {
             "usage": usage,  # Include usage in metadata as expected by implementation
             "adaptive_resource_management": {"phase_metrics": []}
         }

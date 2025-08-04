@@ -65,41 +65,49 @@ def transform_to_execution_json(
         "avg_memory": 0.0,
         "has_phase_data": False,
     }
-    
+
     if normalized_phases:
         # Take maximum peak values across all phases
-        peak_cpus = [p.get("peak_cpu") for p in normalized_phases if p.get("peak_cpu") is not None]
-        peak_memories = [p.get("peak_memory") for p in normalized_phases if p.get("peak_memory") is not None]
-        
+        peak_cpus: list[float] = []
+        peak_memories: list[float] = []
+
+        for p in normalized_phases:
+            peak_cpu = p.get("peak_cpu")
+            if peak_cpu is not None:
+                peak_cpus.append(float(peak_cpu))
+            peak_memory = p.get("peak_memory")
+            if peak_memory is not None:
+                peak_memories.append(float(peak_memory))
+
         if peak_cpus:
             computed_execution_metrics["peak_cpu"] = max(peak_cpus)
         if peak_memories:
             computed_execution_metrics["peak_memory"] = max(peak_memories)
-            
+
         # Compute weighted average of averages (weighted by duration)
         total_duration = sum(p.get("duration_seconds", 0.0) for p in normalized_phases)
         if total_duration > 0:
             weighted_cpu = sum(
-                p.get("avg_cpu", 0.0) * p.get("duration_seconds", 0.0) 
-                for p in normalized_phases 
+                p.get("avg_cpu", 0.0) * p.get("duration_seconds", 0.0)
+                for p in normalized_phases
                 if p.get("avg_cpu") is not None
             )
             weighted_memory = sum(
                 p.get("avg_memory", 0.0) * p.get("duration_seconds", 0.0)
                 for p in normalized_phases
-                if p.get("avg_memory") is not None  
+                if p.get("avg_memory") is not None
             )
             computed_execution_metrics["avg_cpu"] = weighted_cpu / total_duration
             computed_execution_metrics["avg_memory"] = weighted_memory / total_duration
             computed_execution_metrics["has_phase_data"] = True
 
-    # Use computed metrics if we have phase data, otherwise fall back to raw execution metrics
+    # Use computed metrics if we have phase data, otherwise fall back to raw
     final_execution_metrics = (
-        computed_execution_metrics 
-        if computed_execution_metrics["has_phase_data"] 
+        computed_execution_metrics
+        if computed_execution_metrics["has_phase_data"]
         else {
             "peak_cpu": execution_metrics.get("peak_cpu", 0.0),
-            "avg_cpu": execution_metrics.get("avg_cpu", 0.0), 
+            "avg_cpu": execution_metrics.get("avg_cpu", 0.0),
             "peak_memory": execution_metrics.get("peak_memory", 0.0),
             "avg_memory": execution_metrics.get("avg_memory", 0.0),
             "sample_count": execution_metrics.get("sample_count", 0),
@@ -283,18 +291,18 @@ def render_comprehensive_text(structured_json: dict[str, Any]) -> str:
         exec_metrics = rm.get("execution_metrics", {})
         has_phase_data = exec_metrics.get("has_phase_data", False)
         peak_cpu = exec_metrics.get("peak_cpu", 0.0)
-        avg_cpu = exec_metrics.get("avg_cpu", 0.0) 
+        avg_cpu = exec_metrics.get("avg_cpu", 0.0)
         peak_memory = exec_metrics.get("peak_memory", 0.0)
         avg_memory = exec_metrics.get("avg_memory", 0.0)
-        
+
         # Show metrics if we have any meaningful data
         if peak_cpu > 0 or peak_memory > 0 or avg_cpu > 0 or avg_memory > 0:
             lines.append(f"Peak usage: CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%")
             lines.append(f"Average usage: CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%")
-            
-            # Only show sample count info if using raw execution metrics (not computed from phases)
+
+            # Only show sample count if using raw execution metrics
             if not has_phase_data:
-                sample_count = exec_metrics.get("sample_count", 0) 
+                sample_count = exec_metrics.get("sample_count", 0)
                 if sample_count > 0:
                     lines.append(f"Monitoring: {sample_count} samples collected")
             else:
@@ -431,7 +439,7 @@ def render_comprehensive_markdown(structured_json: dict[str, Any]) -> str:
         avg_cpu = exec_metrics.get("avg_cpu", 0.0)
         peak_memory = exec_metrics.get("peak_memory", 0.0)
         avg_memory = exec_metrics.get("avg_memory", 0.0)
-        
+
         # Show metrics if we have any meaningful data
         if peak_cpu > 0 or peak_memory > 0 or avg_cpu > 0 or avg_memory > 0:
             sections.append(
@@ -440,12 +448,14 @@ def render_comprehensive_markdown(structured_json: dict[str, Any]) -> str:
             sections.append(
                 f"- **Average usage:** CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%\n"
             )
-            
-            # Only show sample count info if using raw execution metrics (not computed from phases)
+
+            # Only show sample count if using raw execution metrics
             if not has_phase_data:
                 sample_count = exec_metrics.get("sample_count", 0)
                 if sample_count > 0:
-                    sections.append(f"- **Monitoring:** {sample_count} samples collected\n")
+                    sections.append(
+                        f"- **Monitoring:** {sample_count} samples collected\n"
+                    )
             else:
                 sections.append("- **Computed from per-phase performance data**\n")
 
