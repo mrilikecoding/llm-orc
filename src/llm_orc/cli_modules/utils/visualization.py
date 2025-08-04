@@ -319,17 +319,10 @@ def display_results(
         # Transform to structured JSON (single source of truth)
         execution_json = transform_to_execution_json(results, usage_data, metadata)
 
-        # Render as comprehensive markdown using structured JSON
+        # Render EVERYTHING from structured JSON (single source of truth)
         markdown_content = ["# Results\n"]
 
-        # Add agent results from structured JSON
-        agent_results = execution_json.get("agent_results", [])
-        for agent in agent_results:
-            if agent.get("status") == "success" and agent.get("content"):
-                markdown_content.append(f"## {agent['name']}\n\n")
-                markdown_content.append(f"{agent['content']}\n\n")
-
-        # Use comprehensive JSON-first renderer for all performance data
+        # Use comprehensive JSON-first renderer for ALL content including agents
         comprehensive_markdown = render_comprehensive_markdown(execution_json)
         if comprehensive_markdown.strip():
             markdown_content.append(comprehensive_markdown)
@@ -369,50 +362,33 @@ def _display_plain_text_dependency_graph(
 def _display_detailed_plain_text(
     results: dict[str, Any], metadata: dict[str, Any]
 ) -> None:
-    """Display detailed plain text results."""
+    """Display detailed plain text results using JSON-first architecture."""
     click.echo("Results")
     click.echo("=======")
     click.echo()
 
-    # Show agent results
-    for agent_name, result in results.items():
-        if result.get("status") == "success":
-            click.echo(f"{agent_name}:")
-            click.echo("-" * len(agent_name) + ":")
-            click.echo(result["response"])
-            click.echo()
-        else:
-            click.echo(f"❌ {agent_name}:")
-            click.echo("-" * (len(agent_name) + 3) + ":")
-            error_msg = result.get("error", "Unknown error")
-            click.echo(f"Error: {error_msg}")
-            click.echo()
+    # Use JSON-first transformation for ALL content (single source of truth)
+    from .json_renderer import render_comprehensive_text, transform_to_execution_json
 
-    # Show performance metrics
-    if "usage" in metadata:
-        usage = metadata["usage"]
-        totals = usage.get("totals", {})
+    usage = metadata.get("usage", {})
+    execution_json = transform_to_execution_json(results, usage, metadata)
 
-        click.echo("Performance Metrics")
+    # Render EVERYTHING from structured JSON
+    comprehensive_text = render_comprehensive_text(execution_json)
+    if comprehensive_text.strip():
+        click.echo(comprehensive_text)
+
+    # Show basic performance summary
+    totals = usage.get("totals", {})
+    if totals:
+        click.echo()
+        click.echo("Performance Summary")
         click.echo("==================")
-        click.echo(f"Duration: {metadata['duration']}")
+        if "duration" in metadata:
+            click.echo(f"Duration: {metadata['duration']}")
         click.echo(f"Total tokens: {totals.get('total_tokens', 0):,}")
         click.echo(f"Total cost: ${totals.get('total_cost_usd', 0.0):.4f}")
         click.echo(f"Agents: {totals.get('agents_count', 0)}")
-
-        # Show comprehensive performance statistics using JSON-first architecture
-        from .json_renderer import (
-            render_comprehensive_text,
-            transform_to_execution_json,
-        )
-
-        execution_json = transform_to_execution_json(results, usage, metadata)
-        performance_text = render_comprehensive_text(execution_json)
-        if performance_text.strip():
-            click.echo()
-            click.echo("Resource Management")
-            click.echo("==================")
-            click.echo(performance_text)
 
 
 def _display_simplified_plain_text(

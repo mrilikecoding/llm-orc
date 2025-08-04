@@ -43,11 +43,17 @@ class TestExecutionResultsTransformation:
                         "duration_seconds": 1.5,
                         "peak_cpu": 40.0,
                         "avg_cpu": 30.0,
+                        "peak_memory": 75.0,
+                        "avg_memory": 65.0,
                     },
                     {
                         "phase_index": 1,
                         "agent_names": ["agent2"],
                         "duration_seconds": 0.8,
+                        "peak_cpu": 35.0,
+                        "avg_cpu": 28.0,
+                        "peak_memory": 70.0,
+                        "avg_memory": 60.0,
                         "final_cpu_percent": 25.0,
                     },
                 ],
@@ -72,7 +78,18 @@ class TestExecutionResultsTransformation:
         rm = json_result["resource_management"]
         assert rm["type"] == "user_configured"
         assert rm["concurrency_limit"] == 5
-        assert rm["execution_metrics"]["peak_cpu"] == 45.2
+        
+        # Execution metrics should now be computed from phase data
+        # Expected: peak_cpu = max(40.0, 35.0) = 40.0
+        # Expected: peak_memory = max(75.0, 70.0) = 75.0  
+        # Expected: avg_cpu = (30.0*1.5 + 28.0*0.8) / (1.5+0.8) = (45+22.4)/2.3 = 29.3
+        # Expected: avg_memory = (65.0*1.5 + 60.0*0.8) / (1.5+0.8) = (97.5+48)/2.3 = 63.3
+        exec_metrics = rm["execution_metrics"]
+        assert exec_metrics["peak_cpu"] == 40.0
+        assert exec_metrics["peak_memory"] == 75.0
+        assert abs(exec_metrics["avg_cpu"] - 29.3) < 0.1  # Allow small float differences
+        assert abs(exec_metrics["avg_memory"] - 63.3) < 0.1
+        assert exec_metrics["has_phase_data"] == True
         assert len(rm["phases"]) == 2
         assert rm["phases"][0]["phase_number"] == 1  # 1-based for users
         assert rm["phases"][1]["phase_number"] == 2

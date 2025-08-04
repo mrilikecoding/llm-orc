@@ -41,7 +41,7 @@ class TestJSONFirstVisualizationIntegration:
                         "avg_cpu": 35.0,
                     }
                 ],
-            }
+            },
         }
 
         # Call the detailed display function that should use comprehensive rendering
@@ -125,6 +125,7 @@ class TestJSONFirstVisualizationIntegration:
         results = {"agent1": {"status": "success", "response": "Test response"}}
         usage = {"totals": {"total_tokens": 100}}
         metadata: dict[str, dict[str, list[dict[str, str]]]] = {
+            "usage": usage,  # Include usage in metadata as expected by implementation
             "adaptive_resource_management": {"phase_metrics": []}
         }
 
@@ -143,4 +144,3 @@ class TestJSONFirstVisualizationIntegration:
 
             # Verify transformation is called (single source of truth)
             transform_mock.assert_called_once_with(results, usage, metadata)
-
