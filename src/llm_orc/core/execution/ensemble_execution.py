@@ -279,27 +279,60 @@ class EnsembleExecutor:
     async def _execute_script_agent(
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
-        """Execute script agent."""
-        script_agent = ScriptAgent(agent_config["name"], agent_config)
-        response = await script_agent.execute(input_data)
-        return response, None  # Script agents don't have model instances
+        """Execute script agent with resource monitoring."""
+        agent_name = agent_config["name"]
+
+        # Start resource monitoring for this agent
+        self._usage_collector.start_agent_resource_monitoring(agent_name)
+
+        try:
+            script_agent = ScriptAgent(agent_name, agent_config)
+
+            # Sample resources during execution
+            self._usage_collector.sample_agent_resources(agent_name)
+
+            response = await script_agent.execute(input_data)
+
+            # Final sample before completion
+            self._usage_collector.sample_agent_resources(agent_name)
+
+            return response, None  # Script agents don't have model instances
+        finally:
+            # Always finalize resource monitoring
+            self._usage_collector.finalize_agent_resource_monitoring(agent_name)
 
     async def _execute_llm_agent(
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
-        """Execute LLM agent with fallback handling."""
-        role = await self._load_role_from_config(agent_config)
-        model = await self._load_model_with_fallback(agent_config)
-        agent = Agent(agent_config["name"], role, model)
+        """Execute LLM agent with fallback handling and resource monitoring."""
+        agent_name = agent_config["name"]
 
-        # Generate response with fallback handling for runtime failures
+        # Start resource monitoring for this agent
+        self._usage_collector.start_agent_resource_monitoring(agent_name)
+
         try:
-            response = await agent.respond_to_message(input_data)
-            return response, model
-        except Exception as e:
-            return await self._handle_runtime_fallback(
-                agent_config, role, input_data, e
-            )
+            role = await self._load_role_from_config(agent_config)
+            model = await self._load_model_with_fallback(agent_config)
+            agent = Agent(agent_name, role, model)
+
+            # Take periodic resource samples during execution
+            self._usage_collector.sample_agent_resources(agent_name)
+
+            # Generate response with fallback handling for runtime failures
+            try:
+                response = await agent.respond_to_message(input_data)
+
+                # Final resource sample before completing
+                self._usage_collector.sample_agent_resources(agent_name)
+
+                return response, model
+            except Exception as e:
+                return await self._handle_runtime_fallback(
+                    agent_config, role, input_data, e
+                )
+        finally:
+            # Always finalize resource monitoring, even if execution failed
+            self._usage_collector.finalize_agent_resource_monitoring(agent_name)
 
     async def _load_model_with_fallback(
         self, agent_config: dict[str, Any]

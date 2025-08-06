@@ -127,7 +127,7 @@ class TestJSONFirstVisualizationIntegration:
         usage = {"totals": {"total_tokens": 100}}
         metadata: dict[str, Any] = {
             "usage": usage,  # Include usage in metadata as expected by implementation
-            "adaptive_resource_management": {"phase_metrics": []}
+            "adaptive_resource_management": {"phase_metrics": []},
         }
 
         with patch(

@@ -1498,9 +1498,7 @@ def _display_phase_resource_usage(phase_data: dict[str, Any]) -> None:
         final_cpu = phase_data.get("final_cpu_percent")
         final_memory = phase_data.get("final_memory_percent")
         if final_cpu is not None and final_memory is not None:
-            click.echo(
-                f"  Resources: CPU {final_cpu:.1f}%, Memory {final_memory:.1f}%"
-            )
+            click.echo(f"  Resources: CPU {final_cpu:.1f}%, Memory {final_memory:.1f}%")
         else:
             click.echo("  Resources: No monitoring data available")
 
