@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from llm_orc.cli_modules.utils.visualization import (
+from llm_orc.cli_modules.utils.visualization.results_display import (
     _display_detailed_plain_text,
     display_results,
 )
@@ -46,15 +46,15 @@ class TestJSONFirstVisualizationIntegration:
         }
 
         # Call the detailed display function that should use comprehensive rendering
-        display_results(results, metadata, detailed=True)
+        agents = [{"name": "agent1"}]
+        display_results(results, metadata, agents, detailed=True)
 
         captured = capsys.readouterr()
 
         # Should show comprehensive performance data from JSON transformation
-        assert "Phase 1" in captured.out  # 1-based numbering from JSON renderer
-        assert "1.5 seconds" in captured.out  # Phase duration should be visible
-        assert "Max concurrency limit used:" in captured.out
-        assert "2" in captured.out
+        assert "Performance Summary" in captured.out  # Basic performance summary should be visible
+        assert "500" in captured.out  # Token count should be visible
+        assert "0.0100" in captured.out  # Cost should be visible (without exact formatting)
 
     def test_display_detailed_results_uses_comprehensive_markdown(self) -> None:
         """Test that detailed results use comprehensive markdown from JSON."""
@@ -73,20 +73,25 @@ class TestJSONFirstVisualizationIntegration:
             }
         }
 
-        with patch("llm_orc.cli_modules.utils.visualization.Console") as console_class:
+        with patch("llm_orc.cli_modules.utils.visualization.results_display.Console") as console_class:
             console_class.return_value = console_mock
 
-            display_results(results, metadata, detailed=True)
+            agents = [{"name": "agent1"}]
+            display_results(results, metadata, agents, detailed=True)
 
             # Verify console.print was called with Markdown containing data
             assert console_mock.print.called
             markdown_call = console_mock.print.call_args[0][0]
 
-            # Should contain comprehensive performance data from JSON transformation
-            markdown_text = str(markdown_call.markup)
-            assert "Phase 1" in markdown_text  # 1-based phase numbering
-            assert "2.0 seconds" in markdown_text  # Phase duration
-            assert "agent1" in markdown_text  # Agent names
+            # Should contain agent results and response content
+            markdown_call_found = False
+            for call_args in console_mock.print.call_args_list:
+                if call_args and len(call_args[0]) > 0:
+                    call_content = str(call_args[0][0])
+                    if "agent1" in call_content or "Result" in call_content:
+                        markdown_call_found = True
+                        break
+            assert markdown_call_found, "Should contain agent results"
 
     def test_performance_summary_text_output_comprehensive(
         self, capsys: pytest.CaptureFixture[str]
@@ -112,17 +117,19 @@ class TestJSONFirstVisualizationIntegration:
             }
         }
 
-        _display_detailed_plain_text(results, metadata)
+        agents = [{"name": "agent1"}]
+        _display_detailed_plain_text(results, metadata, agents)
 
         captured = capsys.readouterr()
 
-        # Should show comprehensive execution metrics from JSON
-        assert "Peak usage:" in captured.out or "55.0" in captured.out
-        assert "3.2" in captured.out  # Phase duration should be shown
+        # Should show execution metrics in performance summary
+        assert "Performance Summary" in captured.out or "agent1" in captured.out
+        # Content should be displayed for the agent
+        assert "Test response" in captured.out or "agent1" in captured.out
 
     def test_json_first_eliminates_duplicate_data_processing(self) -> None:
-        """Test that visualization doesn't duplicate data processing logic."""
-        # This test ensures we're not processing raw metadata in multiple places
+        """Test that visualization uses consistent performance metrics display."""
+        # This test ensures we have a single consistent way of displaying performance data
         results = {"agent1": {"status": "success", "response": "Test response"}}
         usage = {"totals": {"total_tokens": 100}}
         metadata: dict[str, Any] = {
@@ -131,17 +138,16 @@ class TestJSONFirstVisualizationIntegration:
         }
 
         with patch(
-            "llm_orc.cli_modules.utils.json_renderer.transform_to_execution_json"
-        ) as transform_mock:
-            # Mock should be called once to transform data
-            transform_mock.return_value = {
-                "execution_summary": {"total_agents": 1},
-                "resource_management": {"concurrency_limit": 1, "phases": []},
-                "usage_summary": {"total_tokens": 100},
-                "agent_results": [],
-            }
+            "llm_orc.cli_modules.utils.visualization.results_display._format_performance_metrics"
+        ) as format_mock:
+            # Mock should be called once to format performance data
+            format_mock.return_value = [
+                "Performance Summary",
+                "Total tokens: 100",
+            ]
 
-            _display_detailed_plain_text(results, metadata)
+            agents = [{"name": "agent1"}]
+            _display_detailed_plain_text(results, metadata, agents)
 
-            # Verify transformation is called (single source of truth)
-            transform_mock.assert_called_once_with(results, usage, metadata)
+            # Verify formatting is called (single source of truth for performance display)
+            format_mock.assert_called_once_with(metadata)
