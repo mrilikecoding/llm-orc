@@ -369,6 +369,11 @@ def _handle_streaming_event_with_status(
         results_console = FreshConsole(force_terminal=True, width=None)
         
         if detailed:
+            # Display dependency graph at the top
+            final_statuses = {name: "completed" for name in results.keys() if results[name].get("status") == "success"}
+            final_tree = create_dependency_tree(ensemble_config.agents, final_statuses)
+            results_console.print(final_tree)
+            
             # Force display directly without Rich status interference
             results_console.print("\n[bold blue]📋 Results[/bold blue]")
             results_console.print("=" * 50)
