@@ -1,7 +1,10 @@
 """Usage tracking and aggregation for agent execution."""
 
 import copy
+import time
 from typing import Any
+
+import psutil
 
 from llm_orc.models.base import ModelInterface
 
@@ -12,10 +15,12 @@ class UsageCollector:
     def __init__(self) -> None:
         """Initialize usage collector."""
         self._agent_usage: dict[str, Any] = {}
+        self._agent_resource_metrics: dict[str, dict[str, Any]] = {}
 
     def reset(self) -> None:
         """Reset collected usage data."""
         self._agent_usage.clear()
+        self._agent_resource_metrics.clear()
 
     def collect_agent_usage(
         self,
@@ -30,7 +35,103 @@ class UsageCollector:
                 # Add model profile information to usage data
                 if model_profile is not None:
                     usage["model_profile"] = model_profile
+
+                # Merge with any collected resource metrics for this agent
+                if agent_name in self._agent_resource_metrics:
+                    usage.update(self._agent_resource_metrics[agent_name])
+
                 self._agent_usage[agent_name] = usage
+
+    def start_agent_resource_monitoring(self, agent_name: str) -> dict[str, Any]:
+        """Start monitoring resources for an agent and return baseline metrics.
+
+        Returns:
+            Dictionary with baseline CPU and memory percentages
+        """
+        try:
+            baseline_metrics = {
+                "start_time": time.time(),
+                "baseline_cpu": psutil.cpu_percent(interval=0.1),
+                "baseline_memory": psutil.virtual_memory().percent,
+                "sample_count": 0,
+                "peak_cpu": 0.0,
+                "avg_cpu": 0.0,
+                "peak_memory": 0.0,
+                "avg_memory": 0.0,
+                "cpu_samples": [],
+                "memory_samples": [],
+            }
+            self._agent_resource_metrics[agent_name] = baseline_metrics
+            return baseline_metrics
+        except Exception:
+            # If resource monitoring fails, return empty baseline
+            return {}
+
+    def sample_agent_resources(self, agent_name: str) -> None:
+        """Take a resource usage sample for the specified agent."""
+        if agent_name not in self._agent_resource_metrics:
+            return
+
+        try:
+            metrics = self._agent_resource_metrics[agent_name]
+            current_cpu = psutil.cpu_percent(interval=None)  # Don't block
+            current_memory = psutil.virtual_memory().percent
+
+            # Store samples for averaging
+            metrics["cpu_samples"].append(current_cpu)
+            metrics["memory_samples"].append(current_memory)
+            metrics["sample_count"] += 1
+
+            # Update peaks
+            metrics["peak_cpu"] = max(metrics["peak_cpu"], current_cpu)
+            metrics["peak_memory"] = max(metrics["peak_memory"], current_memory)
+
+            # Update running averages
+            cpu_samples = metrics["cpu_samples"]
+            memory_samples = metrics["memory_samples"]
+            metrics["avg_cpu"] = sum(cpu_samples) / len(cpu_samples)
+            metrics["avg_memory"] = sum(memory_samples) / len(memory_samples)
+
+        except Exception:
+            # Silently handle monitoring errors
+            pass
+
+    def finalize_agent_resource_monitoring(self, agent_name: str) -> dict[str, Any]:
+        """Finalize resource monitoring for an agent and return the metrics.
+
+        Returns:
+            Dictionary with final resource usage metrics
+        """
+        if agent_name not in self._agent_resource_metrics:
+            return {}
+
+        try:
+            metrics = self._agent_resource_metrics[agent_name]
+
+            # Take final sample
+            self.sample_agent_resources(agent_name)
+
+            # Calculate final duration
+            end_time = time.time()
+            duration_seconds = end_time - metrics.get("start_time", end_time)
+
+            # Return cleaned up metrics (remove internal tracking data)
+            final_metrics = {
+                "peak_cpu": metrics["peak_cpu"],
+                "avg_cpu": metrics["avg_cpu"],
+                "peak_memory": metrics["peak_memory"],
+                "avg_memory": metrics["avg_memory"],
+                "resource_duration_seconds": duration_seconds,
+                "resource_sample_count": metrics["sample_count"],
+            }
+
+            # Update stored metrics with final values
+            self._agent_resource_metrics[agent_name].update(final_metrics)
+
+            return final_metrics
+
+        except Exception:
+            return {}
 
     def get_agent_usage(self) -> dict[str, Any]:
         """Get collected agent usage data."""

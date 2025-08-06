@@ -864,7 +864,7 @@ class TestPlainTextFunctions:
             for call in mock_echo.call_args_list
         ]
         assert "Results" in calls
-        assert "Performance Metrics" in calls
+        assert "Performance Summary" in calls
 
     @patch("click.echo")
     def test_display_simplified_plain_text_no_successful_results(

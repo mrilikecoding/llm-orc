@@ -1480,6 +1480,45 @@ def _display_simplified_metrics(execution_metrics: dict[str, Any]) -> None:
     click.echo(f"Monitoring: {sample_count} samples collected")
 
 
+def _display_phase_resource_usage(phase_data: dict[str, Any]) -> None:
+    """Display resource usage for a single phase."""
+    peak_cpu = phase_data.get("peak_cpu")
+    avg_cpu = phase_data.get("avg_cpu")
+    peak_memory = phase_data.get("peak_memory")
+    avg_memory = phase_data.get("avg_memory")
+    sample_count = phase_data.get("sample_count", 0)
+
+    if peak_cpu is not None and avg_cpu is not None and sample_count > 0:
+        # Show detailed peak/average metrics
+        click.echo(f"  Peak usage: CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%")
+        click.echo(f"  Avg usage: CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%")
+        click.echo(f"  Samples: {sample_count} collected")
+    else:
+        # Fallback to final snapshot if available
+        final_cpu = phase_data.get("final_cpu_percent")
+        final_memory = phase_data.get("final_memory_percent")
+        if final_cpu is not None and final_memory is not None:
+            click.echo(
+                f"  Resources: CPU {final_cpu:.1f}%, Memory {final_memory:.1f}%"
+            )
+        else:
+            click.echo("  Resources: No monitoring data available")
+
+
+def _display_phase_timing(
+    phase_data: dict[str, Any], phase_index: int, phase_metrics: list[dict[str, Any]]
+) -> None:
+    """Display timing information for a single phase."""
+    start_time = phase_data.get("start_time")
+    end_time = phase_data.get("end_time")
+    if start_time and end_time:
+        # Convert to relative time from start
+        relative_start = 0.0 if phase_index == 0 else start_time
+        first_start = phase_metrics[0].get("start_time", start_time)
+        relative_end = end_time - first_start
+        click.echo(f"  Timing: {relative_start:.2f}s - {relative_end:.2f}s")
+
+
 def _display_phase_statistics(phase_metrics: list[dict[str, Any]]) -> None:
     """Display per-phase execution statistics."""
     click.echo("Per-Phase Statistics")
@@ -1497,39 +1536,11 @@ def _display_phase_statistics(phase_metrics: list[dict[str, Any]]) -> None:
             agent_list = ", ".join(agent_names)
             click.echo(f"  Agents: {agent_list}")
 
-        # Show resource usage - prefer peak/average if available,
-        # fallback to final snapshot
-        peak_cpu = phase_data.get("peak_cpu")
-        avg_cpu = phase_data.get("avg_cpu")
-        peak_memory = phase_data.get("peak_memory")
-        avg_memory = phase_data.get("avg_memory")
-        sample_count = phase_data.get("sample_count", 0)
-
-        if peak_cpu is not None and avg_cpu is not None and sample_count > 0:
-            # Show detailed peak/average metrics
-            click.echo(f"  Peak usage: CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%")
-            click.echo(f"  Avg usage: CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%")
-            click.echo(f"  Samples: {sample_count} collected")
-        else:
-            # Fallback to final snapshot if available
-            final_cpu = phase_data.get("final_cpu_percent")
-            final_memory = phase_data.get("final_memory_percent")
-            if final_cpu is not None and final_memory is not None:
-                click.echo(
-                    f"  Resources: CPU {final_cpu:.1f}%, Memory {final_memory:.1f}%"
-                )
-            else:
-                click.echo("  Resources: No monitoring data available")
+        # Show resource usage
+        _display_phase_resource_usage(phase_data)
 
         # Show timing details if available
-        start_time = phase_data.get("start_time")
-        end_time = phase_data.get("end_time")
-        if start_time and end_time:
-            # Convert to relative time from start
-            relative_start = 0.0 if phase_index == 0 else start_time
-            first_start = phase_metrics[0].get("start_time", start_time)
-            relative_end = end_time - first_start
-            click.echo(f"  Timing: {relative_start:.2f}s - {relative_end:.2f}s")
+        _display_phase_timing(phase_data, phase_index, phase_metrics)
 
         click.echo()  # Empty line between phases
 
