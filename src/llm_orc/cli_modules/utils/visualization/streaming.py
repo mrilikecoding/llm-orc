@@ -382,7 +382,7 @@ def _handle_streaming_event_with_status(
             from .results_display import _process_agent_results, _display_agent_result, _format_performance_metrics
             processed_results = _process_agent_results(results)
             for agent_name, result in processed_results.items():
-                _display_agent_result(results_console, agent_name, result, ensemble_config.agents)
+                _display_agent_result(results_console, agent_name, result, ensemble_config.agents, metadata)
 
             # Display performance metrics
             performance_lines = _format_performance_metrics(metadata)

@@ -41,7 +41,7 @@ def display_results(
         # Process and display agent results
         processed_results = _process_agent_results(results)
         for agent_name, result in processed_results.items():
-            _display_agent_result(console, agent_name, result, agents)
+            _display_agent_result(console, agent_name, result, agents, metadata)
 
         # Display performance metrics
         performance_lines = _format_performance_metrics(metadata)
@@ -52,7 +52,7 @@ def display_results(
         final_agent = find_final_agent(results)
         if final_agent and results[final_agent].get("response"):
             # Get model info for the final agent
-            model_info = _get_agent_model_info(final_agent, agents)
+            model_info = _get_agent_model_info(final_agent, agents, results[final_agent], metadata)
             model_display = f" ({model_info})" if model_info else ""
             
             console.print(f"\n[bold blue]📋 Final Result[/bold blue]")
@@ -130,14 +130,14 @@ def _process_agent_results(results: dict[str, Any]) -> dict[str, Any]:
     return processed
 
 
-def _display_agent_result(console: Console, agent_name: str, result: dict[str, Any], agents: list[dict[str, Any]]) -> None:
+def _display_agent_result(console: Console, agent_name: str, result: dict[str, Any], agents: list[dict[str, Any]], metadata: dict[str, Any] | None = None) -> None:
     """Display a single agent result."""
     status = result["status"]
     response = result["response"]
     error = result["error"]
     
-    # Find model information from agent config
-    model_info = _get_agent_model_info(agent_name, agents)
+    # Find model information from agent config, result, and metadata
+    model_info = _get_agent_model_info(agent_name, agents, result, metadata)
     model_display = f" ({model_info})" if model_info else ""
     
     # Extract individual agent performance info from result
@@ -182,7 +182,7 @@ def _display_detailed_plain_text(
         error = result.get("error", "")
         
         # Get model information
-        model_info = _get_agent_model_info(agent_name, agents)
+        model_info = _get_agent_model_info(agent_name, agents, result)
         model_display = f" ({model_info})" if model_info else ""
         
         click.echo(f"\n{agent_name} ({status}){model_display}:")
@@ -406,31 +406,35 @@ def _extract_agent_timing_info(result: dict[str, Any]) -> str:
     return " • ".join(info_parts)
 
 
-def _get_agent_model_info(agent_name: str, agents: list[dict[str, Any]]) -> str:
+def _get_agent_model_info(agent_name: str, agents: list[dict[str, Any]], result: dict[str, Any] | None = None, metadata: dict[str, Any] | None = None) -> str:
     """Get comprehensive model information for an agent."""
     for agent in agents:
         if agent.get("name") == agent_name:
-            # Get both profile and actual model
+            # Get profile from agent config
             model_profile = agent.get("model_profile")
-            model = agent.get("model")
-            provider = agent.get("provider")
             
-            # Build comprehensive model info
-            info_parts = []
+            # Get actual model from usage metadata (JSON single source of truth)
+            model = None
+            if metadata and "usage" in metadata:
+                usage = metadata["usage"]
+                agents_usage = usage.get("agents", {})
+                if agent_name in agents_usage:
+                    agent_usage = agents_usage[agent_name]
+                    model = agent_usage.get("model")
             
-            if model_profile:
-                info_parts.append(model_profile)
+            # Fallback to agent config if not in metadata
+            if not model:
+                model = agent.get("model")
             
-            if model and model != model_profile:
-                if info_parts:
-                    info_parts.append(f"({model})")
-                else:
-                    info_parts.append(model)
-            
-            if info_parts:
-                return " ".join(info_parts)
-            elif provider:
-                return provider
+            # Build model display
+            if model_profile and model:
+                return f"{model_profile} -> {model}"
+            elif model_profile:
+                return model_profile
+            elif model:
+                return model
+            elif agent.get("provider"):
+                return agent["provider"]
     
     return ""
 
