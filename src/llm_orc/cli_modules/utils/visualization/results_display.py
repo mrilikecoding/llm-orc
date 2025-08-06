@@ -263,8 +263,8 @@ def _format_performance_metrics(metadata: dict[str, Any]) -> list[str]:
                 duration = agent_usage.get("duration_seconds")
                 peak_cpu = agent_usage.get("peak_cpu")
                 avg_cpu = agent_usage.get("avg_cpu")
-                peak_memory = agent_usage.get("peak_memory_mb")
-                avg_memory = agent_usage.get("avg_memory_mb")
+                peak_memory = agent_usage.get("peak_memory")
+                avg_memory = agent_usage.get("avg_memory")
                 
                 lines.append(f"  {agent_name}:")
                 if input_tokens or output_tokens:
@@ -333,8 +333,8 @@ def _format_performance_metrics(metadata: dict[str, Any]) -> list[str]:
                     agent_names = phase.get("agent_names", [])
                     peak_cpu = phase.get("peak_cpu")
                     avg_cpu = phase.get("avg_cpu")
-                    peak_memory = phase.get("peak_memory_mb")
-                    avg_memory = phase.get("avg_memory_mb")
+                    peak_memory = phase.get("peak_memory")
+                    avg_memory = phase.get("avg_memory")
                     
                     # Phase header with duration
                     if duration is not None:
