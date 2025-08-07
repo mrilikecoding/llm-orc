@@ -6,6 +6,9 @@ from collections.abc import Callable
 from typing import Any
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.execution.adaptive_resource_manager import (
+    SystemResourceMonitor,
+)
 
 
 class AgentExecutor:
@@ -34,6 +37,20 @@ class AgentExecutor:
         self._execute_agent_with_timeout = execute_agent_with_timeout
         self._get_agent_input = get_agent_input
 
+        # Initialize resource monitoring for performance feedback
+        self._init_monitoring()
+
+        # Track resource management statistics for this execution
+        self.adaptive_stats: dict[str, Any] = {
+            "adaptive_used": False,  # No longer using adaptive calculations
+            "management_type": "user_configured",
+            "concurrency_decisions": [],
+            "resource_metrics": [],
+        }
+
+        # Track per-phase metrics for detailed performance analysis
+        self._phase_metrics: list[dict[str, Any]] = []
+
     async def execute_agents_parallel(
         self,
         agents: list[dict[str, Any]],
@@ -52,11 +69,33 @@ class AgentExecutor:
             results_dict: Dictionary to store results
             agent_usage: Dictionary to store usage metrics
         """
+        # Debug: Track that parallel execution started
         if not agents:
             return
 
-        # Get concurrency limit from performance config or use sensible default
-        max_concurrent = self.get_effective_concurrency_limit(len(agents))
+        # Get concurrency limit from user configuration
+        max_concurrent = await self._get_concurrency_limit(len(agents))
+
+        # Start monitoring for performance feedback
+        await self.monitor.start_execution_monitoring()
+
+        # Record concurrency decision for metrics
+        self.adaptive_stats["concurrency_decisions"].append(
+            {
+                "agent_count": len(agents),
+                "configured_limit": max_concurrent,
+                "management_type": "user_configured",
+            }
+        )
+
+        self._emit_performance_event(
+            "using_configured_concurrency",
+            {
+                "total_agents": len(agents),
+                "concurrency_limit": max_concurrent,
+                "management_type": "user_configured",
+            },
+        )
 
         # For small ensembles, run all in parallel
         # For large ensembles, use semaphore to limit concurrent execution
@@ -67,6 +106,45 @@ class AgentExecutor:
         else:
             await self.execute_agents_with_semaphore(
                 agents, input_data, config, results_dict, agent_usage, max_concurrent
+            )
+
+        # Collect execution metrics for performance feedback
+        try:
+            # Stop monitoring and get aggregated execution metrics
+            execution_metrics = await self.monitor.stop_execution_monitoring()
+
+            # Add detailed execution metrics to stats
+            self.adaptive_stats["execution_metrics"] = execution_metrics
+
+            # Add summary resource metrics entry for visualization
+            self.adaptive_stats["resource_metrics"].append(
+                {
+                    "peak_cpu": execution_metrics["peak_cpu"],
+                    "avg_cpu": execution_metrics["avg_cpu"],
+                    "peak_memory": execution_metrics["peak_memory"],
+                    "avg_memory": execution_metrics["avg_memory"],
+                    "sample_count": execution_metrics["sample_count"],
+                    "circuit_breaker_state": "N/A",
+                    "measurement_point": "execution_summary",
+                }
+            )
+        except Exception as e:
+            # Final fallback - always provide SOME data for research
+            print(f"⚠️  WARNING: All monitoring failed: {e}")
+            self.adaptive_stats["execution_metrics"] = {
+                "peak_cpu": 0.0,
+                "avg_cpu": 0.0,
+                "peak_memory": 0.0,
+                "avg_memory": 0.0,
+                "sample_count": 0,
+            }
+            self.adaptive_stats["resource_metrics"].append(
+                {
+                    "cpu_percent": 0.0,
+                    "memory_percent": 0.0,
+                    "circuit_breaker_state": "ERROR",
+                    "measurement_point": "fallback_error",
+                }
             )
 
     def get_effective_concurrency_limit(self, agent_count: int) -> int:
@@ -340,3 +418,135 @@ class AgentExecutor:
                     usage = model_instance.get_last_usage()
                     if usage:
                         agent_usage[agent_name] = usage
+
+    def _init_monitoring(self) -> None:
+        """Initialize resource monitoring for performance feedback."""
+        # Create system resource monitor for performance feedback
+        self.monitor = SystemResourceMonitor(polling_interval=0.1)
+
+        # Keep adaptive_manager for backward compatibility with existing code
+        # But simplify it to just be a monitoring container
+        self.adaptive_manager = type("SimpleMonitor", (), {"monitor": self.monitor})()
+
+    async def _get_concurrency_limit(self, agent_count: int) -> int:
+        """Get concurrency limit from user configuration."""
+        # Use the configured max_concurrent directly - trust the user to set
+        # appropriate limits
+        limit = self.get_effective_concurrency_limit(agent_count)
+
+        # Collect current resource metrics for user feedback (not for decision making)
+        try:
+            import psutil
+
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+            memory_percent = psutil.virtual_memory().percent
+
+            self.adaptive_stats["resource_metrics"].append(
+                {
+                    "cpu_percent": cpu_percent,
+                    "memory_percent": memory_percent,
+                    "circuit_breaker_state": "N/A",
+                    "measurement_point": "user_configured",
+                }
+            )
+
+            guidance = self._get_concurrency_guidance(
+                limit, agent_count, cpu_percent, memory_percent
+            )
+            print(
+                f"🔧 Using configured concurrency: {limit} agents "
+                f"(Current system: CPU {cpu_percent:.1f}%, "
+                f"Memory {memory_percent:.1f}%)"
+            )
+            if guidance:
+                print(f"💡 {guidance}")
+        except Exception:
+            print(f"🔧 Using configured concurrency: {limit} agents")
+            print(
+                "💡 Monitor performance and adjust max_concurrent in performance "
+                "config as needed"
+            )
+
+        return limit
+
+    def _get_concurrency_guidance(
+        self, limit: int, agent_count: int, cpu_percent: float, memory_percent: float
+    ) -> str | None:
+        """Provide helpful guidance for concurrency settings based on current
+        conditions."""
+        # High resource usage - suggest reducing concurrency
+        if cpu_percent > 80 or memory_percent > 85:
+            return (
+                f"High resource usage detected - consider reducing max_concurrent "
+                f"from {limit} to {max(1, limit - 1)} for better stability"
+            )
+
+        # Low resource usage with small limit - suggest increasing
+        if (
+            cpu_percent < 20
+            and memory_percent < 50
+            and limit < agent_count
+            and limit < 8
+        ):
+            return (
+                f"System has capacity - consider increasing max_concurrent "
+                f"from {limit} to {min(agent_count, limit + 1)} for faster execution"
+            )
+
+        # All agents running in parallel already
+        if limit >= agent_count:
+            return "All agents will run in parallel - optimal for this ensemble size"
+
+        # No specific guidance needed
+        return None
+
+    def get_adaptive_stats(self) -> dict[str, Any]:
+        """Get adaptive resource management statistics for this execution."""
+        # Ensure we ALWAYS have execution_metrics for research purposes
+        if "execution_metrics" not in self.adaptive_stats:
+            try:
+                import psutil
+
+                current_cpu = psutil.cpu_percent(interval=0.1)
+                current_memory = psutil.virtual_memory().percent
+                self.adaptive_stats["execution_metrics"] = {
+                    "peak_cpu": current_cpu,
+                    "avg_cpu": current_cpu,
+                    "peak_memory": current_memory,
+                    "avg_memory": current_memory,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [current_cpu],
+                    "raw_memory_samples": [current_memory],
+                }
+                # Also ensure resource_metrics has at least one entry
+                if not self.adaptive_stats["resource_metrics"]:
+                    self.adaptive_stats["resource_metrics"].append(
+                        {
+                            "cpu_percent": current_cpu,
+                            "memory_percent": current_memory,
+                            "circuit_breaker_state": "N/A",
+                            "measurement_point": "final_fallback",
+                        }
+                    )
+            except Exception:
+                # Absolute fallback
+                self.adaptive_stats["execution_metrics"] = {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 0.0,
+                    "avg_memory": 0.0,
+                    "sample_count": 0,
+                }
+
+        # Add phase metrics if available
+        stats_copy = self.adaptive_stats.copy()
+        if hasattr(self, "_phase_metrics") and self._phase_metrics:
+            stats_copy["phase_metrics"] = self._phase_metrics
+
+        return stats_copy
+
+    def get_phase_metrics(self) -> list[dict[str, Any]]:
+        """Get per-phase monitoring metrics."""
+        if hasattr(self, "_phase_metrics") and isinstance(self._phase_metrics, list):
+            return self._phase_metrics
+        return []

@@ -43,9 +43,9 @@ class TestMainCLI:
                 None,  # config_dir
                 None,  # input_data_option
                 None,  # output_format (default - Rich interface)
-                False,  # streaming (default)
+                True,  # streaming (default)
                 None,  # max_concurrent (default)
-                False,  # detailed (default)
+                True,  # detailed (default)
             )
             assert result.exit_code == 0
 
@@ -108,9 +108,9 @@ class TestMainCLI:
                 None,  # config_dir
                 "option_input",  # input_data_option
                 None,  # output_format (default - Rich interface)
-                False,  # streaming (default)
+                True,  # streaming (default)
                 None,  # max_concurrent (default)
-                False,  # detailed (default)
+                True,  # detailed (default)
             )
 
     def test_invoke_command_output_format_choices(self) -> None:

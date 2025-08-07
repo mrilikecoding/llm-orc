@@ -307,25 +307,26 @@ def display_results(
     console = Console(soft_wrap=True, width=None, force_terminal=True)
 
     if detailed:
-        # Build markdown content using comprehensive JSON-first architecture
-        from .json_renderer import (
-            render_comprehensive_markdown,
-            transform_to_execution_json,
-        )
-
+        # Build markdown content using JSON-first architecture
+        from .json_renderer import transform_to_execution_json, render_json_as_markdown
+        
         # Get usage data from metadata (extract from performance metrics helper)
         usage_data = metadata.get("usage", {})
-
+        
         # Transform to structured JSON (single source of truth)
         execution_json = transform_to_execution_json(results, usage_data, metadata)
-
-        # Render EVERYTHING from structured JSON (single source of truth)
+        
+        # Render as markdown
         markdown_content = ["# Results\n"]
-
-        # Use comprehensive JSON-first renderer for ALL content including agents
-        comprehensive_markdown = render_comprehensive_markdown(execution_json)
-        if comprehensive_markdown.strip():
-            markdown_content.append(comprehensive_markdown)
+        
+        # Process agent results using helper method (keep existing for now)
+        markdown_content.extend(_process_agent_results(results, metadata))
+        
+        # Use JSON-first renderer for performance metrics
+        performance_markdown = render_json_as_markdown(execution_json)
+        if performance_markdown.strip():
+            markdown_content.append("\n## Performance Summary\n")
+            markdown_content.append(performance_markdown + "\n")
 
         # Render the markdown - Rich will handle soft wrapping
         markdown_text = "".join(markdown_content)
@@ -362,33 +363,47 @@ def _display_plain_text_dependency_graph(
 def _display_detailed_plain_text(
     results: dict[str, Any], metadata: dict[str, Any]
 ) -> None:
-    """Display detailed plain text results using JSON-first architecture."""
+    """Display detailed plain text results."""
     click.echo("Results")
     click.echo("=======")
     click.echo()
 
-    # Use JSON-first transformation for ALL content (single source of truth)
-    from .json_renderer import render_comprehensive_text, transform_to_execution_json
+    # Show agent results
+    for agent_name, result in results.items():
+        if result.get("status") == "success":
+            click.echo(f"{agent_name}:")
+            click.echo("-" * len(agent_name) + ":")
+            click.echo(result["response"])
+            click.echo()
+        else:
+            click.echo(f"❌ {agent_name}:")
+            click.echo("-" * (len(agent_name) + 3) + ":")
+            error_msg = result.get("error", "Unknown error")
+            click.echo(f"Error: {error_msg}")
+            click.echo()
 
-    usage = metadata.get("usage", {})
-    execution_json = transform_to_execution_json(results, usage, metadata)
+    # Show performance metrics
+    if "usage" in metadata:
+        usage = metadata["usage"]
+        totals = usage.get("totals", {})
 
-    # Render EVERYTHING from structured JSON
-    comprehensive_text = render_comprehensive_text(execution_json)
-    if comprehensive_text.strip():
-        click.echo(comprehensive_text)
-
-    # Show basic performance summary
-    totals = usage.get("totals", {})
-    if totals:
-        click.echo()
-        click.echo("Performance Summary")
+        click.echo("Performance Metrics")
         click.echo("==================")
-        if "duration" in metadata:
-            click.echo(f"Duration: {metadata['duration']}")
+        click.echo(f"Duration: {metadata['duration']}")
         click.echo(f"Total tokens: {totals.get('total_tokens', 0):,}")
         click.echo(f"Total cost: ${totals.get('total_cost_usd', 0.0):.4f}")
         click.echo(f"Agents: {totals.get('agents_count', 0)}")
+
+        # Show performance statistics using JSON-first architecture
+        from .json_renderer import transform_to_execution_json, render_json_as_text
+        
+        execution_json = transform_to_execution_json(results, usage, metadata)
+        performance_text = render_json_as_text(execution_json)
+        if performance_text.strip():
+            click.echo()
+            click.echo("Resource Management")
+            click.echo("==================")
+            click.echo(performance_text)
 
 
 def _display_simplified_plain_text(
@@ -1480,43 +1495,6 @@ def _display_simplified_metrics(execution_metrics: dict[str, Any]) -> None:
     click.echo(f"Monitoring: {sample_count} samples collected")
 
 
-def _display_phase_resource_usage(phase_data: dict[str, Any]) -> None:
-    """Display resource usage for a single phase."""
-    peak_cpu = phase_data.get("peak_cpu")
-    avg_cpu = phase_data.get("avg_cpu")
-    peak_memory = phase_data.get("peak_memory")
-    avg_memory = phase_data.get("avg_memory")
-    sample_count = phase_data.get("sample_count", 0)
-
-    if peak_cpu is not None and avg_cpu is not None and sample_count > 0:
-        # Show detailed peak/average metrics
-        click.echo(f"  Peak usage: CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%")
-        click.echo(f"  Avg usage: CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%")
-        click.echo(f"  Samples: {sample_count} collected")
-    else:
-        # Fallback to final snapshot if available
-        final_cpu = phase_data.get("final_cpu_percent")
-        final_memory = phase_data.get("final_memory_percent")
-        if final_cpu is not None and final_memory is not None:
-            click.echo(f"  Resources: CPU {final_cpu:.1f}%, Memory {final_memory:.1f}%")
-        else:
-            click.echo("  Resources: No monitoring data available")
-
-
-def _display_phase_timing(
-    phase_data: dict[str, Any], phase_index: int, phase_metrics: list[dict[str, Any]]
-) -> None:
-    """Display timing information for a single phase."""
-    start_time = phase_data.get("start_time")
-    end_time = phase_data.get("end_time")
-    if start_time and end_time:
-        # Convert to relative time from start
-        relative_start = 0.0 if phase_index == 0 else start_time
-        first_start = phase_metrics[0].get("start_time", start_time)
-        relative_end = end_time - first_start
-        click.echo(f"  Timing: {relative_start:.2f}s - {relative_end:.2f}s")
-
-
 def _display_phase_statistics(phase_metrics: list[dict[str, Any]]) -> None:
     """Display per-phase execution statistics."""
     click.echo("Per-Phase Statistics")
@@ -1534,11 +1512,39 @@ def _display_phase_statistics(phase_metrics: list[dict[str, Any]]) -> None:
             agent_list = ", ".join(agent_names)
             click.echo(f"  Agents: {agent_list}")
 
-        # Show resource usage
-        _display_phase_resource_usage(phase_data)
+        # Show resource usage - prefer peak/average if available,
+        # fallback to final snapshot
+        peak_cpu = phase_data.get("peak_cpu")
+        avg_cpu = phase_data.get("avg_cpu")
+        peak_memory = phase_data.get("peak_memory")
+        avg_memory = phase_data.get("avg_memory")
+        sample_count = phase_data.get("sample_count", 0)
+
+        if peak_cpu is not None and avg_cpu is not None and sample_count > 0:
+            # Show detailed peak/average metrics
+            click.echo(f"  Peak usage: CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%")
+            click.echo(f"  Avg usage: CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%")
+            click.echo(f"  Samples: {sample_count} collected")
+        else:
+            # Fallback to final snapshot if available
+            final_cpu = phase_data.get("final_cpu_percent")
+            final_memory = phase_data.get("final_memory_percent")
+            if final_cpu is not None and final_memory is not None:
+                click.echo(
+                    f"  Resources: CPU {final_cpu:.1f}%, Memory {final_memory:.1f}%"
+                )
+            else:
+                click.echo("  Resources: No monitoring data available")
 
         # Show timing details if available
-        _display_phase_timing(phase_data, phase_index, phase_metrics)
+        start_time = phase_data.get("start_time")
+        end_time = phase_data.get("end_time")
+        if start_time and end_time:
+            # Convert to relative time from start
+            relative_start = 0.0 if phase_index == 0 else start_time
+            first_start = phase_metrics[0].get("start_time", start_time)
+            relative_end = end_time - first_start
+            click.echo(f"  Timing: {relative_start:.2f}s - {relative_end:.2f}s")
 
         click.echo()  # Empty line between phases
 

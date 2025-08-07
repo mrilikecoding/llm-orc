@@ -13,6 +13,7 @@ class ResultsProcessor:
         agent_usage: dict[str, Any],
         has_errors: bool,
         start_time: float,
+        adaptive_stats: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Finalize execution result with metadata and usage summary."""
         # Calculate usage totals (no coordinator synthesis in dependency-based model)
@@ -25,6 +26,11 @@ class ResultsProcessor:
         metadata_dict["duration"] = f"{(end_time - start_time):.2f}s"
         metadata_dict["completed_at"] = end_time
         metadata_dict["usage"] = usage_summary
+
+        # Add adaptive resource management statistics if available
+        if adaptive_stats:
+            metadata_dict["adaptive_resource_management"] = adaptive_stats
+
         return result
 
     def calculate_usage_summary(

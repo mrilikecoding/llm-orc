@@ -871,6 +871,43 @@ class TestResetLocalConfigHelperMethods:
         finally:
             os.chdir(original_cwd)
 
+    def test_create_local_backup_if_requested_overwrite_existing_backup(
+        self, temp_dir: str
+    ) -> None:
+        """Test local backup creation when backup already exists."""
+        from llm_orc.cli_modules.commands.config_commands import (
+            _create_local_backup_if_requested,
+        )
+
+        # Given
+        original_cwd = Path.cwd()
+        test_dir = Path(temp_dir)
+
+        try:
+            import os
+
+            os.chdir(test_dir)
+
+            # Create existing local config
+            local_config_dir = test_dir / ".llm-orc"
+            local_config_dir.mkdir(parents=True)
+            (local_config_dir / "config.yaml").write_text("new: config")
+
+            # Create existing backup directory
+            backup_path = test_dir / ".llm-orc.backup"
+            backup_path.mkdir(parents=True)
+            (backup_path / "old_config.yaml").write_text("old: backup")
+
+            # When
+            _create_local_backup_if_requested(True, local_config_dir)
+
+            # Then - should overwrite existing backup
+            assert backup_path.exists()
+            assert (backup_path / "config.yaml").read_text() == "new: config"
+            assert not (backup_path / "old_config.yaml").exists()
+        finally:
+            os.chdir(original_cwd)
+
     def test_create_local_backup_if_requested_with_backup_disabled(
         self, temp_dir: str
     ) -> None:

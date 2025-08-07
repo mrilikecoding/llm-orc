@@ -109,8 +109,8 @@ def completion(shell: str | None) -> None:
     help="Output format for results (default: rich streaming interface)",
 )
 @click.option(
-    "--streaming",
-    is_flag=True,
+    "--streaming/--no-streaming",
+    default=True,
     help="Enable streaming execution for real-time progress updates",
 )
 @click.option(
@@ -120,8 +120,8 @@ def completion(shell: str | None) -> None:
     help="Maximum number of concurrent agents (overrides config)",
 )
 @click.option(
-    "--detailed",
-    is_flag=True,
+    "--detailed/--no-detailed",
+    default=True,
     help="Show detailed results and performance metrics",
 )
 def invoke(
