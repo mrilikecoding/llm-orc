@@ -768,3 +768,229 @@ class TestTerminalVisualizer:
 
         # Should handle self-reference gracefully
         assert level == 1
+
+    @pytest.mark.asyncio
+    async def test_handle_agent_progress_with_intermediate_result(self) -> None:
+        """Test agent progress with intermediate result and show_live_results."""
+        config = VisualizationConfig()
+        config.terminal.show_live_results = True
+        visualizer = TerminalVisualizer(config)
+
+        # First start an agent
+        start_event = ExecutionEvent(
+            event_type=ExecutionEventType.AGENT_STARTED,
+            timestamp=datetime.now(),
+            ensemble_name="test-ensemble",
+            execution_id="test-execution",
+            agent_name="test-agent",
+            data={},
+        )
+        await visualizer._process_event(start_event)
+
+        # Then send progress event with intermediate result
+        progress_event = ExecutionEvent(
+            event_type=ExecutionEventType.AGENT_PROGRESS,
+            timestamp=datetime.now(),
+            ensemble_name="test-ensemble",
+            execution_id="test-execution",
+            agent_name="test-agent",
+            data={
+                "progress_percentage": 0.5,
+                "intermediate_result": "Intermediate processing result",
+            },
+        )
+
+        await visualizer._process_event(progress_event)
+
+        # Should have added intermediate result to live results
+        assert len(visualizer.execution_state["live_results"]) == 1
+        live_result = visualizer.execution_state["live_results"][0]
+        assert live_result["agent"] == "test-agent"
+        assert live_result["result"] == "Intermediate processing result"
+
+    @pytest.mark.asyncio
+    async def test_handle_agent_completed_with_show_live_results(self) -> None:
+        """Test agent completed with show_live_results enabled."""
+        config = VisualizationConfig()
+        config.terminal.show_live_results = True
+        visualizer = TerminalVisualizer(config)
+
+        # First start an agent
+        start_event = ExecutionEvent(
+            event_type=ExecutionEventType.AGENT_STARTED,
+            timestamp=datetime.now(),
+            ensemble_name="test-ensemble",
+            execution_id="test-execution",
+            agent_name="test-agent",
+            data={},
+        )
+        await visualizer._process_event(start_event)
+
+        # Then complete the agent
+        completed_event = ExecutionEvent(
+            event_type=ExecutionEventType.AGENT_COMPLETED,
+            timestamp=datetime.now(),
+            ensemble_name="test-ensemble",
+            execution_id="test-execution",
+            agent_name="test-agent",
+            data={
+                "result": "Agent completed successfully",
+                "duration_ms": 5000,
+                "cost_usd": 0.05,
+            },
+        )
+
+        await visualizer._process_event(completed_event)
+
+        # Should have added result to live results
+        assert len(visualizer.execution_state["live_results"]) == 1
+        live_result = visualizer.execution_state["live_results"][0]
+        assert live_result["agent"] == "test-agent"
+        assert live_result["result"] == "✅ test-agent: Completed in 5000ms"
+
+    @pytest.mark.asyncio
+    async def test_handle_agent_failed_with_show_live_results(self) -> None:
+        """Test agent failed with show_live_results enabled."""
+        config = VisualizationConfig()
+        config.terminal.show_live_results = True
+        visualizer = TerminalVisualizer(config)
+
+        # First start an agent
+        start_event = ExecutionEvent(
+            event_type=ExecutionEventType.AGENT_STARTED,
+            timestamp=datetime.now(),
+            ensemble_name="test-ensemble",
+            execution_id="test-execution",
+            agent_name="test-agent",
+            data={},
+        )
+        await visualizer._process_event(start_event)
+
+        # Then fail the agent
+        failed_event = ExecutionEvent(
+            event_type=ExecutionEventType.AGENT_FAILED,
+            timestamp=datetime.now(),
+            ensemble_name="test-ensemble",
+            execution_id="test-execution",
+            agent_name="test-agent",
+            data={
+                "error": "Agent failed with error",
+                "duration_ms": 2000,
+                "cost_usd": 0.01,
+            },
+        )
+
+        await visualizer._process_event(failed_event)
+
+        # Should have added error to live results
+        assert len(visualizer.execution_state["live_results"]) == 1
+        live_result = visualizer.execution_state["live_results"][0]
+        assert live_result["agent"] == "test-agent"
+        assert live_result["result"] == "❌ test-agent: Agent failed with error"
+
+    def test_create_layout_compact_mode(self) -> None:
+        """Test layout creation in compact mode."""
+        config = VisualizationConfig()
+        config.terminal.compact_mode = True
+        visualizer = TerminalVisualizer(config)
+
+        layout = visualizer.create_layout()
+
+        assert isinstance(layout, Layout)
+
+    def test_create_layout_non_compact_mode(self) -> None:
+        """Test layout creation in non-compact mode."""
+        config = VisualizationConfig()
+        config.terminal.compact_mode = False
+        visualizer = TerminalVisualizer(config)
+
+        layout = visualizer.create_layout()
+
+        assert isinstance(layout, Layout)
+
+    def test_create_agents_section_with_long_agent_list(self) -> None:
+        """Test agents section creation with many agents to test scrolling."""
+        visualizer = TerminalVisualizer()
+
+        # Create many agents to potentially trigger scrolling logic
+        agents = {}
+        for i in range(15):  # Create 15 agents
+            agents[f"agent{i}"] = {
+                "name": f"agent{i}",
+                "status": "running" if i % 2 == 0 else "completed",
+                "model": "claude-3-sonnet",
+                "progress": i / 15.0,
+                "duration": i * 1000,
+                "cost": i * 0.01,
+                "result": f"Result {i}" if i % 2 == 1 else None,
+                "error": None,
+            }
+
+        visualizer.execution_state["agents"] = agents
+
+        agents_section = visualizer.create_agents_section()
+
+        assert isinstance(agents_section, Panel)
+
+    def test_create_results_section_with_recent_results(self) -> None:
+        """Test results section with recent results to cover lines 500-507."""
+        visualizer = TerminalVisualizer()
+
+        # Add multiple live results to test recent results logic
+        visualizer.execution_state["live_results"] = [
+            {"agent": "agent1", "result": "Result 1", "timestamp": datetime.now()},
+            {"agent": "agent2", "result": "Result 2", "timestamp": datetime.now()},
+            {"agent": "agent3", "result": "Result 3", "timestamp": datetime.now()},
+            {"agent": "agent4", "result": "Result 4", "timestamp": datetime.now()},
+            {"agent": "agent5", "result": "Result 5", "timestamp": datetime.now()},
+            {
+                "agent": "agent6",
+                "result": "Result 6",
+                "timestamp": datetime.now(),
+            },  # More than 5 to test slicing
+        ]
+
+        results_section = visualizer.create_results_section()
+
+        assert isinstance(results_section, Panel)
+
+    def test_create_results_section_no_results(self) -> None:
+        """Test results section with no results to cover lines 502-503."""
+        visualizer = TerminalVisualizer()
+
+        # Ensure no results exist
+        visualizer.execution_state["live_results"] = []
+
+        results_section = visualizer.create_results_section()
+
+        assert isinstance(results_section, Panel)
+
+    def test_create_metrics_section_disabled(self) -> None:
+        """Test metrics section when performance metrics are disabled.
+
+        This covers line 512.
+        """
+        config = VisualizationConfig()
+        config.terminal.show_performance_metrics = False
+        visualizer = TerminalVisualizer(config)
+
+        metrics_section = visualizer.create_metrics_section()
+
+        assert isinstance(metrics_section, Panel)
+
+    def test_print_summary_empty_ensemble_name(self) -> None:
+        """Test print_summary returns early when ensemble_name is empty.
+
+        This covers line 553.
+        """
+        visualizer = TerminalVisualizer()
+
+        # Set empty ensemble name
+        visualizer.execution_state["ensemble_name"] = ""
+
+        # Mock console.print to verify it's not called
+        with patch.object(visualizer.console, "print") as mock_print:
+            visualizer.print_summary()
+
+            # Should return early and not print anything
+            mock_print.assert_not_called()

@@ -995,3 +995,108 @@ class TestGlobalStreamManager:
 
         assert manager1 is manager2
         assert isinstance(manager1, EventStreamManager)
+
+    @pytest.mark.asyncio
+    async def test_subscription_timeout_continue_logic(self) -> None:
+        """Test that subscription timeout continues properly."""
+        from llm_orc.visualization.stream import reset_global_stream_manager
+
+        # Reset to ensure clean state
+        reset_global_stream_manager()
+
+        stream = EventStream("test-id")
+        received_events = []
+        continue_count = 0
+
+        async def subscription_with_timeout_tracking() -> None:
+            nonlocal continue_count
+            async for event in stream.subscribe([ExecutionEventType.AGENT_STARTED]):
+                received_events.append(event)
+                if len(received_events) >= 1:
+                    break
+                continue_count += 1  # This tracks the continue execution
+
+        subscription_task = asyncio.create_task(subscription_with_timeout_tracking())
+        await asyncio.sleep(0.01)  # Give subscription time to set up
+
+        # Send event after short delay to trigger timeout -> continue -> event cycle
+        await asyncio.sleep(0.01)
+        event = ExecutionEvent(
+            event_type=ExecutionEventType.AGENT_STARTED,
+            timestamp=datetime.now(),
+            ensemble_name="test",
+            execution_id="test-id",
+            agent_name="test-agent",
+            data={},
+        )
+        await stream.emit(event)
+
+        await subscription_task
+
+        # Should have received the event
+        assert len(received_events) == 1
+        assert received_events[0] == event
+
+    def test_create_stream_no_event_loop_runtime_error(self) -> None:
+        """Test creating stream when no event loop is running."""
+        manager = EventStreamManager(enable_cleanup_tasks=True)
+
+        # Mock get_running_loop to raise RuntimeError
+        with patch(
+            "asyncio.get_running_loop", side_effect=RuntimeError("No running loop")
+        ):
+            # Should not raise exception, just skip cleanup task scheduling
+            stream = manager.create_stream("test-no-loop")
+
+        assert stream is not None
+        assert stream.execution_id == "test-no-loop"
+        assert "test-no-loop" not in manager._stream_cleanup_tasks
+
+    def test_remove_stream_with_cleanup_task(self) -> None:
+        """Test removing stream that has an associated cleanup task."""
+        manager = EventStreamManager(enable_cleanup_tasks=False)
+        execution_id = "test-with-cleanup"
+
+        # Create stream
+        manager.create_stream(execution_id)
+
+        # Manually add a mock cleanup task
+        mock_task = Mock()
+        manager._cleanup_tasks.add(mock_task)
+        manager._stream_cleanup_tasks[execution_id] = mock_task
+
+        # Remove the stream
+        manager.remove_stream(execution_id)
+
+        # Verify cleanup task was cancelled and removed
+        mock_task.cancel.assert_called_once()
+        assert mock_task not in manager._cleanup_tasks
+        assert execution_id not in manager._stream_cleanup_tasks
+
+    @pytest.mark.asyncio
+    async def test_cleanup_task_done_callback(self) -> None:
+        """Test the cleanup task done callback functionality."""
+        manager = EventStreamManager(enable_cleanup_tasks=True)
+        execution_id = "test-callback"
+
+        with patch("asyncio.create_task") as mock_create_task:
+            mock_task = Mock()
+            mock_create_task.return_value = mock_task
+
+            # Create stream (should add done callback)
+            with patch.object(manager, "_cleanup_stream_after_delay", new=Mock()):
+                manager.create_stream(execution_id)
+
+            # Verify task was created and done callback was added
+            mock_create_task.assert_called_once()
+            mock_task.add_done_callback.assert_called_once()
+
+            # Get the callback function
+            callback_func = mock_task.add_done_callback.call_args[0][0]
+
+            # Simulate task completion by calling the callback
+            callback_func(mock_task)
+
+            # Verify task was removed from cleanup sets
+            assert mock_task not in manager._cleanup_tasks
+            assert execution_id not in manager._stream_cleanup_tasks

@@ -4,9 +4,13 @@ project:
     test: micro-local    # Fallback model for reliability and testing
 
 performance:
-  max_concurrent: 5
   streaming_enabled: true
   timeout_seconds: 120
+  concurrency:
+    adaptive_enabled: true
+    base_limit: 1
+    min_limit: 1
+    max_limit: 3
 
 model_profiles:
   # Test profile with non-existent model to test fallbacks
@@ -207,6 +211,22 @@ model_profiles:
     provider: anthropic-claude-pro-max
     system_prompt: "You are a research synthesist who loves connecting dots across disciplines to reveal surprising insights about human nature and society."
     timeout_seconds: 60
+    
+  # Efficient profile for resource-conscious agents
+  efficient:
+    model: qwen3:0.6b
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: "You are an efficient AI analyst providing focused, high-quality analysis with optimized resource usage."
+    timeout_seconds: 30
+    
+  # Fast local model for architecture work
+  fast-architect:
+    model: llama3:latest
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: "You are a systems architect specializing in high-performance async Python systems and integration patterns."
+    timeout_seconds: 45
     
   # Cascading fallback demonstration profiles
   # These demonstrate the configurable fallback system with A → B → C → system default chains

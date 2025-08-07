@@ -821,7 +821,185 @@ class TestImprovedAuthenticationManager:
 
         # Then
         assert validation_called
-        assert result is True  # Should succeed with mocked validation
+        assert result
+
+    def test_store_manual_oauth_tokens_success(
+        self, auth_manager: AuthenticationManager
+    ) -> None:
+        """Test successful manual OAuth token storage (covers lines 453-478)."""
+        # Given
+        provider = "test_provider"
+        access_token = "test_access_token"
+        refresh_token = "test_refresh_token"
+        expires_in = 7200
+
+        # When
+        result = auth_manager.store_manual_oauth_token(
+            provider, access_token, refresh_token, expires_in
+        )
+
+        # Then
+        assert result is True
+        assert provider in auth_manager._authenticated_clients
+        client = auth_manager._authenticated_clients[provider]
+        assert client.access_token == access_token
+        assert client.token_type == "Bearer"
+
+        # Verify token is stored in credential storage
+        stored_token = auth_manager.credential_storage.get_oauth_token(provider)
+        assert stored_token is not None
+        assert stored_token["access_token"] == access_token
+        assert stored_token["refresh_token"] == refresh_token
+
+    def test_store_manual_oauth_tokens_minimal_params(
+        self, auth_manager: AuthenticationManager
+    ) -> None:
+        """Test manual OAuth token storage with minimal parameters."""
+        # Given
+        provider = "test_provider"
+        access_token = "test_access_token"
+
+        # When
+        result = auth_manager.store_manual_oauth_token(provider, access_token)
+
+        # Then
+        assert result is True
+        assert provider in auth_manager._authenticated_clients
+
+    def test_store_manual_oauth_tokens_failure(
+        self, auth_manager: AuthenticationManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test manual OAuth token storage failure (covers lines 476-478)."""
+        # Given
+        provider = "test_provider"
+        access_token = "test_access_token"
+
+        # Mock credential storage to raise exception
+        def mock_store_oauth_token(*args: Any, **kwargs: Any) -> None:
+            raise Exception("Storage error")
+
+        monkeypatch.setattr(
+            auth_manager.credential_storage, "store_oauth_token", mock_store_oauth_token
+        )
+
+        # When
+        result = auth_manager.store_manual_oauth_token(provider, access_token)
+
+        # Then
+        assert result is False
+        assert provider not in auth_manager._authenticated_clients
+
+    def test_oauth_flow_setup_failure(
+        self, auth_manager: AuthenticationManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test OAuth authentication when flow setup fails (covers line 419)."""
+
+        # Given
+        def mock_setup_oauth_flow(*args: Any) -> None:
+            return None  # Simulate setup failure
+
+        monkeypatch.setattr(
+            "llm_orc.core.auth.authentication._setup_and_validate_oauth_flow",
+            mock_setup_oauth_flow,
+        )
+
+        # When
+        result = auth_manager.authenticate_oauth("test_provider", "client", "secret")
+
+        # Then
+        assert result is False
+
+    def test_oauth_authorization_url_failure(
+        self, auth_manager: AuthenticationManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test OAuth authentication when authorization URL retrieval fails.
+
+        This covers line 423.
+        """
+        # Given
+        mock_flow = Mock()
+        mock_flow.validate_credentials.return_value = True
+
+        def mock_setup_oauth_flow(*args: Any) -> Mock:
+            return mock_flow
+
+        def mock_get_auth_url_and_open_browser(*args: Any) -> bool:
+            return False  # Simulate authorization URL failure
+
+        monkeypatch.setattr(
+            "llm_orc.core.auth.authentication._setup_and_validate_oauth_flow",
+            mock_setup_oauth_flow,
+        )
+        monkeypatch.setattr(
+            "llm_orc.core.auth.authentication._get_authorization_url_and_open_browser",
+            mock_get_auth_url_and_open_browser,
+        )
+
+        # When
+        result = auth_manager.authenticate_oauth("test_provider", "client", "secret")
+
+        # Then
+        assert result is False
+
+    def test_oauth_connection_error_handling(
+        self, auth_manager: AuthenticationManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test OAuth authentication with ConnectionError (covers lines 437-440)."""
+
+        # Given
+        def mock_setup_oauth_flow(*args: Any) -> None:
+            raise ConnectionError("Network connection failed")
+
+        monkeypatch.setattr(
+            "llm_orc.core.auth.authentication._setup_and_validate_oauth_flow",
+            mock_setup_oauth_flow,
+        )
+
+        # When
+        result = auth_manager.authenticate_oauth("test_provider", "client", "secret")
+
+        # Then
+        assert result is False
+
+    def test_oauth_value_error_handling(
+        self, auth_manager: AuthenticationManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test OAuth authentication with ValueError (covers lines 434-436)."""
+
+        # Given
+        def mock_setup_oauth_flow(*args: Any) -> None:
+            raise ValueError("Invalid configuration")
+
+        monkeypatch.setattr(
+            "llm_orc.core.auth.authentication._setup_and_validate_oauth_flow",
+            mock_setup_oauth_flow,
+        )
+
+        # When
+        result = auth_manager.authenticate_oauth("test_provider", "client", "secret")
+
+        # Then
+        assert result is False
+
+    def test_oauth_general_exception_handling(
+        self, auth_manager: AuthenticationManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test OAuth authentication with general Exception (covers lines 441-443)."""
+
+        # Given
+        def mock_setup_oauth_flow(*args: Any) -> None:
+            raise Exception("Unexpected error")
+
+        monkeypatch.setattr(
+            "llm_orc.core.auth.authentication._setup_and_validate_oauth_flow",
+            mock_setup_oauth_flow,
+        )
+
+        # When
+        result = auth_manager.authenticate_oauth("test_provider", "client", "secret")
+
+        # Then
+        assert result is False
 
     def test_oauth_error_handling_for_invalid_provider(
         self, auth_manager: AuthenticationManager

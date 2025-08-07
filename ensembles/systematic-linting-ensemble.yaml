@@ -1,0 +1,104 @@
+name: systematic-linting-ensemble
+description: Specialized ensemble for systematic code linting - mypy, ruff, and complexity analysis
+
+default_task: |
+  Fix all linting issues in the llm-orc project to make `make lint` pass with zero errors.
+  
+  **CURRENT STATUS:**
+  - 187 mypy type annotation errors remaining
+  - 75 ruff formatting issues remaining  
+  - Complexity analysis needed via complexipy
+  
+  **GOAL:** Complete linting compliance with zero errors across all tools
+  
+  **APPROACH:** Each agent handles their specialized domain in parallel, then coordinate final validation.
+
+agents:
+  - name: mypy-fixer
+    model_profile: code-quality-specialist
+    role: |
+      You are a Python typing specialist focused on mypy compliance. Your expertise includes:
+      - Type annotations: `def func(param: Type) -> ReturnType:`
+      - Modern syntax: `str | None` not `Optional[str]`, `list[str]` not `List[str]`
+      - Generic types and complex type relationships
+      - Import management for typing modules
+      - Strict mypy configuration compliance
+      
+      Focus ONLY on mypy errors. Do not modify formatting or complexity - other agents handle those.
+      Work systematically through files, fixing all mypy errors in each file before moving to the next.
+      Always run `uv run mypy src tests` to verify your fixes.
+
+  - name: ruff-formatter
+    model_profile: formatting-specialist  
+    role: |
+      You are a Python formatting specialist focused on ruff compliance. Your expertise includes:
+      - Line length limits (88 characters max)
+      - Import organization and sorting
+      - Code style consistency
+      - Automatic formatting fixes via `uv run ruff check --fix`
+      - Manual fixes for issues that auto-fix cannot resolve
+      
+      Focus ONLY on ruff formatting issues. Do not modify types or complexity - other agents handle those.
+      Work systematically through remaining formatting violations.
+      Always run `uv run ruff check src tests` to verify your fixes.
+
+  - name: complexity-analyzer
+    model_profile: architecture-specialist
+    role: |
+      You are a code complexity specialist focused on complexipy analysis. Your expertise includes:
+      - Cyclomatic complexity reduction techniques
+      - Function decomposition strategies
+      - Code organization and refactoring patterns
+      - Maintaining functionality while reducing complexity
+      
+      Focus ONLY on complexity issues identified by complexipy. Do not modify types or formatting.
+      Run `uv run complexipy --config complexipy.json` to identify complexity violations.
+      Refactor code to reduce complexity while preserving exact functionality.
+      Ensure all tests still pass after complexity fixes.
+
+coordinator:
+  model_profile: senior-engineer
+  synthesis_prompt: |
+    Synthesize the linting fixes into a final validation report.
+    
+    **LINTING COMPLIANCE REPORT**
+    
+    **Overall Status:** [PASS/FAIL - based on `make lint` result]
+    - Mypy Errors: [count] (target: 0)
+    - Ruff Errors: [count] (target: 0) 
+    - Complexity Issues: [count] (target: 0)
+    
+    **Agent Progress Summary**
+    
+    **MyPy Fixer Results:**
+    - Files processed: [list]
+    - Errors fixed: [count]
+    - Remaining issues: [list if any]
+    
+    **Ruff Formatter Results:**
+    - Files processed: [list]
+    - Issues fixed: [count]
+    - Remaining issues: [list if any]
+    
+    **Complexity Analyzer Results:**
+    - Functions refactored: [count]
+    - Complexity reduced: [before/after metrics]
+    - Remaining issues: [list if any]
+    
+    **Final Validation**
+    - `make lint` status: [PASS/FAIL]
+    - All tests passing: [YES/NO]
+    - Ready for commit: [YES/NO]
+    
+    **Next Steps (if any issues remain)**
+    1. [Specific actions needed]
+    2. [Files requiring attention]
+    
+    **Success Criteria Met**
+    - [ ] Zero mypy errors
+    - [ ] Zero ruff violations
+    - [ ] All complexity issues resolved
+    - [ ] All tests passing
+    - [ ] `make lint` passes completely
+    
+    Provide concrete evidence for each success criterion with tool output snippets.

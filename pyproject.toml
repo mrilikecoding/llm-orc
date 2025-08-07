@@ -101,5 +101,6 @@ dev = [
     "bandit>=1.8.6",
     "vulture>=2.14",
     "psutil>=6.1.0",
+    "types-psutil>=7.0.0.20250601",
 ]
 

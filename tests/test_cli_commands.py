@@ -545,7 +545,7 @@ class TestInvokeEnsemble:
                 output_format="text",  # Text format
                 streaming=False,
                 max_concurrent=None,
-                detailed=False,
+                detailed=True,  # Need detailed=True to show dependency graph
             )
 
             # Should print performance information
@@ -557,7 +557,7 @@ class TestInvokeEnsemble:
             echo_output = " ".join(echo_calls)
 
             # Text output should show dependency graph and results
-            assert "Dependency Graph:" in echo_output
+            assert "Agent Dependencies:" in echo_output
             assert "agent_1" in echo_output
             assert "agent_2" in echo_output
             assert "Test response" in echo_output
@@ -602,7 +602,7 @@ class TestInvokeEnsemble:
                 output_format="text",
                 streaming=False,
                 max_concurrent=None,
-                detailed=False,
+                detailed=True,  # Need detailed=True to show dependency graph
             )
 
             # Should print fallback information
@@ -613,7 +613,7 @@ class TestInvokeEnsemble:
             echo_output = " ".join(echo_calls)
 
             # Text output should show dependency graph and results
-            assert "Dependency Graph:" in echo_output
+            assert "Agent Dependencies:" in echo_output
             assert "agent_1" in echo_output
             assert "agent_2" in echo_output
             assert "Test response" in echo_output

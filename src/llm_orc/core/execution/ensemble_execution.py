@@ -258,10 +258,11 @@ class EnsembleExecutor:
         )
         has_errors = has_errors or llm_agent_errors
 
-        # Get collected usage and finalize result using ResultsProcessor
+        # Get collected usage and adaptive stats, then finalize result using processor
         agent_usage = self._usage_collector.get_agent_usage()
+        adaptive_stats = self._agent_executor.get_adaptive_stats()
         return self._results_processor.finalize_result(
-            result, agent_usage, has_errors, start_time
+            result, agent_usage, has_errors, start_time, adaptive_stats
         )
 
     async def _execute_agent(
@@ -278,27 +279,60 @@ class EnsembleExecutor:
     async def _execute_script_agent(
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
-        """Execute script agent."""
-        script_agent = ScriptAgent(agent_config["name"], agent_config)
-        response = await script_agent.execute(input_data)
-        return response, None  # Script agents don't have model instances
+        """Execute script agent with resource monitoring."""
+        agent_name = agent_config["name"]
+
+        # Start resource monitoring for this agent
+        self._usage_collector.start_agent_resource_monitoring(agent_name)
+
+        try:
+            script_agent = ScriptAgent(agent_name, agent_config)
+
+            # Sample resources during execution
+            self._usage_collector.sample_agent_resources(agent_name)
+
+            response = await script_agent.execute(input_data)
+
+            # Final sample before completion
+            self._usage_collector.sample_agent_resources(agent_name)
+
+            return response, None  # Script agents don't have model instances
+        finally:
+            # Always finalize resource monitoring
+            self._usage_collector.finalize_agent_resource_monitoring(agent_name)
 
     async def _execute_llm_agent(
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
-        """Execute LLM agent with fallback handling."""
-        role = await self._load_role_from_config(agent_config)
-        model = await self._load_model_with_fallback(agent_config)
-        agent = Agent(agent_config["name"], role, model)
+        """Execute LLM agent with fallback handling and resource monitoring."""
+        agent_name = agent_config["name"]
 
-        # Generate response with fallback handling for runtime failures
+        # Start resource monitoring for this agent
+        self._usage_collector.start_agent_resource_monitoring(agent_name)
+
         try:
-            response = await agent.respond_to_message(input_data)
-            return response, model
-        except Exception as e:
-            return await self._handle_runtime_fallback(
-                agent_config, role, input_data, e
-            )
+            role = await self._load_role_from_config(agent_config)
+            model = await self._load_model_with_fallback(agent_config)
+            agent = Agent(agent_name, role, model)
+
+            # Take periodic resource samples during execution
+            self._usage_collector.sample_agent_resources(agent_name)
+
+            # Generate response with fallback handling for runtime failures
+            try:
+                response = await agent.respond_to_message(input_data)
+
+                # Final resource sample before completing
+                self._usage_collector.sample_agent_resources(agent_name)
+
+                return response, model
+            except Exception as e:
+                return await self._handle_runtime_fallback(
+                    agent_config, role, input_data, e
+                )
+        finally:
+            # Always finalize resource monitoring, even if execution failed
+            self._usage_collector.finalize_agent_resource_monitoring(agent_name)
 
     async def _load_model_with_fallback(
         self, agent_config: dict[str, Any]
@@ -717,29 +751,46 @@ class EnsembleExecutor:
             )
             phases = dependency_analysis["phases"]
 
-            # Execute each phase sequentially, with parallelization within each phase
-            for phase_index, phase_agents in enumerate(phases):
-                self._emit_performance_event(
-                    "phase_started",
-                    {
-                        "phase_index": phase_index,
-                        "phase_agents": [agent["name"] for agent in phase_agents],
-                        "total_phases": len(phases),
-                    },
+            # Execute phases with monitoring hooks
+            has_errors = await self._execute_phases_standard(
+                phases, enhanced_input, results_dict, has_errors
+            )
+
+        return has_errors
+
+    async def _execute_phases_standard(
+        self,
+        phases: list[list[dict[str, Any]]],
+        enhanced_input: str,
+        results_dict: dict[str, Any],
+        has_errors: bool,
+    ) -> bool:
+        """Execute phases using standard approach without per-phase monitoring."""
+        for phase_index, phase_agents in enumerate(phases):
+            self._emit_performance_event(
+                "phase_started",
+                {
+                    "phase_index": phase_index,
+                    "phase_agents": [agent["name"] for agent in phase_agents],
+                    "total_phases": len(phases),
+                },
+            )
+
+            # Determine input for this phase using DependencyResolver
+            if phase_index == 0:
+                # First phase uses the base enhanced input
+                phase_input: str | dict[str, str] = enhanced_input
+            else:
+                # Subsequent phases get enhanced input with dependencies
+                phase_input = self._dependency_resolver.enhance_input_with_dependencies(
+                    enhanced_input, phase_agents, results_dict
                 )
 
-                # Determine input for this phase using DependencyResolver
-                if phase_index == 0:
-                    # First phase uses the base enhanced input
-                    phase_input: str | dict[str, str] = enhanced_input
-                else:
-                    # Subsequent phases get enhanced input with dependencies
-                    phase_input = (
-                        self._dependency_resolver.enhance_input_with_dependencies(
-                            enhanced_input, phase_agents, results_dict
-                        )
-                    )
+            # Start per-phase monitoring for performance feedback
+            phase_start_time = time.time()
+            await self._start_phase_monitoring(phase_index, phase_agents)
 
+            try:
                 # Execute agents in this phase in parallel (Issue #43 implementation)
                 phase_results = await self._execute_agents_in_phase_parallel(
                     phase_agents, phase_input
@@ -751,10 +802,15 @@ class EnsembleExecutor:
                 )
                 has_errors = has_errors or phase_has_errors
 
-                # Emit phase completion event
-                self._emit_phase_completed_event(
-                    phase_index, phase_agents, results_dict
+            finally:
+                # Stop per-phase monitoring and collect metrics
+                phase_duration = time.time() - phase_start_time
+                await self._stop_phase_monitoring(
+                    phase_index, phase_agents, phase_duration
                 )
+
+            # Emit phase completion event
+            self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
 
         return has_errors
 
@@ -799,3 +855,112 @@ class EnsembleExecutor:
 
         # Fallback: convert name to readable format
         return agent_name.replace("-", " ").title()
+
+    async def _start_phase_monitoring(
+        self, phase_index: int, phase_agents: list[dict[str, Any]]
+    ) -> None:
+        """Start monitoring for a specific phase."""
+        # Phase metrics are always initialized in AgentExecutor
+
+        # Collect initial phase metrics
+        phase_name = f"phase_{phase_index}"
+        agent_names = [agent["name"] for agent in phase_agents]
+
+        phase_metrics = await self._agent_executor.monitor.collect_phase_metrics(
+            phase_index=phase_index,
+            phase_name=phase_name,
+            agent_count=len(phase_agents),
+        )
+
+        # Add agent details
+        phase_metrics.update(
+            {
+                "agent_names": agent_names,
+                "start_time": time.time(),
+            }
+        )
+
+        self._agent_executor._phase_metrics.append(phase_metrics)
+
+        # Start continuous monitoring for this phase
+        await self._agent_executor.monitor.start_execution_monitoring()
+
+        self._emit_performance_event(
+            "phase_monitoring_started",
+            {
+                "phase_index": phase_index,
+                "agent_count": len(phase_agents),
+                "agent_names": agent_names,
+            },
+        )
+
+    async def _stop_phase_monitoring(
+        self, phase_index: int, phase_agents: list[dict[str, Any]], duration: float
+    ) -> None:
+        """Stop monitoring for a specific phase and collect final metrics."""
+
+        # Find the phase metrics entry
+        phase_metrics = None
+        for metrics in self._agent_executor._phase_metrics:
+            if metrics.get("phase_index") == phase_index:
+                phase_metrics = metrics
+                break
+
+        if phase_metrics:
+            # Stop monitoring and get aggregated metrics for this phase
+            try:
+                phase_execution_metrics = await (
+                    self._agent_executor.monitor.stop_execution_monitoring()
+                )
+
+                # Update with completion data and monitoring results
+                phase_metrics.update(
+                    {
+                        "duration_seconds": duration,
+                        "end_time": time.time(),
+                        "agents_completed": len(phase_agents),
+                        # Add aggregated monitoring data
+                        "peak_cpu": phase_execution_metrics.get("peak_cpu", 0.0),
+                        "avg_cpu": phase_execution_metrics.get("avg_cpu", 0.0),
+                        "peak_memory": phase_execution_metrics.get("peak_memory", 0.0),
+                        "avg_memory": phase_execution_metrics.get("avg_memory", 0.0),
+                        "sample_count": phase_execution_metrics.get("sample_count", 0),
+                    }
+                )
+            except Exception:
+                # Fallback to current snapshot if continuous monitoring fails
+                try:
+                    current_metrics = await (
+                        self._agent_executor.monitor.get_current_metrics()
+                    )
+                    phase_metrics.update(
+                        {
+                            "duration_seconds": duration,
+                            "end_time": time.time(),
+                            "agents_completed": len(phase_agents),
+                            "final_cpu_percent": current_metrics.get(
+                                "cpu_percent", 0.0
+                            ),
+                            "final_memory_percent": current_metrics.get(
+                                "memory_percent", 0.0
+                            ),
+                        }
+                    )
+                except Exception:
+                    # Final fallback - just timing data
+                    phase_metrics.update(
+                        {
+                            "duration_seconds": duration,
+                            "end_time": time.time(),
+                            "agents_completed": len(phase_agents),
+                        }
+                    )
+
+        self._emit_performance_event(
+            "phase_monitoring_stopped",
+            {
+                "phase_index": phase_index,
+                "duration_seconds": duration,
+                "agent_count": len(phase_agents),
+            },
+        )

@@ -1,0 +1,20 @@
+name: adaptive-test-small
+description: Small test ensemble to demonstrate adaptive resource management visibility
+
+agents:
+  - name: analyst1
+    model_profile: efficient
+    system_prompt: "You are analyst 1. Provide a brief analysis."
+
+  - name: analyst2
+    model_profile: efficient
+    system_prompt: "You are analyst 2. Provide a brief analysis."
+
+  - name: analyst3
+    model_profile: efficient
+    system_prompt: "You are analyst 3. Provide a brief analysis."
+
+  - name: coordinator
+    model_profile: efficient
+    depends_on: [analyst1, analyst2, analyst3]
+    system_prompt: "You are a coordinator. Summarize the other analysts' work."

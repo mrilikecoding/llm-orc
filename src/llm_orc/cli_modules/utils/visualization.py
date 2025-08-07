@@ -271,6 +271,11 @@ def _format_performance_metrics(metadata: dict[str, Any]) -> list[str]:
     markdown_content.append(f"- **Total cost:** ${total_cost:.4f}\n")
     markdown_content.append(f"- **Agents:** {totals.get('agents_count', 0)}\n")
 
+    # Show adaptive resource management statistics if available
+    adaptive_stats = metadata.get("adaptive_resource_management")
+    if adaptive_stats:
+        markdown_content.extend(_format_adaptive_resource_metrics(adaptive_stats))
+
     # Show per-agent usage
     agents_usage = usage.get("agents", {})
     if agents_usage:
@@ -302,14 +307,25 @@ def display_results(
     console = Console(soft_wrap=True, width=None, force_terminal=True)
 
     if detailed:
-        # Build markdown content for detailed results using helper methods
+        # Build markdown content using comprehensive JSON-first architecture
+        from .json_renderer import (
+            render_comprehensive_markdown,
+            transform_to_execution_json,
+        )
+
+        # Get usage data from metadata (extract from performance metrics helper)
+        usage_data = metadata.get("usage", {})
+
+        # Transform to structured JSON (single source of truth)
+        execution_json = transform_to_execution_json(results, usage_data, metadata)
+
+        # Render EVERYTHING from structured JSON (single source of truth)
         markdown_content = ["# Results\n"]
 
-        # Process agent results using helper method
-        markdown_content.extend(_process_agent_results(results, metadata))
-
-        # Format performance metrics using helper method
-        markdown_content.extend(_format_performance_metrics(metadata))
+        # Use comprehensive JSON-first renderer for ALL content including agents
+        comprehensive_markdown = render_comprehensive_markdown(execution_json)
+        if comprehensive_markdown.strip():
+            markdown_content.append(comprehensive_markdown)
 
         # Render the markdown - Rich will handle soft wrapping
         markdown_text = "".join(markdown_content)
@@ -346,33 +362,30 @@ def _display_plain_text_dependency_graph(
 def _display_detailed_plain_text(
     results: dict[str, Any], metadata: dict[str, Any]
 ) -> None:
-    """Display detailed plain text results."""
+    """Display detailed plain text results using JSON-first architecture."""
     click.echo("Results")
     click.echo("=======")
     click.echo()
 
-    # Show agent results
-    for agent_name, result in results.items():
-        if result.get("status") == "success":
-            click.echo(f"{agent_name}:")
-            click.echo("-" * len(agent_name) + ":")
-            click.echo(result["response"])
-            click.echo()
-        else:
-            click.echo(f"❌ {agent_name}:")
-            click.echo("-" * (len(agent_name) + 3) + ":")
-            error_msg = result.get("error", "Unknown error")
-            click.echo(f"Error: {error_msg}")
-            click.echo()
+    # Use JSON-first transformation for ALL content (single source of truth)
+    from .json_renderer import render_comprehensive_text, transform_to_execution_json
 
-    # Show performance metrics
-    if "usage" in metadata:
-        usage = metadata["usage"]
-        totals = usage.get("totals", {})
+    usage = metadata.get("usage", {})
+    execution_json = transform_to_execution_json(results, usage, metadata)
 
-        click.echo("Performance Metrics")
+    # Render EVERYTHING from structured JSON
+    comprehensive_text = render_comprehensive_text(execution_json)
+    if comprehensive_text.strip():
+        click.echo(comprehensive_text)
+
+    # Show basic performance summary
+    totals = usage.get("totals", {})
+    if totals:
+        click.echo()
+        click.echo("Performance Summary")
         click.echo("==================")
-        click.echo(f"Duration: {metadata['duration']}")
+        if "duration" in metadata:
+            click.echo(f"Duration: {metadata['duration']}")
         click.echo(f"Total tokens: {totals.get('total_tokens', 0):,}")
         click.echo(f"Total cost: ${totals.get('total_cost_usd', 0.0):.4f}")
         click.echo(f"Agents: {totals.get('agents_count', 0)}")
@@ -552,6 +565,261 @@ def _build_dependency_levels(
 
         dependency_levels.append({"level": level, "agents": level_agents})
     return dependency_levels
+
+
+def _format_adaptive_resource_metrics(adaptive_stats: dict[str, Any]) -> list[str]:
+    """Format adaptive resource management metrics into markdown content.
+
+    Args:
+        adaptive_stats: Adaptive resource management statistics
+
+    Returns:
+        List of markdown content strings for adaptive resource metrics
+    """
+    markdown_content: list[str] = []
+    management_type = adaptive_stats.get("management_type", "unknown")
+    adaptive_used = adaptive_stats.get("adaptive_used", False)
+    concurrency_decisions = adaptive_stats.get("concurrency_decisions", [])
+
+    markdown_content.append("\n### Resource Management\n")
+
+    if adaptive_used and concurrency_decisions:
+        markdown_content.extend(
+            _format_adaptive_with_decisions(management_type, concurrency_decisions)
+        )
+    elif concurrency_decisions:
+        markdown_content.extend(
+            _format_static_with_decisions(management_type, concurrency_decisions)
+        )
+    elif adaptive_used:
+        markdown_content.extend(
+            _format_adaptive_no_decisions(management_type, adaptive_stats)
+        )
+    else:
+        # Extract concurrency limit from decisions
+        concurrency_limit = 1  # Default fallback
+        if concurrency_decisions:
+            concurrency_limit = concurrency_decisions[0].get("configured_limit", 1)
+        markdown_content.extend(
+            _format_static_no_decisions(management_type, concurrency_limit)
+        )
+
+    # Add per-phase metrics if available
+    phase_metrics = adaptive_stats.get("phase_metrics", [])
+    if phase_metrics:
+        markdown_content.extend(_format_per_phase_metrics(phase_metrics))
+
+    return markdown_content
+
+
+def _format_per_phase_metrics(phase_metrics: list[dict[str, Any]]) -> list[str]:
+    """Format per-phase monitoring metrics."""
+    content = ["\n#### Per-Phase Performance\n"]
+
+    for phase_data in phase_metrics:
+        phase_index = phase_data.get("phase_index", "Unknown")
+        agent_count = phase_data.get("agent_count", 0)
+        agent_names = phase_data.get("agent_names", [])
+        sample_count = phase_data.get("sample_count", 0)
+
+        # Get resource usage metrics
+        peak_cpu = phase_data.get("peak_cpu", 0.0)
+        avg_cpu = phase_data.get("avg_cpu", 0.0)
+        peak_memory = phase_data.get("peak_memory", 0.0)
+        avg_memory = phase_data.get("avg_memory", 0.0)
+
+        content.append(f"**Phase {phase_index}** ({agent_count} agents)\n")
+        content.append(f"- **Agents:** {', '.join(agent_names)}\n")
+
+        # Show duration if available
+        duration = phase_data.get("duration_seconds")
+        if duration is not None:
+            content.append(f"- **Duration:** {duration:.2f} seconds\n")
+
+        if sample_count > 0:
+            content.append(
+                f"- **Resource usage:** CPU {avg_cpu:.1f}% (peak {peak_cpu:.1f}%), "
+                f"Memory {avg_memory:.1f}% (peak {peak_memory:.1f}%)\n"
+            )
+            content.append(f"- **Monitoring:** {sample_count} samples collected\n")
+        else:
+            # Show final resource snapshot if available
+            final_cpu = phase_data.get("final_cpu_percent")
+            final_memory = phase_data.get("final_memory_percent")
+            if final_cpu is not None and final_memory is not None:
+                content.append(
+                    f"- **Resource usage:** CPU {final_cpu:.1f}%, "
+                    f"Memory {final_memory:.1f}%\n"
+                )
+            else:
+                content.append("- **Resource usage:** No monitoring data available\n")
+
+        # Show raw samples if available (first few for debugging)
+        raw_cpu = phase_data.get("raw_cpu_samples", [])
+        if raw_cpu:
+            sample_preview = raw_cpu[:3]  # First 3 samples
+            content.append(f"- **Sample data:** CPU: {sample_preview}%...\n")
+
+        content.append("\n")
+
+    return content
+
+
+def _format_adaptive_with_decisions(
+    management_type: str, concurrency_decisions: list[dict[str, Any]]
+) -> list[str]:
+    """Format adaptive resource metrics with concurrency decisions."""
+    content = [
+        f"- **Type:** {management_type} (adaptive limits based on system resources)\n"
+    ]
+
+    final_decision = concurrency_decisions[-1]
+
+    if "adaptive_limit" in final_decision:
+        content.extend(_format_adaptive_decision_details(final_decision))
+        if len(concurrency_decisions) > 1:
+            count = len(concurrency_decisions)
+            content.append(
+                f"- **Concurrency adjustments:** {count} "
+                "decisions made during execution\n"
+            )
+    else:
+        content.append(
+            "- **Adaptive resource management enabled** "
+            "but no detailed metrics available\n"
+        )
+
+    return content
+
+
+def _format_adaptive_decision_details(final_decision: dict[str, Any]) -> list[str]:
+    """Format detailed adaptive decision metrics."""
+    adaptive_limit = final_decision.get("adaptive_limit", "unknown")
+    cpu_percent = final_decision.get("cpu_percent", 0.0)
+    memory_percent = final_decision.get("memory_percent", 0.0)
+    circuit_state = final_decision.get("circuit_breaker_state", "unknown")
+    base_limit = final_decision.get("base_limit", "unknown")
+
+    return [
+        f"- **⚡ Adaptive limit calculated:** {adaptive_limit} "
+        f"(CPU: {cpu_percent:.1f}%, Memory: {memory_percent:.1f}%, "
+        f"Circuit: {circuit_state})\n",
+        f"- **Base limit:** {base_limit}\n",
+    ]
+
+
+def _format_static_with_decisions(
+    management_type: str, concurrency_decisions: list[dict[str, Any]]
+) -> list[str]:
+    """Format static resource metrics with concurrency decisions."""
+    content = [f"- **Type:** {management_type} (fixed concurrency limits)\n"]
+    final_decision = concurrency_decisions[-1]
+
+    if "static_limit" in final_decision:
+        static_limit = final_decision.get("static_limit", "unknown")
+        agent_count = final_decision.get("agent_count", "unknown")
+        content.append(
+            f"- **📊 Static limit applied:** {static_limit} "
+            f"concurrent agents (for {agent_count} total agents)\n"
+        )
+
+    return content
+
+
+def _format_adaptive_no_decisions(
+    management_type: str, adaptive_stats: dict[str, Any]
+) -> list[str]:
+    """Format adaptive metrics when no concurrency decisions were needed."""
+    content = [
+        f"- **Type:** {management_type} (adaptive limits based on system resources)\n",
+        "- **User-configured limits used:** No adaptive calculations needed\n",
+    ]
+
+    execution_metrics = adaptive_stats.get("execution_metrics", {})
+    if execution_metrics:
+        content.extend(_format_execution_metrics(execution_metrics, adaptive_stats))
+    else:
+        content.extend(_format_execution_summary({}))
+
+    return content
+
+
+def _format_execution_metrics(
+    execution_metrics: dict[str, Any], adaptive_stats: dict[str, Any]
+) -> list[str]:
+    """Format detailed execution metrics for research analysis."""
+    content = []
+    peak_cpu = execution_metrics.get("peak_cpu", 0.0)
+    avg_cpu = execution_metrics.get("avg_cpu", 0.0)
+    peak_memory = execution_metrics.get("peak_memory", 0.0)
+    avg_memory = execution_metrics.get("avg_memory", 0.0)
+    sample_count = execution_metrics.get("sample_count", 0)
+
+    # Get circuit state from resource metrics if available
+    circuit_state = "unknown"
+    resource_metrics = adaptive_stats.get("resource_metrics", [])
+    if resource_metrics:
+        circuit_state = resource_metrics[-1].get("circuit_breaker_state", "unknown")
+
+    content.extend(
+        [
+            f"- **Peak resource usage during execution:** "
+            f"CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%\n",
+            f"- **Average resource usage during execution:** "
+            f"CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%\n",
+            f"- **Monitoring details:** {sample_count} samples collected, "
+            f"Circuit: {circuit_state}\n",
+        ]
+    )
+
+    # Show raw samples for research purposes
+    raw_cpu_samples = execution_metrics.get("raw_cpu_samples")
+    raw_memory_samples = execution_metrics.get("raw_memory_samples")
+    if raw_cpu_samples and raw_memory_samples:
+        cpu_str = ", ".join(f"{s:.1f}" for s in raw_cpu_samples)
+        memory_str = ", ".join(
+            f"{s:.1f}" for s in raw_memory_samples[: len(raw_cpu_samples)]
+        )
+        content.append(
+            f"- **Sample data (first 10):** CPU: [{cpu_str}]%, "
+            f"Memory: [{memory_str}]%\n"
+        )
+
+    if sample_count == 0:
+        content.append(
+            "- **Note:** No monitoring samples collected - "
+            "execution may have been too fast\n"
+        )
+
+    return content
+
+
+def _format_execution_summary(execution_metrics: dict[str, Any]) -> list[str]:
+    """Format execution metrics summary for markdown display."""
+    if not execution_metrics:
+        return ["- **No monitoring data collected**\n"]
+
+    peak_cpu = execution_metrics.get("peak_cpu", 0.0)
+    avg_cpu = execution_metrics.get("avg_cpu", 0.0)
+    peak_memory = execution_metrics.get("peak_memory", 0.0)
+    avg_memory = execution_metrics.get("avg_memory", 0.0)
+    sample_count = execution_metrics.get("sample_count", 0)
+
+    return [
+        f"- **Peak usage:** CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%\n",
+        f"- **Average usage:** CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%\n",
+        f"- **Monitoring:** {sample_count} samples collected\n",
+    ]
+
+
+def _format_static_no_decisions(
+    management_type: str, concurrency_limit: int
+) -> list[str]:
+    """Format static management metrics when no decisions were recorded."""
+    return [
+        f"- **Type:** {management_type} (fixed concurrency limits)\n",
+        f"- **Max concurrency limit used: {concurrency_limit}**\n",
+    ]
 
 
 def find_final_agent(results: dict[str, Any]) -> str | None:
@@ -1082,3 +1350,293 @@ async def run_standard_execution(
     finally:
         # Restore original event emission
         executor._emit_performance_event = original_emit
+
+
+def _display_adaptive_with_decisions(
+    management_type: str, concurrency_decisions: list[dict[str, Any]]
+) -> None:
+    """Display adaptive resource management with concurrency decisions."""
+    click.echo(f"Type: {management_type} (adaptive limits based on system resources)")
+
+    final_decision = concurrency_decisions[-1]
+
+    if "adaptive_limit" in final_decision:
+        _display_adaptive_decision_details(final_decision, concurrency_decisions)
+    else:
+        click.echo(
+            "Adaptive resource management enabled but no detailed metrics available"
+        )
+
+
+def _display_adaptive_decision_details(
+    final_decision: dict[str, Any], concurrency_decisions: list[dict[str, Any]]
+) -> None:
+    """Display detailed adaptive decision metrics."""
+    adaptive_limit = final_decision.get("adaptive_limit", "unknown")
+    cpu_percent = final_decision.get("cpu_percent", 0.0)
+    memory_percent = final_decision.get("memory_percent", 0.0)
+    circuit_state = final_decision.get("circuit_breaker_state", "unknown")
+    base_limit = final_decision.get("base_limit", "unknown")
+
+    click.echo(
+        f"Adaptive limit calculated: {adaptive_limit} "
+        f"(CPU: {cpu_percent:.1f}%, Memory: {memory_percent:.1f}%, "
+        f"Circuit: {circuit_state})"
+    )
+    click.echo(f"Base limit: {base_limit}")
+
+    if len(concurrency_decisions) > 1:
+        decisions_count = len(concurrency_decisions)
+        click.echo(
+            f"Concurrency adjustments: {decisions_count} decisions made "
+            f"during execution"
+        )
+
+
+def _display_static_decisions(
+    management_type: str, concurrency_decisions: list[dict[str, Any]]
+) -> None:
+    """Display resource management with decision data."""
+    if management_type == "user_configured":
+        click.echo(f"Type: {management_type} (user-controlled concurrency)")
+    else:
+        click.echo(f"Type: {management_type} (fixed concurrency limits)")
+
+    final_decision = concurrency_decisions[-1]
+
+    # Handle our new user_configured format
+    if "configured_limit" in final_decision:
+        limit = final_decision.get("configured_limit", "unknown")
+        agent_count = final_decision.get("agent_count", "unknown")
+        click.echo(
+            f"Configured limit: {limit} concurrent agents "
+            f"(for {agent_count} total agents)"
+        )
+    elif "static_limit" in final_decision:
+        static_limit = final_decision.get("static_limit", "unknown")
+        agent_count = final_decision.get("agent_count", "unknown")
+        click.echo(
+            f"Static limit applied: {static_limit} concurrent agents "
+            f"(for {agent_count} total agents)"
+        )
+
+
+def _display_execution_metrics(execution_metrics: dict[str, Any]) -> None:
+    """Display detailed execution metrics for research purposes."""
+    peak_cpu = execution_metrics.get("peak_cpu", 0.0)
+    avg_cpu = execution_metrics.get("avg_cpu", 0.0)
+    peak_memory = execution_metrics.get("peak_memory", 0.0)
+    avg_memory = execution_metrics.get("avg_memory", 0.0)
+    sample_count = execution_metrics.get("sample_count", 0)
+
+    click.echo(
+        f"Peak resource usage during execution: "
+        f"CPU {peak_cpu:.1f}%, Memory: {peak_memory:.1f}%"
+    )
+    click.echo(
+        f"Average resource usage during execution: "
+        f"CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%"
+    )
+    click.echo(f"Monitoring details: {sample_count} samples collected")
+
+    _display_raw_samples(execution_metrics)
+
+    if sample_count == 0:
+        click.echo(
+            "Note: No monitoring samples collected - execution may have been too fast"
+        )
+
+
+def _display_raw_samples(execution_metrics: dict[str, Any]) -> None:
+    """Display raw CPU and memory samples for research analysis."""
+    raw_cpu_samples = execution_metrics.get("raw_cpu_samples")
+    raw_memory_samples = execution_metrics.get("raw_memory_samples")
+
+    if raw_cpu_samples and raw_memory_samples:
+        cpu_sample_str = ", ".join(f"{s:.1f}" for s in raw_cpu_samples)
+        memory_sample_str = ", ".join(
+            f"{s:.1f}" for s in raw_memory_samples[: len(raw_cpu_samples)]
+        )
+        click.echo(
+            f"Sample data (first 10): CPU: [{cpu_sample_str}]%, "
+            f"Memory: [{memory_sample_str}]%"
+        )
+
+
+def _display_simplified_metrics(execution_metrics: dict[str, Any]) -> None:
+    """Display simplified execution metrics for user feedback."""
+    if not execution_metrics:
+        click.echo("No monitoring data collected")
+        return
+
+    peak_cpu = execution_metrics.get("peak_cpu", 0.0)
+    avg_cpu = execution_metrics.get("avg_cpu", 0.0)
+    peak_memory = execution_metrics.get("peak_memory", 0.0)
+    avg_memory = execution_metrics.get("avg_memory", 0.0)
+    sample_count = execution_metrics.get("sample_count", 0)
+
+    click.echo(f"Peak usage: CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%")
+    click.echo(f"Average usage: CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%")
+    click.echo(f"Monitoring: {sample_count} samples collected")
+
+
+def _display_phase_resource_usage(phase_data: dict[str, Any]) -> None:
+    """Display resource usage for a single phase."""
+    peak_cpu = phase_data.get("peak_cpu")
+    avg_cpu = phase_data.get("avg_cpu")
+    peak_memory = phase_data.get("peak_memory")
+    avg_memory = phase_data.get("avg_memory")
+    sample_count = phase_data.get("sample_count", 0)
+
+    if peak_cpu is not None and avg_cpu is not None and sample_count > 0:
+        # Show detailed peak/average metrics
+        click.echo(f"  Peak usage: CPU {peak_cpu:.1f}%, Memory {peak_memory:.1f}%")
+        click.echo(f"  Avg usage: CPU {avg_cpu:.1f}%, Memory {avg_memory:.1f}%")
+        click.echo(f"  Samples: {sample_count} collected")
+    else:
+        # Fallback to final snapshot if available
+        final_cpu = phase_data.get("final_cpu_percent")
+        final_memory = phase_data.get("final_memory_percent")
+        if final_cpu is not None and final_memory is not None:
+            click.echo(f"  Resources: CPU {final_cpu:.1f}%, Memory {final_memory:.1f}%")
+        else:
+            click.echo("  Resources: No monitoring data available")
+
+
+def _display_phase_timing(
+    phase_data: dict[str, Any], phase_index: int, phase_metrics: list[dict[str, Any]]
+) -> None:
+    """Display timing information for a single phase."""
+    start_time = phase_data.get("start_time")
+    end_time = phase_data.get("end_time")
+    if start_time and end_time:
+        # Convert to relative time from start
+        relative_start = 0.0 if phase_index == 0 else start_time
+        first_start = phase_metrics[0].get("start_time", start_time)
+        relative_end = end_time - first_start
+        click.echo(f"  Timing: {relative_start:.2f}s - {relative_end:.2f}s")
+
+
+def _display_phase_statistics(phase_metrics: list[dict[str, Any]]) -> None:
+    """Display per-phase execution statistics."""
+    click.echo("Per-Phase Statistics")
+    click.echo("===================")
+
+    for phase_data in phase_metrics:
+        phase_index = phase_data.get("phase_index", "?")
+        agent_names = phase_data.get("agent_names", [])
+        duration = phase_data.get("duration_seconds", 0.0)
+        agent_count = phase_data.get("agent_count", len(agent_names))
+
+        click.echo(f"Phase {phase_index + 1}: {agent_count} agents ({duration:.2f}s)")
+
+        if agent_names:
+            agent_list = ", ".join(agent_names)
+            click.echo(f"  Agents: {agent_list}")
+
+        # Show resource usage
+        _display_phase_resource_usage(phase_data)
+
+        # Show timing details if available
+        _display_phase_timing(phase_data, phase_index, phase_metrics)
+
+        click.echo()  # Empty line between phases
+
+
+def _display_adaptive_resource_metrics_text(adaptive_stats: dict[str, Any]) -> None:
+    """Display simplified resource management metrics."""
+    management_type = adaptive_stats.get("management_type", "user_configured")
+    concurrency_decisions = adaptive_stats.get("concurrency_decisions", [])
+    execution_metrics = adaptive_stats.get("execution_metrics", {})
+
+    click.echo()
+    click.echo("Resource Management")
+    click.echo("==================")
+
+    # Show concurrency configuration
+    if concurrency_decisions:
+        _display_static_decisions(management_type, concurrency_decisions)
+    else:
+        click.echo(f"Type: {management_type} (user-controlled concurrency)")
+
+    # Always show execution metrics when available
+    if execution_metrics:
+        click.echo()
+        _display_simplified_metrics(execution_metrics)
+    else:
+        click.echo("No monitoring data collected")
+
+    # Show per-phase statistics if available
+    phase_metrics = adaptive_stats.get("phase_metrics", [])
+    if phase_metrics:
+        click.echo()
+        _display_phase_statistics(phase_metrics)
+
+    # Add user guidance for performance optimization
+    _display_performance_guidance(adaptive_stats)
+
+
+def _display_performance_guidance(adaptive_stats: dict[str, Any]) -> None:
+    """Display helpful guidance for optimizing performance settings."""
+    execution_metrics = adaptive_stats.get("execution_metrics", {})
+    concurrency_decisions = adaptive_stats.get("concurrency_decisions", [])
+
+    if not execution_metrics or not concurrency_decisions:
+        return
+
+    # Get the current configuration
+    final_decision = concurrency_decisions[-1]
+    current_limit = final_decision.get(
+        "configured_limit", final_decision.get("static_limit")
+    )
+    agent_count = final_decision.get("agent_count", 0)
+
+    if not current_limit:
+        return
+
+    # Get performance metrics
+    peak_cpu = execution_metrics.get("peak_cpu", 0)
+    peak_memory = execution_metrics.get("peak_memory", 0)
+    sample_count = execution_metrics.get("sample_count", 0)
+
+    click.echo()
+    click.echo("💡 Performance Optimization Tips:")
+
+    # High resource usage guidance
+    if peak_cpu > 80 or peak_memory > 85:
+        click.echo(
+            f"   • High resource usage detected "
+            f"(CPU: {peak_cpu:.1f}%, Memory: {peak_memory:.1f}%)"
+        )
+        if current_limit > 1:
+            click.echo(
+                f"   • Consider reducing max_concurrent from {current_limit} "
+                f"to {current_limit - 1}"
+            )
+        click.echo("   • Monitor system stability during execution")
+
+    # Low resource usage guidance
+    elif peak_cpu < 20 and peak_memory < 50 and current_limit < agent_count:
+        click.echo(
+            f"   • System has capacity "
+            f"(CPU: {peak_cpu:.1f}%, Memory: {peak_memory:.1f}%)"
+        )
+        suggested_limit = min(agent_count, current_limit + 2)
+        click.echo(
+            f"   • Consider increasing max_concurrent from {current_limit} "
+            f"to {suggested_limit}"
+        )
+        click.echo("   • This could reduce execution time")
+
+    # Sample count guidance
+    if sample_count < 5:
+        click.echo(
+            f"   • Low monitoring samples ({sample_count}) - execution was very fast"
+        )
+        click.echo(
+            "   • Consider testing with larger ensembles for better performance data"
+        )
+
+    # Configuration guidance
+    click.echo("   • Adjust max_concurrent in your performance configuration")
+    click.echo("   • Monitor execution time vs resource usage to find optimal settings")
