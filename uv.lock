@@ -867,7 +867,7 @@ wheels = [
 
 [[package]]
 name = "llm-orchestra"
-version = "0.10.0"
+version = "0.10.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -876,6 +876,7 @@ dependencies = [
     { name = "cryptography" },
     { name = "google-genai" },
     { name = "ollama" },
+    { name = "psutil" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "requests" },
@@ -923,6 +924,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.5.0" },
     { name = "ollama" },
     { name = "pip-audit", marker = "extra == 'dev'", specifier = ">=2.6.0" },
+    { name = "psutil", specifier = ">=5.9.0" },
     { name = "pydantic" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
