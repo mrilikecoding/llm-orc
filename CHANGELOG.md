@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.1] - 2025-08-07
+
+### Fixed
+- **Critical Dependency**: Added missing `psutil>=5.9.0` dependency required for adaptive resource management
+  - Resolves `ModuleNotFoundError: No module named 'psutil'` when using resource monitoring features
+  - Ensures Homebrew formula includes all required dependencies for v0.10.0 features
+
 ## [0.10.0] - 2025-08-07
 
 ### Added
