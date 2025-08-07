@@ -1,5 +1,7 @@
 """Tests for JSON-first rendering architecture."""
 
+from typing import Any
+
 from llm_orc.cli_modules.utils.json_renderer import (
     render_json_as_markdown,
     render_json_as_text,
@@ -307,7 +309,7 @@ class TestRichMarkdownRendering:
 
 class TestModelDisplayLogic:
     """Test model display logic in agent results transformation."""
-    
+
     def test_model_display_with_both_profile_and_model(self) -> None:
         """Test model display when both model_profile and model are present."""
         raw_results = {
@@ -316,20 +318,20 @@ class TestModelDisplayLogic:
         raw_usage = {
             "agents": {
                 "agent1": {
-                    "model": "claude-3-sonnet-20240229", 
+                    "model": "claude-3-sonnet-20240229",
                     "model_profile": "efficient",
                     "total_tokens": 150
                 }
             },
             "totals": {"total_tokens": 150, "agents_count": 1}
         }
-        raw_metadata = {}
+        raw_metadata: dict[str, Any] = {}
 
         json_result = transform_to_execution_json(raw_results, raw_usage, raw_metadata)
-        
+
         agent = json_result["agent_results"][0]
         assert agent["model_display"] == " (efficient → claude-3-sonnet-20240229)"
-    
+
     def test_model_display_with_model_only(self) -> None:
         """Test model display when only model is present (no profile)."""
         raw_results = {
@@ -338,19 +340,19 @@ class TestModelDisplayLogic:
         raw_usage = {
             "agents": {
                 "agent1": {
-                    "model": "claude-3-sonnet-20240229", 
+                    "model": "claude-3-sonnet-20240229",
                     "total_tokens": 150
                 }
             },
             "totals": {"total_tokens": 150, "agents_count": 1}
         }
-        raw_metadata = {}
+        raw_metadata: dict[str, Any] = {}
 
         json_result = transform_to_execution_json(raw_results, raw_usage, raw_metadata)
-        
+
         agent = json_result["agent_results"][0]
         assert agent["model_display"] == " (claude-3-sonnet-20240229)"
-    
+
     def test_model_display_with_neither(self) -> None:
         """Test model display when neither model nor profile are present."""
         raw_results = {
@@ -362,40 +364,40 @@ class TestModelDisplayLogic:
             },
             "totals": {"total_tokens": 150, "agents_count": 1}
         }
-        raw_metadata = {}
+        raw_metadata: dict[str, Any] = {}
 
         json_result = transform_to_execution_json(raw_results, raw_usage, raw_metadata)
-        
+
         agent = json_result["agent_results"][0]
         assert agent["model_display"] == ""
 
 
 class TestTextRendering:
     """Test text rendering functions for uncovered lines."""
-    
+
     def test_render_agent_results_success_with_content(self) -> None:
         """Test text rendering of successful agent with content."""
         from llm_orc.cli_modules.utils.json_renderer import _render_text_agent_results
-        
+
         agent_results = [
             {
                 "name": "agent1",
-                "status": "success", 
+                "status": "success",
                 "content": "This is some result content",
                 "model_display": " (claude-3)",
                 "error": ""
             }
         ]
-        
+
         lines = _render_text_agent_results(agent_results)
-        
+
         assert "agent1 (claude-3):" in lines
         assert "This is some result content" in lines
-    
+
     def test_render_agent_results_success_no_content(self) -> None:
-        """Test text rendering of successful agent with no content.""" 
+        """Test text rendering of successful agent with no content."""
         from llm_orc.cli_modules.utils.json_renderer import _render_text_agent_results
-        
+
         agent_results = [
             {
                 "name": "agent1",
@@ -405,16 +407,16 @@ class TestTextRendering:
                 "error": ""
             }
         ]
-        
+
         lines = _render_text_agent_results(agent_results)
-        
+
         assert "agent1:" in lines
         assert "*No content provided*" in lines
-    
+
     def test_render_agent_results_failed_with_error(self) -> None:
         """Test text rendering of failed agent with error message."""
         from llm_orc.cli_modules.utils.json_renderer import _render_text_agent_results
-        
+
         agent_results = [
             {
                 "name": "agent1",
@@ -424,63 +426,69 @@ class TestTextRendering:
                 "error": "Connection timeout"
             }
         ]
-        
+
         lines = _render_text_agent_results(agent_results)
-        
+
         assert "❌ agent1 (gpt-4):" in lines
         assert "Error: Connection timeout" in lines
-    
+
     def test_render_agent_results_failed_no_error(self) -> None:
         """Test text rendering of failed agent without error message."""
         from llm_orc.cli_modules.utils.json_renderer import _render_text_agent_results
-        
+
         agent_results = [
             {
-                "name": "agent1", 
+                "name": "agent1",
                 "status": "failed",
                 "content": "",
                 "model_display": "",
                 "error": ""
             }
         ]
-        
+
         lines = _render_text_agent_results(agent_results)
-        
+
         assert "❌ agent1:" in lines
         assert "Error: Unknown error" in lines
 
 
 class TestResourceManagementRendering:
     """Test resource management text rendering functions."""
-    
+
     def test_render_resource_management_empty(self) -> None:
         """Test resource management rendering with empty data."""
-        from llm_orc.cli_modules.utils.json_renderer import _render_text_resource_management
-        
+        from llm_orc.cli_modules.utils.json_renderer import (
+            _render_text_resource_management,
+        )
+
         lines = _render_text_resource_management({})
         assert lines == []
-    
+
     def test_render_resource_management_basic(self) -> None:
         """Test resource management rendering with basic data."""
-        from llm_orc.cli_modules.utils.json_renderer import _render_text_resource_management
-        
+        from llm_orc.cli_modules.utils.json_renderer import (
+            _render_text_resource_management,
+        )
+
         rm_data = {
             "type": "user_configured",
             "concurrency_limit": 5
         }
-        
+
         lines = _render_text_resource_management(rm_data)
-        
+
         assert "Resource Management" in lines
         assert "Type: user_configured (fixed concurrency limits)" in lines
         assert "Max concurrency limit used: 5" in lines
-    
+
     def test_render_resource_management_with_metrics_no_phase_data(self) -> None:
         """Test resource management rendering with execution metrics (no phase data)."""
-        from llm_orc.cli_modules.utils.json_renderer import _render_text_resource_management
-        
+        from llm_orc.cli_modules.utils.json_renderer import (
+            _render_text_resource_management,
+        )
+
         rm_data = {
-            "type": "adaptive", 
+            "type": "adaptive",
             "concurrency_limit": 3,
             "execution_metrics": {
                 "peak_cpu": 45.2,
@@ -491,31 +499,33 @@ class TestResourceManagementRendering:
                 "has_phase_data": False
             }
         }
-        
+
         lines = _render_text_resource_management(rm_data)
-        
+
         assert "Peak usage: CPU 45.2%, Memory 78.5%" in lines
         assert "Average usage: CPU 32.1%, Memory 65.3%" in lines
         assert "Monitoring: 12 samples collected" in lines
-    
+
     def test_render_resource_management_with_phase_data(self) -> None:
         """Test resource management rendering with phase-computed metrics."""
-        from llm_orc.cli_modules.utils.json_renderer import _render_text_resource_management
-        
+        from llm_orc.cli_modules.utils.json_renderer import (
+            _render_text_resource_management,
+        )
+
         rm_data = {
             "type": "adaptive",
             "concurrency_limit": 3,
             "execution_metrics": {
                 "peak_cpu": 45.2,
-                "avg_cpu": 32.1, 
+                "avg_cpu": 32.1,
                 "peak_memory": 78.5,
                 "avg_memory": 65.3,
                 "has_phase_data": True
             }
         }
-        
+
         lines = _render_text_resource_management(rm_data)
-        
+
         assert "Peak usage: CPU 45.2%, Memory 78.5%" in lines
         assert "Average usage: CPU 32.1%, Memory 65.3%" in lines
         assert "Computed from per-phase performance data" in lines
@@ -525,18 +535,18 @@ class TestResourceManagementRendering:
 
 class TestPhaseRendering:
     """Test phase rendering functions."""
-    
+
     def test_render_phases_empty(self) -> None:
         """Test phase rendering with empty list."""
         from llm_orc.cli_modules.utils.json_renderer import _render_text_phases
-        
+
         lines = _render_text_phases([])
         assert lines == []
-    
+
     def test_render_phases_with_peak_avg_metrics(self) -> None:
         """Test phase rendering with peak/avg metrics and sample count."""
         from llm_orc.cli_modules.utils.json_renderer import _render_text_phases
-        
+
         phases = [
             {
                 "phase_number": 1,
@@ -549,21 +559,24 @@ class TestPhaseRendering:
                 "sample_count": 8
             }
         ]
-        
+
         lines = _render_text_phases(phases)
-        
+
         lines_text = " ".join(lines)
         assert "Per-Phase Performance" in lines_text
         assert "Phase 1 (2 agents)" in lines_text
         assert "Agents: agent1, agent2" in lines_text
         assert "Duration: 1.5 seconds" in lines_text
-        assert "Resource usage: CPU 32.0% (peak 45.0%), Memory 65.0% (peak 75.0%)" in lines_text
+        assert (
+            "Resource usage: CPU 32.0% (peak 45.0%), Memory 65.0% (peak 75.0%)"
+            in lines_text
+        )
         assert "Monitoring: 8 samples collected" in lines_text
-    
+
     def test_render_phases_with_final_metrics(self) -> None:
         """Test phase rendering with final metrics (no peak/avg)."""
         from llm_orc.cli_modules.utils.json_renderer import _render_text_phases
-        
+
         phases = [
             {
                 "phase_number": 2,
@@ -573,9 +586,9 @@ class TestPhaseRendering:
                 "final_memory_percent": 45.0
             }
         ]
-        
+
         lines = _render_text_phases(phases)
-        
+
         lines_text = " ".join(lines)
         assert "Phase 2 (1 agents)" in lines_text
         assert "Agents: agent3" in lines_text
@@ -583,11 +596,11 @@ class TestPhaseRendering:
         assert "Resource usage: CPU 25.0%, Memory 45.0%" in lines_text
         # Should not show monitoring info for final metrics
         assert "samples collected" not in lines_text
-    
+
     def test_render_phases_no_agent_names(self) -> None:
         """Test phase rendering without agent names."""
         from llm_orc.cli_modules.utils.json_renderer import _render_text_phases
-        
+
         phases = [
             {
                 "phase_number": 1,
@@ -595,9 +608,9 @@ class TestPhaseRendering:
                 "duration_seconds": 1.0
             }
         ]
-        
+
         lines = _render_text_phases(phases)
-        
+
         lines_text = " ".join(lines)
         assert "Phase 1 (0 agents)" in lines_text
         assert "Duration: 1.0 seconds" in lines_text
@@ -607,19 +620,19 @@ class TestPhaseRendering:
 
 class TestUsageRendering:
     """Test usage summary rendering functions."""
-    
+
     def test_render_usage_summary_empty(self) -> None:
         """Test usage summary rendering with no per-agent data."""
         from llm_orc.cli_modules.utils.json_renderer import _render_text_usage_summary
-        
-        usage = {"per_agent": []}
+
+        usage: dict[str, list[Any]] = {"per_agent": []}
         lines = _render_text_usage_summary(usage)
         assert lines == []
-    
+
     def test_render_usage_summary_basic(self) -> None:
         """Test usage summary rendering with basic agent data."""
         from llm_orc.cli_modules.utils.json_renderer import _render_text_usage_summary
-        
+
         usage = {
             "per_agent": [
                 {
@@ -631,17 +644,17 @@ class TestUsageRendering:
                 }
             ]
         }
-        
+
         lines = _render_text_usage_summary(usage)
         lines_text = " ".join(lines)
-        
+
         assert "Per-Agent Usage" in lines_text
         assert "agent1 (claude-3-sonnet): 150 tokens, $0.0010, 1500ms" in lines_text
-    
+
     def test_render_usage_summary_with_resource_metrics(self) -> None:
         """Test usage summary rendering with resource metrics."""
         from llm_orc.cli_modules.utils.json_renderer import _render_text_usage_summary
-        
+
         usage = {
             "per_agent": [
                 {
@@ -657,21 +670,24 @@ class TestUsageRendering:
                 }
             ]
         }
-        
+
         lines = _render_text_usage_summary(usage)
         lines_text = " ".join(lines)
-        
-        expected = "agent1 (gpt-4): 200 tokens, $0.0020, 2000ms, CPU 32.1% (peak 45.5%), Memory 65.7% (peak 78.2%)"
+
+        expected = (
+            "agent1 (gpt-4): 200 tokens, $0.0020, 2000ms, "
+            "CPU 32.1% (peak 45.5%), Memory 65.7% (peak 78.2%)"
+        )
         assert expected in lines_text
 
 
 class TestComprehensiveRendering:
     """Test comprehensive text rendering functions."""
-    
+
     def test_render_comprehensive_text_integration(self) -> None:
         """Test comprehensive text rendering integrates all components."""
         from llm_orc.cli_modules.utils.json_renderer import render_comprehensive_text
-        
+
         structured_json = {
             "execution_summary": {
                 "total_agents": 2,
@@ -719,11 +735,11 @@ class TestComprehensiveRendering:
                 }
             ]
         }
-        
+
         result = render_comprehensive_text(structured_json)
-        
+
         # Should include all major sections
         assert "Resource Management" in result
-        assert "Per-Phase Performance" in result  
+        assert "Per-Phase Performance" in result
         assert "Per-Agent Usage" in result
         assert "agent1 (claude-3): 150 tokens" in result

@@ -52,9 +52,9 @@ class TestJSONFirstVisualizationIntegration:
         captured = capsys.readouterr()
 
         # Should show comprehensive performance data from JSON transformation
-        assert "Performance Summary" in captured.out  # Basic performance summary should be visible
+        assert "Performance Summary" in captured.out  # Basic performance summary
         assert "500" in captured.out  # Token count should be visible
-        assert "0.0100" in captured.out  # Cost should be visible (without exact formatting)
+        assert "0.0100" in captured.out  # Cost should be visible
 
     def test_display_detailed_results_uses_comprehensive_markdown(self) -> None:
         """Test that detailed results use comprehensive markdown from JSON."""
@@ -73,7 +73,9 @@ class TestJSONFirstVisualizationIntegration:
             }
         }
 
-        with patch("llm_orc.cli_modules.utils.visualization.results_display.Console") as console_class:
+        with patch(
+            "llm_orc.cli_modules.utils.visualization.results_display.Console"
+        ) as console_class:
             console_class.return_value = console_mock
 
             agents = [{"name": "agent1"}]
@@ -81,7 +83,7 @@ class TestJSONFirstVisualizationIntegration:
 
             # Verify console.print was called with Markdown containing data
             assert console_mock.print.called
-            markdown_call = console_mock.print.call_args[0][0]
+            console_mock.print.call_args[0][0]
 
             # Should contain agent results and response content
             markdown_call_found = False
@@ -129,7 +131,7 @@ class TestJSONFirstVisualizationIntegration:
 
     def test_json_first_eliminates_duplicate_data_processing(self) -> None:
         """Test that visualization uses consistent performance metrics display."""
-        # This test ensures we have a single consistent way of displaying performance data
+        # This test ensures we have a single consistent way of displaying data
         results = {"agent1": {"status": "success", "response": "Test response"}}
         usage = {"totals": {"total_tokens": 100}}
         metadata: dict[str, Any] = {
@@ -149,5 +151,5 @@ class TestJSONFirstVisualizationIntegration:
             agents = [{"name": "agent1"}]
             _display_detailed_plain_text(results, metadata, agents)
 
-            # Verify formatting is called (single source of truth for performance display)
+            # Verify formatting is called (single source of truth for display)
             format_mock.assert_called_once_with(metadata)

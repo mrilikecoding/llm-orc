@@ -99,7 +99,7 @@ def create_dependency_graph_with_status(
             agent_displays.append(f"{symbol} {name}")
 
     # Return a simple representation for text mode
-    return " → ".join([", ".join([a["name"] for a in level_agents]) 
+    return " → ".join([", ".join([a["name"] for a in level_agents])
                       for level_agents in agents_by_level.values()])
 
 
@@ -107,19 +107,19 @@ def find_final_agent(results: dict[str, Any]) -> str | None:
     """Find the final agent that should be displayed."""
     # Priority order: coordinator > synthesizer > last successful agent
     successful_agents = [
-        name for name, result in results.items() 
+        name for name, result in results.items()
         if result.get("status") == "success"
     ]
-    
+
     if not successful_agents:
         return None
-    
+
     # Check for special agent names first
     if "coordinator" in successful_agents:
         return "coordinator"
     if "synthesizer" in successful_agents:
         return "synthesizer"
-    
+
     # Return the last successful agent
     return successful_agents[-1]
 
