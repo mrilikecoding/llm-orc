@@ -1,0 +1,19 @@
+# GitHub Sponsors configuration for LLM Orchestra
+# This file configures funding options that appear in the repository
+
+# GitHub Sponsors (primary)
+github: [mrilikecoding]
+
+# Alternative funding platforms (uncomment and configure as needed)
+# patreon: username
+# open_collective: project-name
+# ko_fi: username
+# tidelift: package-manager/package-name
+# community_bridge: project-name
+# liberapay: username
+# issuehunt: username
+# otechie: username
+# lfx_crowdfunding: project-name
+
+# Custom funding URLs (uncomment and add your URLs)
+# custom: ['https://your-custom-funding-url.com']
