@@ -35,6 +35,11 @@ class UsageCollector:
                 # Add model profile information to usage data
                 if model_profile is not None:
                     usage["model_profile"] = model_profile
+                elif hasattr(model_instance, "get_model_profile"):
+                    # Try to get model profile from model instance if not provided
+                    profile = model_instance.get_model_profile()
+                    if profile:
+                        usage["model_profile"] = profile
 
                 # Merge with any collected resource metrics for this agent
                 if agent_name in self._agent_resource_metrics:

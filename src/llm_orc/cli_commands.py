@@ -190,15 +190,14 @@ def invoke_ensemble(
             )
             # Determine effective streaming setting (CLI flag overrides config)
             effective_streaming = streaming or performance_config.get(
-                "streaming_enabled", False
+                "streaming_enabled", True
             )
             click.echo(
                 f"🚀 Executing ensemble '{ensemble_name}' with "
                 f"{len(ensemble_config.agents)} agents"
             )
             click.echo(
-                f"⚡ Performance: max_concurrent={effective_concurrency}, "
-                f"streaming={effective_streaming}"
+                f"⚡ Performance: max_concurrent={effective_concurrency}"
             )
             click.echo("─" * 50)
         except Exception:
