@@ -26,7 +26,7 @@ def display_results(
         highlight=False,
         _environ={},
         stderr=False,
-        file=None
+        file=None,
     )
 
     if detailed:
@@ -62,8 +62,9 @@ def display_results(
             response = results[final_agent]["response"]
             # Use direct stdout to prevent truncation
             import sys
+
             sys.stdout.write(response)
-            sys.stdout.write('\n\n')
+            sys.stdout.write("\n\n")
             sys.stdout.flush()
         else:
             console.print("No results to display")
@@ -90,8 +91,7 @@ def display_simplified_results(
 
     # Find the final agent result to display
     successful_agents = [
-        name for name, result in results.items()
-        if result.get("status") == "success"
+        name for name, result in results.items() if result.get("status") == "success"
     ]
 
     if successful_agents:
@@ -124,7 +124,7 @@ def _process_agent_results(results: dict[str, Any]) -> dict[str, Any]:
             "status": status,
             "response": response,
             "error": error,
-            "has_code": _has_code_content(response)
+            "has_code": _has_code_content(response),
         }
 
     return processed
@@ -158,8 +158,9 @@ def _display_agent_result(
         if response:
             # Use direct stdout approach to bypass all Rich limitations
             import sys
+
             sys.stdout.write(response)
-            sys.stdout.write('\n\n')
+            sys.stdout.write("\n\n")
             sys.stdout.flush()
         else:
             console.print("[dim]No response provided[/dim]")
@@ -218,8 +219,7 @@ def _display_simplified_plain_text(
 ) -> None:
     """Display simplified plain text results."""
     successful_agents = [
-        name for name, result in results.items()
-        if result.get("status") == "success"
+        name for name, result in results.items() if result.get("status") == "success"
     ]
 
     if successful_agents:
@@ -247,151 +247,248 @@ def _format_performance_metrics(metadata: dict[str, Any]) -> list[str]:
     """Format comprehensive performance metrics for display."""
     lines = []
 
-    # Usage summary
-    if "usage" in metadata:
-        usage = metadata["usage"]
-        totals = usage.get("totals", {})
+    # Format each section separately
+    lines.extend(_format_usage_summary(metadata))
+    lines.extend(_format_adaptive_resource_metrics(metadata))
 
-        lines.append("\n📊 Performance Summary")
-        lines.append("=" * 60)
+    return lines
+
+
+def _format_usage_summary(metadata: dict[str, Any]) -> list[str]:
+    """Format usage summary metrics."""
+    lines: list[str] = []
+
+    if "usage" not in metadata:
+        return lines
+
+    usage = metadata["usage"]
+    totals = usage.get("totals", {})
+
+    lines.append("\n📊 Performance Summary")
+    lines.append("=" * 60)
+    lines.append(
+        f"Total agents: {totals.get('agents_count', len(usage.get('agents', {})))}"
+    )
+    lines.append(f"Total tokens: {totals.get('total_tokens', 0):,}")
+    lines.append(f"Total cost: ${totals.get('total_cost_usd', 0.0):.4f}")
+
+    if "duration" in metadata:
+        lines.append(f"Duration: {metadata['duration']}")
+
+    # Add per-agent usage details
+    lines.extend(_format_per_agent_usage(usage.get("agents", {})))
+
+    return lines
+
+
+def _format_per_agent_usage(agents_usage: dict[str, Any]) -> list[str]:
+    """Format per-agent usage details."""
+    lines: list[str] = []
+
+    if not agents_usage:
+        return lines
+
+    lines.append("\n👥 Per-Agent Performance")
+    lines.append("-" * 50)
+
+    for agent_name, agent_usage in agents_usage.items():
+        lines.extend(_format_single_agent_usage(agent_name, agent_usage))
+
+    return lines
+
+
+def _format_single_agent_usage(
+    agent_name: str, agent_usage: dict[str, Any]
+) -> list[str]:
+    """Format usage details for a single agent."""
+    lines: list[str] = []
+
+    tokens = agent_usage.get("total_tokens", 0)
+    cost = agent_usage.get("total_cost_usd", 0.0)
+    input_tokens = agent_usage.get("input_tokens", 0)
+    output_tokens = agent_usage.get("output_tokens", 0)
+    duration = agent_usage.get("duration_seconds")
+    peak_cpu = agent_usage.get("peak_cpu")
+    avg_cpu = agent_usage.get("avg_cpu")
+    peak_memory = agent_usage.get("peak_memory")
+    avg_memory = agent_usage.get("avg_memory")
+
+    lines.append(f"  {agent_name}:")
+
+    # Token information
+    if input_tokens or output_tokens:
         lines.append(
-            f"Total agents: {totals.get('agents_count', len(usage.get('agents', {})))}"
+            f"    Tokens: {tokens:,} "
+            f"(input: {input_tokens:,}, output: {output_tokens:,})"
         )
-        lines.append(f"Total tokens: {totals.get('total_tokens', 0):,}")
-        lines.append(f"Total cost: ${totals.get('total_cost_usd', 0.0):.4f}")
+    else:
+        lines.append(f"    Tokens: {tokens:,}")
 
-        if "duration" in metadata:
-            lines.append(f"Duration: {metadata['duration']}")
+    lines.append(f"    Cost: ${cost:.4f}")
 
-        # Per-agent usage details
-        agents_usage = usage.get("agents", {})
-        if agents_usage:
-            lines.append("\n👥 Per-Agent Performance")
-            lines.append("-" * 50)
+    # Performance metrics
+    if duration is not None:
+        lines.append(f"    Duration: {duration:.2f}s")
+    if peak_cpu is not None:
+        lines.append(f"    Peak CPU: {peak_cpu:.1f}%")
+    if avg_cpu is not None:
+        lines.append(f"    Avg CPU: {avg_cpu:.1f}%")
+    if peak_memory is not None:
+        lines.append(f"    Peak memory: {peak_memory:.1f} MB")
+    if avg_memory is not None:
+        lines.append(f"    Avg memory: {avg_memory:.1f} MB")
 
-            for agent_name, agent_usage in agents_usage.items():
-                tokens = agent_usage.get("total_tokens", 0)
-                cost = agent_usage.get("total_cost_usd", 0.0)
-                input_tokens = agent_usage.get("input_tokens", 0)
-                output_tokens = agent_usage.get("output_tokens", 0)
-                duration = agent_usage.get("duration_seconds")
-                peak_cpu = agent_usage.get("peak_cpu")
-                avg_cpu = agent_usage.get("avg_cpu")
-                peak_memory = agent_usage.get("peak_memory")
-                avg_memory = agent_usage.get("avg_memory")
+    return lines
 
-                lines.append(f"  {agent_name}:")
-                if input_tokens or output_tokens:
-                    lines.append(
-                        f"    Tokens: {tokens:,} "
-                        f"(input: {input_tokens:,}, output: {output_tokens:,})"
-                    )
-                else:
-                    lines.append(f"    Tokens: {tokens:,}")
-                lines.append(f"    Cost: ${cost:.4f}")
 
-                if duration is not None:
-                    lines.append(f"    Duration: {duration:.2f}s")
+def _format_adaptive_resource_metrics(metadata: dict[str, Any]) -> list[str]:
+    """Format adaptive resource management metrics."""
+    lines: list[str] = []
 
-                if peak_cpu is not None:
-                    lines.append(f"    Peak CPU: {peak_cpu:.1f}%")
-                if avg_cpu is not None:
-                    lines.append(f"    Avg CPU: {avg_cpu:.1f}%")
-                if peak_memory is not None:
-                    lines.append(f"    Peak memory: {peak_memory:.1f} MB")
-                if avg_memory is not None:
-                    lines.append(f"    Avg memory: {avg_memory:.1f} MB")
+    if "adaptive_resource_management" not in metadata:
+        return lines
 
-    # Adaptive resource management metrics
-    if "adaptive_resource_management" in metadata:
-        arm = metadata["adaptive_resource_management"]
+    arm = metadata["adaptive_resource_management"]
 
-        # Concurrency information
-        if "concurrency_decisions" in arm:
-            decisions = arm["concurrency_decisions"]
-            if decisions:
-                configured_limit = decisions[0].get("configured_limit")
-                if configured_limit:
-                    lines.append(f"Max concurrency limit used: {configured_limit}")
+    # Concurrency information
+    lines.extend(_format_concurrency_info(arm))
 
-        # Execution metrics (CPU usage, etc.)
-        if "execution_metrics" in arm:
-            exec_metrics = arm["execution_metrics"]
-            lines.append("\n🔧 System Resource Usage")
-            lines.append("-" * 40)
+    # Execution metrics
+    lines.extend(_format_execution_metrics(arm))
 
-            peak_cpu = exec_metrics.get("peak_cpu")
-            avg_cpu = exec_metrics.get("avg_cpu")
-            sample_count = exec_metrics.get("sample_count")
-            peak_memory = exec_metrics.get("peak_memory_mb")
-            avg_memory = exec_metrics.get("avg_memory_mb")
+    # Phase metrics
+    lines.extend(_format_phase_metrics(arm))
 
-            if peak_cpu is not None:
-                lines.append(f"Peak CPU usage: {peak_cpu:.1f}%")
-            if avg_cpu is not None:
-                lines.append(f"Average CPU usage: {avg_cpu:.1f}%")
-            if peak_memory is not None:
-                lines.append(f"Peak memory: {peak_memory:.1f} MB")
-            if avg_memory is not None:
-                lines.append(f"Average memory: {avg_memory:.1f} MB")
-            if sample_count is not None:
-                lines.append(f"Sample count: {sample_count}")
+    return lines
 
-        # Phase metrics (execution phases)
-        if "phase_metrics" in arm:
-            phase_metrics = arm["phase_metrics"]
-            if phase_metrics:
-                lines.append("\n⚡ Execution Phases")
-                lines.append("-" * 35)
 
-                for i, phase in enumerate(phase_metrics):
-                    phase_num = i + 1
-                    duration = phase.get("duration_seconds")
-                    agent_names = phase.get("agent_names", [])
-                    peak_cpu = phase.get("peak_cpu")
-                    avg_cpu = phase.get("avg_cpu")
-                    peak_memory = phase.get("peak_memory")
-                    avg_memory = phase.get("avg_memory")
+def _format_concurrency_info(arm: dict[str, Any]) -> list[str]:
+    """Format concurrency decision information."""
+    lines: list[str] = []
 
-                    # Phase header with duration
-                    if duration is not None:
-                        lines.append(f"Phase {phase_num}: {duration:.2f}s")
-                    else:
-                        lines.append(f"Phase {phase_num}:")
+    if "concurrency_decisions" in arm:
+        decisions = arm["concurrency_decisions"]
+        if decisions:
+            configured_limit = decisions[0].get("configured_limit")
+            if configured_limit:
+                lines.append(f"Max concurrency limit used: {configured_limit}")
 
-                    # Agent list (with better formatting for long lists)
-                    if agent_names:
-                        if len(agent_names) > 4:
-                            agent_display = (
-                                ", ".join(agent_names[:4]) +
-                                f" (+{len(agent_names)-4} more)"
-                            )
-                        else:
-                            agent_display = ", ".join(agent_names)
-                        lines.append(f"  Agents: {agent_display}")
+    return lines
 
-                    # Resource usage metrics
-                    resource_lines = []
-                    if peak_cpu is not None:
-                        resource_lines.append(f"Peak CPU: {peak_cpu:.1f}%")
-                    if avg_cpu is not None:
-                        resource_lines.append(f"Avg CPU: {avg_cpu:.1f}%")
-                    if peak_memory is not None:
-                        resource_lines.append(f"Peak memory: {peak_memory:.1f} MB")
-                    if avg_memory is not None:
-                        resource_lines.append(f"Avg memory: {avg_memory:.1f} MB")
 
-                    # Display resource metrics (combine if multiple exist)
-                    if resource_lines:
-                        if len(resource_lines) <= 2:
-                            lines.append(f"  {' • '.join(resource_lines)}")
-                        else:
-                            for resource_line in resource_lines:
-                                lines.append(f"  {resource_line}")
+def _format_execution_metrics(arm: dict[str, Any]) -> list[str]:
+    """Format execution metrics from ARM."""
+    lines: list[str] = []
 
-                    # Add spacing between phases for readability
-                    if i < len(phase_metrics) - 1:
-                        lines.append("")
+    if "execution_metrics" not in arm:
+        return lines
+
+    exec_metrics = arm["execution_metrics"]
+    lines.append("\n🔧 System Resource Usage")
+    lines.append("-" * 40)
+
+    peak_cpu = exec_metrics.get("peak_cpu")
+    avg_cpu = exec_metrics.get("avg_cpu")
+    sample_count = exec_metrics.get("sample_count")
+    peak_memory = exec_metrics.get("peak_memory_mb")
+    avg_memory = exec_metrics.get("avg_memory_mb")
+
+    if peak_cpu is not None:
+        lines.append(f"Peak CPU usage: {peak_cpu:.1f}%")
+    if avg_cpu is not None:
+        lines.append(f"Average CPU usage: {avg_cpu:.1f}%")
+    if peak_memory is not None:
+        lines.append(f"Peak memory: {peak_memory:.1f} MB")
+    if avg_memory is not None:
+        lines.append(f"Average memory: {avg_memory:.1f} MB")
+    if sample_count is not None:
+        lines.append(f"Sample count: {sample_count}")
+
+    return lines
+
+
+def _format_phase_metrics(arm: dict[str, Any]) -> list[str]:
+    """Format phase execution metrics."""
+    lines: list[str] = []
+
+    if "phase_metrics" not in arm:
+        return lines
+
+    phase_metrics = arm["phase_metrics"]
+    if not phase_metrics:
+        return lines
+
+    lines.append("\n⚡ Execution Phases")
+    lines.append("-" * 35)
+
+    for i, phase in enumerate(phase_metrics):
+        lines.extend(_format_single_phase(i, phase, len(phase_metrics)))
+
+    return lines
+
+
+def _format_single_phase(
+    index: int, phase: dict[str, Any], total_phases: int
+) -> list[str]:
+    """Format metrics for a single execution phase."""
+    lines: list[str] = []
+
+    phase_num = index + 1
+    duration = phase.get("duration_seconds")
+    agent_names = phase.get("agent_names", [])
+
+    # Phase header with duration
+    if duration is not None:
+        lines.append(f"Phase {phase_num}: {duration:.2f}s")
+    else:
+        lines.append(f"Phase {phase_num}:")
+
+    # Agent list (with better formatting for long lists)
+    if agent_names:
+        if len(agent_names) > 4:
+            agent_display = (
+                ", ".join(agent_names[:4]) + f" (+{len(agent_names) - 4} more)"
+            )
+        else:
+            agent_display = ", ".join(agent_names)
+        lines.append(f"  Agents: {agent_display}")
+
+    # Resource usage metrics
+    lines.extend(_format_phase_resource_metrics(phase))
+
+    # Add spacing between phases for readability
+    if index < total_phases - 1:
+        lines.append("")
+
+    return lines
+
+
+def _format_phase_resource_metrics(phase: dict[str, Any]) -> list[str]:
+    """Format resource metrics for a phase."""
+    lines: list[str] = []
+
+    peak_cpu = phase.get("peak_cpu")
+    avg_cpu = phase.get("avg_cpu")
+    peak_memory = phase.get("peak_memory")
+    avg_memory = phase.get("avg_memory")
+
+    resource_lines = []
+    if peak_cpu is not None:
+        resource_lines.append(f"Peak CPU: {peak_cpu:.1f}%")
+    if avg_cpu is not None:
+        resource_lines.append(f"Avg CPU: {avg_cpu:.1f}%")
+    if peak_memory is not None:
+        resource_lines.append(f"Peak memory: {peak_memory:.1f} MB")
+    if avg_memory is not None:
+        resource_lines.append(f"Avg memory: {avg_memory:.1f} MB")
+
+    # Display resource metrics (combine if multiple exist)
+    if resource_lines:
+        if len(resource_lines) <= 2:
+            lines.append(f"  {' • '.join(resource_lines)}")
+        else:
+            for resource_line in resource_lines:
+                lines.append(f"  {resource_line}")
 
     return lines
 

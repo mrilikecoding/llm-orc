@@ -36,7 +36,7 @@ async def run_streaming_execution(
             no_color=False,
             legacy_windows=False,
             markup=True,
-            highlight=False
+            highlight=False,
         )
         agent_statuses: dict[str, str] = {}
 
@@ -111,11 +111,7 @@ async def _run_text_json_execution(
             )
     except Exception as e:
         if output_format == "json":
-            error_event = {
-                "type": "error",
-                "error": str(e),
-                "timestamp": "now"
-            }
+            error_event = {"type": "error", "error": str(e), "timestamp": "now"}
             click.echo(json.dumps(error_event))
         else:
             click.echo(f"Error: {e}")
@@ -130,11 +126,7 @@ async def _run_json_streaming_execution(
         async for event in execute_stream():
             click.echo(json.dumps(event))
     except Exception as e:
-        error_event = {
-            "event_type": "error",
-            "error": str(e),
-            "timestamp": "now"
-        }
+        error_event = {"event_type": "error", "error": str(e), "timestamp": "now"}
         click.echo(json.dumps(error_event))
 
 
@@ -142,7 +134,7 @@ async def _run_rich_streaming_execution(
     input_data: str,
     ensemble_config: Any,
     execute_stream: Callable[..., Any],
-    agents: list[dict[str, Any]]
+    agents: list[dict[str, Any]],
 ) -> None:
     """Run streaming execution with Rich live display."""
     console = Console()
@@ -155,7 +147,7 @@ async def _run_rich_streaming_execution(
     with Live(
         create_dependency_tree(agents, dict.fromkeys(agent_progress, "pending")),
         console=console,
-        refresh_per_second=10
+        refresh_per_second=10,
     ) as live:
         try:
             async for event in execute_stream():
@@ -319,108 +311,157 @@ def _handle_streaming_event_with_status(
 
     Returns True if execution should continue, False if it should break.
     """
-    status_changed = False
-
     if event_type == "agent_progress":
-        # Extract detailed agent status from progress data
-        started_agent_names = event["data"].get("started_agent_names", [])
-        completed_agent_names = event["data"].get("completed_agent_names", [])
-
-        # Update agent statuses based on actual agent states
-        old_statuses = dict(agent_statuses)
-        _update_agent_status_by_names_from_lists(
-            ensemble_config.agents,
-            started_agent_names,
-            completed_agent_names,
-            agent_statuses,
+        status_changed = _handle_agent_progress_event(
+            event, agent_statuses, ensemble_config
         )
-        status_changed = old_statuses != agent_statuses
-
     elif event_type == "execution_started":
-        # Initial tree already shown - no need to update
+        status_changed = False
+    elif event_type == "agent_started":
+        status_changed = _handle_agent_started_event(event, agent_statuses)
+    elif event_type == "agent_completed":
+        status_changed = _handle_agent_completed_event(event, agent_statuses)
+    elif event_type == "agent_failed":
+        status_changed = _handle_agent_failed_event(event, agent_statuses)
+    elif event_type == "execution_completed":
+        return _handle_execution_completed_event(
+            event, ensemble_config, status, console, detailed
+        )
+    else:
         status_changed = False
 
-    elif event_type == "agent_started":
-        # Agent has started execution
-        event_data = event["data"]
-        agent_name = event_data["agent_name"]
-        if agent_statuses.get(agent_name) != "running":
-            agent_statuses[agent_name] = "running"
-            status_changed = True
-
-    elif event_type == "agent_completed":
-        # Agent has completed execution
-        event_data = event["data"]
-        agent_name = event_data["agent_name"]
-        if agent_statuses.get(agent_name) != "completed":
-            agent_statuses[agent_name] = "completed"
-            status_changed = True
-
-    elif event_type == "agent_failed":
-        # Agent has failed execution
-        event_data = event["data"]
-        agent_name = event_data["agent_name"]
-        if agent_statuses.get(agent_name) != "failed":
-            agent_statuses[agent_name] = "failed"
-            status_changed = True
-
-    elif event_type == "execution_completed":
-        # Execution has completed - stop status display and show final results
-        event_data = event.get("data", {})
-        results = event_data.get("results", {})
-        metadata = event_data.get("metadata", {})
-
-        # Force exit status context and clear before showing results
-        status.stop()
-        console.print("")
-
-        # Display final results with a completely new console to avoid interference
-        from rich.console import Console as FreshConsole
-        results_console = FreshConsole(force_terminal=True, width=None)
-
-        if detailed:
-            # Display dependency graph at the top
-            final_statuses = {
-                name: "completed"
-                for name in results.keys()
-                if results[name].get("status") == "success"
-            }
-            final_tree = create_dependency_tree(ensemble_config.agents, final_statuses)
-            results_console.print(final_tree)
-
-            # Force display directly without Rich status interference
-            results_console.print("\n[bold blue]📋 Results[/bold blue]")
-            results_console.print("=" * 50)
-
-            # Process and display agent results
-            from .results_display import (
-                _display_agent_result,
-                _format_performance_metrics,
-                _process_agent_results,
-            )
-            processed_results = _process_agent_results(results)
-            for agent_name, result in processed_results.items():
-                _display_agent_result(
-                    results_console,
-                    agent_name,
-                    result,
-                    ensemble_config.agents,
-                    metadata,
-                )
-
-            # Display performance metrics
-            performance_lines = _format_performance_metrics(metadata)
-            if performance_lines:
-                results_console.print("\n" + "\n".join(performance_lines))
-
-        return False  # Break the event loop
-
-    # Only update the display if agent statuses actually changed
     if status_changed:
         current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
         status.update(current_tree)
 
-    return True  # Continue processing events
+    return True
+
+
+def _handle_agent_progress_event(
+    event: dict[str, Any],
+    agent_statuses: dict[str, str],
+    ensemble_config: Any,
+) -> bool:
+    """Handle agent progress event and return True if status changed."""
+    started_agent_names = event["data"].get("started_agent_names", [])
+    completed_agent_names = event["data"].get("completed_agent_names", [])
+
+    old_statuses = dict(agent_statuses)
+    _update_agent_status_by_names_from_lists(
+        ensemble_config.agents,
+        started_agent_names,
+        completed_agent_names,
+        agent_statuses,
+    )
+    return old_statuses != agent_statuses
+
+
+def _handle_agent_started_event(
+    event: dict[str, Any], agent_statuses: dict[str, str]
+) -> bool:
+    """Handle agent started event and return True if status changed."""
+    event_data = event["data"]
+    agent_name = event_data["agent_name"]
+    if agent_statuses.get(agent_name) != "running":
+        agent_statuses[agent_name] = "running"
+        return True
+    return False
+
+
+def _handle_agent_completed_event(
+    event: dict[str, Any], agent_statuses: dict[str, str]
+) -> bool:
+    """Handle agent completed event and return True if status changed."""
+    event_data = event["data"]
+    agent_name = event_data["agent_name"]
+    if agent_statuses.get(agent_name) != "completed":
+        agent_statuses[agent_name] = "completed"
+        return True
+    return False
+
+
+def _handle_agent_failed_event(
+    event: dict[str, Any], agent_statuses: dict[str, str]
+) -> bool:
+    """Handle agent failed event and return True if status changed."""
+    event_data = event["data"]
+    agent_name = event_data["agent_name"]
+    if agent_statuses.get(agent_name) != "failed":
+        agent_statuses[agent_name] = "failed"
+        return True
+    return False
+
+
+def _handle_execution_completed_event(
+    event: dict[str, Any],
+    ensemble_config: Any,
+    status: Any,
+    console: Any,
+    detailed: bool,
+) -> bool:
+    """Handle execution completed event and return False to break event loop."""
+    event_data = event.get("data", {})
+    results = event_data.get("results", {})
+    metadata = event_data.get("metadata", {})
+
+    # Force exit status context and clear before showing results
+    status.stop()
+    console.print("")
+
+    # Display final results with a completely new console to avoid interference
+    from rich.console import Console as FreshConsole
+
+    results_console = FreshConsole(force_terminal=True, width=None)
+
+    if detailed:
+        _display_detailed_execution_results(
+            results, metadata, ensemble_config, results_console
+        )
+
+    return False
+
+
+def _display_detailed_execution_results(
+    results: dict[str, Any],
+    metadata: dict[str, Any],
+    ensemble_config: Any,
+    results_console: Any,
+) -> None:
+    """Display detailed execution results."""
+    # Display dependency graph at the top
+    final_statuses = {
+        name: "completed"
+        for name in results.keys()
+        if results[name].get("status") == "success"
+    }
+    final_tree = create_dependency_tree(ensemble_config.agents, final_statuses)
+    results_console.print(final_tree)
+
+    # Force display directly without Rich status interference
+    results_console.print("\n[bold blue]📋 Results[/bold blue]")
+    results_console.print("=" * 50)
+
+    # Process and display agent results
+    from .results_display import (
+        _display_agent_result,
+        _format_performance_metrics,
+        _process_agent_results,
+    )
+
+    processed_results = _process_agent_results(results)
+    for agent_name, result in processed_results.items():
+        _display_agent_result(
+            results_console,
+            agent_name,
+            result,
+            ensemble_config.agents,
+            metadata,
+        )
+
+    # Display performance metrics
+    performance_lines = _format_performance_metrics(metadata)
+    if performance_lines:
+        results_console.print("\n" + "\n".join(performance_lines))
 
 
 def _update_agent_status_by_names_from_lists(
@@ -450,14 +491,11 @@ def _display_json_results(result: dict[str, Any], ensemble_config: Any) -> None:
         output = {
             "results": result.get("results", {}),
             "metadata": result.get("metadata", {}),
-            "config": config_dict
+            "config": config_dict,
         }
 
         click.echo(json.dumps(output, indent=2, default=str))
     except Exception as e:
         # Fallback error handling
-        error_output = {
-            "error": str(e),
-            "config": {"type": "error_config"}
-        }
+        error_output = {"error": str(e), "config": {"type": "error_config"}}
         click.echo(json.dumps(error_output, indent=2))
