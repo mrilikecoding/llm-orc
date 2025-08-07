@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2025-08-07
+
+### Added
+- **🎯 Adaptive Resource Management** - Complete system for monitoring and managing agent execution resources
+  - Semaphore-based concurrency control with configurable `max_concurrent` limits
+  - Real-time CPU and memory monitoring during ensemble execution
+  - Per-phase performance metrics with peak and average resource tracking
+  - User guidance and optimization recommendations based on system performance
+  - AgentExecutor integration with comprehensive resource monitoring hooks
+  - Backward compatible with existing ensemble configurations
+- **🏗️ JSON-First Rendering Architecture** - Unified data transformation and presentation system
+  - Schema-driven transformation from raw execution data to structured JSON
+  - Consistent text/markdown renderers with single source of truth
+  - API-ready structured output for all execution data
+  - Eliminated scattered formatting functions across visualization modules
+  - Comprehensive data schemas for execution results, metrics, and usage data
+- **📊 Enhanced Monitoring & Visualization** - Improved execution feedback and display
+  - Per-phase performance statistics with detailed resource breakdowns
+  - Peak and average CPU/memory utilization tracking across execution phases
+  - Final dependency graph display showing agent relationships after completion
+  - User-friendly 1-based phase numbering for better readability
+  - Model profile and actual model display in agent execution results
+- **⚡ Parallel Execution Improvements** - Enhanced concurrent agent processing
+  - Async parallel execution for independent agent phases
+  - Improved performance monitoring for parallel workloads
+  - Better dependency-aware scheduling and resource allocation
+- **🔄 Enhanced Fallback Model System** - Improved model reliability and flexibility
+  - Configurable fallback model chains for better resilience
+  - Clear fallback status display in execution results
+  - Enhanced error handling and recovery mechanisms
+
+### Technical
+- **Modular Architecture** - Broke down monolithic visualization.py into focused components
+  - `visualization/dependency.py` - Agent dependency graph logic
+  - `visualization/performance_metrics.py` - Resource and performance formatting
+  - `visualization/results_display.py` - Execution results presentation
+  - `visualization/streaming.py` - Real-time execution display and progress tracking
+- **Code Quality** - Function complexity reduction and comprehensive testing
+  - Extracted helper functions to reduce cyclomatic complexity violations
+  - 95.19% test coverage with 1544+ passing tests
+  - MyPy strict type checking compliance across all modules
+  - Ruff formatting and linting compliance
+- **Performance** - Optimized resource monitoring and execution coordination
+  - Minimal overhead resource monitoring during execution
+  - Efficient per-phase metrics collection and aggregation
+  - Streamlined JSON-first architecture reducing rendering complexity
+
+### Fixed
+- Timing test reliability in CI environments with appropriate overhead allowances
+- Phase numbering consistency across all output formats (now 1-based)
+- Memory and CPU metric calculation accuracy using phase-based data
+- Test coverage gaps in visualization and execution modules
+
 ## [0.9.1] - 2025-07-26
 
 ### Added
