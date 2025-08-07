@@ -196,9 +196,7 @@ def invoke_ensemble(
                 f"🚀 Executing ensemble '{ensemble_name}' with "
                 f"{len(ensemble_config.agents)} agents"
             )
-            click.echo(
-                f"⚡ Performance: max_concurrent={effective_concurrency}"
-            )
+            click.echo(f"⚡ Performance: max_concurrent={effective_concurrency}")
             click.echo("─" * 50)
         except Exception:
             # Fallback to original output if performance config fails

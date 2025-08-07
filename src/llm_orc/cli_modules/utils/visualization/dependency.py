@@ -99,16 +99,19 @@ def create_dependency_graph_with_status(
             agent_displays.append(f"{symbol} {name}")
 
     # Return a simple representation for text mode
-    return " → ".join([", ".join([a["name"] for a in level_agents])
-                      for level_agents in agents_by_level.values()])
+    return " → ".join(
+        [
+            ", ".join([a["name"] for a in level_agents])
+            for level_agents in agents_by_level.values()
+        ]
+    )
 
 
 def find_final_agent(results: dict[str, Any]) -> str | None:
     """Find the final agent that should be displayed."""
     # Priority order: coordinator > synthesizer > last successful agent
     successful_agents = [
-        name for name, result in results.items()
-        if result.get("status") == "success"
+        name for name, result in results.items() if result.get("status") == "success"
     ]
 
     if not successful_agents:
@@ -125,7 +128,7 @@ def find_final_agent(results: dict[str, Any]) -> str | None:
 
 
 def _group_agents_by_dependency_level(
-    agents: list[dict[str, Any]]
+    agents: list[dict[str, Any]],
 ) -> dict[int, list[dict[str, Any]]]:
     """Group agents by their dependency level."""
     agents_by_level: dict[int, list[dict[str, Any]]] = {}
@@ -188,7 +191,7 @@ def _create_plain_text_dependency_graph(agents: list[dict[str, Any]]) -> list[st
 
 
 def _create_structured_dependency_info(
-    agents: list[dict[str, Any]]
+    agents: list[dict[str, Any]],
 ) -> tuple[dict[int, list[dict[str, Any]]], dict[str, str]]:
     """Create structured dependency information for display."""
     agents_by_level = _group_agents_by_dependency_level(agents)
@@ -202,7 +205,7 @@ def _create_agent_statuses(agents: list[dict[str, Any]]) -> dict[str, str]:
 
 
 def _build_dependency_levels(
-    agents: list[dict[str, Any]]
+    agents: list[dict[str, Any]],
 ) -> dict[int, list[dict[str, Any]]]:
     """Build dependency levels for agents."""
     return _group_agents_by_dependency_level(agents)

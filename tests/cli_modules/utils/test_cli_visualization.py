@@ -90,7 +90,7 @@ class TestBackwardCompatibility:
             "avg_cpu": 65.2,
             "peak_memory": 75.0,
             "avg_memory": 60.0,
-            "sample_count": 10
+            "sample_count": 10,
         }
 
         formatted = _format_execution_metrics(metrics)
@@ -105,10 +105,7 @@ class TestBackwardCompatibility:
         stats = {
             "management_type": "adaptive",
             "adaptive_used": True,
-            "execution_metrics": {
-                "peak_cpu": 90.0,
-                "avg_cpu": 75.0
-            }
+            "execution_metrics": {"peak_cpu": 90.0, "avg_cpu": 75.0},
         }
 
         formatted = _format_adaptive_resource_metrics(stats)

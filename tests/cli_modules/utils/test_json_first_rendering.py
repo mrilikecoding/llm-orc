@@ -312,18 +312,16 @@ class TestModelDisplayLogic:
 
     def test_model_display_with_both_profile_and_model(self) -> None:
         """Test model display when both model_profile and model are present."""
-        raw_results = {
-            "agent1": {"content": "Result 1", "status": "success"}
-        }
+        raw_results = {"agent1": {"content": "Result 1", "status": "success"}}
         raw_usage = {
             "agents": {
                 "agent1": {
                     "model": "claude-3-sonnet-20240229",
                     "model_profile": "efficient",
-                    "total_tokens": 150
+                    "total_tokens": 150,
                 }
             },
-            "totals": {"total_tokens": 150, "agents_count": 1}
+            "totals": {"total_tokens": 150, "agents_count": 1},
         }
         raw_metadata: dict[str, Any] = {}
 
@@ -334,17 +332,12 @@ class TestModelDisplayLogic:
 
     def test_model_display_with_model_only(self) -> None:
         """Test model display when only model is present (no profile)."""
-        raw_results = {
-            "agent1": {"content": "Result 1", "status": "success"}
-        }
+        raw_results = {"agent1": {"content": "Result 1", "status": "success"}}
         raw_usage = {
             "agents": {
-                "agent1": {
-                    "model": "claude-3-sonnet-20240229",
-                    "total_tokens": 150
-                }
+                "agent1": {"model": "claude-3-sonnet-20240229", "total_tokens": 150}
             },
-            "totals": {"total_tokens": 150, "agents_count": 1}
+            "totals": {"total_tokens": 150, "agents_count": 1},
         }
         raw_metadata: dict[str, Any] = {}
 
@@ -355,14 +348,10 @@ class TestModelDisplayLogic:
 
     def test_model_display_with_neither(self) -> None:
         """Test model display when neither model nor profile are present."""
-        raw_results = {
-            "agent1": {"content": "Result 1", "status": "success"}
-        }
+        raw_results = {"agent1": {"content": "Result 1", "status": "success"}}
         raw_usage = {
-            "agents": {
-                "agent1": {"total_tokens": 150}
-            },
-            "totals": {"total_tokens": 150, "agents_count": 1}
+            "agents": {"agent1": {"total_tokens": 150}},
+            "totals": {"total_tokens": 150, "agents_count": 1},
         }
         raw_metadata: dict[str, Any] = {}
 
@@ -385,7 +374,7 @@ class TestTextRendering:
                 "status": "success",
                 "content": "This is some result content",
                 "model_display": " (claude-3)",
-                "error": ""
+                "error": "",
             }
         ]
 
@@ -404,7 +393,7 @@ class TestTextRendering:
                 "status": "success",
                 "content": "",
                 "model_display": "",
-                "error": ""
+                "error": "",
             }
         ]
 
@@ -423,7 +412,7 @@ class TestTextRendering:
                 "status": "failed",
                 "content": "",
                 "model_display": " (gpt-4)",
-                "error": "Connection timeout"
+                "error": "Connection timeout",
             }
         ]
 
@@ -442,7 +431,7 @@ class TestTextRendering:
                 "status": "failed",
                 "content": "",
                 "model_display": "",
-                "error": ""
+                "error": "",
             }
         ]
 
@@ -470,10 +459,7 @@ class TestResourceManagementRendering:
             _render_text_resource_management,
         )
 
-        rm_data = {
-            "type": "user_configured",
-            "concurrency_limit": 5
-        }
+        rm_data = {"type": "user_configured", "concurrency_limit": 5}
 
         lines = _render_text_resource_management(rm_data)
 
@@ -496,8 +482,8 @@ class TestResourceManagementRendering:
                 "peak_memory": 78.5,
                 "avg_memory": 65.3,
                 "sample_count": 12,
-                "has_phase_data": False
-            }
+                "has_phase_data": False,
+            },
         }
 
         lines = _render_text_resource_management(rm_data)
@@ -520,8 +506,8 @@ class TestResourceManagementRendering:
                 "avg_cpu": 32.1,
                 "peak_memory": 78.5,
                 "avg_memory": 65.3,
-                "has_phase_data": True
-            }
+                "has_phase_data": True,
+            },
         }
 
         lines = _render_text_resource_management(rm_data)
@@ -556,7 +542,7 @@ class TestPhaseRendering:
                 "avg_cpu": 32.0,
                 "peak_memory": 75.0,
                 "avg_memory": 65.0,
-                "sample_count": 8
+                "sample_count": 8,
             }
         ]
 
@@ -583,7 +569,7 @@ class TestPhaseRendering:
                 "agent_names": ["agent3"],
                 "duration_seconds": 0.8,
                 "final_cpu_percent": 25.0,
-                "final_memory_percent": 45.0
+                "final_memory_percent": 45.0,
             }
         ]
 
@@ -601,13 +587,7 @@ class TestPhaseRendering:
         """Test phase rendering without agent names."""
         from llm_orc.cli_modules.utils.json_renderer import _render_text_phases
 
-        phases = [
-            {
-                "phase_number": 1,
-                "agent_names": [],
-                "duration_seconds": 1.0
-            }
-        ]
+        phases = [{"phase_number": 1, "agent_names": [], "duration_seconds": 1.0}]
 
         lines = _render_text_phases(phases)
 
@@ -640,7 +620,7 @@ class TestUsageRendering:
                     "tokens": 150,
                     "cost_usd": 0.001,
                     "duration_ms": 1500,
-                    "model_display": "claude-3-sonnet"
+                    "model_display": "claude-3-sonnet",
                 }
             ]
         }
@@ -666,7 +646,7 @@ class TestUsageRendering:
                     "peak_cpu": 45.5,
                     "avg_cpu": 32.1,
                     "peak_memory": 78.2,
-                    "avg_memory": 65.7
+                    "avg_memory": 65.7,
                 }
             ]
         }
@@ -692,7 +672,7 @@ class TestComprehensiveRendering:
             "execution_summary": {
                 "total_agents": 2,
                 "successful_agents": 2,
-                "failed_agents": 0
+                "failed_agents": 0,
             },
             "resource_management": {
                 "type": "user_configured",
@@ -703,15 +683,15 @@ class TestComprehensiveRendering:
                     "peak_memory": 70.0,
                     "avg_memory": 60.0,
                     "has_phase_data": False,
-                    "sample_count": 5
+                    "sample_count": 5,
                 },
                 "phases": [
                     {
                         "phase_number": 1,
                         "agent_names": ["agent1"],
-                        "duration_seconds": 1.2
+                        "duration_seconds": 1.2,
                     }
-                ]
+                ],
             },
             "usage_summary": {
                 "total_tokens": 300,
@@ -722,18 +702,18 @@ class TestComprehensiveRendering:
                         "tokens": 150,
                         "cost_usd": 0.0015,
                         "duration_ms": 1200,
-                        "model_display": "claude-3"
+                        "model_display": "claude-3",
                     }
-                ]
+                ],
             },
             "agent_results": [
                 {
                     "name": "agent1",
                     "status": "success",
                     "content": "Test result",
-                    "model_display": " (claude-3)"
+                    "model_display": " (claude-3)",
                 }
-            ]
+            ],
         }
 
         result = render_comprehensive_text(structured_json)

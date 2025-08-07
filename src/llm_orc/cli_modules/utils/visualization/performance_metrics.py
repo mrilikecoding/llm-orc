@@ -281,9 +281,7 @@ def _display_phase_timing(
 
         # Show timing relative to other phases
         if len(phase_metrics) > 1:
-            total_duration = sum(
-                p.get("duration_seconds", 0) for p in phase_metrics
-            )
+            total_duration = sum(p.get("duration_seconds", 0) for p in phase_metrics)
             if total_duration > 0:
                 percentage = (duration / total_duration) * 100
                 click.echo(f"  ({percentage:.1f}% of total execution time)")

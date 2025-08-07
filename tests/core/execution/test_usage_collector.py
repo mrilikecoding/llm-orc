@@ -54,7 +54,7 @@ class TestUsageCollector:
         collector = UsageCollector()
 
         # Mock psutil to raise exception
-        with patch('llm_orc.core.execution.usage_collector.psutil') as mock_psutil:
+        with patch("llm_orc.core.execution.usage_collector.psutil") as mock_psutil:
             mock_psutil.cpu_percent.side_effect = Exception("psutil error")
 
             # When
@@ -78,7 +78,7 @@ class TestUsageCollector:
         collector.start_agent_resource_monitoring("agent1")
 
         # Mock psutil to raise exception during sampling
-        with patch('llm_orc.core.execution.usage_collector.psutil') as mock_psutil:
+        with patch("llm_orc.core.execution.usage_collector.psutil") as mock_psutil:
             mock_psutil.cpu_percent.side_effect = Exception("psutil error")
 
             # When/Then - should not raise exception (silent handling)
@@ -127,14 +127,12 @@ class TestUsageCollector:
         collector = UsageCollector()
 
         # Add some usage data
-        collector.add_manual_usage("agent1", {
-            "total_tokens": 100,
-            "total_cost_usd": 0.05
-        })
-        collector.add_manual_usage("agent2", {
-            "total_tokens": 200,
-            "total_cost_usd": 0.10
-        })
+        collector.add_manual_usage(
+            "agent1", {"total_tokens": 100, "total_cost_usd": 0.05}
+        )
+        collector.add_manual_usage(
+            "agent2", {"total_tokens": 200, "total_cost_usd": 0.10}
+        )
 
         # When
         breakdown = collector.get_usage_breakdown_by_metric()
@@ -183,13 +181,16 @@ class TestUsageCollector:
         collector = UsageCollector()
 
         # Add usage data
-        collector.add_manual_usage("agent1", {
-            "total_tokens": 100,
-            "input_tokens": 60,
-            "output_tokens": 40,
-            "cost_usd": 0.05,
-            "duration_ms": 1000
-        })
+        collector.add_manual_usage(
+            "agent1",
+            {
+                "total_tokens": 100,
+                "input_tokens": 60,
+                "output_tokens": 40,
+                "cost_usd": 0.05,
+                "duration_ms": 1000,
+            },
+        )
 
         # When
         summary = collector.calculate_usage_summary()
@@ -208,13 +209,16 @@ class TestUsageCollector:
         collector = UsageCollector()
 
         # Add agent usage
-        collector.add_manual_usage("agent1", {
-            "total_tokens": 100,
-            "input_tokens": 60,
-            "output_tokens": 40,
-            "cost_usd": 0.05,
-            "duration_ms": 1000
-        })
+        collector.add_manual_usage(
+            "agent1",
+            {
+                "total_tokens": 100,
+                "input_tokens": 60,
+                "output_tokens": 40,
+                "cost_usd": 0.05,
+                "duration_ms": 1000,
+            },
+        )
 
         # Synthesis usage data
         synthesis_usage = {
@@ -222,7 +226,7 @@ class TestUsageCollector:
             "input_tokens": 30,
             "output_tokens": 20,
             "cost_usd": 0.02,
-            "duration_ms": 500
+            "duration_ms": 500,
         }
 
         # When
@@ -246,7 +250,7 @@ class TestUsageCollector:
         # Prepare usage to merge
         other_usage = {
             "agent2": {"total_tokens": 200, "cost_usd": 0.10},
-            "agent3": {"total_tokens": 50}
+            "agent3": {"total_tokens": 50},
         }
 
         # When
@@ -267,7 +271,7 @@ class TestUsageCollector:
         collector.start_agent_resource_monitoring("agent1")
 
         # Mock psutil to return specific values
-        with patch('llm_orc.core.execution.usage_collector.psutil') as mock_psutil:
+        with patch("llm_orc.core.execution.usage_collector.psutil") as mock_psutil:
             mock_psutil.cpu_percent.return_value = 75.5
             mock_psutil.virtual_memory.return_value.percent = 85.2
 
@@ -287,7 +291,7 @@ class TestUsageCollector:
         collector.start_agent_resource_monitoring("agent1")
 
         # Take some samples with mock data
-        with patch('llm_orc.core.execution.usage_collector.psutil') as mock_psutil:
+        with patch("llm_orc.core.execution.usage_collector.psutil") as mock_psutil:
             mock_psutil.cpu_percent.return_value = 70.0
             mock_psutil.virtual_memory.return_value.percent = 80.0
             collector.sample_agent_resources("agent1")
@@ -326,10 +330,9 @@ class TestUsageCollector:
         collector = UsageCollector()
 
         # Test with total_cost_usd field (stored as-is)
-        collector.add_manual_usage("agent1", {
-            "total_tokens": 100,
-            "total_cost_usd": 0.05
-        })
+        collector.add_manual_usage(
+            "agent1", {"total_tokens": 100, "total_cost_usd": 0.05}
+        )
 
         # When
         usage = collector.get_agent_usage()
@@ -343,19 +346,25 @@ class TestUsageCollector:
         collector = UsageCollector()
 
         # Add usage with valid and invalid cost types
-        collector.add_manual_usage("agent1", {
-            "total_tokens": 100,
-            "cost_usd": 0.05  # Valid float
-        })
-        collector.add_manual_usage("agent2", {
-            "total_tokens": 200,
-            "cost_usd": 10  # Valid int
-        })
+        collector.add_manual_usage(
+            "agent1",
+            {
+                "total_tokens": 100,
+                "cost_usd": 0.05,  # Valid float
+            },
+        )
+        collector.add_manual_usage(
+            "agent2",
+            {
+                "total_tokens": 200,
+                "cost_usd": 10,  # Valid int
+            },
+        )
 
         # Manually add invalid cost type to test the isinstance check
         collector._agent_usage["agent3"] = {
             "total_tokens": 50,
-            "cost_usd": "invalid"  # Invalid string
+            "cost_usd": "invalid",  # Invalid string
         }
 
         # When
@@ -370,10 +379,7 @@ class TestUsageCollector:
 
         # Mock model with usage and model_profile
         mock_model = Mock()
-        mock_model.get_last_usage.return_value = {
-            "total_tokens": 100,
-            "cost_usd": 0.05
-        }
+        mock_model.get_last_usage.return_value = {"total_tokens": 100, "cost_usd": 0.05}
         mock_model.get_model_profile.return_value = "gpt-4"
 
         # When
@@ -392,10 +398,7 @@ class TestUsageCollector:
 
         # Mock model with usage
         mock_model = Mock()
-        mock_model.get_last_usage.return_value = {
-            "total_tokens": 100,
-            "cost_usd": 0.05
-        }
+        mock_model.get_last_usage.return_value = {"total_tokens": 100, "cost_usd": 0.05}
         mock_model.get_model_profile.return_value = None
 
         # When
@@ -406,4 +409,3 @@ class TestUsageCollector:
         assert usage["agent1"]["total_tokens"] == 100
         # Should also have resource monitoring fields merged in
         assert "start_time" in usage["agent1"]
-

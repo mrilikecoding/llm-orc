@@ -80,7 +80,6 @@ __all__ = [
     "_create_structured_dependency_info",
     "_create_agent_statuses",
     "_build_dependency_levels",
-
     # Results display
     "display_results",
     "display_plain_text_results",
@@ -91,7 +90,6 @@ __all__ = [
     "_display_simplified_plain_text",
     "_display_plain_text_dependency_graph",
     "_has_code_content",
-
     # Performance metrics
     "_format_adaptive_resource_metrics",
     "_format_per_phase_metrics",
@@ -110,7 +108,6 @@ __all__ = [
     "_display_execution_metrics",
     "_display_simplified_metrics",
     "_display_raw_samples",
-
     # Streaming execution
     "run_streaming_execution",
     "run_standard_execution",

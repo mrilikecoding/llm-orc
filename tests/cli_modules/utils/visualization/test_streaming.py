@@ -848,15 +848,20 @@ class TestNewHelperFunctions:
         ensemble_config.agents = [{"name": "agent_a"}]
         results_console = Mock()
 
-        with patch(
-            "llm_orc.cli_modules.utils.visualization.streaming.create_dependency_tree"
-        ) as mock_tree, patch(
-            "llm_orc.cli_modules.utils.visualization.results_display._process_agent_results"
-        ) as mock_process, patch(
-            "llm_orc.cli_modules.utils.visualization.results_display._display_agent_result"
-        ) as mock_display_result, patch(
-            "llm_orc.cli_modules.utils.visualization.results_display._format_performance_metrics"
-        ) as mock_format_perf:
+        with (
+            patch(
+                "llm_orc.cli_modules.utils.visualization.streaming.create_dependency_tree"
+            ) as mock_tree,
+            patch(
+                "llm_orc.cli_modules.utils.visualization.results_display._process_agent_results"
+            ) as mock_process,
+            patch(
+                "llm_orc.cli_modules.utils.visualization.results_display._display_agent_result"
+            ) as mock_display_result,
+            patch(
+                "llm_orc.cli_modules.utils.visualization.results_display._format_performance_metrics"
+            ) as mock_format_perf,
+        ):
             mock_process.return_value = {
                 "agent_a": {"status": "success", "response": "Hello"}
             }

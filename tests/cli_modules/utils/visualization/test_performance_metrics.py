@@ -29,15 +29,9 @@ class TestFormatAdaptiveResourceMetrics:
             "management_type": "adaptive",
             "adaptive_used": True,
             "concurrency_decisions": [
-                {
-                    "configured_limit": 5,
-                    "recommendation": {"limit": 3}
-                }
+                {"configured_limit": 5, "recommendation": {"limit": 3}}
             ],
-            "execution_metrics": {
-                "peak_cpu": 80.5,
-                "avg_cpu": 65.2
-            }
+            "execution_metrics": {"peak_cpu": 80.5, "avg_cpu": 65.2},
         }
 
         result = _format_adaptive_resource_metrics(adaptive_stats)
@@ -52,13 +46,8 @@ class TestFormatAdaptiveResourceMetrics:
         """Test formatting static resource metrics."""
         adaptive_stats = {
             "management_type": "static",
-            "concurrency_decisions": [
-                {"static_limit": 4}
-            ],
-            "execution_metrics": {
-                "peak_memory": 75.0,
-                "avg_memory": 60.0
-            }
+            "concurrency_decisions": [{"static_limit": 4}],
+            "execution_metrics": {"peak_memory": 75.0, "avg_memory": 60.0},
         }
 
         result = _format_adaptive_resource_metrics(adaptive_stats)
@@ -72,9 +61,7 @@ class TestFormatAdaptiveResourceMetrics:
         """Test formatting when no decisions were made."""
         adaptive_stats = {
             "management_type": "unknown",
-            "execution_metrics": {
-                "sample_count": 15
-            }
+            "execution_metrics": {"sample_count": 15},
         }
 
         result = _format_adaptive_resource_metrics(adaptive_stats)
@@ -112,7 +99,7 @@ class TestFormatPerPhaseMetrics:
                 "avg_cpu": 70.2,
                 "peak_memory": 65.8,
                 "avg_memory": 55.3,
-                "duration_seconds": 12.5
+                "duration_seconds": 12.5,
             },
             {
                 "phase_index": 1,
@@ -121,8 +108,8 @@ class TestFormatPerPhaseMetrics:
                 "sample_count": 5,
                 "peak_cpu": 45.0,
                 "avg_cpu": 35.0,
-                "duration_seconds": 8.2
-            }
+                "duration_seconds": 8.2,
+            },
         ]
 
         result = _format_per_phase_metrics(phase_metrics)
@@ -142,11 +129,7 @@ class TestFormatPerPhaseMetrics:
     def test_format_per_phase_metrics_minimal(self) -> None:
         """Test formatting minimal phase metrics."""
         phase_metrics = [
-            {
-                "phase_index": 0,
-                "agent_count": 1,
-                "agent_names": ["agent_a"]
-            }
+            {"phase_index": 0, "agent_count": 1, "agent_names": ["agent_a"]}
         ]
 
         result = _format_per_phase_metrics(phase_metrics)
@@ -176,16 +159,13 @@ class TestFormatAdaptiveWithDecisions:
         """Test complete adaptive formatting with decisions."""
         adaptive_stats = {
             "concurrency_decisions": [
-                {
-                    "configured_limit": 8,
-                    "recommendation": {"limit": 6}
-                }
+                {"configured_limit": 8, "recommendation": {"limit": 6}}
             ],
             "execution_metrics": {
                 "peak_cpu": 90.0,
                 "avg_cpu": 75.5,
-                "sample_count": 20
-            }
+                "sample_count": 20,
+            },
         }
 
         result = _format_adaptive_with_decisions(adaptive_stats)
@@ -201,7 +181,7 @@ class TestFormatAdaptiveWithDecisions:
         """Test adaptive formatting without decisions."""
         adaptive_stats = {
             "concurrency_decisions": [],
-            "execution_metrics": {"peak_cpu": 50.0}
+            "execution_metrics": {"peak_cpu": 50.0},
         }
 
         result = _format_adaptive_with_decisions(adaptive_stats)
@@ -216,10 +196,7 @@ class TestFormatAdaptiveDecisionDetails:
 
     def test_format_adaptive_decision_details_configured_limit(self) -> None:
         """Test formatting decision with configured limit."""
-        decision = {
-            "configured_limit": 10,
-            "recommendation": {"limit": 8}
-        }
+        decision = {"configured_limit": 10, "recommendation": {"limit": 8}}
 
         result = _format_adaptive_decision_details(decision)
 
@@ -228,10 +205,7 @@ class TestFormatAdaptiveDecisionDetails:
 
     def test_format_adaptive_decision_details_static_limit(self) -> None:
         """Test formatting decision with static limit."""
-        decision = {
-            "static_limit": 6,
-            "recommendation": {"limit": 4}
-        }
+        decision = {"static_limit": 6, "recommendation": {"limit": 4}}
 
         result = _format_adaptive_decision_details(decision)
 
@@ -264,7 +238,7 @@ class TestFormatExecutionMetrics:
             "avg_cpu": 72.3,
             "peak_memory": 91.2,
             "avg_memory": 78.5,
-            "sample_count": 25
+            "sample_count": 25,
         }
 
         result = _format_execution_metrics(execution_metrics)
@@ -276,10 +250,7 @@ class TestFormatExecutionMetrics:
 
     def test_format_execution_metrics_cpu_only(self) -> None:
         """Test formatting with CPU metrics only."""
-        execution_metrics = {
-            "peak_cpu": 65.0,
-            "avg_cpu": 50.0
-        }
+        execution_metrics = {"peak_cpu": 65.0, "avg_cpu": 50.0}
 
         result = _format_execution_metrics(execution_metrics)
 
@@ -288,10 +259,7 @@ class TestFormatExecutionMetrics:
 
     def test_format_execution_metrics_memory_only(self) -> None:
         """Test formatting with memory metrics only."""
-        execution_metrics = {
-            "peak_memory": 45.0,
-            "avg_memory": 38.0
-        }
+        execution_metrics = {"peak_memory": 45.0, "avg_memory": 38.0}
 
         result = _format_execution_metrics(execution_metrics)
 
@@ -314,7 +282,7 @@ class TestFormatExecutionSummary:
             "peak_cpu": 95.5,
             "avg_cpu": 82.1,
             "peak_memory": 87.3,
-            "avg_memory": 71.8
+            "avg_memory": 71.8,
         }
 
         result = _format_execution_summary(execution_metrics)
@@ -329,10 +297,7 @@ class TestFormatExecutionSummary:
 
     def test_format_execution_summary_partial(self) -> None:
         """Test partial execution summary."""
-        execution_metrics = {
-            "peak_cpu": 60.0,
-            "avg_memory": 40.0
-        }
+        execution_metrics = {"peak_cpu": 60.0, "avg_memory": 40.0}
 
         result = _format_execution_summary(execution_metrics)
 
@@ -351,10 +316,10 @@ class TestFormatExecutionSummary:
 class TestDisplayFunctions:
     """Test display functions."""
 
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo')
+    @patch("llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo")
     @patch(
-        'llm_orc.cli_modules.utils.visualization.performance_metrics'
-        '._format_adaptive_resource_metrics'
+        "llm_orc.cli_modules.utils.visualization.performance_metrics"
+        "._format_adaptive_resource_metrics"
     )
     def test_display_adaptive_resource_metrics_text(
         self, mock_format: Mock, mock_echo: Mock
@@ -371,7 +336,7 @@ class TestDisplayFunctions:
         mock_echo.assert_any_call("Line 2")
         mock_echo.assert_any_call("Line 3")
 
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo')
+    @patch("llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo")
     def test_display_adaptive_resource_metrics_text_empty(
         self, mock_echo: Mock
     ) -> None:
@@ -380,14 +345,14 @@ class TestDisplayFunctions:
 
         mock_echo.assert_not_called()
 
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo')
+    @patch("llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo")
     @patch(
-        'llm_orc.cli_modules.utils.visualization.performance_metrics'
-        '._display_phase_resource_usage'
+        "llm_orc.cli_modules.utils.visualization.performance_metrics"
+        "._display_phase_resource_usage"
     )
     @patch(
-        'llm_orc.cli_modules.utils.visualization.performance_metrics'
-        '._display_phase_timing'
+        "llm_orc.cli_modules.utils.visualization.performance_metrics"
+        "._display_phase_timing"
     )
     def test_display_phase_statistics(
         self, mock_timing: Mock, mock_usage: Mock, mock_echo: Mock
@@ -397,7 +362,7 @@ class TestDisplayFunctions:
             {
                 "phase_index": 0,
                 "agent_names": ["agent_a", "agent_b"],
-                "duration_seconds": 10.5
+                "duration_seconds": 10.5,
             }
         ]
 
@@ -407,14 +372,14 @@ class TestDisplayFunctions:
         mock_usage.assert_called_once()
         mock_timing.assert_called_once()
 
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo')
+    @patch("llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo")
     def test_display_phase_statistics_empty(self, mock_echo: Mock) -> None:
         """Test displaying empty phase statistics."""
         _display_phase_statistics([])
 
         mock_echo.assert_not_called()
 
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo')
+    @patch("llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo")
     def test_display_phase_resource_usage_complete(self, mock_echo: Mock) -> None:
         """Test displaying complete phase resource usage."""
         phase_data = {
@@ -422,7 +387,7 @@ class TestDisplayFunctions:
             "avg_cpu": 70.2,
             "peak_memory": 65.8,
             "avg_memory": 55.3,
-            "sample_count": 15
+            "sample_count": 15,
         }
 
         _display_phase_resource_usage(phase_data)
@@ -432,27 +397,24 @@ class TestDisplayFunctions:
         assert any("Memory 55.3% (peak 65.8%)" in call for call in calls)
         assert any("15 samples collected" in call for call in calls)
 
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo')
+    @patch("llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo")
     def test_display_phase_resource_usage_fallback(self, mock_echo: Mock) -> None:
         """Test displaying phase resource usage with fallback values."""
-        phase_data = {
-            "final_cpu_percent": 60.0,
-            "final_memory_percent": 45.0
-        }
+        phase_data = {"final_cpu_percent": 60.0, "final_memory_percent": 45.0}
 
         _display_phase_resource_usage(phase_data)
 
         calls = [call[0][0] for call in mock_echo.call_args_list]
         assert any("CPU 60.0%, Memory 45.0%" in call for call in calls)
 
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo')
+    @patch("llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo")
     def test_display_phase_timing_with_percentage(self, mock_echo: Mock) -> None:
         """Test displaying phase timing with percentage calculation."""
         phase_data = {"duration_seconds": 10.0}
         phase_metrics = [
             {"duration_seconds": 10.0},
             {"duration_seconds": 20.0},
-            {"duration_seconds": 20.0}
+            {"duration_seconds": 20.0},
         ]
 
         _display_phase_timing(phase_data, 0, phase_metrics)
@@ -461,14 +423,14 @@ class TestDisplayFunctions:
         assert any("Duration: 10.0 seconds" in call for call in calls)
         assert any("(20.0% of total execution time)" in call for call in calls)
 
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo')
+    @patch("llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo")
     def test_display_performance_guidance_low_cpu(self, mock_echo: Mock) -> None:
         """Test performance guidance for low CPU usage."""
         adaptive_stats = {
             "execution_metrics": {
                 "peak_cpu": 40.0,
                 "avg_cpu": 25.0,
-                "peak_memory": 30.0
+                "peak_memory": 30.0,
             }
         }
 
@@ -477,14 +439,14 @@ class TestDisplayFunctions:
         calls = [call[0][0] for call in mock_echo.call_args_list]
         assert any("💡 CPU utilization is low" in call for call in calls)
 
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo')
+    @patch("llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo")
     def test_display_performance_guidance_high_resources(self, mock_echo: Mock) -> None:
         """Test performance guidance for high resource usage."""
         adaptive_stats = {
             "execution_metrics": {
                 "peak_cpu": 95.0,
                 "avg_cpu": 85.0,
-                "peak_memory": 90.0
+                "peak_memory": 90.0,
             }
         }
 
@@ -494,38 +456,39 @@ class TestDisplayFunctions:
         assert any("⚠️  High CPU usage detected" in call for call in calls)
         assert any("⚠️  High memory usage" in call for call in calls)
 
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo')
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics._display_simplified_metrics')
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics._display_raw_samples')
+    @patch("llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo")
+    @patch(
+        "llm_orc.cli_modules.utils.visualization.performance_metrics._display_simplified_metrics"
+    )
+    @patch(
+        "llm_orc.cli_modules.utils.visualization.performance_metrics._display_raw_samples"
+    )
     def test_display_execution_metrics(
         self, mock_raw: Mock, mock_simplified: Mock, mock_echo: Mock
     ) -> None:
         """Test displaying execution metrics."""
-        execution_metrics = {
-            "peak_cpu": 80.0,
-            "sample_count": 10
-        }
+        execution_metrics = {"peak_cpu": 80.0, "sample_count": 10}
 
         _display_execution_metrics(execution_metrics)
 
         mock_simplified.assert_called_once_with(execution_metrics)
         mock_raw.assert_called_once_with(execution_metrics)
 
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo')
+    @patch("llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo")
     def test_display_execution_metrics_empty(self, mock_echo: Mock) -> None:
         """Test displaying empty execution metrics."""
         _display_execution_metrics({})
 
         mock_echo.assert_called_with("No execution metrics available")
 
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo')
+    @patch("llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo")
     def test_display_simplified_metrics(self, mock_echo: Mock) -> None:
         """Test displaying simplified metrics."""
         execution_metrics = {
             "peak_cpu": 75.5,
             "avg_cpu": 60.2,
             "peak_memory": 85.1,
-            "avg_memory": 70.3
+            "avg_memory": 70.3,
         }
 
         _display_simplified_metrics(execution_metrics)
@@ -534,13 +497,13 @@ class TestDisplayFunctions:
         assert any("CPU: 60.2% avg, 75.5% peak" in call for call in calls)
         assert any("Memory: 70.3% avg, 85.1% peak" in call for call in calls)
 
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo')
+    @patch("llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo")
     def test_display_raw_samples(self, mock_echo: Mock) -> None:
         """Test displaying raw sample data."""
         execution_metrics = {
             "sample_count": 8,
             "cpu_samples": [60.0, 65.0, 70.0],
-            "memory_samples": [45.0, 50.0, 55.0]
+            "memory_samples": [45.0, 50.0, 55.0],
         }
 
         _display_raw_samples(execution_metrics)
@@ -550,13 +513,13 @@ class TestDisplayFunctions:
         assert any("CPU samples:" in call for call in calls)
         assert any("Memory samples:" in call for call in calls)
 
-    @patch('llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo')
+    @patch("llm_orc.cli_modules.utils.visualization.performance_metrics.click.echo")
     def test_display_raw_samples_large_dataset(self, mock_echo: Mock) -> None:
         """Test displaying raw samples with large dataset (should skip output)."""
         execution_metrics = {
             "sample_count": 5,
             "cpu_samples": [i * 10.0 for i in range(15)],  # 15 samples > 10 limit
-            "memory_samples": [i * 5.0 for i in range(15)]
+            "memory_samples": [i * 5.0 for i in range(15)],
         }
 
         _display_raw_samples(execution_metrics)
