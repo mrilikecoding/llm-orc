@@ -5,7 +5,7 @@ import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from llm_orc.agents.script_agent import ScriptAgent
+from llm_orc.agents.enhanced_script_agent import EnhancedScriptAgent
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
@@ -268,25 +268,44 @@ class EnsembleExecutor:
     async def _execute_agent(
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
-        """Execute a single agent and return its response and model instance."""
-        agent_type = agent_config.get("type", "llm")
+        """Execute a single agent and return its response and model instance.
 
-        if agent_type == "script":
+        Agent type is determined implicitly based on configuration fields:
+        - Has 'script' field -> Script agent
+        - Has 'model_profile' field -> LLM agent
+        - Has explicit 'type' field -> Use that (backward compatibility)
+        """
+        # Check for explicit type first (backward compatibility)
+        explicit_type = agent_config.get("type")
+
+        if explicit_type == "script":
             return await self._execute_script_agent(agent_config, input_data)
-        else:
+        elif explicit_type == "llm":
             return await self._execute_llm_agent(agent_config, input_data)
+
+        # Implicit type detection based on fields present
+        if "script" in agent_config:
+            return await self._execute_script_agent(agent_config, input_data)
+        elif "model_profile" in agent_config:
+            return await self._execute_llm_agent(agent_config, input_data)
+        else:
+            agent_name = agent_config.get("name", "unknown")
+            raise ValueError(
+                f"Agent '{agent_name}' must have either 'script' or 'model_profile'"
+            )
 
     async def _execute_script_agent(
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
-        """Execute script agent with resource monitoring."""
+        """Execute script agent with resource monitoring using EnhancedScriptAgent."""
         agent_name = agent_config["name"]
 
         # Start resource monitoring for this agent
         self._usage_collector.start_agent_resource_monitoring(agent_name)
 
         try:
-            script_agent = ScriptAgent(agent_name, agent_config)
+            # Use EnhancedScriptAgent for JSON I/O support
+            script_agent = EnhancedScriptAgent(agent_name, agent_config)
 
             # Sample resources during execution
             self._usage_collector.sample_agent_resources(agent_name)
@@ -295,6 +314,12 @@ class EnsembleExecutor:
 
             # Final sample before completion
             self._usage_collector.sample_agent_resources(agent_name)
+
+            # Convert response to string if it's a dict (JSON output)
+            if isinstance(response, dict):
+                import json
+
+                response = json.dumps(response)
 
             return response, None  # Script agents don't have model instances
         finally:
@@ -499,7 +524,12 @@ class EnsembleExecutor:
         """Execute script agents and return context data and error status."""
         context_data = {}
         has_errors = False
-        script_agents = [a for a in config.agents if a.get("type") == "script"]
+        # Identify script agents using implicit detection
+        script_agents = [
+            a
+            for a in config.agents
+            if a.get("type") == "script" or ("script" in a and "model_profile" not in a)
+        ]
 
         for agent_config in script_agents:
             try:
@@ -737,7 +767,15 @@ class EnsembleExecutor:
     ) -> bool:
         """Execute LLM agents with dependency-aware phasing."""
         has_errors = False
-        llm_agents = [a for a in config.agents if a.get("type") != "script"]
+        # Identify LLM agents using implicit detection
+        llm_agents = [
+            a
+            for a in config.agents
+            if (
+                a.get("type") not in ["script", None]  # Explicit LLM type
+                or ("model_profile" in a and "script" not in a)
+            )  # Implicit LLM via model_profile
+        ]
 
         # Prepare enhanced input for LLM agents
         enhanced_input = self._prepare_enhanced_input(input_data, config, context_data)

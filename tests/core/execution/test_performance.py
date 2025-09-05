@@ -272,8 +272,7 @@ class TestEnsembleExecutionPerformance:
         for i in range(3):
             agent_config = {
                 "name": f"agent_{i}",
-                "model": f"mock-model-{i}",
-                "provider": "mock",
+                "model_profile": f"mock-model-{i}",
             }
             agent_configs.append(agent_config)
 
@@ -334,14 +333,13 @@ class TestEnsembleExecutionPerformance:
         # Arrange - Create ensemble where synthesizer depends on 3 reviewers
         agent_configs: list[dict[str, Any]] = [
             # Independent agents (should run in parallel)
-            {"name": "security_reviewer", "model": "mock-security", "provider": "mock"},
-            {"name": "performance_reviewer", "model": "mock-perf", "provider": "mock"},
-            {"name": "style_reviewer", "model": "mock-style", "provider": "mock"},
+            {"name": "security_reviewer", "model_profile": "mock-security"},
+            {"name": "performance_reviewer", "model_profile": "mock-perf"},
+            {"name": "style_reviewer", "model_profile": "mock-style"},
             # Dependent agent (should run after the above 3)
             {
                 "name": "synthesizer",
-                "model": "mock-synthesizer",
-                "provider": "mock",
+                "model_profile": "mock-synthesizer",
                 "depends_on": [
                     "security_reviewer",
                     "performance_reviewer",
@@ -402,12 +400,17 @@ class TestEnsembleExecutionPerformance:
             return mock
 
         # Mock model loading to return tracked models
-        async def mock_load_model(
-            model_name: str, provider: str | None = None
+        async def mock_load_model_from_agent_config(
+            agent_config: dict[str, Any],
         ) -> AsyncMock:
-            return create_tracked_model(model_name)
+            model_profile = agent_config.get("model_profile", "default-model")
+            return create_tracked_model(model_profile)
 
-        monkeypatch.setattr(executor._model_factory, "load_model", mock_load_model)
+        monkeypatch.setattr(
+            executor._model_factory,
+            "load_model_from_agent_config",
+            mock_load_model_from_agent_config,
+        )
 
         # Act - Execute ensemble with dependencies
         time.perf_counter()
@@ -518,26 +521,23 @@ class TestEnsembleExecutionPerformance:
         # Arrange - Create complex dependency graph
         agent_configs: list[dict[str, Any]] = [
             # Level 0: Independent agents
-            {"name": "data_collector", "model": "mock-data", "provider": "mock"},
-            {"name": "schema_validator", "model": "mock-schema", "provider": "mock"},
+            {"name": "data_collector", "model_profile": "mock-data"},
+            {"name": "schema_validator", "model_profile": "mock-schema"},
             # Level 1: Depends on Level 0
             {
                 "name": "security_scanner",
-                "model": "mock-security",
-                "provider": "mock",
+                "model_profile": "mock-security",
                 "depends_on": ["data_collector"],
             },
             {
                 "name": "performance_analyzer",
-                "model": "mock-perf",
-                "provider": "mock",
+                "model_profile": "mock-perf",
                 "depends_on": ["data_collector", "schema_validator"],
             },
             # Level 2: Depends on Level 1
             {
                 "name": "final_synthesizer",
-                "model": "mock-synthesizer",
-                "provider": "mock",
+                "model_profile": "mock-synthesizer",
                 "depends_on": ["security_scanner", "performance_analyzer"],
             },
         ]
@@ -608,7 +608,7 @@ class TestEnsembleExecutionPerformance:
 
         async def mock_load_model_with_delay(agent_config: dict[str, Any]) -> AsyncMock:
             """Mock model loading with simulated delay to test parallelism."""
-            model_name = agent_config.get("model", "mock-model")
+            model_name = agent_config.get("model_profile", "mock-model")
             # Track timing for parallel execution validation
 
             # Simulate model loading delay (50ms)
@@ -632,9 +632,9 @@ class TestEnsembleExecutionPerformance:
 
         # Test with 3 independent agents that should load models in parallel
         agent_configs = [
-            {"name": "agent1", "model": "mock-model-1", "provider": "mock"},
-            {"name": "agent2", "model": "mock-model-2", "provider": "mock"},
-            {"name": "agent3", "model": "mock-model-3", "provider": "mock"},
+            {"name": "agent1", "model_profile": "mock-model-1"},
+            {"name": "agent2", "model_profile": "mock-model-2"},
+            {"name": "agent3", "model_profile": "mock-model-3"},
         ]
 
         config = EnsembleConfig(
@@ -727,10 +727,10 @@ class TestEnsembleExecutionPerformance:
 
         # Test with multiple agents using the same model
         agent_configs = [
-            {"name": "agent1", "model": "shared-model", "provider": "mock"},
-            {"name": "agent2", "model": "shared-model", "provider": "mock"},
-            {"name": "agent3", "model": "shared-model", "provider": "mock"},
-            {"name": "agent4", "model": "different-model", "provider": "mock"},
+            {"name": "agent1", "model_profile": "shared-model"},
+            {"name": "agent2", "model_profile": "shared-model"},
+            {"name": "agent3", "model_profile": "shared-model"},
+            {"name": "agent4", "model_profile": "different-model"},
         ]
 
         config = EnsembleConfig(
@@ -818,9 +818,9 @@ class TestEnsembleExecutionPerformance:
 
         # Test with multiple agents
         agent_configs = [
-            {"name": "agent1", "model": "mock-model-1", "provider": "mock"},
-            {"name": "agent2", "model": "mock-model-2", "provider": "mock"},
-            {"name": "agent3", "model": "mock-model-3", "provider": "mock"},
+            {"name": "agent1", "model_profile": "mock-model-1"},
+            {"name": "agent2", "model_profile": "mock-model-2"},
+            {"name": "agent3", "model_profile": "mock-model-3"},
         ]
 
         config = EnsembleConfig(
@@ -917,8 +917,8 @@ class TestEnsembleExecutionPerformance:
 
         # Test with simple agent configuration
         agent_configs = [
-            {"name": "agent1", "model": "mock-model-1", "provider": "mock"},
-            {"name": "agent2", "model": "mock-model-2", "provider": "mock"},
+            {"name": "agent1", "model_profile": "mock-model-1"},
+            {"name": "agent2", "model_profile": "mock-model-2"},
         ]
 
         config = EnsembleConfig(
@@ -1055,9 +1055,9 @@ class TestPerformanceBenchmarks:
             name="performance_benchmark",
             description="Performance benchmark ensemble",
             agents=[
-                {"name": "analyst", "model": "mock-claude", "provider": "mock"},
-                {"name": "reviewer", "model": "mock-claude", "provider": "mock"},
-                {"name": "validator", "model": "mock-claude", "provider": "mock"},
+                {"name": "analyst", "model_profile": "mock-claude"},
+                {"name": "reviewer", "model_profile": "mock-claude"},
+                {"name": "validator", "model_profile": "mock-claude"},
             ],
         )
 
@@ -1116,8 +1116,7 @@ class TestPerformanceBenchmarks:
             agents.append(
                 {
                     "name": f"agent_{i}",
-                    "model": "mock-model",
-                    "provider": "mock",
+                    "model_profile": "mock-model",
                 }
             )
 
@@ -1180,9 +1179,9 @@ class TestPerformanceBenchmarks:
             name="streaming_benchmark",
             description="Streaming performance test",
             agents=[
-                {"name": "stream_agent1", "model": "mock-model", "provider": "mock"},
-                {"name": "stream_agent2", "model": "mock-model", "provider": "mock"},
-                {"name": "stream_agent3", "model": "mock-model", "provider": "mock"},
+                {"name": "stream_agent1", "model_profile": "mock-model"},
+                {"name": "stream_agent2", "model_profile": "mock-model"},
+                {"name": "stream_agent3", "model_profile": "mock-model"},
             ],
         )
 
@@ -1299,14 +1298,12 @@ class TestPerformanceBenchmarks:
             agents=[
                 {
                     "name": "fast_agent",
-                    "model": "mock-fast",
-                    "provider": "mock",
+                    "model_profile": "mock-fast",
                     "timeout_seconds": 2.0,
                 },
                 {
                     "name": "slow_agent",
-                    "model": "mock-slow",
-                    "provider": "mock",
+                    "model_profile": "mock-slow",
                     "timeout_seconds": 0.1,  # Will timeout
                 },
             ],
@@ -1388,9 +1385,9 @@ class TestPerformanceBenchmarks:
             name="memory_benchmark",
             description="Memory efficiency test",
             agents=[
-                {"name": "memory_agent1", "model": "mock-model", "provider": "mock"},
-                {"name": "memory_agent2", "model": "mock-model", "provider": "mock"},
-                {"name": "memory_agent3", "model": "mock-model", "provider": "mock"},
+                {"name": "memory_agent1", "model_profile": "mock-model"},
+                {"name": "memory_agent2", "model_profile": "mock-model"},
+                {"name": "memory_agent3", "model_profile": "mock-model"},
             ],
         )
 
@@ -1464,8 +1461,7 @@ class TestPerformanceBenchmarks:
             agents.append(
                 {
                     "name": f"concurrent_agent_{i}",
-                    "model": "mock-model",
-                    "provider": "mock",
+                    "model_profile": "mock-model",
                 }
             )
 

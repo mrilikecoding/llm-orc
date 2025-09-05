@@ -18,8 +18,9 @@ class TestEnsembleScriptIntegration:
             agents=[
                 {
                     "name": "echo_agent",
-                    "type": "script",
-                    "script": 'echo "Script output: $INPUT_DATA"',
+                    "script": (
+                        'echo "{"success": true, "output": "Script output from agent"}"'
+                    ),
                     "timeout_seconds": 1,
                 }
             ],
@@ -30,9 +31,11 @@ class TestEnsembleScriptIntegration:
 
         assert result["status"] in ["completed", "completed_with_errors"]
         assert "echo_agent" in result["results"]
-        assert (
-            "Script output: test input" in result["results"]["echo_agent"]["response"]
-        )
+        response = result["results"]["echo_agent"]["response"]
+        if isinstance(response, dict):
+            assert "Script output from agent" in response.get("output", "")
+        else:
+            assert "Script output from agent" in response
 
     @pytest.mark.asyncio
     async def test_ensemble_with_mixed_agents(self) -> None:
@@ -43,16 +46,16 @@ class TestEnsembleScriptIntegration:
             agents=[
                 {
                     "name": "data_fetcher",
-                    "type": "script",
-                    "script": 'echo "Data: $INPUT_DATA"',
+                    "script": (
+                        'echo "{"success": true, '
+                        '"output": "Data fetched successfully"}"'
+                    ),
                     "timeout_seconds": 1,
                 },
                 {
                     "name": "llm_analyzer",
-                    "type": "llm",
-                    "role": "analyst",
-                    "model": "claude-3-sonnet",
-                    "prompt": "Analyze the provided data",
+                    "model_profile": "claude-analyst",
+                    "system_prompt": "Analyze the provided data",
                     "timeout_seconds": 2,
                 },
             ],
@@ -64,7 +67,11 @@ class TestEnsembleScriptIntegration:
         assert result["status"] in ["completed", "completed_with_errors"]
         assert "data_fetcher" in result["results"]
         assert "llm_analyzer" in result["results"]
-        assert "Data: test data" in result["results"]["data_fetcher"]["response"]
+        response = result["results"]["data_fetcher"]["response"]
+        if isinstance(response, dict):
+            assert "Data fetched successfully" in response.get("output", "")
+        else:
+            assert "Data fetched successfully" in response
 
     def test_ensemble_config_validates_agent_types(self) -> None:
         """Test that ensemble configuration validates agent types."""

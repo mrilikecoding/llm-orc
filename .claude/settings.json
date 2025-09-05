@@ -1,0 +1,32 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matchers": ["startup", "resume"],
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/load-agents.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matchers": ["Write", "Edit", "MultiEdit"],
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/auto-lint.sh",
+            "description": "Auto-format Python code after file changes"
+          },
+          {
+            "type": "command", 
+            "command": ".claude/hooks/complexity-gate.sh",
+            "description": "Check code complexity after changes"
+          }
+        ]
+      }
+    ]
+  }
+}

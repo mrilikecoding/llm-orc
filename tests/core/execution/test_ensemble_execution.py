@@ -24,8 +24,8 @@ class TestEnsembleExecutor:
             name="test_ensemble",
             description="Test ensemble",
             agents=[
-                {"name": "agent1", "role": "tester", "model": "mock-model"},
-                {"name": "agent2", "role": "reviewer", "model": "mock-model"},
+                {"name": "agent1", "model_profile": "test-tester"},
+                {"name": "agent2", "model_profile": "test-reviewer"},
             ],
         )
 
@@ -96,8 +96,8 @@ class TestEnsembleExecutor:
             name="multi_model_ensemble",
             description="Ensemble with different models",
             agents=[
-                {"name": "claude_agent", "role": "analyst", "model": "claude-3-sonnet"},
-                {"name": "local_agent", "role": "checker", "model": "llama3"},
+                {"name": "claude_agent", "model_profile": "claude-analyst"},
+                {"name": "local_agent", "model_profile": "llama-checker"},
             ],
         )
 
@@ -158,8 +158,8 @@ class TestEnsembleExecutor:
             name="test_ensemble_with_failure",
             description="Test ensemble with one failing agent",
             agents=[
-                {"name": "working_agent", "role": "tester", "model": "mock-model"},
-                {"name": "failing_agent", "role": "reviewer", "model": "mock-model"},
+                {"name": "working_agent", "model_profile": "test-tester"},
+                {"name": "failing_agent", "model_profile": "test-reviewer"},
             ],
         )
 
@@ -224,7 +224,7 @@ class TestEnsembleExecutor:
             name="dependency_test",
             description="Test dependency-based functionality",
             agents=[
-                {"name": "agent1", "role": "analyst", "model": "mock-model"},
+                {"name": "agent1", "model_profile": "test-analyst"},
             ],
         )
 
@@ -263,8 +263,8 @@ class TestEnsembleExecutor:
             name="usage_tracking_test",
             description="Test usage tracking",
             agents=[
-                {"name": "agent1", "role": "analyst", "model": "claude-3-sonnet"},
-                {"name": "agent2", "role": "reviewer", "model": "llama3"},
+                {"name": "agent1", "model_profile": "claude-analyst"},
+                {"name": "agent2", "model_profile": "llama-reviewer"},
             ],
         )
 
@@ -351,8 +351,7 @@ class TestEnsembleExecutor:
             agents=[
                 {
                     "name": "slow_agent",
-                    "role": "analyst",
-                    "model": "slow-model",
+                    "model_profile": "slow-analyst",
                     "timeout_seconds": 0.1,  # 100ms timeout at agent level
                 },
             ],
@@ -411,14 +410,12 @@ class TestEnsembleExecutor:
             agents=[
                 {
                     "name": "fast_agent",
-                    "role": "analyst",
-                    "model": "fast-model",
+                    "model_profile": "fast-analyst",
                     "timeout_seconds": 1.0,
                 },
                 {
                     "name": "slow_agent",
-                    "role": "reviewer",
-                    "model": "slow-model",
+                    "model_profile": "slow-reviewer",
                     "timeout_seconds": 0.05,  # 50ms timeout
                 },
             ],
@@ -738,18 +735,15 @@ class TestEnsembleExecutor:
             agents=[
                 {
                     "name": "researcher",
-                    "role": "researcher",
-                    "model": "mock-model",
+                    "model_profile": "test-researcher",
                 },
                 {
                     "name": "analyzer",
-                    "role": "analyzer",
-                    "model": "mock-model",
+                    "model_profile": "test-analyzer",
                 },
                 {
                     "name": "synthesizer",
-                    "role": "synthesizer",
-                    "model": "mock-model",
+                    "model_profile": "test-synthesizer",
                     "depends_on": ["researcher", "analyzer"],
                 },
             ],
@@ -833,8 +827,8 @@ class TestEnsembleExecutor:
             name="streaming_test",
             description="Test streaming execution",
             agents=[
-                {"name": "agent1", "role": "tester", "model": "mock-model"},
-                {"name": "agent2", "role": "reviewer", "model": "mock-model"},
+                {"name": "agent1", "model_profile": "test-tester"},
+                {"name": "agent2", "model_profile": "test-reviewer"},
             ],
         )
 
@@ -958,9 +952,8 @@ class TestEnsembleExecutor:
                     "name": "script_agent",
                     "type": "script",
                     "script": "echo 'Script output'",
-                    "role": "data_collector",
                 },
-                {"name": "llm_agent", "role": "analyzer", "model": "mock-model"},
+                {"name": "llm_agent", "model_profile": "test-analyzer"},
             ],
         )
 
@@ -1010,7 +1003,6 @@ class TestEnsembleExecutor:
                     "name": "failing_script",
                     "type": "script",
                     "script": "exit 1",
-                    "role": "data_collector",
                 },
             ],
         )
@@ -1109,18 +1101,16 @@ class TestEnsembleExecutor:
         executor = EnsembleExecutor()
 
         llm_agents: list[dict[str, Any]] = [
-            {"name": "independent1", "role": "analyst", "model": "mock-model"},
-            {"name": "independent2", "role": "reviewer", "model": "mock-model"},
+            {"name": "independent1", "model_profile": "test-analyst"},
+            {"name": "independent2", "model_profile": "test-reviewer"},
             {
                 "name": "dependent1",
-                "role": "synthesizer",
-                "model": "mock-model",
+                "model_profile": "test-synthesizer",
                 "depends_on": ["independent1", "independent2"],
             },
             {
                 "name": "dependent2",
-                "role": "summarizer",
-                "model": "mock-model",
+                "model_profile": "test-summarizer",
                 "depends_on": ["dependent1"],
             },
         ]
@@ -1146,11 +1136,10 @@ class TestEnsembleExecutor:
         executor = EnsembleExecutor()
 
         llm_agents: list[dict[str, Any]] = [
-            {"name": "agent1", "role": "analyst", "model": "mock-model"},
+            {"name": "agent1", "model_profile": "test-analyst"},
             {
                 "name": "agent2",
-                "role": "reviewer",
-                "model": "mock-model",
+                "model_profile": "test-reviewer",
                 "depends_on": [],  # Empty dependencies
             },
         ]
@@ -1186,9 +1175,9 @@ class TestEnsembleExecutor:
             name="parallel_test",
             description="Test parallel execution performance",
             agents=[
-                {"name": "agent1", "role": "analyst", "model": "mock-model"},
-                {"name": "agent2", "role": "reviewer", "model": "mock-model"},
-                {"name": "agent3", "role": "synthesizer", "model": "mock-model"},
+                {"name": "agent1", "model_profile": "test-analyst"},
+                {"name": "agent2", "model_profile": "test-reviewer"},
+                {"name": "agent3", "model_profile": "test-synthesizer"},
             ],
         )
 
