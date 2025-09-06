@@ -270,6 +270,84 @@ def library() -> None:
     pass
 
 
+@cli.group()
+def scripts() -> None:
+    """Script management commands."""
+    pass
+
+
+@cli.group()
+def artifacts() -> None:
+    """Artifact management commands."""
+    pass
+
+
+@scripts.command("list")
+@click.option(
+    "--format",
+    "format_type",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format",
+)
+def scripts_list(format_type: str) -> None:
+    """List available scripts."""
+    from llm_orc.cli_commands import scripts_list_command
+
+    scripts_list_command(format_type)
+
+
+@scripts.command("show")
+@click.argument("name")
+def scripts_show(name: str) -> None:
+    """Show script documentation."""
+    from llm_orc.cli_commands import scripts_show_command
+
+    scripts_show_command(name)
+
+
+@scripts.command("test")
+@click.argument("name")
+@click.option("--parameters", help="JSON parameters for the script")
+def scripts_test(name: str, parameters: str | None) -> None:
+    """Test script with parameters."""
+    from llm_orc.cli_commands import scripts_test_command
+
+    scripts_test_command(name, parameters)
+
+
+@artifacts.command("list")
+@click.option(
+    "--format",
+    "format_type",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format",
+)
+def artifacts_list(format_type: str) -> None:
+    """List execution artifacts."""
+    from llm_orc.cli_commands import artifacts_list_command
+
+    artifacts_list_command(format_type)
+
+
+@artifacts.command("show")
+@click.argument("name")
+@click.option(
+    "--format",
+    "format_type",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format",
+)
+@click.option("--execution", help="Specific execution timestamp")
+def artifacts_show(name: str, format_type: str, execution: str | None) -> None:
+    """Show latest results."""
+    from llm_orc.cli_commands import artifacts_show_command
+
+    artifacts_show_command(name, format_type, execution)
+
+
 @library.command()
 @click.argument("category", required=False)
 def browse(category: str | None) -> None:
@@ -386,6 +464,7 @@ def help_command() -> None:
 
     # Command mappings with their aliases
     commands_with_aliases = [
+        ("artifacts", "ar", "Artifact management commands."),
         ("auth", "a", "Authentication management commands."),
         ("config", "c", "Configuration management commands."),
         ("help", "h", "Show help for llm-orc commands."),
@@ -401,6 +480,7 @@ def help_command() -> None:
             "lp",
             "List available model profiles with their provider/model...",
         ),
+        ("scripts", "sc", "Script management commands."),
         ("serve", "s", "Serve an ensemble as an MCP server."),
     ]
 
@@ -419,6 +499,8 @@ cli.add_command(invoke, name="i")
 cli.add_command(auth, name="a")
 cli.add_command(config, name="c")
 cli.add_command(library, name="l")
+cli.add_command(scripts, name="sc")
+cli.add_command(artifacts, name="ar")
 cli.add_command(list_ensembles, name="le")
 cli.add_command(list_profiles, name="lp")
 cli.add_command(serve, name="s")

@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from typing import Any
 
 
 class ScriptResolver:
@@ -94,3 +95,125 @@ class ScriptResolver:
     def clear_cache(self) -> None:
         """Clear the resolution cache."""
         self._cache.clear()
+
+    def list_available_scripts(self) -> list[dict[str, str]]:
+        """List all available scripts in .llm-orc/scripts directory.
+
+        Returns:
+            List of script dictionaries with name and path
+        """
+        import glob
+
+        scripts = []
+        cwd = Path(os.getcwd())
+        scripts_dir = cwd / ".llm-orc" / "scripts"
+
+        if scripts_dir.exists():
+            # Find all script files
+            for pattern in ["*.py", "*.sh", "*.bash", "*.js", "*.rb"]:
+                script_files = glob.glob(str(scripts_dir / pattern))
+                for script_file in script_files:
+                    script_path = Path(script_file)
+                    scripts.append(
+                        {
+                            "name": script_path.name,
+                            "path": str(script_path),
+                        }
+                    )
+
+        return sorted(scripts, key=lambda x: x["name"])
+
+    def get_script_info(self, script_name: str) -> dict[str, str | list[str]] | None:
+        """Get information about a specific script.
+
+        Args:
+            script_name: Name of the script
+
+        Returns:
+            Script information dictionary or None if not found
+        """
+        try:
+            script_path = self.resolve_script_path(script_name)
+            if not os.path.exists(script_path):
+                return None
+
+            return {
+                "name": script_name,
+                "path": script_path,
+                "description": f"Script at {script_path}",
+                "parameters": [],  # Basic implementation
+            }
+        except FileNotFoundError:
+            return None
+
+    def test_script(
+        self, script_name: str, parameters: dict[str, str]
+    ) -> dict[str, Any]:
+        """Test script execution with given parameters.
+
+        Args:
+            script_name: Name of the script to test
+            parameters: Dictionary of parameters for the script
+
+        Returns:
+            Dictionary with execution results
+        """
+        import json
+        import subprocess
+        import time
+
+        try:
+            script_path = self.resolve_script_path(script_name)
+            start_time = time.time()
+
+            # Prepare environment with parameters as JSON
+            env = os.environ.copy()
+            env["SCRIPT_PARAMS"] = json.dumps(parameters)
+
+            # Execute script
+            result = subprocess.run(
+                [script_path],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=30,
+            )
+
+            end_time = time.time()
+            duration_ms = int((end_time - start_time) * 1000)
+
+            if result.returncode == 0:
+                return {
+                    "success": True,
+                    "output": result.stdout.strip(),
+                    "duration_ms": duration_ms,
+                }
+            else:
+                return {
+                    "success": False,
+                    "output": result.stdout.strip(),
+                    "error": result.stderr.strip(),
+                    "duration_ms": duration_ms,
+                }
+
+        except FileNotFoundError:
+            return {
+                "success": False,
+                "output": "",
+                "error": f"Script '{script_name}' not found",
+                "duration_ms": 0,
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "output": "",
+                "error": "Script execution timed out",
+                "duration_ms": 30000,
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "output": "",
+                "error": str(e),
+                "duration_ms": 0,
+            }

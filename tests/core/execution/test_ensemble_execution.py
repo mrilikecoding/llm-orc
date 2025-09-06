@@ -1478,3 +1478,136 @@ class TestEnsembleExecutor:
 
             # Verify that put_nowait was attempted
             mock_queue.put_nowait.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_artifact_manager_integration(self) -> None:
+        """Test ArtifactManager integration into ensemble execution.
+
+        RED Phase: This test should fail until integration is implemented.
+        """
+        from unittest.mock import AsyncMock, Mock, patch
+
+        from llm_orc.core.execution.artifact_manager import ArtifactManager
+
+        config = EnsembleConfig(
+            name="artifact_test",
+            description="Test artifact manager integration",
+            agents=[
+                {"name": "agent1", "model_profile": "test-tester"},
+            ],
+        )
+
+        # Create mock model
+        mock_model = AsyncMock(spec=ModelInterface)
+        mock_model.generate_response.return_value = "Agent response"
+        mock_model.get_last_usage.return_value = {
+            "total_tokens": 30,
+            "input_tokens": 20,
+            "output_tokens": 10,
+            "cost_usd": 0.005,
+            "duration_ms": 50,
+        }
+
+        role = RoleDefinition(name="tester", prompt="You are a tester")
+        executor = EnsembleExecutor()
+
+        # Mock ArtifactManager
+        mock_artifact_manager = Mock(spec=ArtifactManager)
+        mock_artifact_manager.save_execution_results = Mock()
+
+        # Mock the role and model loading methods
+        with (
+            patch.object(
+                executor, "_load_role_from_config", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
+            ) as mock_load_model,
+            patch.object(executor, "_artifact_manager", mock_artifact_manager),
+        ):
+            mock_load_role.return_value = role
+            mock_load_model.return_value = mock_model
+
+            result = await executor.execute(config, input_data="Test input")
+
+        # Verify artifact manager was called with correct parameters
+        mock_artifact_manager.save_execution_results.assert_called_once()
+        call_args = mock_artifact_manager.save_execution_results.call_args
+
+        # Check ensemble name was passed correctly
+        assert call_args[0][0] == "artifact_test"
+
+        # Check complete results were passed
+        saved_results = call_args[0][1]
+        assert saved_results["ensemble"] == "artifact_test"
+        assert saved_results["input"]["data"] == "Test input"
+        assert "results" in saved_results
+        assert "agent1" in saved_results["results"]
+
+        # Verify execution completed successfully
+        assert result["status"] == "completed"
+
+    @pytest.mark.asyncio
+    async def test_artifact_manager_error_handling(self) -> None:
+        """Test that artifact manager errors don't break execution.
+
+        RED Phase: This test should fail until error handling is implemented.
+        """
+        from unittest.mock import AsyncMock, Mock, patch
+
+        from llm_orc.core.execution.artifact_manager import ArtifactManager
+
+        config = EnsembleConfig(
+            name="artifact_error_test",
+            description="Test artifact manager error handling",
+            agents=[
+                {"name": "agent1", "model_profile": "test-tester"},
+            ],
+        )
+
+        # Create mock model
+        mock_model = AsyncMock(spec=ModelInterface)
+        mock_model.generate_response.return_value = "Agent response"
+        mock_model.get_last_usage.return_value = {
+            "total_tokens": 30,
+            "input_tokens": 20,
+            "output_tokens": 10,
+            "cost_usd": 0.005,
+            "duration_ms": 50,
+        }
+
+        role = RoleDefinition(name="tester", prompt="You are a tester")
+        executor = EnsembleExecutor()
+
+        # Mock ArtifactManager that raises an exception
+        mock_artifact_manager = Mock(spec=ArtifactManager)
+        mock_artifact_manager.save_execution_results.side_effect = Exception(
+            "Permission denied creating artifact directory"
+        )
+
+        # Mock the role and model loading methods
+        with (
+            patch.object(
+                executor, "_load_role_from_config", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
+            ) as mock_load_model,
+            patch.object(executor, "_artifact_manager", mock_artifact_manager),
+        ):
+            mock_load_role.return_value = role
+            mock_load_model.return_value = mock_model
+
+            # Execution should not fail even if artifact saving fails
+            result = await executor.execute(config, input_data="Test input")
+
+        # Verify execution completed successfully despite artifact error
+        assert result["status"] == "completed"
+        assert result["ensemble"] == "artifact_error_test"
+
+        # Verify artifact manager was called
+        mock_artifact_manager.save_execution_results.assert_called_once()

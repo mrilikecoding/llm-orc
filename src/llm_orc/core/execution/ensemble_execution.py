@@ -12,6 +12,7 @@ from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.config.roles import RoleDefinition
 from llm_orc.core.execution.agent_execution_coordinator import AgentExecutionCoordinator
 from llm_orc.core.execution.agent_executor import AgentExecutor
+from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.input_enhancer import InputEnhancer
@@ -49,6 +50,7 @@ class EnsembleExecutor:
         self._usage_collector = UsageCollector()
         self._results_processor = ResultsProcessor()
         self._streaming_progress_tracker = StreamingProgressTracker()
+        self._artifact_manager = ArtifactManager()
 
         # Initialize execution coordinator with agent executor function
         # Use a wrapper to avoid circular dependency with _execute_agent_with_timeout
@@ -261,9 +263,18 @@ class EnsembleExecutor:
         # Get collected usage and adaptive stats, then finalize result using processor
         agent_usage = self._usage_collector.get_agent_usage()
         adaptive_stats = self._agent_executor.get_adaptive_stats()
-        return self._results_processor.finalize_result(
+        final_result = self._results_processor.finalize_result(
             result, agent_usage, has_errors, start_time, adaptive_stats
         )
+
+        # Save artifacts (don't fail execution if saving fails)
+        try:
+            self._artifact_manager.save_execution_results(config.name, final_result)
+        except Exception:
+            # Silently ignore artifact saving errors to not break execution
+            pass
+
+        return final_result
 
     async def _execute_agent(
         self, agent_config: dict[str, Any], input_data: str

@@ -164,3 +164,100 @@ class ArtifactManager:
         # Create new symlink (use relative path for portability)
         relative_target = target_dir.name
         latest_link.symlink_to(relative_target)
+
+    def list_ensembles(self) -> list[dict[str, Any]]:
+        """List all ensembles with artifact information.
+
+        Returns:
+            List of ensemble dictionaries with execution information
+        """
+        ensembles: list[dict[str, Any]] = []
+        artifacts_dir = self.base_dir / ".llm-orc" / "artifacts"
+
+        if not artifacts_dir.exists():
+            return ensembles
+
+        for ensemble_dir in artifacts_dir.iterdir():
+            if not ensemble_dir.is_dir():
+                continue
+
+            ensemble_name = ensemble_dir.name
+            execution_dirs = []
+
+            # Count execution directories
+            for item in ensemble_dir.iterdir():
+                if item.is_dir() and item.name != "latest":
+                    execution_dirs.append(item.name)
+
+            if execution_dirs:
+                latest_execution = max(execution_dirs)  # Most recent timestamp
+                ensembles.append(
+                    {
+                        "name": ensemble_name,
+                        "latest_execution": latest_execution,
+                        "executions_count": len(execution_dirs),
+                    }
+                )
+
+        return sorted(ensembles, key=lambda x: x["name"])
+
+    def get_latest_results(self, ensemble_name: str) -> dict[str, Any] | None:
+        """Get the latest execution results for an ensemble.
+
+        Args:
+            ensemble_name: Name of the ensemble
+
+        Returns:
+            Latest execution results or None if not found
+        """
+        artifacts_dir = self.base_dir / ".llm-orc" / "artifacts"
+        ensemble_dir = artifacts_dir / ensemble_name
+        latest_link = ensemble_dir / "latest"
+
+        if not latest_link.exists():
+            return None
+
+        # Read the execution.json file
+        execution_json = latest_link / "execution.json"
+        if not execution_json.exists():
+            return None
+
+        try:
+            with execution_json.open("r") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+                return None
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def get_execution_results(
+        self, ensemble_name: str, timestamp: str
+    ) -> dict[str, Any] | None:
+        """Get specific execution results by timestamp.
+
+        Args:
+            ensemble_name: Name of the ensemble
+            timestamp: Execution timestamp
+
+        Returns:
+            Execution results or None if not found
+        """
+        artifacts_dir = self.base_dir / ".llm-orc" / "artifacts"
+        execution_dir = artifacts_dir / ensemble_name / timestamp
+
+        if not execution_dir.exists():
+            return None
+
+        execution_json = execution_dir / "execution.json"
+        if not execution_json.exists():
+            return None
+
+        try:
+            with execution_json.open("r") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+                return None
+        except (OSError, json.JSONDecodeError):
+            return None

@@ -1,6 +1,7 @@
 """Main CLI command implementations."""
 
 import asyncio
+import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -439,3 +440,164 @@ def auth_setup() -> None:
 def logout_oauth_providers(provider: str | None, logout_all: bool) -> None:
     """Logout from OAuth providers (revokes tokens and removes credentials)."""
     AuthCommands.logout_oauth_providers(provider, logout_all)
+
+
+# Script and Artifact Commands
+def _format_json_output(data: Any) -> None:
+    """Format and display JSON output."""
+    click.echo(json.dumps(data, indent=2))
+
+
+def scripts_list_command(format_type: str) -> None:
+    """List available scripts."""
+    from llm_orc.core.execution.script_resolver import ScriptResolver
+
+    resolver = ScriptResolver()
+    scripts = resolver.list_available_scripts()
+
+    if format_type == "json":
+        _format_json_output(scripts)
+        return
+
+    if not scripts:
+        click.echo("No scripts found in .llm-orc/scripts/")
+        return
+
+    click.echo("Available scripts:")
+    for script in scripts:
+        click.echo(f"  {script['name']}: {script['path']}")
+
+
+def scripts_show_command(script_name: str) -> None:
+    """Show script documentation."""
+    from llm_orc.core.execution.script_resolver import ScriptResolver
+
+    resolver = ScriptResolver()
+    script_info = resolver.get_script_info(script_name)
+
+    if not script_info:
+        click.echo(f"Script '{script_name}' not found", err=True)
+        raise SystemExit(1)
+
+    click.echo(f"Script: {script_info['name']}")
+    click.echo(f"Path: {script_info['path']}")
+    click.echo(f"Description: {script_info['description']}")
+
+    if script_info["parameters"]:
+        parameters_str = ", ".join(script_info["parameters"])
+        click.echo(f"Parameters: {parameters_str}")
+    else:
+        click.echo("Parameters: None")
+
+
+def _parse_json_parameters(parameters_json: str | None) -> dict[str, Any]:
+    """Parse JSON parameters with error handling."""
+    if not parameters_json:
+        return {}
+
+    try:
+        data = json.loads(parameters_json)
+        if isinstance(data, dict):
+            return data
+        else:
+            click.echo("Parameters must be a JSON object", err=True)
+            raise SystemExit(1)
+    except json.JSONDecodeError as e:
+        click.echo("Invalid JSON in parameters", err=True)
+        raise SystemExit(1) from e
+
+
+def scripts_test_command(script_name: str, parameters_json: str | None) -> None:
+    """Test script with parameters."""
+    from llm_orc.core.execution.script_resolver import ScriptResolver
+
+    resolver = ScriptResolver()
+    parameters = _parse_json_parameters(parameters_json)
+
+    # Execute script test
+    result = resolver.test_script(script_name, parameters)
+
+    if result["success"]:
+        click.echo(result["output"])
+        click.echo(f"Duration: {result['duration_ms']}ms")
+    else:
+        click.echo(result["output"], err=True)
+        if "error" in result:
+            click.echo(f"Error: {result['error']}", err=True)
+        raise SystemExit(1)
+
+
+def artifacts_list_command(format_type: str) -> None:
+    """List execution artifacts."""
+    from llm_orc.core.execution.artifact_manager import ArtifactManager
+
+    manager = ArtifactManager()
+    ensembles = manager.list_ensembles()
+
+    if format_type == "json":
+        _format_json_output(ensembles)
+        return
+
+    if not ensembles:
+        click.echo("No artifacts found in .llm-orc/artifacts/")
+        return
+
+    click.echo("Available artifacts:")
+    for ensemble in ensembles:
+        count_str = f"{ensemble['executions_count']} execution"
+        if ensemble["executions_count"] != 1:
+            count_str += "s"
+        click.echo(
+            f"  {ensemble['name']}: {count_str}, latest: {ensemble['latest_execution']}"
+        )
+
+
+def _display_artifact_text_format(ensemble_name: str, results: dict[str, Any]) -> None:
+    """Display artifact results in text format."""
+    click.echo(f"Ensemble: {results.get('ensemble_name', ensemble_name)}")
+
+    if "timestamp" in results:
+        click.echo(f"Executed: {results['timestamp']}")
+
+    if "total_duration_ms" in results:
+        duration_s = results["total_duration_ms"] / 1000
+        click.echo(f"Duration: {duration_s:.1f}s")
+
+    if "agents" in results and results["agents"]:
+        click.echo("\nAgent Results:")
+        for agent in results["agents"]:
+            agent_name = agent.get("name", "Unknown")
+            status = agent.get("status", "unknown")
+            click.echo(f"  {agent_name}: {status}")
+
+            if status == "completed" and "result" in agent:
+                result_preview = agent["result"][:100]
+                if len(agent["result"]) > 100:
+                    result_preview += "..."
+                click.echo(f"    → {result_preview}")
+            elif status == "failed" and "error" in agent:
+                click.echo(f"    → Error: {agent['error']}")
+
+
+def artifacts_show_command(
+    ensemble_name: str, format_type: str, execution_timestamp: str | None
+) -> None:
+    """Show latest results for an ensemble."""
+    from llm_orc.core.execution.artifact_manager import ArtifactManager
+
+    manager = ArtifactManager()
+
+    if execution_timestamp:
+        results = manager.get_execution_results(ensemble_name, execution_timestamp)
+    else:
+        results = manager.get_latest_results(ensemble_name)
+
+    if not results:
+        click.echo(f"No artifacts found for ensemble '{ensemble_name}'", err=True)
+        raise SystemExit(1)
+
+    if format_type == "json":
+        _format_json_output(results)
+        return
+
+    _display_artifact_text_format(ensemble_name, results)
