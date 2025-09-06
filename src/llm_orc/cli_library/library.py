@@ -1,5 +1,6 @@
 """Library commands for browsing and copying ensembles."""
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +9,34 @@ import requests
 import yaml
 
 from llm_orc.core.config.config_manager import ConfigurationManager
+
+
+def _get_library_source_config() -> tuple[str, str]:
+    """Get library source configuration from environment or defaults.
+
+    Returns:
+        Tuple of (source_type, source_path) where source_type is 'local' or 'remote'
+    """
+    library_source = os.environ.get("LLM_ORC_LIBRARY_SOURCE", "remote")
+
+    if library_source == "local":
+        # Use local submodule - find it relative to this file
+        # Go up from src/llm_orc/cli_library/ to project root
+        current_dir = Path(__file__).parent.parent.parent.parent
+        local_path = current_dir / "llm-orchestra-library"
+        if not local_path.exists():
+            raise FileNotFoundError(
+                f"Local llm-orchestra-library not found at {local_path}. "
+                "Please ensure submodule is initialized or set "
+                "LLM_ORC_LIBRARY_SOURCE=remote"
+            )
+        return "local", str(local_path)
+    else:
+        # Use remote GitHub
+        return (
+            "remote",
+            "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main",
+        )
 
 
 def get_library_categories() -> list[str]:
@@ -37,14 +66,58 @@ def get_library_categories_with_descriptions() -> list[tuple[str, str]]:
 
 
 def get_category_ensembles(category: str) -> list[dict[str, Any]]:
-    """Get ensembles for a specific category by fetching from GitHub API."""
+    """Get ensembles for a specific category from local or remote source."""
+    source_type, source_path = _get_library_source_config()
+
+    if source_type == "local":
+        return _get_local_category_ensembles(category, Path(source_path))
+    else:
+        return _get_remote_category_ensembles(category)
+
+
+def _get_local_category_ensembles(
+    category: str, library_path: Path
+) -> list[dict[str, Any]]:
+    """Get ensembles from local library directory."""
+    ensembles_dir = library_path / "ensembles" / category
+    if not ensembles_dir.exists():
+        return []
+
+    ensembles = []
+    for yaml_file in ensembles_dir.glob("*.yaml"):
+        ensemble_name = yaml_file.stem
+        ensemble_path = f"{category}/{yaml_file.name}"
+
+        # Try to read ensemble content to get description
+        try:
+            with open(yaml_file, encoding="utf-8") as f:
+                ensemble_data = yaml.safe_load(f)
+                description = ensemble_data.get(
+                    "description", "No description available"
+                )
+        except (OSError, yaml.YAMLError):
+            description = "No description available"
+
+        ensembles.append(
+            {
+                "name": ensemble_name,
+                "description": description,
+                "path": ensemble_path,
+            }
+        )
+
+    return ensembles
+
+
+def _get_remote_category_ensembles(category: str) -> list[dict[str, Any]]:
+    """Get ensembles from remote GitHub repository."""
     base_api_url = (
         "https://api.github.com/repos/mrilikecoding/llm-orchestra-library/contents"
     )
 
     try:
         # Fetch directory contents from GitHub API
-        response = requests.get(f"{base_api_url}/{category}", timeout=10)
+        response = requests.get(f"{base_api_url}/ensembles/{category}", timeout=10)
         response.raise_for_status()
 
         files = response.json()
@@ -84,7 +157,32 @@ def get_category_ensembles(category: str) -> list[dict[str, Any]]:
 
 
 def fetch_ensemble_content(ensemble_path: str) -> str:
-    """Fetch ensemble content from GitHub repository."""
+    """Fetch ensemble content from local or remote source."""
+    source_type, source_path = _get_library_source_config()
+
+    if source_type == "local":
+        return _fetch_local_ensemble_content(ensemble_path, Path(source_path))
+    else:
+        return _fetch_remote_ensemble_content(ensemble_path)
+
+
+def _fetch_local_ensemble_content(ensemble_path: str, library_path: Path) -> str:
+    """Fetch ensemble content from local library directory."""
+    # Handle .yaml extension
+    if not ensemble_path.endswith(".yaml"):
+        ensemble_path += ".yaml"
+
+    full_path = library_path / "ensembles" / ensemble_path
+
+    try:
+        with open(full_path, encoding="utf-8") as f:
+            return f.read()
+    except OSError as e:
+        raise FileNotFoundError(f"Ensemble not found: {ensemble_path}") from e
+
+
+def _fetch_remote_ensemble_content(ensemble_path: str) -> str:
+    """Fetch ensemble content from remote GitHub repository."""
     base_url = (
         "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main"
     )
@@ -93,7 +191,7 @@ def fetch_ensemble_content(ensemble_path: str) -> str:
     if not ensemble_path.endswith(".yaml"):
         ensemble_path += ".yaml"
 
-    url = f"{base_url}/{ensemble_path}"
+    url = f"{base_url}/ensembles/{ensemble_path}"
 
     try:
         response = requests.get(url, timeout=10)
@@ -318,7 +416,32 @@ def show_ensemble_info(ensemble_path: str) -> None:
 
 
 def get_template_content(template_name: str) -> str:
-    """Fetch template content from GitHub repository."""
+    """Fetch template content from local or remote source."""
+    source_type, source_path = _get_library_source_config()
+
+    if source_type == "local":
+        return _get_local_template_content(template_name, Path(source_path))
+    else:
+        return _get_remote_template_content(template_name)
+
+
+def _get_local_template_content(template_name: str, library_path: Path) -> str:
+    """Fetch template content from local library directory."""
+    # Ensure template has .yaml extension if not already present
+    if not template_name.endswith(".yaml"):
+        template_name += ".yaml"
+
+    template_path = library_path / "templates" / template_name
+
+    try:
+        with open(template_path, encoding="utf-8") as f:
+            return f.read()
+    except OSError as e:
+        raise FileNotFoundError(f"Template not found: {template_name}") from e
+
+
+def _get_remote_template_content(template_name: str) -> str:
+    """Fetch template content from remote GitHub repository."""
     base_url = (
         "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main"
     )
@@ -335,6 +458,196 @@ def get_template_content(template_name: str) -> str:
         return response.text
     except requests.RequestException as e:
         raise FileNotFoundError(f"Template not found: {template_name}") from e
+
+
+def copy_primitive_scripts(target_scripts_dir: Path) -> None:
+    """Copy primitive scripts from local or remote library source."""
+    source_type, source_path = _get_library_source_config()
+
+    try:
+        if source_type == "local":
+            _copy_local_primitive_scripts(Path(source_path), target_scripts_dir)
+        else:
+            _copy_remote_primitive_scripts(target_scripts_dir)
+    except (OSError, requests.RequestException):
+        # If we can't access source, fail silently
+        # This allows offline usage without breaking init
+        pass
+
+
+def _copy_local_primitive_scripts(library_path: Path, target_scripts_dir: Path) -> None:
+    """Copy primitive scripts from local library directory."""
+    source_primitives_dir = library_path / "scripts" / "primitives"
+    if not source_primitives_dir.exists():
+        return
+
+    # Copy entire primitives directory structure
+    target_primitives_dir = target_scripts_dir / "primitives"
+    if target_primitives_dir.exists():
+        import shutil
+
+        shutil.rmtree(target_primitives_dir)
+
+    import shutil
+
+    shutil.copytree(source_primitives_dir, target_primitives_dir)
+
+    # Make all Python scripts executable
+    for script_file in target_primitives_dir.rglob("*.py"):
+        script_file.chmod(0o755)
+
+
+def _copy_remote_primitive_scripts(target_scripts_dir: Path) -> None:
+    """Copy primitive scripts from remote GitHub repository."""
+    base_api_url = (
+        "https://api.github.com/repos/mrilikecoding/llm-orchestra-library/contents"
+    )
+    base_raw_url = (
+        "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main"
+    )
+
+    categories = _fetch_primitive_categories(base_api_url)
+    _process_script_categories(
+        categories, base_api_url, base_raw_url, target_scripts_dir
+    )
+
+
+def _fetch_primitive_categories(base_api_url: str) -> list[dict[str, Any]]:
+    """Fetch primitive script categories from GitHub API."""
+    primitives_response = requests.get(f"{base_api_url}/scripts/primitives", timeout=10)
+    primitives_response.raise_for_status()
+    return primitives_response.json()  # type: ignore[no-any-return]
+
+
+def _process_script_categories(
+    categories: list[dict[str, Any]],
+    base_api_url: str,
+    base_raw_url: str,
+    target_scripts_dir: Path,
+) -> None:
+    """Process each script category and download scripts."""
+    for category_info in categories:
+        if category_info["type"] == "dir":
+            _download_category_scripts(
+                category_info["name"], base_api_url, base_raw_url, target_scripts_dir
+            )
+
+
+def _download_category_scripts(
+    category_name: str, base_api_url: str, base_raw_url: str, target_scripts_dir: Path
+) -> None:
+    """Download all Python scripts in a category."""
+    try:
+        category_response = requests.get(
+            f"{base_api_url}/scripts/primitives/{category_name}", timeout=10
+        )
+        category_response.raise_for_status()
+
+        files = category_response.json()
+        category_dir = target_scripts_dir / "primitives" / category_name
+        category_dir.mkdir(parents=True, exist_ok=True)
+
+        for file_info in files:
+            if file_info["name"].endswith(".py"):
+                _download_script_file(
+                    file_info["name"], category_name, base_raw_url, category_dir
+                )
+
+    except requests.RequestException:
+        # If a category fails, continue with others
+        pass
+
+
+def _download_script_file(
+    filename: str, category_name: str, base_raw_url: str, category_dir: Path
+) -> None:
+    """Download and save a single script file."""
+    script_response = requests.get(
+        f"{base_raw_url}/scripts/primitives/{category_name}/{filename}",
+        timeout=10,
+    )
+    script_response.raise_for_status()
+
+    script_file = category_dir / filename
+    with open(script_file, "w", encoding="utf-8") as f:
+        f.write(script_response.text)
+
+    # Make script executable
+    script_file.chmod(0o755)
+
+
+def copy_profile_templates(target_profiles_dir: Path) -> None:
+    """Copy profile templates from local or remote library source."""
+    source_type, source_path = _get_library_source_config()
+
+    try:
+        target_profiles_dir.mkdir(parents=True, exist_ok=True)
+
+        if source_type == "local":
+            _copy_local_profile_templates(Path(source_path), target_profiles_dir)
+        else:
+            _copy_remote_profile_templates(target_profiles_dir)
+    except (OSError, requests.RequestException):
+        # If we can't access source, fail silently
+        pass
+
+
+def _copy_local_profile_templates(
+    library_path: Path, target_profiles_dir: Path
+) -> None:
+    """Copy profile templates from local library directory."""
+    source_profiles_dir = library_path / "profiles"
+    if not source_profiles_dir.exists():
+        return
+
+    # Copy each YAML profile template
+    for yaml_file in source_profiles_dir.glob("*.yaml"):
+        target_file = target_profiles_dir / yaml_file.name
+        # Skip if file already exists (idempotent)
+        if not target_file.exists():
+            import shutil
+
+            shutil.copy2(yaml_file, target_file)
+
+
+def _copy_remote_profile_templates(target_profiles_dir: Path) -> None:
+    """Copy profile templates from remote GitHub repository."""
+    base_api_url = (
+        "https://api.github.com/repos/mrilikecoding/llm-orchestra-library/contents"
+    )
+    base_raw_url = (
+        "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main"
+    )
+
+    # Get list of profile templates from GitHub API
+    profiles_response = requests.get(f"{base_api_url}/profiles", timeout=10)
+    profiles_response.raise_for_status()
+
+    files = profiles_response.json()
+
+    # Download each YAML profile template
+    for file_info in files:
+        if file_info["name"].endswith(".yaml"):
+            _download_profile_template(
+                file_info["name"], base_raw_url, target_profiles_dir
+            )
+
+
+def _download_profile_template(
+    filename: str, base_raw_url: str, target_profiles_dir: Path
+) -> None:
+    """Download and save a single profile template file."""
+    profile_file = target_profiles_dir / filename
+
+    # Skip if file already exists (idempotent)
+    if profile_file.exists():
+        return
+
+    profile_response = requests.get(f"{base_raw_url}/profiles/{filename}", timeout=10)
+    profile_response.raise_for_status()
+
+    with open(profile_file, "w", encoding="utf-8") as f:
+        f.write(profile_response.text)
 
 
 def list_categories() -> None:

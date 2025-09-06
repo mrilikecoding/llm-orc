@@ -1,0 +1,57 @@
+{
+  "ensemble": "test_script_ensemble",
+  "status": "completed",
+  "input": {
+    "data": "test input"
+  },
+  "results": {
+    "echo_agent": {
+      "response": "{\"success\": true, \"output\": \"{success: true, output: Script output from agent}\"}",
+      "status": "success"
+    }
+  },
+  "synthesis": null,
+  "metadata": {
+    "agents_used": 1,
+    "started_at": 1757174999.5720582,
+    "duration": "0.22s",
+    "completed_at": 1757174999.7901812,
+    "usage": {
+      "agents": {},
+      "totals": {
+        "total_tokens": 0,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_cost_usd": 0.0,
+        "total_duration_ms": 0,
+        "agents_count": 0
+      }
+    },
+    "adaptive_resource_management": {
+      "adaptive_used": false,
+      "management_type": "user_configured",
+      "concurrency_decisions": [],
+      "resource_metrics": [
+        {
+          "cpu_percent": 0.0,
+          "memory_percent": 56.1,
+          "circuit_breaker_state": "N/A",
+          "measurement_point": "final_fallback"
+        }
+      ],
+      "execution_metrics": {
+        "peak_cpu": 0.0,
+        "avg_cpu": 0.0,
+        "peak_memory": 56.1,
+        "avg_memory": 56.1,
+        "sample_count": 1,
+        "raw_cpu_samples": [
+          0.0
+        ],
+        "raw_memory_samples": [
+          56.1
+        ]
+      }
+    }
+  }
+}

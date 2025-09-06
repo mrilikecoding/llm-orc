@@ -1,0 +1,90 @@
+{
+  "ensemble": "infrastructure-sharing-test",
+  "status": "completed_with_errors",
+  "input": {
+    "data": "test input"
+  },
+  "results": {
+    "agent1": {
+      "response": null,
+      "status": "failed",
+      "error": "1 validation error for Message\ncontent\n  Input should be a valid string [type=string_type, input_value=<AsyncMock name='_load_ro...prompt' id='4500661840'>, input_type=AsyncMock]\n    For further information visit https://errors.pydantic.dev/2.11/v/string_type"
+    },
+    "agent2": {
+      "response": null,
+      "status": "failed",
+      "error": "1 validation error for Message\ncontent\n  Input should be a valid string [type=string_type, input_value=<AsyncMock name='_load_ro...prompt' id='4500661840'>, input_type=AsyncMock]\n    For further information visit https://errors.pydantic.dev/2.11/v/string_type"
+    },
+    "agent3": {
+      "response": null,
+      "status": "failed",
+      "error": "1 validation error for Message\ncontent\n  Input should be a valid string [type=string_type, input_value=<AsyncMock name='_load_ro...prompt' id='4500661840'>, input_type=AsyncMock]\n    For further information visit https://errors.pydantic.dev/2.11/v/string_type"
+    }
+  },
+  "synthesis": null,
+  "metadata": {
+    "agents_used": 3,
+    "started_at": 1757173111.0514822,
+    "duration": "0.88s",
+    "completed_at": 1757173111.930038,
+    "usage": {
+      "agents": {},
+      "totals": {
+        "total_tokens": 0,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_cost_usd": 0.0,
+        "total_duration_ms": 0,
+        "agents_count": 0
+      }
+    },
+    "adaptive_resource_management": {
+      "adaptive_used": false,
+      "management_type": "user_configured",
+      "concurrency_decisions": [],
+      "resource_metrics": [
+        {
+          "cpu_percent": 0.0,
+          "memory_percent": 57.5,
+          "circuit_breaker_state": "N/A",
+          "measurement_point": "final_fallback"
+        }
+      ],
+      "execution_metrics": {
+        "peak_cpu": 0.0,
+        "avg_cpu": 0.0,
+        "peak_memory": 57.5,
+        "avg_memory": 57.5,
+        "sample_count": 1,
+        "raw_cpu_samples": [
+          0.0
+        ],
+        "raw_memory_samples": [
+          57.5
+        ]
+      },
+      "phase_metrics": [
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 3,
+          "phase_start_time": 1757173111.0515258,
+          "agent_names": [
+            "agent1",
+            "agent2",
+            "agent3"
+          ],
+          "start_time": 1757173111.0515258,
+          "duration_seconds": 0.7754690647125244,
+          "end_time": 1757173111.8271072,
+          "agents_completed": 3,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 57.5,
+          "avg_memory": 57.5,
+          "sample_count": 1
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "ensemble": "dependency_test",
+  "status": "completed",
+  "input": {
+    "data": "Test analysis"
+  },
+  "results": {
+    "agent1": {
+      "response": "Detailed analysis result",
+      "status": "success"
+    }
+  },
+  "synthesis": null,
+  "metadata": {
+    "agents_used": 1,
+    "started_at": 1757173985.487529,
+    "duration": "0.35s",
+    "completed_at": 1757173985.8419032,
+    "usage": {
+      "agents": {
+        "agent1": 

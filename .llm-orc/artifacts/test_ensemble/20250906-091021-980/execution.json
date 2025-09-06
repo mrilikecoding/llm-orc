@@ -1,0 +1,107 @@
+{
+  "ensemble": "test_ensemble",
+  "status": "completed",
+  "input": {
+    "data": "Test task"
+  },
+  "results": {
+    "worker1": {
+      "response": "<think>\nOkay, the user provided a test task. Let me start by understanding what they need. The task is to process it as a diligent worker agent. First, I need to check if there are any specific instructions or requirements mentioned. Since there's no explicit task, I should assume they want me to process the test task in a general way.\n\nNext, I should consider the context. The user mentioned being a diligent worker agent, so maybe they're testing me on how to handle tasks. I need to make sure I'm processing the task correctly without any errors. If there's a mistake, I should flag it and ask for clarification. Also, I should keep the response clear and concise, avoiding any unnecessary details. Let me double-check the task to ensure accuracy before providing the answer.\n</think>\n\nI'll process your test task as a diligent worker agent. Please provide the specific task or any instructions you'd like me to handle. Let me know and I'll take it up!",
+      "status": "success"
+    }
+  },
+  "synthesis": null,
+  "metadata": {
+    "agents_used": 1,
+    "started_at": 1757175020.176955,
+    "duration": "1.80s",
+    "completed_at": 1757175021.9800022,
+    "usage": {
+      "agents": {
+        "worker1": {
+          "input_tokens": 15,
+          "output_tokens": 239,
+          "total_tokens": 254,
+          "cost_usd": 0.0,
+          "duration_ms": 1436,
+          "model": "qwen3:0.6b",
+          "model_profile": "worker_bee",
+          "start_time": 1757175020.177227,
+          "baseline_cpu": 9.8,
+          "baseline_memory": 57.9,
+          "sample_count": 3,
+          "peak_cpu": 15.8,
+          "avg_cpu": 5.266666666666667,
+          "peak_memory": 59.9,
+          "avg_memory": 59.23333333333333,
+          "cpu_samples": [
+            15.8,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            57.9,
+            59.9,
+            59.9
+          ],
+          "resource_duration_seconds": 1.6973397731781006,
+          "resource_sample_count": 3
+        }
+      },
+      "totals": {
+        "total_tokens": 254,
+        "total_input_tokens": 15,
+        "total_output_tokens": 239,
+        "total_cost_usd": 0.0,
+        "total_duration_ms": 1436,
+        "agents_count": 1
+      }
+    },
+    "adaptive_resource_management": {
+      "adaptive_used": false,
+      "management_type": "user_configured",
+      "concurrency_decisions": [],
+      "resource_metrics": [
+        {
+          "cpu_percent": 0.0,
+          "memory_percent": 59.9,
+          "circuit_breaker_state": "N/A",
+          "measurement_point": "final_fallback"
+        }
+      ],
+      "execution_metrics": {
+        "peak_cpu": 0.0,
+        "avg_cpu": 0.0,
+        "peak_memory": 59.9,
+        "avg_memory": 59.9,
+        "sample_count": 1,
+        "raw_cpu_samples": [
+          0.0
+        ],
+        "raw_memory_samples": [
+          59.9
+        ]
+      },
+      "phase_metrics": [
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 1,
+          "phase_start_time": 1757175020.1769862,
+          "agent_names": [
+            "worker1"
+          ],
+          "start_time": 1757175020.176987,
+          "duration_seconds": 1.6976990699768066,
+          "end_time": 1757175021.874774,
+          "agents_completed": 1,
+          "peak_cpu": 17.6,
+          "avg_cpu": 5.085714285714286,
+          "peak_memory": 60.0,
+          "avg_memory": 59.671428571428564,
+          "sample_count": 7
+        }
+      ]
+    }
+  }
+}

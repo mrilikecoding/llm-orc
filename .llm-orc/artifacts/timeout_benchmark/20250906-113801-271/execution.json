@@ -1,0 +1,112 @@
+{
+  "ensemble": "timeout_benchmark",
+  "status": "completed_with_errors",
+  "input": {
+    "data": "Test timeout handling"
+  },
+  "results": {
+    "fast_agent": {
+      "response": "Slow response",
+      "status": "success"
+    },
+    "slow_agent": {
+      "response": null,
+      "status": "failed",
+      "error": "Agent execution timed out after 0.1 seconds"
+    }
+  },
+  "synthesis": null,
+  "metadata": {
+    "agents_used": 2,
+    "started_at": 1757183880.6872902,
+    "duration": "0.58s",
+    "completed_at": 1757183881.270987,
+    "usage": {
+      "agents": {
+        "fast_agent": {
+          "total_tokens": 100,
+          "input_tokens": 60,
+          "output_tokens": 40,
+          "cost_usd": 0.003,
+          "duration_ms": 1000,
+          "model_profile": "mock-fast",
+          "start_time": 1757183880.76399,
+          "baseline_cpu": 0.0,
+          "baseline_memory": 57.5,
+          "sample_count": 3,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 57.6,
+          "avg_memory": 57.56666666666666,
+          "cpu_samples": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            57.5,
+            57.6,
+            57.6
+          ],
+          "resource_duration_seconds": 0.4031240940093994,
+          "resource_sample_count": 3
+        }
+      },
+      "totals": {
+        "total_tokens": 100,
+        "total_input_tokens": 60,
+        "total_output_tokens": 40,
+        "total_cost_usd": 0.003,
+        "total_duration_ms": 1000,
+        "agents_count": 1
+      }
+    },
+    "adaptive_resource_management": {
+      "adaptive_used": false,
+      "management_type": "user_configured",
+      "concurrency_decisions": [],
+      "resource_metrics": [
+        {
+          "cpu_percent": 10.6,
+          "memory_percent": 57.6,
+          "circuit_breaker_state": "N/A",
+          "measurement_point": "final_fallback"
+        }
+      ],
+      "execution_metrics": {
+        "peak_cpu": 10.6,
+        "avg_cpu": 10.6,
+        "peak_memory": 57.6,
+        "avg_memory": 57.6,
+        "sample_count": 1,
+        "raw_cpu_samples": [
+          10.6
+        ],
+        "raw_memory_samples": [
+          57.6
+        ]
+      },
+      "phase_metrics": [
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 2,
+          "phase_start_time": 1757183880.6873379,
+          "agent_names": [
+            "fast_agent",
+            "slow_agent"
+          ],
+          "start_time": 1757183880.687339,
+          "duration_seconds": 0.48001599311828613,
+          "end_time": 1757183881.167466,
+          "agents_completed": 2,
+          "peak_cpu": 8.3,
+          "avg_cpu": 8.3,
+          "peak_memory": 57.6,
+          "avg_memory": 57.6,
+          "sample_count": 1
+        }
+      ]
+    }
+  }
+}

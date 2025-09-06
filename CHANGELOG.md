@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### In Progress
+- [#24] Enhanced Script Agent Support - 90% complete
+  - ✅ Core script agent framework implemented (commits: 3cd88aa, 8110dbd)
+  - ✅ ArtifactManager for execution result persistence
+  - ✅ EnhancedScriptAgent with JSON I/O support and script resolution
+  - ✅ ScriptResolver for discovering and managing project scripts
+  - ✅ CLI commands for script management (`scripts list`, `scripts show`, `scripts test`)
+  - ✅ Implicit type detection for script vs LLM agents in configurations
+  - ✅ Idempotent init process with profiles directory support
+  - ✅ Enhanced configuration management for script agent environments
+  - ⏳ Final integration in EnsembleExecutor for unified execution workflow
+  - ❌ Script caching system for performance optimization
+  - 🔍 Next: Complete script agent execution integration and performance testing
+
 ## [0.10.1] - 2025-08-07
 
 ### Fixed

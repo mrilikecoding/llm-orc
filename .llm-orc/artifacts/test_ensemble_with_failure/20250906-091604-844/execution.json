@@ -1,0 +1,26 @@
+{
+  "ensemble": "test_ensemble_with_failure",
+  "status": "completed_with_errors",
+  "input": {
+    "data": "Test input"
+  },
+  "results": {
+    "working_agent": {
+      "response": "Working agent response",
+      "status": "success"
+    },
+    "failing_agent": {
+      "response": null,
+      "status": "failed",
+      "error": "Fallback also failed"
+    }
+  },
+  "synthesis": null,
+  "metadata": {
+    "agents_used": 2,
+    "started_at": 1757175364.347069,
+    "duration": "0.50s",
+    "completed_at": 1757175364.8446121,
+    "usage": {
+      "agents": {
+        "working_agent": 

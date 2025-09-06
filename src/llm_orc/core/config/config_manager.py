@@ -18,8 +18,10 @@ class ConfigurationManager:
 
         # Create global config directory and setup defaults
         self._global_config_dir.mkdir(parents=True, exist_ok=True)
+        (self._global_config_dir / "profiles").mkdir(exist_ok=True)
         self._setup_default_config()
         self._setup_default_ensembles()
+        self._copy_profile_templates(self._global_config_dir / "profiles")
 
     def _get_global_config_dir(self) -> Path:
         """Get the global configuration directory following XDG spec."""
@@ -56,8 +58,10 @@ class ConfigurationManager:
     def ensure_global_config_dir(self) -> None:
         """Ensure the global configuration directory exists."""
         self._global_config_dir.mkdir(parents=True, exist_ok=True)
+        (self._global_config_dir / "profiles").mkdir(exist_ok=True)
         self._setup_default_config()
         self._setup_default_ensembles()
+        self._copy_profile_templates(self._global_config_dir / "profiles")
 
     def _setup_default_config(self) -> None:
         """Set up default global config.yaml by copying template content."""
@@ -222,66 +226,73 @@ class ConfigurationManager:
                 base[key] = value
 
     def init_local_config(self, project_name: str | None = None) -> None:
-        """Initialize local configuration in current directory."""
+        """Initialize local configuration in current directory (idempotent)."""
         local_dir = Path.cwd() / ".llm-orc"
 
-        if local_dir.exists():
-            raise ValueError("Local .llm-orc directory already exists")
+        # Create directory structure (idempotent)
+        local_dir.mkdir(exist_ok=True)
+        (local_dir / "ensembles").mkdir(exist_ok=True)
+        (local_dir / "models").mkdir(exist_ok=True)
+        (local_dir / "scripts").mkdir(exist_ok=True)
+        (local_dir / "profiles").mkdir(exist_ok=True)
 
-        # Create directory structure
-        local_dir.mkdir()
-        (local_dir / "ensembles").mkdir()
-        (local_dir / "models").mkdir()
-        (local_dir / "scripts").mkdir()
-
-        # Create config file from template
+        # Create config file from template (idempotent)
         config_file = local_dir / "config.yaml"
 
-        try:
-            # Get template content from library
-            template_content = self._get_template_config_content("local-config.yaml")
-
-            # Replace placeholder with actual project name
-            actual_project_name = project_name or Path.cwd().name
-            config_content = template_content.replace(
-                "{project_name}", actual_project_name
-            )
-
-            with open(config_file, "w", encoding="utf-8") as f:
-                f.write(config_content)
-        except FileNotFoundError:
-            # Fallback to minimal config if template not found
-            config_data = {
-                "project": {"name": project_name or Path.cwd().name},
-                "model_profiles": {},
-            }
-            with open(config_file, "w", encoding="utf-8") as f:
-                yaml.dump(config_data, f, default_flow_style=False, indent=2)
-
-        # Copy example ensemble template to local ensembles directory
-        try:
-            example_template_content = self._get_template_config_content(
-                "example-local-ensemble.yaml"
-            )
-            local_ensemble_file = (
-                local_dir / "ensembles" / "example-local-ensemble.yaml"
-            )
-            with open(local_ensemble_file, "w", encoding="utf-8") as f:
-                f.write(example_template_content)
-        except FileNotFoundError:
-            # If template not found in library, try local fallback
-            template_ensemble_dir = self._get_template_ensembles_dir()
-            example_template = template_ensemble_dir / "example-local-ensemble.yaml"
-            if example_template.exists():
-                local_ensemble_file = (
-                    local_dir / "ensembles" / "example-local-ensemble.yaml"
+        if not config_file.exists():
+            try:
+                # Get template content from library
+                template_content = self._get_template_config_content(
+                    "local-config.yaml"
                 )
-                shutil.copy2(example_template, local_ensemble_file)
 
-        # Create .gitignore for credentials if they are stored locally
+                # Replace placeholder with actual project name
+                actual_project_name = project_name or Path.cwd().name
+                config_content = template_content.replace(
+                    "{project_name}", actual_project_name
+                )
+
+                with open(config_file, "w", encoding="utf-8") as f:
+                    f.write(config_content)
+            except FileNotFoundError:
+                # Fallback to minimal config if template not found
+                config_data = {
+                    "project": {"name": project_name or Path.cwd().name},
+                    "model_profiles": {},
+                }
+                with open(config_file, "w", encoding="utf-8") as f:
+                    yaml.dump(config_data, f, default_flow_style=False, indent=2)
+
+        # Copy example ensemble template to local ensembles directory (idempotent)
+        local_ensemble_file = local_dir / "ensembles" / "example-local-ensemble.yaml"
+
+        if not local_ensemble_file.exists():
+            try:
+                example_template_content = self._get_template_config_content(
+                    "example-local-ensemble.yaml"
+                )
+                with open(local_ensemble_file, "w", encoding="utf-8") as f:
+                    f.write(example_template_content)
+            except FileNotFoundError:
+                # If template not found in library, try local fallback
+                template_ensemble_dir = self._get_template_ensembles_dir()
+                example_template = template_ensemble_dir / "example-local-ensemble.yaml"
+                if example_template.exists():
+                    shutil.copy2(example_template, local_ensemble_file)
+
+        # Copy primitive scripts from llm-orchestra-library GitHub repo (idempotent)
+        self._copy_primitive_scripts(local_dir / "scripts")
+
+        # Copy profile templates to local profiles directory (idempotent)
+        self._copy_profile_templates(local_dir / "profiles")
+
+        # Create .gitignore for credentials if they are stored locally (idempotent)
         gitignore_file = local_dir / ".gitignore"
-        with open(gitignore_file, "w") as f:
-            f.write("# Local credentials (if any)\ncredentials.yaml\n.encryption_key\n")
+        if not gitignore_file.exists():
+            with open(gitignore_file, "w", encoding="utf-8") as f:
+                f.write(
+                    "# Local credentials (if any)\ncredentials.yaml\n.encryption_key\n"
+                )
 
     def get_model_profiles(self) -> dict[str, dict[str, str]]:
         """Get merged model profiles from global and local configs."""
@@ -336,3 +347,25 @@ class ConfigurationManager:
         """
         profiles = self.get_model_profiles()
         return profiles.get(profile_name)
+
+    def _copy_primitive_scripts(self, target_scripts_dir: Path) -> None:
+        """Copy primitive scripts from llm-orchestra-library GitHub repository."""
+        from llm_orc.cli_library.library import copy_primitive_scripts
+
+        try:
+            copy_primitive_scripts(target_scripts_dir)
+        except Exception:
+            # If script copying fails, continue with init
+            # This allows offline usage
+            pass
+
+    def _copy_profile_templates(self, target_profiles_dir: Path) -> None:
+        """Copy profile templates from llm-orchestra-library GitHub repository."""
+        from llm_orc.cli_library.library import copy_profile_templates
+
+        try:
+            copy_profile_templates(target_profiles_dir)
+        except Exception:
+            # If profile copying fails, continue with init
+            # This allows offline usage
+            pass

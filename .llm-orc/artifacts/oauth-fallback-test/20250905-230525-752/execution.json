@@ -1,0 +1,103 @@
+{
+  "ensemble": "oauth-fallback-test",
+  "status": "completed",
+  "input": {
+    "data": "Test OAuth fallback"
+  },
+  "results": {
+    "oauth-agent": {
+      "response": "Fallback response",
+      "status": "success"
+    }
+  },
+  "synthesis": null,
+  "metadata": {
+    "agents_used": 1,
+    "started_at": 1757138725.4028,
+    "duration": "0.35s",
+    "completed_at": 1757138725.7522712,
+    "usage": {
+      "agents": {
+        "oauth-agent": {
+          "input_tokens": 15,
+          "output_tokens": 10,
+          "duration_ms": 200,
+          "cost_usd": 0.02,
+          "model_profile": "premium-claude",
+          "start_time": 1757138725.441351,
+          "baseline_cpu": 0.0,
+          "baseline_memory": 56.7,
+          "sample_count": 2,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 56.7,
+          "avg_memory": 56.7,
+          "cpu_samples": [
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            56.7,
+            56.7
+          ],
+          "resource_duration_seconds": 0.10350990295410156,
+          "resource_sample_count": 2
+        }
+      },
+      "totals": {
+        "total_tokens": 0,
+        "total_input_tokens": 15,
+        "total_output_tokens": 10,
+        "total_cost_usd": 0.02,
+        "total_duration_ms": 200,
+        "agents_count": 1
+      }
+    },
+    "adaptive_resource_management": {
+      "adaptive_used": false,
+      "management_type": "user_configured",
+      "concurrency_decisions": [],
+      "resource_metrics": [
+        {
+          "cpu_percent": 6.7,
+          "memory_percent": 56.7,
+          "circuit_breaker_state": "N/A",
+          "measurement_point": "final_fallback"
+        }
+      ],
+      "execution_metrics": {
+        "peak_cpu": 6.7,
+        "avg_cpu": 6.7,
+        "peak_memory": 56.7,
+        "avg_memory": 56.7,
+        "sample_count": 1,
+        "raw_cpu_samples": [
+          6.7
+        ],
+        "raw_memory_samples": [
+          56.7
+        ]
+      },
+      "phase_metrics": [
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 1,
+          "phase_start_time": 1757138725.402835,
+          "agent_names": [
+            "oauth-agent"
+          ],
+          "start_time": 1757138725.402836,
+          "duration_seconds": 0.24346494674682617,
+          "end_time": 1757138725.6465101,
+          "agents_completed": 1,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 56.7,
+          "avg_memory": 56.7,
+          "sample_count": 1
+        }
+      ]
+    }
+  }
+}

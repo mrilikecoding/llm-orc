@@ -260,6 +260,33 @@ llm-orc library copy code-analysis/security-review
 llm-orc library copy code-analysis/security-review --global
 ```
 
+#### Library Source Configuration
+
+By default, LLM Orchestra fetches library content from the remote GitHub repository. For development purposes, you can use a local copy of the library:
+
+```bash
+# Use remote GitHub library (default)
+llm-orc library browse research-analysis
+
+# Use local library for development
+export LLM_ORC_LIBRARY_SOURCE=local
+llm-orc library browse research-analysis  # Uses local submodule
+llm-orc init                              # Copies from local submodule
+
+# Switch back to remote
+unset LLM_ORC_LIBRARY_SOURCE
+```
+
+**When to use local library:**
+- Testing changes to library ensembles before publishing
+- Working on feature branches of the llm-orchestra-library
+- Offline development (when remote access unavailable)
+- Custom ensemble development and testing
+
+**Requirements for local library:**
+- The `llm-orchestra-library` submodule must be initialized and present
+- Clear error messages guide you if the local library is not found
+
 ## Use Cases
 
 ### Code Review

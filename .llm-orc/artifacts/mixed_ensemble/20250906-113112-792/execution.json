@@ -1,0 +1,82 @@
+{
+  "ensemble": "mixed_ensemble",
+  "status": "completed_with_errors",
+  "input": {
+    "data": "test data"
+  },
+  "results": {
+    "data_fetcher": {
+      "response": "{\"success\": true, \"output\": \"{success: true, output: Data fetched successfully}\"}",
+      "status": "success"
+    },
+    "llm_analyzer": {
+      "response": null,
+      "status": "failed",
+      "error": "Agent execution timed out after 2 seconds"
+    }
+  },
+  "synthesis": null,
+  "metadata": {
+    "agents_used": 2,
+    "started_at": 1757183470.463058,
+    "duration": "2.33s",
+    "completed_at": 1757183472.792395,
+    "usage": {
+      "agents": {},
+      "totals": {
+        "total_tokens": 0,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_cost_usd": 0.0,
+        "total_duration_ms": 0,
+        "agents_count": 0
+      }
+    },
+    "adaptive_resource_management": {
+      "adaptive_used": false,
+      "management_type": "user_configured",
+      "concurrency_decisions": [],
+      "resource_metrics": [
+        {
+          "cpu_percent": 6.6,
+          "memory_percent": 60.5,
+          "circuit_breaker_state": "N/A",
+          "measurement_point": "final_fallback"
+        }
+      ],
+      "execution_metrics": {
+        "peak_cpu": 6.6,
+        "avg_cpu": 6.6,
+        "peak_memory": 60.5,
+        "avg_memory": 60.5,
+        "sample_count": 1,
+        "raw_cpu_samples": [
+          6.6
+        ],
+        "raw_memory_samples": [
+          60.5
+        ]
+      },
+      "phase_metrics": [
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 1,
+          "phase_start_time": 1757183470.593046,
+          "agent_names": [
+            "llm_analyzer"
+          ],
+          "start_time": 1757183470.593046,
+          "duration_seconds": 2.097486972808838,
+          "end_time": 1757183472.690869,
+          "agents_completed": 1,
+          "peak_cpu": 25.8,
+          "avg_cpu": 5.911111111111111,
+          "peak_memory": 60.5,
+          "avg_memory": 58.6888888888889,
+          "sample_count": 9
+        }
+      ]
+    }
+  }
+}

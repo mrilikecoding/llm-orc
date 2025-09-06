@@ -1,0 +1,222 @@
+{
+  "ensemble": "dependency-test-ensemble",
+  "status": "completed",
+  "input": {
+    "data": "Test dependency execution"
+  },
+  "results": {
+    "security_reviewer": {
+      "response": "Response from mock-security",
+      "status": "success"
+    },
+    "performance_reviewer": {
+      "response": "Response from mock-perf",
+      "status": "success"
+    },
+    "style_reviewer": {
+      "response": "Response from mock-style",
+      "status": "success"
+    },
+    "synthesizer": {
+      "response": "Response from mock-synthesizer",
+      "status": "success"
+    }
+  },
+  "synthesis": null,
+  "metadata": {
+    "agents_used": 4,
+    "started_at": 1757138576.805514,
+    "duration": "1.08s",
+    "completed_at": 1757138577.881258,
+    "usage": {
+      "agents": {
+        "security_reviewer": {
+          "total_tokens": 10,
+          "input_tokens": 5,
+          "output_tokens": 5,
+          "cost_usd": 0.001,
+          "duration_ms": 1,
+          "model_profile": "mock-synthesizer",
+          "start_time": 1757138577.517038,
+          "baseline_cpu": 0.0,
+          "baseline_memory": 58.7,
+          "sample_count": 3,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 58.7,
+          "avg_memory": 58.56666666666666,
+          "cpu_samples": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            58.7,
+            58.5,
+            58.5
+          ],
+          "resource_duration_seconds": 0.25867295265197754,
+          "resource_sample_count": 3
+        },
+        "performance_reviewer": {
+          "total_tokens": 10,
+          "input_tokens": 5,
+          "output_tokens": 5,
+          "cost_usd": 0.001,
+          "duration_ms": 1,
+          "model_profile": "mock-synthesizer",
+          "start_time": 1757138577.517038,
+          "baseline_cpu": 0.0,
+          "baseline_memory": 58.7,
+          "sample_count": 3,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 58.7,
+          "avg_memory": 58.56666666666666,
+          "cpu_samples": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            58.7,
+            58.5,
+            58.5
+          ],
+          "resource_duration_seconds": 0.25867295265197754,
+          "resource_sample_count": 3
+        },
+        "style_reviewer": {
+          "total_tokens": 10,
+          "input_tokens": 5,
+          "output_tokens": 5,
+          "cost_usd": 0.001,
+          "duration_ms": 1,
+          "model_profile": "mock-synthesizer",
+          "start_time": 1757138577.517038,
+          "baseline_cpu": 0.0,
+          "baseline_memory": 58.7,
+          "sample_count": 3,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 58.7,
+          "avg_memory": 58.56666666666666,
+          "cpu_samples": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            58.7,
+            58.5,
+            58.5
+          ],
+          "resource_duration_seconds": 0.25867295265197754,
+          "resource_sample_count": 3
+        },
+        "synthesizer": {
+          "total_tokens": 10,
+          "input_tokens": 5,
+          "output_tokens": 5,
+          "cost_usd": 0.001,
+          "duration_ms": 1,
+          "model_profile": "mock-synthesizer",
+          "start_time": 1757138577.517038,
+          "baseline_cpu": 0.0,
+          "baseline_memory": 58.7,
+          "sample_count": 3,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 58.7,
+          "avg_memory": 58.56666666666666,
+          "cpu_samples": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            58.7,
+            58.5,
+            58.5
+          ],
+          "resource_duration_seconds": 0.25867295265197754,
+          "resource_sample_count": 3
+        }
+      },
+      "totals": {
+        "total_tokens": 40,
+        "total_input_tokens": 20,
+        "total_output_tokens": 20,
+        "total_cost_usd": 0.004,
+        "total_duration_ms": 4,
+        "agents_count": 4
+      }
+    },
+    "adaptive_resource_management": {
+      "adaptive_used": false,
+      "management_type": "user_configured",
+      "concurrency_decisions": [],
+      "resource_metrics": [
+        {
+          "cpu_percent": 6.9,
+          "memory_percent": 58.5,
+          "circuit_breaker_state": "N/A",
+          "measurement_point": "final_fallback"
+        }
+      ],
+      "execution_metrics": {
+        "peak_cpu": 6.9,
+        "avg_cpu": 6.9,
+        "peak_memory": 58.5,
+        "avg_memory": 58.5,
+        "sample_count": 1,
+        "raw_cpu_samples": [
+          6.9
+        ],
+        "raw_memory_samples": [
+          58.5
+        ]
+      },
+      "phase_metrics": [
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 3,
+          "phase_start_time": 1757138576.805572,
+          "agent_names": [
+            "security_reviewer",
+            "performance_reviewer",
+            "style_reviewer"
+          ],
+          "start_time": 1757138576.8055732,
+          "duration_seconds": 0.668895959854126,
+          "end_time": 1757138577.474568,
+          "agents_completed": 3,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 58.7,
+          "avg_memory": 58.7,
+          "sample_count": 1
+        },
+        {
+          "phase_index": 1,
+          "phase_name": "phase_1",
+          "agent_count": 1,
+          "phase_start_time": 1757138577.4746199,
+          "agent_names": [
+            "synthesizer"
+          ],
+          "start_time": 1757138577.4746208,
+          "duration_seconds": 0.3013460636138916,
+          "end_time": 1757138577.776078,
+          "agents_completed": 1,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 58.5,
+          "avg_memory": 58.5,
+          "sample_count": 1
+        }
+      ]
+    }
+  }
+}

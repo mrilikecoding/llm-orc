@@ -1,0 +1,172 @@
+{
+  "ensemble": "memory_benchmark",
+  "status": "completed",
+  "input": {
+    "data": "Memory test iteration 0"
+  },
+  "results": {
+    "memory_agent1": {
+      "response": "Memory efficient response",
+      "status": "success"
+    },
+    "memory_agent2": {
+      "response": "Memory efficient response",
+      "status": "success"
+    },
+    "memory_agent3": {
+      "response": "Memory efficient response",
+      "status": "success"
+    }
+  },
+  "synthesis": null,
+  "metadata": {
+    "agents_used": 3,
+    "started_at": 1757175012.399272,
+    "duration": "0.77s",
+    "completed_at": 1757175013.169628,
+    "usage": {
+      "agents": {
+        "memory_agent1": {
+          "total_tokens": 75,
+          "input_tokens": 50,
+          "output_tokens": 25,
+          "cost_usd": 0.00225,
+          "duration_ms": 450,
+          "model_profile": "mock-model",
+          "start_time": 1757175012.80762,
+          "baseline_cpu": 0.0,
+          "baseline_memory": 57.8,
+          "sample_count": 3,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 57.8,
+          "avg_memory": 57.79999999999999,
+          "cpu_samples": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            57.8,
+            57.8,
+            57.8
+          ],
+          "resource_duration_seconds": 0.15114998817443848,
+          "resource_sample_count": 3
+        },
+        "memory_agent2": {
+          "total_tokens": 75,
+          "input_tokens": 50,
+          "output_tokens": 25,
+          "cost_usd": 0.00225,
+          "duration_ms": 450,
+          "model_profile": "mock-model",
+          "start_time": 1757175012.80762,
+          "baseline_cpu": 0.0,
+          "baseline_memory": 57.8,
+          "sample_count": 3,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 57.8,
+          "avg_memory": 57.79999999999999,
+          "cpu_samples": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            57.8,
+            57.8,
+            57.8
+          ],
+          "resource_duration_seconds": 0.15114998817443848,
+          "resource_sample_count": 3
+        },
+        "memory_agent3": {
+          "total_tokens": 75,
+          "input_tokens": 50,
+          "output_tokens": 25,
+          "cost_usd": 0.00225,
+          "duration_ms": 450,
+          "model_profile": "mock-model",
+          "start_time": 1757175012.80762,
+          "baseline_cpu": 0.0,
+          "baseline_memory": 57.8,
+          "sample_count": 3,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 57.8,
+          "avg_memory": 57.79999999999999,
+          "cpu_samples": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            57.8,
+            57.8,
+            57.8
+          ],
+          "resource_duration_seconds": 0.15114998817443848,
+          "resource_sample_count": 3
+        }
+      },
+      "totals": {
+        "total_tokens": 225,
+        "total_input_tokens": 150,
+        "total_output_tokens": 75,
+        "total_cost_usd": 0.006749999999999999,
+        "total_duration_ms": 1350,
+        "agents_count": 3
+      }
+    },
+    "adaptive_resource_management": {
+      "adaptive_used": false,
+      "management_type": "user_configured",
+      "concurrency_decisions": [],
+      "resource_metrics": [
+        {
+          "cpu_percent": 0.0,
+          "memory_percent": 57.8,
+          "circuit_breaker_state": "N/A",
+          "measurement_point": "final_fallback"
+        }
+      ],
+      "execution_metrics": {
+        "peak_cpu": 0.0,
+        "avg_cpu": 0.0,
+        "peak_memory": 57.8,
+        "avg_memory": 57.8,
+        "sample_count": 1,
+        "raw_cpu_samples": [
+          0.0
+        ],
+        "raw_memory_samples": [
+          57.8
+        ]
+      },
+      "phase_metrics": [
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 3,
+          "phase_start_time": 1757175012.399311,
+          "agent_names": [
+            "memory_agent1",
+            "memory_agent2",
+            "memory_agent3"
+          ],
+          "start_time": 1757175012.3993118,
+          "duration_seconds": 0.6649580001831055,
+          "end_time": 1757175013.064379,
+          "agents_completed": 3,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 57.8,
+          "avg_memory": 57.8,
+          "sample_count": 1
+        }
+      ]
+    }
+  }
+}

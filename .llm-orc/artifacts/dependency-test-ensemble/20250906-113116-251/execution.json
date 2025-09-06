@@ -1,0 +1,222 @@
+{
+  "ensemble": "dependency-test-ensemble",
+  "status": "completed",
+  "input": {
+    "data": "Test dependency execution"
+  },
+  "results": {
+    "security_reviewer": {
+      "response": "Response from mock-security",
+      "status": "success"
+    },
+    "performance_reviewer": {
+      "response": "Response from mock-perf",
+      "status": "success"
+    },
+    "style_reviewer": {
+      "response": "Response from mock-style",
+      "status": "success"
+    },
+    "synthesizer": {
+      "response": "Response from mock-synthesizer",
+      "status": "success"
+    }
+  },
+  "synthesis": null,
+  "metadata": {
+    "agents_used": 4,
+    "started_at": 1757183475.1825962,
+    "duration": "1.07s",
+    "completed_at": 1757183476.250983,
+    "usage": {
+      "agents": {
+        "security_reviewer": {
+          "total_tokens": 10,
+          "input_tokens": 5,
+          "output_tokens": 5,
+          "cost_usd": 0.001,
+          "duration_ms": 1,
+          "model_profile": "mock-synthesizer",
+          "start_time": 1757183475.895763,
+          "baseline_cpu": 16.0,
+          "baseline_memory": 58.8,
+          "sample_count": 3,
+          "peak_cpu": 13.5,
+          "avg_cpu": 4.5,
+          "peak_memory": 58.8,
+          "avg_memory": 58.73333333333333,
+          "cpu_samples": [
+            13.5,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            58.8,
+            58.7,
+            58.7
+          ],
+          "resource_duration_seconds": 0.24942708015441895,
+          "resource_sample_count": 3
+        },
+        "performance_reviewer": {
+          "total_tokens": 10,
+          "input_tokens": 5,
+          "output_tokens": 5,
+          "cost_usd": 0.001,
+          "duration_ms": 1,
+          "model_profile": "mock-synthesizer",
+          "start_time": 1757183475.895763,
+          "baseline_cpu": 16.0,
+          "baseline_memory": 58.8,
+          "sample_count": 3,
+          "peak_cpu": 13.5,
+          "avg_cpu": 4.5,
+          "peak_memory": 58.8,
+          "avg_memory": 58.73333333333333,
+          "cpu_samples": [
+            13.5,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            58.8,
+            58.7,
+            58.7
+          ],
+          "resource_duration_seconds": 0.24942708015441895,
+          "resource_sample_count": 3
+        },
+        "style_reviewer": {
+          "total_tokens": 10,
+          "input_tokens": 5,
+          "output_tokens": 5,
+          "cost_usd": 0.001,
+          "duration_ms": 1,
+          "model_profile": "mock-synthesizer",
+          "start_time": 1757183475.895763,
+          "baseline_cpu": 16.0,
+          "baseline_memory": 58.8,
+          "sample_count": 3,
+          "peak_cpu": 13.5,
+          "avg_cpu": 4.5,
+          "peak_memory": 58.8,
+          "avg_memory": 58.73333333333333,
+          "cpu_samples": [
+            13.5,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            58.8,
+            58.7,
+            58.7
+          ],
+          "resource_duration_seconds": 0.24942708015441895,
+          "resource_sample_count": 3
+        },
+        "synthesizer": {
+          "total_tokens": 10,
+          "input_tokens": 5,
+          "output_tokens": 5,
+          "cost_usd": 0.001,
+          "duration_ms": 1,
+          "model_profile": "mock-synthesizer",
+          "start_time": 1757183475.895763,
+          "baseline_cpu": 16.0,
+          "baseline_memory": 58.8,
+          "sample_count": 3,
+          "peak_cpu": 13.5,
+          "avg_cpu": 4.5,
+          "peak_memory": 58.8,
+          "avg_memory": 58.73333333333333,
+          "cpu_samples": [
+            13.5,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            58.8,
+            58.7,
+            58.7
+          ],
+          "resource_duration_seconds": 0.24942708015441895,
+          "resource_sample_count": 3
+        }
+      },
+      "totals": {
+        "total_tokens": 40,
+        "total_input_tokens": 20,
+        "total_output_tokens": 20,
+        "total_cost_usd": 0.004,
+        "total_duration_ms": 4,
+        "agents_count": 4
+      }
+    },
+    "adaptive_resource_management": {
+      "adaptive_used": false,
+      "management_type": "user_configured",
+      "concurrency_decisions": [],
+      "resource_metrics": [
+        {
+          "cpu_percent": 0.0,
+          "memory_percent": 58.7,
+          "circuit_breaker_state": "N/A",
+          "measurement_point": "final_fallback"
+        }
+      ],
+      "execution_metrics": {
+        "peak_cpu": 0.0,
+        "avg_cpu": 0.0,
+        "peak_memory": 58.7,
+        "avg_memory": 58.7,
+        "sample_count": 1,
+        "raw_cpu_samples": [
+          0.0
+        ],
+        "raw_memory_samples": [
+          58.7
+        ]
+      },
+      "phase_metrics": [
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 3,
+          "phase_start_time": 1757183475.1826382,
+          "agent_names": [
+            "security_reviewer",
+            "performance_reviewer",
+            "style_reviewer"
+          ],
+          "start_time": 1757183475.1826391,
+          "duration_seconds": 0.6669330596923828,
+          "end_time": 1757183475.849684,
+          "agents_completed": 3,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 59.2,
+          "avg_memory": 59.2,
+          "sample_count": 1
+        },
+        {
+          "phase_index": 1,
+          "phase_name": "phase_1",
+          "agent_count": 1,
+          "phase_start_time": 1757183475.8497448,
+          "agent_names": [
+            "synthesizer"
+          ],
+          "start_time": 1757183475.849746,
+          "duration_seconds": 0.2956509590148926,
+          "end_time": 1757183476.1455,
+          "agents_completed": 1,
+          "peak_cpu": 13.7,
+          "avg_cpu": 13.7,
+          "peak_memory": 58.7,
+          "avg_memory": 58.7,
+          "sample_count": 1
+        }
+      ]
+    }
+  }
+}

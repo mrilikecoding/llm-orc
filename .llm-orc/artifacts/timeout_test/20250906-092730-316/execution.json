@@ -1,0 +1,78 @@
+{
+  "ensemble": "timeout_test",
+  "status": "completed_with_errors",
+  "input": {
+    "data": "Test timeout"
+  },
+  "results": {
+    "slow_agent": {
+      "response": null,
+      "status": "failed",
+      "error": "Agent execution timed out after 0.1 seconds"
+    }
+  },
+  "synthesis": null,
+  "metadata": {
+    "agents_used": 1,
+    "started_at": 1757176049.9604669,
+    "duration": "0.36s",
+    "completed_at": 1757176050.316331,
+    "usage": {
+      "agents": {},
+      "totals": {
+        "total_tokens": 0,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "total_cost_usd": 0.0,
+        "total_duration_ms": 0,
+        "agents_count": 0
+      }
+    },
+    "adaptive_resource_management": {
+      "adaptive_used": false,
+      "management_type": "user_configured",
+      "concurrency_decisions": [],
+      "resource_metrics": [
+        {
+          "cpu_percent": 0.0,
+          "memory_percent": 55.8,
+          "circuit_breaker_state": "N/A",
+          "measurement_point": "final_fallback"
+        }
+      ],
+      "execution_metrics": {
+        "peak_cpu": 0.0,
+        "avg_cpu": 0.0,
+        "peak_memory": 55.8,
+        "avg_memory": 55.8,
+        "sample_count": 1,
+        "raw_cpu_samples": [
+          0.0
+        ],
+        "raw_memory_samples": [
+          55.8
+        ]
+      },
+      "phase_metrics": [
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 1,
+          "phase_start_time": 1757176049.9605062,
+          "agent_names": [
+            "slow_agent"
+          ],
+          "start_time": 1757176049.960507,
+          "duration_seconds": 0.25108814239501953,
+          "end_time": 1757176050.211715,
+          "agents_completed": 1,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 55.8,
+          "avg_memory": 55.8,
+          "sample_count": 1
+        }
+      ]
+    }
+  }
+}
