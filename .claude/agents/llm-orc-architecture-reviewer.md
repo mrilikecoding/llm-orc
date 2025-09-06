@@ -1,7 +1,7 @@
 ---
 name: llm-orc-architecture-reviewer
 description: PROACTIVELY review architectural decisions and code changes for alignment with llm-orc's multi-agent orchestration principles. MUST BE USED when implementing new features, modifying core components, or making design decisions.
-tools: Read, Edit, Grep, Glob, Task
+tools: Read, Edit, Grep, Glob, WebFetch
 model: sonnet
 color: green
 ---

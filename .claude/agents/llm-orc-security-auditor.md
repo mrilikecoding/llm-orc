@@ -1,7 +1,7 @@
 ---
 name: llm-orc-security-auditor
 description: PROACTIVELY audit security aspects of llm-orc development including credential management, API security, input validation, and secure coding practices. MUST BE USED when handling authentication, external APIs, or user input processing.
-tools: Read, Grep, Glob, WebSearch
+tools: Read, Write, Edit, Grep, Glob, WebSearch
 model: haiku
 color: yellow
 ---

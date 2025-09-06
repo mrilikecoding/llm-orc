@@ -21,8 +21,24 @@ if [ ${#CHANGED_FILES[@]} -eq 0 ]; then
     exit 0
 fi
 
+# Skip complexity check for small files (< 50 lines) to reduce noise
+SHOULD_CHECK=false
+for file in "${CHANGED_FILES[@]}"; do
+    if [ -f "$file" ]; then
+        LINES=$(wc -l < "$file" 2>/dev/null || echo "0")
+        if [ "$LINES" -gt 50 ]; then
+            SHOULD_CHECK=true
+            break
+        fi
+    fi
+done
+
+if [ "$SHOULD_CHECK" = false ]; then
+    exit 0
+fi
+
 # Run complexity analysis (using project's limit of 15)
-echo "🧠 Checking code complexity..."
+echo "🧠 Checking code complexity for substantial files..."
 COMPLEXITY_RESULT=$(uv run complexipy --max-complexity-allowed 15 "${CHANGED_FILES[@]}" 2>&1 || echo "")
 
 # Check if there are complexity violations

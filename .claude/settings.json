@@ -7,6 +7,11 @@
           {
             "type": "command",
             "command": ".claude/hooks/load-agents.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/feature-context.sh",
+            "description": "Provide feature development context on non-main branches"
           }
         ]
       }

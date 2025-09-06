@@ -1,7 +1,7 @@
 ---
 name: llm-orc-performance-optimizer
 description: PROACTIVELY identify and address performance bottlenecks in llm-orc's async execution, model coordination, and resource management. MUST BE USED when implementing ensemble execution, model integrations, or performance-critical features.
-tools: Read, Edit, Bash, Grep, Glob
+tools: Read, Write, Edit, Bash, Grep, Glob
 model: haiku
 color: orange
 ---
