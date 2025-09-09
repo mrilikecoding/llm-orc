@@ -427,3 +427,293 @@ class TestArtifactManagerTimestampGeneration:
             temp_dir / ".llm-orc" / "artifacts" / "test-ensemble" / custom_timestamp
         )
         assert timestamped_dir.exists()
+
+
+class TestArtifactManagerMirroredDirectoryStructure:
+    """Test mirrored directory structure for hierarchical ensembles."""
+
+    def test_save_execution_results_with_relative_path(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test that relative_path parameter creates mirrored directory structure."""
+        ensemble_name = "network-analysis"
+        relative_path = "research/network-science"
+        timestamp = "20240115-103000-123"
+        results = {"test": "data"}
+
+        artifact_manager.save_execution_results(
+            ensemble_name=ensemble_name,
+            results=results,
+            timestamp=timestamp,
+            relative_path=relative_path,
+        )
+
+        # Check mirrored directory structure is created
+        mirrored_dir = (
+            temp_dir
+            / ".llm-orc"
+            / "artifacts"
+            / relative_path
+            / ensemble_name
+            / timestamp
+        )
+        assert mirrored_dir.exists()
+
+        # Check execution.json exists in mirrored location
+        json_file = mirrored_dir / "execution.json"
+        assert json_file.exists()
+
+        # Check content is correct
+        with json_file.open() as f:
+            saved_data = json.load(f)
+        assert saved_data == results
+
+    def test_save_execution_results_without_relative_path_uses_legacy_structure(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test that omitting relative_path maintains backward compatibility."""
+        ensemble_name = "test-ensemble"
+        timestamp = "20240115-103000-123"
+        results = {"test": "data"}
+
+        artifact_manager.save_execution_results(
+            ensemble_name=ensemble_name,
+            results=results,
+            timestamp=timestamp,
+        )
+
+        # Check legacy directory structure is used
+        legacy_dir = temp_dir / ".llm-orc" / "artifacts" / ensemble_name / timestamp
+        assert legacy_dir.exists()
+
+        # Check execution.json exists in legacy location
+        json_file = legacy_dir / "execution.json"
+        assert json_file.exists()
+
+    def test_update_latest_symlink_with_relative_path(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test that latest symlink is created in correct mirrored location."""
+        ensemble_name = "analysis-tool"
+        relative_path = "creative/storytelling"
+        timestamp = "20240115-103000-123"
+        results = {"test": "data"}
+
+        artifact_manager.save_execution_results(
+            ensemble_name=ensemble_name,
+            results=results,
+            timestamp=timestamp,
+            relative_path=relative_path,
+        )
+
+        # Check latest symlink exists in mirrored location
+        ensemble_dir = (
+            temp_dir / ".llm-orc" / "artifacts" / relative_path / ensemble_name
+        )
+        latest_link = ensemble_dir / "latest"
+
+        assert latest_link.exists()
+        assert latest_link.is_symlink()
+
+        # Should point to the timestamped directory
+        target = latest_link.resolve()
+        expected_target = (ensemble_dir / timestamp).resolve()
+        assert target == expected_target
+
+    def test_list_ensembles_includes_mirrored_structure(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test that list_ensembles finds ensembles in mirrored directories."""
+        # Create ensembles in both legacy and mirrored structures
+        artifact_manager.save_execution_results(
+            ensemble_name="legacy-ensemble",
+            results={"test": "legacy"},
+            timestamp="20240115-103000-123",
+        )
+
+        artifact_manager.save_execution_results(
+            ensemble_name="research-ensemble",
+            results={"test": "research"},
+            timestamp="20240115-103000-124",
+            relative_path="research/ai-safety",
+        )
+
+        ensembles = artifact_manager.list_ensembles()
+
+        # Should find both ensembles
+        ensemble_names = [e["name"] for e in ensembles]
+        assert "legacy-ensemble" in ensemble_names
+        assert "research-ensemble" in ensemble_names
+
+    def test_get_latest_results_with_relative_path(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test that get_latest_results works with mirrored directory structure."""
+        ensemble_name = "data-processor"
+        relative_path = "testing/integration"
+        results = {"output": "processed data", "status": "success"}
+
+        artifact_manager.save_execution_results(
+            ensemble_name=ensemble_name,
+            results=results,
+            timestamp="20240115-103000-123",
+            relative_path=relative_path,
+        )
+
+        # Should be able to retrieve latest results using relative path
+        latest_results = artifact_manager.get_latest_results(
+            ensemble_name, relative_path=relative_path
+        )
+
+        assert latest_results is not None
+        assert latest_results["output"] == "processed data"
+        assert latest_results["status"] == "success"
+
+    def test_get_execution_results_with_relative_path(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test that get_execution_results works with mirrored directory structure."""
+        ensemble_name = "validator"
+        relative_path = "research/validation"
+        timestamp = "20240115-103000-123"
+        results = {"validation": "passed", "score": 95}
+
+        artifact_manager.save_execution_results(
+            ensemble_name=ensemble_name,
+            results=results,
+            timestamp=timestamp,
+            relative_path=relative_path,
+        )
+
+        # Should be able to retrieve specific execution results
+        execution_results = artifact_manager.get_execution_results(
+            ensemble_name, timestamp, relative_path=relative_path
+        )
+
+        assert execution_results is not None
+        assert execution_results["validation"] == "passed"
+        assert execution_results["score"] == 95
+
+    def test_nested_relative_paths_create_deep_directory_structure(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test that deeply nested relative paths create correct directory structure."""
+        ensemble_name = "deep-analyzer"
+        relative_path = "research/deep-learning/nlp/transformers"
+        timestamp = "20240115-103000-123"
+        results = {"model": "transformer", "accuracy": 0.95}
+
+        artifact_manager.save_execution_results(
+            ensemble_name=ensemble_name,
+            results=results,
+            timestamp=timestamp,
+            relative_path=relative_path,
+        )
+
+        # Check deeply nested directory structure
+        deep_dir = (
+            temp_dir
+            / ".llm-orc"
+            / "artifacts"
+            / "research"
+            / "deep-learning"
+            / "nlp"
+            / "transformers"
+            / ensemble_name
+            / timestamp
+        )
+        assert deep_dir.exists()
+
+        json_file = deep_dir / "execution.json"
+        assert json_file.exists()
+
+    def test_backward_compatibility_for_existing_methods(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test that existing method calls without relative_path still work."""
+        # This tests the current API continues to work
+        ensemble_name = "compatibility-test"
+        timestamp = "20240115-103000-123"
+        results = {"compatibility": "maintained"}
+
+        # This should not fail (backward compatibility)
+        result_dir = artifact_manager.save_execution_results(
+            ensemble_name=ensemble_name,
+            results=results,
+            timestamp=timestamp,
+        )
+
+        assert result_dir.exists()
+
+        # Legacy methods should still work
+        latest_results = artifact_manager.get_latest_results(ensemble_name)
+        assert latest_results is not None
+        assert latest_results["compatibility"] == "maintained"
+
+        execution_results = artifact_manager.get_execution_results(
+            ensemble_name, timestamp
+        )
+        assert execution_results is not None
+        assert execution_results["compatibility"] == "maintained"
+
+
+class TestArtifactManagerEndToEndIntegration:
+    """End-to-end integration tests for mirrored directory structure."""
+
+    def test_full_workflow_mirrored_structure(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test complete workflow with mirrored directory structure."""
+        # Simulate different ensemble types in different directories
+        ensembles = [
+            ("research-agent", "research/ai-safety", {"task": "safety analysis"}),
+            ("creative-writer", "creative/storytelling", {"task": "story generation"}),
+            ("test-validator", "testing/integration", {"task": "validation"}),
+            ("legacy-ensemble", None, {"task": "legacy operation"}),  # No relative_path
+        ]
+
+        # Save multiple executions for each ensemble
+        for ensemble_name, relative_path, results in ensembles:
+            for i in range(2):
+                timestamp = f"20240115-10300{i}-123"
+                artifact_manager.save_execution_results(
+                    ensemble_name=ensemble_name,
+                    results=results,
+                    timestamp=timestamp,
+                    relative_path=relative_path,
+                )
+
+        # Test directory structure exists correctly
+        for ensemble_name, relative_path, _ in ensembles:
+            if relative_path:
+                expected_dir = (
+                    temp_dir / ".llm-orc" / "artifacts" / relative_path / ensemble_name
+                )
+            else:
+                expected_dir = temp_dir / ".llm-orc" / "artifacts" / ensemble_name
+
+            assert expected_dir.exists()
+            assert (expected_dir / "latest").exists()
+
+        # Test list_ensembles finds all ensembles
+        found_ensembles = artifact_manager.list_ensembles()
+        found_names = [e["name"] for e in found_ensembles]
+
+        for ensemble_name, _, _ in ensembles:
+            assert ensemble_name in found_names
+
+        # Test get_latest_results works for both mirrored and legacy
+        for ensemble_name, relative_path, expected_data in ensembles:
+            latest = artifact_manager.get_latest_results(
+                ensemble_name, relative_path=relative_path
+            )
+            assert latest is not None
+            assert latest["task"] == expected_data["task"]
+
+        # Test get_execution_results works for specific timestamps
+        for ensemble_name, relative_path, expected_data in ensembles:
+            execution = artifact_manager.get_execution_results(
+                ensemble_name, "20240115-103001-123", relative_path=relative_path
+            )
+            assert execution is not None
+            assert execution["task"] == expected_data["task"]

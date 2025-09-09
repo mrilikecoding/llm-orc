@@ -155,10 +155,31 @@ class TestConfigurationManager:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
 
-            # Mock cwd to temp directory
+            # Mock template content to avoid expensive I/O operations
+            mock_config_template = """project:
+  name: {project_name}
+  default_models:
+    test: micro-local
+"""
+            mock_ensemble_template = """name: example-local-ensemble
+agents:
+  test-agent:
+    model: ollama:llama3.2
+    instructions: "You are a test agent."
+"""
+
+            # Mock cwd and template content
             with patch("pathlib.Path.cwd", return_value=temp_path):
-                config_manager = ConfigurationManager()
-                config_manager.init_local_config("test-project")
+                with patch(
+                    "llm_orc.cli_library.library.get_template_content",
+                    side_effect=lambda name: (
+                        mock_config_template
+                        if "local-config" in name
+                        else mock_ensemble_template
+                    ),
+                ):
+                    config_manager = ConfigurationManager()
+                    config_manager.init_local_config("test-project")
 
                 # Check directory structure was created
                 local_dir = temp_path / ".llm-orc"

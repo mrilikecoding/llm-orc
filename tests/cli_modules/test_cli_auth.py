@@ -66,6 +66,7 @@ class TestAuthCommandsNew:
                     # Mock CredentialStorage
                     mock_storage = Mock()
                     mock_storage.store_api_key.return_value = None
+                    mock_storage.list_providers.return_value = []  # Empty list initially
                     mock_storage_class.return_value = mock_storage
 
                     result = runner.invoke(

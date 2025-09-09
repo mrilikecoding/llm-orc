@@ -22,6 +22,7 @@ class ArtifactManager:
         ensemble_name: str,
         results: dict[str, Any],
         timestamp: str | None = None,
+        relative_path: str | None = None,
     ) -> Path:
         """Save execution results to artifacts directory.
 
@@ -29,6 +30,7 @@ class ArtifactManager:
             ensemble_name: Name of the ensemble
             results: Execution results dictionary
             timestamp: Optional timestamp string (generated if None)
+            relative_path: Optional relative path for mirrored directory structure
 
         Returns:
             Path to the created artifact directory
@@ -48,7 +50,13 @@ class ArtifactManager:
 
         # Create directory structure
         artifacts_dir = self.base_dir / ".llm-orc" / "artifacts"
-        ensemble_dir = artifacts_dir / ensemble_name
+
+        # Use mirrored directory structure if relative_path is provided
+        if relative_path:
+            ensemble_dir = artifacts_dir / relative_path / ensemble_name
+        else:
+            ensemble_dir = artifacts_dir / ensemble_name
+
         timestamped_dir = ensemble_dir / timestamp
 
         # Create directories (parents=True, exist_ok=True for concurrency)
@@ -177,19 +185,21 @@ class ArtifactManager:
         if not artifacts_dir.exists():
             return ensembles
 
-        for ensemble_dir in artifacts_dir.iterdir():
-            if not ensemble_dir.is_dir():
+        # Recursively search for ensemble directories
+        for root_path in artifacts_dir.rglob("*"):
+            if not root_path.is_dir():
                 continue
 
-            ensemble_name = ensemble_dir.name
+            # Check if this directory contains timestamped execution directories
             execution_dirs = []
-
-            # Count execution directories
-            for item in ensemble_dir.iterdir():
+            for item in root_path.iterdir():
                 if item.is_dir() and item.name != "latest":
-                    execution_dirs.append(item.name)
+                    # Check if this looks like a timestamp directory
+                    if self._is_timestamp_directory(item.name):
+                        execution_dirs.append(item.name)
 
             if execution_dirs:
+                ensemble_name = root_path.name
                 latest_execution = max(execution_dirs)  # Most recent timestamp
                 ensembles.append(
                     {
@@ -201,17 +211,33 @@ class ArtifactManager:
 
         return sorted(ensembles, key=lambda x: x["name"])
 
-    def get_latest_results(self, ensemble_name: str) -> dict[str, Any] | None:
+    def _is_timestamp_directory(self, name: str) -> bool:
+        """Check if directory name looks like a timestamp (YYYYMMDD-HHMMSS-mmm)."""
+        import re
+
+        timestamp_pattern = r"^\d{8}-\d{6}-\d{3}$"
+        return bool(re.match(timestamp_pattern, name))
+
+    def get_latest_results(
+        self, ensemble_name: str, relative_path: str | None = None
+    ) -> dict[str, Any] | None:
         """Get the latest execution results for an ensemble.
 
         Args:
             ensemble_name: Name of the ensemble
+            relative_path: Optional relative path for mirrored directory structure
 
         Returns:
             Latest execution results or None if not found
         """
         artifacts_dir = self.base_dir / ".llm-orc" / "artifacts"
-        ensemble_dir = artifacts_dir / ensemble_name
+
+        # Use mirrored directory structure if relative_path is provided
+        if relative_path:
+            ensemble_dir = artifacts_dir / relative_path / ensemble_name
+        else:
+            ensemble_dir = artifacts_dir / ensemble_name
+
         latest_link = ensemble_dir / "latest"
 
         if not latest_link.exists():
@@ -232,19 +258,25 @@ class ArtifactManager:
             return None
 
     def get_execution_results(
-        self, ensemble_name: str, timestamp: str
+        self, ensemble_name: str, timestamp: str, relative_path: str | None = None
     ) -> dict[str, Any] | None:
         """Get specific execution results by timestamp.
 
         Args:
             ensemble_name: Name of the ensemble
             timestamp: Execution timestamp
+            relative_path: Optional relative path for mirrored directory structure
 
         Returns:
             Execution results or None if not found
         """
         artifacts_dir = self.base_dir / ".llm-orc" / "artifacts"
-        execution_dir = artifacts_dir / ensemble_name / timestamp
+
+        # Use mirrored directory structure if relative_path is provided
+        if relative_path:
+            execution_dir = artifacts_dir / relative_path / ensemble_name / timestamp
+        else:
+            execution_dir = artifacts_dir / ensemble_name / timestamp
 
         if not execution_dir.exists():
             return None

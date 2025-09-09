@@ -309,7 +309,9 @@ class EnsembleExecutor:
 
         # Save artifacts (don't fail execution if saving fails)
         try:
-            self._artifact_manager.save_execution_results(config.name, final_result)
+            self._artifact_manager.save_execution_results(
+                config.name, final_result, relative_path=config.relative_path
+            )
         except Exception:
             # Silently ignore artifact saving errors to not break execution
             pass
