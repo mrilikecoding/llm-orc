@@ -75,17 +75,22 @@ class ScriptResolver:
         # Get current working directory
         cwd = Path(os.getcwd())
 
-        # Priority 1: Check .llm-orc/scripts/ directory
+        # Priority 1: Check .llm-orc/scripts/ directory (hierarchical names)
+        llm_orc_scripts_path = cwd / ".llm-orc" / "scripts" / script_ref
+        if llm_orc_scripts_path.exists():
+            return str(llm_orc_scripts_path)
+
+        # Priority 2: Check .llm-orc/ directory directly
         llm_orc_path = cwd / ".llm-orc" / script_ref
         if llm_orc_path.exists():
             return str(llm_orc_path)
 
-        # Priority 2: Check .llm-orc/ directly (for backward compatibility)
+        # Priority 3: Check .llm-orc/ directly (backward compatibility)
         llm_orc_direct = cwd / ".llm-orc" / script_ref.removeprefix("scripts/")
         if llm_orc_direct.exists():
             return str(llm_orc_direct)
 
-        # Priority 3: Check current directory (fallback)
+        # Priority 4: Check current directory (fallback)
         current_path = cwd / script_ref
         if current_path.exists():
             return str(current_path)
@@ -96,32 +101,43 @@ class ScriptResolver:
         """Clear the resolution cache."""
         self._cache.clear()
 
-    def list_available_scripts(self) -> list[dict[str, str]]:
-        """List all available scripts in .llm-orc/scripts directory.
+    def list_available_scripts(self) -> list[dict[str, str | None]]:
+        """List all available scripts in .llm-orc/scripts directory and subdirectories.
 
         Returns:
-            List of script dictionaries with name and path
+            List of script dictionaries with name, path, and relative_path
         """
-        import glob
-
         scripts = []
         cwd = Path(os.getcwd())
         scripts_dir = cwd / ".llm-orc" / "scripts"
 
         if scripts_dir.exists():
-            # Find all script files
+            # Find all script files recursively
             for pattern in ["*.py", "*.sh", "*.bash", "*.js", "*.rb"]:
-                script_files = glob.glob(str(scripts_dir / pattern))
-                for script_file in script_files:
-                    script_path = Path(script_file)
+                for script_file in scripts_dir.rglob(pattern):
+                    # Calculate relative path for hierarchical display
+                    relative_path = script_file.relative_to(scripts_dir)
+                    relative_dir = (
+                        str(relative_path.parent)
+                        if relative_path.parent != Path(".")
+                        else None
+                    )
+                    display_name = (
+                        f"{relative_dir}/{script_file.name}"
+                        if relative_dir
+                        else script_file.name
+                    )
+
                     scripts.append(
                         {
-                            "name": script_path.name,
-                            "path": str(script_path),
+                            "name": script_file.name,
+                            "display_name": display_name,
+                            "path": str(script_file),
+                            "relative_path": relative_dir,
                         }
                     )
 
-        return sorted(scripts, key=lambda x: x["name"])
+        return sorted(scripts, key=lambda x: x["display_name"] or "")
 
     def get_script_info(self, script_name: str) -> dict[str, str | list[str]] | None:
         """Get information about a specific script.

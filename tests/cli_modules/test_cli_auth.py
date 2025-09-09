@@ -68,48 +68,69 @@ class TestAuthCommandsNew:
         """Test that 'auth list' command shows configured providers."""
         # Given - Set up some providers
         config_manager_path = "llm_orc.core.config.config_manager.ConfigurationManager"
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        credential_storage_path = (
+            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+        )
+
         with patch(config_manager_path) as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
-            mock_instance.get_credentials_file.return_value = (
-                temp_config_dir / "credentials.yaml"
-            )
-            mock_instance.get_encryption_key_file.return_value = (
-                temp_config_dir / ".encryption_key"
-            )
-            mock_instance.needs_migration.return_value = False
+            with patch(auth_manager_path) as mock_auth:
+                with patch(credential_storage_path) as mock_storage_class:
+                    mock_instance = mock_config_manager.return_value
+                    mock_instance._global_config_dir = temp_config_dir
+                    mock_instance.ensure_global_config_dir.return_value = None
+                    mock_instance.get_credentials_file.return_value = (
+                        temp_config_dir / "credentials.yaml"
+                    )
+                    mock_instance.get_encryption_key_file.return_value = (
+                        temp_config_dir / ".encryption_key"
+                    )
+                    mock_instance.needs_migration.return_value = False
 
-            # Add some providers first
-            runner.invoke(
-                cli,
-                [
-                    "auth",
-                    "add",
-                    "anthropic",
-                    "--api-key",
-                    "key1",
-                ],
-            )
-            runner.invoke(
-                cli,
-                [
-                    "auth",
-                    "add",
-                    "google",
-                    "--api-key",
-                    "key2",
-                ],
-            )
+                    # Mock AuthenticationManager for the add commands
+                    mock_auth_manager = mock_auth.return_value
+                    mock_auth_manager.authenticate.return_value = True
 
-            # When
-            result = runner.invoke(cli, ["auth", "list"])
+                    # Add some providers first
+                    runner.invoke(
+                        cli,
+                        [
+                            "auth",
+                            "add",
+                            "anthropic",
+                            "--api-key",
+                            "key1",
+                        ],
+                    )
+                    runner.invoke(
+                        cli,
+                        [
+                            "auth",
+                            "add",
+                            "google",
+                            "--api-key",
+                            "key2",
+                        ],
+                    )
 
-            # Then
-            assert result.exit_code == 0
-            assert "anthropic" in result.output
-            assert "google" in result.output
-            assert "API key" in result.output
+                    # Mock CredentialStorage for list command to return both providers
+                    mock_storage = Mock()
+                    mock_storage.list_providers.return_value = ["anthropic", "google"]
+                    mock_storage.get_auth_method.side_effect = (
+                        lambda provider: "api_key"
+                    )
+                    mock_storage_class.return_value = mock_storage
+
+                    # When
+                    result = runner.invoke(cli, ["auth", "list"])
+
+                    # Then
+                    assert result.exit_code == 0
+                    assert "anthropic" in result.output
+                    assert "google" in result.output
+                    assert "API key" in result.output
 
     def test_auth_list_command_shows_no_providers_message(
         self, runner: CliRunner, temp_config_dir: Path

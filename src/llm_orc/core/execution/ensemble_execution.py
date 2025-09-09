@@ -244,21 +244,61 @@ class EnsembleExecutor:
         # Reset usage collector for this execution
         self._usage_collector.reset()
 
-        # Execute agents in phases: script agents first, then LLM agents
+        # Execute agents in dependency order (not type-based phases)
         has_errors = False
-        context_data: dict[str, Any] = {}
 
-        # Phase 1: Execute script agents to gather context
-        context_data, script_errors = await self._execute_script_agents(
-            config, input_data, results_dict
+        # Use dependency analyzer for ALL agents (script and LLM)
+        dependency_analysis = (
+            self._dependency_analyzer.analyze_enhanced_dependency_graph(config.agents)
         )
-        has_errors = has_errors or script_errors
+        phases = dependency_analysis["phases"]
 
-        # Phase 2: Execute LLM agents with dependency-aware phasing
-        llm_agent_errors = await self._execute_llm_agents(
-            config, input_data, context_data, results_dict
-        )
-        has_errors = has_errors or llm_agent_errors
+        # Execute agents in dependency-based phases
+        for phase_index, phase_agents in enumerate(phases):
+            self._emit_performance_event(
+                "phase_started",
+                {
+                    "phase_index": phase_index,
+                    "phase_agents": [agent["name"] for agent in phase_agents],
+                    "total_phases": len(phases),
+                },
+            )
+
+            # Determine input for this phase using DependencyResolver
+            if phase_index == 0:
+                # First phase uses the base input
+                phase_input: str | dict[str, str] = input_data
+            else:
+                # Subsequent phases get enhanced input with dependencies
+                phase_input = self._dependency_resolver.enhance_input_with_dependencies(
+                    input_data, phase_agents, results_dict
+                )
+
+            # Start per-phase monitoring for performance feedback
+            phase_start_time = time.time()
+            await self._start_phase_monitoring(phase_index, phase_agents)
+
+            try:
+                # Execute agents in this phase in parallel
+                phase_results = await self._execute_agents_in_phase_parallel(
+                    phase_agents, phase_input
+                )
+
+                # Process parallel execution results
+                phase_has_errors = self._process_phase_results(
+                    phase_results, results_dict, phase_agents
+                )
+                has_errors = has_errors or phase_has_errors
+
+            finally:
+                # Stop per-phase monitoring and collect metrics
+                phase_duration = time.time() - phase_start_time
+                await self._stop_phase_monitoring(
+                    phase_index, phase_agents, phase_duration
+                )
+
+            # Emit phase completion event
+            self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
 
         # Get collected usage and adaptive stats, then finalize result using processor
         agent_usage = self._usage_collector.get_agent_usage()
@@ -526,57 +566,6 @@ class EnsembleExecutor:
             name=role_name, prompt=f"You are a {role_name}. Provide helpful analysis."
         )
 
-    async def _execute_script_agents(
-        self,
-        config: EnsembleConfig,
-        input_data: str,
-        results_dict: dict[str, Any],
-    ) -> tuple[dict[str, Any], bool]:
-        """Execute script agents and return context data and error status."""
-        context_data = {}
-        has_errors = False
-        # Identify script agents using implicit detection
-        script_agents = [
-            a
-            for a in config.agents
-            if a.get("type") == "script" or ("script" in a and "model_profile" not in a)
-        ]
-
-        for agent_config in script_agents:
-            try:
-                # Resolve model profile to get enhanced configuration
-                enhanced_config = await self._resolve_model_profile_to_config(
-                    agent_config
-                )
-                timeout = enhanced_config.get("timeout_seconds") or (
-                    self._performance_config.get("execution", {}).get(
-                        "default_timeout", 60
-                    )
-                )
-                agent_result, model_instance = await self._execute_agent_with_timeout(
-                    agent_config, input_data, timeout
-                )
-                results_dict[agent_config["name"]] = {
-                    "response": agent_result,
-                    "status": "success",
-                }
-                # Store script results as context for LLM agents
-                context_data[agent_config["name"]] = agent_result
-
-                # Collect usage for script agents
-                model_profile = agent_config.get("model_profile", "unknown")
-                self._usage_collector.collect_agent_usage(
-                    agent_config["name"], model_instance, model_profile
-                )
-            except Exception as e:
-                results_dict[agent_config["name"]] = {
-                    "error": str(e),
-                    "status": "failed",
-                }
-                has_errors = True
-
-        return context_data, has_errors
-
     async def _execute_agents_in_phase_parallel(
         self, phase_agents: list[dict[str, Any]], phase_input: str | dict[str, str]
     ) -> dict[str, Any]:
@@ -677,32 +666,6 @@ class EnsembleExecutor:
 
         return phase_results
 
-    def _prepare_enhanced_input(
-        self, input_data: str, config: EnsembleConfig, context_data: dict[str, Any]
-    ) -> str:
-        """Prepare enhanced input for LLM agents with context data."""
-        # CLI input overrides config default_task when provided
-        # Fall back to config.default_task or config.task (backward compatibility)
-        if input_data and input_data.strip() and input_data != "Please analyze this.":
-            # Use CLI input when explicitly provided
-            task_input = input_data
-        else:
-            # Fall back to config default task (support both new and old field names)
-            task_input = (
-                getattr(config, "default_task", None)
-                or getattr(config, "task", None)
-                or input_data
-            )
-
-        enhanced_input = task_input
-        if context_data:
-            context_text = "\n\n".join(
-                [f"=== {name} ===\n{data}" for name, data in context_data.items()]
-            )
-            enhanced_input = f"{task_input}\n\n{context_text}"
-
-        return enhanced_input
-
     def _process_phase_results(
         self,
         phase_results: dict[str, Any],
@@ -768,100 +731,6 @@ class EnsembleExecutor:
                 "failed_agents": len(failed_agents),
             },
         )
-
-    async def _execute_llm_agents(
-        self,
-        config: EnsembleConfig,
-        input_data: str,
-        context_data: dict[str, Any],
-        results_dict: dict[str, Any],
-    ) -> bool:
-        """Execute LLM agents with dependency-aware phasing."""
-        has_errors = False
-        # Identify LLM agents using implicit detection
-        llm_agents = [
-            a
-            for a in config.agents
-            if (
-                a.get("type") not in ["script", None]  # Explicit LLM type
-                or ("model_profile" in a and "script" not in a)
-            )  # Implicit LLM via model_profile
-        ]
-
-        # Prepare enhanced input for LLM agents
-        enhanced_input = self._prepare_enhanced_input(input_data, config, context_data)
-
-        # Use enhanced dependency analysis for multi-level execution
-        if llm_agents:
-            # Update input enhancer with current agent configs for role descriptions
-            self._input_enhancer.update_agent_configs(llm_agents)
-            dependency_analysis = (
-                self._dependency_analyzer.analyze_enhanced_dependency_graph(llm_agents)
-            )
-            phases = dependency_analysis["phases"]
-
-            # Execute phases with monitoring hooks
-            has_errors = await self._execute_phases_standard(
-                phases, enhanced_input, results_dict, has_errors
-            )
-
-        return has_errors
-
-    async def _execute_phases_standard(
-        self,
-        phases: list[list[dict[str, Any]]],
-        enhanced_input: str,
-        results_dict: dict[str, Any],
-        has_errors: bool,
-    ) -> bool:
-        """Execute phases using standard approach without per-phase monitoring."""
-        for phase_index, phase_agents in enumerate(phases):
-            self._emit_performance_event(
-                "phase_started",
-                {
-                    "phase_index": phase_index,
-                    "phase_agents": [agent["name"] for agent in phase_agents],
-                    "total_phases": len(phases),
-                },
-            )
-
-            # Determine input for this phase using DependencyResolver
-            if phase_index == 0:
-                # First phase uses the base enhanced input
-                phase_input: str | dict[str, str] = enhanced_input
-            else:
-                # Subsequent phases get enhanced input with dependencies
-                phase_input = self._dependency_resolver.enhance_input_with_dependencies(
-                    enhanced_input, phase_agents, results_dict
-                )
-
-            # Start per-phase monitoring for performance feedback
-            phase_start_time = time.time()
-            await self._start_phase_monitoring(phase_index, phase_agents)
-
-            try:
-                # Execute agents in this phase in parallel (Issue #43 implementation)
-                phase_results = await self._execute_agents_in_phase_parallel(
-                    phase_agents, phase_input
-                )
-
-                # Process parallel execution results
-                phase_has_errors = self._process_phase_results(
-                    phase_results, results_dict, phase_agents
-                )
-                has_errors = has_errors or phase_has_errors
-
-            finally:
-                # Stop per-phase monitoring and collect metrics
-                phase_duration = time.time() - phase_start_time
-                await self._stop_phase_monitoring(
-                    phase_index, phase_agents, phase_duration
-                )
-
-            # Emit phase completion event
-            self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
-
-        return has_errors
 
     async def _execute_agent_with_timeout(
         self, agent_config: dict[str, Any], input_data: str, timeout_seconds: int | None
