@@ -34,29 +34,50 @@ class TestAuthCommandsNew:
         api_key = "test_key_123"
 
         # When
-        config_manager_path = "llm_orc.core.config.config_manager.ConfigurationManager"
-        with patch(config_manager_path) as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
-            mock_instance.get_credentials_file.return_value = (
-                temp_config_dir / "credentials.yaml"
-            )
-            mock_instance.get_encryption_key_file.return_value = (
-                temp_config_dir / ".encryption_key"
-            )
-            mock_instance.needs_migration.return_value = False
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        credential_storage_path = (
+            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+        )
 
-            result = runner.invoke(
-                cli,
-                [
-                    "auth",
-                    "add",
-                    provider,
-                    "--api-key",
-                    api_key,
-                ],
-            )
+        with patch(config_manager_path) as mock_config_manager:
+            with patch(auth_manager_path) as mock_auth:
+                with patch(credential_storage_path) as mock_storage_class:
+                    # Mock ConfigurationManager
+                    mock_instance = mock_config_manager.return_value
+                    mock_instance._global_config_dir = temp_config_dir
+                    mock_instance.ensure_global_config_dir.return_value = None
+                    mock_instance.get_credentials_file.return_value = (
+                        temp_config_dir / "credentials.yaml"
+                    )
+                    mock_instance.get_encryption_key_file.return_value = (
+                        temp_config_dir / ".encryption_key"
+                    )
+                    mock_instance.needs_migration.return_value = False
+
+                    # Mock AuthenticationManager
+                    mock_auth_manager = mock_auth.return_value
+                    mock_auth_manager.authenticate.return_value = True
+
+                    # Mock CredentialStorage
+                    mock_storage = Mock()
+                    mock_storage.store_api_key.return_value = None
+                    mock_storage_class.return_value = mock_storage
+
+                    result = runner.invoke(
+                        cli,
+                        [
+                            "auth",
+                            "add",
+                            provider,
+                            "--api-key",
+                            api_key,
+                        ],
+                    )
 
         # Then
         assert result.exit_code == 0
@@ -66,8 +87,10 @@ class TestAuthCommandsNew:
         self, runner: CliRunner, temp_config_dir: Path
     ) -> None:
         """Test that 'auth list' command shows configured providers."""
-        # Given - Set up some providers
-        config_manager_path = "llm_orc.core.config.config_manager.ConfigurationManager"
+        # Given - Mock configured providers
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
         auth_manager_path = (
             "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
         )
@@ -89,33 +112,11 @@ class TestAuthCommandsNew:
                     )
                     mock_instance.needs_migration.return_value = False
 
-                    # Mock AuthenticationManager for the add commands
+                    # Mock AuthenticationManager
                     mock_auth_manager = mock_auth.return_value
                     mock_auth_manager.authenticate.return_value = True
 
-                    # Add some providers first
-                    runner.invoke(
-                        cli,
-                        [
-                            "auth",
-                            "add",
-                            "anthropic",
-                            "--api-key",
-                            "key1",
-                        ],
-                    )
-                    runner.invoke(
-                        cli,
-                        [
-                            "auth",
-                            "add",
-                            "google",
-                            "--api-key",
-                            "key2",
-                        ],
-                    )
-
-                    # Mock CredentialStorage for list command to return both providers
+                    # Mock CredentialStorage to return configured providers
                     mock_storage = Mock()
                     mock_storage.list_providers.return_value = ["anthropic", "google"]
                     mock_storage.get_auth_method.side_effect = (
@@ -173,37 +174,60 @@ class TestAuthCommandsNew:
         # Given
         provider = "anthropic"
 
-        config_manager_path = "llm_orc.core.config.config_manager.ConfigurationManager"
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        credential_storage_path = (
+            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+        )
+
         with patch(config_manager_path) as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
-            mock_instance.get_credentials_file.return_value = (
-                temp_config_dir / "credentials.yaml"
-            )
-            mock_instance.get_encryption_key_file.return_value = (
-                temp_config_dir / ".encryption_key"
-            )
-            mock_instance.needs_migration.return_value = False
+            with patch(auth_manager_path) as mock_auth:
+                with patch(credential_storage_path) as mock_storage_class:
+                    mock_instance = mock_config_manager.return_value
+                    mock_instance._global_config_dir = temp_config_dir
+                    mock_instance.ensure_global_config_dir.return_value = None
+                    mock_instance.get_credentials_file.return_value = (
+                        temp_config_dir / "credentials.yaml"
+                    )
+                    mock_instance.get_encryption_key_file.return_value = (
+                        temp_config_dir / ".encryption_key"
+                    )
+                    mock_instance.needs_migration.return_value = False
 
-            # Add provider first
-            runner.invoke(
-                cli,
-                [
-                    "auth",
-                    "add",
-                    provider,
-                    "--api-key",
-                    "test_key",
-                ],
-            )
+                    # Mock AuthenticationManager for the add command
+                    mock_auth_manager = mock_auth.return_value
+                    mock_auth_manager.authenticate.return_value = True
 
-            # When
-            result = runner.invoke(cli, ["auth", "remove", provider])
+                    # Mock CredentialStorage
+                    mock_storage = Mock()
+                    mock_storage.list_providers.return_value = [
+                        provider
+                    ]  # Provider exists for removal
+                    mock_storage.remove_provider.return_value = None
+                    mock_storage_class.return_value = mock_storage
 
-            # Then
-            assert result.exit_code == 0
-            assert f"Authentication for {provider} removed" in result.output
+                    # Add provider first
+                    runner.invoke(
+                        cli,
+                        [
+                            "auth",
+                            "add",
+                            provider,
+                            "--api-key",
+                            "test_key",
+                        ],
+                    )
+
+                    # When
+                    result = runner.invoke(cli, ["auth", "remove", provider])
+
+                    # Then
+                    assert result.exit_code == 0
+                    assert f"Authentication for {provider} removed" in result.output
 
     def test_auth_remove_command_fails_for_nonexistent_provider(
         self, runner: CliRunner, temp_config_dir: Path
@@ -213,20 +237,41 @@ class TestAuthCommandsNew:
         provider = "nonexistent"
 
         # When
-        config_manager_path = "llm_orc.core.config.config_manager.ConfigurationManager"
-        with patch(config_manager_path) as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
-            mock_instance.get_credentials_file.return_value = (
-                temp_config_dir / "credentials.yaml"
-            )
-            mock_instance.get_encryption_key_file.return_value = (
-                temp_config_dir / ".encryption_key"
-            )
-            mock_instance.needs_migration.return_value = False
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        )
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        credential_storage_path = (
+            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+        )
 
-            result = runner.invoke(cli, ["auth", "remove", provider])
+        with patch(config_manager_path) as mock_config_manager:
+            with patch(auth_manager_path) as mock_auth:
+                with patch(credential_storage_path) as mock_storage_class:
+                    # Mock ConfigurationManager
+                    mock_instance = mock_config_manager.return_value
+                    mock_instance._global_config_dir = temp_config_dir
+                    mock_instance.ensure_global_config_dir.return_value = None
+                    mock_instance.get_credentials_file.return_value = (
+                        temp_config_dir / "credentials.yaml"
+                    )
+                    mock_instance.get_encryption_key_file.return_value = (
+                        temp_config_dir / ".encryption_key"
+                    )
+                    mock_instance.needs_migration.return_value = False
+
+                    # Mock AuthenticationManager
+                    mock_auth_manager = mock_auth.return_value
+                    mock_auth_manager.authenticate.return_value = True
+
+                    # Mock CredentialStorage to return empty provider list
+                    mock_storage = Mock()
+                    mock_storage.list_providers.return_value = []  # No providers
+                    mock_storage_class.return_value = mock_storage
+
+                    result = runner.invoke(cli, ["auth", "remove", provider])
 
         # Then
         assert result.exit_code != 0
@@ -417,21 +462,40 @@ class TestAuthCommandsNew:
         """Test adding claude-cli authentication when claude command is available."""
         # When - Claude CLI is available
         config_manager_path = "llm_orc.core.config.config_manager.ConfigurationManager"
-        with patch(config_manager_path) as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
-            mock_instance.get_credentials_file.return_value = (
-                temp_config_dir / "credentials.yaml"
-            )
-            mock_instance.get_encryption_key_file.return_value = (
-                temp_config_dir / ".encryption_key"
-            )
-            mock_instance.needs_migration.return_value = False
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        credential_storage_path = (
+            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+        )
 
-            # Mock claude command being available
-            with patch("shutil.which", return_value="/usr/local/bin/claude"):
-                result = runner.invoke(cli, ["auth", "add", "claude-cli"])
+        with patch(config_manager_path) as mock_config_manager:
+            with patch(auth_manager_path) as mock_auth:
+                with patch(credential_storage_path) as mock_storage_class:
+                    # Mock ConfigurationManager
+                    mock_instance = mock_config_manager.return_value
+                    mock_instance._global_config_dir = temp_config_dir
+                    mock_instance.ensure_global_config_dir.return_value = None
+                    mock_instance.get_credentials_file.return_value = (
+                        temp_config_dir / "credentials.yaml"
+                    )
+                    mock_instance.get_encryption_key_file.return_value = (
+                        temp_config_dir / ".encryption_key"
+                    )
+                    mock_instance.needs_migration.return_value = False
+
+                    # Mock AuthenticationManager
+                    mock_auth_manager = mock_auth.return_value
+                    mock_auth_manager.authenticate.return_value = True
+
+                    # Mock CredentialStorage
+                    mock_storage = Mock()
+                    mock_storage.store_api_key.return_value = None
+                    mock_storage_class.return_value = mock_storage
+
+                    # Mock claude command being available
+                    with patch("shutil.which", return_value="/usr/local/bin/claude"):
+                        result = runner.invoke(cli, ["auth", "add", "claude-cli"])
 
         # Then
         assert result.exit_code == 0
@@ -836,27 +900,46 @@ class TestAuthCommandsNew:
         client_id = "test_client_id"
 
         config_manager_path = "llm_orc.core.config.config_manager.ConfigurationManager"
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        credential_storage_path = (
+            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+        )
+
         with patch(config_manager_path) as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
+            with patch(auth_manager_path):
+                with patch(credential_storage_path):
+                    mock_instance = mock_config_manager.return_value
+                    mock_instance._global_config_dir = temp_config_dir
+                    mock_instance.ensure_global_config_dir.return_value = None
+                    mock_instance.get_credentials_file.return_value = (
+                        temp_config_dir / "credentials.yaml"
+                    )
+                    mock_instance.get_encryption_key_file.return_value = (
+                        temp_config_dir / ".encryption_key"
+                    )
+                    mock_instance.needs_migration.return_value = False
 
-            # When
-            result = runner.invoke(
-                cli,
-                [
-                    "auth",
-                    "add",
-                    provider,
-                    "--api-key",
-                    api_key,
-                    "--client-id",
-                    client_id,
-                ],
-            )
+                    # When
+                    result = runner.invoke(
+                        cli,
+                        [
+                            "auth",
+                            "add",
+                            provider,
+                            "--api-key",
+                            api_key,
+                            "--client-id",
+                            client_id,
+                        ],
+                    )
 
-            # Then
-            assert result.exit_code != 0
-            assert "Cannot use both API key and OAuth credentials" in result.output
+                    # Then
+                    assert result.exit_code != 0
+                    assert (
+                        "Cannot use both API key and OAuth credentials" in result.output
+                    )
 
     def test_auth_add_no_credentials_error(
         self, runner: CliRunner, temp_config_dir: Path
@@ -866,19 +949,36 @@ class TestAuthCommandsNew:
         provider = "test-provider"
 
         config_manager_path = "llm_orc.core.config.config_manager.ConfigurationManager"
+        auth_manager_path = (
+            "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+        )
+        credential_storage_path = (
+            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+        )
+
         with patch(config_manager_path) as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
+            with patch(auth_manager_path):
+                with patch(credential_storage_path):
+                    mock_instance = mock_config_manager.return_value
+                    mock_instance._global_config_dir = temp_config_dir
+                    mock_instance.ensure_global_config_dir.return_value = None
+                    mock_instance.get_credentials_file.return_value = (
+                        temp_config_dir / "credentials.yaml"
+                    )
+                    mock_instance.get_encryption_key_file.return_value = (
+                        temp_config_dir / ".encryption_key"
+                    )
+                    mock_instance.needs_migration.return_value = False
 
-            # When
-            result = runner.invoke(cli, ["auth", "add", provider])
+                    # When
+                    result = runner.invoke(cli, ["auth", "add", provider])
 
-            # Then
-            assert result.exit_code != 0
-            assert (
-                "Must provide either --api-key or both --client-id and --client-secret"
-                in result.output
-            )
+                    # Then
+                    assert result.exit_code != 0
+                    assert (
+                        "Must provide either --api-key or both --client-id and "
+                        "--client-secret" in result.output
+                    )
 
     def test_auth_add_incomplete_oauth_error(
         self, runner: CliRunner, temp_config_dir: Path
