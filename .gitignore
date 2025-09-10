@@ -74,6 +74,10 @@ credentials.enc
 .llm-orc/ensembles/*-local.yaml
 .llm-orc/ensembles/local-*.yaml
 
+# LLM Orchestra - Execution Artifacts
+# Execution results and artifacts should not be committed
+.llm-orc/artifacts/
+
 # Uncomment to ignore project config variations per developer
 # .llm-orc/config.yaml
 

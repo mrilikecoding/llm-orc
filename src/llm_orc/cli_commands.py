@@ -129,15 +129,29 @@ def _display_grouped_ensembles(
     # Show local ensembles first
     if local_ensembles:
         click.echo("\n📁 Local Repo (.llm-orc/ensembles):")
-        for ensemble in sorted(local_ensembles, key=lambda e: e.name):
-            click.echo(f"  {ensemble.name}: {ensemble.description}")
+        for ensemble in sorted(
+            local_ensembles, key=lambda e: (e.relative_path or "", e.name)
+        ):
+            display_name = (
+                f"{ensemble.relative_path}/{ensemble.name}"
+                if ensemble.relative_path
+                else ensemble.name
+            )
+            click.echo(f"  {display_name}: {ensemble.description}")
 
     # Show global ensembles
     if global_ensembles:
         global_config_label = f"Global ({config_manager.global_config_dir}/ensembles)"
         click.echo(f"\n🌐 {global_config_label}:")
-        for ensemble in sorted(global_ensembles, key=lambda e: e.name):
-            click.echo(f"  {ensemble.name}: {ensemble.description}")
+        for ensemble in sorted(
+            global_ensembles, key=lambda e: (e.relative_path or "", e.name)
+        ):
+            display_name = (
+                f"{ensemble.relative_path}/{ensemble.name}"
+                if ensemble.relative_path
+                else ensemble.name
+            )
+            click.echo(f"  {display_name}: {ensemble.description}")
 
 
 def invoke_ensemble(
@@ -465,7 +479,7 @@ def scripts_list_command(format_type: str) -> None:
 
     click.echo("Available scripts:")
     for script in scripts:
-        click.echo(f"  {script['name']}: {script['path']}")
+        click.echo(f"  {script['display_name']}: {script['path']}")
 
 
 def scripts_show_command(script_name: str) -> None:

@@ -10,7 +10,6 @@ import yaml
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.config.roles import RoleDefinition
-from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
 
 class TestEnhancedModelProfiles:
@@ -60,7 +59,9 @@ class TestEnhancedModelProfiles:
             assert profile["timeout_seconds"] == 30  # type: ignore[comparison-overlap]
 
     @pytest.mark.asyncio
-    async def test_ensemble_agent_uses_model_profile_system_prompt(self) -> None:
+    async def test_ensemble_agent_uses_model_profile_system_prompt(
+        self, mock_ensemble_executor
+    ) -> None:
         """Test that agents can use system_prompt from model profile."""
         # Create ensemble config that uses model_profile without explicit system_prompt
         config = EnsembleConfig(
@@ -78,7 +79,7 @@ class TestEnhancedModelProfiles:
             "timeout_seconds": 30,
         }
 
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock the model profile resolution to return enhanced profile
         with patch.object(executor, "_resolve_model_profile_to_config") as mock_resolve:
@@ -125,7 +126,9 @@ class TestEnhancedModelProfiles:
                     assert mock_resolve.called
 
     @pytest.mark.asyncio
-    async def test_ensemble_agent_uses_model_profile_timeout(self) -> None:
+    async def test_ensemble_agent_uses_model_profile_timeout(
+        self, mock_ensemble_executor
+    ) -> None:
         """Test that agents can use timeout_seconds from model profile."""
         # Create ensemble config that uses model_profile without explicit timeout
         config = EnsembleConfig(
@@ -145,7 +148,7 @@ class TestEnhancedModelProfiles:
             "timeout_seconds": 30,
         }
 
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock the model profile resolution to return enhanced profile
         with patch.object(executor, "_resolve_model_profile_to_config") as mock_resolve:

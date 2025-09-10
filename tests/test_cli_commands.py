@@ -666,6 +666,7 @@ class TestInvokeEnsemble:
         mock_ensemble_config.name = "test_ensemble"
         mock_ensemble_config.description = "Test ensemble"
         mock_ensemble_config.agents = [Mock(), Mock()]
+        mock_ensemble_config.relative_path = None
 
         mock_loader = Mock()
         mock_loader.find_ensemble.return_value = mock_ensemble_config
@@ -723,10 +724,12 @@ class TestListEnsemblesCommand:
         mock_ensemble1 = Mock()
         mock_ensemble1.name = "ensemble1"
         mock_ensemble1.description = "Test ensemble 1"
+        mock_ensemble1.relative_path = None
 
         mock_ensemble2 = Mock()
         mock_ensemble2.name = "ensemble2"
         mock_ensemble2.description = "Test ensemble 2"
+        mock_ensemble2.relative_path = None
 
         mock_loader = Mock()
         mock_loader.list_ensembles.return_value = [mock_ensemble1, mock_ensemble2]
@@ -751,6 +754,7 @@ class TestListEnsemblesCommand:
         mock_ensemble = Mock()
         mock_ensemble.name = "custom_ensemble"
         mock_ensemble.description = "Custom test ensemble"
+        mock_ensemble.relative_path = None
 
         mock_loader = Mock()
         mock_loader.list_ensembles.return_value = [mock_ensemble]
@@ -827,6 +831,7 @@ class TestListEnsemblesCommand:
         mock_ensemble = Mock()
         mock_ensemble.name = "local_ensemble"
         mock_ensemble.description = "Local test ensemble"
+        mock_ensemble.relative_path = None
 
         mock_loader = Mock()
         mock_loader.list_ensembles.return_value = [mock_ensemble]
@@ -1304,6 +1309,7 @@ class TestListEnsemblesHelperMethods:
 
         mock_ensemble = Mock()
         mock_ensemble.name = "global-ensemble"
+        mock_ensemble.relative_path = None
 
         # When
         with patch("llm_orc.cli_commands.EnsembleLoader") as mock_loader_class:
@@ -1330,10 +1336,12 @@ class TestListEnsemblesHelperMethods:
         local_ensemble = Mock()
         local_ensemble.name = "local-test"
         local_ensemble.description = "Local description"
+        local_ensemble.relative_path = None
 
         global_ensemble = Mock()
         global_ensemble.name = "global-test"
         global_ensemble.description = "Global description"
+        global_ensemble.relative_path = None
 
         local_ensembles = [local_ensemble]
         global_ensembles = [global_ensemble]
@@ -1363,6 +1371,7 @@ class TestListEnsemblesHelperMethods:
         global_ensemble = Mock()
         global_ensemble.name = "global-test"
         global_ensemble.description = "Global description"
+        global_ensemble.relative_path = None
 
         local_ensembles: list[Mock] = []
         global_ensembles = [global_ensemble]

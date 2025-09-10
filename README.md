@@ -20,6 +20,7 @@ Mix expensive cloud models with free local models - use Claude for strategic ins
 
 - **Multi-Agent Ensembles**: Coordinate specialized agents with flexible dependency graphs
 - **Agent Dependencies**: Define which agents depend on others for sophisticated orchestration patterns
+- **Script Agent Integration**: Execute custom scripts alongside LLM agents with JSON I/O communication
 - **Model Profiles**: Simplified configuration with named shortcuts for model + provider combinations
 - **Cost Optimization**: Mix expensive and free models based on what each task needs
 - **Streaming Output**: Real-time progress updates during ensemble execution
@@ -27,6 +28,7 @@ Mix expensive cloud models with free local models - use Claude for strategic ins
 - **Secure Authentication**: Encrypted API key storage with easy credential management
 - **YAML Configuration**: Easy ensemble setup with readable config files
 - **Usage Tracking**: Token counting, cost estimation, and timing metrics
+- **Artifact Management**: Automatic saving of execution results with timestamped persistence
 
 ## Installation
 
@@ -233,6 +235,26 @@ llm-orc config reset-global --no-backup --reset-auth       # Complete reset incl
 llm-orc config reset-local --reset-ensembles --no-backup   # Reset including ensembles
 
 ```
+
+### Script Management
+
+LLM Orchestra includes powerful script agent integration for executing custom scripts alongside LLM agents:
+
+```bash
+# List available scripts in your project
+llm-orc scripts list
+
+# Show detailed information about a script
+llm-orc scripts show file_operations/read_file.py
+
+# Test a script with parameters
+llm-orc scripts test file_operations/read_file.py --parameters '{"filepath": "example.txt"}'
+
+# Scripts are discovered from .llm-orc/scripts/ directories
+# Results are automatically saved to .llm-orc/artifacts/ with timestamps
+```
+
+Script agents use JSON I/O for seamless integration with LLM agents, enabling powerful hybrid workflows where scripts provide data and context for LLM analysis.
 
 ## Ensemble Library
 

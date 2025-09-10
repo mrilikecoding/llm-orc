@@ -4,16 +4,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
-
 
 class TestImplicitAgentDetection:
     """Test implicit agent type detection in ensemble executor."""
 
     @pytest.mark.asyncio
-    async def test_executor_detects_script_agent_by_script_field(self) -> None:
+    async def test_executor_detects_script_agent_by_script_field(
+        self, mock_ensemble_executor
+    ) -> None:
         """Test that executor detects script agents by presence of 'script' field."""
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         agent_config = {
             "name": "test_script",
@@ -30,9 +30,11 @@ class TestImplicitAgentDetection:
             assert result == ("Script output", None)
 
     @pytest.mark.asyncio
-    async def test_executor_detects_llm_agent_by_model_profile_field(self) -> None:
+    async def test_executor_detects_llm_agent_by_model_profile_field(
+        self, mock_ensemble_executor
+    ) -> None:
         """Test executor detects LLM agents by 'model_profile' field."""
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         agent_config = {
             "name": "test_llm",
@@ -50,9 +52,11 @@ class TestImplicitAgentDetection:
             assert result[0] == "LLM output"
 
     @pytest.mark.asyncio
-    async def test_executor_raises_for_missing_type_fields(self) -> None:
+    async def test_executor_raises_for_missing_type_fields(
+        self, mock_ensemble_executor
+    ) -> None:
         """Test executor raises error when neither field is present."""
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         agent_config = {
             "name": "invalid_agent",
@@ -66,9 +70,11 @@ class TestImplicitAgentDetection:
             await executor._execute_agent(agent_config, "test input")
 
     @pytest.mark.asyncio
-    async def test_executor_maintains_backward_compatibility(self) -> None:
+    async def test_executor_maintains_backward_compatibility(
+        self, mock_ensemble_executor
+    ) -> None:
         """Test executor maintains backward compatibility with 'type' field."""
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Script agent with explicit type
         script_config = {
@@ -97,9 +103,11 @@ class TestImplicitAgentDetection:
             mock_llm.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_script_field_takes_priority_over_model_profile(self) -> None:
+    async def test_script_field_takes_priority_over_model_profile(
+        self, mock_ensemble_executor
+    ) -> None:
         """Test 'script' field takes priority if both are present."""
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         agent_config = {
             "name": "test_agent",
@@ -117,9 +125,11 @@ class TestImplicitAgentDetection:
                 mock_llm.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_implicit_detection_with_enhanced_script_agent(self) -> None:
+    async def test_implicit_detection_with_enhanced_script_agent(
+        self, mock_ensemble_executor
+    ) -> None:
         """Test that implicit detection works with EnhancedScriptAgent."""
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         agent_config = {
             "name": "enhanced_script",

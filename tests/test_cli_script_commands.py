@@ -25,8 +25,18 @@ class TestScriptCommands:
 
         mock_resolver = Mock()
         mock_resolver.list_available_scripts.return_value = [
-            {"name": "test-script.py", "path": "/path/to/test-script.py"},
-            {"name": "analyze.sh", "path": "/path/to/analyze.sh"},
+            {
+                "name": "test-script.py",
+                "display_name": "test-script.py",
+                "path": "/path/to/test-script.py",
+                "relative_path": None,
+            },
+            {
+                "name": "analyze.sh",
+                "display_name": "analyze.sh",
+                "path": "/path/to/analyze.sh",
+                "relative_path": None,
+            },
         ]
 
         with patch(

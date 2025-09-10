@@ -551,7 +551,7 @@ agents:
 
             # Verify API was called correctly
             mock_get.assert_called_once_with(
-                "https://api.github.com/repos/mrilikecoding/llm-orchestra-library/contents/code-analysis",
+                "https://api.github.com/repos/mrilikecoding/llm-orchestra-library/contents/ensembles/code-analysis",
                 timeout=10,
             )
 
@@ -639,7 +639,7 @@ agents:
             # Verify correct URL was called
             expected_url = (
                 "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main/"
-                "code-analysis/test-ensemble.yaml"
+                "ensembles/code-analysis/test-ensemble.yaml"
             )
             mock_get.assert_called_once_with(expected_url, timeout=10)
 
@@ -921,7 +921,7 @@ class TestLibraryEdgeCases:
             # Verify .yaml was appended to URL
             expected_url = (
                 "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main/"
-                "code-analysis/security-review.yaml"
+                "ensembles/code-analysis/security-review.yaml"
             )
             mock_get.assert_called_once_with(expected_url, timeout=10)
 

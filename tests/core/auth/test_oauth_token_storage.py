@@ -7,7 +7,6 @@ import pytest
 
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.models.anthropic import OAuthClaudeModel
 
 
@@ -103,11 +102,13 @@ class TestOAuthTokenStorage:
         assert oauth_token is None
 
     @pytest.mark.asyncio
-    async def test_ensemble_execution_client_id_fallback(self) -> None:
+    async def test_ensemble_execution_client_id_fallback(
+        self, mock_ensemble_executor
+    ) -> None:
         """
         Test ensemble execution uses client_id fallback for anthropic-claude-pro-max.
         """
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock the credential storage to return OAuth token without client_id
         mock_storage = Mock()
@@ -145,10 +146,10 @@ class TestOAuthTokenStorage:
 
     @pytest.mark.asyncio
     async def test_ensemble_execution_uses_stored_client_id_when_available(
-        self,
+        self, mock_ensemble_executor
     ) -> None:
         """Test that ensemble execution uses stored client_id when available."""
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock the credential storage to return OAuth token WITH client_id
         mock_storage = Mock()

@@ -17,7 +17,9 @@ class TestMessageRoutingPerformance:
     """Test message routing performance requirements."""
 
     @pytest.mark.asyncio
-    async def test_message_routing_latency_under_50ms(self) -> None:
+    async def test_message_routing_latency_under_50ms(
+        self, mock_ensemble_executor
+    ) -> None:
         """Should route messages between agents in under 50ms."""
         # Arrange - Create fast mock model
         mock_model = AsyncMock(spec=ModelInterface)
@@ -66,7 +68,9 @@ class TestMessageRoutingPerformance:
         assert len(agent2.conversation_history) == 1
 
     @pytest.mark.asyncio
-    async def test_multi_agent_conversation_performance(self) -> None:
+    async def test_multi_agent_conversation_performance(
+        self, mock_ensemble_executor
+    ) -> None:
         """Should handle multi-agent conversations efficiently."""
         # Arrange - Create 3 agents with fast mock models
         agents = []
@@ -133,7 +137,9 @@ class TestMessageRoutingPerformance:
             assert len(agent.conversation_history) == 1
 
     @pytest.mark.asyncio
-    async def test_agent_response_generation_performance(self) -> None:
+    async def test_agent_response_generation_performance(
+        self, mock_ensemble_executor
+    ) -> None:
         """Should generate agent responses efficiently."""
         # Arrange
         mock_model = AsyncMock(spec=ModelInterface)
@@ -161,7 +167,9 @@ class TestMessageRoutingPerformance:
         assert len(agent.conversation_history) == 1
 
     @pytest.mark.asyncio
-    async def test_orchestrator_agent_registration_performance(self) -> None:
+    async def test_orchestrator_agent_registration_performance(
+        self, mock_ensemble_executor
+    ) -> None:
         """Should register agents efficiently."""
         # Arrange
         orchestrator = ConversationOrchestrator()
@@ -202,7 +210,9 @@ class TestPRReviewPerformance:
     """Test PR review orchestration performance."""
 
     @pytest.mark.asyncio
-    async def test_pr_review_orchestration_performance(self) -> None:
+    async def test_pr_review_orchestration_performance(
+        self, mock_ensemble_executor
+    ) -> None:
         """Should orchestrate PR reviews efficiently."""
         # Arrange - Create PR review orchestrator with fast mock agents
         from llm_orc.core.execution.orchestration import PRReviewOrchestrator
@@ -260,11 +270,10 @@ class TestEnsembleExecutionPerformance:
 
     @pytest.mark.asyncio
     async def test_parallel_execution_performance_improvement(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, mock_ensemble_executor, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Should execute independent agents in parallel for significant speedup."""
         from llm_orc.core.config.ensemble_config import EnsembleConfig
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Arrange - Create ensemble with 3 independent agents (no dependencies)
         agent_configs: list[dict[str, str]] = []
@@ -282,7 +291,7 @@ class TestEnsembleExecutionPerformance:
             agents=agent_configs,
         )
 
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock the model loading to use fast mock models
         fast_mock_model = AsyncMock(spec=ModelInterface)
@@ -324,11 +333,10 @@ class TestEnsembleExecutionPerformance:
 
     @pytest.mark.asyncio
     async def test_dependency_aware_execution_order(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, mock_ensemble_executor, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Should execute agents in correct order when dependencies exist."""
         from llm_orc.core.config.ensemble_config import EnsembleConfig
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Arrange - Create ensemble where synthesizer depends on 3 reviewers
         agent_configs: list[dict[str, Any]] = [
@@ -354,7 +362,7 @@ class TestEnsembleExecutionPerformance:
             agents=agent_configs,
         )
 
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Track execution order with mock that records call times
         execution_times: dict[str, float] = {}
@@ -513,10 +521,11 @@ class TestEnsembleExecutionPerformance:
         )
 
     @pytest.mark.asyncio
-    async def test_enhanced_dependency_graph_analysis(self) -> None:
+    async def test_enhanced_dependency_graph_analysis(
+        self, mock_ensemble_executor
+    ) -> None:
         """Should analyze complex dependency graphs and determine optimal
         execution phases."""
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Arrange - Create complex dependency graph
         agent_configs: list[dict[str, Any]] = [
@@ -542,7 +551,7 @@ class TestEnsembleExecutionPerformance:
             },
         ]
 
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Act - Analyze dependency graph using the dependency analyzer
         analyzer = executor._dependency_analyzer
@@ -594,12 +603,13 @@ class TestEnsembleExecutionPerformance:
         )
 
     @pytest.mark.asyncio
-    async def test_parallel_model_loading_performance(self) -> None:
+    async def test_parallel_model_loading_performance(
+        self, mock_ensemble_executor
+    ) -> None:
         """Should load models in parallel rather than sequentially."""
         import time
         from unittest.mock import AsyncMock, patch
 
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
         from llm_orc.models.base import ModelInterface
 
         # Track model loading calls and timing
@@ -643,7 +653,7 @@ class TestEnsembleExecutionPerformance:
             agents=agent_configs,
         )
 
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock the model loading to use our tracked version
         with patch.object(
@@ -695,11 +705,12 @@ class TestEnsembleExecutionPerformance:
                 )
 
     @pytest.mark.asyncio
-    async def test_shared_model_instance_optimization(self) -> None:
+    async def test_shared_model_instance_optimization(
+        self, mock_ensemble_executor
+    ) -> None:
         """Should reuse model instances when multiple agents use the same model."""
         from unittest.mock import AsyncMock, patch
 
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
         from llm_orc.models.base import ModelInterface
 
         # Track model loading calls
@@ -739,7 +750,7 @@ class TestEnsembleExecutionPerformance:
             agents=agent_configs,
         )
 
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock the model loading to track calls
         with patch.object(
@@ -797,12 +808,12 @@ class TestEnsembleExecutionPerformance:
                 # After optimization, this should be changed to expect model reuse
 
     @pytest.mark.asyncio
-    async def test_infrastructure_sharing_optimization(self) -> None:
+    async def test_infrastructure_sharing_optimization(
+        self, mock_ensemble_executor
+    ) -> None:
         """Should share ConfigurationManager and CredentialStorage across model
         loads."""
         from unittest.mock import patch
-
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Track configuration and credential storage instantiation
         config_manager_calls = []
@@ -830,7 +841,7 @@ class TestEnsembleExecutionPerformance:
         )
 
         # Test with infrastructure sharing optimization
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock the infrastructure classes to track instantiation
         with patch(
@@ -908,12 +919,11 @@ class TestEnsembleExecutionPerformance:
                         )
 
     @pytest.mark.asyncio
-    async def test_streaming_execution_interface(self) -> None:
+    async def test_streaming_execution_interface(self, mock_ensemble_executor) -> None:
         """Should provide async generator interface for real-time progress."""
         from unittest.mock import patch
 
         from llm_orc.core.config.ensemble_config import EnsembleConfig
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Test with simple agent configuration
         agent_configs = [
@@ -927,7 +937,7 @@ class TestEnsembleExecutionPerformance:
             agents=agent_configs,
         )
 
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock the entire execute method to focus on streaming interface
         mock_result = {
@@ -972,7 +982,7 @@ class TestEnsembleExecutionPerformance:
             assert "metadata" in final_event["data"]
 
     @pytest.mark.asyncio
-    async def test_connection_pooling_performance(self) -> None:
+    async def test_connection_pooling_performance(self, mock_ensemble_executor) -> None:
         """Should reuse HTTP connections for better performance."""
         import time
         from unittest.mock import patch
@@ -1042,13 +1052,14 @@ class TestPerformanceBenchmarks:
     """Comprehensive performance benchmarks and validation tests."""
 
     @pytest.mark.asyncio
-    async def test_ensemble_execution_under_60s_target(self) -> None:
+    async def test_ensemble_execution_under_60s_target(
+        self, mock_ensemble_executor
+    ) -> None:
         """Should complete ensemble execution within 60s target."""
         import time
         from unittest.mock import AsyncMock, patch
 
         from llm_orc.core.config.ensemble_config import EnsembleConfig
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Create a realistic ensemble configuration
         config = EnsembleConfig(
@@ -1072,7 +1083,7 @@ class TestPerformanceBenchmarks:
             "duration_ms": 1200,
         }
 
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock model loading to return fast mock models
         with patch.object(
@@ -1102,13 +1113,14 @@ class TestPerformanceBenchmarks:
             assert len(result["results"]) == 3
 
     @pytest.mark.asyncio
-    async def test_large_ensemble_scalability_benchmark(self) -> None:
+    async def test_large_ensemble_scalability_benchmark(
+        self, mock_ensemble_executor
+    ) -> None:
         """Should handle large ensembles efficiently."""
         import time
         from unittest.mock import AsyncMock, patch
 
         from llm_orc.core.config.ensemble_config import EnsembleConfig
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Create a large ensemble (10 agents) to test scalability
         agents = []
@@ -1137,7 +1149,7 @@ class TestPerformanceBenchmarks:
             "duration_ms": 800,
         }
 
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock model loading
         with patch.object(
@@ -1166,13 +1178,14 @@ class TestPerformanceBenchmarks:
             assert usage["totals"]["agents_count"] == 10
 
     @pytest.mark.asyncio
-    async def test_streaming_performance_benchmark(self) -> None:
+    async def test_streaming_performance_benchmark(
+        self, mock_ensemble_executor
+    ) -> None:
         """Should provide real-time streaming updates efficiently."""
         import time
         from unittest.mock import AsyncMock, patch
 
         from llm_orc.core.config.ensemble_config import EnsembleConfig
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Create ensemble for streaming benchmark
         config = EnsembleConfig(
@@ -1196,7 +1209,7 @@ class TestPerformanceBenchmarks:
             "duration_ms": 600,
         }
 
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock model loading
         with patch.object(
@@ -1230,7 +1243,9 @@ class TestPerformanceBenchmarks:
             assert events[-1]["data"]["status"] == "completed"
 
     @pytest.mark.asyncio
-    async def test_connection_pooling_performance_benchmark(self) -> None:
+    async def test_connection_pooling_performance_benchmark(
+        self, mock_ensemble_executor
+    ) -> None:
         """Should demonstrate connection pooling performance benefits."""
         import time
         from unittest.mock import patch
@@ -1283,13 +1298,12 @@ class TestPerformanceBenchmarks:
         await HTTPConnectionPool.close()
 
     @pytest.mark.asyncio
-    async def test_timeout_handling_benchmark(self) -> None:
+    async def test_timeout_handling_benchmark(self, mock_ensemble_executor) -> None:
         """Should handle timeouts gracefully without performance degradation."""
         import time
         from unittest.mock import AsyncMock, patch
 
         from llm_orc.core.config.ensemble_config import EnsembleConfig
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Create ensemble with timeout configuration
         config = EnsembleConfig(
@@ -1335,7 +1349,7 @@ class TestPerformanceBenchmarks:
             "duration_ms": 1000,
         }
 
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock model loading to return appropriate models
         async def mock_load_model_from_agent_config(
@@ -1372,13 +1386,12 @@ class TestPerformanceBenchmarks:
             assert "timed out" in result["results"]["slow_agent"]["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_memory_efficiency_benchmark(self) -> None:
+    async def test_memory_efficiency_benchmark(self, mock_ensemble_executor) -> None:
         """Should maintain efficient memory usage during execution."""
         import time
         from unittest.mock import AsyncMock, patch
 
         from llm_orc.core.config.ensemble_config import EnsembleConfig
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Create ensemble that tests memory efficiency
         config = EnsembleConfig(
@@ -1402,7 +1415,7 @@ class TestPerformanceBenchmarks:
             "duration_ms": 450,
         }
 
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock model loading
         with patch.object(
@@ -1447,13 +1460,14 @@ class TestPerformanceBenchmarks:
             )
 
     @pytest.mark.asyncio
-    async def test_resource_management_concurrency_control(self) -> None:
+    async def test_resource_management_concurrency_control(
+        self, mock_ensemble_executor
+    ) -> None:
         """Should limit concurrent execution for large ensembles."""
         import time
         from unittest.mock import AsyncMock, patch
 
         from llm_orc.core.config.ensemble_config import EnsembleConfig
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
         # Create large ensemble (15 agents) to test concurrency limits
         agents = []
@@ -1508,7 +1522,7 @@ class TestPerformanceBenchmarks:
             model.get_last_usage.return_value = mock_model.get_last_usage.return_value
             return model
 
-        executor = EnsembleExecutor()
+        executor = mock_ensemble_executor
 
         # Mock model loading to return tracked models
         call_count = 0

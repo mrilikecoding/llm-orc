@@ -74,6 +74,7 @@ class TestMixedAgentDependencies:
                 "load_model_from_agent_config",
                 new_callable=AsyncMock,
             ) as mock_load_model,
+            patch.object(executor, "_artifact_manager") as mock_artifact_manager,
         ):
             mock_load_role.return_value = role
             mock_load_model.return_value = mock_model
@@ -159,6 +160,7 @@ class TestMixedAgentDependencies:
                 "load_model_from_agent_config",
                 new_callable=AsyncMock,
             ) as mock_load_model,
+            patch.object(executor, "_artifact_manager") as mock_artifact_manager,
         ):
             mock_load_role.return_value = role
             mock_load_model.return_value = mock_model
@@ -209,5 +211,8 @@ class TestMixedAgentDependencies:
         executor = EnsembleExecutor()
 
         # This should raise a circular dependency error
-        with pytest.raises(ValueError, match="Circular dependency detected"):
+        with (
+            patch.object(executor, "_artifact_manager") as mock_artifact_manager,
+            pytest.raises(ValueError, match="Circular dependency detected"),
+        ):
             await executor.execute(config, "Test circular detection")

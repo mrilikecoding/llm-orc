@@ -66,6 +66,22 @@ LLM Orchestra is a multi-agent LLM communication system designed for ensemble or
 - **Markdown Generation**: Converts execution results to readable markdown reports
 - **Latest Symlinks**: Maintains easy access to most recent execution results
 
+### Library Integration
+
+#### LLM Orchestra Library (`llm-orchestra-library/` submodule)
+- **Primitive Scripts**: Reusable building blocks for common operations
+  - File operations: Read/write files with JSON I/O
+  - User interaction: Human-in-the-loop workflows  
+  - Data transformation: JSON manipulation and formatting
+  - Control flow: Loops, replication, and conditional execution
+- **Specialized Scripts**: Domain-specific tools
+  - Network science: Topology generation and analysis
+  - Research: Statistical tests and experimental design
+- **Library Management**: Dynamic source configuration
+  - Local submodule support for development
+  - Remote GitHub fallback for production
+  - Automatic script copying during initialization
+
 ### Configuration System
 
 #### EnsembleConfig (`llm_orc/core/config/ensemble_config.py`)
