@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -96,6 +97,259 @@ class EnhancedScriptAgent(ScriptAgent):
             )
         except Exception as e:
             return json.dumps({"success": False, "error": str(e)})
+
+    async def execute_with_user_input(
+        self,
+        input_data: str,
+        context: dict[str, Any] | None = None,
+        user_input_handler: Callable[[str], str] | None = None,
+    ) -> str:
+        """Execute the script with support for user input during execution.
+
+        Args:
+            input_data: Input data for the script
+            context: Optional context variables
+            user_input_handler: Optional handler for user input requests
+
+        Returns:
+            JSON string output from script or error as JSON string
+        """
+        if context is None:
+            context = {}
+
+        try:
+            # Simple approach - try interactive execution if handler provided
+            if user_input_handler:
+                return await self._execute_interactive(
+                    input_data, context, user_input_handler
+                )
+            else:
+                # Fall back to normal execution
+                return await self.execute(input_data, context)
+
+        except Exception as e:
+            return json.dumps({"success": False, "error": str(e)})
+
+    async def _execute_interactive(
+        self,
+        input_data: str,
+        context: dict[str, Any],
+        user_input_handler: Callable[[str], str],
+    ) -> str:
+        """Execute script with interactive user input support.
+
+        Args:
+            input_data: Input data for the script
+            context: Context variables
+            user_input_handler: Handler for user input requests
+
+        Returns:
+            Final script output as JSON string
+        """
+        # Resolve script path
+        if self.script:
+            resolved_script = self._script_resolver.resolve_script_path(self.script)
+        else:
+            resolved_script = None
+
+        # Prepare JSON input
+        json_input = {
+            "input": input_data,
+            "parameters": self.parameters,
+            "context": context,
+        }
+        json_input_str = json.dumps(json_input)
+
+        # For the minimal implementation, we'll use subprocess with interactive I/O
+        if resolved_script and os.path.exists(resolved_script):
+            return await self._execute_script_interactive(
+                resolved_script, json_input_str, user_input_handler
+            )
+        else:
+            # Fall back to normal execution for non-file scripts
+            return await self.execute(input_data, context)
+
+    async def _execute_script_interactive(
+        self,
+        script_path: str,
+        json_input: str,
+        user_input_handler: Callable[[str], str],
+    ) -> str:
+        """Execute script file with interactive user input support.
+
+        Args:
+            script_path: Path to script file
+            json_input: JSON input to pass initially
+            user_input_handler: Handler for user input requests
+
+        Returns:
+            Final script output
+        """
+        # Determine interpreter and prepare environment
+        interpreter = self._get_interpreter(script_path)
+        env = os.environ.copy()
+        env.update(self.environment)
+
+        # Start the process with stdin/stdout pipes
+        process = subprocess.Popen(
+            interpreter + [script_path],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+
+        try:
+            return await self._handle_interactive_process(
+                process, json_input, user_input_handler
+            )
+        except subprocess.TimeoutExpired:
+            process.kill()
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": f"Script timed out after {self.timeout} seconds",
+                }
+            )
+        except Exception as e:
+            process.kill()
+            return json.dumps({"success": False, "error": str(e)})
+        finally:
+            self._cleanup_process(process)
+
+    async def _handle_interactive_process(
+        self,
+        process: subprocess.Popen[str],
+        json_input: str,
+        user_input_handler: Callable[[str], str],
+    ) -> str:
+        """Handle the interactive process communication.
+
+        Args:
+            process: The subprocess
+            json_input: Initial JSON input
+            user_input_handler: Handler for user input requests
+
+        Returns:
+            Final script output as JSON string
+        """
+        # Send initial JSON input
+        if process.stdin:
+            process.stdin.write(json_input + "\n")
+            process.stdin.flush()
+
+        # Read and process output lines
+        output_lines = self._read_and_process_output(process, user_input_handler)
+
+        # Wait for process to complete
+        process.wait(timeout=self.timeout)
+
+        # Return final result
+        return self._format_final_result(output_lines)
+
+    def _read_and_process_output(
+        self,
+        process: subprocess.Popen[str],
+        user_input_handler: Callable[[str], str],
+    ) -> list[str]:
+        """Read output lines and handle user input requests.
+
+        Args:
+            process: The subprocess
+            user_input_handler: Handler for user input requests
+
+        Returns:
+            List of output lines
+        """
+        output_lines: list[str] = []
+        if not process.stdout:
+            return output_lines
+
+        while True:
+            line = process.stdout.readline()
+            if not line:
+                break
+
+            output_lines.append(line.strip())
+
+            # Check if this line is a user input request
+            if self._handle_user_input_request(line, process, user_input_handler):
+                continue
+
+        return output_lines
+
+    def _handle_user_input_request(
+        self,
+        line: str,
+        process: subprocess.Popen[str],
+        user_input_handler: Callable[[str], str],
+    ) -> bool:
+        """Handle a user input request if the line contains one.
+
+        Args:
+            line: Output line to check
+            process: The subprocess
+            user_input_handler: Handler for user input requests
+
+        Returns:
+            True if a user input request was handled, False otherwise
+        """
+        try:
+            parsed_line = json.loads(line.strip())
+            if (
+                isinstance(parsed_line, dict)
+                and parsed_line.get("type") == "user_input_request"
+            ):
+                prompt = parsed_line.get("prompt", "")
+                user_response = user_input_handler(prompt)
+                if process.stdin:
+                    process.stdin.write(user_response + "\n")
+                    process.stdin.flush()
+                return True
+        except json.JSONDecodeError:
+            pass
+        return False
+
+    def _format_final_result(self, output_lines: list[str]) -> str:
+        """Format the final result from output lines.
+
+        Args:
+            output_lines: List of output lines
+
+        Returns:
+            Final result as JSON string
+        """
+        if not output_lines:
+            return json.dumps({"success": True, "output": ""})
+
+        # Try to return the last JSON line that's not a user input request
+        for line in reversed(output_lines):
+            try:
+                parsed = json.loads(line)
+                if (
+                    isinstance(parsed, dict)
+                    and parsed.get("type") != "user_input_request"
+                ):
+                    return json.dumps(parsed)
+            except json.JSONDecodeError:
+                continue
+
+        # If no JSON found, return the full output
+        return json.dumps({"output": "\n".join(output_lines)})
+
+    def _cleanup_process(self, process: subprocess.Popen[str]) -> None:
+        """Clean up process resources.
+
+        Args:
+            process: The subprocess to clean up
+        """
+        if process.stdin:
+            process.stdin.close()
+        if process.stdout:
+            process.stdout.close()
+        if process.stderr:
+            process.stderr.close()
 
     async def _execute_script_file(self, script_path: str, json_input: str) -> str:
         """Execute a script file with JSON input via stdin.

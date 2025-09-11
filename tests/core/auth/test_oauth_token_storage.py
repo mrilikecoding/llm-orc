@@ -6,8 +6,24 @@ from unittest.mock import Mock, patch
 import pytest
 
 from llm_orc.core.auth.authentication import CredentialStorage
-from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.models.anthropic import OAuthClaudeModel
+
+
+@pytest.fixture(autouse=True)
+def mock_expensive_dependencies():
+    """Mock expensive dependencies for all OAuth token storage tests."""
+    with patch("llm_orc.core.auth.authentication.ConfigurationManager"):
+        # Use surgical mocking - only mock expensive config I/O, not the entire ModelFactory
+        with patch(
+            "llm_orc.core.config.config_manager.ConfigurationManager._setup_default_config"
+        ):
+            with patch(
+                "llm_orc.core.config.config_manager.ConfigurationManager._setup_default_ensembles"
+            ):
+                with patch(
+                    "llm_orc.core.config.config_manager.ConfigurationManager._copy_profile_templates"
+                ):
+                    yield
 
 
 class TestOAuthTokenStorage:
@@ -16,9 +32,16 @@ class TestOAuthTokenStorage:
     @pytest.fixture
     def credential_storage(self, tmp_path: Any) -> CredentialStorage:
         """Create credential storage for testing."""
-        config_manager = ConfigurationManager()
+        config_manager = Mock()
         config_manager._global_config_dir = tmp_path / ".test-llm-orc"
         config_manager._global_config_dir.mkdir(parents=True, exist_ok=True)
+        config_manager.get_encryption_key_file.return_value = (
+            config_manager._global_config_dir / ".encryption_key"
+        )
+        config_manager.get_credentials_file.return_value = (
+            config_manager._global_config_dir / "credentials.yaml"
+        )
+        config_manager.ensure_global_config_dir.return_value = None
 
         storage = CredentialStorage(config_manager=config_manager)
         return storage

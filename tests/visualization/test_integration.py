@@ -8,6 +8,15 @@ from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.visualization.integration import VisualizationIntegratedExecutor
 
 
+@pytest.fixture(autouse=True)
+def mock_expensive_dependencies():
+    """Mock expensive dependencies for all visualization integration tests."""
+    with patch("llm_orc.core.execution.ensemble_execution.ConfigurationManager"):
+        with patch("llm_orc.core.execution.ensemble_execution.CredentialStorage"):
+            with patch("llm_orc.core.execution.ensemble_execution.ModelFactory"):
+                yield
+
+
 class TestVisualizationIntegratedExecutor:
     """Test visualization integrated executor."""
 

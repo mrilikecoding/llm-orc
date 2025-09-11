@@ -18,6 +18,7 @@ from llm_orc.core.execution.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.input_enhancer import InputEnhancer
 from llm_orc.core.execution.orchestration import Agent
 from llm_orc.core.execution.results_processor import ResultsProcessor
+from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
 from llm_orc.core.execution.streaming_progress_tracker import StreamingProgressTracker
 from llm_orc.core.execution.usage_collector import UsageCollector
 from llm_orc.core.models.model_factory import ModelFactory
@@ -229,7 +230,20 @@ class EnsembleExecutor:
                 break
 
     async def execute(self, config: EnsembleConfig, input_data: str) -> dict[str, Any]:
-        """Execute an ensemble and return structured results."""
+        """Execute an ensemble and return structured results.
+
+        Automatically detects if the ensemble requires user input and switches to
+        interactive mode if needed.
+        """
+        # Check if this ensemble requires interactive mode
+        if self._detect_interactive_ensemble(config):
+            # Automatically switch to interactive execution
+            user_input_handler = self._create_user_input_handler()
+            return await self.execute_with_user_input(
+                config, input_data, user_input_handler
+            )
+
+        # Continue with standard execution for non-interactive ensembles
         start_time = time.time()
 
         # Store agent configs for role descriptions
@@ -306,6 +320,153 @@ class EnsembleExecutor:
         final_result = self._results_processor.finalize_result(
             result, agent_usage, has_errors, start_time, adaptive_stats
         )
+
+        # Save artifacts (don't fail execution if saving fails)
+        try:
+            self._artifact_manager.save_execution_results(
+                config.name, final_result, relative_path=config.relative_path
+            )
+        except Exception:
+            # Silently ignore artifact saving errors to not break execution
+            pass
+
+        return final_result
+
+    def _detect_interactive_ensemble(self, config: EnsembleConfig) -> bool:
+        """Detect if ensemble contains scripts that require user input.
+
+        Uses ScriptUserInputHandler to analyze the ensemble configuration
+        and determine if any agents require interactive execution.
+
+        Args:
+            config: Ensemble configuration to analyze
+
+        Returns:
+            True if ensemble requires user input, False otherwise
+        """
+        handler = ScriptUserInputHandler()
+        return handler.ensemble_requires_user_input(config)
+
+    def _create_user_input_handler(self) -> ScriptUserInputHandler:
+        """Create a user input handler for interactive execution.
+
+        Returns:
+            Configured ScriptUserInputHandler instance
+        """
+        return ScriptUserInputHandler()
+
+    async def execute_with_user_input(
+        self,
+        config: EnsembleConfig,
+        input_data: str,
+        user_input_handler: ScriptUserInputHandler,
+    ) -> dict[str, Any]:
+        """Execute an ensemble with user input handling support.
+
+        This enhanced version integrates user input collection during execution
+        and includes metadata about the interactive session.
+
+        Args:
+            config: Ensemble configuration
+            input_data: Initial input data
+            user_input_handler: Handler for user input collection
+
+        Returns:
+            Execution results with interactive metadata
+        """
+        start_time = time.time()
+
+        # Store agent configs for role descriptions
+        self._current_agent_configs = config.agents
+
+        # Initialize result structure using ResultsProcessor
+        result = self._results_processor.create_initial_result(
+            config.name, input_data, len(config.agents)
+        )
+        results_dict: dict[str, Any] = result["results"]
+
+        # Reset usage collector for this execution
+        self._usage_collector.reset()
+
+        # Track user inputs collected
+        user_inputs_collected = 0
+
+        # Execute agents in dependency order (not type-based phases)
+        has_errors = False
+
+        # Use dependency analyzer for ALL agents (script and LLM)
+        dependency_analysis = (
+            self._dependency_analyzer.analyze_enhanced_dependency_graph(config.agents)
+        )
+        phases = dependency_analysis["phases"]
+
+        # Execute agents in dependency-based phases
+        for phase_index, phase_agents in enumerate(phases):
+            self._emit_performance_event(
+                "phase_started",
+                {
+                    "phase_index": phase_index,
+                    "phase_agents": [agent["name"] for agent in phase_agents],
+                    "total_phases": len(phases),
+                },
+            )
+
+            # Determine input for this phase using DependencyResolver
+            if phase_index == 0:
+                # First phase uses the base input
+                phase_input: str | dict[str, str] = input_data
+            else:
+                # Subsequent phases get enhanced input with dependencies
+                phase_input = self._dependency_resolver.enhance_input_with_dependencies(
+                    input_data, phase_agents, results_dict
+                )
+
+            # Start per-phase monitoring for performance feedback
+            phase_start_time = time.time()
+            await self._start_phase_monitoring(phase_index, phase_agents)
+
+            try:
+                # Execute agents in this phase in parallel
+                # For interactive mode, we handle user input collection here
+                phase_results = await self._execute_agents_in_phase_parallel(
+                    phase_agents, phase_input
+                )
+
+                # Check if any script agents required user input and count them
+                for agent_name, agent_result in phase_results.items():
+                    if agent_result.get("response") and isinstance(
+                        agent_result["response"], dict
+                    ):
+                        # Check if this was an interactive script result
+                        if agent_result["response"].get("collected_data"):
+                            user_inputs_collected += 1
+
+                # Process parallel execution results
+                phase_has_errors = self._process_phase_results(
+                    phase_results, results_dict, phase_agents
+                )
+                has_errors = has_errors or phase_has_errors
+
+            finally:
+                # Stop per-phase monitoring and collect metrics
+                phase_duration = time.time() - phase_start_time
+                await self._stop_phase_monitoring(
+                    phase_index, phase_agents, phase_duration
+                )
+
+            # Emit phase completion event
+            self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
+
+        # Get collected usage and adaptive stats, then finalize result using processor
+        agent_usage = self._usage_collector.get_agent_usage()
+        adaptive_stats = self._agent_executor.get_adaptive_stats()
+        final_result = self._results_processor.finalize_result(
+            result, agent_usage, has_errors, start_time, adaptive_stats
+        )
+
+        # Add interactive mode metadata
+        final_result["metadata"]["interactive_mode"] = True
+        final_result["metadata"]["user_inputs_collected"] = user_inputs_collected
 
         # Save artifacts (don't fail execution if saving fails)
         try:

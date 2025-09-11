@@ -318,3 +318,94 @@ print(json.dumps(result))
             assert parsed_result["context_user"] == "test_user"
         finally:
             Path(script_path).unlink(missing_ok=True)
+
+
+class TestEnhancedScriptAgentUserInput:
+    """Integration tests for enhanced script agent with user input support."""
+
+    @pytest.mark.asyncio
+    async def test_enhanced_script_agent_handles_user_input_during_execution(
+        self,
+    ) -> None:
+        """Test that enhanced script agent can handle user input during execution."""
+        # Create script that requires user input
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False
+        ) as script_file:
+            script_file.write(
+                """#!/usr/bin/env python3
+import sys
+import json
+
+# Read JSON data from stdin (first line)
+first_line = sys.stdin.readline()
+data = json.loads(first_line)
+
+# Simulate requesting user input
+if data.get("input") == "start_interactive":
+    # Output request for user input
+    print(json.dumps({"type": "user_input_request", "prompt": "Enter your name:"}))
+    sys.stdout.flush()
+
+    # Wait for and read user input from stdin (next line)
+    user_input = sys.stdin.readline().strip()
+    print(json.dumps({"greeting": f"Hello, {user_input}!"}))
+else:
+    print(json.dumps({"output": "No interaction needed"}))
+"""
+            )
+            script_path = script_file.name
+
+        try:
+            config = {"script": script_path}
+            agent = EnhancedScriptAgent("test_agent", config)
+
+            # Mock the user input handler
+            user_responses = ["Alice"]
+
+            def mock_input_handler(prompt: str) -> str:
+                return user_responses.pop(0)
+
+            result = await agent.execute_with_user_input(
+                "start_interactive", user_input_handler=mock_input_handler
+            )
+
+            # Should handle user input and return final result
+            assert "Alice" in result
+            assert "Hello" in result
+        finally:
+            Path(script_path).unlink(missing_ok=True)
+
+    @pytest.mark.asyncio
+    async def test_enhanced_script_agent_fallback_for_non_interactive_scripts(
+        self,
+    ) -> None:
+        """Test enhanced script agent fallback to normal execution."""
+        # Create normal script that doesn't require user input
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False
+        ) as script_file:
+            script_file.write(
+                """#!/usr/bin/env python3
+import sys
+import json
+
+data = json.loads(sys.stdin.read())
+result = {"processed": data.get("input", ""), "type": "normal"}
+print(json.dumps(result))
+"""
+            )
+            script_path = script_file.name
+
+        try:
+            config = {"script": script_path}
+            agent = EnhancedScriptAgent("test_agent", config)
+
+            # Should work without user input handler
+            result = await agent.execute_with_user_input("test_data")
+
+            parsed_result = json.loads(result)
+            assert parsed_result["processed"] == "test_data"
+            assert parsed_result["type"] == "normal"
+        finally:
+            Path(script_path).unlink(missing_ok=True)

@@ -7,6 +7,17 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+
+
+@pytest.fixture(autouse=True)
+def mock_expensive_dependencies():
+    """Mock expensive dependencies for all visualization tests."""
+    with patch("llm_orc.core.execution.ensemble_execution.ConfigurationManager"):
+        with patch("llm_orc.core.execution.ensemble_execution.CredentialStorage"):
+            with patch("llm_orc.core.execution.ensemble_execution.ModelFactory"):
+                yield
+
+
 from llm_orc.visualization.config import (
     TerminalVisualizationConfig,
     VisualizationConfig,

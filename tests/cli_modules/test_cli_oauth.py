@@ -11,6 +11,25 @@ from click.testing import CliRunner
 from llm_orc.cli import cli
 
 
+@pytest.fixture(autouse=True)
+def mock_expensive_dependencies():
+    """Mock expensive dependencies for all CLI OAuth tests."""
+    config_manager_path = (
+        "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+    )
+    auth_manager_path = (
+        "llm_orc.cli_modules.commands.auth_commands.AuthenticationManager"
+    )
+    credential_storage_path = (
+        "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
+    )
+
+    with patch(config_manager_path):
+        with patch(auth_manager_path):
+            with patch(credential_storage_path):
+                yield
+
+
 class TestOAuthCLI:
     """Test CLI OAuth authentication functionality."""
 

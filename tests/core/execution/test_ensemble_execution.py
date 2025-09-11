@@ -1510,6 +1510,257 @@ class TestEnsembleExecutor:
         assert result["status"] == "completed"
 
     @pytest.mark.asyncio
+    async def test_automatic_interactive_mode_detection_and_integration(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Test automatic detection and integration of interactive mode for ensembles.
+
+        When an ensemble contains scripts that require user input, the system should:
+        1. Automatically detect this condition
+        2. Enable interactive mode without requiring --interactive flag
+        3. Use execute_with_user_input() seamlessly
+        4. Handle user input collection during script execution
+
+        RED Phase: This test should fail until automatic detection is implemented.
+        """
+        from unittest.mock import AsyncMock, Mock, patch
+
+        from llm_orc.core.execution.script_user_input_handler import (
+            ScriptUserInputHandler,
+        )
+
+        # Create ensemble config with interactive script agent
+        config = EnsembleConfig(
+            name="interactive_ensemble",
+            description="Ensemble with interactive script requiring user input",
+            agents=[
+                {
+                    "name": "data_collector",
+                    "type": "script",
+                    "script": "primitives/user-interaction/get_user_input.py",
+                    "timeout_seconds": 10,
+                },
+                {
+                    "name": "data_processor",
+                    "model_profile": "claude-analyst",
+                    "system_prompt": "Process the collected data",
+                    "timeout_seconds": 30,
+                },
+            ],
+        )
+
+        executor = mock_ensemble_executor
+
+        # Mock ScriptUserInputHandler
+        mock_handler = Mock(spec=ScriptUserInputHandler)
+        mock_handler.ensemble_requires_user_input.return_value = True
+        mock_handler.collect_user_input = AsyncMock(return_value="John Doe")
+
+        # Mock execution results for interactive script
+        mock_script_result = {
+            "success": True,
+            "output": "User provided: John Doe",
+            "collected_data": {"name": "John Doe", "timestamp": "2025-01-15T10:30:00"},
+        }
+
+        # Mock LLM agent response
+        mock_llm_model = AsyncMock(spec=ModelInterface)
+        mock_llm_model.generate_response.return_value = (
+            "Data processed successfully. Name: John Doe, captured at 10:30 AM"
+        )
+        mock_llm_model.get_last_usage.return_value = {
+            "total_tokens": 50,
+            "input_tokens": 30,
+            "output_tokens": 20,
+            "cost_usd": 0.01,
+            "duration_ms": 800,
+        }
+
+        from llm_orc.core.config.roles import RoleDefinition
+
+        role = RoleDefinition(name="analyst", prompt="Process data")
+
+        # The key behavior we're testing: automatic detection and mode switching
+        with (
+            patch.object(
+                executor, "_detect_interactive_ensemble", return_value=True
+            ) as mock_detect,
+            patch.object(
+                executor, "_create_user_input_handler", return_value=mock_handler
+            ) as mock_create_handler,
+            patch.object(
+                executor, "execute_with_user_input", new_callable=AsyncMock
+            ) as mock_execute_interactive,
+            patch.object(
+                executor, "_load_role_from_config", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
+            ) as mock_load_model,
+        ):
+            # Setup mock returns
+            mock_load_role.return_value = role
+            mock_load_model.return_value = mock_llm_model
+
+            # Mock the interactive execution result
+            mock_execute_interactive.return_value = {
+                "ensemble": "interactive_ensemble",
+                "status": "completed",
+                "input": {"data": "Test interactive execution"},
+                "results": {
+                    "data_collector": {
+                        "response": mock_script_result,
+                        "status": "success",
+                    },
+                    "data_processor": {
+                        "response": "Data processed successfully. Name: John Doe, captured at 10:30 AM",
+                        "status": "success",
+                    },
+                },
+                "metadata": {
+                    "duration": 2.5,
+                    "agents_used": 2,
+                    "interactive_mode": True,
+                    "user_inputs_collected": 1,
+                },
+                "synthesis": None,
+            }
+
+            # Execute ensemble - this should automatically detect interactive mode
+            result = await executor.execute(
+                config, input_data="Test interactive execution"
+            )
+
+        # Verify automatic detection occurred
+        mock_detect.assert_called_once_with(config)
+
+        # Verify user input handler was created
+        mock_create_handler.assert_called_once()
+
+        # Verify interactive execution was used automatically
+        mock_execute_interactive.assert_called_once_with(
+            config, "Test interactive execution", mock_handler
+        )
+
+        # Verify execution completed successfully with interactive mode
+        assert result["status"] == "completed"
+        assert result["metadata"]["interactive_mode"] is True
+        assert result["metadata"]["user_inputs_collected"] == 1
+        assert "data_collector" in result["results"]
+        assert "data_processor" in result["results"]
+
+        # Verify interactive script result contains user data
+        collector_result = result["results"]["data_collector"]["response"]
+        assert "John Doe" in str(collector_result)
+        assert collector_result["success"] is True
+
+        # Verify LLM agent processed the interactive data
+        processor_response = result["results"]["data_processor"]["response"]
+        assert "John Doe" in processor_response
+        assert "processed successfully" in processor_response.lower()
+
+    @pytest.mark.asyncio
+    async def test_non_interactive_ensemble_bypasses_interactive_mode(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Test that non-interactive ensembles bypass interactive mode detection.
+
+        This ensures we don't add overhead to standard ensemble execution.
+        """
+        from unittest.mock import AsyncMock, Mock, patch
+
+        from llm_orc.core.execution.script_user_input_handler import (
+            ScriptUserInputHandler,
+        )
+
+        # Create ensemble config without any interactive scripts
+        config = EnsembleConfig(
+            name="standard_ensemble",
+            description="Standard ensemble with no user input requirements",
+            agents=[
+                {
+                    "name": "data_processor",
+                    "model_profile": "claude-analyst",
+                    "system_prompt": "Process the data",
+                    "timeout_seconds": 30,
+                },
+                {
+                    "name": "data_formatter",
+                    "type": "script",
+                    "script": "echo '{\"formatted\": true}'",
+                    "timeout_seconds": 5,
+                },
+            ],
+        )
+
+        executor = mock_ensemble_executor
+
+        # Mock the handler to return False (no interactive scripts detected)
+        mock_handler = Mock(spec=ScriptUserInputHandler)
+        mock_handler.ensemble_requires_user_input.return_value = False
+
+        # Mock LLM agent response
+        mock_llm_model = AsyncMock(spec=ModelInterface)
+        mock_llm_model.generate_response.return_value = "Data processed successfully"
+        mock_llm_model.get_last_usage.return_value = {
+            "total_tokens": 50,
+            "input_tokens": 30,
+            "output_tokens": 20,
+            "cost_usd": 0.01,
+            "duration_ms": 800,
+        }
+
+        from llm_orc.core.config.roles import RoleDefinition
+
+        role = RoleDefinition(name="analyst", prompt="Process data")
+
+        # Track that detection occurs but interactive mode is not used
+        with (
+            patch.object(
+                executor, "_detect_interactive_ensemble", return_value=False
+            ) as mock_detect,
+            patch.object(
+                executor, "execute_with_user_input", new_callable=AsyncMock
+            ) as mock_execute_interactive,
+            patch.object(
+                executor, "_load_role_from_config", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
+            ) as mock_load_model,
+            patch.object(executor, "_artifact_manager") as mock_artifact_manager,
+        ):
+            # Setup mocks
+            mock_load_role.return_value = role
+            mock_load_model.return_value = mock_llm_model
+            mock_artifact_manager.save_execution_results = Mock()
+
+            # Execute ensemble - should use standard execution path
+            result = await executor.execute(
+                config, input_data="Test standard execution"
+            )
+
+        # Verify detection occurred
+        mock_detect.assert_called_once_with(config)
+
+        # Verify interactive execution was NOT called
+        mock_execute_interactive.assert_not_called()
+
+        # Verify standard execution completed successfully
+        assert result["status"] in ["completed", "completed_with_errors"]
+        assert result["ensemble"] == "standard_ensemble"
+        assert "data_processor" in result["results"]
+        assert "data_formatter" in result["results"]
+
+        # Verify no interactive mode metadata is present
+        assert result["metadata"].get("interactive_mode") is None
+        assert result["metadata"].get("user_inputs_collected") is None
+
+    @pytest.mark.asyncio
     async def test_artifact_manager_error_handling(
         self, mock_ensemble_executor: Any
     ) -> None:
@@ -1573,3 +1824,93 @@ class TestEnsembleExecutor:
 
         # Verify artifact manager was called
         mock_artifact_manager.save_execution_results.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_script_agent_automatically_uses_user_input_for_interactive_scripts(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Test _execute_script_agent automatically detects and handles user input.
+
+        When a script agent configuration references a script that requires user input,
+        _execute_script_agent should:
+        1. Detect that the script requires user input
+        2. Automatically call execute_with_user_input() instead of execute()
+        3. Pass the user input handler to the script agent
+        4. Return the response with actual user input, not "User cancelled input"
+
+        RED Phase: This test should fail until automatic detection is implemented
+        in _execute_script_agent method.
+        """
+        from unittest.mock import AsyncMock, Mock, patch
+
+        from llm_orc.agents.enhanced_script_agent import EnhancedScriptAgent
+        from llm_orc.core.execution.script_user_input_handler import (
+            ScriptUserInputHandler,
+        )
+
+        executor = mock_ensemble_executor
+
+        # Create script agent configuration that requires user input
+        agent_config = {
+            "name": "interactive_agent",
+            "script": "primitives/user-interaction/get_user_input.py",
+            "parameters": {"prompt": "What's your name?"},
+        }
+        input_data = "start_interactive"
+
+        # Mock user input detection
+        mock_user_input_detection = Mock(spec=ScriptUserInputHandler)
+        mock_user_input_detection.requires_user_input.return_value = True
+
+        # Mock EnhancedScriptAgent
+        mock_script_agent = Mock(spec=EnhancedScriptAgent)
+
+        # The key behavior: when user input is required, execute_with_user_input
+        # should be called and return actual user input
+        mock_script_agent.execute_with_user_input = AsyncMock(
+            return_value='{"user_input": "User input placeholder", "success": true}'
+        )
+        # Regular execute should not be called for interactive scripts
+        mock_script_agent.execute = AsyncMock(
+            return_value='{"error": "User cancelled input", "success": false}'
+        )
+
+        # Mock the script detection and agent creation
+        with (
+            patch(
+                "llm_orc.core.execution.ensemble_execution.EnhancedScriptAgent",
+                return_value=mock_script_agent,
+            ),
+            patch(
+                "llm_orc.core.execution.ensemble_execution.ScriptUserInputHandler",
+                return_value=mock_user_input_detection,
+            ) as mock_handler_class,
+        ):
+            # This is the core test: _execute_script_agent should automatically
+            # detect user input requirement and use execute_with_user_input
+            response, model = await executor._execute_script_agent(
+                agent_config, input_data
+            )
+
+        # Verify that user input detection was performed
+        mock_handler_class.assert_called_once()
+        mock_user_input_detection.requires_user_input.assert_called_once_with(
+            "primitives/user-interaction/get_user_input.py"
+        )
+
+        # Verify that execute_with_user_input was called (not execute)
+        mock_script_agent.execute_with_user_input.assert_called_once()
+        # Check that it was called with input data and a callable handler
+        call_args = mock_script_agent.execute_with_user_input.call_args
+        assert call_args[0][0] == input_data  # First positional arg is input_data
+        assert "user_input_handler" in call_args[1]  # Has user_input_handler kwarg
+        assert callable(call_args[1]["user_input_handler"])  # Handler is callable
+
+        # Verify that regular execute was NOT called
+        mock_script_agent.execute.assert_not_called()
+
+        # Verify the response contains actual user input (placeholder for now)
+        assert '"user_input": "User input placeholder"' in response
+        assert '"success": true' in response
+        assert "User cancelled input" not in response
+        assert model is None  # Script agents don't have model instances

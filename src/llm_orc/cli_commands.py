@@ -22,6 +22,8 @@ from llm_orc.cli_modules.utils.visualization import (
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+
+# Import for interactive script support
 from llm_orc.integrations.mcp.runner import MCPServerRunner
 
 
@@ -190,6 +192,12 @@ def invoke_ensemble(
     # Create standard executor
     executor = EnsembleExecutor()
 
+    # Check if ensemble contains interactive scripts
+    from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
+
+    input_handler = ScriptUserInputHandler()
+    requires_user_input = input_handler.ensemble_requires_user_input(ensemble_config)
+
     # Override concurrency settings if provided
     if max_concurrent is not None:
         # Apply concurrency limit to executor configuration
@@ -239,7 +247,27 @@ def invoke_ensemble(
 
     # Execute the ensemble
     try:
-        if effective_streaming:
+        if requires_user_input:
+            # Interactive execution with user input support
+            async def run_interactive_execution() -> None:
+                result = await executor.execute_with_user_input(
+                    ensemble_config, input_data, input_handler
+                )
+                # Display results using the same logic as standard execution
+                if output_format == "json":
+                    click.echo(json.dumps(result, indent=2))
+                else:
+                    from llm_orc.cli_modules.utils.visualization import display_results
+
+                    display_results(
+                        result["results"],
+                        result["metadata"],
+                        ensemble_config.agents,
+                        detailed,
+                    )
+
+            asyncio.run(run_interactive_execution())
+        elif effective_streaming:
             # Streaming execution with Rich status
             asyncio.run(
                 run_streaming_execution(

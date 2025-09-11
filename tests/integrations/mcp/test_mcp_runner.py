@@ -4,9 +4,17 @@ import json
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
 from aiohttp import web
 
 from llm_orc.integrations.mcp.runner import MCPServerRunner, MCPStdioRunner
+
+
+@pytest.fixture(autouse=True)
+def mock_expensive_mcp_dependencies():
+    """Mock expensive MCP dependencies for all runner tests."""
+    with patch("llm_orc.integrations.mcp.runner.MCPServer"):
+        yield
 
 
 class TestMCPServerRunner:
@@ -341,19 +349,19 @@ class TestMCPStdioRunner:
 class TestMCPRunnerIntegration:
     """Fast integration tests for MCP runners using mocks instead of real server."""
 
-    @patch("llm_orc.integrations.mcp.server.MCPServer.handle_request")
     @patch("llm_orc.integrations.mcp.runner.web.json_response")
-    async def test_integration_http_success(
-        self, mock_json_response: Mock, mock_handle_request: Mock
-    ) -> None:
+    async def test_integration_http_success(self, mock_json_response: Mock) -> None:
         """Test integration of HTTP request handling without real server."""
         # Given
         runner = MCPServerRunner("test-ensemble", 8080)
-        mock_handle_request.return_value = {
+
+        # Mock the server's handle_request method directly on the instance
+        mock_response = {
             "jsonrpc": "2.0",
             "id": 1,
             "result": "integration_success",
         }
+        runner.mcp_server.handle_request = AsyncMock(return_value=mock_response)
         mock_json_response.return_value = web.Response()
 
         request_data = {"jsonrpc": "2.0", "id": 1, "method": "test_integration"}
@@ -364,14 +372,8 @@ class TestMCPRunnerIntegration:
         await runner._handle_http_request(mock_request)
 
         # Then
-        mock_handle_request.assert_called_once_with(request_data)
-        mock_json_response.assert_called_once_with(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "result": "integration_success",
-            }
-        )
+        runner.mcp_server.handle_request.assert_called_once_with(request_data)
+        mock_json_response.assert_called_once_with(mock_response)
 
     @patch("llm_orc.integrations.mcp.runner.web.json_response")
     async def test_integration_http_invalid_json(

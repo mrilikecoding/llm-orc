@@ -1433,3 +1433,207 @@ class TestAuthCommands:
             mock_auth_class.logout_oauth_providers.assert_called_once_with(
                 "provider", False
             )
+
+
+class TestInteractiveScriptIntegration:
+    """Test CLI integration with interactive script execution."""
+
+    @pytest.fixture
+    def mock_config_manager(self) -> Mock:
+        """Create a mock configuration manager."""
+        manager = Mock()
+        manager.get_ensembles_dirs.return_value = [Path("/test/ensembles")]
+        manager.load_performance_config.return_value = {
+            "streaming_enabled": False,
+            "max_concurrent": 3,
+        }
+        return manager
+
+    @pytest.fixture
+    def mock_interactive_ensemble_config(self) -> Mock:
+        """Create a mock ensemble configuration with interactive scripts."""
+        config = Mock()
+        config.name = "interactive_ensemble"
+        config.description = "Ensemble with interactive scripts"
+        # Create agents with script references that need user input
+        config.agents = [
+            {
+                "name": "input_collector",
+                "type": "script",
+                "script": "primitives/user-interaction/get_user_input.py",
+                "depends_on": [],
+            },
+            {
+                "name": "data_processor",
+                "type": "script",
+                "script": "data/process_input.py",
+                "depends_on": ["input_collector"],
+            },
+        ]
+        return config
+
+    @pytest.fixture
+    def mock_loader(self) -> Mock:
+        """Create a mock ensemble loader."""
+        loader = Mock()
+        return loader
+
+    @pytest.fixture
+    def mock_executor(self) -> Mock:
+        """Create a mock ensemble executor."""
+        executor = Mock()
+        executor._get_effective_concurrency_limit.return_value = 3
+        return executor
+
+    def test_invoke_ensemble_detects_interactive_scripts_and_sets_up_user_input_handler(
+        self,
+        mock_config_manager: Mock,
+        mock_interactive_ensemble_config: Mock,
+        mock_loader: Mock,
+        mock_executor: Mock,
+    ) -> None:
+        """Test CLI detects interactive scripts and enables user input handling during execution.
+
+        This test verifies the end-to-end integration where:
+        1. CLI command receives an ensemble with interactive scripts
+        2. CLI detects that user input will be needed
+        3. CLI sets up proper user input handler for the execution
+        4. CLI invokes the ensemble with interactive support enabled
+        """
+        mock_loader.find_ensemble.return_value = mock_interactive_ensemble_config
+
+        # Mock the enhanced executor to simulate interactive script execution
+        mock_executor.execute_with_user_input = AsyncMock(
+            return_value={
+                "results": {
+                    "input_collector": {
+                        "status": "success",
+                        "response": '{"user_input": "John Doe"}',
+                    },
+                    "data_processor": {
+                        "status": "success",
+                        "response": '{"processed": "Hello, John Doe!"}',
+                    },
+                },
+                "metadata": {"execution_time": 2.5, "interactive": True},
+            }
+        )
+
+        with (
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
+            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
+            patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
+            patch(
+                "llm_orc.core.execution.script_user_input_handler.ScriptUserInputHandler"
+            ) as mock_input_handler_class,
+        ):
+            # Mock the input handler instance
+            mock_input_handler = Mock()
+            mock_input_handler.ensemble_requires_user_input.return_value = True
+            mock_input_handler_class.return_value = mock_input_handler
+
+            invoke_ensemble(
+                ensemble_name="interactive_ensemble",
+                input_data="test input",
+                config_dir=None,
+                input_data_option=None,
+                output_format="json",
+                streaming=False,
+                max_concurrent=None,
+                detailed=False,
+            )
+
+            # Verify that the CLI detected interactive scripts
+            mock_input_handler.ensemble_requires_user_input.assert_called_once_with(
+                mock_interactive_ensemble_config
+            )
+
+            # Verify that enhanced execution was used instead of standard execution
+            mock_executor.execute_with_user_input.assert_called_once()
+            call_args = mock_executor.execute_with_user_input.call_args
+            assert (
+                call_args[0][0] == mock_interactive_ensemble_config
+            )  # ensemble_config
+            assert call_args[0][1] == "test input"  # input_data
+            assert call_args[0][2] == mock_input_handler  # user_input_handler
+
+            # Verify standard execute was NOT called
+            mock_executor.execute.assert_not_called()
+
+    def test_invoke_ensemble_fallback_to_standard_execution_for_non_interactive_ensemble(
+        self,
+        mock_config_manager: Mock,
+        mock_loader: Mock,
+        mock_executor: Mock,
+    ) -> None:
+        """Test CLI falls back to standard execution when no interactive scripts detected."""
+        # Create non-interactive ensemble config
+        non_interactive_config = Mock()
+        non_interactive_config.name = "standard_ensemble"
+        non_interactive_config.description = "Standard non-interactive ensemble"
+        non_interactive_config.agents = [
+            {
+                "name": "text_processor",
+                "type": "script",
+                "script": "text/analyze.py",
+                "depends_on": [],
+            }
+        ]
+
+        mock_loader.find_ensemble.return_value = non_interactive_config
+
+        # Mock standard execution
+        mock_executor.execute = AsyncMock(
+            return_value={
+                "results": {
+                    "text_processor": {
+                        "status": "success",
+                        "response": "Analysis complete",
+                    }
+                },
+                "metadata": {"execution_time": 1.0},
+            }
+        )
+
+        with (
+            patch(
+                "llm_orc.cli_commands.ConfigurationManager",
+                return_value=mock_config_manager,
+            ),
+            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
+            patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
+            patch(
+                "llm_orc.core.execution.script_user_input_handler.ScriptUserInputHandler"
+            ) as mock_input_handler_class,
+        ):
+            # Mock input handler that detects no interactive scripts
+            mock_input_handler = Mock()
+            mock_input_handler.ensemble_requires_user_input.return_value = False
+            mock_input_handler_class.return_value = mock_input_handler
+
+            invoke_ensemble(
+                ensemble_name="standard_ensemble",
+                input_data="test input",
+                config_dir=None,
+                input_data_option=None,
+                output_format="json",
+                streaming=False,
+                max_concurrent=None,
+                detailed=False,
+            )
+
+            # Verify interactive detection was attempted
+            mock_input_handler.ensemble_requires_user_input.assert_called_once_with(
+                non_interactive_config
+            )
+
+            # Verify standard execution was used (through asyncio.run + run_standard_execution)
+            # Since CLI routing goes through run_standard_execution/run_streaming_execution
+            # we can't directly assert executor.execute, but can verify interactive wasn't used
+            assert (
+                not hasattr(mock_executor, "execute_with_user_input")
+                or mock_executor.execute_with_user_input.call_count == 0
+            )

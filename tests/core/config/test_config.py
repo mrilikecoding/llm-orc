@@ -11,6 +11,34 @@ import yaml
 from llm_orc.core.config.config_manager import ConfigurationManager
 
 
+@pytest.fixture(autouse=True)
+def mock_expensive_dependencies(request):
+    """Mock expensive dependencies for all config tests, except specific tests."""
+    # Skip mocking for tests that specifically test the setup methods
+    skip_tests = [
+        "test_setup_default_config_from_template",
+        "test_setup_default_config_template_not_found",
+        "test_setup_default_ensembles_from_templates",
+        "test_setup_default_ensembles_no_templates",
+    ]
+
+    if request.node.name in skip_tests:
+        # Don't mock for these specific tests
+        yield
+    else:
+        # Mock expensive file operations in ConfigurationManager initialization
+        with patch(
+            "llm_orc.core.config.config_manager.ConfigurationManager._setup_default_config"
+        ):
+            with patch(
+                "llm_orc.core.config.config_manager.ConfigurationManager._setup_default_ensembles"
+            ):
+                with patch(
+                    "llm_orc.core.config.config_manager.ConfigurationManager._copy_profile_templates"
+                ):
+                    yield
+
+
 class TestConfigurationManager:
     """Test the ConfigurationManager class."""
 

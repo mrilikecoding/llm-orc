@@ -14,6 +14,21 @@ from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.models.base import ModelInterface
 
 
+@pytest.fixture(autouse=True)
+def mock_expensive_dependencies():
+    """Mock expensive dependencies for mixed agent dependency tests."""
+    with patch(
+        "llm_orc.core.config.config_manager.ConfigurationManager._setup_default_config"
+    ):
+        with patch(
+            "llm_orc.core.config.config_manager.ConfigurationManager._setup_default_ensembles"
+        ):
+            with patch(
+                "llm_orc.core.config.config_manager.ConfigurationManager._copy_profile_templates"
+            ):
+                yield
+
+
 class TestMixedAgentDependencies:
     """Test mixed script-LLM agent dependency chains."""
 

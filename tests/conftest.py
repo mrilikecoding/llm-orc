@@ -55,17 +55,28 @@ def cleanup_test_artifacts() -> Generator[None, None, None]:
 
 @pytest.fixture
 def mock_ensemble_executor() -> Generator[EnsembleExecutor, None, None]:
-    """Create an EnsembleExecutor with mocked ArtifactManager.
+    """Create an EnsembleExecutor with mocked expensive dependencies.
 
     This fixture ensures that tests don't create real artifacts in .llm-orc/artifacts/
-    by mocking the ArtifactManager component.
+    and mocks only expensive I/O operations while preserving functionality.
     """
-    executor = EnsembleExecutor()
+    # Mock only the expensive I/O operations during construction
+    with patch(
+        "llm_orc.core.config.config_manager.ConfigurationManager._setup_default_config"
+    ):
+        with patch(
+            "llm_orc.core.config.config_manager.ConfigurationManager._setup_default_ensembles"
+        ):
+            with patch(
+                "llm_orc.core.config.config_manager.ConfigurationManager._copy_profile_templates"
+            ):
+                # Create real executor with mocked I/O
+                executor = EnsembleExecutor()
 
-    # Mock the ArtifactManager to prevent real artifact creation
-    mock_artifact_manager = Mock(spec=ArtifactManager)
-    mock_artifact_manager.save_execution_results = Mock()
+                # Mock the ArtifactManager to prevent real artifact creation
+                mock_artifact_manager = Mock(spec=ArtifactManager)
+                mock_artifact_manager.save_execution_results = Mock()
 
-    # Replace the real artifact manager with the mock
-    with patch.object(executor, "_artifact_manager", mock_artifact_manager):
-        yield executor
+                # Replace only the artifact manager, keep the rest functional
+                with patch.object(executor, "_artifact_manager", mock_artifact_manager):
+                    yield executor

@@ -807,7 +807,7 @@ class TestAnthropicOAuthFlow:
                     test_state = "test_state_67890"
                     callback_url = f"http://localhost:{port}/callback?code={test_code}&state={test_state}"
 
-                    # Make request to callback server
+                    # Make request to callback server (mocked above)
                     import requests
 
                     response = requests.get(callback_url, timeout=5)

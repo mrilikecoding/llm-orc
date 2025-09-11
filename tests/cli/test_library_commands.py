@@ -12,6 +12,32 @@ from click.testing import CliRunner
 from llm_orc.cli import cli
 
 
+@pytest.fixture(autouse=True)
+def mock_expensive_dependencies(request):
+    """Mock expensive dependencies for CLI library tests."""
+    # Skip mocking for tests that specifically test the setup methods
+    skip_tests = [
+        "test_setup_default_config_uses_library_template",
+        "test_init_local_config_uses_library_template",
+    ]
+
+    if request.node.name in skip_tests:
+        # Don't mock for these specific tests
+        yield
+    else:
+        # Apply surgical mocking for other tests
+        with patch(
+            "llm_orc.core.config.config_manager.ConfigurationManager._setup_default_config"
+        ):
+            with patch(
+                "llm_orc.core.config.config_manager.ConfigurationManager._setup_default_ensembles"
+            ):
+                with patch(
+                    "llm_orc.core.config.config_manager.ConfigurationManager._copy_profile_templates"
+                ):
+                    yield
+
+
 class TestLibraryBrowseCommand:
     """Test library browse command functionality."""
 

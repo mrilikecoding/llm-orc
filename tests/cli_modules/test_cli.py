@@ -4,11 +4,28 @@ import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
 import yaml
 from click.testing import CliRunner
 
 from llm_orc.cli import cli
 from llm_orc.cli_modules.utils.config_utils import get_available_providers
+
+
+@pytest.fixture(autouse=True)
+def mock_expensive_file_operations():
+    """Mock expensive file I/O operations for CLI tests."""
+    # Mock only the expensive I/O operations, not entire subsystems
+    with patch(
+        "llm_orc.core.config.config_manager.ConfigurationManager._setup_default_config"
+    ):
+        with patch(
+            "llm_orc.core.config.config_manager.ConfigurationManager._setup_default_ensembles"
+        ):
+            with patch(
+                "llm_orc.core.config.config_manager.ConfigurationManager._copy_profile_templates"
+            ):
+                yield
 
 
 class TestCLI:

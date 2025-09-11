@@ -7,6 +7,15 @@ import pytest
 from llm_orc.integrations.mcp.server import MCPServer
 
 
+@pytest.fixture(autouse=True)
+def mock_expensive_dependencies():
+    """Mock expensive dependencies for all MCP server integration tests."""
+    with patch("llm_orc.integrations.mcp.server.EnsembleExecutor"):
+        with patch("llm_orc.integrations.mcp.server.ConfigurationManager"):
+            with patch("llm_orc.integrations.mcp.server.EnsembleLoader"):
+                yield
+
+
 class TestMCPServerIntegration:
     """Test MCP server integration with real ensemble loading."""
 
