@@ -115,7 +115,7 @@ class TestEnsembleScriptIntegration:
 
     @pytest.mark.asyncio
     async def test_integration_tests_do_not_create_artifacts(self) -> None:
-        """Test that integration tests do not create real artifacts in .llm-orc/artifacts/."""
+        """Test that integration tests do not create real artifacts."""
         # Run a test with EnsembleExecutor and verify no artifacts are created
         config = EnsembleConfig(
             name="test_no_artifacts",

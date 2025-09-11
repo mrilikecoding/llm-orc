@@ -66,7 +66,7 @@ class TestAuthCommandsNew:
                     # Mock CredentialStorage
                     mock_storage = Mock()
                     mock_storage.store_api_key.return_value = None
-                    mock_storage.list_providers.return_value = []  # Empty list initially
+                    mock_storage.list_providers.return_value = []  # Empty list
                     mock_storage_class.return_value = mock_storage
 
                     result = runner.invoke(
@@ -380,7 +380,7 @@ class TestAuthCommandsNew:
 
                     # Mock CredentialStorage
                     mock_storage = Mock()
-                    mock_storage.list_providers.return_value = []  # Empty list initially
+                    mock_storage.list_providers.return_value = []  # Empty list
                     mock_storage.store_api_key.return_value = None
                     mock_storage_class.return_value = mock_storage
 
@@ -838,7 +838,7 @@ class TestAuthCommandsNew:
                     mock_instance.needs_migration.return_value = False
 
                     # Mock AuthenticationManager
-                    mock_auth_manager = mock_auth.return_value
+                    _ = mock_auth.return_value
 
                     # Mock CredentialStorage
                     mock_storage = Mock()
@@ -895,7 +895,7 @@ class TestAuthCommandsNew:
 
                     # Mock CredentialStorage
                     mock_storage = Mock()
-                    mock_storage.list_providers.return_value = []  # Empty list initially
+                    mock_storage.list_providers.return_value = []  # Empty list
                     mock_storage_class.return_value = mock_storage
 
                     # When
@@ -1099,7 +1099,7 @@ class TestAuthCommandsNew:
                     mock_instance.needs_migration.return_value = False
 
                     # Mock AuthenticationManager
-                    mock_auth_manager = mock_auth.return_value
+                    _ = mock_auth.return_value
 
                     # Mock CredentialStorage
                     mock_storage = Mock()
@@ -1115,8 +1115,8 @@ class TestAuthCommandsNew:
                     # Then
                     assert result.exit_code != 0
                     assert (
-                        "Must provide either --api-key or both --client-id and --client-secret"
-                        in result.output
+                        "Must provide either --api-key or both --client-id and "
+                        "--client-secret" in result.output
                     )
 
     def test_auth_add_storage_exception(

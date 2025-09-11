@@ -18,7 +18,7 @@ class TestMessageRoutingPerformance:
 
     @pytest.mark.asyncio
     async def test_message_routing_latency_under_50ms(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Should route messages between agents in under 50ms."""
         # Arrange - Create fast mock model
@@ -69,7 +69,7 @@ class TestMessageRoutingPerformance:
 
     @pytest.mark.asyncio
     async def test_multi_agent_conversation_performance(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Should handle multi-agent conversations efficiently."""
         # Arrange - Create 3 agents with fast mock models
@@ -138,7 +138,7 @@ class TestMessageRoutingPerformance:
 
     @pytest.mark.asyncio
     async def test_agent_response_generation_performance(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Should generate agent responses efficiently."""
         # Arrange
@@ -168,7 +168,7 @@ class TestMessageRoutingPerformance:
 
     @pytest.mark.asyncio
     async def test_orchestrator_agent_registration_performance(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Should register agents efficiently."""
         # Arrange
@@ -211,7 +211,7 @@ class TestPRReviewPerformance:
 
     @pytest.mark.asyncio
     async def test_pr_review_orchestration_performance(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Should orchestrate PR reviews efficiently."""
         # Arrange - Create PR review orchestrator with fast mock agents
@@ -270,7 +270,7 @@ class TestEnsembleExecutionPerformance:
 
     @pytest.mark.asyncio
     async def test_parallel_execution_performance_improvement(
-        self, mock_ensemble_executor, monkeypatch: pytest.MonkeyPatch
+        self, mock_ensemble_executor: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Should execute independent agents in parallel for significant speedup."""
         from llm_orc.core.config.ensemble_config import EnsembleConfig
@@ -333,7 +333,7 @@ class TestEnsembleExecutionPerformance:
 
     @pytest.mark.asyncio
     async def test_dependency_aware_execution_order(
-        self, mock_ensemble_executor, monkeypatch: pytest.MonkeyPatch
+        self, mock_ensemble_executor: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Should execute agents in correct order when dependencies exist."""
         from llm_orc.core.config.ensemble_config import EnsembleConfig
@@ -522,7 +522,7 @@ class TestEnsembleExecutionPerformance:
 
     @pytest.mark.asyncio
     async def test_enhanced_dependency_graph_analysis(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Should analyze complex dependency graphs and determine optimal
         execution phases."""
@@ -604,7 +604,7 @@ class TestEnsembleExecutionPerformance:
 
     @pytest.mark.asyncio
     async def test_parallel_model_loading_performance(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Should load models in parallel rather than sequentially."""
         import time
@@ -706,7 +706,7 @@ class TestEnsembleExecutionPerformance:
 
     @pytest.mark.asyncio
     async def test_shared_model_instance_optimization(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Should reuse model instances when multiple agents use the same model."""
         from unittest.mock import AsyncMock, patch
@@ -809,7 +809,7 @@ class TestEnsembleExecutionPerformance:
 
     @pytest.mark.asyncio
     async def test_infrastructure_sharing_optimization(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Should share ConfigurationManager and CredentialStorage across model
         loads."""
@@ -919,7 +919,9 @@ class TestEnsembleExecutionPerformance:
                         )
 
     @pytest.mark.asyncio
-    async def test_streaming_execution_interface(self, mock_ensemble_executor) -> None:
+    async def test_streaming_execution_interface(
+        self, mock_ensemble_executor: Any
+    ) -> None:
         """Should provide async generator interface for real-time progress."""
         from unittest.mock import patch
 
@@ -982,7 +984,9 @@ class TestEnsembleExecutionPerformance:
             assert "metadata" in final_event["data"]
 
     @pytest.mark.asyncio
-    async def test_connection_pooling_performance(self, mock_ensemble_executor) -> None:
+    async def test_connection_pooling_performance(
+        self, mock_ensemble_executor: Any
+    ) -> None:
         """Should reuse HTTP connections for better performance."""
         import time
         from unittest.mock import patch
@@ -1053,7 +1057,7 @@ class TestPerformanceBenchmarks:
 
     @pytest.mark.asyncio
     async def test_ensemble_execution_under_60s_target(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Should complete ensemble execution within 60s target."""
         import time
@@ -1114,7 +1118,7 @@ class TestPerformanceBenchmarks:
 
     @pytest.mark.asyncio
     async def test_large_ensemble_scalability_benchmark(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Should handle large ensembles efficiently."""
         import time
@@ -1179,7 +1183,7 @@ class TestPerformanceBenchmarks:
 
     @pytest.mark.asyncio
     async def test_streaming_performance_benchmark(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Should provide real-time streaming updates efficiently."""
         import time
@@ -1244,7 +1248,7 @@ class TestPerformanceBenchmarks:
 
     @pytest.mark.asyncio
     async def test_connection_pooling_performance_benchmark(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Should demonstrate connection pooling performance benefits."""
         import time
@@ -1298,7 +1302,9 @@ class TestPerformanceBenchmarks:
         await HTTPConnectionPool.close()
 
     @pytest.mark.asyncio
-    async def test_timeout_handling_benchmark(self, mock_ensemble_executor) -> None:
+    async def test_timeout_handling_benchmark(
+        self, mock_ensemble_executor: Any
+    ) -> None:
         """Should handle timeouts gracefully without performance degradation."""
         import time
         from unittest.mock import AsyncMock, patch
@@ -1386,7 +1392,9 @@ class TestPerformanceBenchmarks:
             assert "timed out" in result["results"]["slow_agent"]["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_memory_efficiency_benchmark(self, mock_ensemble_executor) -> None:
+    async def test_memory_efficiency_benchmark(
+        self, mock_ensemble_executor: Any
+    ) -> None:
         """Should maintain efficient memory usage during execution."""
         import time
         from unittest.mock import AsyncMock, patch
@@ -1461,7 +1469,7 @@ class TestPerformanceBenchmarks:
 
     @pytest.mark.asyncio
     async def test_resource_management_concurrency_control(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Should limit concurrent execution for large ensembles."""
         import time

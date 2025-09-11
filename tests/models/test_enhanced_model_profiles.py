@@ -2,6 +2,7 @@
 
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -60,7 +61,7 @@ class TestEnhancedModelProfiles:
 
     @pytest.mark.asyncio
     async def test_ensemble_agent_uses_model_profile_system_prompt(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test that agents can use system_prompt from model profile."""
         # Create ensemble config that uses model_profile without explicit system_prompt
@@ -127,7 +128,7 @@ class TestEnhancedModelProfiles:
 
     @pytest.mark.asyncio
     async def test_ensemble_agent_uses_model_profile_timeout(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test that agents can use timeout_seconds from model profile."""
         # Create ensemble config that uses model_profile without explicit timeout

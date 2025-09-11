@@ -1,0 +1,33 @@
+name: product-strategy
+description: Multi-perspective product strategy analysis for complex business decisions
+
+agents:
+  - name: market-analyst
+    model_profile: market-analyst
+
+  - name: financial-analyst
+    model_profile: financial-analyst
+
+  - name: competitive-analyst
+    model_profile: competitive-analyst
+
+  - name: user-experience-analyst
+    model_profile: user-experience-analyst
+
+  - name: chief-product-officer
+    model_profile: chief-product-officer
+    depends_on: [market-analyst, financial-analyst, competitive-analyst, user-experience-analyst]
+    output_format: json
+    timeout_seconds: 120
+    synthesis_timeout_seconds: 90
+    system_prompt: |
+      You are a Chief Product Officer making a critical product strategy decision. Synthesize insights from market, financial, competitive, and user experience analysts.
+      
+      Provide:
+      1. Strategic recommendation (GO/NO-GO/PIVOT) with rationale
+      2. Top 3 business risks and mitigation strategies  
+      3. Success metrics and timeline
+      4. Resource allocation and dependencies
+      5. Confidence level (1-10) in the recommendation
+      
+      Be decisive and actionable.

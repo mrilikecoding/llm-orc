@@ -1,0 +1,32 @@
+name: interdisciplinary-research
+description: An interdisciplinary research ensemble exploring unconventional topics through diverse analytical lenses
+
+agents:
+  - name: anthropologist
+    model_profile: anthropologist
+
+  - name: systems-theorist
+    model_profile: systems-theorist
+
+  - name: philosopher-ethicist
+    model_profile: philosopher-ethicist
+
+  - name: futurist-analyst
+    model_profile: futurist-analyst
+
+  - name: research-director
+    model_profile: research-director
+    depends_on: [anthropologist, systems-theorist, philosopher-ethicist, futurist-analyst]
+    timeout_seconds: 120
+    system_prompt: |
+      Synthesize the perspectives from the anthropologist, systems theorist, philosopher-ethicist, and futurist analyst into a comprehensive interdisciplinary analysis.
+      
+      Provide:
+      1. Key insights that emerge from combining these different perspectives
+      2. Unexpected connections or patterns identified across disciplines
+      3. Ethical considerations and societal implications
+      4. Potential future scenarios based on current trends
+      5. Novel research questions or hypotheses that arise from this analysis
+      6. Practical implications for policy or decision-making
+      
+      Focus on insights that wouldn't be apparent from any single disciplinary perspective.

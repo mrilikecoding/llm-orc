@@ -1,0 +1,31 @@
+name: mycology-meets-technology
+description: Exploring the fascinating intersection of fungal networks and modern technology through multiple research perspectives
+
+default_task: "Analyze how mycorrhizal networks (the 'wood wide web') might inspire new approaches to distributed computing, network resilience, and sustainable technology design."
+
+agents:
+  - name: mycologist
+    model_profile: mycologist
+
+  - name: network-engineer
+    model_profile: network-engineer
+
+  - name: biomimicry-researcher
+    model_profile: biomimicry-researcher
+
+  - name: research-coordinator
+    model_profile: research-coordinator
+    depends_on: [mycologist, network-engineer, biomimicry-researcher]
+    timeout_seconds: 120
+    system_prompt: |
+      Synthesize insights from the mycologist, network engineer, and biomimicry researcher to explore fungal-inspired technology innovations.
+      
+      Provide:
+      1. Specific fungal network properties that could inspire new technologies
+      2. Concrete applications in distributed computing or network design
+      3. Technical challenges and how fungal solutions might address them
+      4. Potential breakthrough innovations at this intersection
+      5. Implementation roadmap for the most promising concepts
+      6. Environmental and sustainability implications
+      
+      Focus on actionable insights that could lead to real technological advances.

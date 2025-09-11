@@ -1,0 +1,91 @@
+"""Test that verifies no artifacts are created during test runs."""
+
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from llm_orc.core.config.ensemble_config import EnsembleConfig
+
+
+class TestNoArtifactCreation:
+    """Test that no artifacts are created during test runs."""
+
+    def test_no_artifacts_created_during_test_instantiation(self) -> None:
+        """Test that instantiating EnsembleExecutor doesn't create artifacts."""
+        artifacts_dir = Path(".llm-orc/artifacts")
+
+        # Get initial state
+        initial_dirs = set()
+        if artifacts_dir.exists():
+            initial_dirs = {d.name for d in artifacts_dir.iterdir() if d.is_dir()}
+
+        # Create a simple EnsembleExecutor to simulate what tests do
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+
+        # This should NOT create artifacts during instantiation
+        _ = EnsembleExecutor()
+
+        # Check that no new directories were created from instantiation
+        current_dirs = set()
+        if artifacts_dir.exists():
+            current_dirs = {d.name for d in artifacts_dir.iterdir() if d.is_dir()}
+
+        new_dirs = current_dirs - initial_dirs
+
+        # Instantiation should not create artifacts
+        assert len(new_dirs) == 0, (
+            f"New artifact directories created during instantiation: {new_dirs}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_mock_ensemble_executor_prevents_artifacts(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Test that using mock_ensemble_executor fixture prevents artifact creation."""
+        artifacts_dir = Path(".llm-orc/artifacts")
+
+        # Get initial state
+        initial_dirs = set()
+        if artifacts_dir.exists():
+            initial_dirs = {d.name for d in artifacts_dir.iterdir() if d.is_dir()}
+
+        config = EnsembleConfig(
+            name="test_no_artifacts_with_mock",
+            description="Test that this doesn't create artifacts with mock",
+            agents=[
+                {"name": "agent1", "type": "script", "script": "echo 'test'"},
+            ],
+        )
+
+        # Use the mock fixture
+        executor = mock_ensemble_executor
+
+        # Mock some additional methods to avoid real execution
+        from unittest.mock import AsyncMock, patch
+
+        with (
+            patch.object(executor, "_load_role_from_config", new_callable=AsyncMock),
+            patch.object(
+                executor, "_execute_script_agent", new_callable=AsyncMock
+            ) as mock_script,
+        ):
+            mock_script.return_value = ("Test output", None)
+
+            # Execute the ensemble - this should NOT create artifacts
+            result = await executor.execute(config, "test input")
+
+        # Check that no new directories were created
+        current_dirs = set()
+        if artifacts_dir.exists():
+            current_dirs = {d.name for d in artifacts_dir.iterdir() if d.is_dir()}
+
+        new_dirs = current_dirs - initial_dirs
+
+        # Using mock should not create artifacts
+        assert len(new_dirs) == 0, (
+            f"New artifact directories created with mock: {new_dirs}"
+        )
+
+        # Verify execution completed (proving the mock works)
+        assert result is not None

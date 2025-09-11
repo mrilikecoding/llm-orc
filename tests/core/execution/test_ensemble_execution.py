@@ -16,7 +16,7 @@ class TestEnsembleExecutor:
     """Test ensemble execution."""
 
     @pytest.mark.asyncio
-    async def test_execute_simple_ensemble(self, mock_ensemble_executor) -> None:
+    async def test_execute_simple_ensemble(self, mock_ensemble_executor: Any) -> None:
         """Test executing a simple ensemble with mock agents."""
         # Create ensemble config
         config = EnsembleConfig(
@@ -90,7 +90,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_ensemble_with_different_models(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test executing ensemble with different models per agent."""
         config = EnsembleConfig(
@@ -154,7 +154,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_ensemble_handles_agent_failure(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test that ensemble execution handles individual agent failures."""
         config = EnsembleConfig(
@@ -222,7 +222,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_ensemble_dependency_based(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test that ensemble execution works with dependency-based approach."""
         config = EnsembleConfig(
@@ -263,7 +263,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_ensemble_tracks_usage_metrics(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test that ensemble execution tracks LLM usage metrics."""
         config = EnsembleConfig(
@@ -351,7 +351,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_ensemble_with_global_timeout(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test that ensemble execution respects global timeout settings."""
         config = EnsembleConfig(
@@ -412,7 +412,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_ensemble_with_per_agent_timeout(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test that individual agents can have their own timeout settings."""
         config = EnsembleConfig(
@@ -496,7 +496,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_load_model_with_authentication_configurations(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test _load_model resolves auth configurations to model instances."""
         executor = mock_ensemble_executor
@@ -546,7 +546,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_load_model_prompts_for_auth_setup_when_not_configured(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test that _load_model prompts user to set up auth when not configured."""
         executor = mock_ensemble_executor
@@ -591,7 +591,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_load_model_fallback_when_user_declines_auth_setup(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test that _load_model falls back to Ollama when user declines auth setup."""
         executor = mock_ensemble_executor
@@ -651,7 +651,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_ensemble_execution_with_model_profile(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test ensemble execution using model_profile.
 
@@ -715,7 +715,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_ensemble_execution_fallback_to_explicit_model_provider(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test fallback to explicit model+provider when no model_profile."""
         executor = mock_ensemble_executor
@@ -746,7 +746,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_dependency_based_ensemble(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test executing ensemble with agent dependencies instead of coordinator."""
         # RED: This test should fail until we implement dependency execution
@@ -823,7 +823,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_load_model_from_agent_config_delegation(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test _load_model_from_agent_config delegates to model factory."""
         executor = mock_ensemble_executor
@@ -845,7 +845,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_streaming_with_progress_updates(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test streaming execution yields progress updates."""
         config = EnsembleConfig(
@@ -915,7 +915,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_resolve_model_profile_to_config(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test model profile resolution to enhanced config."""
         executor = mock_ensemble_executor
@@ -951,7 +951,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_resolve_model_profile_nonexistent_profile(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test model profile resolution with nonexistent profile."""
         executor = mock_ensemble_executor
@@ -971,7 +971,9 @@ class TestEnsembleExecutor:
             assert enhanced == agent_config
 
     @pytest.mark.asyncio
-    async def test_load_role_creates_default_role(self, mock_ensemble_executor) -> None:
+    async def test_load_role_creates_default_role(
+        self, mock_ensemble_executor: Any
+    ) -> None:
         """Test _load_role creates default role definition."""
         # Mock dependencies to avoid YAML loading affected by test contamination
         with (
@@ -989,7 +991,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_agent_with_timeout_no_timeout(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test _execute_agent_with_timeout with no timeout specified."""
         executor = mock_ensemble_executor
@@ -1013,7 +1015,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_execute_agent_with_timeout_timeout_occurs(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test _execute_agent_with_timeout when timeout occurs."""
         executor = mock_ensemble_executor
@@ -1040,7 +1042,7 @@ class TestEnsembleExecutor:
                 )
 
     @pytest.mark.asyncio
-    async def test_analyze_dependencies(self, mock_ensemble_executor) -> None:
+    async def test_analyze_dependencies(self, mock_ensemble_executor: Any) -> None:
         """Test _analyze_dependencies separates agents correctly."""
         executor = mock_ensemble_executor
 
@@ -1076,7 +1078,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_analyze_dependencies_empty_depends_on(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test _analyze_dependencies with empty depends_on list."""
         executor = mock_ensemble_executor
@@ -1098,7 +1100,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_resolve_model_profile_to_config_without_profile(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test model profile resolution without model_profile key."""
         executor = mock_ensemble_executor
@@ -1111,7 +1113,9 @@ class TestEnsembleExecutor:
         assert enhanced is not agent_config  # Should be a copy
 
     @pytest.mark.asyncio
-    async def test_parallel_execution_performance(self, mock_ensemble_executor) -> None:
+    async def test_parallel_execution_performance(
+        self, mock_ensemble_executor: Any
+    ) -> None:
         """Test that parallel execution is significantly faster than sequential.
 
         RED: This test should fail until we implement parallel execution.
@@ -1194,7 +1198,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_oauth_fallback_display_enhancement(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test enhanced OAuth fallback display with specific error messaging.
 
@@ -1308,7 +1312,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_model_loading_fallback_display_enhancement(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test enhanced model loading fallback display with specific error messaging.
 
@@ -1415,7 +1419,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_emit_performance_event_queue_full_exception(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test _emit_performance_event handles QueueFull exception gracefully.
 
@@ -1434,7 +1438,9 @@ class TestEnsembleExecutor:
             mock_queue.put_nowait.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_artifact_manager_integration(self, mock_ensemble_executor) -> None:
+    async def test_artifact_manager_integration(
+        self, mock_ensemble_executor: Any
+    ) -> None:
         """Test ArtifactManager integration into ensemble execution.
 
         RED Phase: This test should fail until integration is implemented.
@@ -1505,7 +1511,7 @@ class TestEnsembleExecutor:
 
     @pytest.mark.asyncio
     async def test_artifact_manager_error_handling(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test that artifact manager errors don't break execution.
 

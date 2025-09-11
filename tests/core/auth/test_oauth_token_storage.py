@@ -103,7 +103,7 @@ class TestOAuthTokenStorage:
 
     @pytest.mark.asyncio
     async def test_ensemble_execution_client_id_fallback(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """
         Test ensemble execution uses client_id fallback for anthropic-claude-pro-max.
@@ -146,7 +146,7 @@ class TestOAuthTokenStorage:
 
     @pytest.mark.asyncio
     async def test_ensemble_execution_uses_stored_client_id_when_available(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test that ensemble execution uses stored client_id when available."""
         executor = mock_ensemble_executor

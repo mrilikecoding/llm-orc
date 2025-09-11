@@ -1,5 +1,6 @@
 """Tests for implicit agent type detection based on configuration fields."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,7 +11,7 @@ class TestImplicitAgentDetection:
 
     @pytest.mark.asyncio
     async def test_executor_detects_script_agent_by_script_field(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test that executor detects script agents by presence of 'script' field."""
         executor = mock_ensemble_executor
@@ -31,7 +32,7 @@ class TestImplicitAgentDetection:
 
     @pytest.mark.asyncio
     async def test_executor_detects_llm_agent_by_model_profile_field(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test executor detects LLM agents by 'model_profile' field."""
         executor = mock_ensemble_executor
@@ -53,7 +54,7 @@ class TestImplicitAgentDetection:
 
     @pytest.mark.asyncio
     async def test_executor_raises_for_missing_type_fields(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test executor raises error when neither field is present."""
         executor = mock_ensemble_executor
@@ -71,7 +72,7 @@ class TestImplicitAgentDetection:
 
     @pytest.mark.asyncio
     async def test_executor_maintains_backward_compatibility(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test executor maintains backward compatibility with 'type' field."""
         executor = mock_ensemble_executor
@@ -104,7 +105,7 @@ class TestImplicitAgentDetection:
 
     @pytest.mark.asyncio
     async def test_script_field_takes_priority_over_model_profile(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test 'script' field takes priority if both are present."""
         executor = mock_ensemble_executor
@@ -126,7 +127,7 @@ class TestImplicitAgentDetection:
 
     @pytest.mark.asyncio
     async def test_implicit_detection_with_enhanced_script_agent(
-        self, mock_ensemble_executor
+        self, mock_ensemble_executor: Any
     ) -> None:
         """Test that implicit detection works with EnhancedScriptAgent."""
         executor = mock_ensemble_executor
