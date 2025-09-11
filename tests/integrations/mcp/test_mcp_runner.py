@@ -5,7 +5,6 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 from aiohttp import web
-from aiohttp.test_utils import AioHTTPTestCase
 
 from llm_orc.integrations.mcp.runner import MCPServerRunner, MCPStdioRunner
 
@@ -339,51 +338,60 @@ class TestMCPStdioRunner:
             assert mock_print.call_args_list == expected_calls
 
 
-class TestMCPRunnerIntegration(AioHTTPTestCase):
-    """Integration tests for MCP runners with real aiohttp server."""
-
-    async def get_application(self) -> web.Application:
-        """Get test application."""
-        app = web.Application()
-        runner = MCPServerRunner("test-ensemble", 0)
-        app.router.add_post("/mcp", runner._handle_http_request)
-        return app
+class TestMCPRunnerIntegration:
+    """Fast integration tests for MCP runners using mocks instead of real server."""
 
     @patch("llm_orc.integrations.mcp.server.MCPServer.handle_request")
-    async def test_integration_http_success(self, mock_handle_request: Mock) -> None:
-        """Test integration of HTTP request handling."""
+    @patch("llm_orc.integrations.mcp.runner.web.json_response")
+    async def test_integration_http_success(
+        self, mock_json_response: Mock, mock_handle_request: Mock
+    ) -> None:
+        """Test integration of HTTP request handling without real server."""
         # Given
+        runner = MCPServerRunner("test-ensemble", 8080)
         mock_handle_request.return_value = {
             "jsonrpc": "2.0",
             "id": 1,
             "result": "integration_success",
         }
+        mock_json_response.return_value = web.Response()
 
         request_data = {"jsonrpc": "2.0", "id": 1, "method": "test_integration"}
+        mock_request = Mock()
+        mock_request.json = AsyncMock(return_value=request_data)
 
         # When
-        async with self.client.post("/mcp", json=request_data) as response:
-            response_data = await response.json()
+        await runner._handle_http_request(mock_request)
 
-            # Then
-            assert response.status == 200
-            assert response_data == {
+        # Then
+        mock_handle_request.assert_called_once_with(request_data)
+        mock_json_response.assert_called_once_with(
+            {
                 "jsonrpc": "2.0",
                 "id": 1,
                 "result": "integration_success",
             }
-            mock_handle_request.assert_called_once_with(request_data)
+        )
 
-    async def test_integration_http_invalid_json(self) -> None:
-        """Test integration with invalid JSON."""
+    @patch("llm_orc.integrations.mcp.runner.web.json_response")
+    async def test_integration_http_invalid_json(
+        self, mock_json_response: Mock
+    ) -> None:
+        """Test integration with invalid JSON without real server."""
+        # Given
+        runner = MCPServerRunner("test-ensemble", 8080)
+        mock_json_response.return_value = web.Response()
+
+        mock_request = Mock()
+        mock_request.json = AsyncMock(side_effect=json.JSONDecodeError("", "", 0))
+
         # When
-        async with self.client.post("/mcp", data="invalid json") as response:
-            response_data = await response.json()
+        await runner._handle_http_request(mock_request)
 
-            # Then
-            assert response.status == 400
-            assert response_data == {
-                "jsonrpc": "2.0",
-                "id": None,
-                "error": {"code": -32700, "message": "Parse error"},
-            }
+        # Then
+        expected_error = {
+            "jsonrpc": "2.0",
+            "id": None,
+            "error": {"code": -32700, "message": "Parse error"},
+        }
+        mock_json_response.assert_called_once_with(expected_error, status=400)

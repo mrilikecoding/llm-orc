@@ -94,8 +94,16 @@ class TestCLI:
                 "name": "working_ensemble",
                 "description": "A working test ensemble",
                 "agents": [
-                    {"name": "agent1", "role": "tester", "model": "claude-3-sonnet"},
-                    {"name": "agent2", "role": "reviewer", "model": "claude-3-sonnet"},
+                    {
+                        "name": "agent1",
+                        "role": "tester",
+                        "model": "claude-3-sonnet",
+                    },
+                    {
+                        "name": "agent2",
+                        "role": "reviewer",
+                        "model": "claude-3-sonnet",
+                    },
                 ],
                 "coordinator": {
                     "synthesis_prompt": "Combine results",
