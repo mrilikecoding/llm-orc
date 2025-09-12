@@ -1492,7 +1492,7 @@ class TestInteractiveScriptIntegration:
         mock_loader: Mock,
         mock_executor: Mock,
     ) -> None:
-        """Test CLI detects interactive scripts and enables user input handling during execution.
+        """Test CLI detects interactive scripts and enables user input handling.
 
         This test verifies the end-to-end integration where:
         1. CLI command receives an ensemble with interactive scripts
@@ -1563,13 +1563,13 @@ class TestInteractiveScriptIntegration:
             # Verify standard execute was NOT called
             mock_executor.execute.assert_not_called()
 
-    def test_invoke_ensemble_fallback_to_standard_execution_for_non_interactive_ensemble(
+    def test_invoke_ensemble_fallback_to_standard_execution_for_non_interactive(
         self,
         mock_config_manager: Mock,
         mock_loader: Mock,
         mock_executor: Mock,
     ) -> None:
-        """Test CLI falls back to standard execution when no interactive scripts detected."""
+        """Test CLI falls back to standard execution for non-interactive scripts."""
         # Create non-interactive ensemble config
         non_interactive_config = Mock()
         non_interactive_config.name = "standard_ensemble"
@@ -1630,9 +1630,9 @@ class TestInteractiveScriptIntegration:
                 non_interactive_config
             )
 
-            # Verify standard execution was used (through asyncio.run + run_standard_execution)
-            # Since CLI routing goes through run_standard_execution/run_streaming_execution
-            # we can't directly assert executor.execute, but can verify interactive wasn't used
+            # Verify standard execution was used (through asyncio.run)
+            # Since CLI routing goes through run_standard_execution
+            # we can verify interactive wasn't used
             assert (
                 not hasattr(mock_executor, "execute_with_user_input")
                 or mock_executor.execute_with_user_input.call_count == 0

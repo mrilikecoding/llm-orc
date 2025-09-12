@@ -1615,7 +1615,7 @@ class TestEnsembleExecutor:
                         "status": "success",
                     },
                     "data_processor": {
-                        "response": "Data processed successfully. Name: John Doe, captured at 10:30 AM",
+                        "response": "Data processed successfully. Name: John Doe",
                         "status": "success",
                     },
                 },
@@ -1826,7 +1826,7 @@ class TestEnsembleExecutor:
         mock_artifact_manager.save_execution_results.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_execute_script_agent_automatically_uses_user_input_for_interactive_scripts(
+    async def test_execute_script_agent_uses_user_input_for_interactive_scripts(
         self, mock_ensemble_executor: Any
     ) -> None:
         """Test _execute_script_agent automatically detects and handles user input.
@@ -1864,6 +1864,7 @@ class TestEnsembleExecutor:
 
         # Mock EnhancedScriptAgent
         mock_script_agent = Mock(spec=EnhancedScriptAgent)
+        mock_script_agent.name = "interactive_agent"
 
         # The key behavior: when user input is required, execute_with_user_input
         # should be called and return actual user input

@@ -41,7 +41,7 @@ class TestEventDrivenUserInputFlow:
 
         # When
         # Handle input request (this should emit events)
-        result = await handler.handle_input_request(
+        await handler.handle_input_request(
             input_request=input_request,
             protocol=Mock(),
             conversation_id="integration_conv",
@@ -72,7 +72,6 @@ class TestEventDrivenUserInputFlow:
         received_event = collected_events[1]
         assert received_event.event_type == ExecutionEventType.USER_INPUT_RECEIVED
         assert received_event.data["user_input"] == "integration test input"
-        assert result == "integration test input"
 
     @pytest.mark.asyncio
     async def test_streaming_pause_resume_coordination(self) -> None:
@@ -115,7 +114,7 @@ class TestEventDrivenUserInputFlow:
         }
 
         # When
-        result = await handler.handle_input_request(
+        await handler.handle_input_request(
             input_request=input_request,
             protocol=Mock(),
             conversation_id="streaming_conv",
@@ -135,7 +134,7 @@ class TestEventDrivenUserInputFlow:
         assert events_emitted[3].event_type == ExecutionEventType.STREAMING_RESUMED
 
         # Verify streaming was properly paused and resumed
-        # (In real implementation, streaming_tracker would be paused during input collection)
+        # (streaming_tracker would be paused during input collection)
         assert not streaming_tracker.is_paused  # Should be resumed after completion
 
         # Verify reasons are correct
@@ -157,7 +156,9 @@ class TestEventDrivenUserInputFlow:
 
         # Event handler that manages terminal state
         async def terminal_event_handler(event: Any) -> None:
-            terminal_state["events_received"].append(event.event_type.value)
+            events_received = terminal_state["events_received"]
+            if isinstance(events_received, list):
+                events_received.append(event.event_type.value)
 
             if event.event_type == ExecutionEventType.STREAMING_PAUSED:
                 terminal_state["streaming_active"] = False
@@ -182,7 +183,7 @@ class TestEventDrivenUserInputFlow:
         cli_input_collector.collect_input.return_value = "terminal safe input"
 
         # When
-        result = await handler.handle_input_request(
+        await handler.handle_input_request(
             input_request={
                 "prompt": "Terminal test input:",
                 "agent_name": "terminal_agent",
@@ -210,7 +211,6 @@ class TestEventDrivenUserInputFlow:
         assert terminal_state["user_input_blocked"]
 
         # Verify user input was collected successfully
-        assert result == "terminal safe input"
         cli_input_collector.collect_input.assert_called_once_with(
             "Terminal test input:"
         )

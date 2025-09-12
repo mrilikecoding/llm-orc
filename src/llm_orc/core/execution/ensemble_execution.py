@@ -433,7 +433,7 @@ class EnsembleExecutor:
                 )
 
                 # Check if any script agents required user input and count them
-                for agent_name, agent_result in phase_results.items():
+                for _agent_name, agent_result in phase_results.items():
                     if agent_result.get("response") and isinstance(
                         agent_result["response"], dict
                     ):

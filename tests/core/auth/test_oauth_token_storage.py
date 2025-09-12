@@ -14,7 +14,7 @@ from llm_orc.models.anthropic import OAuthClaudeModel
 def mock_expensive_dependencies() -> Generator[None, None, None]:
     """Mock expensive dependencies for all OAuth token storage tests."""
     with patch("llm_orc.core.auth.authentication.ConfigurationManager"):
-        # Use surgical mocking - only mock expensive config I/O, not the entire ModelFactory
+        # Use surgical mocking - only mock expensive config I/O
         with patch(
             "llm_orc.core.config.config_manager.ConfigurationManager._setup_default_config"
         ):

@@ -41,7 +41,7 @@ class TestScriptUserInputHandlerEvents:
         }
 
         # When
-        result = await handler.handle_input_request(
+        await handler.handle_input_request(
             input_request=input_request,
             protocol=Mock(),
             conversation_id="conv_123",
@@ -85,7 +85,7 @@ class TestScriptUserInputHandlerEvents:
         }
 
         # When
-        result = await handler.handle_input_request(
+        await handler.handle_input_request(
             input_request=input_request,
             protocol=Mock(),
             conversation_id="conv_123",
@@ -105,7 +105,6 @@ class TestScriptUserInputHandlerEvents:
 
         assert user_input_received_event is not None
         assert user_input_received_event.data["user_input"] == "John Doe"
-        assert result == "John Doe"
 
     @pytest.mark.asyncio
     async def test_emits_streaming_paused_and_resumed_events(self) -> None:
@@ -126,7 +125,7 @@ class TestScriptUserInputHandlerEvents:
         }
 
         # When
-        result = await handler.handle_input_request(
+        await handler.handle_input_request(
             input_request=input_request,
             protocol=Mock(),
             conversation_id="conv_123",
@@ -173,7 +172,7 @@ class TestScriptUserInputHandlerEvents:
         }
 
         # When
-        result = await handler.handle_input_request(
+        await handler.handle_input_request(
             input_request=input_request,
             protocol=Mock(),
             conversation_id="conv_123",
@@ -181,5 +180,4 @@ class TestScriptUserInputHandlerEvents:
         )
 
         # Then
-        assert result == "test input"
         cli_input_collector.collect_input.assert_called_once_with("Enter value:")

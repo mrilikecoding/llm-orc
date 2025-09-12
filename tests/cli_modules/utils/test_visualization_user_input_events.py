@@ -20,21 +20,23 @@ spec = importlib.util.spec_from_file_location(
         / "visualization.py"
     ),
 )
-viz_module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(viz_module)
-
-from llm_orc.core.config.ensemble_config import EnsembleConfig
+if spec is not None and spec.loader is not None:
+    viz_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(viz_module)
+    from llm_orc.core.config.ensemble_config import EnsembleConfig
+else:
+    raise RuntimeError("Could not load visualization module")
 
 
 class TestVisualizationUserInputEvents:
     """Test suite for user input event handling in streaming visualization."""
 
     def test_user_input_required_event_stops_status_and_clears_display(self) -> None:
-        """Test that user_input_required event stops status display and clears terminal."""
+        """Test user_input_required event stops status display and clears terminal."""
         # Given
         mock_console = Mock()
         mock_status = Mock()
-        agent_statuses = {}
+        agent_statuses: dict[str, str] = {}
         agents = [{"name": "test-agent", "script": "get_user_input.py"}]
         ensemble_config = EnsembleConfig(name="test", description="test", agents=agents)
 
@@ -102,7 +104,7 @@ class TestVisualizationUserInputEvents:
         # Given
         mock_console = Mock()
         mock_status = Mock()
-        agent_statuses = {}
+        agent_statuses: dict[str, str] = {}
         agents = [{"name": "test-agent"}]
         ensemble_config = EnsembleConfig(name="test", description="test", agents=agents)
 

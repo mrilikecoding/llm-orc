@@ -545,7 +545,7 @@ def _handle_user_input_completed_event(
     # Extract data from the correct nested structure
     event_data = event.get("data", {})
     agent_name = event_data.get("agent_name", "unknown")
-    # Set agent status back to running (it will be updated to completed when the agent finishes)
+    # Set agent status back to running (updated to completed when agent finishes)
     if agent_name in agent_statuses:
         agent_statuses[agent_name] = "running"
     return True
