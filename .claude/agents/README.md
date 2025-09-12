@@ -42,11 +42,11 @@ Identifies opportunities to use llm-orc ensembles to improve llm-orc development
 **automation-optimizer** (`magenta`)  
 Optimizes the entire Claude Code automation system (agents + hooks + workflows) for maximum development effectiveness.
 
-**feature-analyzer** (`blue`)  
-Analyzes feature development progress by comparing GitHub issues with current implementation.
+**branch-context-reviewer** (`blue`)  
+Provides context on current development work by reviewing README, architecture docs, ADRs, and branch changes.
 
-**progress-updater** (`green`)  
-Updates CHANGELOG and project documentation with feature development progress.
+**documentation-maintainer** (`green`)  
+Maintains project documentation when significant features are completed or architectural changes are finalized.
 
 ## Agent Orchestration Strategy
 
@@ -58,7 +58,7 @@ Code Quality        │ tdd-specialist, architecture-reviewer
 Technical Excellence │ performance-optimizer, security-auditor
 User Experience     │ ux-specialist
 Meta-Optimization   │ automation-optimizer
-Feature Tracking    │ feature-analyzer, progress-updater
+Context & Docs      │ branch-context-reviewer, documentation-maintainer
 ```
 
 ## Usage Patterns
