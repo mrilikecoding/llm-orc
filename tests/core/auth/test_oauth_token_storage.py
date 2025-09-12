@@ -1,5 +1,6 @@
 """Tests for OAuth token storage enhancements including client_id support."""
 
+from collections.abc import Generator
 from typing import Any
 from unittest.mock import Mock, patch
 
@@ -10,7 +11,7 @@ from llm_orc.models.anthropic import OAuthClaudeModel
 
 
 @pytest.fixture(autouse=True)
-def mock_expensive_dependencies():
+def mock_expensive_dependencies() -> Generator[None, None, None]:
     """Mock expensive dependencies for all OAuth token storage tests."""
     with patch("llm_orc.core.auth.authentication.ConfigurationManager"):
         # Use surgical mocking - only mock expensive config I/O, not the entire ModelFactory

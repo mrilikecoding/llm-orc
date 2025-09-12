@@ -4,6 +4,7 @@ Tests the core issue where script→LLM→script workflows fail
 due to type-based phased execution instead of dependency-based execution.
 """
 
+from collections.abc import Generator
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -15,7 +16,7 @@ from llm_orc.models.base import ModelInterface
 
 
 @pytest.fixture(autouse=True)
-def mock_expensive_dependencies():
+def mock_expensive_dependencies() -> Generator[None, None, None]:
     """Mock expensive dependencies for mixed agent dependency tests."""
     with patch(
         "llm_orc.core.config.config_manager.ConfigurationManager._setup_default_config"

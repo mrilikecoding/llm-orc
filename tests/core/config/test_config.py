@@ -2,7 +2,9 @@
 
 import os
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -12,7 +14,7 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 
 
 @pytest.fixture(autouse=True)
-def mock_expensive_dependencies(request):
+def mock_expensive_dependencies(request: Any) -> Generator[None, None, None]:
     """Mock expensive dependencies for all config tests, except specific tests."""
     # Skip mocking for tests that specifically test the setup methods
     skip_tests = [

@@ -1,5 +1,6 @@
 """Tests for base model infrastructure."""
 
+from collections.abc import Generator
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -8,7 +9,7 @@ from llm_orc.models.base import HTTPConnectionPool, ModelInterface
 
 
 @pytest.fixture(autouse=True)
-def mock_httpx():
+def mock_httpx() -> Generator[Mock, None, None]:
     """Mock httpx to avoid real network operations in tests."""
     mock_client = Mock()
     mock_client.is_closed = False
@@ -123,7 +124,9 @@ class TestHTTPConnectionPool:
         assert HTTPConnectionPool._httpx_client is None
 
     @pytest.mark.asyncio
-    async def test_get_httpx_client_recreates_after_close(self, mock_httpx) -> None:
+    async def test_get_httpx_client_recreates_after_close(
+        self, mock_httpx: Mock
+    ) -> None:
         """Test that get_httpx_client recreates client after it's been closed."""
         # Given - create and close a client
         client1 = HTTPConnectionPool.get_httpx_client()

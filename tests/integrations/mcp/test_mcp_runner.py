@@ -1,6 +1,7 @@
 """Comprehensive tests for MCP server runners."""
 
 import json
+from collections.abc import Generator
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -11,7 +12,7 @@ from llm_orc.integrations.mcp.runner import MCPServerRunner, MCPStdioRunner
 
 
 @pytest.fixture(autouse=True)
-def mock_expensive_mcp_dependencies():
+def mock_expensive_mcp_dependencies() -> Generator[None, None, None]:
     """Mock expensive MCP dependencies for all runner tests."""
     with patch("llm_orc.integrations.mcp.runner.MCPServer"):
         yield
@@ -355,25 +356,27 @@ class TestMCPRunnerIntegration:
         # Given
         runner = MCPServerRunner("test-ensemble", 8080)
 
-        # Mock the server's handle_request method directly on the instance
         mock_response = {
             "jsonrpc": "2.0",
             "id": 1,
             "result": "integration_success",
         }
-        runner.mcp_server.handle_request = AsyncMock(return_value=mock_response)
         mock_json_response.return_value = web.Response()
 
         request_data = {"jsonrpc": "2.0", "id": 1, "method": "test_integration"}
         mock_request = Mock()
         mock_request.json = AsyncMock(return_value=request_data)
 
-        # When
-        await runner._handle_http_request(mock_request)
+        # Mock the server's handle_request method using patch.object
+        with patch.object(
+            runner.mcp_server, "handle_request", AsyncMock(return_value=mock_response)
+        ) as mock_handle:
+            # When
+            await runner._handle_http_request(mock_request)
 
-        # Then
-        runner.mcp_server.handle_request.assert_called_once_with(request_data)
-        mock_json_response.assert_called_once_with(mock_response)
+            # Then
+            mock_handle.assert_called_once_with(request_data)
+            mock_json_response.assert_called_once_with(mock_response)
 
     @patch("llm_orc.integrations.mcp.runner.web.json_response")
     async def test_integration_http_invalid_json(

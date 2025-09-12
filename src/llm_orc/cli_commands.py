@@ -248,25 +248,12 @@ def invoke_ensemble(
     # Execute the ensemble
     try:
         if requires_user_input:
-            # Interactive execution with user input support
-            async def run_interactive_execution() -> None:
-                result = await executor.execute_with_user_input(
-                    ensemble_config, input_data, input_handler
+            # Interactive execution with streaming visualization for progress control
+            asyncio.run(
+                run_streaming_execution(
+                    executor, ensemble_config, input_data, output_format, detailed
                 )
-                # Display results using the same logic as standard execution
-                if output_format == "json":
-                    click.echo(json.dumps(result, indent=2))
-                else:
-                    from llm_orc.cli_modules.utils.visualization import display_results
-
-                    display_results(
-                        result["results"],
-                        result["metadata"],
-                        ensemble_config.agents,
-                        detailed,
-                    )
-
-            asyncio.run(run_interactive_execution())
+            )
         elif effective_streaming:
             # Streaming execution with Rich status
             asyncio.run(

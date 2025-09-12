@@ -1,5 +1,6 @@
 """Tests for script agent integration with ensemble execution."""
 
+from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -11,7 +12,7 @@ from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
 
 @pytest.fixture(autouse=True)
-def mock_expensive_dependencies():
+def mock_expensive_dependencies() -> Generator[None, None, None]:
     """Mock expensive dependencies for all ensemble script integration tests."""
     with patch("llm_orc.core.execution.ensemble_execution.ConfigurationManager"):
         with patch("llm_orc.core.execution.ensemble_execution.CredentialStorage"):

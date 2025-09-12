@@ -50,6 +50,9 @@ def create_dependency_tree(
             elif status == "failed":
                 symbol = "[red]✗[/red]"
                 style = "red"
+            elif status == "waiting_input":
+                symbol = "[blue]⏸[/blue]"
+                style = "blue"
             else:
                 symbol = "[dim]○[/dim]"
                 style = "dim"
@@ -118,6 +121,8 @@ def _create_plain_text_dependency_graph(
                 agent_displays.append(f"✓ {name}")
             elif status == "failed":
                 agent_displays.append(f"✗ {name}")
+            elif status == "waiting_input":
+                agent_displays.append(f"⏸ {name}")
             else:
                 agent_displays.append(f"○ {name}")
 
@@ -166,6 +171,8 @@ def create_dependency_graph_with_status(
                 agent_displays.append(f"[green]✓[/green] [green]{name}[/green]")
             elif status == "failed":
                 agent_displays.append(f"[red]✗[/red] [red]{name}[/red]")
+            elif status == "waiting_input":
+                agent_displays.append(f"[blue]⏸[/blue] [blue]{name}[/blue]")
             else:
                 agent_displays.append(f"[dim]○[/dim] [dim]{name}[/dim]")
 
@@ -1117,6 +1124,35 @@ def _handle_streaming_event(
             detailed,
         )
 
+    elif event_type == "user_input_required":
+        # User input required - pause streaming progress and clear terminal
+        event_data = event["data"]
+        agent_name = event_data["agent_name"]
+
+        # Update agent status to waiting_input
+        agent_statuses[agent_name] = "waiting_input"
+
+        # Stop the status spinner and clear the terminal
+        status.stop()
+        console.clear()
+
+        # Update status display with current tree showing waiting status
+        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+        console.print(current_tree)
+
+    elif event_type == "user_input_completed":
+        # User input completed - resume streaming progress display
+        event_data = event["data"]
+        agent_name = event_data["agent_name"]
+
+        # Update agent status back to running
+        agent_statuses[agent_name] = "running"
+
+        # Restart the status display with updated tree
+        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+        status.start()
+        status.update(current_tree)
+
     return True
 
 
@@ -1243,6 +1279,18 @@ async def run_streaming_execution(
         initial_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
 
         with console.status(initial_tree, spinner="dots") as status:
+            # Create progress controller for synchronous user input handling
+            from llm_orc.cli_modules.utils.rich_progress_controller import (
+                RichProgressController,
+            )
+
+            progress_controller = RichProgressController(
+                console, status, agent_statuses, ensemble_config.agents
+            )
+
+            # Provide the executor with direct progress control for user input
+            executor._progress_controller = progress_controller
+
             async for event in executor.execute_streaming(ensemble_config, input_data):
                 event_type = event["type"]
 

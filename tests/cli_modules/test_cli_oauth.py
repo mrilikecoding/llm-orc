@@ -1,7 +1,7 @@
 """Tests for CLI OAuth authentication commands following TDD approach."""
 
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -12,7 +12,7 @@ from llm_orc.cli import cli
 
 
 @pytest.fixture(autouse=True)
-def mock_expensive_dependencies():
+def mock_expensive_dependencies() -> Generator[None, None, None]:
     """Mock expensive dependencies for all CLI OAuth tests."""
     config_manager_path = (
         "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"

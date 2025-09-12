@@ -13,12 +13,17 @@ Usage:
     echo '{"prompt": "Your name?"}' | python get_user_input.py
 """
 import json
+import os
 import sys
 
 
 def main():
-    # Read configuration from stdin
-    if not sys.stdin.isatty():
+    # Read configuration from environment variables if available, otherwise from stdin
+    if "AGENT_PARAMETERS" in os.environ:
+        # Running in interactive mode - get config from environment
+        config = json.loads(os.environ.get("AGENT_PARAMETERS", "{}"))
+    elif not sys.stdin.isatty():
+        # Running in normal mode - get config from stdin
         config = json.loads(sys.stdin.read())
     else:
         config = {}

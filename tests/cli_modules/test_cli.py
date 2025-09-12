@@ -1,6 +1,7 @@
 """Tests for CLI interface."""
 
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -13,7 +14,7 @@ from llm_orc.cli_modules.utils.config_utils import get_available_providers
 
 
 @pytest.fixture(autouse=True)
-def mock_expensive_file_operations():
+def mock_expensive_file_operations() -> Generator[None, None, None]:
     """Mock expensive file I/O operations for CLI tests."""
     # Mock only the expensive I/O operations, not entire subsystems
     with patch(

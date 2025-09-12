@@ -1,5 +1,6 @@
 """Comprehensive tests for visualization integration."""
 
+from collections.abc import Generator
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -9,7 +10,7 @@ from llm_orc.visualization.integration import VisualizationIntegratedExecutor
 
 
 @pytest.fixture(autouse=True)
-def mock_expensive_dependencies():
+def mock_expensive_dependencies() -> Generator[None, None, None]:
     """Mock expensive dependencies for all visualization integration tests."""
     with patch("llm_orc.core.execution.ensemble_execution.ConfigurationManager"):
         with patch("llm_orc.core.execution.ensemble_execution.CredentialStorage"):

@@ -1,6 +1,7 @@
 """Tests for visualization system."""
 
 import asyncio
+from collections.abc import Generator
 from datetime import datetime
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -10,7 +11,7 @@ from llm_orc.core.config.ensemble_config import EnsembleConfig
 
 
 @pytest.fixture(autouse=True)
-def mock_expensive_dependencies():
+def mock_expensive_dependencies() -> Generator[None, None, None]:
     """Mock expensive dependencies for all visualization tests."""
     with patch("llm_orc.core.execution.ensemble_execution.ConfigurationManager"):
         with patch("llm_orc.core.execution.ensemble_execution.CredentialStorage"):

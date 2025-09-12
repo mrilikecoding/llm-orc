@@ -1,5 +1,6 @@
 """Tests for library CLI commands."""
 
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 from unittest.mock import mock_open, patch
@@ -13,7 +14,7 @@ from llm_orc.cli import cli
 
 
 @pytest.fixture(autouse=True)
-def mock_expensive_dependencies(request):
+def mock_expensive_dependencies(request: Any) -> Generator[None, None, None]:
     """Mock expensive dependencies for CLI library tests."""
     # Skip mocking for tests that specifically test the setup methods
     skip_tests = [

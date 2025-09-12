@@ -524,7 +524,18 @@ class EnsembleExecutor:
             # Sample resources during execution
             self._usage_collector.sample_agent_resources(agent_name)
 
-            response = await script_agent.execute(input_data)
+            # Check if this script requires user input
+            user_input_detection = ScriptUserInputHandler()
+            script_ref = agent_config.get("script", "")
+
+            if user_input_detection.requires_user_input(script_ref):
+                # For scripts that use input(), use interactive execution
+                response = await self._execute_interactive_script_agent(
+                    script_agent, input_data
+                )
+            else:
+                # Use regular execute for non-interactive scripts
+                response = await script_agent.execute(input_data)
 
             # Final sample before completion
             self._usage_collector.sample_agent_resources(agent_name)
@@ -539,6 +550,110 @@ class EnsembleExecutor:
         finally:
             # Always finalize resource monitoring
             self._usage_collector.finalize_agent_resource_monitoring(agent_name)
+
+    async def _execute_interactive_script_agent(
+        self, script_agent: EnhancedScriptAgent, input_data: str
+    ) -> str:
+        """Execute script agent interactively with terminal access for input().
+
+        Args:
+            script_agent: The script agent to execute
+            input_data: Input data for the agent
+
+        Returns:
+            Script output as string
+        """
+        # First try to directly pause the progress display if available
+        if hasattr(self, "_progress_controller"):
+            if self._progress_controller:
+                try:
+                    # Extract prompt from script parameters if available
+                    prompt = script_agent.parameters.get("prompt", "")
+                    self._progress_controller.pause_for_user_input(
+                        script_agent.name, prompt
+                    )
+                except Exception:
+                    pass  # Fall back to event system if direct control fails
+
+        # Also emit event for any other listeners
+        self._emit_performance_event(
+            "user_input_required",
+            {
+                "agent_name": script_agent.name,
+                "script": script_agent.script,
+                "message": "Waiting for user input...",
+            },
+        )
+        import json
+        import os
+        import subprocess
+
+        # Get the resolved script path
+        resolved_script = script_agent._script_resolver.resolve_script_path(
+            script_agent.script
+        )
+
+        if not os.path.exists(resolved_script):
+            raise RuntimeError(f"Script file not found: {resolved_script}")
+
+        # Prepare environment with input data and parameters
+        env = os.environ.copy()
+        env.update(script_agent.environment)
+
+        # Pass data via environment instead of stdin so script can access terminal
+        env["INPUT_DATA"] = input_data
+        env["AGENT_PARAMETERS"] = json.dumps(script_agent.parameters)
+
+        # Determine interpreter
+        interpreter = script_agent._get_interpreter(resolved_script)
+
+        # Execute with stdin inherited but stdout captured
+        # We need stdout for the result, but stdin must be connected to terminal
+        result = subprocess.run(
+            interpreter + [resolved_script],
+            env=env,
+            timeout=script_agent.timeout,
+            stdin=None,  # Inherit stdin from parent (terminal access)
+            stdout=subprocess.PIPE,  # Capture stdout for result
+            stderr=None,  # Let stderr show in terminal
+            text=True,
+            check=False,
+        )
+
+        if result.returncode != 0:
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": f"Script exited with code {result.returncode}",
+                }
+            )
+
+        # First try to directly resume the progress display if available
+        if hasattr(self, "_progress_controller") and self._progress_controller:
+            try:
+                self._progress_controller.resume_from_user_input(script_agent.name)
+            except Exception:
+                pass  # Fall back to event system if direct control fails
+
+        # Also emit event for any other listeners
+        self._emit_performance_event(
+            "user_input_completed",
+            {
+                "agent_name": script_agent.name,
+                "message": "User input completed, continuing...",
+            },
+        )
+
+        # Return the actual script output
+        if result.stdout:
+            return result.stdout.strip()
+        else:
+            return json.dumps(
+                {
+                    "success": True,
+                    "message": "Interactive script completed (no output)",
+                }
+            )
 
     async def _execute_llm_agent(
         self, agent_config: dict[str, Any], input_data: str

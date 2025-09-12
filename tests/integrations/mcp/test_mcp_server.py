@@ -1,5 +1,6 @@
 """Test suite for MCP server implementation."""
 
+from collections.abc import Generator
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -8,7 +9,7 @@ from llm_orc.integrations.mcp.server import MCPServer
 
 
 @pytest.fixture(autouse=True)
-def mock_expensive_dependencies():
+def mock_expensive_dependencies() -> Generator[None, None, None]:
     """Mock expensive MCP server dependencies for all tests."""
     with patch("llm_orc.integrations.mcp.server.EnsembleExecutor"):
         with patch("llm_orc.integrations.mcp.server.ConfigurationManager"):
