@@ -26,9 +26,14 @@
             "description": "Auto-format Python code after file changes"
           },
           {
-            "type": "command", 
+            "type": "command",
             "command": ".claude/hooks/complexity-gate.sh",
             "description": "Check code complexity after changes"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/adr-lifecycle-manager.sh",
+            "description": "Manage ADR status transitions based on BDD progress and implementation milestones"
           }
         ]
       }
