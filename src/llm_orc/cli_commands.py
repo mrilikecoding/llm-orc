@@ -156,6 +156,151 @@ def _display_grouped_ensembles(
             click.echo(f"  {display_name}: {ensemble.description}")
 
 
+def _determine_ensemble_directories(
+    config_manager: ConfigurationManager, config_dir: str | None
+) -> list[Path]:
+    """Determine ensemble directories from config manager or custom directory.
+
+    Args:
+        config_manager: Configuration manager instance
+        config_dir: Custom config directory path or None
+
+    Returns:
+        List of ensemble directories to search
+
+    Raises:
+        click.ClickException: If no ensemble directories found
+    """
+    if config_dir is None:
+        # Use configuration manager to get ensemble directories
+        ensemble_dirs = config_manager.get_ensembles_dirs()
+        if not ensemble_dirs:
+            raise click.ClickException(
+                "No ensemble directories found. Run 'llm-orc config init' to set up "
+                "local configuration."
+            )
+        return ensemble_dirs
+    else:
+        # Use specified config directory
+        return [Path(config_dir)]
+
+
+def _setup_performance_display(
+    config_manager: ConfigurationManager,
+    executor: "EnsembleExecutor",
+    ensemble_name: str,
+    ensemble_config: "EnsembleConfig",
+    streaming: bool,
+    output_format: str | None,
+    input_data: str,
+) -> None:
+    """Setup and display performance configuration for Rich interface.
+
+    Args:
+        config_manager: Configuration manager instance
+        executor: Ensemble executor
+        ensemble_name: Name of the ensemble
+        ensemble_config: Ensemble configuration
+        streaming: Streaming flag from CLI
+        output_format: Output format (None for Rich interface)
+        input_data: Input data for display
+    """
+    if output_format is not None:  # Skip for text/json output
+        return
+
+    try:
+        config_manager.load_performance_config()  # Ensure config is valid
+        coordinator = executor._execution_coordinator
+        effective_concurrency = coordinator.get_effective_concurrency_limit(
+            len(ensemble_config.agents)
+        )
+        click.echo(
+            f"🚀 Executing ensemble '{ensemble_name}' with "
+            f"{len(ensemble_config.agents)} agents"
+        )
+        click.echo(f"⚡ Performance: max_concurrent={effective_concurrency}")
+        click.echo("─" * 50)
+    except Exception:
+        # Fallback to original output if performance config fails
+        click.echo(f"Invoking ensemble: {ensemble_name}")
+        click.echo(f"Description: {ensemble_config.description}")
+        click.echo(f"Agents: {len(ensemble_config.agents)}")
+        click.echo(f"Input: {input_data}")
+        click.echo("---")
+
+
+def _determine_effective_streaming(
+    config_manager: ConfigurationManager,
+    output_format: str,
+    streaming: bool,
+) -> bool:
+    """Determine effective streaming setting based on output format and config.
+
+    Args:
+        config_manager: Configuration manager instance
+        output_format: Output format (text/json/rich)
+        streaming: Streaming flag from CLI
+
+    Returns:
+        Whether to use streaming execution
+    """
+    # For text/JSON output, use standard execution for clean piping output
+    # Only use streaming for Rich interface (default) or when explicitly requested
+    if output_format in ["json", "text"]:
+        return False  # Clean, non-streaming output for piping
+    else:
+        # Default Rich interface - use streaming
+        try:
+            performance_config = config_manager.load_performance_config()
+            return streaming or performance_config.get("streaming_enabled", True)
+        except Exception:
+            # Fallback if performance config fails
+            return streaming  # Use just the CLI flag
+
+
+def _execute_ensemble_with_mode(
+    executor: "EnsembleExecutor",
+    ensemble_config: "EnsembleConfig",
+    input_data: str,
+    output_format: str,
+    detailed: bool,
+    requires_user_input: bool,
+    effective_streaming: bool,
+) -> None:
+    """Execute ensemble with the appropriate execution mode.
+
+    Args:
+        executor: Ensemble executor
+        ensemble_config: Ensemble configuration
+        input_data: Input data for execution
+        output_format: Output format
+        detailed: Detailed output flag
+        requires_user_input: Whether ensemble requires user input
+        effective_streaming: Whether to use streaming execution
+    """
+    if requires_user_input:
+        # Interactive execution with streaming visualization for progress control
+        asyncio.run(
+            run_streaming_execution(
+                executor, ensemble_config, input_data, output_format, detailed
+            )
+        )
+    elif effective_streaming:
+        # Streaming execution with Rich status
+        asyncio.run(
+            run_streaming_execution(
+                executor, ensemble_config, input_data, output_format, detailed
+            )
+        )
+    else:
+        # Standard execution
+        asyncio.run(
+            run_standard_execution(
+                executor, ensemble_config, input_data, output_format, detailed
+            )
+        )
+
+
 def invoke_ensemble(
     ensemble_name: str,
     input_data: str | None,
@@ -171,17 +316,7 @@ def invoke_ensemble(
     config_manager = ConfigurationManager()
 
     # Determine ensemble directories
-    if config_dir is None:
-        # Use configuration manager to get ensemble directories
-        ensemble_dirs = config_manager.get_ensembles_dirs()
-        if not ensemble_dirs:
-            raise click.ClickException(
-                "No ensemble directories found. Run 'llm-orc config init' to set up "
-                "local configuration."
-            )
-    else:
-        # Use specified config directory
-        ensemble_dirs = [Path(config_dir)]
+    ensemble_dirs = _determine_ensemble_directories(config_manager, config_dir)
 
     # Resolve input data using helper method
     input_data = _resolve_input_data(input_data, input_data_option)
@@ -204,71 +339,32 @@ def invoke_ensemble(
         pass  # This would be implemented as needed
 
     # Show performance configuration only for default Rich interface (not text/json)
-    if output_format is None:  # Default Rich interface
-        try:
-            performance_config = config_manager.load_performance_config()
-            coordinator = executor._execution_coordinator
-            effective_concurrency = coordinator.get_effective_concurrency_limit(
-                len(ensemble_config.agents)
-            )
-            # Determine effective streaming setting (CLI flag overrides config)
-            effective_streaming = streaming or performance_config.get(
-                "streaming_enabled", True
-            )
-            click.echo(
-                f"🚀 Executing ensemble '{ensemble_name}' with "
-                f"{len(ensemble_config.agents)} agents"
-            )
-            click.echo(f"⚡ Performance: max_concurrent={effective_concurrency}")
-            click.echo("─" * 50)
-        except Exception:
-            # Fallback to original output if performance config fails
-            click.echo(f"Invoking ensemble: {ensemble_name}")
-            click.echo(f"Description: {ensemble_config.description}")
-            click.echo(f"Agents: {len(ensemble_config.agents)}")
-            click.echo(f"Input: {input_data}")
-            click.echo("---")
+    _setup_performance_display(
+        config_manager,
+        executor,
+        ensemble_name,
+        ensemble_config,
+        streaming,
+        output_format,
+        input_data,
+    )
 
     # Determine effective streaming setting
-    # For text/JSON output, use standard execution for clean piping output
-    # Only use streaming for Rich interface (default) or when explicitly requested
-    if output_format in ["json", "text"]:
-        effective_streaming = False  # Clean, non-streaming output for piping
-    else:
-        # Default Rich interface - use streaming
-        try:
-            performance_config = config_manager.load_performance_config()
-            effective_streaming = streaming or performance_config.get(
-                "streaming_enabled", True
-            )
-        except Exception:
-            # Fallback if performance config fails
-            effective_streaming = streaming  # Use just the CLI flag
+    effective_streaming = _determine_effective_streaming(
+        config_manager, output_format, streaming
+    )
 
     # Execute the ensemble
     try:
-        if requires_user_input:
-            # Interactive execution with streaming visualization for progress control
-            asyncio.run(
-                run_streaming_execution(
-                    executor, ensemble_config, input_data, output_format, detailed
-                )
-            )
-        elif effective_streaming:
-            # Streaming execution with Rich status
-            asyncio.run(
-                run_streaming_execution(
-                    executor, ensemble_config, input_data, output_format, detailed
-                )
-            )
-        else:
-            # Standard execution
-            asyncio.run(
-                run_standard_execution(
-                    executor, ensemble_config, input_data, output_format, detailed
-                )
-            )
-
+        _execute_ensemble_with_mode(
+            executor,
+            ensemble_config,
+            input_data,
+            output_format,
+            detailed,
+            requires_user_input,
+            effective_streaming,
+        )
     except Exception as e:
         raise click.ClickException(f"Ensemble execution failed: {str(e)}") from e
 
