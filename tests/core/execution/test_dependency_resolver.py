@@ -339,6 +339,135 @@ class TestDependencyResolver:
         errors = resolver.validate_dependency_chain([])
         assert errors == []
 
+    def test_enhance_input_with_mixed_dependency_statuses(self) -> None:
+        """Test enhancement with mix of successful, failed, and missing deps."""
+        resolver, mock_role_resolver = self.setup_resolver()
+        mock_role_resolver.side_effect = lambda name: f"{name.title()} Role"
+
+        agents = [{"name": "agent4", "depends_on": ["success", "failed", "missing"]}]
+        results_dict = {
+            "success": {"response": "Good result", "status": "success"},
+            "failed": {"error": "Failed", "status": "failed"},
+            # "missing" not in results_dict
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "base input", agents, results_dict
+        )
+
+        # Should only include successful dependency
+        assert "Agent success (Success Role):" in enhanced["agent4"]
+        assert "Good result" in enhanced["agent4"]
+        assert "failed" not in enhanced["agent4"]
+        assert "missing" not in enhanced["agent4"]
+
+    def test_enhance_input_empty_dependencies_list(self) -> None:
+        """Test enhancement with explicitly empty dependencies list."""
+        resolver, _ = self.setup_resolver()
+
+        agents = [{"name": "agent1", "depends_on": []}]
+        results_dict: dict[str, Any] = {}
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "base input", agents, results_dict
+        )
+
+        assert enhanced["agent1"] == "base input"
+
+    def test_enhance_input_multiple_agents_various_dependencies(self) -> None:
+        """Test enhancement with multiple agents having different patterns."""
+        resolver, mock_role_resolver = self.setup_resolver()
+        mock_role_resolver.side_effect = lambda name: f"{name.title()} Role"
+
+        agents: list[dict[str, Any]] = [
+            {"name": "no_deps", "role": "test"},
+            {"name": "single_dep", "depends_on": ["success1"]},
+            {"name": "multi_deps", "depends_on": ["success1", "success2"]},
+            {"name": "partial_deps", "depends_on": ["success1", "failed1"]},
+        ]
+        results_dict = {
+            "success1": {"response": "First success", "status": "success"},
+            "success2": {"response": "Second success", "status": "success"},
+            "failed1": {"error": "Failed", "status": "failed"},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "base input", agents, results_dict
+        )
+
+        # No dependencies agent
+        assert enhanced["no_deps"] == "base input"
+
+        # Single dependency agent
+        assert "Agent success1 (Success1 Role):" in enhanced["single_dep"]
+        assert "First success" in enhanced["single_dep"]
+
+        # Multiple dependencies agent
+        assert "Agent success1 (Success1 Role):" in enhanced["multi_deps"]
+        assert "Agent success2 (Success2 Role):" in enhanced["multi_deps"]
+        assert "First success" in enhanced["multi_deps"]
+        assert "Second success" in enhanced["multi_deps"]
+
+        # Partial successful dependencies agent
+        assert "Agent success1 (Success1 Role):" in enhanced["partial_deps"]
+        assert "First success" in enhanced["partial_deps"]
+        assert "failed1" not in enhanced["partial_deps"]
+
+    def test_extract_successful_dependency_results_helper(self) -> None:
+        """Test the extracted helper method for getting successful results."""
+        resolver, mock_role_resolver = self.setup_resolver()
+        mock_role_resolver.side_effect = lambda name: f"{name.title()} Role"
+
+        dependencies = ["success", "failed", "missing"]
+        results_dict = {
+            "success": {"response": "Good result", "status": "success"},
+            "failed": {"error": "Failed", "status": "failed"},
+            # "missing" not in results_dict
+        }
+
+        # This method should be extracted during refactoring
+        dependency_results = resolver._extract_successful_dependency_results(
+            dependencies, results_dict
+        )
+
+        assert len(dependency_results) == 1
+        assert "Agent success (Success Role):\nGood result" in dependency_results
+
+    def test_build_enhanced_input_with_dependencies_helper(self) -> None:
+        """Test the extracted helper method for building enhanced input."""
+        resolver, _ = self.setup_resolver()
+
+        agent_name = "test_agent"
+        base_input = "test input"
+        dependency_results = [
+            "Agent dep1 (Dep1 Role):\nResult 1",
+            "Agent dep2 (Dep2 Role):\nResult 2",
+        ]
+
+        # This method should be extracted during refactoring
+        enhanced_input = resolver._build_enhanced_input_with_dependencies(
+            agent_name, base_input, dependency_results
+        )
+
+        assert "You are test_agent" in enhanced_input
+        assert "test input" in enhanced_input
+        assert "Agent dep1 (Dep1 Role):\nResult 1" in enhanced_input
+        assert "Agent dep2 (Dep2 Role):\nResult 2" in enhanced_input
+
+    def test_build_enhanced_input_no_dependencies_helper(self) -> None:
+        """Test the extracted helper method for building input without dependencies."""
+        resolver, _ = self.setup_resolver()
+
+        agent_name = "test_agent"
+        base_input = "test input"
+
+        # This method should be extracted during refactoring
+        enhanced_input = resolver._build_enhanced_input_no_dependencies(
+            agent_name, base_input
+        )
+
+        assert enhanced_input == "You are test_agent. Please respond to: test input"
+
 
 class TestValidateDependencyChainHelperMethods:
     """Test helper methods extracted from validate_dependency_chain for complexity."""

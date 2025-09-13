@@ -1502,8 +1502,8 @@ class TestInteractiveScriptIntegration:
         """
         mock_loader.find_ensemble.return_value = mock_interactive_ensemble_config
 
-        # Mock the executor to support streaming execution (which is used for interactive)
-        async def mock_execute_streaming(*args, **kwargs):
+        # Mock the executor to support streaming execution for interactive
+        async def mock_execute_streaming(*args: Any, **kwargs: Any) -> Any:
             yield {
                 "type": "ensemble_started",
                 "data": {"ensemble_name": "interactive_ensemble"},
@@ -1567,7 +1567,7 @@ class TestInteractiveScriptIntegration:
                 mock_interactive_ensemble_config
             )
 
-            # The actual implementation uses streaming execution for interactive ensembles
+            # The implementation uses streaming execution for interactive ensembles
             # It doesn't have a separate execute_with_user_input method yet
             # Verify that streaming execution was triggered (which handles interactive)
 

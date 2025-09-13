@@ -434,7 +434,7 @@ class TestInvokeEnsembleRefactoredFunctions:
     """
 
     def test_determine_ensemble_directories_with_config_manager(self) -> None:
-        """Test helper function to determine ensemble directories from config manager."""
+        """Test helper function to determine directories from config manager."""
         from llm_orc.cli_commands import _determine_ensemble_directories
 
         mock_config_manager = Mock()

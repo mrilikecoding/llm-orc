@@ -69,7 +69,7 @@ class ScriptUserInputHandler:
     async def handle_input_request(
         self,
         input_request: dict[str, Any],
-        protocol: MessageProtocol,
+        _protocol: MessageProtocol,
         conversation_id: str,
         cli_input_collector: Any,
         ensemble_name: str | None = None,
@@ -79,7 +79,7 @@ class ScriptUserInputHandler:
 
         Args:
             input_request: Dictionary containing input request details
-            protocol: Communication protocol for message passing
+            _protocol: Communication protocol for message passing (unused)
             conversation_id: ID of the conversation
             cli_input_collector: CLI component that collects user input
             ensemble_name: Name of the ensemble being executed

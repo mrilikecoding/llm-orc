@@ -43,7 +43,7 @@ class TestEventDrivenUserInputFlow:
         # Handle input request (this should emit events)
         await handler.handle_input_request(
             input_request=input_request,
-            protocol=Mock(),
+            _protocol=Mock(),
             conversation_id="integration_conv",
             cli_input_collector=cli_input_collector,
             ensemble_name="integration_ensemble",
@@ -116,7 +116,7 @@ class TestEventDrivenUserInputFlow:
         # When
         await handler.handle_input_request(
             input_request=input_request,
-            protocol=Mock(),
+            _protocol=Mock(),
             conversation_id="streaming_conv",
             cli_input_collector=cli_input_collector,
             ensemble_name="streaming_ensemble",
@@ -189,7 +189,7 @@ class TestEventDrivenUserInputFlow:
                 "agent_name": "terminal_agent",
                 "script_path": "/terminal/test.py",
             },
-            protocol=Mock(),
+            _protocol=Mock(),
             conversation_id="terminal_conv",
             cli_input_collector=cli_input_collector,
             ensemble_name="terminal_ensemble",

@@ -179,37 +179,87 @@ class ArtifactManager:
         Returns:
             List of ensemble dictionaries with execution information
         """
-        ensembles: list[dict[str, Any]] = []
         artifacts_dir = self.base_dir / ".llm-orc" / "artifacts"
 
         if not artifacts_dir.exists():
-            return ensembles
+            return []
+
+        ensembles = self._find_ensemble_directories(artifacts_dir)
+        return sorted(ensembles, key=lambda x: x["name"])
+
+    def _find_ensemble_directories(self, artifacts_dir: Path) -> list[dict[str, Any]]:
+        """Find all ensemble directories and their execution information.
+
+        Args:
+            artifacts_dir: Base artifacts directory to search
+
+        Returns:
+            List of ensemble dictionaries with execution information
+        """
+        ensembles: list[dict[str, Any]] = []
 
         # Recursively search for ensemble directories
         for root_path in artifacts_dir.rglob("*"):
             if not root_path.is_dir():
                 continue
 
-            # Check if this directory contains timestamped execution directories
-            execution_dirs = []
-            for item in root_path.iterdir():
-                if item.is_dir() and item.name != "latest":
-                    # Check if this looks like a timestamp directory
-                    if self._is_timestamp_directory(item.name):
-                        execution_dirs.append(item.name)
+            ensemble_info = self._extract_ensemble_info(root_path)
+            if ensemble_info:
+                ensembles.append(ensemble_info)
 
-            if execution_dirs:
-                ensemble_name = root_path.name
-                latest_execution = max(execution_dirs)  # Most recent timestamp
-                ensembles.append(
-                    {
-                        "name": ensemble_name,
-                        "latest_execution": latest_execution,
-                        "executions_count": len(execution_dirs),
-                    }
-                )
+        return ensembles
 
-        return sorted(ensembles, key=lambda x: x["name"])
+    def _extract_ensemble_info(self, directory: Path) -> dict[str, Any] | None:
+        """Extract ensemble information from a directory if it contains executions.
+
+        Args:
+            directory: Directory to check for ensemble executions
+
+        Returns:
+            Ensemble info dict if valid ensemble directory, None otherwise
+        """
+        execution_dirs = self._get_execution_directories(directory)
+
+        if not execution_dirs:
+            return None
+
+        return {
+            "name": directory.name,
+            "latest_execution": max(execution_dirs),
+            "executions_count": len(execution_dirs),
+        }
+
+    def _get_execution_directories(self, ensemble_dir: Path) -> list[str]:
+        """Get list of valid execution directory names from ensemble directory.
+
+        Args:
+            ensemble_dir: Ensemble directory to scan
+
+        Returns:
+            List of valid execution directory names (timestamps)
+        """
+        execution_dirs: list[str] = []
+
+        for item in ensemble_dir.iterdir():
+            if self._is_valid_execution_directory(item):
+                execution_dirs.append(item.name)
+
+        return execution_dirs
+
+    def _is_valid_execution_directory(self, path: Path) -> bool:
+        """Check if path is a valid execution directory.
+
+        Args:
+            path: Path to check
+
+        Returns:
+            True if valid execution directory, False otherwise
+        """
+        return (
+            path.is_dir()
+            and path.name != "latest"
+            and self._is_timestamp_directory(path.name)
+        )
 
     def _is_timestamp_directory(self, name: str) -> bool:
         """Check if directory name looks like a timestamp (YYYYMMDD-HHMMSS-mmm)."""

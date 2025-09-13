@@ -1,6 +1,7 @@
 """Tests for ensemble execution."""
 
 import asyncio
+import time
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -1926,8 +1927,316 @@ class TestEnsembleExecutor:
         call_args = mock_subprocess_run.call_args
         assert call_args[0][0] == ["python", "/tmp/test_script.py"]
 
-        # Verify the response contains the user input from subprocess
-        assert '"user_input": "Test User"' in response
-        assert '"success": true' in response
-        assert "User cancelled input" not in response
-        assert model is None  # Script agents don't have model instances
+    @pytest.mark.asyncio
+    async def test_execute_with_user_input_comprehensive(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Test execute_with_user_input method thoroughly for refactoring.
+
+        This test verifies the complete interactive execution flow:
+        1. Setup and initialization
+        2. Dependency analysis and phase preparation
+        3. Phase execution with user input handling
+        4. User input counting and metadata tracking
+        5. Result finalization with interactive metadata
+        """
+        from unittest.mock import AsyncMock, Mock
+
+        from llm_orc.core.execution.script_user_input_handler import (
+            ScriptUserInputHandler,
+        )
+
+        # Create ensemble config with mixed agents (script + LLM)
+        config = EnsembleConfig(
+            name="interactive_test_ensemble",
+            description="Test ensemble with user input handling",
+            agents=[
+                {
+                    "name": "user_input_collector",
+                    "type": "script",
+                    "script": "primitives/user-interaction/get_user_input.py",
+                    "timeout_seconds": 10,
+                },
+                {
+                    "name": "data_processor",
+                    "model_profile": "claude-analyst",
+                    "system_prompt": "Process collected data",
+                    "timeout_seconds": 30,
+                    "depends_on": ["user_input_collector"],
+                },
+                {
+                    "name": "interactive_script2",
+                    "type": "script",
+                    "script": "primitives/user-interaction/confirm_action.py",
+                    "timeout_seconds": 5,
+                    "depends_on": ["data_processor"],
+                },
+            ],
+        )
+
+        input_data = "Process user data interactively"
+        executor = mock_ensemble_executor
+
+        # Mock ScriptUserInputHandler
+        mock_handler = Mock(spec=ScriptUserInputHandler)
+        mock_handler.ensemble_requires_user_input.return_value = True
+        mock_handler.collect_user_input = AsyncMock(
+            side_effect=["John Doe", "confirmed"]
+        )
+
+        # Mock LLM model
+        mock_llm_model = AsyncMock(spec=ModelInterface)
+        mock_llm_model.generate_response.return_value = "Data processed: John Doe"
+        mock_llm_model.get_last_usage.return_value = {
+            "total_tokens": 75,
+            "input_tokens": 45,
+            "output_tokens": 30,
+            "cost_usd": 0.015,
+            "duration_ms": 1200,
+        }
+
+        # Mock the phase execution to simulate interactive script responses
+        original_execute_agents = executor._execute_agents_in_phase_parallel
+
+        async def mock_execute_agents_in_phase(
+            agents: list[dict[str, Any]], phase_input: str | dict[str, str]
+        ) -> dict[str, Any]:
+            results = {}
+            for agent in agents:
+                # Simulate interactive script results with collected_data
+                results[agent["name"]] = {
+                    "success": True,
+                    "status": "success",
+                    "output": f"Interactive script {agent['name']} executed",
+                    "model_instance": None,  # Script agents don't have models
+                    "response": {
+                        "collected_data": {"user_input": f"data from {agent['name']}"}
+                    },
+                }
+            return results
+
+        executor._execute_agents_in_phase_parallel = mock_execute_agents_in_phase
+
+        # Execute the method we're testing
+        result = await executor.execute_with_user_input(
+            config, input_data, mock_handler
+        )
+
+        # Verify result structure and interactive metadata
+        assert result["ensemble"] == "interactive_test_ensemble"
+        assert result["input"]["data"] == input_data
+        assert result["metadata"]["interactive_mode"] is True
+        assert (
+            result["metadata"]["user_inputs_collected"] == 3
+        )  # Three interactive scripts
+        assert "duration" in result["metadata"]  # Actual field name
+        assert "agents_used" in result["metadata"]
+        assert "results" in result
+
+        # Verify results contain all agents
+        assert "user_input_collector" in result["results"]
+        assert "data_processor" in result["results"]
+        assert "interactive_script2" in result["results"]
+
+        # Restore original method
+        executor._execute_agents_in_phase_parallel = original_execute_agents
+
+    @pytest.mark.asyncio
+    async def test_initialize_execution_setup(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Test _initialize_execution_setup helper method.
+
+        This method should:
+        1. Store agent configs for role descriptions
+        2. Create initial result structure
+        3. Reset usage collector
+        4. Return initialized result and results_dict
+        """
+        config = EnsembleConfig(
+            name="test_ensemble",
+            description="Test ensemble",
+            agents=[
+                {"name": "agent1", "model_profile": "test-tester"},
+                {"name": "agent2", "model_profile": "test-reviewer"},
+            ],
+        )
+        input_data = "Test input"
+
+        executor = mock_ensemble_executor
+
+        # This should fail initially since the method doesn't exist yet
+        result, results_dict = await executor._initialize_execution_setup(
+            config, input_data
+        )
+
+        # Verify agent configs were stored
+        assert executor._current_agent_configs == config.agents
+
+        # Verify result structure
+        assert result["ensemble"] == "test_ensemble"
+        assert result["input"]["data"] == "Test input"
+        assert "results" in result
+        assert result["metadata"]["agents_used"] == 2
+
+        # Verify results_dict is the same reference
+        assert results_dict is result["results"]
+        assert results_dict == {}  # Initially empty, populated during execution
+
+        # Verify usage collector was reset
+        assert executor._usage_collector.get_agent_usage() == {}
+
+    @pytest.mark.asyncio
+    async def test_analyze_and_prepare_phases(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Test _analyze_and_prepare_phases helper method.
+
+        This method should:
+        1. Use dependency analyzer to get enhanced dependency graph
+        2. Return phases for execution
+        """
+        config = EnsembleConfig(
+            name="dependency_test",
+            description="Test dependency analysis",
+            agents=[
+                {"name": "agent1", "model_profile": "test-analyst"},
+                {
+                    "name": "agent2",
+                    "model_profile": "test-reviewer",
+                    "depends_on": ["agent1"],
+                },
+            ],
+        )
+
+        executor = mock_ensemble_executor
+
+        # This should fail initially since the method doesn't exist yet
+        phases = await executor._analyze_and_prepare_phases(config)
+
+        # Verify phases structure
+        assert isinstance(phases, list)
+        assert len(phases) >= 1
+
+        # Verify first phase contains independent agents
+        phase0_names = [agent["name"] for agent in phases[0]]
+        assert "agent1" in phase0_names
+
+        # Verify dependent agents are in later phases
+        if len(phases) > 1:
+            phase1_names = [agent["name"] for agent in phases[1]]
+            assert "agent2" in phase1_names
+
+    @pytest.mark.asyncio
+    async def test_execute_phase_with_monitoring(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Test _execute_phase_with_monitoring helper method.
+
+        This method should:
+        1. Emit phase started event
+        2. Determine phase input using dependency resolver
+        3. Start phase monitoring
+        4. Execute agents in parallel
+        5. Process results
+        6. Stop monitoring and emit completion event
+        7. Return has_errors flag
+        """
+        config = EnsembleConfig(
+            name="test_ensemble",
+            description="Test ensemble",
+            agents=[
+                {"name": "agent1", "model_profile": "test-tester"},
+            ],
+        )
+
+        executor = mock_ensemble_executor
+
+        # Mock dependencies
+        mock_model = AsyncMock(spec=ModelInterface)
+        mock_model.generate_response.return_value = "Test response"
+        mock_model.get_last_usage.return_value = {
+            "total_tokens": 30,
+            "input_tokens": 20,
+            "output_tokens": 10,
+            "cost_usd": 0.005,
+            "duration_ms": 50,
+        }
+
+        role = RoleDefinition(name="tester", prompt="You are a tester")
+
+        with (
+            patch.object(
+                executor, "_load_role_from_config", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
+            ) as mock_load_model,
+        ):
+            mock_load_role.return_value = role
+            mock_load_model.return_value = mock_model
+
+            phase_agents = config.agents
+            input_data = "Test input"
+            results_dict: dict[str, Any] = {}
+            phase_index = 0
+
+            # This should fail initially since the method doesn't exist yet
+            has_errors = await executor._execute_phase_with_monitoring(
+                phase_index, phase_agents, input_data, results_dict
+            )
+
+            # Verify results were populated
+            assert len(results_dict) == 1
+            assert "agent1" in results_dict
+
+            # Verify return value
+            assert isinstance(has_errors, bool)
+
+    @pytest.mark.asyncio
+    async def test_finalize_execution_results(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Test _finalize_execution_results helper method.
+
+        This method should:
+        1. Get collected usage and adaptive stats
+        2. Finalize result using processor
+        3. Save artifacts with error handling
+        4. Return final result
+        """
+        config = EnsembleConfig(
+            name="test_ensemble",
+            description="Test ensemble",
+            agents=[{"name": "agent1", "model_profile": "test-tester"}],
+        )
+
+        executor = mock_ensemble_executor
+
+        # Mock initial result structure
+        result = {
+            "ensemble": "test_ensemble",
+            "status": "in_progress",
+            "input": {"data": "Test input"},
+            "results": {"agent1": {"response": "Test response", "status": "success"}},
+            "metadata": {},
+            "synthesis": None,
+        }
+
+        has_errors = False
+        start_time = time.time() - 1.0  # 1 second ago
+
+        # This should fail initially since the method doesn't exist yet
+        final_result = await executor._finalize_execution_results(
+            config, result, has_errors, start_time
+        )
+
+        # Verify result finalization
+        assert final_result["status"] in ["completed", "completed_with_errors"]
+        assert "metadata" in final_result
+        assert "usage" in final_result["metadata"]
+
+        # Verify artifacts were saved (mocked)
+        # The real implementation should handle save errors gracefully

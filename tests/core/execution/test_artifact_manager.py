@@ -657,6 +657,160 @@ class TestArtifactManagerMirroredDirectoryStructure:
         assert execution_results["compatibility"] == "maintained"
 
 
+class TestArtifactManagerListEnsembles:
+    """Test list_ensembles method comprehensive coverage."""
+
+    def test_list_ensembles_returns_empty_list_when_no_artifacts_dir(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test list_ensembles returns empty list when artifacts dir doesn't exist."""
+        # No artifacts created, directory shouldn't exist
+        ensembles = artifact_manager.list_ensembles()
+        assert ensembles == []
+
+    def test_list_ensembles_returns_empty_list_when_artifacts_dir_empty(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test that list_ensembles returns empty list when artifacts dir is empty."""
+        # Create empty artifacts directory
+        artifacts_dir = temp_dir / ".llm-orc" / "artifacts"
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+
+        ensembles = artifact_manager.list_ensembles()
+        assert ensembles == []
+
+    def test_list_ensembles_ignores_non_timestamp_directories(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test list_ensembles ignores directories without valid timestamps."""
+        artifacts_dir = temp_dir / ".llm-orc" / "artifacts"
+
+        # Create ensemble directory with non-timestamp subdirectories
+        ensemble_dir = artifacts_dir / "test-ensemble"
+        ensemble_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create non-timestamp directories
+        (ensemble_dir / "not-a-timestamp").mkdir()
+        (ensemble_dir / "20241301-9999").mkdir()  # Wrong format (too short)
+        (ensemble_dir / "latest").mkdir()  # Should be ignored
+        (ensemble_dir / "some-other-dir").mkdir()
+
+        ensembles = artifact_manager.list_ensembles()
+        assert ensembles == []
+
+    def test_list_ensembles_ignores_files_in_search(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test that list_ensembles ignores files during recursive search."""
+        artifacts_dir = temp_dir / ".llm-orc" / "artifacts"
+
+        # Create some files in artifacts directory
+        artifacts_dir.mkdir(parents=True, exist_ok=True)
+        (artifacts_dir / "some-file.txt").write_text("content")
+
+        # Create nested files
+        nested_dir = artifacts_dir / "nested"
+        nested_dir.mkdir()
+        (nested_dir / "another-file.json").write_text("{}")
+
+        ensembles = artifact_manager.list_ensembles()
+        assert ensembles == []
+
+    def test_list_ensembles_finds_single_ensemble_with_single_execution(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test list_ensembles finds single ensemble with one execution."""
+        artifact_manager.save_execution_results(
+            ensemble_name="simple-ensemble",
+            results={"test": "data"},
+            timestamp="20240115-103000-123",
+        )
+
+        ensembles = artifact_manager.list_ensembles()
+
+        assert len(ensembles) == 1
+        assert ensembles[0]["name"] == "simple-ensemble"
+        assert ensembles[0]["latest_execution"] == "20240115-103000-123"
+        assert ensembles[0]["executions_count"] == 1
+
+    def test_list_ensembles_finds_single_ensemble_with_multiple_executions(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test list_ensembles finds single ensemble with multiple executions."""
+        timestamps = [
+            "20240115-103000-123",
+            "20240115-104000-456",
+            "20240115-105000-789",
+        ]
+
+        for timestamp in timestamps:
+            artifact_manager.save_execution_results(
+                ensemble_name="multi-exec-ensemble",
+                results={"timestamp": timestamp},
+                timestamp=timestamp,
+            )
+
+        ensembles = artifact_manager.list_ensembles()
+
+        assert len(ensembles) == 1
+        assert ensembles[0]["name"] == "multi-exec-ensemble"
+        assert ensembles[0]["latest_execution"] == "20240115-105000-789"  # Latest
+        assert ensembles[0]["executions_count"] == 3
+
+    def test_list_ensembles_finds_multiple_ensembles(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test list_ensembles finds multiple ensembles and sorts by name."""
+        # Create ensembles in non-alphabetical order to test sorting
+        ensembles_data = [
+            ("zebra-ensemble", "20240115-103000-123", 1),
+            ("alpha-ensemble", "20240115-104000-456", 1),
+            ("beta-ensemble", "20240115-105000-789", 1),
+        ]
+
+        for name, timestamp, _ in ensembles_data:
+            artifact_manager.save_execution_results(
+                ensemble_name=name,
+                results={"name": name},
+                timestamp=timestamp,
+            )
+
+        ensembles = artifact_manager.list_ensembles()
+
+        assert len(ensembles) == 3
+        # Should be sorted alphabetically
+        assert ensembles[0]["name"] == "alpha-ensemble"
+        assert ensembles[1]["name"] == "beta-ensemble"
+        assert ensembles[2]["name"] == "zebra-ensemble"
+
+    def test_list_ensembles_handles_deeply_nested_structure(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test list_ensembles finds ensembles in deeply nested directory structures."""
+        # Create ensembles with relative paths (mirrored structure)
+        deep_ensembles = [
+            ("deep-ensemble-1", "research/ai/nlp/transformers"),
+            ("deep-ensemble-2", "creative/writing/poetry"),
+            ("shallow-ensemble", "simple"),
+        ]
+
+        for name, relative_path in deep_ensembles:
+            artifact_manager.save_execution_results(
+                ensemble_name=name,
+                results={"path": relative_path},
+                timestamp="20240115-103000-123",
+                relative_path=relative_path,
+            )
+
+        ensembles = artifact_manager.list_ensembles()
+
+        assert len(ensembles) == 3
+        found_names = [e["name"] for e in ensembles]
+        assert "deep-ensemble-1" in found_names
+        assert "deep-ensemble-2" in found_names
+        assert "shallow-ensemble" in found_names
+
+
 class TestArtifactManagerEndToEndIntegration:
     """End-to-end integration tests for mirrored directory structure."""
 

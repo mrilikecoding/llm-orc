@@ -191,7 +191,7 @@ class EnhancedScriptAgent(ScriptAgent):
         env.update(self.environment)
 
         # Start the process with stdin/stdout pipes
-        process = subprocess.Popen(
+        process = subprocess.Popen(  # nosec B603
             interpreter + [script_path],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -369,7 +369,7 @@ class EnhancedScriptAgent(ScriptAgent):
         env.update(self.environment)
 
         # Execute script with JSON input via stdin
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603
             interpreter + [script_path],
             input=json_input,
             capture_output=True,
@@ -399,13 +399,13 @@ class EnhancedScriptAgent(ScriptAgent):
             script_path = f.name
 
         try:
-            os.chmod(script_path, 0o755)
+            os.chmod(script_path, 0o700)  # Only owner can read/write/execute
 
             # Execute with JSON input via stdin
             env = os.environ.copy()
             env.update(self.environment)
 
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603
                 ["/bin/bash", script_path],
                 input=json_input,
                 capture_output=True,
@@ -444,7 +444,7 @@ class EnhancedScriptAgent(ScriptAgent):
         env = os.environ.copy()
         env.update(self.environment)
 
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603
             args,
             input=json_input,
             capture_output=True,

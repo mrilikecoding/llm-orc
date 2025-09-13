@@ -231,7 +231,7 @@ def _setup_performance_display(
 
 def _determine_effective_streaming(
     config_manager: ConfigurationManager,
-    output_format: str,
+    output_format: str | None,
     streaming: bool,
 ) -> bool:
     """Determine effective streaming setting based on output format and config.
@@ -262,7 +262,7 @@ def _execute_ensemble_with_mode(
     executor: "EnsembleExecutor",
     ensemble_config: "EnsembleConfig",
     input_data: str,
-    output_format: str,
+    output_format: str | None,
     detailed: bool,
     requires_user_input: bool,
     effective_streaming: bool,
@@ -278,25 +278,28 @@ def _execute_ensemble_with_mode(
         requires_user_input: Whether ensemble requires user input
         effective_streaming: Whether to use streaming execution
     """
+    # Convert None output_format to "rich" for execution functions
+    execution_format = output_format or "rich"
+
     if requires_user_input:
         # Interactive execution with streaming visualization for progress control
         asyncio.run(
             run_streaming_execution(
-                executor, ensemble_config, input_data, output_format, detailed
+                executor, ensemble_config, input_data, execution_format, detailed
             )
         )
     elif effective_streaming:
         # Streaming execution with Rich status
         asyncio.run(
             run_streaming_execution(
-                executor, ensemble_config, input_data, output_format, detailed
+                executor, ensemble_config, input_data, execution_format, detailed
             )
         )
     else:
         # Standard execution
         asyncio.run(
             run_standard_execution(
-                executor, ensemble_config, input_data, output_format, detailed
+                executor, ensemble_config, input_data, execution_format, detailed
             )
         )
 
@@ -306,7 +309,7 @@ def invoke_ensemble(
     input_data: str | None,
     config_dir: str | None,
     input_data_option: str | None,
-    output_format: str,
+    output_format: str | None,
     streaming: bool,
     max_concurrent: int | None,
     detailed: bool,

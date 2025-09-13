@@ -246,38 +246,17 @@ class EnsembleExecutor:
         # Continue with standard execution for non-interactive ensembles
         start_time = time.time()
 
-        # Store agent configs for role descriptions
-        self._current_agent_configs = config.agents
-
-        # Initialize result structure using ResultsProcessor
-        result = self._results_processor.create_initial_result(
-            config.name, input_data, len(config.agents)
+        # Initialize execution setup
+        result, results_dict = await self._initialize_execution_setup(
+            config, input_data
         )
-        results_dict: dict[str, Any] = result["results"]
 
-        # Reset usage collector for this execution
-        self._usage_collector.reset()
-
-        # Execute agents in dependency order (not type-based phases)
-        has_errors = False
-
-        # Use dependency analyzer for ALL agents (script and LLM)
-        dependency_analysis = (
-            self._dependency_analyzer.analyze_enhanced_dependency_graph(config.agents)
-        )
-        phases = dependency_analysis["phases"]
+        # Analyze dependencies and prepare phases
+        phases = await self._analyze_and_prepare_phases(config)
 
         # Execute agents in dependency-based phases
+        has_errors = False
         for phase_index, phase_agents in enumerate(phases):
-            self._emit_performance_event(
-                "phase_started",
-                {
-                    "phase_index": phase_index,
-                    "phase_agents": [agent["name"] for agent in phase_agents],
-                    "total_phases": len(phases),
-                },
-            )
-
             # Determine input for this phase using DependencyResolver
             if phase_index == 0:
                 # First phase uses the base input
@@ -288,49 +267,16 @@ class EnsembleExecutor:
                     input_data, phase_agents, results_dict
                 )
 
-            # Start per-phase monitoring for performance feedback
-            phase_start_time = time.time()
-            await self._start_phase_monitoring(phase_index, phase_agents)
-
-            try:
-                # Execute agents in this phase in parallel
-                phase_results = await self._execute_agents_in_phase_parallel(
-                    phase_agents, phase_input
-                )
-
-                # Process parallel execution results
-                phase_has_errors = self._process_phase_results(
-                    phase_results, results_dict, phase_agents
-                )
-                has_errors = has_errors or phase_has_errors
-
-            finally:
-                # Stop per-phase monitoring and collect metrics
-                phase_duration = time.time() - phase_start_time
-                await self._stop_phase_monitoring(
-                    phase_index, phase_agents, phase_duration
-                )
-
-            # Emit phase completion event
-            self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
-
-        # Get collected usage and adaptive stats, then finalize result using processor
-        agent_usage = self._usage_collector.get_agent_usage()
-        adaptive_stats = self._agent_executor.get_adaptive_stats()
-        final_result = self._results_processor.finalize_result(
-            result, agent_usage, has_errors, start_time, adaptive_stats
-        )
-
-        # Save artifacts (don't fail execution if saving fails)
-        try:
-            self._artifact_manager.save_execution_results(
-                config.name, final_result, relative_path=config.relative_path
+            # Execute phase with full monitoring
+            phase_has_errors = await self._execute_phase_with_monitoring(
+                phase_index, phase_agents, phase_input, results_dict, len(phases)
             )
-        except Exception:
-            # Silently ignore artifact saving errors to not break execution
-            pass
+            has_errors = has_errors or phase_has_errors
 
-        return final_result
+        # Finalize results with usage, stats, and artifact saving
+        return await self._finalize_execution_results(
+            config, result, has_errors, start_time
+        )
 
     def _detect_interactive_ensemble(self, config: EnsembleConfig) -> bool:
         """Detect if ensemble contains scripts that require user input.
@@ -355,6 +301,105 @@ class EnsembleExecutor:
         """
         return ScriptUserInputHandler()
 
+    async def _initialize_execution_setup(
+        self, config: EnsembleConfig, input_data: str
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Initialize execution setup.
+
+        Args:
+            config: Ensemble configuration
+            input_data: Initial input data
+
+        Returns:
+            Tuple of (result, results_dict)
+        """
+        # Store agent configs for role descriptions
+        self._current_agent_configs = config.agents
+
+        # Initialize result structure using ResultsProcessor
+        result = self._results_processor.create_initial_result(
+            config.name, input_data, len(config.agents)
+        )
+        results_dict: dict[str, Any] = result["results"]
+
+        # Reset usage collector for this execution
+        self._usage_collector.reset()
+
+        return result, results_dict
+
+    async def _analyze_and_prepare_phases(
+        self, config: EnsembleConfig
+    ) -> list[list[dict[str, Any]]]:
+        """Analyze dependencies and prepare execution phases.
+
+        Args:
+            config: Ensemble configuration
+
+        Returns:
+            List of phases, each containing list of agent configs
+        """
+        # Use dependency analyzer for ALL agents (script and LLM)
+        dependency_analysis = (
+            self._dependency_analyzer.analyze_enhanced_dependency_graph(config.agents)
+        )
+        phases: list[list[dict[str, Any]]] = dependency_analysis["phases"]
+        return phases
+
+    async def _execute_phase_with_monitoring(
+        self,
+        phase_index: int,
+        phase_agents: list[dict[str, Any]],
+        input_data: str | dict[str, str],
+        results_dict: dict[str, Any],
+        total_phases: int = 1,
+    ) -> bool:
+        """Execute a phase with full monitoring and event handling.
+
+        Args:
+            phase_index: Index of the current phase
+            phase_agents: List of agent configs for this phase
+            input_data: Input data for this phase (base or enhanced with dependencies)
+            results_dict: Results dictionary to populate
+            total_phases: Total number of phases for event reporting
+
+        Returns:
+            True if any errors occurred in this phase
+        """
+        # Emit phase started event
+        self._emit_performance_event(
+            "phase_started",
+            {
+                "phase_index": phase_index,
+                "phase_agents": [agent["name"] for agent in phase_agents],
+                "total_phases": total_phases,
+            },
+        )
+
+        # Start per-phase monitoring for performance feedback
+        phase_start_time = time.time()
+        await self._start_phase_monitoring(phase_index, phase_agents)
+
+        try:
+            # Execute agents in this phase in parallel
+            phase_results = await self._execute_agents_in_phase_parallel(
+                phase_agents, input_data
+            )
+
+            # Process parallel execution results
+            phase_has_errors = self._process_phase_results(
+                phase_results, results_dict, phase_agents
+            )
+
+        finally:
+            # Stop per-phase monitoring and collect metrics
+            phase_duration = time.time() - phase_start_time
+            await self._stop_phase_monitoring(phase_index, phase_agents, phase_duration)
+
+        # Emit phase completion event
+        self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
+
+        return phase_has_errors
+
     async def execute_with_user_input(
         self,
         config: EnsembleConfig,
@@ -376,41 +421,19 @@ class EnsembleExecutor:
         """
         start_time = time.time()
 
-        # Store agent configs for role descriptions
-        self._current_agent_configs = config.agents
-
-        # Initialize result structure using ResultsProcessor
-        result = self._results_processor.create_initial_result(
-            config.name, input_data, len(config.agents)
+        # Initialize execution setup using existing helper
+        result, results_dict = await self._initialize_execution_setup(
+            config, input_data
         )
-        results_dict: dict[str, Any] = result["results"]
 
-        # Reset usage collector for this execution
-        self._usage_collector.reset()
+        # Analyze dependencies and prepare phases using existing helper
+        phases = await self._analyze_and_prepare_phases(config)
 
-        # Track user inputs collected
+        # Execute agents in dependency-based phases with user input tracking
+        has_errors = False
         user_inputs_collected = 0
 
-        # Execute agents in dependency order (not type-based phases)
-        has_errors = False
-
-        # Use dependency analyzer for ALL agents (script and LLM)
-        dependency_analysis = (
-            self._dependency_analyzer.analyze_enhanced_dependency_graph(config.agents)
-        )
-        phases = dependency_analysis["phases"]
-
-        # Execute agents in dependency-based phases
         for phase_index, phase_agents in enumerate(phases):
-            self._emit_performance_event(
-                "phase_started",
-                {
-                    "phase_index": phase_index,
-                    "phase_agents": [agent["name"] for agent in phase_agents],
-                    "total_phases": len(phases),
-                },
-            )
-
             # Determine input for this phase using DependencyResolver
             if phase_index == 0:
                 # First phase uses the base input
@@ -421,52 +444,145 @@ class EnsembleExecutor:
                     input_data, phase_agents, results_dict
                 )
 
-            # Start per-phase monitoring for performance feedback
-            phase_start_time = time.time()
-            await self._start_phase_monitoring(phase_index, phase_agents)
+            # Execute phase with monitoring and user input counting
+            (
+                phase_has_errors,
+                user_inputs_from_phase,
+            ) = await self._execute_phase_with_monitoring_interactive(
+                phase_index, phase_agents, phase_input, results_dict, len(phases)
+            )
 
-            try:
-                # Execute agents in this phase in parallel
-                # For interactive mode, we handle user input collection here
-                phase_results = await self._execute_agents_in_phase_parallel(
-                    phase_agents, phase_input
-                )
+            has_errors = has_errors or phase_has_errors
+            user_inputs_collected += user_inputs_from_phase
 
-                # Check if any script agents required user input and count them
-                for _agent_name, agent_result in phase_results.items():
-                    if agent_result.get("response") and isinstance(
-                        agent_result["response"], dict
-                    ):
-                        # Check if this was an interactive script result
-                        if agent_result["response"].get("collected_data"):
-                            user_inputs_collected += 1
+        # Finalize results using existing helper
+        final_result = await self._finalize_execution_results(
+            config, result, has_errors, start_time
+        )
 
-                # Process parallel execution results
-                phase_has_errors = self._process_phase_results(
-                    phase_results, results_dict, phase_agents
-                )
-                has_errors = has_errors or phase_has_errors
+        # Add interactive-specific metadata using helper
+        self._add_interactive_metadata(final_result, user_inputs_collected)
 
-            finally:
-                # Stop per-phase monitoring and collect metrics
-                phase_duration = time.time() - phase_start_time
-                await self._stop_phase_monitoring(
-                    phase_index, phase_agents, phase_duration
-                )
+        return final_result
 
-            # Emit phase completion event
-            self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
+    def _count_user_inputs_from_phase_results(
+        self, phase_results: dict[str, Any]
+    ) -> int:
+        """Count user inputs collected from phase results.
 
+        Args:
+            phase_results: Results from executing agents in a phase
+
+        Returns:
+            Number of user inputs collected
+        """
+        user_inputs_collected = 0
+        for _agent_name, agent_result in phase_results.items():
+            if agent_result.get("response") and isinstance(
+                agent_result["response"], dict
+            ):
+                # Check if this was an interactive script result
+                if agent_result["response"].get("collected_data"):
+                    user_inputs_collected += 1
+        return user_inputs_collected
+
+    def _add_interactive_metadata(
+        self, final_result: dict[str, Any], user_inputs_collected: int
+    ) -> None:
+        """Add interactive mode metadata to final result.
+
+        Args:
+            final_result: The final result dictionary to modify
+            user_inputs_collected: Number of user inputs collected
+        """
+        final_result["metadata"]["interactive_mode"] = True
+        final_result["metadata"]["user_inputs_collected"] = user_inputs_collected
+
+    async def _execute_phase_with_monitoring_interactive(
+        self,
+        phase_index: int,
+        phase_agents: list[dict[str, Any]],
+        input_data: str | dict[str, str],
+        results_dict: dict[str, Any],
+        total_phases: int = 1,
+    ) -> tuple[bool, int]:
+        """Execute a phase with monitoring and user input counting.
+
+        Args:
+            phase_index: Index of the current phase
+            phase_agents: List of agent configs for this phase
+            input_data: Input data for this phase (base or enhanced with dependencies)
+            results_dict: Results dictionary to populate
+            total_phases: Total number of phases for event reporting
+
+        Returns:
+            Tuple of (has_errors, user_inputs_collected)
+        """
+        # Emit phase started event
+        self._emit_performance_event(
+            "phase_started",
+            {
+                "phase_index": phase_index,
+                "phase_agents": [agent["name"] for agent in phase_agents],
+                "total_phases": total_phases,
+            },
+        )
+
+        # Start per-phase monitoring for performance feedback
+        phase_start_time = time.time()
+        await self._start_phase_monitoring(phase_index, phase_agents)
+
+        try:
+            # Execute agents in this phase in parallel
+            # For interactive mode, we handle user input collection here
+            phase_results = await self._execute_agents_in_phase_parallel(
+                phase_agents, input_data
+            )
+
+            # Count user inputs from phase results
+            user_inputs_from_phase = self._count_user_inputs_from_phase_results(
+                phase_results
+            )
+
+            # Process parallel execution results
+            phase_has_errors = self._process_phase_results(
+                phase_results, results_dict, phase_agents
+            )
+
+        finally:
+            # Stop per-phase monitoring and collect metrics
+            phase_duration = time.time() - phase_start_time
+            await self._stop_phase_monitoring(phase_index, phase_agents, phase_duration)
+
+        # Emit phase completion event
+        self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
+
+        return phase_has_errors, user_inputs_from_phase
+
+    async def _finalize_execution_results(
+        self,
+        config: EnsembleConfig,
+        result: dict[str, Any],
+        has_errors: bool,
+        start_time: float,
+    ) -> dict[str, Any]:
+        """Finalize execution results with usage, stats, and artifact saving.
+
+        Args:
+            config: Ensemble configuration
+            result: Initial result structure
+            has_errors: Whether any errors occurred during execution
+            start_time: Execution start time
+
+        Returns:
+            Finalized result dictionary
+        """
         # Get collected usage and adaptive stats, then finalize result using processor
         agent_usage = self._usage_collector.get_agent_usage()
         adaptive_stats = self._agent_executor.get_adaptive_stats()
         final_result = self._results_processor.finalize_result(
             result, agent_usage, has_errors, start_time, adaptive_stats
         )
-
-        # Add interactive mode metadata
-        final_result["metadata"]["interactive_mode"] = True
-        final_result["metadata"]["user_inputs_collected"] = user_inputs_collected
 
         # Save artifacts (don't fail execution if saving fails)
         try:
@@ -633,7 +749,8 @@ class EnsembleExecutor:
             try:
                 self._progress_controller.resume_from_user_input(script_agent.name)
             except Exception:
-                pass  # Fall back to event system if direct control fails
+                # Fall back to event system if direct control fails  # nosec B110
+                pass
 
         # Also emit event for any other listeners
         self._emit_performance_event(
