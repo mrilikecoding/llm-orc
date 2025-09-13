@@ -9,8 +9,7 @@ from typing import Any
 
 import pytest
 
-# Import existing fixtures from main test suite
-pytest_plugins = ["tests.conftest"]
+# Import existing fixtures from main test suite - moved to top-level conftest.py
 
 
 @pytest.fixture

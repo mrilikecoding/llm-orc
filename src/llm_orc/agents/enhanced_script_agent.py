@@ -10,6 +10,7 @@ from typing import Any
 
 from llm_orc.agents.script_agent import ScriptAgent
 from llm_orc.core.execution.script_resolver import ScriptResolver
+from llm_orc.schemas.script_agent import ScriptAgentInput, ScriptAgentOutput
 
 
 class EnhancedScriptAgent(ScriptAgent):
@@ -97,6 +98,45 @@ class EnhancedScriptAgent(ScriptAgent):
             )
         except Exception as e:
             return json.dumps({"success": False, "error": str(e)})
+
+    async def execute_with_schema(
+        self, input_schema: ScriptAgentInput
+    ) -> ScriptAgentOutput:
+        """Execute script with Pydantic schema validation (ADR-001).
+
+        Args:
+            input_schema: Validated input schema
+
+        Returns:
+            Validated output schema
+
+        Raises:
+            ValueError: If schema validation fails
+        """
+        try:
+            # Execute script with schema data
+            raw_result = await self.execute(
+                input_schema.input_data,
+                {"dependencies": input_schema.dependencies, **input_schema.context},
+            )
+
+            # Parse the raw JSON result
+            result_dict = json.loads(raw_result)
+
+            # Validate and return as ScriptAgentOutput schema
+            return ScriptAgentOutput(**result_dict)
+
+        except json.JSONDecodeError as e:
+            # Handle non-JSON output
+            return ScriptAgentOutput(
+                success=False,
+                error=f"Script output is not valid JSON: {str(e)}",
+                data=raw_result if "raw_result" in locals() else None,
+            )
+        except Exception as e:
+            # Handle execution errors with proper exception chaining (ADR-003)
+            error_msg = f"Schema-based execution failed for {input_schema.agent_name}"
+            return ScriptAgentOutput(success=False, error=f"{error_msg}: {str(e)}")
 
     async def execute_with_user_input(
         self,

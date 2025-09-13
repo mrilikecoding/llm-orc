@@ -10,6 +10,9 @@ import pytest
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
+# Enable BDD testing with pytest-bdd
+pytest_plugins = ["pytest_bdd"]
+
 
 @pytest.fixture(autouse=True)
 def cleanup_test_artifacts() -> Generator[None, None, None]:
