@@ -52,7 +52,15 @@ if [ -n "$ISSUE_NUMBER" ]; then
         export COMMITS_COUNT="$COMMITS_SINCE_MAIN"
         export FILES_CHANGED="$CHANGED_FILES"
         
-        # Output JSON context for Claude to use with feature-analyzer
+        # Check if BDD scenarios exist for this issue
+        BDD_SCENARIOS=""
+        if [ -f "tests/bdd/features/issue-${ISSUE_NUMBER}.feature" ]; then
+            BDD_SCENARIOS="present"
+        else
+            BDD_SCENARIOS="missing"
+        fi
+        
+        # Output JSON context for Claude to use with feature agents
         cat << EOF
 {
   "featureContext": {
@@ -60,8 +68,9 @@ if [ -n "$ISSUE_NUMBER" ]; then
     "issueNumber": "$ISSUE_NUMBER",
     "commitsSinceMain": $COMMITS_SINCE_MAIN,
     "filesChanged": $CHANGED_FILES,
+    "bddScenarios": "$BDD_SCENARIOS",
     "shouldAnalyzeProgress": true,
-    "message": "Use the feature-analyzer agent to analyze development progress for issue #$ISSUE_NUMBER on branch '$CURRENT_BRANCH'. Then use progress-updater agent to update CHANGELOG with findings."
+    "message": "Use the feature-analyzer agent to analyze development progress for issue #$ISSUE_NUMBER on branch '$CURRENT_BRANCH'. If BDD scenarios are missing, use llm-orc-bdd-specialist to create behavioral contracts. Then use progress-updater agent to update CHANGELOG with findings."
   }
 }
 EOF

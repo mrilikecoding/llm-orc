@@ -47,18 +47,50 @@ Loads all specialized development agents on session start, making them available
 ### PostToolUse Hooks (After Write/Edit/MultiEdit)
 - **auto-lint.sh**: Immediate formatting fixes
 - **complexity-gate.sh**: Immediate complexity feedback
+- **intelligent-post-edit.sh**: Context-aware agent activation based on file patterns
 
-### Manual Execution
+### Development Workflow Hooks (Manual)
+- **pre-implementation-gate.sh**: Ensures BDD scenarios exist before coding begins
+- **bdd-development-gate.sh**: Generates/validates BDD scenarios for issues
+- **implementation-checkpoint.sh**: Continuous validation during development
+
+### Quality Maintenance (Manual)
 - **unused-variable-cleaner.sh**: Run before commits
 - **line-length-helper.sh**: Run before commits  
 - **manual-quality-checks.sh**: Combined pre-commit cleanup
 
 ### SessionStart Hooks
+- **feature-context.sh**: Provides issue context and BDD scenario status
 - **load-agents.sh**: Agent initialization
 
 ### Git Integration
 - Existing git pre-commit hook runs `make lint-fix`
 - **test-coverage-gate.sh** integrates with git workflow
+
+## Enhanced BDD-Driven Development Flow
+
+### LLM Development Workflow
+The hook system now supports **BDD-driven LLM development** with automatic agent activation:
+
+1. **Pre-Implementation**: `pre-implementation-gate.sh` ensures BDD scenarios exist
+2. **During Implementation**: `intelligent-post-edit.sh` activates agents based on file patterns
+3. **Continuous Validation**: `implementation-checkpoint.sh` prevents architectural drift
+4. **BDD Maintenance**: `bdd-development-gate.sh` keeps scenarios current
+
+### Intelligent Agent Activation
+**File Pattern-Based Triggers**:
+- Core changes → `architecture-reviewer`, `performance-optimizer`
+- Schema changes → `architecture-reviewer`, `bdd-specialist` 
+- Test changes → `tdd-specialist`, `bdd-specialist`
+- CLI changes → `ux-specialist`
+- Security files → `security-auditor`
+- ADR changes → `bdd-specialist`, `architecture-reviewer`
+
+### BDD Integration Points
+- **SessionStart**: Detects missing BDD scenarios for current issue
+- **PreImplementation**: Generates behavioral contracts before coding
+- **PostToolUse**: Updates scenarios when implementation changes
+- **Continuous**: Validates implementation against behavioral contracts
 
 ## Hook Design Principles
 
@@ -73,6 +105,9 @@ Hooks gracefully handle missing tools, invalid files, and edge cases without fai
 
 ### User Choice
 Interactive hooks always provide options to skip, view details, or proceed differently.
+
+### Context-Aware Intelligence
+Hooks analyze file patterns and development context to activate the most relevant agents automatically.
 
 ## Integration with Existing Workflow
 
