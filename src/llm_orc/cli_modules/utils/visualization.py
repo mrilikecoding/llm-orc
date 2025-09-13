@@ -1015,6 +1015,113 @@ def _handle_text_fallback_completed(event_data: dict[str, Any]) -> None:
     )
 
 
+def _handle_progress_events(
+    event_type: str,
+    event: dict[str, Any],
+    agent_statuses: dict[str, str],
+    ensemble_config: EnsembleConfig,
+    status: Any,
+) -> None:
+    """Handle progress-related events that update the dependency tree."""
+    if event_type == "agent_progress":
+        # Extract detailed agent status from progress data
+        started_agent_names = event["data"].get("started_agent_names", [])
+        completed_agent_names = event["data"].get("completed_agent_names", [])
+
+        # Update agent statuses based on actual agent states
+        _update_agent_status_by_names(
+            ensemble_config.agents,
+            started_agent_names,
+            completed_agent_names,
+            agent_statuses,
+        )
+
+    # All progress events update the dependency tree
+    current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+    status.update(current_tree)
+
+
+def _handle_agent_lifecycle_events(
+    event_type: str,
+    event: dict[str, Any],
+    agent_statuses: dict[str, str],
+    ensemble_config: EnsembleConfig,
+    status: Any,
+) -> None:
+    """Handle agent lifecycle events (started, completed)."""
+    event_data = event["data"]
+    agent_name = event_data["agent_name"]
+
+    if event_type == "agent_started":
+        agent_statuses[agent_name] = "running"
+    elif event_type == "agent_completed":
+        agent_statuses[agent_name] = "completed"
+
+    # Update status display with current dependency tree
+    current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+    status.update(current_tree)
+
+
+def _handle_fallback_events(
+    event_type: str,
+    event: dict[str, Any],
+    agent_statuses: dict[str, str],
+    ensemble_config: EnsembleConfig,
+    status: Any,
+    console: Console,
+) -> None:
+    """Handle fallback-related events."""
+    event_data = event["data"]
+    agent_name = event_data["agent_name"]
+
+    if event_type == "agent_fallback_started":
+        agent_statuses[agent_name] = "running"
+        _handle_fallback_started_event(console, event_data)
+    elif event_type == "agent_fallback_completed":
+        agent_statuses[agent_name] = "completed"
+    elif event_type == "agent_fallback_failed":
+        agent_statuses[agent_name] = "failed"
+        _handle_fallback_failed_event(console, event_data)
+
+    # Update status display with current dependency tree
+    current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+    status.update(current_tree)
+
+
+def _handle_user_input_events(
+    event_type: str,
+    event: dict[str, Any],
+    agent_statuses: dict[str, str],
+    ensemble_config: EnsembleConfig,
+    status: Any,
+    console: Console,
+) -> None:
+    """Handle user input events."""
+    event_data = event["data"]
+    agent_name = event_data["agent_name"]
+
+    if event_type == "user_input_required":
+        # Update agent status to waiting_input
+        agent_statuses[agent_name] = "waiting_input"
+
+        # Stop the status spinner and clear the terminal
+        status.stop()
+        console.clear()
+
+        # Update status display with current tree showing waiting status
+        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+        console.print(current_tree)
+
+    elif event_type == "user_input_completed":
+        # Update agent status back to running
+        agent_statuses[agent_name] = "running"
+
+        # Restart the status display with updated tree
+        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
+        status.start()
+        status.update(current_tree)
+
+
 def _handle_streaming_event(
     event_type: str,
     event: dict[str, Any],
@@ -1029,89 +1136,24 @@ def _handle_streaming_event(
 
     Returns True if execution should continue, False if it should break.
     """
-    if event_type == "agent_progress":
-        # Extract detailed agent status from progress data
-        started_agent_names = event["data"].get("started_agent_names", [])
-        completed_agent_names = event["data"].get("completed_agent_names", [])
-
-        # Update agent statuses based on actual agent states
-        _update_agent_status_by_names(
-            ensemble_config.agents,
-            started_agent_names,
-            completed_agent_names,
-            agent_statuses,
+    if event_type in ["agent_progress", "execution_started", "execution_progress"]:
+        _handle_progress_events(
+            event_type, event, agent_statuses, ensemble_config, status
         )
 
-        # Update status display with current dependency tree
-        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
-        status.update(current_tree)
+    elif event_type in ["agent_started", "agent_completed"]:
+        _handle_agent_lifecycle_events(
+            event_type, event, agent_statuses, ensemble_config, status
+        )
 
-    elif event_type == "execution_started":
-        # Show initial dependency tree when execution starts
-        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
-        status.update(current_tree)
-
-    elif event_type == "agent_started":
-        # Agent has started execution
-        event_data = event["data"]
-        agent_name = event_data["agent_name"]
-        agent_statuses[agent_name] = "running"
-
-        # Update status display with current dependency tree
-        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
-        status.update(current_tree)
-
-    elif event_type == "agent_completed":
-        # Agent has completed execution
-        event_data = event["data"]
-        agent_name = event_data["agent_name"]
-        agent_statuses[agent_name] = "completed"
-
-        # Update status display with current dependency tree
-        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
-        status.update(current_tree)
-
-    elif event_type == "execution_progress":
-        # Just update the tree without elapsed time overlay to avoid flickering
-        # The elapsed time will be shown in the final completion message
-        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
-        status.update(current_tree)
-
-    elif event_type == "agent_fallback_started":
-        # Show fallback message without disrupting the tree display
-        event_data = event["data"]
-        agent_name = event_data["agent_name"]
-
-        # Update agent status to running (attempting fallback)
-        agent_statuses[agent_name] = "running"
-
-        # Update status display with current dependency tree
-        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
-        status.update(current_tree)
-
-        _handle_fallback_started_event(console, event_data)
-
-    elif event_type == "agent_fallback_completed":
-        # Update agent status to completed
-        event_data = event["data"]
-        agent_name = event_data["agent_name"]
-        agent_statuses[agent_name] = "completed"
-
-        # Update status display with current dependency tree
-        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
-        status.update(current_tree)
-
-    elif event_type == "agent_fallback_failed":
-        # Update agent status to failed
-        event_data = event["data"]
-        agent_name = event_data["agent_name"]
-        agent_statuses[agent_name] = "failed"
-
-        # Update status with current tree
-        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
-        status.update(current_tree)
-
-        _handle_fallback_failed_event(console, event_data)
+    elif event_type in [
+        "agent_fallback_started",
+        "agent_fallback_completed",
+        "agent_fallback_failed",
+    ]:
+        _handle_fallback_events(
+            event_type, event, agent_statuses, ensemble_config, status, console
+        )
 
     elif event_type == "execution_completed":
         # Process execution completed event using helper method
@@ -1124,34 +1166,10 @@ def _handle_streaming_event(
             detailed,
         )
 
-    elif event_type == "user_input_required":
-        # User input required - pause streaming progress and clear terminal
-        event_data = event["data"]
-        agent_name = event_data["agent_name"]
-
-        # Update agent status to waiting_input
-        agent_statuses[agent_name] = "waiting_input"
-
-        # Stop the status spinner and clear the terminal
-        status.stop()
-        console.clear()
-
-        # Update status display with current tree showing waiting status
-        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
-        console.print(current_tree)
-
-    elif event_type == "user_input_completed":
-        # User input completed - resume streaming progress display
-        event_data = event["data"]
-        agent_name = event_data["agent_name"]
-
-        # Update agent status back to running
-        agent_statuses[agent_name] = "running"
-
-        # Restart the status display with updated tree
-        current_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
-        status.start()
-        status.update(current_tree)
+    elif event_type in ["user_input_required", "user_input_completed"]:
+        _handle_user_input_events(
+            event_type, event, agent_statuses, ensemble_config, status, console
+        )
 
     return True
 
