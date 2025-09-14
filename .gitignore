@@ -83,3 +83,4 @@ credentials.enc
 
 # Meta-repo context
 CLAUDE.md
+.claude/settings.local.json

@@ -1,0 +1,12 @@
+{
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "name": "test_db"
+  },
+  "api_key": "test-key-123",
+  "features": {
+    "caching": true,
+    "logging": false
+  }
+}

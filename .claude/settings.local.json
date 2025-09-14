@@ -4,7 +4,8 @@
       "Bash(uv run pytest:*)",
       "Bash(gh issue view:*)",
       "Bash(make lint:*)",
-      "Bash(make test:*)"
+      "Bash(make test:*)",
+      "Bash(uv run:*)"
     ],
     "deny": []
   }
