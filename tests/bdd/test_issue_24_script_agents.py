@@ -5,6 +5,7 @@ contracts defined in issue-24-script-agents.feature. These steps serve as the
 Red phase of TDD, defining what needs to be implemented.
 """
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -353,6 +354,147 @@ def execute_chained_primitives(bdd_context: dict[str, Any]) -> None:
 def validate_read_file_execution(bdd_context: dict[str, Any]) -> None:
     """Validate read_file execution."""
     pytest.fail("read_file execution validation not implemented")
+
+
+# Script discovery scenario steps
+@given('a script reference "primitives/network/topology.py"')
+def given_script_reference(bdd_context: dict[str, Any]) -> None:
+    """Provide a script reference for resolution."""
+    bdd_context["script_reference"] = "primitives/network/topology.py"
+
+
+@given("the script exists in .llm-orc/scripts/primitives/network/topology.py")
+def given_script_exists_in_llm_orc(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Create script in .llm-orc directory structure."""
+    # Create the script in temp directory structure
+    script_dir = tmp_path / ".llm-orc" / "scripts" / "primitives" / "network"
+    script_dir.mkdir(parents=True, exist_ok=True)
+
+    script_file = script_dir / "topology.py"
+    script_file.write_text("""#!/usr/bin/env python3
+import json
+import sys
+
+# Sample topology analysis script
+if __name__ == "__main__":
+    input_data = json.loads(sys.stdin.read())
+    output = {"success": True, "topology": "analyzed", "data": input_data}
+    print(json.dumps(output))
+""")
+    script_file.chmod(0o755)
+
+    bdd_context["llm_orc_script_path"] = str(script_file)
+    bdd_context["test_dir"] = str(tmp_path)
+
+
+@given("an alternative script exists at /usr/local/bin/topology")
+def given_alternative_script(bdd_context: dict[str, Any]) -> None:
+    """Note alternative script location (won't actually create it)."""
+    bdd_context["alternative_script"] = "/usr/local/bin/topology"
+
+
+@when("the script resolver attempts to resolve the reference")
+def when_resolver_attempts_resolution(bdd_context: dict[str, Any]) -> None:
+    """Use ScriptResolver to resolve the script reference."""
+    import os
+
+    from llm_orc.core.execution.script_resolver import ScriptResolver
+
+    # Change to test directory to resolve scripts correctly
+    original_cwd = os.getcwd()
+    test_dir = bdd_context.get("test_dir")
+
+    try:
+        if test_dir:
+            os.chdir(test_dir)
+
+        resolver = ScriptResolver()
+        script_ref = bdd_context["script_reference"]
+
+        try:
+            resolved_path = resolver.resolve_script_path(script_ref)
+            bdd_context["resolved_path"] = resolved_path
+            bdd_context["resolution_success"] = True
+        except FileNotFoundError as e:
+            bdd_context["resolution_error"] = str(e)
+            bdd_context["resolution_success"] = False
+    finally:
+        os.chdir(original_cwd)
+
+
+@then("it should find the script in .llm-orc/scripts/ first")
+def then_should_find_in_llm_orc_first(bdd_context: dict[str, Any]) -> None:
+    """Validate script found in .llm-orc directory."""
+    assert bdd_context.get("resolution_success"), "Script resolution failed"
+    resolved_path = bdd_context.get("resolved_path", "")
+    assert ".llm-orc/scripts/" in resolved_path, (
+        f"Script not found in .llm-orc: {resolved_path}"
+    )
+
+
+@then("it should return the correct absolute path")
+def then_should_return_absolute_path(bdd_context: dict[str, Any]) -> None:
+    """Validate absolute path returned."""
+    import os
+
+    resolved_path = bdd_context.get("resolved_path", "")
+    assert os.path.isabs(resolved_path), f"Path is not absolute: {resolved_path}"
+    assert resolved_path.endswith("topology.py"), (
+        f"Wrong file resolved: {resolved_path}"
+    )
+
+
+@then("it should validate the script is executable")
+def then_should_validate_executable(bdd_context: dict[str, Any]) -> None:
+    """Validate script is executable."""
+    import os
+
+    resolved_path = bdd_context.get("resolved_path", "")
+    if resolved_path and os.path.exists(resolved_path):
+        assert os.access(resolved_path, os.X_OK), (
+            f"Script not executable: {resolved_path}"
+        )
+
+
+@then("it should handle missing scripts gracefully with clear error messages")
+def then_should_handle_missing_gracefully(bdd_context: dict[str, Any]) -> None:
+    """Validate error handling for missing scripts."""
+    # Test with a non-existent script
+    from llm_orc.core.execution.script_resolver import ScriptResolver
+
+    resolver = ScriptResolver()
+    with pytest.raises(FileNotFoundError, match="(?i)not found"):
+        resolver.resolve_script_path("non/existent/script.py")
+
+
+@then("the resolution should be cached for performance")
+def then_resolution_should_be_cached(bdd_context: dict[str, Any]) -> None:
+    """Validate resolution caching."""
+    import os
+
+    from llm_orc.core.execution.script_resolver import ScriptResolver
+
+    original_cwd = os.getcwd()
+    test_dir = bdd_context.get("test_dir")
+
+    try:
+        if test_dir:
+            os.chdir(test_dir)
+
+        resolver = ScriptResolver()
+        script_ref = bdd_context["script_reference"]
+
+        # First resolution
+        path1 = resolver.resolve_script_path(script_ref)
+
+        # Second resolution (should use cache)
+        path2 = resolver.resolve_script_path(script_ref)
+
+        assert path1 == path2, "Cached path differs from original"
+        assert script_ref in resolver._cache, "Script not in cache"
+
+    finally:
+        os.chdir(original_cwd)
 
 
 # Continue with other step placeholders...

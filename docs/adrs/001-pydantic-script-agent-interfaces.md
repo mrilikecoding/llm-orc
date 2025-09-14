@@ -1,7 +1,22 @@
 # ADR-001: Pydantic-Based Script Agent Interface System
 
 ## Status
-Proposed
+In Progress
+
+## Implementation Status
+- [x] BDD scenarios created in tests/bdd/features/issue-24-script-agents.feature
+- [x] Core Pydantic schemas implemented (ScriptAgentInput/Output, AgentRequest)
+- [x] EnhancedScriptAgent.execute_with_schema() method implemented
+- [x] First BDD scenario passing (JSON I/O contract)
+- [ ] All BDD scenarios passing (1/10 complete)
+- [ ] Dynamic parameter generation for agent requests
+- [ ] Integration with primitive registry
+- [ ] Full validation chain implementation
+
+## BDD Integration
+- **Scenario File**: tests/bdd/features/issue-24-script-agents.feature
+- **Test Command**: `uv run pytest tests/bdd/ -k "json_inputoutput_contract"`
+- **Priority Scenario**: "Script agent executes with JSON input/output contract" ✅
 
 ## Context
 
