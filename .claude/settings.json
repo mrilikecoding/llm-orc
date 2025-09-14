@@ -12,6 +12,23 @@
             "type": "command",
             "command": ".claude/hooks/feature-context.sh",
             "description": "Provide feature development context on non-main branches"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/testing-pyramid-gate.sh",
+            "description": "Show testing pyramid health on session start"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matchers": ["implement", "add feature", "write code", "create function"],
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/bdd-unit-test-generator.sh",
+            "description": "Ensure unit tests exist before implementation"
           }
         ]
       }
