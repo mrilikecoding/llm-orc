@@ -42,7 +42,7 @@ count_test_types() {
     if [[ -d "tests/bdd/features" ]]; then
         bdd_scenarios=$(find tests/bdd/features -name "*.feature" 2>/dev/null | \
                        xargs grep -c "^[[:space:]]*Scenario:" 2>/dev/null | \
-                       awk '{sum += $1} END {print sum}' 2>/dev/null || echo 0)
+                       awk -F: '{sum += $2} END {print sum}' 2>/dev/null || echo 0)
     fi
 
     # Count BDD step definitions
@@ -262,6 +262,14 @@ main() {
         echo -e "${GREEN}✅ Testing pyramid is well-structured${NC}"
         return 0
     else
+        # Write concise error messages to stderr for Claude Code
+        local errors=()
+        [[ "$pyramid_valid" = false ]] && errors+=("Testing pyramid structure issues detected")
+        [[ "$unit_tests_valid" = false ]] && errors+=("Missing unit tests for source files")
+        [[ "$relationship_valid" = false ]] && errors+=("BDD-Unit test relationship issues")
+
+        printf '%s\n' "${errors[@]}" >&2
+
         suggest_improvements "$test_counts"
         echo ""
         echo -e "${YELLOW}⚠️ Testing pyramid needs attention${NC}"
@@ -278,7 +286,11 @@ if [[ "${1:-}" == "--fix" ]]; then
 fi
 
 # Execute main function
-main "$@"
-
-echo -e "${GREEN}✅ ${HOOK_NAME} complete${NC}"
-exit 0
+if main "$@"; then
+    echo -e "${GREEN}✅ ${HOOK_NAME} complete${NC}"
+    exit 0
+else
+    exit_code=$?
+    echo -e "${GREEN}✅ ${HOOK_NAME} complete${NC}"
+    exit $exit_code
+fi

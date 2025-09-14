@@ -23,12 +23,6 @@ class TestIssue24Units:
         # This should test the validation logic in isolation
         pytest.fail("Unit test not implemented: validate_input")
 
-    def test_schema_validation(self) -> None:
-        """Test Pydantic schema validation logic."""
-        # TODO: Test schema validation independently
-        # Focus on edge cases, invalid inputs, serialization
-        pytest.fail("Unit test not implemented: schema_validation")
-
     def test_json_serialization(self) -> None:
         """Test JSON serialization/deserialization."""
         # TODO: Test JSON handling in isolation

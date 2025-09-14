@@ -53,6 +53,16 @@
             "description": "Manage ADR status transitions based on BDD progress and implementation milestones"
           }
         ]
+      },
+      {
+        "matchers": ["pytest", "test"],
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/bdd-test-migrator.sh",
+            "description": "Migrate passing unit tests to proper module locations after BDD scenarios pass"
+          }
+        ]
       }
     ]
   }
