@@ -33,14 +33,25 @@ identify_passing_tests() {
     local issue_test_file="tests/test_issue_${issue_number}_units.py"
 
     if [[ ! -f "$issue_test_file" ]]; then
-        echo -e "${YELLOW}⚠️ No issue-specific test file found: $issue_test_file${NC}"
-        return 1
+        echo -e "${BLUE}ℹ️ No issue-specific test file found: $issue_test_file${NC}" >&2
+        echo -e "${BLUE}ℹ️ Tests may already be migrated - this is expected after migration${NC}" >&2
+        # Return with empty stdout - don't output anything for caller to process
+        return 0
     fi
 
-    echo -e "${BLUE}🔍 Identifying passing tests in: $(basename "$issue_test_file")${NC}"
+    echo -e "${BLUE}🔍 Identifying passing tests in: $(basename "$issue_test_file")${NC}" >&2
 
-    # Run just the issue-specific tests to see which pass (no colors)
-    local test_output=$(uv run pytest "$issue_test_file" -v --tb=no --no-header --no-summary -q 2>/dev/null || echo "")
+    # Run just the issue-specific tests to see which pass
+    local test_output
+    local test_exit_code
+
+    if ! test_output=$(uv run pytest "$issue_test_file" -v --tb=no --no-header --no-summary -q 2>&1); then
+        test_exit_code=$?
+        echo -e "${RED}❌ pytest failed to run (exit code $test_exit_code):${NC}" >&2
+        echo "$test_output" >&2
+        return $test_exit_code
+    fi
+
     local passing_tests=()
 
     while IFS= read -r line; do
@@ -54,13 +65,14 @@ identify_passing_tests() {
     done <<< "$test_output"
 
     if [[ ${#passing_tests[@]} -eq 0 ]]; then
-        echo -e "${BLUE}ℹ️ No passing tests found - staying in Red/Green phase${NC}"
+        echo -e "${BLUE}ℹ️ No passing tests found - staying in Red/Green phase${NC}" >&2
         return 0
     fi
 
-    echo -e "${GREEN}✅ Found ${#passing_tests[@]} passing tests:${NC}"
-    printf '%s\n' "${passing_tests[@]}" | sed 's/^/  • /'
+    echo -e "${GREEN}✅ Found ${#passing_tests[@]} passing tests:${NC}" >&2
+    printf '%s\n' "${passing_tests[@]}" | sed 's/^/  • /' >&2
 
+    # Output the test names to stdout for capture by caller
     echo "${passing_tests[@]}"
     return 0
 }
@@ -176,8 +188,8 @@ main() {
     issue_number=$(get_current_issue)
 
     if [[ -z "$issue_number" ]]; then
-        echo -e "${YELLOW}⚠️ Could not determine issue number from branch name${NC}"
-        echo "Please run from a feature branch like 'feature/24-script-agents'"
+        echo -e "${YELLOW}⚠️ Could not determine issue number from branch name${NC}" >&2
+        echo "Please run from a feature branch like 'feature/24-script-agents'" >&2
         return 1
     fi
 
@@ -185,57 +197,76 @@ main() {
 
     local issue_test_file="tests/test_issue_${issue_number}_units.py"
     local passing_tests_result
-    passing_tests_result=$(identify_passing_tests "$issue_number")
 
-    if [[ "$passing_tests_result" == "0" ]] || [[ -z "$passing_tests_result" ]]; then
+    # Capture both output and exit code from identify_passing_tests
+    if ! passing_tests_result=$(identify_passing_tests "$issue_number"); then
+        local exit_code=$?
+        echo -e "${RED}❌ Failed to identify passing tests (exit code: $exit_code)${NC}" >&2
+        return $exit_code
+    fi
+
+    if [[ -z "$passing_tests_result" ]]; then
         return 0
     fi
 
     # Convert result to array
     local passing_tests=($passing_tests_result)
 
-    echo ""
-    echo "Would you like to migrate these passing tests to their proper module locations?"
-    echo "1. Yes - migrate all passing tests"
-    echo "2. Select specific tests to migrate"
-    echo "3. Skip migration (keep in issue file)"
+    # Check if we're in an interactive terminal (for manual runs vs hook runs)
+    if [[ -t 0 && -t 1 ]]; then
+        # Interactive mode - ask user what to do
+        echo ""
+        echo "Would you like to migrate these passing tests to their proper module locations?"
+        echo "1. Yes - migrate all passing tests"
+        echo "2. Select specific tests to migrate"
+        echo "3. Skip migration (keep in issue file)"
 
-    read -p "Choice (1/2/3): " -n 1 -r choice
-    echo
+        read -p "Choice (1/2/3): " -n 1 -r choice
+        echo
 
-    case "$choice" in
-        1)
-            for test_name in "${passing_tests[@]}"; do
-                local target_file=$(determine_target_module "$test_name" "$issue_test_file")
-                migrate_test "$test_name" "$issue_test_file" "$target_file"
-            done
-            ;;
-        2)
-            echo "Select tests to migrate (space-separated numbers):"
-            for i in "${!passing_tests[@]}"; do
-                echo "$((i+1)). ${passing_tests[$i]}"
-            done
-            read -p "Selection: " -r selection
-
-            for num in $selection; do
-                if [[ "$num" =~ ^[0-9]+$ ]] && [[ $num -le ${#passing_tests[@]} ]] && [[ $num -gt 0 ]]; then
-                    local test_name="${passing_tests[$((num-1))]}"
+        case "$choice" in
+            1)
+                for test_name in "${passing_tests[@]}"; do
                     local target_file=$(determine_target_module "$test_name" "$issue_test_file")
                     migrate_test "$test_name" "$issue_test_file" "$target_file"
-                fi
-            done
-            ;;
-        3)
-            echo "Skipping migration - tests remain in issue file"
-            return 0
-            ;;
-        *)
-            echo "Invalid choice, skipping migration"
-            return 0
-            ;;
-    esac
+                done
+                ;;
+            2)
+                echo "Select tests to migrate (space-separated numbers):"
+                for i in "${!passing_tests[@]}"; do
+                    echo "$((i+1)). ${passing_tests[$i]}"
+                done
+                read -p "Selection: " -r selection
 
-    # Update issue file
+                for num in $selection; do
+                    if [[ "$num" =~ ^[0-9]+$ ]] && [[ $num -le ${#passing_tests[@]} ]] && [[ $num -gt 0 ]]; then
+                        local test_name="${passing_tests[$((num-1))]}"
+                        local target_file=$(determine_target_module "$test_name" "$issue_test_file")
+                        migrate_test "$test_name" "$issue_test_file" "$target_file"
+                    fi
+                done
+                ;;
+            3)
+                echo "Skipping migration - tests remain in issue file"
+                return 0
+                ;;
+            *)
+                echo "Invalid choice, skipping migration"
+                return 0
+                ;;
+        esac
+    else
+        # Non-interactive mode (called as hook) - report but don't migrate automatically
+        echo -e "${BLUE}ℹ️ Running in non-interactive mode (as post-hook)${NC}"
+        echo -e "${BLUE}ℹ️ Found passing tests that could be migrated:${NC}"
+        printf '%s\n' "${passing_tests[@]}" | sed 's/^/  • /'
+        echo ""
+        echo -e "${YELLOW}💡 To migrate these tests, run manually:${NC}"
+        echo "  .claude/hooks/bdd-test-migrator.sh"
+        return 0
+    fi
+
+    # Update issue file (only in interactive mode)
     update_issue_file_imports "$issue_test_file"
 
     echo ""
