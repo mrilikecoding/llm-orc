@@ -640,6 +640,16 @@ class EnsembleExecutor:
             # Sample resources during execution
             self._usage_collector.sample_agent_resources(agent_name)
 
+            # Parse JSON input data to proper format for script agents
+            # EnhancedScriptAgent expects input as dict/object, not JSON string
+            try:
+                import json
+
+                parsed_input = json.loads(input_data)
+            except (json.JSONDecodeError, TypeError):
+                # If input is not valid JSON, treat as raw string
+                parsed_input = input_data
+
             # Check if this script requires user input
             user_input_detection = ScriptUserInputHandler()
             script_ref = agent_config.get("script", "")
@@ -647,11 +657,11 @@ class EnsembleExecutor:
             if user_input_detection.requires_user_input(script_ref):
                 # For scripts that use input(), use interactive execution
                 response = await self._execute_interactive_script_agent(
-                    script_agent, input_data
+                    script_agent, parsed_input
                 )
             else:
                 # Use regular execute for non-interactive scripts
-                response = await script_agent.execute(input_data)
+                response = await script_agent.execute(parsed_input)
 
             # Final sample before completion
             self._usage_collector.sample_agent_resources(agent_name)
@@ -668,7 +678,7 @@ class EnsembleExecutor:
             self._usage_collector.finalize_agent_resource_monitoring(agent_name)
 
     async def _execute_interactive_script_agent(
-        self, script_agent: EnhancedScriptAgent, input_data: str
+        self, script_agent: EnhancedScriptAgent, input_data: str | dict[str, Any]
     ) -> str:
         """Execute script agent interactively with terminal access for input().
 
@@ -717,7 +727,11 @@ class EnsembleExecutor:
         env.update(script_agent.environment)
 
         # Pass data via environment instead of stdin so script can access terminal
-        env["INPUT_DATA"] = input_data
+        # Convert input_data to JSON string if it's a dict
+        if isinstance(input_data, dict):
+            env["INPUT_DATA"] = json.dumps(input_data)
+        else:
+            env["INPUT_DATA"] = input_data
         env["AGENT_PARAMETERS"] = json.dumps(script_agent.parameters)
 
         # Determine interpreter

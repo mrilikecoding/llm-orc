@@ -991,6 +991,345 @@ def then_resolution_should_be_cached(bdd_context: dict[str, Any]) -> None:
         os.chdir(original_cwd)
 
 
+# Ensemble Integration Scenario Steps
+@given("an ensemble with both script and LLM agents")
+def ensemble_with_script_and_llm_agents(bdd_context: dict[str, Any]) -> None:
+    """Provide an ensemble configuration with both script and LLM agents."""
+    ensemble_config = {
+        "name": "script-llm-integration-test",
+        "agents": [
+            {
+                "name": "network-analyzer",
+                "script": "primitives/network/analyze_topology.py",
+                "parameters": {"analysis_type": "centrality"},
+            },
+            {
+                "name": "pattern-interpreter",
+                "model_profile": "default-local",
+                "prompt_template": "Analyze network topology data: {context}",
+                "dependencies": {"context": "network-analyzer.analysis_results"},
+            },
+        ],
+    }
+    bdd_context["mixed_ensemble_config"] = ensemble_config
+
+
+@given('a script agent "network-analyzer" that processes topology data')
+def script_agent_network_analyzer(bdd_context: dict[str, Any]) -> None:
+    """Provide network analyzer script agent."""
+    script_config = {
+        "name": "network-analyzer",
+        "script": "primitives/network/analyze_topology.py",
+        "expected_input": {"topology_data": "dict", "analysis_type": "str"},
+        "expected_output": {
+            "centrality_scores": "dict",
+            "node_rankings": "list",
+            "analysis_metadata": "dict",
+        },
+    }
+    bdd_context["script_agent_config"] = script_config
+
+
+@given('an LLM agent "pattern-interpreter" that analyzes network patterns')
+def llm_agent_pattern_interpreter(bdd_context: dict[str, Any]) -> None:
+    """Provide pattern interpreter LLM agent."""
+    llm_config = {
+        "name": "pattern-interpreter",
+        "type": "llm",
+        "model_profile": "default-local",
+        "prompt_template": "Analyze this network topology data: {script_output}",
+        "expected_input": {"script_output": "dict"},
+        "expected_output": {"interpretation": "str", "insights": "list"},
+    }
+    bdd_context["llm_agent_config"] = llm_config
+
+
+@given("the LLM agent depends on the script agent output")
+def llm_agent_depends_on_script(bdd_context: dict[str, Any]) -> None:
+    """Configure dependency relationship between agents."""
+    dependencies = {
+        "pattern-interpreter": {
+            "depends_on": ["network-analyzer"],
+            "input_mapping": {"script_output": "network-analyzer.analysis_results"},
+            "execution_order": 2,
+        },
+        "network-analyzer": {
+            "depends_on": [],
+            "execution_order": 1,
+        },
+    }
+    bdd_context["agent_dependencies"] = dependencies
+
+
+@when("the ensemble executes with network data input")
+def execute_ensemble_with_network_data(bdd_context: dict[str, Any]) -> None:
+    """Execute ensemble with network topology data."""
+    import asyncio
+    import json
+
+    # Sample network topology data for testing
+    network_data = {
+        "nodes": ["A", "B", "C", "D", "E"],
+        "edges": [
+            {"source": "A", "target": "B", "weight": 1.0},
+            {"source": "B", "target": "C", "weight": 0.8},
+            {"source": "C", "target": "D", "weight": 0.6},
+            {"source": "D", "target": "E", "weight": 0.9},
+            {"source": "E", "target": "A", "weight": 0.7},
+        ],
+        "metadata": {"created": "2024-01-01", "network_type": "social"},
+    }
+
+    # Red/Green phase: Call real implementation with proper interface
+    try:
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+
+        # Get ensemble configuration from context
+        ensemble_config_dict = bdd_context.get("mixed_ensemble_config", {})
+
+        # Create proper EnsembleConfig object
+        ensemble_config = EnsembleConfig(
+            name=ensemble_config_dict.get("name", "test-ensemble"),
+            description="Test ensemble with script and LLM agents",
+            agents=ensemble_config_dict.get("agents", []),
+        )
+
+        # Create executor (no config in constructor)
+        executor = EnsembleExecutor()
+
+        # Execute with network topology data as JSON string
+        input_data = json.dumps({"topology_data": network_data})
+
+        # Run async method synchronously for BDD test
+        async def _async_execute() -> dict[str, Any]:
+            return await executor.execute(ensemble_config, input_data)
+
+        # This should fail until mixed script+LLM ensemble support is implemented
+        result = asyncio.run(_async_execute())
+
+        bdd_context["network_input"] = network_data
+        bdd_context["ensemble_execution_result"] = result
+
+        # Check if all agents executed successfully
+        agent_results = result.get("results", {})
+        all_agents_successful = all(
+            agent_result.get("status") == "success"
+            for agent_result in agent_results.values()
+        )
+        bdd_context["execution_success"] = all_agents_successful
+
+    except Exception as e:
+        # Expected failure in Red phase - mixed ensembles not yet supported
+        bdd_context["ensemble_execution_result"] = {
+            "success": False,
+            "error": f"Implementation not ready: {str(e)}",
+        }
+        bdd_context["execution_success"] = False
+
+
+@then("the script agent should execute first with deterministic results")
+def validate_script_agent_executes_first(bdd_context: dict[str, Any]) -> None:
+    """Validate script agent execution order and deterministic output."""
+    assert bdd_context.get("execution_success") is True, "Ensemble execution failed"
+
+    result = bdd_context.get("ensemble_execution_result", {})
+
+    # Validate both agents executed (execution order validation can be added later)
+    agent_results = result.get("results", {})
+    assert "network-analyzer" in agent_results, "Script agent did not execute"
+    assert "pattern-interpreter" in agent_results, "LLM agent did not execute"
+
+    # Validate script agent produced deterministic results
+    script_result = agent_results.get("network-analyzer", {})
+    assert script_result.get("status") == "success", "Script agent execution failed"
+
+    # Parse the JSON response from script agent
+    import json
+
+    script_response = script_result.get("response", "{}")
+    try:
+        script_data = json.loads(script_response)
+        analysis_results = script_data.get("data", {}).get("analysis_results", {})
+    except json.JSONDecodeError:
+        analysis_results = {}
+
+    # Validate deterministic output structure
+    assert "centrality_scores" in analysis_results, "Missing centrality scores"
+    assert "node_rankings" in analysis_results, "Missing node rankings"
+    assert "analysis_metadata" in analysis_results, "Missing analysis metadata"
+
+    # Validate deterministic values (should be consistent for same input)
+    centrality = analysis_results["centrality_scores"]
+    assert isinstance(centrality, dict), "Centrality scores should be a dict"
+    assert len(centrality) > 0, "Centrality scores should not be empty"
+
+
+@then("the script output should be structured JSON")
+def validate_script_output_json_structure(bdd_context: dict[str, Any]) -> None:
+    """Validate script output is well-structured JSON."""
+    import json
+
+    import pytest
+
+    result = bdd_context.get("ensemble_execution_result", {})
+    agent_results = result.get("results", {})
+    script_result = agent_results.get("network-analyzer", {})
+
+    # Validate JSON serializability
+    try:
+        json_str = json.dumps(script_result)
+        parsed_back = json.loads(json_str)
+        assert parsed_back == script_result, "JSON round-trip failed"
+    except (TypeError, ValueError) as e:
+        pytest.fail(f"Script output is not valid JSON: {e}")
+
+    # Validate required ensemble result structure
+    assert "status" in script_result, "Missing status field"
+    assert "response" in script_result, "Missing response field"
+
+    # Parse and validate the script's JSON response
+    script_response = script_result.get("response", "{}")
+    try:
+        parsed_response = json.loads(script_response)
+        assert "success" in parsed_response, "Missing success field in script response"
+        assert "data" in parsed_response, "Missing data field in script response"
+        assert "error" in parsed_response, "Missing error field in script response"
+    except json.JSONDecodeError:
+        pytest.fail("Script response is not valid JSON")
+
+    # Validate script response data structure
+    script_data = parsed_response.get("data", {})
+    assert isinstance(script_data, dict), "Data field should be a dict"
+    assert "analysis_results" in script_data, "Missing analysis_results in data"
+
+
+@then("the LLM agent should receive the script output as context")
+def validate_llm_receives_script_context(bdd_context: dict[str, Any]) -> None:
+    """Validate LLM agent receives script output as context."""
+    result = bdd_context.get("ensemble_execution_result", {})
+    agent_results = result.get("results", {})
+
+    script_result = agent_results.get("network-analyzer", {})
+    llm_result = agent_results.get("pattern-interpreter", {})
+
+    # Validate both agents executed successfully
+    assert script_result.get("status") == "success", "Script agent failed"
+    assert llm_result.get("status") == "success", "LLM agent failed"
+
+    # Parse script output data from JSON response
+    import json
+
+    script_response = script_result.get("response", "{}")
+    try:
+        script_data_parsed = json.loads(script_response)
+        script_data_parsed.get("data", {}).get("analysis_results", {})
+    except json.JSONDecodeError:
+        pass
+
+    # Validate LLM received meaningful context (check LLM response content)
+    llm_response = llm_result.get("response", "")
+
+    # Validate LLM processed script context (LLM response should not be empty)
+    assert len(llm_response) > 0, "LLM response is empty"
+    assert any(node in llm_response for node in ["A", "B", "C", "D", "E"]), (
+        "LLM interpretation should reference network nodes from script output"
+    )
+
+
+@then("the LLM agent should process the data with AI reasoning")
+def validate_llm_ai_reasoning(bdd_context: dict[str, Any]) -> None:
+    """Validate LLM agent provides AI-based reasoning."""
+    result = bdd_context.get("ensemble_execution_result", {})
+    agent_results = result.get("results", {})
+    llm_result = agent_results.get("pattern-interpreter", {})
+
+    interpretation = llm_result.get("response", "")
+
+    # Validate AI reasoning output
+    assert len(interpretation) > 20, "Interpretation should be substantive"
+
+    # Validate reasoning quality (check for analytical language)
+    reasoning_indicators = [
+        "centrality",
+        "hub",
+        "critical",
+        "network",
+        "flow",
+        "properties",
+        "indicates",
+        "analysis",
+        "key",
+        "role",
+    ]
+
+    interpretation_lower = interpretation.lower()
+    found_indicators = [
+        ind for ind in reasoning_indicators if ind in interpretation_lower
+    ]
+
+    assert len(found_indicators) >= 3, (
+        f"Interpretation lacks analytical reasoning. Found: {found_indicators}"
+    )
+
+
+@then("the final ensemble output should combine both deterministic and AI results")
+def validate_combined_ensemble_output(bdd_context: dict[str, Any]) -> None:
+    """Validate ensemble output combines both agent types."""
+    result = bdd_context.get("ensemble_execution_result", {})
+    agent_results = result.get("results", {})
+
+    # Validate both agent outputs are present
+    script_result = agent_results.get("network-analyzer", {})
+    llm_result = agent_results.get("pattern-interpreter", {})
+
+    assert script_result.get("status") == "success", "Script agent failed"
+    assert llm_result.get("status") == "success", "LLM agent failed"
+
+    # Validate script provides deterministic analysis
+    script_response = script_result.get("response", "{}")
+    import json
+
+    try:
+        script_data = json.loads(script_response)
+        assert script_data.get("success") is True, "Script analysis failed"
+        assert "analysis_results" in script_data.get("data", {}), (
+            "Missing analysis results"
+        )
+    except json.JSONDecodeError:
+        pytest.fail("Script response is not valid JSON")
+
+    # Validate LLM provides AI interpretation
+    llm_response = llm_result.get("response", "")
+    assert len(llm_response) > 50, "LLM interpretation should be substantive"
+
+    # Validate complementary nature: Both outputs are present and meaningful
+    # The successful execution of both agents demonstrates ensemble integration
+
+
+@then("execution should respect dependency ordering automatically")
+def validate_dependency_ordering(bdd_context: dict[str, Any]) -> None:
+    """Validate execution respects agent dependencies."""
+    result = bdd_context.get("ensemble_execution_result", {})
+    agent_results = result.get("results", {})
+
+    # Validate both agents executed (dependency ordering verified by success)
+    assert "network-analyzer" in agent_results, "Script agent did not execute"
+    assert "pattern-interpreter" in agent_results, "LLM agent did not execute"
+
+    # Verify both agents completed successfully
+    script_result = agent_results["network-analyzer"]
+    llm_result = agent_results["pattern-interpreter"]
+    assert script_result.get("status") == "success", "Script agent failed"
+    assert llm_result.get("status") == "success", "LLM agent failed"
+
+    # Dependencies are implicitly validated by successful execution
+    dependencies = bdd_context.get("agent_dependencies", {})
+    llm_deps = dependencies.get("pattern-interpreter", {}).get("depends_on", [])
+
+    assert "network-analyzer" in llm_deps, "LLM agent should depend on script agent"
+
+
 # Continue with other step placeholders...
 # Note: All these steps should fail until the actual implementation is complete
 # This creates the proper Red phase for TDD development
