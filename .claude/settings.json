@@ -17,6 +17,11 @@
             "type": "command",
             "command": ".claude/hooks/testing-pyramid-gate.sh",
             "description": "Show testing pyramid health on session start"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/agent-advisor.sh",
+            "description": "Suggest relevant specialized agents based on current context"
           }
         ]
       }
@@ -51,6 +56,11 @@
             "type": "command",
             "command": ".claude/hooks/adr-lifecycle-manager.sh",
             "description": "Manage ADR status transitions based on BDD progress and implementation milestones"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/agent-advisor.sh",
+            "description": "Suggest relevant specialized agents after file changes"
           }
         ]
       },
