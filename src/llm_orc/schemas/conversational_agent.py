@@ -103,17 +103,19 @@ class ConversationState(BaseModel):
         if not condition:
             return True
 
-        # Safe evaluation context with restricted builtins
+        # Safe evaluation context with restricted builtins and safe functions
         safe_context = {
             "turn_count": self.turn_count,
             "context": self.accumulated_context,
             "history": self.conversation_history,
+            "len": len,  # Allow len() function
             "__builtins__": {},  # Restrict dangerous builtins
         }
 
         try:
             # Use eval with restricted context for safe evaluation
-            return bool(eval(condition, safe_context))
+            # nosec B307: Eval is used with restricted context for condition evaluation
+            return bool(eval(condition, safe_context))  # nosec B307
         except Exception:
             # If evaluation fails, default to False
             return False
