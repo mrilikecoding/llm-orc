@@ -32,8 +32,43 @@
         "hooks": [
           {
             "type": "command",
+            "command": ".claude/hooks/pre-implementation-gate.sh",
+            "description": "Ensure BDD scenarios exist before implementation"
+          },
+          {
+            "type": "command",
             "command": ".claude/hooks/bdd-unit-test-generator.sh",
-            "description": "Ensure unit tests exist before implementation"
+            "description": "Generate unit tests from BDD scenarios before implementation"
+          }
+        ]
+      },
+      {
+        "matchers": ["refactor", "optimize", "clean"],
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/testing-pyramid-gate.sh --fix",
+            "description": "Ensure tests exist before refactoring"
+          }
+        ]
+      },
+      {
+        "matchers": ["commit", "git commit"],
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/testing-pyramid-gate.sh",
+            "description": "Validate testing pyramid before commit"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/test-coverage-gate.sh",
+            "description": "Ensure 95% coverage before commit"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/bdd-development-gate.sh",
+            "description": "Validate BDD compliance before commit"
           }
         ]
       }
@@ -59,14 +94,19 @@
           },
           {
             "type": "command",
-            "command": ".claude/hooks/agent-advisor.sh",
-            "description": "Suggest relevant specialized agents after file changes"
+            "command": ".claude/hooks/intelligent-post-edit.sh",
+            "description": "Context-aware agent triggering based on file patterns"
           }
         ]
       },
       {
-        "matchers": ["pytest", "test"],
+        "matchers": ["pytest", "test", "coverage"],
         "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/test-coverage-gate.sh",
+            "description": "Validate coverage after test runs"
+          },
           {
             "type": "command",
             "command": ".claude/hooks/bdd-test-migrator.sh",
