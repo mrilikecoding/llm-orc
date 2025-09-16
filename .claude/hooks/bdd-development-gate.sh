@@ -38,8 +38,8 @@ validate_bdd_scenarios() {
     echo "🧪 Running BDD scenario validation..."
     
     if [ -d "tests/bdd" ]; then
-        if command -v pytest &>/dev/null; then
-            if pytest tests/bdd/ --tb=short -q; then
+        if command -v uv &>/dev/null; then
+            if uv run pytest tests/bdd/ --tb=short -q; then
                 echo "✅ All BDD scenarios passing"
                 return 0
             else
@@ -47,7 +47,7 @@ validate_bdd_scenarios() {
                 return 1
             fi
         else
-            echo "⚠️ pytest not found - install pytest-bdd for scenario validation"
+            echo "⚠️ uv not found - install uv for scenario validation"
             return 0
         fi
     else
@@ -111,7 +111,7 @@ EOF
         if ! validate_bdd_scenarios; then
             echo ""
             echo "🔧 BDD scenarios need attention"
-            echo "   Run: pytest tests/bdd/features/issue-${issue_number}.feature -v"
+            echo "   Run: uv run pytest tests/bdd/features/issue-${issue_number}.feature -v"
             echo ""
             echo "Would you like to update scenarios for current implementation? (y/n)"
             read -r response

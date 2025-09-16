@@ -285,7 +285,7 @@ main() {
 
     # Show BDD integration reminder
     echo -e "\n${BLUE}💡 Tip:${NC} Run BDD scenarios with:"
-    echo "   uv run pytest tests/bdd/ -v"
+    echo "   uv run uv run pytest tests/bdd/ -v"
     echo -e "\n${BLUE}📚 Documentation:${NC} docs/adr-lifecycle-management.md"
 }
 

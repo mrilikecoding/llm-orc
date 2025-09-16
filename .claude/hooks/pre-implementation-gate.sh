@@ -178,7 +178,7 @@ provide_implementation_guidance() {
     echo "Quality gates:"
     echo "• PostToolUse hooks: Automatic formatting and complexity checks"
     echo "• Implementation checkpoints: Continuous behavioral validation"
-    echo "• BDD validation: pytest tests/bdd/features/issue-${issue_number}.feature"
+    echo "• BDD validation: uv run pytest tests/bdd/features/issue-${issue_number}.feature"
 }
 
 # Main workflow

@@ -104,7 +104,7 @@ if [ -n "$ISSUE_NUMBER" ]; then
     # Check current status
     if [ -f "tests/bdd/features/issue-${ISSUE_NUMBER}.feature" ]; then
         echo "✅ BDD scenarios exist"
-        echo "   Run: pytest tests/bdd/features/issue-${ISSUE_NUMBER}.feature -v"
+        echo "   Run: uv run pytest tests/bdd/features/issue-${ISSUE_NUMBER}.feature -v"
     else
         echo "❌ BDD scenarios missing"
         echo "   Run: .claude/hooks/pre-implementation-gate.sh"

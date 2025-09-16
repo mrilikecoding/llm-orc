@@ -39,9 +39,9 @@ validate_bdd_scenarios() {
         return 1
     fi
     
-    if command -v pytest &>/dev/null; then
-        echo "  Running: pytest $scenario_file"
-        if pytest "$scenario_file" --tb=short -q; then
+    if command -v uv &>/dev/null; then
+        echo "  Running: uv run pytest $scenario_file"
+        if uv run pytest "$scenario_file" --tb=short -q; then
             echo "  ✅ BDD scenarios passing"
             return 0
         else
@@ -49,7 +49,7 @@ validate_bdd_scenarios() {
             return 1
         fi
     else
-        echo "  ⚠️ pytest not available - install pytest-bdd for validation"
+        echo "  ⚠️ uv not available - install uv for validation"
         return 0
     fi
 }
@@ -87,8 +87,8 @@ check_architectural_compliance() {
     fi
     
     # Check 3: Test coverage
-    if command -v pytest &>/dev/null && [ -f "pyproject.toml" ]; then
-        local coverage_report=$(pytest --cov=src/llm_orc --cov-report=term-missing --tb=no -q 2>/dev/null | grep "TOTAL" || echo "")
+    if command -v uv &>/dev/null && [ -f "pyproject.toml" ]; then
+        local coverage_report=$(uv run pytest --cov=src/llm_orc --cov-report=term-missing --tb=no -q 2>/dev/null | grep "TOTAL" || echo "")
         if [[ "$coverage_report" =~ ([0-9]+)% ]]; then
             local coverage_percent="${BASH_REMATCH[1]}"
             if [ "$coverage_percent" -ge 95 ]; then
@@ -195,7 +195,7 @@ provide_recommendations() {
     if [ "$bdd_status" = "failing" ]; then
         echo ""
         echo "🎭 BDD Scenarios Need Attention:"
-        echo "  1. Review failing scenarios: pytest tests/bdd/features/issue-${issue_number}.feature -v"
+        echo "  1. Review failing scenarios: uv run pytest tests/bdd/features/issue-${issue_number}.feature -v"
         echo "  2. Update scenarios if requirements changed"
         echo "  3. Fix implementation if behavioral contracts are correct"
         echo ""
@@ -218,7 +218,7 @@ provide_recommendations() {
                     echo "  • Format code: ruff format src/llm_orc/"
                     ;;
                 "test_coverage")
-                    echo "  • Improve test coverage: pytest --cov=src/llm_orc --cov-report=html"
+                    echo "  • Improve test coverage: uv run pytest --cov=src/llm_orc --cov-report=html"
                     echo "    🤖 Consider: llm-orc-tdd-specialist"
                     ;;
                 "anti_patterns")
@@ -234,7 +234,7 @@ provide_recommendations() {
     echo "🚀 Next Steps:"
     echo "  • Continue TDD cycle: Red → Green → Refactor"
     echo "  • Run hooks before commit: .claude/hooks/bdd-development-gate.sh"
-    echo "  • Validate final implementation: pytest tests/bdd/features/issue-${issue_number}.feature"
+    echo "  • Validate final implementation: uv run pytest tests/bdd/features/issue-${issue_number}.feature"
 }
 
 # Main checkpoint workflow
