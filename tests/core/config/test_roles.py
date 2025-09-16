@@ -71,6 +71,7 @@ class TestRoleDefinition:
         )
 
         assert role.context == complex_context
+        assert role.context is not None
         assert role.context["model_params"]["temperature"] == 0.8
         assert role.context["instructions"] == ["Be helpful", "Be accurate"]
         assert role.context["nested"]["deep"]["value"] == 42
@@ -169,6 +170,7 @@ class TestRoleManager:
         retrieved = manager.get_role("immediate_role")
 
         assert retrieved is role  # Same instance
+        assert retrieved.context is not None
         assert retrieved.context["immediate"] is True
 
     def test_role_manager_isolation(self) -> None:
@@ -219,11 +221,13 @@ class TestRoleManager:
         retrieved_analyst = manager.get_role("data_analyst")
         retrieved_writer = manager.get_role("technical_writer")
 
+        assert retrieved_analyst.context is not None
         assert retrieved_analyst.context["expertise"] == [
             "statistics",
             "visualization",
             "machine_learning",
         ]
+        assert retrieved_writer.context is not None
         assert retrieved_writer.context["audience"] == "developers"
 
     def test_role_name_case_sensitivity(self) -> None:
@@ -283,14 +287,17 @@ class TestRoleManager:
 
         # Simulate usage
         active_role = manager.get_role("system")
+        assert active_role.context is not None
         assert active_role.context["behavior"] == "professional"
 
         # Switch to expert role
         expert = manager.get_role("domain_expert")
+        assert expert.context is not None
         expert.context["domains"] = ["machine_learning", "data_science"]
 
         # Verify state
         updated_expert = manager.get_role("domain_expert")
+        assert updated_expert.context is not None
         assert "machine_learning" in updated_expert.context["domains"]
 
     def test_empty_role_names_and_prompts(self) -> None:

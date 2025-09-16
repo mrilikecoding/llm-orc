@@ -207,7 +207,9 @@ class TestEnsembleScriptIntegration:
             agents=[
                 {
                     "name": "deterministic_agent",
-                    "script": 'echo "{\\"success\\": true, \\"data\\": \\"cached_result\\"}"',
+                    "script": (
+                        'echo "{\\"success\\": true, \\"data\\": \\"cached_result\\"}"'
+                    ),
                     "timeout_seconds": 1,
                 }
             ],
@@ -243,17 +245,26 @@ class TestEnsembleScriptIntegration:
             agents=[
                 {
                     "name": "fast_agent",
-                    "script": 'sleep 0.1 && echo "{\\"success\\": true, \\"agent\\": \\"fast\\"}"',
+                    "script": (
+                        "sleep 0.1 && echo "
+                        '"{\\"success\\": true, \\"agent\\": \\"fast\\"}"'
+                    ),
                     "timeout_seconds": 1,
                 },
                 {
                     "name": "medium_agent",
-                    "script": 'sleep 0.2 && echo "{\\"success\\": true, \\"agent\\": \\"medium\\"}"',
+                    "script": (
+                        "sleep 0.2 && echo "
+                        '"{\\"success\\": true, \\"agent\\": \\"medium\\"}"'
+                    ),
                     "timeout_seconds": 1,
                 },
                 {
                     "name": "slow_agent",
-                    "script": 'sleep 0.3 && echo "{\\"success\\": true, \\"agent\\": \\"slow\\"}"',
+                    "script": (
+                        "sleep 0.3 && echo "
+                        '"{\\"success\\": true, \\"agent\\": \\"slow\\"}"'
+                    ),
                     "timeout_seconds": 1,
                 },
             ],
@@ -279,7 +290,7 @@ class TestEnsembleScriptIntegration:
 
     @pytest.mark.asyncio
     async def test_error_handling_integration(self) -> None:
-        """Test error handling with proper exception chaining (replaces BDD scenario)."""
+        """Test error handling with proper exception chaining (replaces BDD)."""
         config = EnsembleConfig(
             name="error_test_ensemble",
             description="Test error handling and exception chaining",
@@ -291,7 +302,9 @@ class TestEnsembleScriptIntegration:
                 },
                 {
                     "name": "success_agent",
-                    "script": 'echo "{\\"success\\": true, \\"message\\": \\"I succeeded\\"}"',
+                    "script": (
+                        'echo "{\\"success\\": true, \\"message\\": \\"I succeeded\\"}"'
+                    ),
                     "timeout_seconds": 1,
                 },
             ],

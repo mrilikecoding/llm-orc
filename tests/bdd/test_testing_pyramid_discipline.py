@@ -171,9 +171,11 @@ def unit_test_percentage_should_be_70_plus(bdd_context: dict[str, Any]) -> None:
     # This will fail with current state (66%), which is expected behavior
     # The BDD scenario documents the requirement, implementation will fix it
     if pyramid["unit_percentage"] < 70:
+        gap = 70 - pyramid["unit_percentage"]
+        current_pct = pyramid["unit_percentage"]
         pytest.fail(
-            f"Unit test percentage {pyramid['unit_percentage']}% is below required 70%. "
-            f"Need {70 - pyramid['unit_percentage']}% more unit tests to meet architectural requirement."
+            f"Unit test percentage {current_pct}% is below required 70%. "
+            f"Need {gap}% more unit tests to meet architectural requirement."
         )
 
 
@@ -184,9 +186,11 @@ def integration_test_percentage_should_be_20_plus(bdd_context: dict[str, Any]) -
 
     # This will fail with current state (5%), which is expected behavior
     if pyramid["integration_percentage"] < 20:
+        gap = 20 - pyramid["integration_percentage"]
+        current_pct = pyramid["integration_percentage"]
         pytest.fail(
-            f"Integration test percentage {pyramid['integration_percentage']}% is below required 20%. "
-            f"Need {20 - pyramid['integration_percentage']}% more integration tests to meet architectural requirement."
+            f"Integration test percentage {current_pct}% is below required 20%. "
+            f"Need {gap}% more integration tests to meet architectural requirement."
         )
 
 
@@ -197,9 +201,11 @@ def bdd_scenario_percentage_should_be_10_max(bdd_context: dict[str, Any]) -> Non
 
     # This will fail with current state (28%), which is expected behavior
     if pyramid["bdd_percentage"] > 10:
+        excess = pyramid["bdd_percentage"] - 10
+        current_pct = pyramid["bdd_percentage"]
         pytest.fail(
-            f"BDD scenario percentage {pyramid['bdd_percentage']}% exceeds maximum 10%. "
-            f"Reduce by {pyramid['bdd_percentage'] - 10}% or add more unit/integration tests."
+            f"BDD scenario percentage {current_pct}% exceeds maximum 10%. "
+            f"Reduce by {excess}% or add more unit/integration tests."
         )
 
 
@@ -216,9 +222,12 @@ def total_test_structure_should_follow_pyramid_shape(
         >= pyramid["integration_tests"]
         >= pyramid["bdd_scenarios"]
     ):
+        unit_count = pyramid["unit_tests"]
+        int_count = pyramid["integration_tests"]
+        bdd_count = pyramid["bdd_scenarios"]
         pytest.fail(
-            f"Pyramid structure violated: Unit({pyramid['unit_tests']}) >= "
-            f"Integration({pyramid['integration_tests']}) >= BDD({pyramid['bdd_scenarios']}) required"
+            f"Pyramid structure violated: Unit({unit_count}) >= "
+            f"Integration({int_count}) >= BDD({bdd_count}) required"
         )
 
 
@@ -241,7 +250,8 @@ def ratio_violations_should_trigger_corrective_actions(
         # This is expected behavior - violations should trigger actions
         bdd_context["corrective_actions_triggered"] = True
         bdd_context["suggested_actions"] = [
-            "Generate missing unit tests using .claude/hooks/bdd-unit-test-generator.sh",
+            "Generate missing unit tests using "
+            ".claude/hooks/bdd-unit-test-generator.sh",
             "Add integration tests to bridge unit and BDD layers",
             "Review BDD scenarios to ensure proper unit test backing",
         ]
@@ -276,7 +286,6 @@ def adr_003_requires_unit_test_backing(bdd_context: dict[str, Any]) -> None:
 @when("unit test foundation validation is performed")
 def perform_unit_test_foundation_validation(bdd_context: dict[str, Any]) -> None:
     """Perform validation of unit test foundation for BDD scenario."""
-    scenario = bdd_context["target_scenario"]
     requirements = bdd_context["pyramid_requirements"]
 
     # Check for existence of unit tests supporting the BDD scenario
@@ -308,9 +317,11 @@ def should_have_3_unit_tests_per_bdd_scenario(bdd_context: dict[str, Any]) -> No
     validation = bdd_context["unit_test_validation"]
 
     if not validation["meets_ratio_requirement"]:
+        found_tests = validation["found_supporting_tests"]
+        expected_tests = validation["expected_unit_tests"]
         pytest.fail(
-            f"Found only {validation['found_supporting_tests']} supporting unit tests, "
-            f"but need at least {validation['expected_unit_tests']} for proper foundation."
+            f"Found only {found_tests} supporting unit tests, "
+            f"but need at least {expected_tests} for proper foundation."
         )
 
 
@@ -408,15 +419,19 @@ def should_have_at_least_27_integration_tests(bdd_context: dict[str, Any]) -> No
     analysis = bdd_context["integration_analysis"]
 
     if analysis["current_count"] < analysis["needed_count"]:
+        needed_count = analysis["needed_count"]
+        current_count = analysis["current_count"]
+        gap = analysis["gap"]
         pytest.fail(
-            f"Need {analysis['needed_count']} integration tests for 20% pyramid target, "
-            f"but only have {analysis['current_count']}. Gap: {analysis['gap']} tests."
+            f"Need {needed_count} integration tests for 20% pyramid target, "
+            f"but only have {current_count}. Gap: {gap} tests."
         )
 
 
 # Additional step definitions for remaining scenarios would follow the same pattern
 # Each step validates specific architectural requirements and documents violations
-# when current state doesn't meet the requirements (which is expected for this BDD contract)
+# when current state doesn't meet the requirements (which is expected for this BDD
+# contract)
 
 
 @then("integration tests should cover cross-component interactions")

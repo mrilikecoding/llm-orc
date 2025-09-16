@@ -99,8 +99,9 @@ class TestIssue24Units:
 
         assert error_output.success is False
         assert error_output.data is None
+        assert error_output.error is not None
         assert "exit code 1" in error_output.error
 
         # Test validation of error states
         with pytest.raises(ValidationError):
-            ScriptAgentOutput(success="invalid")  # Should be boolean
+            ScriptAgentOutput(success="invalid")  # type: ignore  # Should be boolean

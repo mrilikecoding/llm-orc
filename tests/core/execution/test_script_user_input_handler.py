@@ -210,7 +210,7 @@ class TestScriptUserInputHandler:
         # Verify 4 events were emitted
         assert event_emitter.call_count == 4
 
-        # Check event types (we can't easily check exact event objects without importing EventFactory)
+        # Check event types (can't check exact objects without EventFactory)
         calls = event_emitter.call_args_list
         assert len(calls) == 4
 
