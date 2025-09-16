@@ -100,127 +100,86 @@ trigger_agents() {
     local analysis_output="$1"
     local agents=($(echo "$analysis_output" | grep -v "^---" | grep -v ":"))
     local flags=$(echo "$analysis_output" | grep "^---" -A 10)
-    
+
     if [ ${#agents[@]} -eq 0 ]; then
         echo "✅ No specialized agents needed for these changes"
         exit 0
     fi
-    
+
     echo ""
-    echo "🤖 Activating specialized agents based on file patterns:"
-    
+    echo "🤖 Recommended Agent Actions (maintain user control):"
+
     # Get current issue context for agent guidance
     local current_branch=$(git branch --show-current 2>/dev/null)
     local issue_number=""
     if [[ "$current_branch" =~ feature/([0-9]+) ]]; then
         issue_number="${BASH_REMATCH[1]}"
     fi
-    
-    # Activate each required agent with appropriate context
+
+    # Provide actionable guidance for each required agent
     for agent in "${agents[@]}"; do
-        echo "  🎯 $agent"
-        
         case "$agent" in
             "architecture-reviewer")
-                cat << EOF
-{
-  "intelligentPostEditContext": {
-    "triggeredAgent": "$agent",
-    "modifiedFiles": [$(printf '"%s",' "${MODIFIED_FILES[@]}" | sed 's/,$//')],
-    "issueNumber": "$issue_number",
-    "trigger": "file_pattern_match",
-    "message": "Use llm-orc-architecture-reviewer to validate that recent changes to core components maintain ADR compliance. Focus on architectural patterns, integration points, and design consistency."
-  }
-}
-EOF
+                echo "  🏗️  llm-orc-architecture-reviewer"
+                echo "     📋 Focus: ADR compliance, architectural patterns, integration points"
+                echo "     📁 Files: $(printf '%s ' "${MODIFIED_FILES[@]}" | head -c 80)..."
+                echo "     💡 Run: Use Task tool with llm-orc-architecture-reviewer"
+                echo "     🎯 Goal: Validate core component changes maintain design consistency"
                 ;;
-                
+
             "bdd-specialist")
-                cat << EOF
-{
-  "intelligentPostEditContext": {
-    "triggeredAgent": "$agent",
-    "modifiedFiles": [$(printf '"%s",' "${MODIFIED_FILES[@]}" | sed 's/,$//')],
-    "issueNumber": "$issue_number",
-    "trigger": "schema_or_adr_changes",
-    "message": "Use llm-orc-bdd-specialist to update BDD scenarios affected by schema or ADR changes. Ensure behavioral contracts remain current with implementation changes."
-  }
-}
-EOF
+                echo "  🎭 llm-orc-bdd-specialist"
+                echo "     📋 Focus: BDD scenario updates, behavioral contracts"
+                echo "     📁 Files: $(printf '%s ' "${MODIFIED_FILES[@]}" | head -c 80)..."
+                echo "     💡 Run: Use Task tool with llm-orc-bdd-specialist"
+                echo "     🎯 Goal: Ensure scenarios match implementation changes"
                 ;;
-                
+
             "tdd-specialist")
-                cat << EOF
-{
-  "intelligentPostEditContext": {
-    "triggeredAgent": "$agent",
-    "modifiedFiles": [$(printf '"%s",' "${MODIFIED_FILES[@]}" | sed 's/,$//')],
-    "issueNumber": "$issue_number", 
-    "trigger": "test_modifications",
-    "message": "Use llm-orc-tdd-specialist to review test changes and ensure proper TDD discipline. Validate that tests follow Red→Green→Refactor cycle and maintain quality standards."
-  }
-}
-EOF
+                echo "  🧪 llm-orc-tdd-specialist"
+                echo "     📋 Focus: TDD cycle discipline, test quality standards"
+                echo "     📁 Files: $(printf '%s ' "${MODIFIED_FILES[@]}" | head -c 80)..."
+                echo "     💡 Run: Use Task tool with llm-orc-tdd-specialist"
+                echo "     🎯 Goal: Validate Red→Green→Refactor compliance"
                 ;;
-                
+
             "performance-optimizer")
-                cat << EOF
-{
-  "intelligentPostEditContext": {
-    "triggeredAgent": "$agent",
-    "modifiedFiles": [$(printf '"%s",' "${MODIFIED_FILES[@]}" | sed 's/,$//')],
-    "issueNumber": "$issue_number",
-    "trigger": "performance_critical_changes",
-    "message": "Use llm-orc-performance-optimizer to analyze changes to ensemble execution or script agent components for performance implications and optimization opportunities."
-  }
-}
-EOF
+                echo "  ⚡ llm-orc-performance-optimizer"
+                echo "     📋 Focus: Ensemble execution, async performance implications"
+                echo "     📁 Files: $(printf '%s ' "${MODIFIED_FILES[@]}" | head -c 80)..."
+                echo "     💡 Run: Use Task tool with llm-orc-performance-optimizer"
+                echo "     🎯 Goal: Identify optimization opportunities"
                 ;;
-                
+
             "security-auditor")
-                cat << EOF
-{
-  "intelligentPostEditContext": {
-    "triggeredAgent": "$agent",
-    "modifiedFiles": [$(printf '"%s",' "${MODIFIED_FILES[@]}" | sed 's/,$//')],
-    "issueNumber": "$issue_number",
-    "trigger": "security_sensitive_changes",
-    "message": "Use llm-orc-security-auditor to review security-sensitive changes for proper credential handling, input validation, and secure coding practices."
-  }
-}
-EOF
+                echo "  🔒 llm-orc-security-auditor"
+                echo "     📋 Focus: Credential handling, input validation, secure coding"
+                echo "     📁 Files: $(printf '%s ' "${MODIFIED_FILES[@]}" | head -c 80)..."
+                echo "     💡 Run: Use Task tool with llm-orc-security-auditor"
+                echo "     🎯 Goal: Review security-sensitive changes"
                 ;;
-                
+
             "ux-specialist")
-                cat << EOF
-{
-  "intelligentPostEditContext": {
-    "triggeredAgent": "$agent",
-    "modifiedFiles": [$(printf '"%s",' "${MODIFIED_FILES[@]}" | sed 's/,$//')],
-    "issueNumber": "$issue_number",
-    "trigger": "cli_interface_changes",
-    "message": "Use llm-orc-ux-specialist to review CLI changes for user experience, error messaging, and developer ergonomics improvements."
-  }
-}
-EOF
+                echo "  💻 llm-orc-ux-specialist"
+                echo "     📋 Focus: CLI interface, error messaging, developer ergonomics"
+                echo "     📁 Files: $(printf '%s ' "${MODIFIED_FILES[@]}" | head -c 80)..."
+                echo "     💡 Run: Use Task tool with llm-orc-ux-specialist"
+                echo "     🎯 Goal: Improve user experience"
                 ;;
-                
+
             "automation-optimizer")
-                cat << EOF
-{
-  "intelligentPostEditContext": {
-    "triggeredAgent": "$agent",
-    "modifiedFiles": [$(printf '"%s",' "${MODIFIED_FILES[@]}" | sed 's/,$//')],
-    "issueNumber": "$issue_number",
-    "trigger": "automation_configuration_changes",
-    "message": "Use automation-optimizer to analyze configuration changes and optimize the development automation system for maximum effectiveness."
-  }
-}
-EOF
+                echo "  🔧 automation-optimizer"
+                echo "     📋 Focus: Development automation system effectiveness"
+                echo "     📁 Files: $(printf '%s ' "${MODIFIED_FILES[@]}" | head -c 80)..."
+                echo "     💡 Run: Use Task tool with automation-optimizer"
+                echo "     🎯 Goal: Optimize automation workflows"
                 ;;
         esac
         echo ""
     done
+
+    echo "💡 To use agents: Call Task tool with subagent_type matching the agent name above"
+    echo "🎯 Context: Issue #${issue_number:-"N/A"} - $(git branch --show-current)"
 }
 
 # Function to check if changes warrant continuous validation

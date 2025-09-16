@@ -4,7 +4,7 @@
 # Migrates passing unit tests from issue-specific files to proper module locations
 # Triggers after individual BDD scenarios pass to maintain clean test organization
 #
-# Triggers: PostBDDScenario, Manual
+# Triggers: PostToolUse (pytest/test/coverage), Manual
 # Integration: Continuous test organization maintenance
 
 set -euo pipefail
@@ -45,7 +45,8 @@ identify_passing_tests() {
     local test_output
     local test_exit_code
 
-    if ! test_output=$(uv run pytest "$issue_test_file" -v --tb=no --no-header --no-summary -q 2>&1); then
+    # Run tests without coverage to avoid failing due to coverage thresholds
+    if ! test_output=$(uv run python -m pytest "$issue_test_file" -v --tb=no --no-header --no-summary --no-cov 2>&1); then
         test_exit_code=$?
         echo -e "${RED}❌ pytest failed to run (exit code $test_exit_code):${NC}" >&2
         echo "$test_output" >&2
