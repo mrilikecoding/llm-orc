@@ -69,3 +69,22 @@ class RichProgressController(ProgressController):
         )
         self._status.update(current_tree)
         self._status.start()
+
+    async def start_ensemble(self, ensemble_name: str) -> None:
+        """Start tracking ensemble execution progress."""
+        # Rich progress controller already handles ensemble tracking through status
+        pass
+
+    async def update_agent_progress(self, agent_name: str, status: str) -> None:
+        """Update progress for a specific agent."""
+        # Update agent status and refresh display
+        self._agent_statuses[agent_name] = status
+        current_tree = create_dependency_tree(
+            self._ensemble_agents, self._agent_statuses
+        )
+        self._status.update(current_tree)
+
+    async def complete_ensemble(self) -> None:
+        """Complete ensemble execution tracking."""
+        # Rich progress controller handles completion through status stop
+        pass

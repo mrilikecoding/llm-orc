@@ -48,6 +48,15 @@ class TestProgressControllerInterface:
             def resume_from_user_input(self, agent_name: str) -> None:
                 pass
 
+            async def start_ensemble(self, ensemble_name: str) -> None:
+                pass
+
+            async def update_agent_progress(self, agent_name: str, status: str) -> None:
+                pass
+
+            async def complete_ensemble(self) -> None:
+                pass
+
         # Should not raise
         controller = CompleteController()
         assert isinstance(controller, ProgressController)
@@ -140,6 +149,15 @@ class TestCustomProgressController:
                 self.current_agent = None
                 self.resume_count += 1
 
+            async def start_ensemble(self, ensemble_name: str) -> None:
+                pass
+
+            async def update_agent_progress(self, agent_name: str, status: str) -> None:
+                pass
+
+            async def complete_ensemble(self) -> None:
+                pass
+
         controller = StatefulController()
 
         # Initial state
@@ -182,6 +200,15 @@ class TestCustomProgressController:
                     )
                 self.paused_agent = None
 
+            async def start_ensemble(self, ensemble_name: str) -> None:
+                pass
+
+            async def update_agent_progress(self, agent_name: str, status: str) -> None:
+                pass
+
+            async def complete_ensemble(self) -> None:
+                pass
+
         controller = ValidatingController(["agent1", "agent2"])
 
         # Valid pause/resume
@@ -209,6 +236,15 @@ class TestCustomProgressController:
 
             def resume_from_user_input(self, agent_name: str) -> None:
                 self.log.append(f"RESUME: {agent_name}")
+
+            async def start_ensemble(self, ensemble_name: str) -> None:
+                pass
+
+            async def update_agent_progress(self, agent_name: str, status: str) -> None:
+                pass
+
+            async def complete_ensemble(self) -> None:
+                pass
 
         controller = LoggingController()
 
@@ -248,6 +284,15 @@ class TestProgressControllerIntegration:
                 pass
 
             def resume_from_user_input(self, agent_name: str) -> None:
+                pass
+
+            async def start_ensemble(self, ensemble_name: str) -> None:
+                pass
+
+            async def update_agent_progress(self, agent_name: str, status: str) -> None:
+                pass
+
+            async def complete_ensemble(self) -> None:
                 pass
 
         custom = CustomController()

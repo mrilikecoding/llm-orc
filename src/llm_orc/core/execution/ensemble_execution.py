@@ -17,6 +17,7 @@ from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.input_enhancer import InputEnhancer
 from llm_orc.core.execution.orchestration import Agent
+from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.results_processor import ResultsProcessor
 from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
 from llm_orc.core.execution.streaming_progress_tracker import StreamingProgressTracker
@@ -52,6 +53,7 @@ class EnsembleExecutor:
         self._results_processor = ResultsProcessor()
         self._streaming_progress_tracker = StreamingProgressTracker()
         self._artifact_manager = ArtifactManager()
+        self._progress_controller = NoOpProgressController()
 
         # Initialize execution coordinator with agent executor function
         # Use a wrapper to avoid circular dependency with _execute_agent_with_timeout
@@ -246,6 +248,10 @@ class EnsembleExecutor:
         # Continue with standard execution for non-interactive ensembles
         start_time = time.time()
 
+        # Start ensemble execution with progress controller
+        if self._progress_controller:
+            await self._progress_controller.start_ensemble(config.name)
+
         # Initialize execution setup
         result, results_dict = await self._initialize_execution_setup(
             config, input_data
@@ -274,9 +280,15 @@ class EnsembleExecutor:
             has_errors = has_errors or phase_has_errors
 
         # Finalize results with usage, stats, and artifact saving
-        return await self._finalize_execution_results(
+        final_result = await self._finalize_execution_results(
             config, result, has_errors, start_time
         )
+
+        # Complete ensemble execution with progress controller
+        if self._progress_controller:
+            await self._progress_controller.complete_ensemble()
+
+        return final_result
 
     def _detect_interactive_ensemble(self, config: EnsembleConfig) -> bool:
         """Detect if ensemble contains scripts that require user input.
@@ -999,6 +1011,12 @@ class EnsembleExecutor:
                     {"agent_name": agent_name, "timestamp": agent_start_time},
                 )
 
+                # Update progress controller with agent progress
+                if self._progress_controller:
+                    await self._progress_controller.update_agent_progress(
+                        agent_name, "started"
+                    )
+
                 # Get agent input
                 agent_input = self._input_enhancer.get_agent_input(
                     phase_input, agent_name
@@ -1031,6 +1049,12 @@ class EnsembleExecutor:
                         "duration_ms": duration_ms,
                     },
                 )
+
+                # Update progress controller with agent completion
+                if self._progress_controller:
+                    await self._progress_controller.update_agent_progress(
+                        agent_name, "completed"
+                    )
 
                 return agent_name, {
                     "response": response,

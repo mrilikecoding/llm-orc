@@ -25,6 +25,30 @@ class ProgressController(ABC):
         """
         pass
 
+    @abstractmethod
+    async def start_ensemble(self, ensemble_name: str) -> None:
+        """Start tracking ensemble execution progress.
+
+        Args:
+            ensemble_name: Name of the ensemble being executed
+        """
+        pass
+
+    @abstractmethod
+    async def update_agent_progress(self, agent_name: str, status: str) -> None:
+        """Update progress for a specific agent.
+
+        Args:
+            agent_name: Name of the agent
+            status: Current status of the agent execution
+        """
+        pass
+
+    @abstractmethod
+    async def complete_ensemble(self) -> None:
+        """Complete ensemble execution tracking."""
+        pass
+
 
 class NoOpProgressController(ProgressController):
     """No-op implementation for when no progress display is available."""
@@ -35,4 +59,16 @@ class NoOpProgressController(ProgressController):
 
     def resume_from_user_input(self, agent_name: str) -> None:
         """No-op resume."""
+        pass
+
+    async def start_ensemble(self, ensemble_name: str) -> None:
+        """No-op ensemble start."""
+        pass
+
+    async def update_agent_progress(self, agent_name: str, status: str) -> None:
+        """No-op agent progress update."""
+        pass
+
+    async def complete_ensemble(self) -> None:
+        """No-op ensemble completion."""
         pass
