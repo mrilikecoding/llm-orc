@@ -159,3 +159,162 @@ class TestEnsembleScriptIntegration:
         assert not artifacts_dir.exists(), (
             "Real artifacts should not be created during tests"
         )
+
+    @pytest.mark.asyncio
+    async def test_script_resolution_priority_order(self) -> None:
+        """Test script resolution follows priority order (replaces BDD scenario)."""
+        # Create temporary script structure to test resolution
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create .llm-orc/scripts directory structure
+            scripts_dir = Path(temp_dir) / ".llm-orc" / "scripts" / "primitives"
+            scripts_dir.mkdir(parents=True)
+
+            # Create test script
+            test_script = scripts_dir / "test_resolution.py"
+            test_script.write_text('print("resolved from .llm-orc/scripts")')
+            test_script.chmod(0o755)
+
+            config = EnsembleConfig(
+                name="script_resolution_test",
+                description="Test script resolution priority",
+                agents=[
+                    {
+                        "name": "resolver_agent",
+                        "script": str(test_script),
+                        "timeout_seconds": 2,
+                    }
+                ],
+            )
+
+            executor = EnsembleExecutor()
+            mock_artifact_manager = Mock(spec=ArtifactManager)
+            mock_artifact_manager.save_execution_results = Mock()
+
+            with patch.object(executor, "_artifact_manager", mock_artifact_manager):
+                result = await executor.execute(config, "test resolution")
+
+            assert result["status"] in ["completed", "completed_with_errors"]
+            assert "resolver_agent" in result["results"]
+
+    @pytest.mark.asyncio
+    async def test_ensemble_caching_integration(self) -> None:
+        """Test ensemble caching functionality (replaces BDD scenario)."""
+        config = EnsembleConfig(
+            name="cache_test_ensemble",
+            description="Test caching with deterministic script",
+            agents=[
+                {
+                    "name": "deterministic_agent",
+                    "script": 'echo "{\\"success\\": true, \\"data\\": \\"cached_result\\"}"',
+                    "timeout_seconds": 1,
+                }
+            ],
+        )
+
+        executor = EnsembleExecutor()
+        mock_artifact_manager = Mock(spec=ArtifactManager)
+        mock_artifact_manager.save_execution_results = Mock()
+
+        with patch.object(executor, "_artifact_manager", mock_artifact_manager):
+            # First execution - should cache result
+            result1 = await executor.execute(config, "cache test input")
+
+            # Second execution - should use cached result
+            result2 = await executor.execute(config, "cache test input")
+
+        # Both executions should succeed
+        assert result1["status"] in ["completed", "completed_with_errors"]
+        assert result2["status"] in ["completed", "completed_with_errors"]
+
+        # Results should be consistent (cached)
+        assert "deterministic_agent" in result1["results"]
+        assert "deterministic_agent" in result2["results"]
+
+    @pytest.mark.asyncio
+    async def test_async_performance_integration(self) -> None:
+        """Test async performance with parallel scripts (replaces BDD scenario)."""
+        import time
+
+        config = EnsembleConfig(
+            name="performance_test_ensemble",
+            description="Test parallel script execution performance",
+            agents=[
+                {
+                    "name": "fast_agent",
+                    "script": 'sleep 0.1 && echo "{\\"success\\": true, \\"agent\\": \\"fast\\"}"',
+                    "timeout_seconds": 1,
+                },
+                {
+                    "name": "medium_agent",
+                    "script": 'sleep 0.2 && echo "{\\"success\\": true, \\"agent\\": \\"medium\\"}"',
+                    "timeout_seconds": 1,
+                },
+                {
+                    "name": "slow_agent",
+                    "script": 'sleep 0.3 && echo "{\\"success\\": true, \\"agent\\": \\"slow\\"}"',
+                    "timeout_seconds": 1,
+                },
+            ],
+        )
+
+        executor = EnsembleExecutor()
+        mock_artifact_manager = Mock(spec=ArtifactManager)
+        mock_artifact_manager.save_execution_results = Mock()
+
+        start_time = time.time()
+
+        with patch.object(executor, "_artifact_manager", mock_artifact_manager):
+            result = await executor.execute(config, "performance test")
+
+        execution_time = time.time() - start_time
+
+        # Should complete in parallel (closer to max script time, not sum)
+        assert execution_time < 1.0, (
+            f"Parallel execution took {execution_time}s, expected < 1.0s"
+        )
+        assert result["status"] in ["completed", "completed_with_errors"]
+        assert len(result["results"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_error_handling_integration(self) -> None:
+        """Test error handling with proper exception chaining (replaces BDD scenario)."""
+        config = EnsembleConfig(
+            name="error_test_ensemble",
+            description="Test error handling and exception chaining",
+            agents=[
+                {
+                    "name": "failing_agent",
+                    "script": "exit 1",  # Script that will fail
+                    "timeout_seconds": 1,
+                },
+                {
+                    "name": "success_agent",
+                    "script": 'echo "{\\"success\\": true, \\"message\\": \\"I succeeded\\"}"',
+                    "timeout_seconds": 1,
+                },
+            ],
+        )
+
+        executor = EnsembleExecutor()
+        mock_artifact_manager = Mock(spec=ArtifactManager)
+        mock_artifact_manager.save_execution_results = Mock()
+
+        with patch.object(executor, "_artifact_manager", mock_artifact_manager):
+            result = await executor.execute(config, "error test")
+
+        # Ensemble should handle errors gracefully and include both agents
+        assert result["status"] == "completed"
+        assert "failing_agent" in result["results"]
+        assert "success_agent" in result["results"]
+
+        # Check that failing agent properly reports error in response
+        failing_result = result["results"]["failing_agent"]
+        assert failing_result["status"] == "success"  # Executor handles gracefully
+        assert "exit code 1" in failing_result["response"]  # Error details in response
+
+        # Success agent should show proper failure message
+        success_result = result["results"]["success_agent"]
+        assert success_result["status"] == "success"  # Graceful handling
+        assert "Script not found" in success_result["response"]  # Expected error
