@@ -331,3 +331,109 @@ class TestEnsembleScriptIntegration:
         success_result = result["results"]["success_agent"]
         assert success_result["status"] == "success"  # Graceful handling
         assert "Script not found" in success_result["response"]  # Expected error
+
+    @pytest.mark.asyncio
+    async def test_script_resolver_ensemble_executor_json_contract_validation(
+        self,
+    ) -> None:
+        """RED PHASE: Test ScriptResolver ↔ EnsembleExecutor JSON integration.
+
+        This test validates the integration between ScriptResolver script discovery
+        and EnsembleExecutor JSON I/O contract validation during ensemble execution.
+
+        Expected to FAIL initially because JSON contract validation is not implemented
+        in the ScriptResolver → EnsembleExecutor handoff.
+        """
+        import json
+        from pathlib import Path
+
+        from llm_orc.core.execution.script_resolver import ScriptResolver
+        from llm_orc.schemas.script_agent import ScriptAgentInput, ScriptAgentOutput
+
+        # Create script resolver and test discovery
+        resolver = ScriptResolver()
+
+        # Test script discovery from .llm-orc/scripts/
+        script_path = resolver.resolve_script_path("test_json_contract_agent.py")
+        assert Path(script_path).exists(), "Test script should be discoverable"
+
+        # Create ensemble config using discovered script
+        config = EnsembleConfig(
+            name="json_contract_validation_test",
+            description="Test JSON contract validation in ScriptResolver integration",
+            agents=[
+                {
+                    "name": "contract_validator",
+                    "script": "test_json_contract_agent.py",  # By ScriptResolver
+                    "timeout_seconds": 5,
+                }
+            ],
+        )
+
+        # Create input that conforms to ScriptAgentInput schema
+        script_input = ScriptAgentInput(
+            agent_name="contract_validator",
+            input_data="Test input for JSON contract validation",
+            context={"test_context": "integration_test"},
+            dependencies={"upstream_agent": "some_result"},
+        )
+
+        executor = EnsembleExecutor()
+        mock_artifact_manager = Mock(spec=ArtifactManager)
+        mock_artifact_manager.save_execution_results = Mock()
+
+        with patch.object(executor, "_artifact_manager", mock_artifact_manager):
+            # Execute ensemble with ScriptAgentInput JSON
+            result = await executor.execute(config, script_input.model_dump_json())
+
+        # Verify ensemble execution succeeded
+        assert result["status"] in ["completed", "completed_with_errors"]
+        assert "contract_validator" in result["results"]
+
+        agent_result = result["results"]["contract_validator"]
+        assert agent_result["status"] == "success"
+
+        # Parse and validate output conforms to ScriptAgentOutput schema
+        response = agent_result["response"]
+
+        # This is where the test should FAIL initially:
+        # JSON contract validation should ensure response is valid ScriptAgentOutput
+        if isinstance(response, str):
+            response_data = json.loads(response)
+        else:
+            response_data = response
+
+        # Validate the output conforms to ScriptAgentOutput schema
+        # This assertion should FAIL because JSON contract validation
+        # is not implemented in the ScriptResolver → EnsembleExecutor handoff
+        validated_output = ScriptAgentOutput.model_validate(response_data)
+
+        # Additional assertions that should pass once validation is implemented
+        assert validated_output.success is True
+        assert validated_output.data is not None
+        assert validated_output.error is None
+        assert isinstance(validated_output.agent_requests, list)
+
+        # Verify processed data contains expected structure
+        assert "processed_input" in validated_output.data
+        assert "agent_name" in validated_output.data
+
+        # This assertion should FAIL because the ScriptAgentInput JSON
+        # is not being properly passed through the ScriptResolver → EnsembleExecutor
+        # The script receives default values instead of the structured input
+        expected_name = "contract_validator"
+        actual_name = validated_output.data["agent_name"]
+        assert actual_name == expected_name, (
+            f"Expected agent_name '{expected_name}' but got '{actual_name}'. "
+            "This indicates JSON contract validation is not implemented."
+        )
+
+        # Additional validation that the JSON structure was properly passed
+        assert validated_output.data["dependency_count"] > 0, (
+            "Expected dependencies to be passed to script, but got 0. "
+            "This confirms ScriptAgentInput JSON is not validated/passed correctly."
+        )
+        assert len(validated_output.data["context_keys"]) > 0, (
+            "Expected context to be passed to script, but got empty list. "
+            "This confirms ScriptAgentInput JSON is not validated/passed correctly."
+        )

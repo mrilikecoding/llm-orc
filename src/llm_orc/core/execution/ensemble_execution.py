@@ -658,22 +658,53 @@ class EnsembleExecutor:
                 import json
 
                 parsed_input = json.loads(input_data)
+
+                # JSON Contract Validation (ADR-001): Check if input is ScriptAgentInput
+                # If so, pass it directly to avoid double-wrapping
+                if (
+                    isinstance(parsed_input, dict)
+                    and "agent_name" in parsed_input
+                    and "input_data" in parsed_input
+                ):
+                    # ScriptAgentInput JSON - pass directly to script without wrapping
+                    response = await script_agent.execute_with_schema_json(input_data)
+                else:
+                    # Legacy input format - use existing wrapping behavior
+                    response = await script_agent.execute(parsed_input)
             except (json.JSONDecodeError, TypeError):
                 # If input is not valid JSON, treat as raw string
                 parsed_input = input_data
 
-            # Check if this script requires user input
-            user_input_detection = ScriptUserInputHandler()
-            script_ref = agent_config.get("script", "")
+                # Check if this script requires user input
+                user_input_detection = ScriptUserInputHandler()
+                script_ref = agent_config.get("script", "")
 
-            if user_input_detection.requires_user_input(script_ref):
-                # For scripts that use input(), use interactive execution
-                response = await self._execute_interactive_script_agent(
-                    script_agent, parsed_input
-                )
+                if user_input_detection.requires_user_input(script_ref):
+                    # For scripts that use input(), use interactive execution
+                    response = await self._execute_interactive_script_agent(
+                        script_agent, parsed_input
+                    )
+                else:
+                    # Use regular execute for non-interactive scripts
+                    response = await script_agent.execute(parsed_input)
             else:
-                # Use regular execute for non-interactive scripts
-                response = await script_agent.execute(parsed_input)
+                # For valid JSON, check if user input is needed (only for legacy format)
+                if not (
+                    isinstance(parsed_input, dict)
+                    and "agent_name" in parsed_input
+                    and "input_data" in parsed_input
+                ):
+                    user_input_detection = ScriptUserInputHandler()
+                    script_ref = agent_config.get("script", "")
+
+                    if user_input_detection.requires_user_input(script_ref):
+                        # For scripts that use input(), use interactive execution
+                        response = await self._execute_interactive_script_agent(
+                            script_agent, parsed_input
+                        )
+                    else:
+                        # Use regular execute for non-interactive scripts
+                        response = await script_agent.execute(parsed_input)
 
             # Final sample before completion
             self._usage_collector.sample_agent_resources(agent_name)
