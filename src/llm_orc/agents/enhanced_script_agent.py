@@ -13,6 +13,61 @@ from llm_orc.core.execution.script_resolver import ScriptResolver
 from llm_orc.schemas.script_agent import ScriptAgentInput, ScriptAgentOutput
 
 
+class ScriptEnvironmentManager:
+    """Manages environment variable preparation for script execution."""
+
+    def __init__(
+        self, base_environment: dict[str, str], agent_parameters: dict[str, Any]
+    ):
+        """Initialize with base environment and agent parameters.
+
+        Args:
+            base_environment: Base environment variables
+            agent_parameters: Agent-specific parameters
+        """
+        self.base_environment = base_environment
+        self.agent_parameters = agent_parameters
+
+    def prepare_environment(
+        self, input_data: str, direct_json: bool = False
+    ) -> dict[str, str]:
+        """Prepare environment with proper JSON handling.
+
+        Args:
+            input_data: Input data (raw or JSON)
+            direct_json: If True, pass input_data directly as ScriptAgentInput JSON
+
+        Returns:
+            Environment dictionary with INPUT_DATA and AGENT_PARAMETERS
+        """
+        env = os.environ.copy()
+        env.update(self.base_environment)
+
+        if direct_json:
+            # Pass ScriptAgentInput JSON directly for schema validation
+            env["INPUT_DATA"] = input_data
+            env["AGENT_PARAMETERS"] = json.dumps(self.agent_parameters)
+        else:
+            # Parse json_input to extract ScriptAgentInput for environment variables
+            try:
+                parsed_input = json.loads(input_data)
+                # Extract the actual input data which should be ScriptAgentInput JSON
+                actual_input = parsed_input.get("input", "")
+                # Set INPUT_DATA environment variable for script compatibility
+                if isinstance(actual_input, str):
+                    env["INPUT_DATA"] = actual_input
+                else:
+                    env["INPUT_DATA"] = json.dumps(actual_input)
+                # Set AGENT_PARAMETERS for additional parameters
+                env["AGENT_PARAMETERS"] = json.dumps(parsed_input.get("parameters", {}))
+            except (json.JSONDecodeError, KeyError):
+                # Fallback to passing raw input_data as INPUT_DATA
+                env["INPUT_DATA"] = input_data
+                env["AGENT_PARAMETERS"] = "{}"
+
+        return env
+
+
 class EnhancedScriptAgent(ScriptAgent):
     """Enhanced script agent that supports JSON I/O and script resolution."""
 
@@ -26,6 +81,7 @@ class EnhancedScriptAgent(ScriptAgent):
         super().__init__(name, config)
         self._script_resolver = ScriptResolver()
         self.parameters = config.get("parameters", {})
+        self._env_manager = ScriptEnvironmentManager(self.environment, self.parameters)
 
     async def execute(
         self, input_data: str, context: dict[str, Any] | None = None
@@ -198,10 +254,7 @@ class EnhancedScriptAgent(ScriptAgent):
         interpreter = self._get_interpreter(script_path)
 
         # Prepare environment with ScriptAgentInput JSON directly
-        env = os.environ.copy()
-        env.update(self.environment)
-        env["INPUT_DATA"] = input_json  # Pass ScriptAgentInput JSON directly
-        env["AGENT_PARAMETERS"] = json.dumps(self.parameters)
+        env = self._env_manager.prepare_environment(input_json, direct_json=True)
 
         # Execute script with ScriptAgentInput JSON in environment
         result = subprocess.run(  # nosec B603
@@ -477,27 +530,7 @@ class EnhancedScriptAgent(ScriptAgent):
         Returns:
             Environment dictionary with INPUT_DATA and AGENT_PARAMETERS
         """
-        env = os.environ.copy()
-        env.update(self.environment)
-
-        # Parse json_input to extract ScriptAgentInput for environment variables
-        try:
-            input_data = json.loads(json_input)
-            # Extract the actual input data which should be ScriptAgentInput JSON
-            actual_input = input_data.get("input", "")
-            # Set INPUT_DATA environment variable for script compatibility
-            if isinstance(actual_input, str):
-                env["INPUT_DATA"] = actual_input
-            else:
-                env["INPUT_DATA"] = json.dumps(actual_input)
-            # Set AGENT_PARAMETERS for additional parameters
-            env["AGENT_PARAMETERS"] = json.dumps(input_data.get("parameters", {}))
-        except (json.JSONDecodeError, KeyError):
-            # Fallback to passing raw json_input as INPUT_DATA
-            env["INPUT_DATA"] = json_input
-            env["AGENT_PARAMETERS"] = "{}"
-
-        return env
+        return self._env_manager.prepare_environment(json_input, direct_json=False)
 
     async def _execute_script_file(self, script_path: str, json_input: str) -> str:
         """Execute a script file with JSON input via stdin.
