@@ -22,6 +22,11 @@
             "type": "command",
             "command": ".claude/hooks/agent-advisor.sh",
             "description": "Suggest relevant specialized agents based on current context"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/session-start-adr-summary.sh",
+            "description": "Show ADR progress summary and priorities for session planning"
           }
         ]
       }
