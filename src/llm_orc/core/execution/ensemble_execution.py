@@ -12,6 +12,7 @@ from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.config.roles import RoleDefinition
 from llm_orc.core.execution.agent_execution_coordinator import AgentExecutionCoordinator
 from llm_orc.core.execution.agent_executor import AgentExecutor
+from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
@@ -19,6 +20,7 @@ from llm_orc.core.execution.input_enhancer import InputEnhancer
 from llm_orc.core.execution.orchestration import Agent
 from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.results_processor import ResultsProcessor
+from llm_orc.core.execution.script_cache import ScriptCache, ScriptCacheConfig
 from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
 from llm_orc.core.execution.streaming_progress_tracker import StreamingProgressTracker
 from llm_orc.core.execution.usage_collector import UsageCollector
@@ -54,6 +56,7 @@ class EnsembleExecutor:
         self._streaming_progress_tracker = StreamingProgressTracker()
         self._artifact_manager = ArtifactManager()
         self._progress_controller = NoOpProgressController()
+        self._agent_request_processor = AgentRequestProcessor(self._dependency_resolver)
 
         # Initialize execution coordinator with agent executor function
         # Use a wrapper to avoid circular dependency with _execute_agent_with_timeout
@@ -75,6 +78,22 @@ class EnsembleExecutor:
             self._resolve_model_profile_to_config,
             self._execute_agent_with_timeout,
             self._input_enhancer.get_agent_input,
+        )
+
+        # Initialize script cache for reproducible research
+        self._script_cache_config = self._load_script_cache_config()
+        self._script_cache = ScriptCache(self._script_cache_config)
+
+    def _load_script_cache_config(self) -> ScriptCacheConfig:
+        """Load script cache configuration from performance config."""
+        cache_config = self._performance_config.get("script_cache", {})
+
+        return ScriptCacheConfig(
+            enabled=cache_config.get("enabled", True),
+            ttl_seconds=cache_config.get("ttl_seconds", 3600),
+            max_size=cache_config.get("max_size", 1000),
+            persist_to_artifacts=cache_config.get("persist_to_artifacts", False),
+            artifact_base_dir=self._artifact_manager.base_dir,
         )
 
     async def _load_model_from_agent_config(
@@ -284,6 +303,14 @@ class EnsembleExecutor:
             config, result, has_errors, start_time
         )
 
+        # Add processed agent requests to metadata if any exist
+        if hasattr(self, "_ensemble_metadata") and self._ensemble_metadata.get(
+            "processed_agent_requests"
+        ):
+            final_result["metadata"]["processed_agent_requests"] = (
+                self._ensemble_metadata["processed_agent_requests"]
+            )
+
         # Complete ensemble execution with progress controller
         if self._progress_controller:
             await self._progress_controller.complete_ensemble()
@@ -398,7 +425,7 @@ class EnsembleExecutor:
             )
 
             # Process parallel execution results
-            phase_has_errors = self._process_phase_results(
+            phase_has_errors = await self._process_phase_results(
                 phase_results, results_dict, phase_agents
             )
 
@@ -471,6 +498,14 @@ class EnsembleExecutor:
         final_result = await self._finalize_execution_results(
             config, result, has_errors, start_time
         )
+
+        # Add processed agent requests to metadata if any exist
+        if hasattr(self, "_ensemble_metadata") and self._ensemble_metadata.get(
+            "processed_agent_requests"
+        ):
+            final_result["metadata"]["processed_agent_requests"] = (
+                self._ensemble_metadata["processed_agent_requests"]
+            )
 
         # Add interactive-specific metadata using helper
         self._add_interactive_metadata(final_result, user_inputs_collected)
@@ -557,7 +592,7 @@ class EnsembleExecutor:
             )
 
             # Process parallel execution results
-            phase_has_errors = self._process_phase_results(
+            phase_has_errors = await self._process_phase_results(
                 phase_results, results_dict, phase_agents
             )
 
@@ -637,6 +672,41 @@ class EnsembleExecutor:
             )
 
     async def _execute_script_agent(
+        self, agent_config: dict[str, Any], input_data: str
+    ) -> tuple[str, ModelInterface | None]:
+        """Execute script agent with caching and resource monitoring."""
+        script_content = agent_config.get("script", "")
+        parameters = agent_config.get("parameters", {})
+
+        # Check cache first
+        cache_key_params = {
+            "input_data": input_data,
+            "parameters": parameters,
+        }
+
+        cached_result = self._script_cache.get(script_content, cache_key_params)
+        if cached_result is not None:
+            # Cache hit - return cached result
+            return cached_result.get("output", ""), None
+
+        # Cache miss - execute script and cache result
+        start_time = time.time()
+        response, model_instance = await self._execute_script_agent_without_cache(
+            agent_config, input_data
+        )
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        # Cache the result
+        cache_result = {
+            "output": response,
+            "execution_metadata": {"duration_ms": duration_ms},
+            "success": True,
+        }
+        self._script_cache.set(script_content, cache_key_params, cache_result)
+
+        return response, model_instance
+
+    async def _execute_script_agent_without_cache(
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
         """Execute script agent with resource monitoring using EnhancedScriptAgent."""
@@ -1130,7 +1200,7 @@ class EnsembleExecutor:
 
         return phase_results
 
-    def _process_phase_results(
+    async def _process_phase_results(
         self,
         phase_results: dict[str, Any],
         results_dict: dict[str, Any],
@@ -1138,6 +1208,7 @@ class EnsembleExecutor:
     ) -> bool:
         """Process parallel execution results and return if any errors occurred."""
         has_errors = False
+        processed_agent_requests: list[dict[str, Any]] = []
 
         # Create agent lookup for model profile information
         agent_configs = {agent["name"]: agent for agent in phase_agents}
@@ -1154,6 +1225,35 @@ class EnsembleExecutor:
                 has_errors = True
                 results_dict[agent_name]["error"] = agent_result["error"]
 
+            # Process AgentRequest objects from successful script agents (ADR-001)
+            if agent_result["status"] == "success":
+                response = agent_result.get("response")
+                if response and isinstance(response, str):
+                    try:
+                        # Process script output for AgentRequest objects
+                        processor = self._agent_request_processor
+                        processed_result = (
+                            await processor.process_script_output_with_requests(
+                                response, agent_name, phase_agents
+                            )
+                        )
+
+                        # Store processed agent requests for coordination
+                        if processed_result.get("agent_requests"):
+                            processed_agent_requests.extend(
+                                processed_result["agent_requests"]
+                            )
+
+                        # Add metadata about processed requests
+                        results_dict[agent_name]["agent_requests"] = (
+                            processed_result.get("agent_requests", [])
+                        )
+
+                    except Exception:
+                        # Silently ignore AgentRequest processing errors
+                        # Script agents may not output AgentRequest objects
+                        pass
+
             # Collect usage for successful agents
             if (
                 agent_result["status"] == "success"
@@ -1166,6 +1266,14 @@ class EnsembleExecutor:
                 self._usage_collector.collect_agent_usage(
                     agent_name, agent_result["model_instance"], model_profile
                 )
+
+        # Store processed agent requests in results metadata for coordination
+        if processed_agent_requests:
+            if not hasattr(self, "_ensemble_metadata"):
+                self._ensemble_metadata = {}
+            self._ensemble_metadata["processed_agent_requests"] = (
+                processed_agent_requests
+            )
 
         return has_errors
 
