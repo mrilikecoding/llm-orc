@@ -811,6 +811,178 @@ class TestArtifactManagerListEnsembles:
         assert "shallow-ensemble" in found_names
 
 
+class TestArtifactManagerScriptArtifacts:
+    """Test script-specific artifact features for ADR-001 requirements."""
+
+    def test_save_script_artifact_with_metadata(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """GREEN PHASE: Test script artifact saving with metadata."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        # Create script agent output
+        script_output = ScriptAgentOutput(
+            success=True,
+            data={"processed": "test data", "version": "1.0"},
+            error=None,
+            agent_requests=[],
+        )
+
+        # Save script artifact with metadata
+        artifact_path = artifact_manager.save_script_artifact(
+            agent_name="test_script_agent",
+            script_name="data_processor.py",
+            script_output=script_output,
+            input_hash="abc123",
+            metadata={"version": "1.0", "environment": "test"},
+        )
+
+        # Verify artifact directory structure
+        assert artifact_path.exists()
+        assert artifact_path.is_dir()
+        assert (artifact_path / "output.json").exists()
+        assert (artifact_path / "metadata.json").exists()
+
+        # Verify output.json content
+        import json
+
+        with (artifact_path / "output.json").open("r") as f:
+            output_data = json.load(f)
+        assert output_data["success"] is True
+        assert output_data["data"]["processed"] == "test data"
+
+        # Verify metadata.json content
+        with (artifact_path / "metadata.json").open("r") as f:
+            metadata = json.load(f)
+        assert metadata["agent_name"] == "test_script_agent"
+        assert metadata["script_name"] == "data_processor.py"
+        assert metadata["input_hash"] == "abc123"
+        assert metadata["version"] == "1.0"
+        assert metadata["environment"] == "test"
+
+    def test_validate_script_output_schema(
+        self, artifact_manager: ArtifactManager
+    ) -> None:
+        """GREEN PHASE: Test script output validation."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        # Valid script output
+        valid_output = ScriptAgentOutput(
+            success=True, data={"result": "success"}, error=None, agent_requests=[]
+        )
+
+        # Should validate successfully
+        validated = artifact_manager.validate_script_output(valid_output)
+        assert validated == valid_output
+
+        # Test validation errors
+        with pytest.raises(
+            ValueError, match="script_output must be a ScriptAgentOutput instance"
+        ):
+            artifact_manager.validate_script_output({"not": "a_script_output"})  # type: ignore[arg-type]
+
+    def test_get_script_artifacts(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """GREEN PHASE: Test getting script artifacts."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        # Create and save multiple artifacts
+        script_output1 = ScriptAgentOutput(success=True, data={"run": 1})
+        script_output2 = ScriptAgentOutput(success=True, data={"run": 2})
+
+        artifact_manager.save_script_artifact(
+            agent_name="test_agent",
+            script_name="test.py",
+            script_output=script_output1,
+            input_hash="hash1",
+        )
+
+        artifact_manager.save_script_artifact(
+            agent_name="test_agent",
+            script_name="test.py",
+            script_output=script_output2,
+            input_hash="hash2",
+        )
+
+        # Get all artifacts for agent
+        artifacts = artifact_manager.get_script_artifacts("test_agent")
+        assert len(artifacts) == 2
+        assert all("timestamp" in artifact for artifact in artifacts)
+        assert all("path" in artifact for artifact in artifacts)
+        assert all("metadata" in artifact for artifact in artifacts)
+
+        # Test non-existent agent
+        empty_artifacts = artifact_manager.get_script_artifacts("non_existent")
+        assert empty_artifacts == []
+
+    def test_share_artifacts_between_agents(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """GREEN PHASE: Test artifact sharing between agents."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        # Create and save an artifact
+        script_output = ScriptAgentOutput(
+            success=True, data={"shared_data": "test"}, error=None, agent_requests=[]
+        )
+
+        artifact_manager.save_script_artifact(
+            agent_name="producer",
+            script_name="producer.py",
+            script_output=script_output,
+            input_hash="shared_hash",
+        )
+
+        # Share artifact between agents
+        success = artifact_manager.share_artifact(
+            source_agent="producer",
+            target_agent="consumer",
+            artifact_id="shared_hash",
+        )
+        assert success is True
+
+        # Verify shared artifacts
+        shared = artifact_manager.get_shared_artifacts("consumer")
+        assert "shared_hash" in shared
+        assert shared["shared_hash"]["source_agent"] == "producer"
+
+        # Test sharing non-existent artifact
+        no_success = artifact_manager.share_artifact(
+            source_agent="producer",
+            target_agent="consumer",
+            artifact_id="non_existent",
+        )
+        assert no_success is False
+
+    def test_artifact_cache_performance(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """GREEN PHASE: Test artifact cache performance optimization."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        # Create and save an artifact (should be cached)
+        script_output = ScriptAgentOutput(success=True, data={"cached": "data"})
+
+        artifact_manager.save_script_artifact(
+            agent_name="cached_agent",
+            script_name="cache_test.py",
+            script_output=script_output,
+            input_hash="cache_key",
+        )
+
+        # Get cached artifact
+        cached = artifact_manager.get_cached_artifact("cached_agent:cache_key")
+        assert cached is not None
+        assert cached["output"].data["cached"] == "data"
+        assert "metadata" in cached
+        assert "path" in cached
+
+        # Test non-existent cache key
+        not_cached = artifact_manager.get_cached_artifact("non_existent_key")
+        assert not_cached is None
+
+
 class TestArtifactManagerEndToEndIntegration:
     """End-to-end integration tests for mirrored directory structure."""
 
