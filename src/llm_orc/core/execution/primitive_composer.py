@@ -205,6 +205,73 @@ class PrimitiveComposer:
 
         return execution_order
 
+    def analyze_parallel_execution(
+        self, composition_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Analyze dependency graph for parallel execution opportunities.
+
+        Args:
+            composition_config: Configuration with primitives and dependencies
+
+        Returns:
+            Parallel execution analysis including independent primitives and groups
+        """
+        primitives = composition_config.get("primitives", [])
+
+        # Build dependency graph
+        graph: dict[str, list[str]] = {}
+        in_degree: dict[str, int] = {}
+
+        # Initialize all primitives
+        for primitive in primitives:
+            name = primitive["name"]
+            graph[name] = []
+            in_degree[name] = 0
+
+        # Build dependency edges
+        for primitive in primitives:
+            name = primitive["name"]
+            dependencies = primitive.get("dependencies", {})
+            for dep_ref in dependencies.values():
+                if "." in dep_ref:  # References another primitive
+                    dep_name = dep_ref.split(".")[0]
+                    if dep_name in graph:
+                        graph[dep_name].append(name)
+                        in_degree[name] += 1
+
+        # Find independent primitives (no dependencies)
+        independent_primitives = [
+            name for name, degree in in_degree.items() if degree == 0
+        ]
+
+        # Group primitives by execution level for parallel processing
+        parallel_groups = []
+        remaining = {primitive["name"] for primitive in primitives}
+        current_degree = dict(in_degree)
+
+        while remaining:
+            # Find all primitives that can run in parallel at this level
+            ready = [name for name in remaining if current_degree[name] == 0]
+            if not ready:
+                break  # Circular dependency
+
+            parallel_groups.append(ready)
+            remaining -= set(ready)
+
+            # Update degrees for next level
+            for name in ready:
+                for neighbor in graph[name]:
+                    current_degree[neighbor] -= 1
+
+        return {
+            "independent_primitives": independent_primitives,
+            "parallel_groups": parallel_groups,
+            "max_concurrency": max(len(group) for group in parallel_groups)
+            if parallel_groups
+            else 1,
+            "total_levels": len(parallel_groups),
+        }
+
     def _prepare_primitive_input(
         self,
         primitive: dict[str, Any],
