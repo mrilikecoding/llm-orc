@@ -192,52 +192,73 @@ update_adr_status() {
     local adr_num="$3"
     local bdd_status="$4"
 
-    echo -e "\n${PURPLE}📋 ADR-${adr_num} Status Update Opportunity${NC}"
-    echo -e "Current Status: $(get_adr_status "$adr_file")"
-    echo -e "BDD Scenarios: $bdd_status"
-    echo -e "Suggested: $suggested_status"
+    # Check if stdin is a terminal (interactive mode)
+    if [ -t 0 ]; then
+        echo -e "\n${PURPLE}📋 ADR-${adr_num} Status Update Opportunity${NC}"
+        echo -e "Current Status: $(get_adr_status "$adr_file")"
+        echo -e "BDD Scenarios: $bdd_status"
+        echo -e "Suggested: $suggested_status"
 
-    case "$suggested_status" in
-        "IN_PROGRESS")
-            echo -e "\n${GREEN}✨ Ready to transition to IN_PROGRESS${NC}"
-            echo "BDD scenarios and tests are set up - implementation can begin!"
-            ;;
-        "IMPLEMENTED")
-            echo -e "\n${GREEN}🎉 Ready to transition to IMPLEMENTED${NC}"
-            echo "All BDD scenarios are passing - core implementation complete!"
-            ;;
-        "CONSIDER_VALIDATED")
-            echo -e "\n${BLUE}🔍 Consider transitioning to VALIDATED${NC}"
-            echo "Implementation is stable and scenarios passing consistently."
-            ;;
-    esac
+        case "$suggested_status" in
+            "IN_PROGRESS")
+                echo -e "\n${GREEN}✨ Ready to transition to IN_PROGRESS${NC}"
+                echo "BDD scenarios and tests are set up - implementation can begin!"
+                ;;
+            "IMPLEMENTED")
+                echo -e "\n${GREEN}🎉 Ready to transition to IMPLEMENTED${NC}"
+                echo "All BDD scenarios are passing - core implementation complete!"
+                ;;
+            "CONSIDER_VALIDATED")
+                echo -e "\n${BLUE}🔍 Consider transitioning to VALIDATED${NC}"
+                echo "Implementation is stable and scenarios passing consistently."
+                ;;
+        esac
 
-    echo -e "\nWould you like to:"
-    echo "1. Update ADR status automatically"
-    echo "2. View ADR lifecycle documentation"
-    echo "3. Skip this update"
+        echo -e "\nWould you like to:"
+        echo "1. Update ADR status automatically"
+        echo "2. View ADR lifecycle documentation"
+        echo "3. Skip this update"
 
-    read -p "Choice (1/2/3): " -n 1 -r choice
-    echo
+        read -p "Choice (1/2/3): " -n 1 -r choice
+        echo
 
-    case "$choice" in
-        1)
-            # Would implement actual ADR file modification here
-            echo -e "${GREEN}✅ ADR status would be updated (implementation needed)${NC}"
-            echo "Next: Implement ADR file parsing and status update logic"
-            ;;
-        2)
-            echo -e "${BLUE}📖 ADR Lifecycle Documentation${NC}"
-            echo "See: docs/adr-lifecycle-management.md"
-            if command -v cat >/dev/null 2>&1; then
-                echo -e "\nKey status transitions:"
-                grep -A 5 "## ADR Status Lifecycle" docs/adr-lifecycle-management.md || true
-            fi
-            ;;
-        3)
-            echo "Skipping ADR status update"
-            ;;
-    esac
+        case "$choice" in
+            1)
+                # Would implement actual ADR file modification here
+                echo -e "${GREEN}✅ ADR status would be updated (implementation needed)${NC}"
+                echo "Next: Implement ADR file parsing and status update logic"
+                ;;
+            2)
+                echo -e "${BLUE}📖 ADR Lifecycle Documentation${NC}"
+                echo "See: docs/adr-lifecycle-management.md"
+                if command -v cat >/dev/null 2>&1; then
+                    echo -e "\nKey status transitions:"
+                    grep -A 5 "## ADR Status Lifecycle" docs/adr-lifecycle-management.md || true
+                fi
+                ;;
+            3)
+                echo "Skipping ADR status update"
+                ;;
+        esac
+    else
+        # Non-interactive mode: log the suggested status and take default safe actions
+        echo -e "\n${BLUE}ADR-${adr_num} Non-Interactive Mode${NC}"
+        echo "Current Status: $(get_adr_status "$adr_file")"
+        echo "BDD Scenarios: $bdd_status"
+        echo "Suggested Status: $suggested_status"
+
+        case "$suggested_status" in
+            "IN_PROGRESS"|"IMPLEMENTED"|"CONSIDER_VALIDATED")
+                echo -e "${GREEN}✅ Logging potential ADR status transition${NC}"
+                echo "Would transition to: $suggested_status"
+                # Log the potential status transition without modifying the file
+                logger -t "ADR-Lifecycle" "ADR-${adr_num} potential status transition to $suggested_status"
+                ;;
+            *)
+                echo "No action needed for current ADR status"
+                ;;
+        esac
+    fi
 }
 
 # Main processing logic

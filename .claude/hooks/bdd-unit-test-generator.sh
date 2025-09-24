@@ -1,20 +1,11 @@
 #!/bin/bash
-# BDD to Unit Test Generator
-#
-# Analyzes BDD scenarios and generates unit test stubs for implementation details
-# Enforces the BDD → Unit Test → Implementation workflow
-#
-# Triggers: PreImplementation, Manual
-# Integration: Automated test stub generation
 
-set -euo pipefail
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
+# Color definitions
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
+GREEN='\033[0;32m'
+RED='\033[0;31m'
 NC='\033[0m' # No Color
 
 HOOK_NAME="BDD Unit Test Generator"
@@ -25,93 +16,116 @@ echo -e "${BLUE}🧪 ${HOOK_NAME}${NC}"
 
 # Function to extract current issue number from branch
 get_current_issue() {
-    local branch=$(git branch --show-current 2>/dev/null || echo "")
-    echo "$branch" | grep -o '[0-9]\+' | head -1 || echo ""
+	local branch
+	branch=$(git branch --show-current 2>/dev/null || echo "")
+	echo "$branch" | grep -o '[0-9]\+' | head -1 || echo ""
 }
 
 # Function to analyze BDD scenarios for unit-testable behaviors
 analyze_bdd_for_units() {
-    local issue_number="$1"
-    local feature_file="${BDD_DIR}/features/issue-${issue_number}-*.feature"
+	local issue_number="$1"
+	local feature_file="${BDD_DIR}/features/issue-${issue_number}-*.feature"
 
-    # Find the actual feature file
-    local actual_file=$(find "${BDD_DIR}/features" -name "issue-${issue_number}-*.feature" 2>/dev/null | head -1)
+	# Find the actual feature file
+	local actual_file
+	actual_file=$(find "${BDD_DIR}/features" -name "issue-${issue_number}-*.feature" 2>/dev/null | head -1)
 
-    if [[ ! -f "$actual_file" ]]; then
-        echo -e "${YELLOW}⚠️ No BDD feature file found for issue ${issue_number}${NC}"
-        return 1
-    fi
+	if [[ ! -f "$actual_file" ]]; then
+		echo -e "${YELLOW}⚠️ No BDD feature file found for issue ${issue_number}${NC}"
+		return 1
+	fi
 
-    echo -e "${BLUE}🔍 Analyzing BDD scenarios in: $(basename "$actual_file")${NC}"
+	echo -e "${BLUE}🔍 Analyzing BDD scenarios in: $(basename "$actual_file")${NC}"
 
-    # Extract behaviors that suggest unit-level testing
-    local unit_behaviors=()
+	# Extract behaviors that suggest unit-level testing
+	local unit_behaviors=()
 
-    # Look for validation, parsing, transformation behaviors
-    while IFS= read -r line; do
-        if [[ "$line" =~ (should validate|should parse|should transform|should calculate|should format|should generate|should cache) ]]; then
-            local behavior=$(echo "$line" | sed -E 's/.*should ([^"]*).*/\1/' | tr ' ' '_')
-            unit_behaviors+=("$behavior")
-        fi
-    done < "$actual_file"
+	# Look for validation, parsing, transformation behaviors
+	while IFS= read -r line; do
+		if [[ "$line" =~ (should validate|should parse|should transform|should calculate|should format|should generate|should cache) ]]; then
+			local behavior
+			behavior=$(echo "$line" | sed -E 's/.*should ([^"]*).*/\1/' | tr ' ' '_')
+			unit_behaviors+=("$behavior")
+		fi
+	done <"$actual_file"
 
-    # Look for Given/When/Then steps that imply internal logic
-    while IFS= read -r line; do
-        if [[ "$line" =~ (it should.*using|it should.*with|it should.*via) ]]; then
-            local behavior=$(echo "$line" | sed -E 's/.*it should ([^"]*).*/\1/' | tr ' ' '_' | tr -d '.,')
-            unit_behaviors+=("$behavior")
-        fi
-    done < "$actual_file"
+	# Look for Given/When/Then steps that imply internal logic
+	while IFS= read -r line; do
+		if [[ "$line" =~ (it should.*using|it should.*with|it should.*via) ]]; then
+			local behavior
+			behavior=$(echo "$line" | sed -E 's/.*it should ([^"]*).*/\1/' | tr ' ' '_' | tr -d '.,')
+			unit_behaviors+=("$behavior")
+		fi
+	done <"$actual_file"
 
-    if [[ ${#unit_behaviors[@]} -eq 0 ]]; then
-        echo -e "${GREEN}✅ No unit-level behaviors identified in BDD scenarios${NC}"
-        return 0
-    fi
+	if [[ ${#unit_behaviors[@]} -eq 0 ]]; then
+		echo -e "${GREEN}✅ No unit-level behaviors identified in BDD scenarios${NC}"
+		return 0
+	fi
 
-    echo -e "${PURPLE}📋 Identified unit-testable behaviors:${NC}"
-    printf '%s\n' "${unit_behaviors[@]}" | sort -u | sed 's/^/  • /'
+	echo -e "${PURPLE}📋 Identified unit-testable behaviors:${NC}"
+	printf '%s\n' "${unit_behaviors[@]}" | sort -u | sed 's/^/  • /'
 
-    return 0
+	return 0
 }
 
 # Function to generate unit test stubs
 generate_unit_test_stubs() {
-    local issue_number="$1"
-    local feature_file="${BDD_DIR}/features/issue-${issue_number}-*.feature"
+	local issue_number="$1"
+	local feature_file="${BDD_DIR}/features/issue-${issue_number}-*.feature"
 
-    # Find the actual feature file
-    local actual_file=$(find "${BDD_DIR}/features" -name "issue-${issue_number}-*.feature" 2>/dev/null | head -1)
+	# Find the actual feature file
+	local actual_file
+	actual_file=$(find "${BDD_DIR}/features" -name "issue-${issue_number}-*.feature" 2>/dev/null | head -1)
 
-    if [[ ! -f "$actual_file" ]]; then
-        echo -e "${RED}❌ No BDD feature file found for issue ${issue_number}${NC}"
-        return 1
-    fi
+	if [[ ! -f "$actual_file" ]]; then
+		echo -e "${RED}❌ No BDD feature file found for issue ${issue_number}${NC}"
+		return 1
+	fi
 
-    # Extract feature title for test class name
-    local feature_title=$(head -5 "$actual_file" | grep "^Feature:" | sed 's/Feature: //' | tr ' ' '_' | tr -cd '[:alnum:]_')
-    local test_file="${UNIT_TEST_DIR}/test_issue_${issue_number}_units.py"
+	# Extract feature title for test class name
+	local feature_title
+	feature_title=$(head -5 "$actual_file" | grep "^Feature:" | sed 's/Feature: //' | tr ' ' '_' | tr -cd '[:alnum:]_')
+	local test_file="${UNIT_TEST_DIR}/test_issue_${issue_number}_units.py"
 
-    # Check if test file already exists
-    if [[ -f "$test_file" ]]; then
-        echo -e "${YELLOW}⚠️ Unit test file already exists: $test_file${NC}"
-        echo "Would you like to:"
-        echo "1. Skip generation (keep existing)"
-        echo "2. Add missing tests to existing file"
-        echo "3. Regenerate completely (overwrite)"
+	# Check if test file already exists
+	if [[ -f "$test_file" ]]; then
+		echo -e "${YELLOW}⚠️ Unit test file already exists: $test_file${NC}"
 
-        read -p "Choice (1/2/3): " -n 1 -r choice
-        echo
+		# Check if stdin is a terminal (interactive mode)
+		if [ -t 0 ]; then
+			echo "Would you like to:"
+			echo "1. Skip generation (keep existing)"
+			echo "2. Add missing tests to existing file"
+			echo "3. Regenerate completely (overwrite)"
 
-        case "$choice" in
-            1) echo "Skipping test generation"; return 0 ;;
-            2) echo "Adding to existing file not implemented yet"; return 0 ;;
-            3) echo "Regenerating..." ;;
-            *) echo "Skipping test generation"; return 0 ;;
-        esac
-    fi
+			read -p "Choice (1/2/3): " -n 1 -r choice
+			echo
 
-    # Generate test file header
-    cat > "$test_file" << EOF
+			case "$choice" in
+			1)
+				echo "Skipping test generation"
+				return 0
+				;;
+			2)
+				echo "Adding to existing file not implemented yet"
+				return 0
+				;;
+			3) echo "Regenerating..." ;;
+			*)
+				echo "Skipping test generation"
+				return 0
+				;;
+			esac
+		else
+			# Non-interactive mode: skip generation, keep existing
+			echo "Non-interactive mode: Keeping existing test file"
+			return 0
+		fi
+	fi
+
+	# Generate test file header
+	cat >"$test_file" <<EOF
 """Unit tests for Issue #${issue_number}: ${feature_title}.
 
 This file contains unit tests that validate implementation details derived from
@@ -130,20 +144,21 @@ import pytest
 
 EOF
 
-    # Extract and generate test methods
-    local class_name="TestIssue${issue_number}Units"
-    echo "class ${class_name}:" >> "$test_file"
-    echo '    """Unit tests derived from BDD scenarios."""' >> "$test_file"
-    echo "" >> "$test_file"
+	# Extract and generate test methods
+	local class_name="TestIssue${issue_number}Units"
+	echo "class ${class_name}:" >>"$test_file"
+	echo '    """Unit tests derived from BDD scenarios."""' >>"$test_file"
+	echo "" >>"$test_file"
 
-    # Generate test methods based on BDD analysis
-    local test_count=0
+	# Generate test methods based on BDD analysis
+	local test_count=0
 
-    # Look for validation behaviors
-    while IFS= read -r line; do
-        if [[ "$line" =~ should.*validate.*using ]]; then
-            local test_name=$(echo "$line" | sed -E 's/.*should validate ([^"]*) using.*/\1/' | tr ' ' '_' | tr -cd '[:alnum:]_')
-            cat >> "$test_file" << EOF
+	# Look for validation behaviors
+	while IFS= read -r line; do
+		if [[ "$line" =~ should.*validate.*using ]]; then
+			local test_name
+			test_name=$(echo "$line" | sed -E 's/.*should validate ([^"]*) using.*/\1/' | tr ' ' '_' | tr -cd '[:alnum:]_')
+			cat >>"$test_file" <<EOF
     def test_validate_${test_name}(self) -> None:
         """Test validation of ${test_name} based on BDD scenario.
 
@@ -154,13 +169,13 @@ EOF
         pytest.fail("Unit test not implemented: validate_${test_name}")
 
 EOF
-            ((test_count++))
-        fi
-    done < "$actual_file"
+			((test_count++))
+		fi
+	done <"$actual_file"
 
-    # Look for schema-related behaviors
-    if grep -q "Pydantic schema\|ScriptAgent\|JSON" "$actual_file"; then
-        cat >> "$test_file" << EOF
+	# Look for schema-related behaviors
+	if grep -q "Pydantic schema\|ScriptAgent\|JSON" "$actual_file"; then
+		cat >>"$test_file" <<EOF
     def test_schema_validation(self) -> None:
         """Test Pydantic schema validation logic."""
         # TODO: Test schema validation independently
@@ -174,36 +189,36 @@ EOF
         pytest.fail("Unit test not implemented: json_serialization")
 
 EOF
-        ((test_count += 2))
-    fi
+		((test_count += 2))
+	fi
 
-    # Look for caching behaviors
-    if grep -q "cache\|cached" "$actual_file"; then
-        cat >> "$test_file" << EOF
+	# Look for caching behaviors
+	if grep -q "cache\|cached" "$actual_file"; then
+		cat >>"$test_file" <<EOF
     def test_caching_behavior(self) -> None:
         """Test caching mechanism."""
         # TODO: Test cache hit/miss, invalidation, memory management
         pytest.fail("Unit test not implemented: caching_behavior")
 
 EOF
-        ((test_count++))
-    fi
+		((test_count++))
+	fi
 
-    # Look for error handling
-    if grep -q "error\|exception\|fail" "$actual_file"; then
-        cat >> "$test_file" << EOF
+	# Look for error handling
+	if grep -q "error\|exception\|fail" "$actual_file"; then
+		cat >>"$test_file" <<EOF
     def test_error_handling(self) -> None:
         """Test error handling and exception chaining."""
         # TODO: Test error conditions, exception types, error messages
         pytest.fail("Unit test not implemented: error_handling")
 
 EOF
-        ((test_count++))
-    fi
+		((test_count++))
+	fi
 
-    # Add at least one test if none were generated
-    if [[ $test_count -eq 0 ]]; then
-        cat >> "$test_file" << EOF
+	# Add at least one test if none were generated
+	if [[ $test_count -eq 0 ]]; then
+		cat >>"$test_file" <<EOF
     def test_placeholder(self) -> None:
         """Placeholder test - analyze BDD scenarios for specific behaviors."""
         # TODO: Review BDD scenarios and add specific unit tests
@@ -211,101 +226,105 @@ EOF
         pytest.fail("No specific unit tests identified from BDD scenarios")
 
 EOF
-        ((test_count++))
-    fi
+		((test_count++))
+	fi
 
-    echo -e "${GREEN}✅ Generated ${test_count} unit test stubs in: $test_file${NC}"
-    echo -e "${BLUE}💡 Next steps:${NC}"
-    echo "  1. Review generated tests and customize for your implementation"
-    echo "  2. Run: uv run pytest $test_file -v (should fail - Red phase)"
-    echo "  3. Implement the actual functions to make tests pass"
-    echo "  4. Verify BDD scenarios still pass after implementation"
+	echo -e "${GREEN}✅ Generated ${test_count} unit test stubs in: $test_file${NC}"
+	echo -e "${BLUE}💡 Next steps:${NC}"
+	echo "  1. Review generated tests and customize for your implementation"
+	echo "  2. Run: uv run pytest $test_file -v (should fail - Red phase)"
+	echo "  3. Implement the actual functions to make tests pass"
+	echo "  4. Verify BDD scenarios still pass after implementation"
 
-    return 0
+	return 0
 }
 
 # Function to check unit test coverage for existing implementation
 check_unit_coverage() {
-    local issue_number="$1"
+	local issue_number="$1"
 
-    # Look for implementation files related to this issue
-    local impl_files=()
-    while IFS= read -r -d '' file; do
-        if grep -l "issue.${issue_number}\|Issue.${issue_number}" "$file" >/dev/null 2>&1; then
-            impl_files+=("$file")
-        fi
-    done < <(find src -name "*.py" -print0 2>/dev/null)
+	# Look for implementation files related to this issue
+	local impl_files=()
+	while IFS= read -r -d '' file; do
+		if grep -l "issue.${issue_number}\|Issue.${issue_number}" "$file" >/dev/null 2>&1; then
+			impl_files+=("$file")
+		fi
+	done < <(find src -name "*.py" -print0 2>/dev/null)
 
-    if [[ ${#impl_files[@]} -eq 0 ]]; then
-        echo -e "${BLUE}ℹ️ No implementation files found referencing issue ${issue_number}${NC}"
-        return 0
-    fi
+	if [[ ${#impl_files[@]} -eq 0 ]]; then
+		echo -e "${BLUE}ℹ️ No implementation files found referencing issue ${issue_number}${NC}"
+		return 0
+	fi
 
-    echo -e "${BLUE}🔍 Implementation files for issue ${issue_number}:${NC}"
-    printf '%s\n' "${impl_files[@]}" | sed 's/^/  • /'
+	echo -e "${BLUE}🔍 Implementation files for issue ${issue_number}:${NC}"
+	printf '%s\n' "${impl_files[@]}" | sed 's/^/  • /'
 
-    # Check if corresponding unit tests exist
-    local missing_tests=()
-    for impl_file in "${impl_files[@]}"; do
-        local rel_path="${impl_file#src/llm_orc/}"
-        local test_file="tests/${rel_path%.py}/test_$(basename "$rel_path")"
+	# Check if corresponding unit tests exist
+	local missing_tests=()
+	for impl_file in "${impl_files[@]}"; do
+		local rel_path="${impl_file#src/llm_orc/}"
+		local test_file="tests/${rel_path%.py}/test_$(basename "$rel_path")"
 
-        if [[ ! -f "$test_file" ]]; then
-            missing_tests+=("$test_file")
-        fi
-    done
+		if [[ ! -f "$test_file" ]]; then
+			missing_tests+=("$test_file")
+		fi
+	done
 
-    if [[ ${#missing_tests[@]} -gt 0 ]]; then
-        echo -e "${YELLOW}⚠️ Missing unit tests:${NC}"
-        printf '%s\n' "${missing_tests[@]}" | sed 's/^/  • /'
-        return 1
-    fi
+	if [[ ${#missing_tests[@]} -gt 0 ]]; then
+		echo -e "${YELLOW}⚠️ Missing unit tests:${NC}"
+		printf '%s\n' "${missing_tests[@]}" | sed 's/^/  • /'
+		return 1
+	fi
 
-    echo -e "${GREEN}✅ Unit tests exist for all implementation files${NC}"
-    return 0
+	echo -e "${GREEN}✅ Unit tests exist for all implementation files${NC}"
+	return 0
 }
 
 # Main execution
 main() {
-    local issue_number
-    issue_number=$(get_current_issue)
+	local issue_number
+	issue_number=$(get_current_issue)
 
-    if [[ -z "$issue_number" ]]; then
-        echo -e "${YELLOW}⚠️ Could not determine issue number from branch name${NC}"
-        echo "Please run from a feature branch like 'feature/24-script-agents'"
-        return 1
-    fi
+	if [[ -z "$issue_number" ]]; then
+		echo -e "${YELLOW}⚠️ Could not determine issue number from branch name${NC}"
+		echo "Please run from a feature branch like 'feature/24-script-agents'"
+		return 1
+	fi
 
-    echo -e "${BLUE}🎯 Processing Issue #${issue_number}${NC}"
+	echo -e "${BLUE}🎯 Processing Issue #${issue_number}${NC}"
 
-    # Analyze BDD scenarios
-    if ! analyze_bdd_for_units "$issue_number"; then
-        return 1
-    fi
+	# Analyze BDD scenarios
+	if ! analyze_bdd_for_units "$issue_number"; then
+		return 1
+	fi
 
-    echo ""
-    echo "Would you like to:"
-    echo "1. Generate unit test stubs from BDD scenarios"
-    echo "2. Check unit test coverage for existing implementation"
-    echo "3. Skip (BDD scenarios look complete)"
+	echo ""
 
-    read -p "Choice (1/2/3): " -n 1 -r choice
-    echo
+	# Check if stdin is a terminal (interactive mode)
+	if [ -t 0 ]; then
+		echo "Would you like to:"
+		echo "1. Generate unit test stubs from BDD scenarios"
+		echo "2. Check unit test coverage for existing implementation"
+		echo "3. Skip (BDD scenarios look complete)"
 
-    case "$choice" in
-        1)
-            generate_unit_test_stubs "$issue_number"
-            ;;
-        2)
-            check_unit_coverage "$issue_number"
-            ;;
-        3)
-            echo "Skipping unit test generation"
-            ;;
-        *)
-            echo "Invalid choice, skipping"
-            ;;
-    esac
+		read -p "Choice (1/2/3): " -n 1 -r choice
+		echo
+
+		case "$choice" in
+		1)
+			generate_unit_test_stubs "$issue_number"
+			;;
+		2)
+			check_unit_coverage "$issue_number"
+			;;
+		3)
+			echo "Skipping unit test generation"
+			;;
+		*)
+			echo "Invalid choice, skipping"
+			;;
+		esac
+	fi
 }
 
 # Execute main function

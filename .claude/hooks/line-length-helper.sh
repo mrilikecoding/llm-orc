@@ -37,14 +37,17 @@ echo "  • Extract long expressions into variables"
 echo "  • Use parentheses for implicit line continuation"
 echo "  • Consider shorter variable names for deeply nested code"
 echo ""
-echo "Options:"
-echo "1. Open file for manual refactoring (o)?"
-echo "2. Show refactoring examples (s)?" 
-echo "3. Skip for now (any other key)?"
-read -r -n 1 response
-echo ""
 
-case $response in
+# Check if stdin is a terminal (interactive mode)
+if [ -t 0 ]; then
+    echo "Options:"
+    echo "1. Open file for manual refactoring (o)?"
+    echo "2. Show refactoring examples (s)?"
+    echo "3. Skip for now (any other key)?"
+    read -r -n 1 response
+    echo ""
+
+    case $response in
     [Oo])
         # Get the first file with long lines
         FIRST_FILE=$(echo "$LONG_LINES" | head -1 | cut -d: -f1)
@@ -74,6 +77,12 @@ case $response in
     *)
         echo "⏭️  Skipping line length refactoring"
         ;;
-esac
+    esac
+else
+    # Non-interactive mode: provide information without blocking
+    echo "⚠️  Non-interactive mode: Long lines detected"
+    echo "   Files with long lines have been listed above"
+    echo "   Consider refactoring to improve readability"
+fi
 
 exit 0

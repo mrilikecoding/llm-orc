@@ -32,14 +32,16 @@ fi
 echo "🧹 Unused variables detected:"
 echo "$UNUSED_VARS"
 echo ""
-echo "Options:"
-echo "1. Auto-remove unused variables (y/n)?"
-echo "2. Show suggested fixes (s)?"
-echo "3. Skip for now (any other key)?"
-read -r -n 1 response
-echo ""
+# Check if stdin is a terminal (interactive mode)
+if [ -t 0 ]; then
+    echo "Options:"
+    echo "1. Auto-remove unused variables (y/n)?"
+    echo "2. Show suggested fixes (s)?"
+    echo "3. Skip for now (any other key)?"
+    read -r -n 1 response
+    echo ""
 
-case $response in
+    case $response in
     [Yy])
         echo "🔧 Removing unused variables..."
         # Use ruff --fix with only F841 (unused variables)
@@ -53,6 +55,11 @@ case $response in
     *)
         echo "⏭️  Skipping unused variable cleanup"
         ;;
-esac
+    esac
+else
+    # Non-interactive mode: provide information without blocking
+    echo "⚠️  Non-interactive mode: Unused variables detected"
+    echo "   Consider running 'make lint-fix' to clean them up"
+fi
 
 exit 0

@@ -1,43 +1,43 @@
-# ADR-003: Testable Script Agent Contracts & Ecosystem Interoperability
+# ADR-003: Testable Script Agent Contracts
 
 ## Status
 Proposed
 
 ## Context
 
-### Current Ecosystem Challenges
-With the implementation of Pydantic-based script interfaces (ADR-001) and the composable primitive system (ADR-002), we need to ensure **ecosystem-wide interoperability** across:
+### Current Contract Validation Challenges
+With the implementation of Pydantic-based script interfaces (ADR-001) and the composable primitive system (ADR-002), we need to ensure **robust contract validation** for:
 
 1. **Core Primitives** (`.llm-orc/scripts/primitives/`) - Built-in building blocks
-2. **Base Script Examples** - Reference implementations and templates  
+2. **Base Script Examples** - Reference implementations and templates
 3. **User-Submitted Scripts** - Community and third-party contributions
-4. **LLM Agent Interactions** - Dynamic script invocation and composition
+4. **Script Composition** - Multi-step workflow validation
 
-### The Interoperability Problem
+### The Contract Validation Problem
 Without enforceable contracts and testing:
-- User scripts may not integrate properly with the primitive system
-- Breaking changes in primitives could break downstream scripts
-- No way to validate that scripts conform to expected interfaces
-- LLM agents can't reliably compose arbitrary script combinations
+- Scripts may not conform to expected Pydantic interfaces
+- Breaking changes in schemas could break downstream integrations
+- No way to validate that scripts implement required contracts
+- Script composition may fail at runtime due to schema mismatches
 - Community contributions may introduce incompatible patterns
 
-### Vision: Testable Contract Ecosystem
-Create a **contract-driven development system** where:
+### Vision: Testable Contract System
+Create a **contract validation system** where:
 - All scripts must implement testable Pydantic interfaces
-- CI automatically validates contract compliance across the ecosystem
-- Scripts can declare their capabilities and requirements
-- LLM agents can dynamically validate script compatibility
-- Community contributions are automatically tested for compliance
+- CI automatically validates contract compliance
+- Scripts declare their input/output schemas and test cases
+- Composition validation ensures schema compatibility
+- Community contributions are tested for contract compliance
 
 ## Decision
 
 Implement a **Testable Script Agent Contract System** that extends the Pydantic interfaces to provide:
 
 1. **Contract Enforcement**: CI tests that validate all scripts implement required interfaces
-2. **Capability Declaration**: Scripts declare their inputs, outputs, and dependencies
-3. **Compatibility Testing**: Automated testing of script composition scenarios
-4. **Extension Patterns**: Standardized patterns for arbitrary script execution, API calls, and data enrichment
-5. **Community Integration**: Submission and validation pipeline for user-contributed scripts
+2. **Schema Declaration**: Scripts declare their input/output schemas and test cases
+3. **Composition Testing**: Automated testing of script composition scenarios
+4. **Extension Patterns**: Standardized patterns for script execution, API calls, and data transformation
+5. **Community Integration**: Validation pipeline for user-contributed scripts
 
 ## Detailed Design
 
@@ -244,8 +244,8 @@ class ContractValidator:
         # 4. Run test cases
         self._run_test_cases(script_instance)
         
-        # 5. Test schema compatibility with existing ecosystem
-        self._test_ecosystem_compatibility(script_instance)
+        # 5. Test schema compatibility for composition
+        self._test_composition_compatibility(script_instance)
 
     def _validate_schemas(self, script: ScriptContract) -> None:
         """Validate Pydantic schema compliance."""
@@ -289,11 +289,11 @@ class ContractValidator:
                 # Cleanup
                 self._run_cleanup_commands(test_case.cleanup_commands)
 
-    def _test_ecosystem_compatibility(self, script: ScriptContract) -> None:
-        """Test compatibility with existing ecosystem."""
-        # Test that script can be composed with primitives
-        for primitive in self._get_compatible_primitives(script):
-            self._test_script_composition(script, primitive)
+    def _test_composition_compatibility(self, script: ScriptContract) -> None:
+        """Test compatibility for script composition."""
+        # Test that script schemas can be composed with other scripts
+        for other_script in self._get_composable_scripts(script):
+            self._test_schema_composition(script, other_script)
 ```
 
 #### 2. CI Pipeline Integration
@@ -351,11 +351,11 @@ jobs:
             --test-all-combinations \
             --max-chain-length 5
             
-      - name: Generate LLM Function Schemas
+      - name: Generate Function Schemas
         run: |
           python -m llm_orc.schemas.function_generator \
-            --output schemas/llm-functions.json \
-            --validate-callable
+            --output schemas/functions.json \
+            --validate-schemas
 ```
 
 ### Community Contribution Pipeline
@@ -569,17 +569,21 @@ def test_all_primitives_have_contracts():
         assert len(contract_classes) >= 1, f"No contract found in {script_file}"
 
 def test_schema_compatibility():
-    """Test that all schemas are compatible with LLM function calling."""
+    """Test that all schemas are valid and composable."""
     for script_class in discover_all_script_contracts():
         input_schema = script_class.input_schema()
-        
+        output_schema = script_class.output_schema()
+
         # Validate JSON schema generation
-        json_schema = input_schema.model_json_schema()
-        assert "properties" in json_schema
-        
-        # Test function calling compatibility
-        function_def = generate_openai_function_definition(script_class)
-        assert function_def["name"] and function_def["parameters"]
+        input_json_schema = input_schema.model_json_schema()
+        output_json_schema = output_schema.model_json_schema()
+        assert "properties" in input_json_schema
+        assert "properties" in output_json_schema
+
+        # Test schema serialization/deserialization
+        test_data = generate_test_data(input_schema)
+        validated_input = input_schema(**test_data)
+        assert validated_input.model_dump() == test_data
 ```
 
 #### 2. Integration Tests
@@ -617,12 +621,12 @@ def test_script_composition():
 
 ### Community Growth
 - **Clear Standards**: Contributors know exactly what's required
-- **Automated Onboarding**: Submission pipeline guides contributors  
+- **Automated Onboarding**: Submission pipeline guides contributors
 - **Quality Control**: Only validated scripts enter the ecosystem
 
-### LLM Agent Reliability
-- **Predictable Interfaces**: Agents can trust script behavior
-- **Dynamic Validation**: Runtime compatibility checking
+### Script Reliability
+- **Predictable Interfaces**: Scripts have validated contracts
+- **Composition Validation**: Runtime compatibility checking
 - **Error Handling**: Consistent error patterns across all scripts
 
 ### Developer Experience
@@ -647,4 +651,4 @@ def test_script_composition():
 2. Build visual workflow designer
 3. Create script marketplace and discovery
 
-This contract system ensures that llm-orchestra becomes a reliable, extensible platform where any script - whether core primitive, base example, or community contribution - can seamlessly interoperate with the broader ecosystem while maintaining type safety and testing compliance.
+This contract system ensures that llm-orchestra becomes a reliable, extensible platform where any script - whether core primitive, base example, or community contribution - can seamlessly integrate through validated contracts while maintaining type safety and testing compliance.

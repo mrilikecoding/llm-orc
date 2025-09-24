@@ -279,7 +279,7 @@ class TDDCycleValidator:
         }
 
     def validate_refactor_phase_requirements(
-        self, before_tests: dict, after_tests: dict
+        self, before_tests: dict[str, Any], after_tests: dict[str, Any]
     ) -> dict[str, Any]:
         """Validate Refactor phase requirements."""
         violations = []

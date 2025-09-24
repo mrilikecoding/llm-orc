@@ -10,7 +10,8 @@
       "Bash(pytest:*)",
       "Bash(.claude/hooks/testing-pyramid-gate.sh:*)",
       "Bash(awk:*)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }

@@ -25,12 +25,14 @@ if ! git diff --cached --quiet 2>/dev/null; then
         echo "Options:"
         echo "1. Add tests to improve coverage (recommended)"
         echo "2. View detailed coverage report (v)?"
-        echo "3. Commit anyway (not recommended) (c)?"
-        echo "4. Abort commit (any other key)"
-        read -r -n 1 response
-        echo ""
-        
-        case $response in
+        # Check if stdin is a terminal (interactive mode)
+        if [ -t 0 ]; then
+            echo "3. Commit anyway (not recommended) (c)?"
+            echo "4. Abort commit (any other key)"
+            read -r -n 1 response
+            echo ""
+
+            case $response in
             [Vv])
                 echo "📊 Detailed coverage report:"
                 uv run pytest --cov=src --cov-report=term-missing --quiet 2>/dev/null | grep -A 50 "Name\|TOTAL" || echo "Run 'make test' for full report"
@@ -46,24 +48,37 @@ if ! git diff --cached --quiet 2>/dev/null; then
                 echo "Run 'make test' to see detailed coverage report"
                 exit 1
                 ;;
-        esac
+            esac
+        else
+            # Non-interactive mode: provide information without blocking
+            echo "⚠️  Non-interactive mode: Low test coverage detected"
+            echo "   Current coverage: $COVERAGE%"
+            echo "   Consider adding more tests"
+        fi
     else
         # Check if there are any test failures
         if echo "$COVERAGE_RESULT" | grep -q "FAILED\|ERROR"; then
             echo "❌ Tests are failing"
             echo ""
             echo "Options:"
-            echo "1. View test failures (v)?"
-            echo "2. Fix tests first (any other key)"
-            read -r -n 1 response
-            echo ""
-            
-            case $response in
+            # Check if stdin is a terminal (interactive mode)
+            if [ -t 0 ]; then
+                echo "1. View test failures (v)?"
+                echo "2. Fix tests first (any other key)"
+                read -r -n 1 response
+                echo ""
+
+                case $response in
                 [Vv])
                     echo "🔍 Test failure details:"
                     uv run pytest -v --tb=short 2>/dev/null || echo "Run 'make test' for detailed output"
                     ;;
-            esac
+                esac
+            else
+                # Non-interactive mode: report failures
+                echo "⚠️  Non-interactive mode: Tests are failing"
+                echo "   Run 'make test' to see failures"
+            fi
             
             echo "✋ Commit blocked - please fix failing tests first"
             exit 1

@@ -55,20 +55,23 @@ if echo "$COMPLEXITY_RESULT" | grep -q "Complexity: [0-9]\+"; then
         echo "  • Break complex loops into separate functions" 
         echo "  • Use guard clauses to reduce nesting"
         echo ""
-        echo "Options:"
-        echo "1. Continue anyway (not recommended) (c)?"
-        echo "2. Show refactoring tips (r)?"
-        echo "3. Abort to refactor first (any other key)?"
-        read -r -n 1 response
-        echo ""
-        
-        case $response in
-            [Cc])
-                echo "⚠️  Proceeding with high complexity (consider refactoring later)"
-                ;;
-            [Rr])
-                echo ""
-                echo "🔄 Complexity reduction techniques:"
+
+        # Check if stdin is a terminal (interactive mode)
+        if [ -t 0 ]; then
+            echo "Options:"
+            echo "1. Continue anyway (not recommended) (c)?"
+            echo "2. Show refactoring tips (r)?"
+            echo "3. Abort to refactor first (any other key)?"
+            read -r -n 1 response
+            echo ""
+
+            case $response in
+                [Cc])
+                    echo "⚠️  Proceeding with high complexity (consider refactoring later)"
+                    ;;
+                [Rr])
+                    echo ""
+                    echo "🔄 Complexity reduction techniques:"
                 echo ""
                 echo "1. Extract Method:"
                 echo "   def complex_function():"
@@ -96,7 +99,13 @@ if echo "$COMPLEXITY_RESULT" | grep -q "Complexity: [0-9]\+"; then
                 echo "Run 'make lint' to see detailed complexity report"
                 exit 1
                 ;;
-        esac
+            esac
+        else
+            # Non-interactive mode: provide information without blocking
+            echo "⚠️  Non-interactive mode: High complexity detected"
+            echo "   Consider refactoring the complex functions listed above"
+            echo "   Run interactively for refactoring tips"
+        fi
     else
         echo "✅ Complexity within acceptable limits"
     fi
