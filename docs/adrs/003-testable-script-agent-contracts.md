@@ -1,7 +1,66 @@
 # ADR-003: Testable Script Agent Contracts
 
 ## Status
-Proposed
+In Progress
+
+## BDD Mapping Hints
+```yaml
+behavioral_capabilities:
+  - capability: "Scripts declare and validate input/output contracts"
+    given: "A script with declared Pydantic schemas"
+    when: "Script execution is requested"
+    then: "Input is validated against schema before execution and output validated after"
+
+  - capability: "Contract validation prevents schema mismatches"
+    given: "Multiple scripts in a composition workflow"
+    when: "Output from one script becomes input to another"
+    then: "Schema compatibility is verified at composition time"
+
+  - capability: "Test cases ensure contract compliance"
+    given: "A script with declared test cases"
+    when: "Contract validation is performed"
+    then: "All test cases pass and schemas are correctly validated"
+
+  - capability: "Community scripts validate against standard contracts"
+    given: "A user-submitted script"
+    when: "Script is added to the system"
+    then: "Contract compliance is automatically validated"
+
+test_boundaries:
+  unit:
+    - ScriptContract.validate_input_schema()
+    - ScriptContract.validate_output_schema()
+    - TestCase.execute_validation()
+    - ScriptComposer.check_schema_compatibility()
+    - SecuritySandbox.validate_execution()
+    - ContractValidator.validate_metadata()
+
+  integration:
+    - script_to_script_composition_flow
+    - ci_contract_validation_pipeline
+    - end_to_end_script_execution_with_validation
+    - community_script_submission_workflow
+    - schema_evolution_compatibility_testing
+
+validation_rules:
+  - "All script contracts must extend ScriptContract abstract class"
+  - "Input/output schemas must be valid Pydantic models"
+  - "Test cases must cover both success and failure scenarios"
+  - "Schema validation errors must use proper exception chaining"
+  - "Contract validation must be deterministic and reproducible"
+  - "Security sandbox must prevent malicious script execution"
+
+related_adrs:
+  - "ADR-001: Pydantic schema foundation for all contracts"
+  - "ADR-002: Composable primitives build on contract system"
+
+implementation_scope:
+  - "src/llm_orc/script_agent/contract.py"
+  - "src/llm_orc/script_agent/validator.py"
+  - "src/llm_orc/script_agent/composer.py"
+  - "src/llm_orc/schemas/script_contract.py"
+  - "src/llm_orc/security/sandbox.py"
+```
 
 ## Context
 

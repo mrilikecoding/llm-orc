@@ -27,6 +27,11 @@
             "type": "command",
             "command": ".claude/hooks/session-start-adr-summary.sh",
             "description": "Show ADR progress summary and priorities for session planning"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/adr-implementation-orchestrator.sh",
+            "description": "Check for ADRs ready for automated BDD→TDD→Code orchestration"
           }
         ]
       }
@@ -96,6 +101,12 @@
             "type": "command",
             "command": ".claude/hooks/adr-lifecycle-manager.sh",
             "description": "Manage ADR status transitions based on BDD progress and implementation milestones"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/adr-implementation-orchestrator.sh",
+            "description": "Orchestrate BDD→TDD→Code when ADRs are updated with 'In Progress' status",
+            "filePattern": "docs/adrs/*.md"
           },
           {
             "type": "command",

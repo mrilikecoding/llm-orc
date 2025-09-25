@@ -1,7 +1,38 @@
 # ADR-004: BDD as LLM Development Guardrails & Architectural Enforcement
 
 ## Status
-Proposed
+In Progress
+
+## Implementation Status
+- [x] BDD scenarios created in .claude/hooks/ and .claude/agents/
+- [x] Core automation framework implemented
+- [x] Hook system operational (bdd-development-gate.sh, testing-pyramid-gate.sh)
+- [x] Agent system integrated (llm-orc-bdd-specialist, llm-orc-tdd-specialist)
+- [x] Automation framework documented in .claude/README.md
+- [x] Separation of concerns between Claude automation and application
+- [ ] ADR-to-BDD orchestrator agent
+- [ ] ADR template with BDD mapping hints
+- [ ] Multi-ADR coordination hook
+- [ ] Epic progress tracking system
+- [ ] CI pipeline integration with GitHub workflows
+- [ ] Pre-commit BDD validation hooks
+- [ ] Automated documentation generation from scenarios
+- [ ] Performance benchmarks and metrics collection
+
+## BDD Integration
+- **Scenario File**: .claude/hooks/ automation framework implementation
+- **Test Command**: Manual hook execution and agent activation
+- **Priority Scenario**: "Issue-to-BDD scenario generation workflow"
+
+## Implementation Progress Log
+- 2025-09-20: Core automation framework operational
+- 2025-09-20: Proper separation between Claude automation and application achieved
+- 2025-09-20: Application BDD tests cleaned of Claude-specific dependencies
+
+## Architectural Compliance
+- **Related ADRs**: ADR-001, ADR-002, ADR-003 (validation through automation)
+- **Validation Rules**: Separation of concerns between automation and application
+- **Breaking Changes**: None - Claude automation is orthogonal to application
 
 ## Context
 
@@ -33,9 +64,71 @@ Create **executable behavioral specifications** that serve as guardrails, ensuri
 
 ## Decision
 
-Implement **BDD specifications as LLM development guardrails** using pytest-bdd to create executable behavioral contracts that guide LLM assistants toward architecturally compliant implementations.
+Implement **ADR-driven BDD orchestration framework** that automates the translation of human-authored ADRs into executable behavioral contracts, enabling LLM assistants to autonomously deliver tested implementations through BDD→TDD→Code pipelines with minimal human intervention after the ADR phase.
 
 ## Detailed Design
+
+### Core Philosophy: ADR-Driven Orchestration
+
+The framework recognizes two distinct phases:
+1. **Human Critical Thinking**: Issue definition and ADR authoring
+2. **Automated Orchestration**: ADR→BDD→TDD→Code translation
+
+#### ADR-to-BDD Orchestration Architecture
+```mermaid
+graph LR
+    subgraph "Human Phase"
+        Issue[GitHub Epic/Issue]
+        ADR1[ADR with BDD Hints]
+        Issue -->|Critical Thinking| ADR1
+    end
+
+    subgraph "Automated Phase"
+        ADR1 -->|Orchestrator| BDD[BDD Scenarios]
+        BDD -->|Decomposition| Unit[Unit Specs]
+        BDD -->|Decomposition| Int[Integration Specs]
+        Unit -->|TDD Red| Tests1[Failing Tests]
+        Int -->|TDD Red| Tests2[Failing Tests]
+        Tests1 -->|TDD Green| Code1[Implementation]
+        Tests2 -->|TDD Green| Code2[Implementation]
+        Code1 -->|Refactor| Final1[Refined Code]
+        Code2 -->|Refactor| Final2[Refined Code]
+    end
+```
+
+#### Enhanced ADR Template with BDD Mapping
+```yaml
+# ADR-XXX: Title
+
+## Status
+{Status}
+
+## BDD Mapping Hints
+behavioral_capabilities:
+  - capability: "Primary behavior to implement"
+    given: "Initial state or precondition"
+    when: "Triggering action"
+    then: "Expected outcome"
+
+test_boundaries:
+  unit:
+    - "Component or function to test"
+    - "Pure logic to validate"
+  integration:
+    - "Cross-component interaction"
+    - "External service boundary"
+
+validation_rules:
+  - "Type safety requirements"
+  - "Performance constraints"
+  - "Error handling patterns"
+
+## Context
+{Original context}
+
+## Decision
+{Original decision}
+```
 
 ### Core Philosophy: Behavioral Contracts for LLMs
 

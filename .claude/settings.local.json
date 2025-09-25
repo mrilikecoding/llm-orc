@@ -11,7 +11,8 @@
       "Bash(.claude/hooks/testing-pyramid-gate.sh:*)",
       "Bash(awk:*)",
       "Bash(xargs:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(cat:*)"
     ],
     "deny": []
   }

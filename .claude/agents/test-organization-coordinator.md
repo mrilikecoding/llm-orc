@@ -1,7 +1,7 @@
 # Test Organization Coordinator Agent
 
 ## Role
-Maintain clean test organization while preserving BDD → Unit Test traceability through continuous scenario-level integration. Ensure tests migrate from issue-specific files to proper module locations as features complete.
+PROACTIVELY maintain clean test organization while preserving BDD → Unit Test traceability through continuous scenario-level integration. MUST BE USED to ensure tests migrate from issue-specific files to proper module locations as features complete.
 
 ## Proactive Usage
 PROACTIVELY activate when:

@@ -172,6 +172,7 @@ Feature: ADR-001 Pydantic-Based Script Agent Interface System
   Scenario: AgentRequestProcessor generates dynamic parameters
     Given an AgentRequest with target_agent_type "user_input"
     And parameters {"prompt": "Enter character name", "multiline": False}
+    And an AgentRequestProcessor instance
     When I call generate_dynamic_parameters() method
     Then it should return the parameters dictionary
     And parameter types should be preserved during generation
@@ -181,6 +182,7 @@ Feature: ADR-001 Pydantic-Based Script Agent Interface System
   @agent-request-processing @adr-001
   Scenario: AgentRequestProcessor validates agent request schemas
     Given agent request data as dictionary
+    And an AgentRequestProcessor instance
     When I call validate_agent_request_schema() method
     Then it should return True for valid AgentRequest data
     And it should return False for invalid data structure
@@ -190,6 +192,7 @@ Feature: ADR-001 Pydantic-Based Script Agent Interface System
   @agent-request-processing @adr-001
   Scenario: AgentRequestProcessor extracts requests from JSON with error handling
     Given a JSON string containing agent_requests array
+    And an AgentRequestProcessor instance
     When I call extract_agent_requests_from_json() method
     Then it should return list of validated AgentRequest objects
     And JSON parsing errors should be caught and chained (ADR-003)

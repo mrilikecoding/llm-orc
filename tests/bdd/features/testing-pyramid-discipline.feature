@@ -1,4 +1,4 @@
-Feature: Testing Pyramid Discipline & TDD Architectural Compliance (ADR-003, ADR-004)
+Feature: Testing Pyramid Discipline & TDD Architectural Compliance (ADR-003)
   """
   LLM Development Context:
 
@@ -14,7 +14,6 @@ Feature: Testing Pyramid Discipline & TDD Architectural Compliance (ADR-003, ADR
 
   Architectural Constraints:
   - ADR-003: All implementations must have testable contracts with proper unit test backing
-  - ADR-004: BDD scenarios serve as LLM development guardrails, not primary test layer
   - Testing pyramid structure (70/20/10) enforces architectural discipline
   - Each BDD scenario requires 3:1 unit test support ratio for proper foundations
 
@@ -28,7 +27,6 @@ Feature: Testing Pyramid Discipline & TDD Architectural Compliance (ADR-003, ADR
   Background:
     Given an llm-orc project with testing pyramid requirements
     And ADR-003 testable contract system is active
-    And ADR-004 BDD guardrails are enforced
     And TDD Red→Green→Refactor discipline is required
 
   @pyramid-structure
@@ -90,7 +88,7 @@ Feature: Testing Pyramid Discipline & TDD Architectural Compliance (ADR-003, ADR
   Scenario: BDD scenarios maintain proper relationship with unit test structure
     Given BDD feature file "tests/bdd/features/issue-24-script-agents.feature"
     And the feature implements Issue #24 for script agent functionality
-    And ADR-004 requires BDD scenarios to have unit test backing
+    And BDD scenarios require unit test backing
     When BDD-Unit relationship validation is performed
     Then corresponding unit test file "tests/test_issue_24_units.py" should exist
     And unit test file should contain at least 3 tests per BDD scenario
@@ -102,7 +100,7 @@ Feature: Testing Pyramid Discipline & TDD Architectural Compliance (ADR-003, ADR
   @tdd-cycle-compliance
   Scenario: TDD Red→Green→Refactor cycle maintains pyramid discipline
     Given a new feature implementation requiring BDD scenario
-    And ADR-004 requires behavioral contracts before implementation
+    And behavioral contracts are required before implementation
     And TDD discipline requires Red→Green→Refactor progression
     When implementing the feature following TDD cycle
     Then Red phase should write failing unit tests first (not BDD scenarios)
@@ -116,7 +114,7 @@ Feature: Testing Pyramid Discipline & TDD Architectural Compliance (ADR-003, ADR
   @architectural-drift-prevention
   Scenario: Testing pyramid prevents architectural drift through enforcement
     Given LLM-assisted development is implementing new features
-    And ADR-003 and ADR-004 establish architectural constraints
+    And ADR-003 establishes architectural constraints
     And testing pyramid ratios serve as architectural guardrails
     When LLM implementation attempts bypass unit test requirements
     Then pyramid validation should reject the implementation
@@ -155,7 +153,7 @@ Feature: Testing Pyramid Discipline & TDD Architectural Compliance (ADR-003, ADR
   @pyramid-ratio-alerts
   Scenario: Pyramid ratio violations trigger immediate corrective guidance
     Given current pyramid ratios are inverted (66/5/28 vs target 70/20/10)
-    And ADR-004 requires proper pyramid structure for LLM guidance
+    And proper pyramid structure guides development
     And testing discipline affects architectural quality
     When pyramid ratio analysis detects violations
     Then immediate alerts should be generated for ratio violations
@@ -168,7 +166,7 @@ Feature: Testing Pyramid Discipline & TDD Architectural Compliance (ADR-003, ADR
   @commit-gate-integration
   Scenario: Testing pyramid compliance blocks commits until resolved
     Given testing pyramid validation is integrated with commit gates
-    And ADR-003 and ADR-004 establish pyramid as architectural requirement
+    And ADR-003 establishes pyramid as architectural requirement
     And TDD discipline requires proper test structure before commits
     When attempting to commit with pyramid violations
     Then commit should be blocked until pyramid compliance is achieved

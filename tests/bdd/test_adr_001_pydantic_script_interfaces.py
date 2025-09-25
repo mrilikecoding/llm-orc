@@ -288,7 +288,8 @@ def all_schema_instances(bdd_context: dict[str, Any]) -> None:
 
 
 @given(
-    "instances of all schema types (ScriptAgentInput, ScriptAgentOutput, AgentRequest, etc.)"
+    "instances of all schema types "
+    "(ScriptAgentInput, ScriptAgentOutput, AgentRequest, etc.)"
 )
 def all_schema_instances_etc(bdd_context: dict[str, Any]) -> None:
     """Create instances of all schema types."""
@@ -452,9 +453,9 @@ def create_invalid_script_agent_input(bdd_context: dict[str, Any]) -> None:
     try:
         # This should fail validation - using actually invalid types
         ScriptAgentInput(
-            agent_name=123,  # Invalid type - should be string
-            input_data=None,  # Invalid type - should be string
-            context="not_a_dict",  # Invalid type - should be dict
+            agent_name=123,  # type: ignore  # Invalid type - should be string
+            input_data=None,  # type: ignore  # Invalid type - should be string
+            context="not_a_dict",  # type: ignore  # Invalid type - should be dict
         )
         bdd_context["invalid_creation_success"] = True
     except (ValueError, TypeError, ValidationError) as e:
@@ -1027,7 +1028,8 @@ def inherits_script_agent_output_fields(bdd_context: dict[str, Any]) -> None:
 
 
 @then(
-    "it should inherit all ScriptAgentOutput fields (success, data, error, agent_requests)"
+    "it should inherit all ScriptAgentOutput fields "
+    "(success, data, error, agent_requests)"
 )
 def inherits_script_agent_output_fields_explicit(bdd_context: dict[str, Any]) -> None:
     """Verify UserInputOutput inherits ScriptAgentOutput fields."""
@@ -1123,10 +1125,13 @@ def invalid_operations_rejected(bdd_context: dict[str, Any]) -> None:
 
 
 @when(
-    "I create FileOperationOutput with path, size, bytes_processed, and operation_performed"
+    "I create FileOperationOutput with path, size, bytes_processed, "
+    "and operation_performed"
 )
-def create_file_operation_output(bdd_context: dict[str, Any]) -> None:
-    """Create FileOperationOutput instance."""
+def create_file_operation_output_with_operation_performed(
+    bdd_context: dict[str, Any],
+) -> None:
+    """Create FileOperationOutput instance with operation_performed."""
     try:
         bdd_context["created_file_output"] = FileOperationOutput(
             success=True,

@@ -925,7 +925,8 @@ def composable_primitive_system(bdd_context: dict[str, Any]) -> None:
 
 
 @when(
-    "scripts are added or modified in core primitives, examples, or community directories"
+    "scripts are added or modified in core primitives, examples, "
+    "or community directories"
 )
 def scripts_modified_in_directories(bdd_context: dict[str, Any]) -> None:
     """Simulate scripts being modified in various directories."""
