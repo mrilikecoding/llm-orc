@@ -1,13 +1,19 @@
 # ADR-005: Multi-Turn Agent Conversations
 
 ## Status
-PROPOSED
+Implemented
 
 ## Implementation Status
-- [ ] BDD scenarios created
-- [ ] Step definitions implemented (Red phase)
-- [ ] Implementation tasks planned
-- [ ] Dependencies identified
+- [x] BDD scenarios created and passing (18/18)
+- [x] ConversationState management implemented
+- [x] Conditional dependency resolution complete
+- [x] ConversationalEnsembleExecutor functional
+- [x] Input injection for testing operational
+- [x] Safe expression evaluation implemented
+- [x] Mixed agent type support complete
+- [ ] Advanced conversation patterns
+- [ ] Performance optimization
+- [ ] Visual workflow designer
 
 ## BDD Integration
 - **Scenario File**: tests/bdd/features/adr-005-multi-turn-conversations.feature

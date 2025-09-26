@@ -15,7 +15,7 @@ import pytest
 spec = importlib.util.spec_from_file_location(
     "visualization",
     str(
-        Path(__file__).parent.parent
+        Path(__file__).parent.parent.parent.parent
         / "src"
         / "llm_orc"
         / "cli_modules"

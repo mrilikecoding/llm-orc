@@ -234,7 +234,7 @@ class RegularClass:
     def test_discover_scripts_finds_existing_json_extract_script(self) -> None:
         """Test discovery can find the actual JsonExtractScript in the project."""
         # Use the actual project directory
-        project_root = Path(__file__).parent.parent
+        project_root = Path(__file__).parent.parent.parent.parent
         validator = ContractValidator(str(project_root))
 
         discovered = validator._discover_scripts()
