@@ -6,13 +6,13 @@ from pathlib import Path
 from unittest.mock import Mock
 
 # Import from the actual module file to get the right function
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "src"))
 import importlib.util
 
 spec = importlib.util.spec_from_file_location(
     "visualization",
     str(
-        Path(__file__).parent.parent.parent.parent
+        Path(__file__).parent.parent.parent.parent.parent
         / "src"
         / "llm_orc"
         / "cli_modules"
