@@ -1,6 +1,9 @@
 """Script resolution and discovery for script agents."""
 
+import json
 import os
+import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +23,8 @@ class ScriptNotFoundError(FileNotFoundError):
                 f"To use library primitives:\n"
                 f"  1. Initialize the library submodule: "
                 f"git submodule update --init --recursive\n"
-                f"  2. Or create a local implementation at .llm-orc/scripts/{script_ref}\n"
+                f"  2. Or create a local implementation at "
+                f".llm-orc/scripts/{script_ref}\n"
                 f"  3. For tests, use TestPrimitiveFactory fixtures"
             )
         else:
@@ -31,7 +35,16 @@ class ScriptNotFoundError(FileNotFoundError):
 
 
 class ScriptResolver:
-    """Resolves script references to executable paths or inline content with library support."""
+    """Resolves script references to executable paths with library support."""
+
+    # Supported script file extensions
+    SCRIPT_EXTENSIONS = (".py", ".sh", ".bash", ".js", ".rb")
+
+    # Standard directory names
+    SCRIPTS_DIR = "scripts"
+    LLM_ORC_DIR = ".llm-orc"
+    LIBRARY_DIR = "llm-orchestra-library"
+    PRIMITIVES_DIR = "primitives"
 
     def __init__(self, search_paths: list[str] | None = None) -> None:
         """Initialize the script resolver with optional custom search paths."""
@@ -53,19 +66,19 @@ class ScriptResolver:
         # Priority 1: Local project paths
         search_paths.extend(
             [
-                str(cwd / ".llm-orc" / "scripts"),
-                str(cwd / ".llm-orc"),
+                str(cwd / self.LLM_ORC_DIR / self.SCRIPTS_DIR),
+                str(cwd / self.LLM_ORC_DIR),
                 str(cwd),
             ]
         )
 
         # Priority 2: Library submodule paths
-        library_base = cwd / "llm-orchestra-library"
+        library_base = cwd / self.LIBRARY_DIR
         if library_base.exists():
             search_paths.extend(
                 [
-                    str(library_base / "primitives" / "python"),
-                    str(library_base / "primitives"),
+                    str(library_base / self.PRIMITIVES_DIR / "python"),
+                    str(library_base / self.PRIMITIVES_DIR),
                     str(library_base),
                 ]
             )
@@ -108,7 +121,7 @@ class ScriptResolver:
         is_path = (
             "/" in script_ref
             or "\\" in script_ref
-            or script_ref.endswith((".py", ".sh", ".bash", ".js", ".rb"))
+            or script_ref.endswith(self.SCRIPT_EXTENSIONS)
         )
 
         if is_path:
@@ -144,8 +157,11 @@ class ScriptResolver:
                 return str(candidate)
 
             # Try without "scripts/" prefix for backward compatibility
-            if script_ref.startswith("scripts/"):
-                candidate_no_prefix = search_dir / script_ref.removeprefix("scripts/")
+            scripts_prefix = f"{self.SCRIPTS_DIR}/"
+            if script_ref.startswith(scripts_prefix):
+                candidate_no_prefix = search_dir / script_ref.removeprefix(
+                    scripts_prefix
+                )
                 if candidate_no_prefix.exists():
                     return str(candidate_no_prefix)
 
@@ -175,11 +191,12 @@ class ScriptResolver:
         """
         scripts = []
         cwd = Path(os.getcwd())
-        scripts_dir = cwd / ".llm-orc" / "scripts"
+        scripts_dir = cwd / self.LLM_ORC_DIR / self.SCRIPTS_DIR
 
         if scripts_dir.exists():
             # Find all script files recursively
-            for pattern in ["*.py", "*.sh", "*.bash", "*.js", "*.rb"]:
+            for ext in self.SCRIPT_EXTENSIONS:
+                pattern = f"*{ext}"
                 for script_file in scripts_dir.rglob(pattern):
                     # Calculate relative path for hierarchical display
                     relative_path = script_file.relative_to(scripts_dir)
@@ -240,9 +257,6 @@ class ScriptResolver:
         Returns:
             Dictionary with execution results
         """
-        import json
-        import subprocess
-        import time
 
         try:
             script_path = self.resolve_script_path(script_name)
