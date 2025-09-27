@@ -5,6 +5,7 @@ to the ensemble processing them for inter-agent communication.
 """
 
 import json
+from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -12,7 +13,69 @@ import pytest
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+from llm_orc.core.execution.script_resolver import ScriptResolver
 from llm_orc.schemas.script_agent import AgentRequest
+from tests.fixtures.test_primitives import (
+    TestPrimitiveFactory,
+    create_test_primitive_with_json_contract,
+)
+
+
+@pytest.fixture
+def test_primitives_with_script_resolver(
+    tmp_path: Path,
+) -> Generator[dict[str, Path], None, None]:
+    """Provide test primitives and patch ScriptResolver to find them.
+
+    Per ADR-006: Tests should be independent of library submodule.
+    This fixture creates minimal test primitives and configures the
+    ScriptResolver to find them before checking library locations.
+    """
+    # Create test primitives directory
+    primitives_dir = TestPrimitiveFactory.setup_test_primitives_dir(tmp_path)
+
+    # Create test script that outputs AgentRequest objects
+    create_test_primitive_with_json_contract(
+        tmp_path,
+        "test_json_contract_agent",
+        mock_agent_requests=[
+            {
+                "target_agent_type": "user_input",
+                "parameters": {
+                    "prompt": "What is the character's name?",
+                    "validation_pattern": "^[A-Za-z\\s]{2,30}$",
+                    "retry_message": "Please enter a valid name",
+                    "mock_user_input": "test_character_name",  # For testing
+                },
+                "priority": 1,
+            }
+        ],
+    )
+
+    # Patch ScriptResolver to check test directories first
+    original_try_resolve = ScriptResolver._try_resolve_relative_path
+
+    def mock_try_resolve_relative_path(
+        self: ScriptResolver, script_ref: str
+    ) -> str | None:
+        """Check test directories first, then fall back to original behavior."""
+        # First check in our test primitives directory
+        test_script_path = primitives_dir / script_ref
+        if test_script_path.exists():
+            return str(test_script_path)
+
+        # Check in the temp directory directly
+        direct_path = tmp_path / script_ref
+        if direct_path.exists():
+            return str(direct_path)
+
+        # Fall back to original resolution logic
+        return original_try_resolve(self, script_ref)
+
+    with patch.object(
+        ScriptResolver, "_try_resolve_relative_path", mock_try_resolve_relative_path
+    ):
+        yield {"primitives_dir": primitives_dir, "tmp_path": tmp_path}
 
 
 class TestAgentRequestIntegration:
@@ -128,11 +191,13 @@ print(json.dumps(output))
             Path(script_path).unlink(missing_ok=True)
 
     @pytest.mark.asyncio
-    async def test_story_generator_to_user_input_agent_flow(self) -> None:
+    async def test_story_generator_to_user_input_agent_flow(
+        self, test_primitives_with_script_resolver: dict[str, Path]
+    ) -> None:
         """Test the complete flow from story generator to user input agent.
 
         This validates the BDD scenario: story generator → user input agent flow.
-        RED PHASE: Will fail because the flow isn't implemented yet.
+        Uses test fixtures per ADR-006 to avoid library dependency.
         """
         config = EnsembleConfig(
             name="story_to_user_input_flow",
@@ -140,7 +205,7 @@ print(json.dumps(output))
             agents=[
                 {
                     "name": "cyberpunk_story_generator",
-                    "script": "test_json_contract_agent.py",  # Can output AgentRequest
+                    "script": "test_json_contract_agent.py",  # Test fixture script
                     "parameters": {
                         "theme": "cyberpunk",
                         "character_type": "protagonist",
@@ -149,7 +214,7 @@ print(json.dumps(output))
                 },
                 {
                     "name": "user_input_agent",
-                    "script": "primitives/user_input.py",  # Assumes this exists
+                    "script": "primitives/user_input.py",  # Test fixture primitive
                     "timeout_seconds": 10,
                 },
             ],

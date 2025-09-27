@@ -5,19 +5,79 @@ from pathlib import Path
 from typing import Any
 
 
-class ScriptResolver:
-    """Resolves script references to executable paths or inline content."""
+class ScriptNotFoundError(FileNotFoundError):
+    """Custom exception for script resolution errors with helpful guidance."""
 
-    def __init__(self) -> None:
-        """Initialize the script resolver."""
+    def __init__(self, script_ref: str, is_primitive: bool = False) -> None:
+        """Initialize with script reference and guidance."""
+        self.script_ref = script_ref
+        self.is_primitive = is_primitive
+
+        if is_primitive and script_ref.startswith("primitives/"):
+            # Helpful guidance for missing library primitives
+            message = (
+                f"Primitive script '{script_ref}' not found. "
+                f"To use library primitives:\n"
+                f"  1. Initialize the library submodule: "
+                f"git submodule update --init --recursive\n"
+                f"  2. Or create a local implementation at .llm-orc/scripts/{script_ref}\n"
+                f"  3. For tests, use TestPrimitiveFactory fixtures"
+            )
+        else:
+            # Basic error message for non-primitive scripts
+            message = f"Script not found: {script_ref}"
+
+        super().__init__(message)
+
+
+class ScriptResolver:
+    """Resolves script references to executable paths or inline content with library support."""
+
+    def __init__(self, search_paths: list[str] | None = None) -> None:
+        """Initialize the script resolver with optional custom search paths."""
         self._cache: dict[str, str] = {}
+        self._custom_search_paths = search_paths
+
+    def _get_search_paths(self) -> list[str]:
+        """Get search paths in priority order: local → library → system.
+
+        Returns:
+            List of search paths in priority order
+        """
+        if self._custom_search_paths:
+            return self._custom_search_paths
+
+        cwd = Path(os.getcwd())
+        search_paths = []
+
+        # Priority 1: Local project paths
+        search_paths.extend(
+            [
+                str(cwd / ".llm-orc" / "scripts"),
+                str(cwd / ".llm-orc"),
+                str(cwd),
+            ]
+        )
+
+        # Priority 2: Library submodule paths
+        library_base = cwd / "llm-orchestra-library"
+        if library_base.exists():
+            search_paths.extend(
+                [
+                    str(library_base / "primitives" / "python"),
+                    str(library_base / "primitives"),
+                    str(library_base),
+                ]
+            )
+
+        return search_paths
 
     def resolve_script_path(self, script_ref: str) -> str:
         """Resolve script reference to executable path or inline content.
 
         Args:
             script_ref: Script reference - can be:
-                - Relative path from .llm-orc/scripts/ (e.g., "scripts/test.py")
+                - Relative path from search paths (e.g., "primitives/user_input.py")
                 - Absolute path (e.g., "/usr/local/bin/analyzer")
                 - Inline script content (backward compatibility)
 
@@ -25,7 +85,7 @@ class ScriptResolver:
             Resolved script path or inline content
 
         Raises:
-            FileNotFoundError: If script file doesn't exist
+            ScriptNotFoundError: If script file doesn't exist with helpful guidance
         """
         # Check cache first
         if script_ref in self._cache:
@@ -42,7 +102,7 @@ class ScriptResolver:
             path = Path(script_ref)
             if path.exists():
                 return str(path)
-            raise FileNotFoundError(f"Script not found: {script_ref}")
+            raise ScriptNotFoundError(script_ref)
 
         # Check if it looks like a path (contains / or \ or has script extension)
         is_path = (
@@ -52,19 +112,20 @@ class ScriptResolver:
         )
 
         if is_path:
-            # Try to resolve as relative path from .llm-orc directory
-            resolved = self._try_resolve_relative_path(script_ref)
+            # Try to resolve using library-aware search paths
+            resolved = self._try_resolve_with_search_paths(script_ref)
             if resolved:
                 return resolved
 
-            # If it looks like a path but wasn't found, raise error
-            raise FileNotFoundError(f"Script not found: {script_ref}")
+            # If it looks like a path but wasn't found, raise error with guidance
+            is_primitive = script_ref.startswith("primitives/")
+            raise ScriptNotFoundError(script_ref, is_primitive=is_primitive)
 
         # Fall back to treating it as inline content (backward compatibility)
         return script_ref
 
-    def _try_resolve_relative_path(self, script_ref: str) -> str | None:
-        """Try to resolve script as relative path from .llm-orc directory.
+    def _try_resolve_with_search_paths(self, script_ref: str) -> str | None:
+        """Try to resolve script using library-aware search paths.
 
         Args:
             script_ref: Relative script reference
@@ -72,30 +133,35 @@ class ScriptResolver:
         Returns:
             Resolved path or None if not found
         """
-        # Get current working directory
-        cwd = Path(os.getcwd())
+        search_paths = self._get_search_paths()
 
-        # Priority 1: Check .llm-orc/scripts/ directory (hierarchical names)
-        llm_orc_scripts_path = cwd / ".llm-orc" / "scripts" / script_ref
-        if llm_orc_scripts_path.exists():
-            return str(llm_orc_scripts_path)
+        for search_path in search_paths:
+            search_dir = Path(search_path)
 
-        # Priority 2: Check .llm-orc/ directory directly
-        llm_orc_path = cwd / ".llm-orc" / script_ref
-        if llm_orc_path.exists():
-            return str(llm_orc_path)
+            # Try direct path in search directory
+            candidate = search_dir / script_ref
+            if candidate.exists():
+                return str(candidate)
 
-        # Priority 3: Check .llm-orc/ directly (backward compatibility)
-        llm_orc_direct = cwd / ".llm-orc" / script_ref.removeprefix("scripts/")
-        if llm_orc_direct.exists():
-            return str(llm_orc_direct)
-
-        # Priority 4: Check current directory (fallback)
-        current_path = cwd / script_ref
-        if current_path.exists():
-            return str(current_path)
+            # Try without "scripts/" prefix for backward compatibility
+            if script_ref.startswith("scripts/"):
+                candidate_no_prefix = search_dir / script_ref.removeprefix("scripts/")
+                if candidate_no_prefix.exists():
+                    return str(candidate_no_prefix)
 
         return None
+
+    def _try_resolve_relative_path(self, script_ref: str) -> str | None:
+        """Legacy method for backward compatibility.
+
+        Args:
+            script_ref: Relative script reference
+
+        Returns:
+            Resolved path or None if not found
+        """
+        # Delegate to new library-aware resolution
+        return self._try_resolve_with_search_paths(script_ref)
 
     def clear_cache(self) -> None:
         """Clear the resolution cache."""
@@ -159,7 +225,7 @@ class ScriptResolver:
                 "description": f"Script at {script_path}",
                 "parameters": [],  # Basic implementation
             }
-        except FileNotFoundError:
+        except (FileNotFoundError, ScriptNotFoundError):
             return None
 
     def test_script(
@@ -212,7 +278,7 @@ class ScriptResolver:
                     "duration_ms": duration_ms,
                 }
 
-        except FileNotFoundError:
+        except (FileNotFoundError, ScriptNotFoundError):
             return {
                 "success": False,
                 "output": "",
