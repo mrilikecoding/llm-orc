@@ -52,29 +52,19 @@ def test_primitives_with_script_resolver(
         ],
     )
 
-    # Patch ScriptResolver to check test directories first
-    original_try_resolve = ScriptResolver._try_resolve_relative_path
+    # Patch ScriptResolver to use test directories
+    # Use custom search paths to include test primitives
+    original_init = ScriptResolver.__init__
 
-    def mock_try_resolve_relative_path(
-        self: ScriptResolver, script_ref: str
-    ) -> str | None:
-        """Check test directories first, then fall back to original behavior."""
-        # First check in our test primitives directory
-        test_script_path = primitives_dir / script_ref
-        if test_script_path.exists():
-            return str(test_script_path)
+    def mock_init(self: ScriptResolver, search_paths: list[str] | None = None) -> None:
+        """Initialize with test search paths."""
+        test_search_paths = [
+            str(primitives_dir),
+            str(tmp_path),
+        ]
+        original_init(self, test_search_paths)
 
-        # Check in the temp directory directly
-        direct_path = tmp_path / script_ref
-        if direct_path.exists():
-            return str(direct_path)
-
-        # Fall back to original resolution logic
-        return original_try_resolve(self, script_ref)
-
-    with patch.object(
-        ScriptResolver, "_try_resolve_relative_path", mock_try_resolve_relative_path
-    ):
+    with patch.object(ScriptResolver, "__init__", mock_init):
         yield {"primitives_dir": primitives_dir, "tmp_path": tmp_path}
 
 
