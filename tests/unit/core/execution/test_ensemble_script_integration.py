@@ -14,7 +14,23 @@ from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 @pytest.fixture(autouse=True)
 def mock_expensive_dependencies() -> Generator[None, None, None]:
     """Mock expensive dependencies for all ensemble script integration tests."""
-    with patch("llm_orc.core.execution.ensemble_execution.ConfigurationManager"):
+    mock_config_manager = Mock()
+    mock_config_manager.load_performance_config.return_value = {
+        "execution": {"default_timeout": 60},
+        "concurrency": {"max_concurrent_agents": 5},
+        "script_cache": {
+            "enabled": True,
+            "ttl_seconds": 3600,
+            "max_size": 1000,
+            "persist_to_artifacts": False,
+        },
+    }
+    mock_config_manager.get_model_profiles.return_value = {}
+
+    with patch(
+        "llm_orc.core.execution.ensemble_execution.ConfigurationManager",
+        return_value=mock_config_manager,
+    ):
         with patch("llm_orc.core.execution.ensemble_execution.CredentialStorage"):
             with patch("llm_orc.core.execution.ensemble_execution.ModelFactory"):
                 yield
