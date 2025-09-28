@@ -105,6 +105,7 @@ def check_bdd_scenario_status(adr_number: str) -> dict[str, Any]:
                 f"adr-{adr_number.zfill(3)}",
                 "-v",
                 "--tb=no",
+                "--no-cov",
             ],
             capture_output=True,
             text=True,

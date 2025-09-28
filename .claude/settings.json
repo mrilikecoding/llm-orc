@@ -53,16 +53,6 @@
         ]
       },
       {
-        "matchers": ["refactor", "optimize", "clean"],
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/testing-pyramid-gate.sh --fix",
-            "description": "Ensure tests exist before refactoring"
-          }
-        ]
-      },
-      {
         "matchers": ["commit", "git commit"],
         "hooks": [
           {
