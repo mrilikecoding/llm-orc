@@ -1,7 +1,19 @@
 # ADR-006: Library-Based Primitives Architecture with Multi-Language Bridge Support
 
 ## Status
-In Progress
+Implemented
+
+## Implementation Status
+- [x] BDD scenarios created in tests/bdd/features/adr-006-library-based-primitives-architecture.feature
+- [x] Library-aware ScriptResolver with search path prioritization
+- [x] Graceful degradation with helpful error messages (ScriptNotFoundError)
+- [x] Test independence via TestPrimitiveFactory fixtures
+- [x] All 22 BDD scenarios passing
+- [x] Integration tests validate orchestration with fixtures
+- [x] Type safety and coding standards compliance
+- [x] Refactoring complete (constants extracted, clean organization)
+
+**Note on Library Content**: This ADR validates llm-orc's orchestration architecture. Library primitive implementations live in the `llm-orchestra-library` repository and are validated through interface contracts (ADR-003). Tests use fixtures to maintain independence from library submodule initialization.
 
 ## BDD Mapping Hints
 ```yaml
@@ -100,11 +112,11 @@ src/llm_orc/
 #### Option B: Library-Based Primitives (External Submodule)
 ```
 llm-orchestra-library/   # ← Optional but recommended
-  primitives/
-    python/
+  scripts/
+    primitives/          # Core primitives (Python-only engine)
       user_input.py
       file_read.py
-  scripts/               # Domain-specific scripts
+    domain/              # Domain-specific scripts
   ensembles/            # Pre-composed workflows
 ```
 
@@ -172,29 +184,27 @@ Specifically:
 
 ```
 llm-orchestra-library/
-  primitives/
-    python/                      # Only Python primitives needed
+  scripts/
+    primitives/                  # Core primitives (Python-only)
       # Core I/O primitives
-      user_input.py
-      file_read.py
-      file_write.py
-      http_request.py
-      json_transform.py
+      file-ops/
+        file_read.py
+        file_write.py
+      user-interaction/
+        user_input.py
+      control-flow/
+        conditional.py
 
-      # Language bridge primitives
-      subprocess_executor.py      # Universal command executor
-      node_executor.py           # Node.js with enhanced integration
-      shell_executor.py          # Shell commands with safety
-      docker_executor.py         # Container execution
+      # Bridge primitives (future)
+      bridges/
+        subprocess_executor.py   # Universal command executor
+        node_executor.py        # Node.js with enhanced integration
+        shell_executor.py       # Shell commands with safety
 
-      # Service bridge primitives
-      api_executor.py            # HTTP API calls
-      lambda_executor.py         # AWS Lambda invocation
-
-  scripts/                      # Domain-specific implementations
-    web_scraping/
-    data_analysis/
-    integrations/
+    domain/                     # Domain-specific implementations
+      web_scraping/
+      data_analysis/
+      integrations/
 
   ensembles/                    # Pre-composed workflows
     data_pipeline.yaml
