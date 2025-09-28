@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from llm_orc.core.execution.script_resolver import ScriptResolver
+from llm_orc.core.execution.script_resolver import ScriptNotFoundError, ScriptResolver
 
 
 class TestScriptResolver:
@@ -151,3 +151,298 @@ class TestScriptResolver:
                 result2 = resolver.resolve_script_path("scripts/cached.py")
 
             assert result1 == result2
+
+    def test_list_available_scripts_empty_directory(self, tmp_path: Path) -> None:
+        """Test list_available_scripts with empty scripts directory."""
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            scripts = resolver.list_available_scripts()
+            assert scripts == []
+
+    def test_list_available_scripts_no_scripts_directory(self, tmp_path: Path) -> None:
+        """Test list_available_scripts when scripts directory doesn't exist."""
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            scripts = resolver.list_available_scripts()
+            assert scripts == []
+
+    def test_list_available_scripts_with_various_extensions(
+        self, tmp_path: Path
+    ) -> None:
+        """Test list_available_scripts finds all supported script extensions."""
+        scripts_dir = tmp_path / ".llm-orc" / "scripts"
+        scripts_dir.mkdir(parents=True)
+
+        # Create scripts with different extensions
+        extensions = [".py", ".sh", ".bash", ".js", ".rb"]
+        for ext in extensions:
+            script = scripts_dir / f"test{ext}"
+            script.write_text(f"#!/usr/bin/env python3\n# Test script {ext}")
+
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            scripts = resolver.list_available_scripts()
+
+            assert len(scripts) == 5
+            script_names = [s["name"] for s in scripts]
+            for ext in extensions:
+                assert f"test{ext}" in script_names
+
+    def test_list_available_scripts_with_nested_structure(self, tmp_path: Path) -> None:
+        """Test list_available_scripts with nested directory structure."""
+        scripts_dir = tmp_path / ".llm-orc" / "scripts"
+
+        # Create nested structure
+        primitives_dir = scripts_dir / "primitives"
+        network_dir = primitives_dir / "network"
+        network_dir.mkdir(parents=True)
+
+        # Create scripts at different levels
+        root_script = scripts_dir / "root.py"
+        root_script.write_text("# Root script")
+
+        primitives_script = primitives_dir / "primitive.py"
+        primitives_script.write_text("# Primitive script")
+
+        network_script = network_dir / "topology.py"
+        network_script.write_text("# Network script")
+
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            scripts = resolver.list_available_scripts()
+
+            assert len(scripts) == 3
+
+            # Sort by display_name to check order (expected: network < primitive < root)
+            scripts_by_name = {
+                s["display_name"]: s for s in scripts if s["display_name"] is not None
+            }
+
+            # Check that all expected scripts are present
+            assert "primitives/primitive.py" in scripts_by_name
+            assert "primitives/network/topology.py" in scripts_by_name
+            assert "root.py" in scripts_by_name
+
+            # Check structure for each script
+            primitive_script_info: dict[str, str | None] = scripts_by_name[
+                "primitives/primitive.py"
+            ]
+            assert primitive_script_info["name"] == "primitive.py"
+            assert primitive_script_info["relative_path"] == "primitives"
+
+            network_script_info: dict[str, str | None] = scripts_by_name[
+                "primitives/network/topology.py"
+            ]
+            assert network_script_info["name"] == "topology.py"
+            assert network_script_info["relative_path"] == "primitives/network"
+
+            root_script_info: dict[str, str | None] = scripts_by_name["root.py"]
+            assert root_script_info["name"] == "root.py"
+            assert root_script_info["relative_path"] is None
+
+    def test_get_script_info_existing_script(self, tmp_path: Path) -> None:
+        """Test get_script_info for existing script."""
+        scripts_dir = tmp_path / ".llm-orc" / "scripts"
+        scripts_dir.mkdir(parents=True)
+        script = scripts_dir / "test.py"
+        script.write_text("#!/usr/bin/env python3\nprint('Test')")
+
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            info = resolver.get_script_info("scripts/test.py")
+
+            assert info is not None
+            assert info["name"] == "scripts/test.py"
+            assert info["path"] == str(script)
+            assert "Script at" in info["description"]
+            assert info["parameters"] == []
+
+    def test_get_script_info_nonexistent_script(self, tmp_path: Path) -> None:
+        """Test get_script_info for nonexistent script."""
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            info = resolver.get_script_info("scripts/missing.py")
+            assert info is None
+
+    def test_get_script_info_inline_content(self, tmp_path: Path) -> None:
+        """Test get_script_info for inline script content."""
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            info = resolver.get_script_info("echo 'inline content'")
+
+            # Should return None for inline content (no file path)
+            assert info is None
+
+    def test_get_script_info_absolute_path(self, tmp_path: Path) -> None:
+        """Test get_script_info with absolute path."""
+        script = tmp_path / "absolute_test.py"
+        script.write_text("#!/usr/bin/env python3\nprint('Absolute')")
+
+        resolver = ScriptResolver()
+        info = resolver.get_script_info(str(script))
+
+        assert info is not None
+        assert info["name"] == str(script)
+        assert info["path"] == str(script)
+        assert "Script at" in info["description"]
+
+    def test_test_script_successful_execution(self, tmp_path: Path) -> None:
+        """Test test_script with successful script execution."""
+        script = tmp_path / "success.py"
+        script.write_text("#!/usr/bin/env python3\nprint('Success!')")
+        script.chmod(0o755)
+
+        resolver = ScriptResolver()
+        result = resolver.test_script(str(script), {"key": "value"})
+
+        assert result["success"] is True
+        assert "Success!" in result["output"]
+        assert "duration_ms" in result
+        assert isinstance(result["duration_ms"], int)
+
+    def test_test_script_failed_execution(self, tmp_path: Path) -> None:
+        """Test test_script with failed script execution."""
+        script = tmp_path / "failure.py"
+        script.write_text("#!/usr/bin/env python3\nimport sys; sys.exit(1)")
+        script.chmod(0o755)
+
+        resolver = ScriptResolver()
+        result = resolver.test_script(str(script), {})
+
+        assert result["success"] is False
+        assert "duration_ms" in result
+        assert isinstance(result["duration_ms"], int)
+
+    def test_test_script_nonexistent(self, tmp_path: Path) -> None:
+        """Test test_script with nonexistent script."""
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            result = resolver.test_script("missing.py", {})
+
+            assert result["success"] is False
+            assert "not found" in result["error"]
+            assert result["duration_ms"] == 0
+
+    def test_test_script_timeout(self, tmp_path: Path) -> None:
+        """Test test_script with script timeout."""
+        script = tmp_path / "timeout.py"
+        script.write_text("#!/usr/bin/env python3\nimport time; time.sleep(60)")
+        script.chmod(0o755)
+
+        resolver = ScriptResolver()
+        result = resolver.test_script(str(script), {})
+
+        assert result["success"] is False
+        assert "timed out" in result["error"]
+        assert result["duration_ms"] == 30000
+
+    def test_test_script_parameters_passed(self, tmp_path: Path) -> None:
+        """Test test_script passes parameters via environment."""
+        script = tmp_path / "params.py"
+        script.write_text(
+            "#!/usr/bin/env python3\n"
+            "import os, json\n"
+            "params = json.loads(os.environ.get('SCRIPT_PARAMS', '{}'))\n"
+            "print(f'Got: {params}')"
+        )
+        script.chmod(0o755)
+
+        resolver = ScriptResolver()
+        result = resolver.test_script(str(script), {"test": "value"})
+
+        assert result["success"] is True
+        assert "Got: {'test': 'value'}" in result["output"]
+
+    def test_script_not_found_error_primitive_guidance(self) -> None:
+        """Test ScriptNotFoundError provides helpful guidance for primitives."""
+        error = ScriptNotFoundError("primitives/missing.py", is_primitive=True)
+
+        error_msg = str(error)
+        assert "Primitive script 'primitives/missing.py' not found" in error_msg
+        assert "git submodule update --init --recursive" in error_msg
+        assert ".llm-orc/scripts/primitives/missing.py" in error_msg
+        assert "TestPrimitiveFactory fixtures" in error_msg
+
+    def test_script_not_found_error_regular_script(self) -> None:
+        """Test ScriptNotFoundError for regular scripts."""
+        error = ScriptNotFoundError("missing.py", is_primitive=False)
+
+        error_msg = str(error)
+        assert "Script not found: missing.py" in error_msg
+        assert "git submodule" not in error_msg
+
+    def test_library_aware_resolution_with_library_submodule(
+        self, tmp_path: Path
+    ) -> None:
+        """Test library-aware resolution finds scripts in library submodule."""
+        # Create library submodule structure
+        library_dir = tmp_path / "llm-orchestra-library"
+        primitives_dir = library_dir / "primitives" / "python"
+        primitives_dir.mkdir(parents=True)
+
+        # Create script in library
+        library_script = primitives_dir / "library_script.py"
+        library_script.write_text("#!/usr/bin/env python3\nprint('Library')")
+
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            result = resolver.resolve_script_path("scripts/library_script.py")
+            assert result == str(library_script)
+
+    def test_library_aware_resolution_priority_order(self, tmp_path: Path) -> None:
+        """Test that local scripts take priority over library scripts."""
+        # Create local script
+        local_dir = tmp_path / ".llm-orc" / "scripts"
+        local_dir.mkdir(parents=True)
+        local_script = local_dir / "same_name.py"
+        local_script.write_text("#!/usr/bin/env python3\nprint('Local')")
+
+        # Create library script with same name
+        library_dir = tmp_path / "llm-orchestra-library"
+        primitives_dir = library_dir / "primitives" / "python"
+        primitives_dir.mkdir(parents=True)
+        library_script = primitives_dir / "same_name.py"
+        library_script.write_text("#!/usr/bin/env python3\nprint('Library')")
+
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            result = resolver.resolve_script_path("scripts/same_name.py")
+
+            # Should resolve to local version
+            assert result == str(local_script)
+            content = Path(result).read_text()
+            assert "Local" in content
+
+    def test_clear_cache_functionality(self, tmp_path: Path) -> None:
+        """Test that clear_cache actually clears the resolution cache."""
+        scripts_dir = tmp_path / ".llm-orc" / "scripts"
+        scripts_dir.mkdir(parents=True)
+        script = scripts_dir / "cached.py"
+        script.write_text("#!/usr/bin/env python3")
+
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+
+            # First resolution - populates cache
+            resolver.resolve_script_path("scripts/cached.py")
+
+            # Clear cache
+            resolver.clear_cache()
+
+            # Delete script to test cache is truly cleared
+            script.unlink()
+
+            # Should raise error since cache is cleared and file is gone
+            with pytest.raises(ScriptNotFoundError):
+                resolver.resolve_script_path("scripts/cached.py")
+
+    def test_custom_search_paths(self, tmp_path: Path) -> None:
+        """Test ScriptResolver with custom search paths."""
+        custom_dir = tmp_path / "custom"
+        custom_dir.mkdir()
+        script = custom_dir / "custom_script.py"
+        script.write_text("#!/usr/bin/env python3")
+
+        resolver = ScriptResolver(search_paths=[str(custom_dir)])
+        result = resolver.resolve_script_path("custom_script.py")
+        assert result == str(script)
