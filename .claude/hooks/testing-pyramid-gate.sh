@@ -28,24 +28,24 @@ count_test_types() {
 	local bdd_scenarios=0
 	local step_definitions=0
 
-	# Count unit tests (excluding BDD directory)
-	if [[ -d "tests" ]]; then
-		unit_tests=$(find tests -name "test_*.py" -not -path "*/bdd/*" -type f 2>/dev/null | wc -l)
+	# Count unit test FUNCTIONS (not files) in tests/unit/
+	if [[ -d "tests/unit" ]]; then
+		unit_tests=$(grep -r "def test_" tests/unit/ 2>/dev/null | wc -l | tr -d ' ')
 	fi
 
-	# Count integration tests
-	if [[ -d "tests" ]]; then
-		integration_tests=$(find tests -name "*integration*.py" -o -name "*e2e*.py" 2>/dev/null | wc -l)
+	# Count integration test FUNCTIONS (not files) in tests/integration/
+	if [[ -d "tests/integration" ]]; then
+		integration_tests=$(grep -r "def test_" tests/integration/ 2>/dev/null | wc -l | tr -d ' ')
 	fi
 
 	# Count BDD scenarios
 	if [[ -d "tests/bdd/features" ]]; then
-		bdd_scenarios=$(grep -r "^[[:space:]]*Scenario:" tests/bdd/features/ 2>/dev/null | wc -l || echo 0)
+		bdd_scenarios=$(grep -r "Scenario:" tests/bdd/features/ 2>/dev/null | wc -l | tr -d ' ')
 	fi
 
-	# Count BDD step definitions
+	# Count BDD step definition files (files are reusable across scenarios)
 	if [[ -d "tests/bdd" ]]; then
-		step_definitions=$(find tests/bdd -name "test_*.py" 2>/dev/null | wc -l)
+		step_definitions=$(find tests/bdd -name "test_*.py" 2>/dev/null | wc -l | tr -d ' ')
 	fi
 
 	echo "$unit_tests,$integration_tests,$bdd_scenarios,$step_definitions"
@@ -70,10 +70,10 @@ validate_pyramid_ratios() {
 	IFS=',' read -r unit_tests integration_tests bdd_scenarios step_definitions <<<"$counts"
 
 	echo -e "${PURPLE}📊 Current Testing Pyramid:${NC}" >&2
-	echo -e "  🧪 Unit Tests: $unit_tests" >&2
-	echo -e "  🔗 Integration Tests: $integration_tests" >&2
+	echo -e "  🧪 Unit Test Functions: $unit_tests" >&2
+	echo -e "  🔗 Integration Test Functions: $integration_tests" >&2
 	echo -e "  🎭 BDD Scenarios: $bdd_scenarios" >&2
-	echo -e "  📋 BDD Step Definitions: $step_definitions" >&2
+	echo -e "  📋 BDD Step Definition Files: $step_definitions" >&2
 
 	local issues=()
 
@@ -149,7 +149,7 @@ output_testing_specialist_context() {
       "missingUnitTests": $missing_tests,
       "bddUnitGaps": $bdd_issues
     },
-    "message": "Use the llm-orc-testing-specialist agent to analyze the testing pyramid structure and generate missing unit tests. Focus on creating unit tests that support BDD scenarios and maintain proper pyramid ratios (70% unit, 20% integration, 10% BDD). Generate unit test stubs for source files that lack coverage and ensure BDD scenarios have corresponding unit-level validation."
+    "message": "Testing pyramid counts test FUNCTIONS (not files) for accurate ratio analysis. Ideal distribution: 70% unit test functions, 20% integration test functions, 10% BDD scenarios. Review current ratios and suggest improvements if pyramid is inverted or unit test coverage is low."
   }
 }
 EOF
