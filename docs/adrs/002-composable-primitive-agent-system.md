@@ -166,6 +166,10 @@ class PrimitiveRegistry:
 
 ### Category-Specific Schemas
 
+**Implementation**: `src/llm_orc/schemas/primitive_categories.py`
+
+Category-specific schemas provide type-safe contracts for different primitive types. These are now implemented and available for use in primitive scripts.
+
 #### User Interaction Primitives
 ```python
 # Base schemas for user interaction
@@ -268,47 +272,37 @@ class GroupStatistics(BaseModel):
 
 ### LLM Agent Integration
 
-#### Function Calling Schema Generation
+**Status**: Future Enhancement (Not Yet Implemented)
+
+LLM function calling integration would enable LLM agents to dynamically discover and invoke primitives. This is not required for the current script-based architecture but could be added as an enhancement.
+
+**Potential Implementation Approach**:
 ```python
 class LLMFunctionGenerator:
-    """Generate function calling schemas for LLM agents."""
-    
+    """Generate function calling schemas for LLM agents (future enhancement)."""
+
     def __init__(self, registry: PrimitiveRegistry):
         self.registry = registry
-    
+
     def generate_function_definitions(self) -> List[Dict[str, Any]]:
-        """Generate OpenAI function calling definitions."""
+        """Generate OpenAI function calling definitions from discovered primitives."""
         functions = []
-        
-        for primitive_class in self.registry.get_all():
-            schema = primitive_class.input_schema().model_json_schema()
-            
+
+        # Discover scripts and extract their category-specific schemas
+        for primitive_info in self.registry.discover_primitives():
+            # Parse script docstring to extract schema information
+            # Generate function definition for LLM function calling
             function_def = {
-                "name": f"execute_{primitive_class.name}",
-                "description": primitive_class.description,
-                "parameters": schema
+                "name": f"execute_{primitive_info['name']}",
+                "description": primitive_info.get('description', ''),
+                "parameters": {} # Extract from script metadata
             }
             functions.append(function_def)
-            
+
         return functions
-    
-    def execute_primitive_from_llm_call(
-        self, 
-        function_name: str, 
-        arguments: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Execute primitive from LLM function call."""
-        primitive_name = function_name.replace("execute_", "")
-        primitive_class = self.registry.get(primitive_name)
-        
-        # Validate and parse input
-        input_data = primitive_class.input_schema()(**arguments)
-        
-        # Execute primitive
-        result = await primitive_class().execute(input_data)
-        
-        return result.model_dump()
 ```
+
+**Current Approach**: Primitives are composed declaratively via YAML ensemble configurations rather than dynamically invoked by LLMs. This provides explicit control over workflow composition.
 
 #### Dynamic Prompt Generation Example
 ```python
