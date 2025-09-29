@@ -46,81 +46,122 @@ Create a **unified primitive system** where:
 
 ## Decision
 
-Implement a **Pydantic-based Composable Primitive System** that transforms existing ad-hoc scripts into a unified, type-safe, discoverable ecosystem of building blocks.
+Implement a **Script-Based Composable Primitive System** where primitives are standalone executable scripts (Python, JavaScript, etc.) that conform to type-safe contracts. Primitives live in the `llm-orchestra-library` submodule as content, not infrastructure, enabling composable workflows that interoperate seamlessly with LLM agents.
 
 ## Detailed Design
 
 ### Core Architecture
 
-#### 1. Universal Primitive Interface
+#### 1. Script-Based Primitive Contracts
+Primitives are executable scripts that conform to `ScriptContract` (ADR-003) and communicate via JSON I/O. They can be written in any language (Python, JavaScript, Rust, shell) as long as they:
+
+1. Accept JSON input via stdin following `ScriptAgentInput` schema (ADR-001)
+2. Return JSON output via stdout following `ScriptAgentOutput` schema (ADR-001)
+3. Implement `ScriptContract` metadata for discoverability (ADR-003)
+4. Use category-specific schemas for type safety
+
+**Python Primitive Example:**
 ```python
-from abc import ABC, abstractmethod
-from typing import TypeVar, Generic
-from pydantic import BaseModel
+#!/usr/bin/env python3
+"""get_user_input.py - Collect user input primitive (user-interaction category)"""
+import json
+import sys
+from pydantic import BaseModel, Field
 
-# Type variables for input/output schemas
-TInput = TypeVar('TInput', bound=BaseModel)
-TOutput = TypeVar('TOutput', bound=BaseModel)
+# Category-specific schemas
+class UserInteractionInput(BaseModel):
+    """Base input for user interaction primitives."""
+    agent_name: str
+    prompt: str
+    context: dict[str, Any] = Field(default_factory=dict)
 
-class Primitive(ABC, Generic[TInput, TOutput]):
-    """Base class for all composable primitives."""
-    
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Unique name for this primitive."""
-        pass
-    
-    @property  
-    @abstractmethod
-    def description(self) -> str:
-        """Human-readable description."""
-        pass
-    
-    @property
-    @abstractmethod
-    def category(self) -> str:
-        """Category (user-interaction, file-ops, etc.)."""
-        pass
-    
-    @abstractmethod
-    async def execute(self, input_data: TInput) -> TOutput:
-        """Execute the primitive operation."""
-        pass
-    
-    @classmethod
-    @abstractmethod
-    def input_schema(cls) -> type[TInput]:
-        """Return the input schema class."""
-        pass
-    
-    @classmethod
-    @abstractmethod  
-    def output_schema(cls) -> type[TOutput]:
-        """Return the output schema class."""
-        pass
+class UserInteractionOutput(BaseModel):
+    """Base output for user interaction primitives."""
+    success: bool
+    user_response: str | None = None
+    error: str | None = None
+
+def main() -> None:
+    # Read JSON input from stdin
+    input_data = UserInteractionInput(**json.load(sys.stdin))
+
+    # Execute primitive operation
+    try:
+        response = input(input_data.prompt + " ")
+        output = UserInteractionOutput(success=True, user_response=response)
+    except Exception as e:
+        output = UserInteractionOutput(success=False, error=str(e))
+
+    # Write JSON output to stdout
+    print(output.model_dump_json())
+
+if __name__ == "__main__":
+    main()
+```
+
+**JavaScript Primitive Example:**
+```javascript
+#!/usr/bin/env node
+// transform_data.js - Data transformation primitive (data-transform category)
+
+const readline = require('readline');
+
+// Read JSON input from stdin
+let inputBuffer = '';
+process.stdin.on('data', chunk => inputBuffer += chunk);
+process.stdin.on('end', () => {
+    const input = JSON.parse(inputBuffer);
+
+    try {
+        // Transform data
+        const transformed = { transformed: input.source_data };
+
+        // Write JSON output to stdout
+        console.log(JSON.stringify({
+            success: true,
+            transformed_data: transformed
+        }));
+    } catch (error) {
+        console.log(JSON.stringify({
+            success: false,
+            error: error.message
+        }));
+    }
+});
 ```
 
 #### 2. Primitive Registry & Discovery
+**Implementation**: `src/llm_orc/core/execution/primitive_registry.py`
+
 ```python
 class PrimitiveRegistry:
-    """Central registry for all available primitives."""
-    
-    def __init__(self):
-        self._primitives: Dict[str, Type[Primitive]] = {}
-    
-    def register(self, primitive_class: Type[Primitive]) -> None:
-        """Register a primitive class."""
-        self._primitives[primitive_class.name] = primitive_class
-    
-    def discover_by_category(self, category: str) -> List[Type[Primitive]]:
-        """Find all primitives in a category."""
-        return [p for p in self._primitives.values() if p.category == category]
-    
-    def get_schema_for_llm(self, primitive_name: str) -> Dict[str, Any]:
-        """Get JSON schema for LLM function calling."""
-        primitive_class = self._primitives[primitive_name]
-        return primitive_class.input_schema().model_json_schema()
+    """Registry for discovering and managing primitive script agents."""
+
+    def discover_primitives(self) -> list[dict[str, Any]]:
+        """Discover available primitive scripts in .llm-orc/scripts/primitives.
+
+        Returns:
+            List of primitive metadata dictionaries with:
+            - name: script filename
+            - path: absolute path to script
+            - relative_path: path relative to project root
+            - type: "primitive"
+            - category: extracted from script metadata
+            - executable: whether script has execute permissions
+        """
+        # Scans .llm-orc/scripts/primitives/ directory
+        # Extracts metadata from script docstrings/comments
+        # Caches results for performance
+
+    def get_primitive_info(self, primitive_name: str) -> dict[str, Any]:
+        """Get detailed information about a specific primitive."""
+        # Returns primitive metadata including schema information
+
+    def validate_primitive(self, primitive_name: str) -> dict[str, Any]:
+        """Validate that a primitive conforms to ScriptAgentInput/Output schemas."""
+        # Executes primitive with test input
+        # Validates JSON I/O format
+        # Returns validation result
 ```
 
 ### Category-Specific Schemas
@@ -306,51 +347,65 @@ class PromptGeneratorOutput(BaseModel):
 
 ### Workflow Composition
 
-#### Primitive Chaining
-```python
-class WorkflowBuilder:
-    """Builder for composing primitive workflows."""
-    
-    def __init__(self):
-        self.steps: List[WorkflowStep] = []
-    
-    def add_primitive(
-        self, 
-        primitive_name: str,
-        input_mapping: Dict[str, str] = None,
-        condition: Optional[Callable] = None
-    ) -> 'WorkflowBuilder':
-        """Add a primitive to the workflow."""
-        step = WorkflowStep(
-            primitive_name=primitive_name,
-            input_mapping=input_mapping or {},
-            condition=condition
-        )
-        self.steps.append(step)
-        return self
-    
-    def build(self) -> Workflow:
-        """Build the complete workflow."""
-        return Workflow(steps=self.steps)
+#### Primitive Chaining via Ensemble Configuration
+**Implementation**: `src/llm_orc/core/execution/primitive_composer.py`
 
-# Example: Cyberpunk character creation workflow
-workflow = (WorkflowBuilder()
-    .add_primitive("generate_story_prompt", {
-        "theme": "cyberpunk",
-        "character_type": "protagonist"  
-    })
-    .add_primitive("get_user_input", {
-        "prompt": "${generate_story_prompt.generated_prompt}"
-    })
-    .add_primitive("validate_story_input", {
-        "user_input": "${get_user_input.user_input}",
-        "validation_rules": "${generate_story_prompt.context_metadata.rules}"
-    })
-    .add_primitive("update_character_state", {
-        "backstory": "${get_user_input.user_input}",
-        "validation_result": "${validate_story_input.is_valid}"
-    }, condition=lambda ctx: ctx["validate_story_input"]["is_valid"])
-    .build())
+Primitives are composed declaratively via YAML ensemble configurations:
+
+```yaml
+name: cyberpunk-character-creation
+description: Interactive character creation with script and LLM agent interop
+
+agents:
+  # LLM agent generates contextual prompt
+  - name: story-context-generator
+    model_profile: creative-writer
+    system_prompt: "Generate atmospheric cyberpunk character creation prompt"
+
+  # Script primitive collects user input
+  - name: get-user-backstory
+    script: primitives/user-interaction/get_user_input.py
+    depends_on: [story-context-generator]
+    parameters:
+      prompt: "${story-context-generator.generated_prompt}"
+      multiline: true
+
+  # LLM agent analyzes input
+  - name: backstory-analyzer
+    model_profile: narrative-analyst
+    system_prompt: "Analyze character backstory for consistency"
+    depends_on: [get-user-backstory]
+
+  # Script primitive validates analysis
+  - name: validation-checker
+    script: primitives/data-transform/json_extract.py
+    depends_on: [backstory-analyzer]
+    parameters:
+      fields: ["consistency_score", "issues"]
+
+  # Conditional execution based on validation
+  - name: request-revision
+    script: primitives/user-interaction/confirm_action.py
+    depends_on: [validation-checker]
+    condition: "validation_checker.consistency_score < 0.7"
+```
+
+**Composition Validation**:
+```python
+class PrimitiveComposer:
+    """Engine for composing and executing chained primitive script agents."""
+
+    def compose_primitives(self, composition_config: dict[str, Any]) -> dict[str, Any]:
+        """Compose primitives into an executable chain based on configuration."""
+        # Validates primitives exist via file-based discovery
+        # Resolves execution order via dependency analysis
+        # Returns composition metadata
+
+    def validate_composition(self, composition_config: dict[str, Any]) -> dict[str, Any]:
+        """Validate that a composition configuration is type-safe and executable."""
+        # Type compatibility checked via declared input_type/output_type
+        # Detects circular dependencies
+        # Returns validation result with errors/warnings
 ```
 
 ### Implementation Strategy
@@ -490,6 +545,13 @@ if llm_response.function_call:
 
 ## Decision Rationale
 
-This composable primitive system transforms llm-orc from a collection of ad-hoc scripts into a unified, type-safe ecosystem of building blocks. It enables the cyberpunk game scenario and countless other complex workflows while providing developer ergonomics and AI agent integration.
+This script-based composable primitive system transforms llm-orc from a collection of ad-hoc scripts into a unified, type-safe ecosystem of building blocks. It enables diverse use cases from swarm network intelligence experiments to interactive narrative experiences, demonstrating that composability is achieved through contract conformance, not inheritance.
 
-The Pydantic foundation ensures type safety and validation while maintaining the flexibility needed for dynamic AI-driven composition. This approach scales from simple single-primitive operations to complex multi-agent workflows with full type checking and runtime validation.
+**Key architectural principles**:
+
+1. **Primitives are content, not infrastructure** (ADR-006): Scripts live in `llm-orchestra-library`, enabling multi-language support and independent evolution
+2. **Contract-based interoperability** (ADR-003): Type safety through `ScriptContract` conformance, not class inheritance
+3. **Universal I/O schemas** (ADR-001): All agents (script and LLM) communicate via `ScriptAgentInput`/`ScriptAgentOutput`
+4. **Declarative composition** (ADR-005): YAML ensemble configurations compose primitives with conditional dependencies and multi-turn conversations
+
+This approach enables seamless interoperability between deterministic scripts (network analysis, statistical tests, user input) and LLM agents (reasoning, generation, analysis) while maintaining clean separation between orchestration infrastructure and orchestrable content.

@@ -1,4 +1,9 @@
-"""BDD step definitions for ADR-002 Composable Primitive Agent System."""
+"""BDD step definitions for ADR-002 Composable Primitive Agent System.
+
+NOTE: This test file contains mock Primitive ABC for backward compatibility
+with existing BDD scenarios. These should be refactored to test actual
+PrimitiveRegistry/PrimitiveComposer implementations. See issue #24.
+"""
 
 import time
 from abc import ABC, abstractmethod
@@ -17,13 +22,19 @@ from llm_orc.schemas.script_agent import ScriptAgentInput, ScriptAgentOutput
 scenarios("features/adr-002-composable-primitive-system.feature")
 
 
-# Type variables for universal primitive interface (ADR-002)
+# TODO: Remove mock Primitive ABC - test actual script-based implementation
+# Type variables for mock primitive interface (TEST SCAFFOLDING ONLY)
 TInput = TypeVar("TInput", bound=BaseModel)
 TOutput = TypeVar("TOutput", bound=BaseModel)
 
 
 class Primitive(ABC, Generic[TInput, TOutput]):
-    """Universal primitive interface implementing ADR-002 specification."""
+    """Mock primitive interface for BDD testing (NOT PRODUCTION CODE).
+
+    This is test scaffolding to maintain compatibility with existing BDD scenarios.
+    Actual primitives are executable scripts, not Python classes.
+    See ADR-002 for actual architecture.
+    """
 
     @property
     @abstractmethod
@@ -61,7 +72,71 @@ class Primitive(ABC, Generic[TInput, TOutput]):
         pass
 
 
-# Example primitive implementations for testing
+# Category-specific schemas for testing
+class UserInteractionInput(BaseModel):
+    """Base input for user interaction primitives."""
+
+    agent_name: str
+    prompt: str
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class UserInteractionOutput(BaseModel):
+    """Base output for user interaction primitives."""
+
+    success: bool
+    user_response: str | None = None
+    error: str | None = None
+
+
+class DataTransformInput(BaseModel):
+    """Base input for data transformation primitives."""
+
+    source_data: Any
+    transform_type: str
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class DataTransformOutput(BaseModel):
+    """Base output for data transformation primitives."""
+
+    success: bool
+    transformed_data: Any = None
+    error: str | None = None
+
+
+# Test script templates for creating temporary primitive scripts
+def create_test_user_input_script() -> str:
+    """Create a test user input primitive script."""
+    return """#!/usr/bin/env python3
+import json
+import sys
+
+input_data = json.load(sys.stdin)
+output = {
+    "success": True,
+    "user_response": f"Response to: {input_data.get('prompt', '')}"
+}
+print(json.dumps(output))
+"""
+
+
+def create_test_data_transform_script() -> str:
+    """Create a test data transform primitive script."""
+    return """#!/usr/bin/env python3
+import json
+import sys
+
+input_data = json.load(sys.stdin)
+output = {
+    "success": True,
+    "transformed_data": {"transformed": input_data.get("source_data")}
+}
+print(json.dumps(output))
+"""
+
+
+# Example primitive implementations for testing (simplified)
 class UserInputSchema(BaseModel):
     """Test input schema for user interaction primitive."""
 

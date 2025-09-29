@@ -2,75 +2,85 @@ Feature: ADR-002 Composable Primitive Agent System
   """
   LLM Development Context:
 
-  Requirements: Implement Pydantic-based composable primitive system that transforms
-  existing ad-hoc scripts into unified, type-safe, discoverable ecosystem of building blocks.
+  Requirements: Implement script-based composable primitive system where primitives are
+  standalone executable scripts (Python, JavaScript, etc.) that conform to type-safe
+  contracts, enabling interoperability between script and LLM agents.
 
   Architectural constraints (ADR-002):
-  - Universal Primitive interface with type variables (TInput, TOutput bound to BaseModel)
-  - PrimitiveRegistry for discovery and schema generation (ADR-001)
-  - LLM function calling integration with auto-generated schemas (ADR-003)
-  - Workflow composition with dependency resolution and type checking
-  - Exception chaining for primitive execution failures (ADR-003)
+  - Script-based primitives living in llm-orchestra-library (ADR-006)
+  - Contract conformance via ScriptContract and category-specific schemas (ADR-003)
+  - Universal I/O via ScriptAgentInput/ScriptAgentOutput (ADR-001)
+  - File-based discovery with PrimitiveRegistry
+  - Composition validation via PrimitiveComposer
+  - Exception chaining for primitive execution failures
 
   Implementation patterns:
-  - Primitive[TInput, TOutput] abstract base class with schema validation
-  - Category-based organization (user-interaction, file-ops, data-transform, research)
-  - WorkflowBuilder for declarative primitive composition with input mapping
-  - LLMFunctionGenerator for OpenAI function calling schema generation
-  - Type-safe primitive chaining with runtime compatibility validation
+  - Executable scripts with JSON I/O (stdin/stdout)
+  - Category-based schemas (UserInteractionInput, DataTransformInput, etc.)
+  - YAML ensemble configurations for declarative composition
+  - Dependency resolution with topological sorting
+  - Type-safe primitive chaining via declared input_type/output_type
+  - Multi-language support through subprocess execution
 
   Critical validations:
-  - Schema migration from existing ad-hoc scripts to Pydantic models
+  - Script discovery from .llm-orc/scripts/primitives/
   - Type compatibility validation between chained primitives
-  - Dynamic primitive discovery and registration mechanisms
-  - LLM agent integration with function calling schemas
+  - Dynamic primitive discovery without class registration
+  - Script and LLM agent interoperability
   - Error propagation with proper exception chaining
-  - Performance optimization for schema validation overhead (<10ms)
+  - Performance optimization for subprocess overhead
+
+  Use cases enabled:
+  - Swarm network intelligence experiments (network topology + LLM analysis)
+  - Interactive narrative experiences (story generation + user input loops)
+  - Research workflows (statistical analysis + human validation)
+  - Development automation (linters + LLM code review)
   """
 
   As a developer using llm-orc
-  I want a unified composable primitive system with type safety
-  So that I can build complex workflows from reusable building blocks with full validation
+  I want a script-based composable primitive system with contract-based type safety
+  So that I can build interoperable workflows mixing deterministic scripts and LLM agents
 
   Background:
     Given llm-orc is properly configured
     And the primitive system is initialized
 
   @priority @adr-002
-  Scenario: Primitive registry discovers and registers all available primitives
+  Scenario: Primitive registry discovers script files from .llm-orc/scripts/primitives
     Given the primitive registry is initialized
     When primitive discovery is executed
-    Then all primitives in .llm-orc/scripts/primitives should be discovered
-    And each primitive should have complete metadata extracted
-    And primitives should be organized by category (user-interaction, file-ops, etc.)
+    Then all script files in .llm-orc/scripts/primitives should be discovered
+    And each primitive should have metadata extracted from script docstrings
+    And primitives should include path, name, and category information
     And the registry should cache discovery results for performance
 
   @adr-002
-  Scenario: Universal Primitive interface provides type-safe execution
-    Given a primitive implementing the universal Primitive interface
-    When the primitive is executed with typed input schema
-    Then input validation should occur using Pydantic models
-    And execution should return typed output schema
-    And type safety should be enforced at compile and runtime
-    And schema violations should raise clear validation errors
+  Scenario: Script primitives conform to ScriptContract for type-safe execution
+    Given a script primitive conforming to ScriptContract
+    When the primitive is executed with JSON input via stdin
+    Then input validation should occur using category-specific Pydantic schemas
+    And execution should return JSON output via stdout
+    And output should conform to category-specific output schema
+    And schema violations should raise clear validation errors with exception chaining
 
   @adr-002
-  Scenario: Primitive composition validates type compatibility between chains
-    Given multiple primitives with different input/output schemas
-    When primitives are composed into a workflow chain
-    Then type compatibility should be validated between consecutive primitives
-    And incompatible type chains should be rejected with clear error messages
+  Scenario: Primitive composition validates type compatibility between script chains
+    Given multiple script primitives with declared input_type and output_type
+    When primitives are composed into a workflow via YAML ensemble configuration
+    Then type compatibility should be validated via PrimitiveComposer
+    And incompatible type chains should be rejected with descriptive error messages
     And compatible chains should be marked as valid for execution
-    And validation should happen before any execution begins
+    And validation should happen before any script execution begins
 
   @adr-002
-  Scenario: Configuration-driven assembly creates executable workflows from YAML
-    Given a YAML workflow configuration with primitive composition
-    When the workflow assembly engine processes the configuration
-    Then primitives should be validated and resolved from the registry
-    And dependency resolution should determine correct execution order
-    And input mapping should be validated for type compatibility
-    And the resulting workflow should be executable with schema validation
+  Scenario: YAML ensemble configurations create executable script+LLM workflows
+    Given a YAML ensemble configuration mixing script primitives and LLM agents
+    When the ensemble executor processes the configuration
+    Then script primitives should be resolved via ScriptResolver with library-aware paths
+    And dependency resolution should determine topological execution order
+    And scripts should execute with JSON I/O via subprocess
+    And LLM agents should execute with model providers
+    And outputs should flow correctly between script and LLM agents
 
   @adr-002
   Scenario: Error propagation handles primitive failures with proper chaining
