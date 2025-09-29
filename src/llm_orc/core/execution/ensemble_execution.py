@@ -652,24 +652,41 @@ class EnsembleExecutor:
         - Has 'model_profile' field -> LLM agent
         - Has explicit 'type' field -> Use that (backward compatibility)
         """
-        # Check for explicit type first (backward compatibility)
-        explicit_type = agent_config.get("type")
+        agent_type = self._determine_agent_type(agent_config)
 
-        if explicit_type == "script":
+        if agent_type == "script":
             return await self._execute_script_agent(agent_config, input_data)
-        elif explicit_type == "llm":
-            return await self._execute_llm_agent(agent_config, input_data)
-
-        # Implicit type detection based on fields present
-        if "script" in agent_config:
-            return await self._execute_script_agent(agent_config, input_data)
-        elif "model_profile" in agent_config:
+        elif agent_type == "llm":
             return await self._execute_llm_agent(agent_config, input_data)
         else:
             agent_name = agent_config.get("name", "unknown")
             raise ValueError(
                 f"Agent '{agent_name}' must have either 'script' or 'model_profile'"
             )
+
+    def _determine_agent_type(self, agent_config: dict[str, Any]) -> str | None:
+        """Determine agent type from configuration.
+
+        Args:
+            agent_config: Agent configuration
+
+        Returns:
+            Agent type: 'script', 'llm', or None if cannot be determined
+        """
+        # Check for explicit type first (backward compatibility)
+        explicit_type = agent_config.get("type")
+        if explicit_type == "script":
+            return "script"
+        elif explicit_type == "llm":
+            return "llm"
+
+        # Implicit type detection based on fields present
+        if "script" in agent_config:
+            return "script"
+        elif "model_profile" in agent_config:
+            return "llm"
+
+        return None
 
     async def _execute_script_agent(
         self, agent_config: dict[str, Any], input_data: str
@@ -722,59 +739,10 @@ class EnsembleExecutor:
             # Sample resources during execution
             self._usage_collector.sample_agent_resources(agent_name)
 
-            # Parse JSON input data to proper format for script agents
-            # EnhancedScriptAgent expects input as dict/object, not JSON string
-            try:
-                import json
-
-                parsed_input = json.loads(input_data)
-
-                # JSON Contract Validation (ADR-001): Check if input is ScriptAgentInput
-                # If so, pass it directly to avoid double-wrapping
-                if (
-                    isinstance(parsed_input, dict)
-                    and "agent_name" in parsed_input
-                    and "input_data" in parsed_input
-                ):
-                    # ScriptAgentInput JSON - pass directly to script without wrapping
-                    response = await script_agent.execute_with_schema_json(input_data)
-                else:
-                    # Legacy input format - use existing wrapping behavior
-                    response = await script_agent.execute(parsed_input)
-            except (json.JSONDecodeError, TypeError):
-                # If input is not valid JSON, treat as raw string
-                parsed_input = input_data
-
-                # Check if this script requires user input
-                user_input_detection = ScriptUserInputHandler()
-                script_ref = agent_config.get("script", "")
-
-                if user_input_detection.requires_user_input(script_ref):
-                    # For scripts that use input(), use interactive execution
-                    response = await self._execute_interactive_script_agent(
-                        script_agent, parsed_input
-                    )
-                else:
-                    # Use regular execute for non-interactive scripts
-                    response = await script_agent.execute(parsed_input)
-            else:
-                # For valid JSON, check if user input is needed (only for legacy format)
-                if not (
-                    isinstance(parsed_input, dict)
-                    and "agent_name" in parsed_input
-                    and "input_data" in parsed_input
-                ):
-                    user_input_detection = ScriptUserInputHandler()
-                    script_ref = agent_config.get("script", "")
-
-                    if user_input_detection.requires_user_input(script_ref):
-                        # For scripts that use input(), use interactive execution
-                        response = await self._execute_interactive_script_agent(
-                            script_agent, parsed_input
-                        )
-                    else:
-                        # Use regular execute for non-interactive scripts
-                        response = await script_agent.execute(parsed_input)
+            # Execute script with appropriate input handling
+            response = await self._execute_script_with_input_handling(
+                script_agent, agent_config, input_data
+            )
 
             # Final sample before completion
             self._usage_collector.sample_agent_resources(agent_name)
@@ -789,6 +757,119 @@ class EnsembleExecutor:
         finally:
             # Always finalize resource monitoring
             self._usage_collector.finalize_agent_resource_monitoring(agent_name)
+
+    async def _execute_script_with_input_handling(
+        self,
+        script_agent: EnhancedScriptAgent,
+        agent_config: dict[str, Any],
+        input_data: str,
+    ) -> str | dict[str, Any]:
+        """Execute script with appropriate input format and interaction handling.
+
+        Args:
+            script_agent: Script agent to execute
+            agent_config: Agent configuration
+            input_data: Input data as JSON string
+
+        Returns:
+            Script execution response
+        """
+        import json
+
+        try:
+            parsed_input = json.loads(input_data)
+            return await self._execute_with_parsed_input(
+                script_agent, agent_config, input_data, parsed_input
+            )
+        except (json.JSONDecodeError, TypeError):
+            return await self._execute_with_raw_input(
+                script_agent, agent_config, input_data
+            )
+
+    async def _execute_with_parsed_input(
+        self,
+        script_agent: EnhancedScriptAgent,
+        agent_config: dict[str, Any],
+        input_data: str,
+        parsed_input: dict[str, Any],
+    ) -> str | dict[str, Any]:
+        """Execute script with parsed JSON input.
+
+        Args:
+            script_agent: Script agent to execute
+            agent_config: Agent configuration
+            input_data: Original input data string
+            parsed_input: Parsed input dictionary
+
+        Returns:
+            Script execution response
+        """
+        import json
+
+        # Check if input is ScriptAgentInput (ADR-001)
+        if self._is_script_agent_input(parsed_input):
+            # ScriptAgentInput JSON - pass directly to script without wrapping
+            return await script_agent.execute_with_schema_json(input_data)
+
+        # Legacy input format - check if user input is needed
+        if self._requires_user_input(agent_config):
+            return await self._execute_interactive_script_agent(
+                script_agent, parsed_input
+            )
+
+        # Use regular execute for non-interactive scripts (convert dict to string)
+        return await script_agent.execute(json.dumps(parsed_input))
+
+    async def _execute_with_raw_input(
+        self,
+        script_agent: EnhancedScriptAgent,
+        agent_config: dict[str, Any],
+        input_data: str,
+    ) -> str | dict[str, Any]:
+        """Execute script with raw string input.
+
+        Args:
+            script_agent: Script agent to execute
+            agent_config: Agent configuration
+            input_data: Raw input data string
+
+        Returns:
+            Script execution response
+        """
+        if self._requires_user_input(agent_config):
+            return await self._execute_interactive_script_agent(
+                script_agent, input_data
+            )
+
+        return await script_agent.execute(input_data)
+
+    def _is_script_agent_input(self, parsed_input: dict[str, Any]) -> bool:
+        """Check if parsed input is a ScriptAgentInput object.
+
+        Args:
+            parsed_input: Parsed input dictionary
+
+        Returns:
+            True if input is ScriptAgentInput format
+        """
+        return (
+            isinstance(parsed_input, dict)
+            and "agent_name" in parsed_input
+            and "input_data" in parsed_input
+        )
+
+    def _requires_user_input(self, agent_config: dict[str, Any]) -> bool:
+        """Check if script requires user input.
+
+        Args:
+            agent_config: Agent configuration
+
+        Returns:
+            True if script requires user input
+        """
+        user_input_detection = ScriptUserInputHandler()
+        script_ref = agent_config.get("script", "")
+        return user_input_detection.requires_user_input(script_ref)
 
     async def _execute_interactive_script_agent(
         self, script_agent: EnhancedScriptAgent, input_data: str | dict[str, Any]
@@ -1096,95 +1177,11 @@ class EnsembleExecutor:
         Based on Issue #43 analysis, this provides 3-15x performance improvement
         for I/O bound LLM API calls using asyncio.gather().
         """
-
-        async def execute_single_agent(
-            agent_config: dict[str, Any],
-        ) -> tuple[str, dict[str, Any]]:
-            """Execute a single agent and return (name, result)."""
-            agent_name = agent_config["name"]
-
-            try:
-                agent_start_time = time.time()
-
-                # Emit agent started event
-                self._emit_performance_event(
-                    "agent_started",
-                    {"agent_name": agent_name, "timestamp": agent_start_time},
-                )
-
-                # Update progress controller with agent progress
-                if self._progress_controller:
-                    await self._progress_controller.update_agent_progress(
-                        agent_name, "started"
-                    )
-
-                # Get agent input
-                agent_input = self._input_enhancer.get_agent_input(
-                    phase_input, agent_name
-                )
-
-                # Get timeout from enhanced config
-                enhanced_config = await self._resolve_model_profile_to_config(
-                    agent_config
-                )
-                timeout = enhanced_config.get("timeout_seconds") or (
-                    self._performance_config.get("execution", {}).get(
-                        "default_timeout", 60
-                    )
-                )
-
-                # Execute agent with timeout coordination
-                coordinator = self._execution_coordinator
-                response, model_instance = await coordinator.execute_agent_with_timeout(
-                    agent_config, agent_input, timeout
-                )
-
-                # Emit agent completed event with duration
-                agent_end_time = time.time()
-                duration_ms = int((agent_end_time - agent_start_time) * 1000)
-                self._emit_performance_event(
-                    "agent_completed",
-                    {
-                        "agent_name": agent_name,
-                        "timestamp": agent_end_time,
-                        "duration_ms": duration_ms,
-                    },
-                )
-
-                # Update progress controller with agent completion
-                if self._progress_controller:
-                    await self._progress_controller.update_agent_progress(
-                        agent_name, "completed"
-                    )
-
-                return agent_name, {
-                    "response": response,
-                    "status": "success",
-                    "model_instance": model_instance,
-                }
-
-            except Exception as e:
-                # Handle agent failure
-                agent_end_time = time.time()
-                duration_ms = int((agent_end_time - agent_start_time) * 1000)
-                self._emit_performance_event(
-                    "agent_completed",
-                    {
-                        "agent_name": agent_name,
-                        "timestamp": agent_end_time,
-                        "duration_ms": duration_ms,
-                        "error": str(e),
-                    },
-                )
-
-                return agent_name, {
-                    "error": str(e),
-                    "status": "failed",
-                    "model_instance": None,
-                }
-
         # Execute all agents in parallel using asyncio.gather
-        tasks = [execute_single_agent(agent_config) for agent_config in phase_agents]
+        tasks = [
+            self._execute_single_agent_in_phase(agent_config, phase_input)
+            for agent_config in phase_agents
+        ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Process results
@@ -1192,13 +1189,120 @@ class EnsembleExecutor:
         for result in results:
             if isinstance(result, BaseException):
                 # Handle unexpected errors during gather
-                # This should not happen since we catch exceptions in execute_single_agent  # noqa: E501
                 continue
             # At this point, result should be a tuple[str, dict[str, Any]]
             agent_name, agent_result = result
             phase_results[agent_name] = agent_result
 
         return phase_results
+
+    async def _execute_single_agent_in_phase(
+        self, agent_config: dict[str, Any], phase_input: str | dict[str, str]
+    ) -> tuple[str, dict[str, Any]]:
+        """Execute a single agent in a phase and return (name, result)."""
+        agent_name = agent_config["name"]
+
+        try:
+            return await self._execute_agent_with_monitoring(
+                agent_config, agent_name, phase_input
+            )
+        except Exception as e:
+            return await self._handle_agent_execution_failure(agent_config, e)
+
+    async def _execute_agent_with_monitoring(
+        self,
+        agent_config: dict[str, Any],
+        agent_name: str,
+        phase_input: str | dict[str, str],
+    ) -> tuple[str, dict[str, Any]]:
+        """Execute agent with full monitoring and progress tracking."""
+        agent_start_time = time.time()
+
+        # Emit agent started event
+        self._emit_performance_event(
+            "agent_started",
+            {"agent_name": agent_name, "timestamp": agent_start_time},
+        )
+
+        # Update progress controller with agent progress
+        if self._progress_controller:
+            await self._progress_controller.update_agent_progress(agent_name, "started")
+
+        # Get agent input and timeout
+        agent_input = self._input_enhancer.get_agent_input(phase_input, agent_name)
+        timeout = await self._get_agent_timeout(agent_config)
+
+        # Execute agent with timeout coordination
+        (
+            response,
+            model_instance,
+        ) = await self._execution_coordinator.execute_agent_with_timeout(
+            agent_config, agent_input, timeout
+        )
+
+        # Emit completion events
+        await self._emit_agent_completion_events(agent_name, agent_start_time)
+
+        return agent_name, {
+            "response": response,
+            "status": "success",
+            "model_instance": model_instance,
+        }
+
+    async def _get_agent_timeout(self, agent_config: dict[str, Any]) -> int:
+        """Get timeout for agent execution."""
+        enhanced_config = await self._resolve_model_profile_to_config(agent_config)
+        timeout = enhanced_config.get("timeout_seconds")
+        if timeout is not None:
+            return int(timeout)
+        return int(
+            self._performance_config.get("execution", {}).get("default_timeout", 60)
+        )
+
+    async def _emit_agent_completion_events(
+        self, agent_name: str, start_time: float
+    ) -> None:
+        """Emit agent completion events and update progress."""
+        agent_end_time = time.time()
+        duration_ms = int((agent_end_time - start_time) * 1000)
+
+        self._emit_performance_event(
+            "agent_completed",
+            {
+                "agent_name": agent_name,
+                "timestamp": agent_end_time,
+                "duration_ms": duration_ms,
+            },
+        )
+
+        # Update progress controller with agent completion
+        if self._progress_controller:
+            await self._progress_controller.update_agent_progress(
+                agent_name, "completed"
+            )
+
+    async def _handle_agent_execution_failure(
+        self, agent_config: dict[str, Any], error: Exception
+    ) -> tuple[str, dict[str, Any]]:
+        """Handle agent execution failure and return error result."""
+        agent_name = agent_config["name"]
+        agent_end_time = time.time()
+
+        self._emit_performance_event(
+            "agent_completed",
+            {
+                "agent_name": agent_name,
+                "timestamp": agent_end_time,
+                "duration_ms": 0,
+                "error": str(error),
+            },
+        )
+
+        return agent_name, {
+            "error": str(error),
+            "status": "failed",
+            "model_instance": None,
+        }
 
     async def _process_phase_results(
         self,
@@ -1215,67 +1319,110 @@ class EnsembleExecutor:
 
         for agent_name, agent_result in phase_results.items():
             # Store result in results_dict
-            results_dict[agent_name] = {
-                "response": agent_result.get("response"),
-                "status": agent_result["status"],
-            }
+            self._store_agent_result(results_dict, agent_name, agent_result)
 
             # Handle errors
             if agent_result["status"] == "failed":
                 has_errors = True
-                results_dict[agent_name]["error"] = agent_result["error"]
 
-            # Process AgentRequest objects from successful script agents (ADR-001)
+            # Process successful agents
             if agent_result["status"] == "success":
-                response = agent_result.get("response")
-                if response and isinstance(response, str):
-                    try:
-                        # Process script output for AgentRequest objects
-                        processor = self._agent_request_processor
-                        processed_result = (
-                            await processor.process_script_output_with_requests(
-                                response, agent_name, phase_agents
-                            )
-                        )
-
-                        # Store processed agent requests for coordination
-                        if processed_result.get("agent_requests"):
-                            processed_agent_requests.extend(
-                                processed_result["agent_requests"]
-                            )
-
-                        # Add metadata about processed requests
-                        results_dict[agent_name]["agent_requests"] = (
-                            processed_result.get("agent_requests", [])
-                        )
-
-                    except Exception:
-                        # Silently ignore AgentRequest processing errors
-                        # Script agents may not output AgentRequest objects
-                        pass
-
-            # Collect usage for successful agents
-            if (
-                agent_result["status"] == "success"
-                and agent_result["model_instance"] is not None
-            ):
-                # Get model profile from agent config
-                agent_config = agent_configs.get(agent_name, {})
-                model_profile = agent_config.get("model_profile", "unknown")
-
-                self._usage_collector.collect_agent_usage(
-                    agent_name, agent_result["model_instance"], model_profile
+                await self._process_successful_agent_result(
+                    agent_result,
+                    agent_name,
+                    results_dict,
+                    processed_agent_requests,
+                    phase_agents,
+                    agent_configs,
                 )
 
         # Store processed agent requests in results metadata for coordination
+        self._store_agent_requests_metadata(processed_agent_requests)
+
+        return has_errors
+
+    def _store_agent_result(
+        self,
+        results_dict: dict[str, Any],
+        agent_name: str,
+        agent_result: dict[str, Any],
+    ) -> None:
+        """Store agent result in results dictionary."""
+        results_dict[agent_name] = {
+            "response": agent_result.get("response"),
+            "status": agent_result["status"],
+        }
+        if agent_result["status"] == "failed":
+            results_dict[agent_name]["error"] = agent_result["error"]
+
+    async def _process_successful_agent_result(
+        self,
+        agent_result: dict[str, Any],
+        agent_name: str,
+        results_dict: dict[str, Any],
+        processed_agent_requests: list[dict[str, Any]],
+        phase_agents: list[dict[str, Any]],
+        agent_configs: dict[str, dict[str, Any]],
+    ) -> None:
+        """Process successful agent result for requests and usage."""
+        # Process AgentRequest objects from successful script agents
+        response = agent_result.get("response")
+        if response and isinstance(response, str):
+            await self._process_agent_requests(
+                response,
+                agent_name,
+                results_dict,
+                processed_agent_requests,
+                phase_agents,
+            )
+
+        # Collect usage for successful agents with model instances
+        if agent_result["model_instance"] is not None:
+            agent_config = agent_configs.get(agent_name, {})
+            model_profile = agent_config.get("model_profile", "unknown")
+            self._usage_collector.collect_agent_usage(
+                agent_name, agent_result["model_instance"], model_profile
+            )
+
+    async def _process_agent_requests(
+        self,
+        response: str,
+        agent_name: str,
+        results_dict: dict[str, Any],
+        processed_agent_requests: list[dict[str, Any]],
+        phase_agents: list[dict[str, Any]],
+    ) -> None:
+        """Process agent requests from script output."""
+        try:
+            processed_result = (
+                await self._agent_request_processor.process_script_output_with_requests(
+                    response, agent_name, phase_agents
+                )
+            )
+
+            # Store processed agent requests for coordination
+            if processed_result.get("agent_requests"):
+                processed_agent_requests.extend(processed_result["agent_requests"])
+
+            # Add metadata about processed requests
+            results_dict[agent_name]["agent_requests"] = processed_result.get(
+                "agent_requests", []
+            )
+
+        except Exception:
+            # Silently ignore AgentRequest processing errors
+            pass
+
+    def _store_agent_requests_metadata(
+        self, processed_agent_requests: list[dict[str, Any]]
+    ) -> None:
+        """Store processed agent requests in ensemble metadata."""
         if processed_agent_requests:
             if not hasattr(self, "_ensemble_metadata"):
                 self._ensemble_metadata = {}
             self._ensemble_metadata["processed_agent_requests"] = (
                 processed_agent_requests
             )
-
-        return has_errors
 
     def _emit_phase_completed_event(
         self,

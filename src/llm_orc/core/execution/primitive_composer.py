@@ -31,12 +31,7 @@ class PrimitiveComposer:
         primitives = composition_config.get("primitives", [])
 
         # Validate all primitives exist
-        for primitive in primitives:
-            script_name = primitive.get("script", "")
-            try:
-                self._registry.get_primitive_info(script_name)
-            except FileNotFoundError as e:
-                raise ValueError(f"Primitive not found: {script_name}") from e
+        self._validate_all_primitives_exist(primitives)
 
         # Resolve execution order based on dependencies
         execution_order = self._resolve_execution_order(composition_config)
@@ -48,6 +43,22 @@ class PrimitiveComposer:
             "primitive_count": len(primitives),
             "valid": True,
         }
+
+    def _validate_all_primitives_exist(self, primitives: list[dict[str, Any]]) -> None:
+        """Validate that all primitives exist in registry.
+
+        Args:
+            primitives: List of primitive configurations
+
+        Raises:
+            ValueError: If any primitive is not found
+        """
+        for primitive in primitives:
+            script_name = primitive.get("script", "")
+            try:
+                self._registry.get_primitive_info(script_name)
+            except FileNotFoundError as e:
+                raise ValueError(f"Primitive not found: {script_name}") from e
 
     def validate_composition(
         self, composition_config: dict[str, Any]
@@ -70,36 +81,66 @@ class PrimitiveComposer:
 
         # Check for type compatibility between chained primitives
         for primitive in primitives:
-            # Check if primitive declares input/output types
-            if "input_type" in primitive and "output_type" in primitive:
-                # Find dependent primitives
-                dependencies = primitive.get("dependencies", {})
-                for dep_ref in dependencies.values():
-                    if "." in dep_ref:  # References another primitive's output
-                        dep_name = dep_ref.split(".")[0]
-                        dep_primitive = next(
-                            (p for p in primitives if p["name"] == dep_name), None
-                        )
-                        if dep_primitive and "output_type" in dep_primitive:
-                            if primitive["input_type"] != dep_primitive["output_type"]:
-                                validation_result["errors"].append(
-                                    f"Type mismatch: {primitive['name']} expects "
-                                    f"{primitive['input_type']} but {dep_name} "
-                                    f"outputs {dep_primitive['output_type']}"
-                                )
-                                validation_result["valid"] = False
+            self._validate_primitive_types(primitive, primitives, validation_result)
+            self._validate_primitive_exists(primitive, validation_result)
 
-            # Validate primitive exists
-            script_name = primitive.get("script", "")
-            try:
-                self._registry.get_primitive_info(script_name)
-            except FileNotFoundError:
+        return validation_result
+
+    def _validate_primitive_types(
+        self,
+        primitive: dict[str, Any],
+        all_primitives: list[dict[str, Any]],
+        validation_result: dict[str, Any],
+    ) -> None:
+        """Validate type compatibility for a primitive with its dependencies.
+
+        Args:
+            primitive: Primitive to validate
+            all_primitives: All primitives in the composition
+            validation_result: Result dict to update with errors
+        """
+        # Check if primitive declares input/output types
+        if "input_type" not in primitive or "output_type" not in primitive:
+            return
+
+        dependencies = primitive.get("dependencies", {})
+        for dep_ref in dependencies.values():
+            if "." not in dep_ref:  # Not a primitive reference
+                continue
+
+            dep_name = dep_ref.split(".")[0]
+            dep_primitive = next(
+                (p for p in all_primitives if p["name"] == dep_name), None
+            )
+
+            if not dep_primitive or "output_type" not in dep_primitive:
+                continue
+
+            if primitive["input_type"] != dep_primitive["output_type"]:
                 validation_result["errors"].append(
-                    f"Primitive script not found: {script_name}"
+                    f"Type mismatch: {primitive['name']} expects "
+                    f"{primitive['input_type']} but {dep_name} "
+                    f"outputs {dep_primitive['output_type']}"
                 )
                 validation_result["valid"] = False
 
-        return validation_result
+    def _validate_primitive_exists(
+        self, primitive: dict[str, Any], validation_result: dict[str, Any]
+    ) -> None:
+        """Validate that a primitive script exists.
+
+        Args:
+            primitive: Primitive configuration to validate
+            validation_result: Result dict to update with errors
+        """
+        script_name = primitive.get("script", "")
+        try:
+            self._registry.get_primitive_info(script_name)
+        except FileNotFoundError:
+            validation_result["errors"].append(
+                f"Primitive script not found: {script_name}"
+            )
+            validation_result["valid"] = False
 
     def execute_composition(
         self, composition_config: dict[str, Any], input_data: ScriptAgentInput
@@ -163,9 +204,21 @@ class PrimitiveComposer:
             List of primitive names in execution order
         """
         primitives = composition_config.get("primitives", [])
+        graph, in_degree = self._build_dependency_graph(primitives)
+        execution_order = self._topological_sort(graph, in_degree, len(primitives))
+        return execution_order
 
-        # Simple topological sort for dependency resolution
-        # Create dependency graph
+    def _build_dependency_graph(
+        self, primitives: list[dict[str, Any]]
+    ) -> tuple[dict[str, list[str]], dict[str, int]]:
+        """Build dependency graph from primitive configurations.
+
+        Args:
+            primitives: List of primitive configurations
+
+        Returns:
+            Tuple of (graph, in_degree) for topological sort
+        """
         graph: dict[str, list[str]] = {}
         in_degree: dict[str, int] = {}
 
@@ -186,7 +239,27 @@ class PrimitiveComposer:
                         graph[dep_name].append(name)
                         in_degree[name] += 1
 
-        # Topological sort
+        return graph, in_degree
+
+    def _topological_sort(
+        self,
+        graph: dict[str, list[str]],
+        in_degree: dict[str, int],
+        expected_count: int,
+    ) -> list[str]:
+        """Perform topological sort on dependency graph.
+
+        Args:
+            graph: Dependency graph
+            in_degree: In-degree count for each node
+            expected_count: Expected number of nodes (for cycle detection)
+
+        Returns:
+            Sorted list of primitive names
+
+        Raises:
+            ValueError: If circular dependency is detected
+        """
         queue = [name for name, degree in in_degree.items() if degree == 0]
         execution_order = []
 
@@ -200,7 +273,7 @@ class PrimitiveComposer:
                     queue.append(neighbor)
 
         # Check for cycles
-        if len(execution_order) != len(primitives):
+        if len(execution_order) != expected_count:
             raise ValueError("Circular dependency detected in primitive composition")
 
         return execution_order
@@ -217,27 +290,7 @@ class PrimitiveComposer:
             Parallel execution analysis including independent primitives and groups
         """
         primitives = composition_config.get("primitives", [])
-
-        # Build dependency graph
-        graph: dict[str, list[str]] = {}
-        in_degree: dict[str, int] = {}
-
-        # Initialize all primitives
-        for primitive in primitives:
-            name = primitive["name"]
-            graph[name] = []
-            in_degree[name] = 0
-
-        # Build dependency edges
-        for primitive in primitives:
-            name = primitive["name"]
-            dependencies = primitive.get("dependencies", {})
-            for dep_ref in dependencies.values():
-                if "." in dep_ref:  # References another primitive
-                    dep_name = dep_ref.split(".")[0]
-                    if dep_name in graph:
-                        graph[dep_name].append(name)
-                        in_degree[name] += 1
+        graph, in_degree = self._build_dependency_graph(primitives)
 
         # Find independent primitives (no dependencies)
         independent_primitives = [
@@ -245,6 +298,33 @@ class PrimitiveComposer:
         ]
 
         # Group primitives by execution level for parallel processing
+        parallel_groups = self._group_by_execution_level(primitives, graph, in_degree)
+
+        return {
+            "independent_primitives": independent_primitives,
+            "parallel_groups": parallel_groups,
+            "max_concurrency": max(len(group) for group in parallel_groups)
+            if parallel_groups
+            else 1,
+            "total_levels": len(parallel_groups),
+        }
+
+    def _group_by_execution_level(
+        self,
+        primitives: list[dict[str, Any]],
+        graph: dict[str, list[str]],
+        in_degree: dict[str, int],
+    ) -> list[list[str]]:
+        """Group primitives by execution level for parallel processing.
+
+        Args:
+            primitives: List of primitive configurations
+            graph: Dependency graph
+            in_degree: In-degree count for each node
+
+        Returns:
+            List of parallel groups (each group can execute in parallel)
+        """
         parallel_groups = []
         remaining = {primitive["name"] for primitive in primitives}
         current_degree = dict(in_degree)
@@ -263,14 +343,7 @@ class PrimitiveComposer:
                 for neighbor in graph[name]:
                     current_degree[neighbor] -= 1
 
-        return {
-            "independent_primitives": independent_primitives,
-            "parallel_groups": parallel_groups,
-            "max_concurrency": max(len(group) for group in parallel_groups)
-            if parallel_groups
-            else 1,
-            "total_levels": len(parallel_groups),
-        }
+        return parallel_groups
 
     def _prepare_primitive_input(
         self,
