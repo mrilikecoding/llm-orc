@@ -222,11 +222,17 @@ class CodingStandardsValidator:
 
     def __init__(self) -> None:
         self.standards = {
-            "type_annotations": "All functions must have parameter and return type annotations",
-            "modern_typing": "Use modern type syntax: str | None instead of Optional[str]",
+            "type_annotations": (
+                "All functions must have parameter and return type annotations"
+            ),
+            "modern_typing": (
+                "Use modern type syntax: str | None instead of Optional[str]"
+            ),
             "exception_chaining": "Use exception chaining with 'from' clause",
             "line_length": "Maximum line length 88 characters",
-            "async_patterns": "Use proper async/await patterns for concurrent operations",
+            "async_patterns": (
+                "Use proper async/await patterns for concurrent operations"
+            ),
         }
 
     def validate_type_annotations(self, code: str) -> bool:
@@ -769,7 +775,6 @@ def execute_meta_framework_validation(bdd_context: dict[str, Any]) -> None:
 @when("the issue-to-BDD translation process executes")
 def execute_issue_to_bdd_translation(bdd_context: dict[str, Any]) -> None:
     """Execute issue to BDD translation process."""
-    issue = bdd_context["github_issue"]
     constraints = bdd_context["issue_adr_constraints"]
 
     # Simulate translation process
