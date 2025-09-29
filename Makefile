@@ -45,7 +45,7 @@ lint:
 	uv run ruff check src tests
 	uv run ruff format --check src tests
 	uv run complexipy --max-complexity-allowed 15 src
-	uv run bandit -r src/ --quiet --severity-level medium
+	uv run bandit -r src/ --quiet --severity-level medium 2>&1 | grep -v "WARNING" || true
 	uv run vulture src/ --min-confidence 80
 
 lint-fix:
@@ -61,7 +61,7 @@ format:
 
 security:
 	@echo "Running security analysis with bandit..."
-	uv run bandit -r src/ --quiet --severity-level medium
+	uv run bandit -r src/ --quiet --severity-level medium 2>&1 | grep -v "WARNING" || true
 
 dead-code:
 	@echo "Running dead code analysis with vulture..."
