@@ -2,7 +2,6 @@
   "hooks": {
     "SessionStart": [
       {
-        "matchers": ["startup", "resume"],
         "hooks": [
           {
             "type": "command",
@@ -38,22 +37,7 @@
     ],
     "PreToolUse": [
       {
-        "matchers": ["implement", "add feature", "write code", "create function"],
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/pre-implementation-gate.sh",
-            "description": "Ensure BDD scenarios exist before implementation"
-          },
-          {
-            "type": "command",
-            "command": ".claude/hooks/bdd-unit-test-generator.sh",
-            "description": "Generate unit tests from BDD scenarios before implementation"
-          }
-        ]
-      },
-      {
-        "matchers": ["commit", "git commit"],
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
@@ -75,7 +59,7 @@
     ],
     "PostToolUse": [
       {
-        "matchers": ["Write", "Edit", "MultiEdit"],
+        "matcher": "Write|Edit",
         "hooks": [
           {
             "type": "command",
@@ -95,8 +79,7 @@
           {
             "type": "command",
             "command": ".claude/hooks/adr-implementation-orchestrator.sh",
-            "description": "Orchestrate BDD→TDD→Code when ADRs are updated with 'In Progress' status",
-            "filePattern": "docs/adrs/*.md"
+            "description": "Orchestrate BDD→TDD→Code when ADRs are updated with 'In Progress' status"
           },
           {
             "type": "command",
@@ -106,7 +89,7 @@
         ]
       },
       {
-        "matchers": ["pytest", "test", "coverage"],
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
