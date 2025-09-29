@@ -131,17 +131,19 @@ class TestFileWriteScript:
 
     async def test_schema_validation(self, script: FileWriteScript) -> None:
         """Test input schema validation."""
+        temp_dir = tempfile.gettempdir()
+
         # Valid input
-        valid_input = FileWriteInput(
-            file_path="/tmp/test.json", content={"valid": "data"}
-        )
-        assert valid_input.file_path == "/tmp/test.json"
+        test_path = f"{temp_dir}/test.json"
+        valid_input = FileWriteInput(file_path=test_path, content={"valid": "data"})
+        assert valid_input.file_path == test_path
         assert valid_input.content == {"valid": "data"}
         assert valid_input.format_json is True  # Default
 
         # Test with format_json=False
+        compact_path = f"{temp_dir}/compact.json"
         compact_input = FileWriteInput(
-            file_path="/tmp/compact.json", content={"compact": True}, format_json=False
+            file_path=compact_path, content={"compact": True}, format_json=False
         )
         assert compact_input.format_json is False
 

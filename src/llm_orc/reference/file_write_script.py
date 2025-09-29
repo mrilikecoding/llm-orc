@@ -1,6 +1,7 @@
 """File Write Script - Reference implementation for ScriptContract composition."""
 
 import json
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -49,13 +50,13 @@ class FileWriteScript(ScriptContract):
                 {
                     "name": "write_json_data",
                     "input": {
-                        "file_path": "/tmp/output.json",
+                        "file_path": f"{tempfile.gettempdir()}/output.json",
                         "content": {"name": "Alice", "age": 30},
                         "format_json": True,
                     },
                     "output": {
                         "success": True,
-                        "file_path": "/tmp/output.json",
+                        "file_path": f"{tempfile.gettempdir()}/output.json",
                         "bytes_written": 42,
                     },
                 }
@@ -107,32 +108,40 @@ class FileWriteScript(ScriptContract):
             )
 
     def get_test_cases(self) -> list[TestCase]:
-        """Return test cases for contract validation."""
+        """Return test cases for contract validation.
+
+        Uses tempfile.gettempdir() to avoid hardcoded /tmp paths (CWE-377).
+        This prevents predictable file paths that could lead to:
+        - Race conditions
+        - Symlink attacks
+        - Conflicts with other processes
+        """
+        temp_dir = tempfile.gettempdir()
         return [
             TestCase(
                 name="successful_write",
                 description="Write JSON data to file successfully",
                 input_data={
-                    "file_path": "/tmp/test_output.json",
+                    "file_path": f"{temp_dir}/test_output.json",
                     "content": {"name": "Alice", "age": 30},
                     "format_json": True,
                 },
                 expected_output={
                     "success": True,
-                    "file_path": "/tmp/test_output.json",
+                    "file_path": f"{temp_dir}/test_output.json",
                 },
             ),
             TestCase(
                 name="unformatted_json",
                 description="Write compact JSON without formatting",
                 input_data={
-                    "file_path": "/tmp/compact.json",
+                    "file_path": f"{temp_dir}/compact.json",
                     "content": {"test": "data", "compact": True},
                     "format_json": False,
                 },
                 expected_output={
                     "success": True,
-                    "file_path": "/tmp/compact.json",
+                    "file_path": f"{temp_dir}/compact.json",
                 },
             ),
             TestCase(
