@@ -578,44 +578,23 @@ def _format_json_output(data: Any) -> None:
 
 def scripts_list_command(format_type: str) -> None:
     """List available scripts."""
-    from llm_orc.core.execution.script_resolver import ScriptResolver
+    from llm_orc.cli_modules.commands.script_commands import list_scripts_impl
 
-    resolver = ScriptResolver()
-    scripts = resolver.list_available_scripts()
-
-    if format_type == "json":
-        _format_json_output(scripts)
-        return
-
-    if not scripts:
-        click.echo("No scripts found in .llm-orc/scripts/")
-        return
-
-    click.echo("Available scripts:")
-    for script in scripts:
-        click.echo(f"  {script['display_name']}: {script['path']}")
+    json_output = format_type == "json"
+    output = list_scripts_impl(category=None, json_output=json_output)
+    click.echo(output)
 
 
 def scripts_show_command(script_name: str) -> None:
     """Show script documentation."""
-    from llm_orc.core.execution.script_resolver import ScriptResolver
+    from llm_orc.cli_modules.commands.script_commands import show_script_impl
 
-    resolver = ScriptResolver()
-    script_info = resolver.get_script_info(script_name)
-
-    if not script_info:
+    try:
+        output = show_script_impl(script_name)
+        click.echo(output)
+    except (FileNotFoundError, KeyError):
         click.echo(f"Script '{script_name}' not found", err=True)
-        raise SystemExit(1)
-
-    click.echo(f"Script: {script_info['name']}")
-    click.echo(f"Path: {script_info['path']}")
-    click.echo(f"Description: {script_info['description']}")
-
-    if script_info["parameters"]:
-        parameters_str = ", ".join(script_info["parameters"])
-        click.echo(f"Parameters: {parameters_str}")
-    else:
-        click.echo("Parameters: None")
+        raise SystemExit(1) from None
 
 
 def _parse_json_parameters(parameters_json: str | None) -> dict[str, Any]:

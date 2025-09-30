@@ -10,6 +10,42 @@ import click
 from llm_orc.core.execution.primitive_registry import PrimitiveRegistry
 
 
+def list_scripts_impl(category: str | None = None, json_output: bool = False) -> str:
+    """Implementation of list_scripts command.
+
+    Args:
+        category: Optional category filter
+        json_output: Whether to output JSON format
+
+    Returns:
+        Formatted output string
+    """
+    registry = PrimitiveRegistry()
+    primitives = registry.discover_primitives()
+
+    # Filter by category if specified
+    if category:
+        primitives = [p for p in primitives if p.get("category") == category]
+
+    if json_output:
+        return json.dumps(primitives, indent=2)
+
+    # Display in table format
+    if not primitives:
+        return "No scripts found."
+
+    lines = ["Available Scripts:", "-" * 80]
+
+    # Print each script
+    for primitive in primitives:
+        name = primitive.get("name", "unknown")
+        category_val = primitive.get("category", "uncategorized")
+        description = primitive.get("description", "")
+        lines.append(f"{name:<30} {category_val:<25} {description}")
+
+    return "\n".join(lines)
+
+
 @click.command()
 @click.option(
     "--category",
@@ -24,69 +60,64 @@ from llm_orc.core.execution.primitive_registry import PrimitiveRegistry
 )
 def list_scripts(category: str | None, json_output: bool) -> None:
     """List available scripts."""
+    output = list_scripts_impl(category, json_output)
+    click.echo(output)
+
+
+def show_script_impl(name: str) -> str:
+    """Implementation of show_script command.
+
+    Args:
+        name: Script name to display
+
+    Returns:
+        Formatted output string
+
+    Raises:
+        FileNotFoundError: If script is not found
+        KeyError: If script is not found
+    """
     registry = PrimitiveRegistry()
-    primitives = registry.discover_primitives()
+    script_info = registry.get_primitive_info(name)
 
-    # Filter by category if specified
-    if category:
-        primitives = [p for p in primitives if p.get("category") == category]
+    # Build output lines
+    lines = [
+        f"Script: {script_info.get('name', 'unknown')}",
+        f"Category: {script_info.get('category', 'uncategorized')}",
+        f"Path: {script_info.get('path', 'unknown')}",
+        "",
+        f"Description: {script_info.get('description', 'No description available')}",
+        "",
+    ]
 
-    if json_output:
-        click.echo(json.dumps(primitives, indent=2))
-    else:
-        # Display in table format
-        if not primitives:
-            click.echo("No scripts found.")
-            return
+    # Show parameters if available
+    parameters = script_info.get("parameters", {})
+    if parameters:
+        lines.append("Parameters:")
+        for param_name, param_type in parameters.items():
+            lines.append(f"  {param_name}: {param_type}")
+        lines.append("")
 
-        # Print header
-        click.echo("Available Scripts:")
-        click.echo("-" * 80)
+    # Show return values if available
+    returns = script_info.get("returns", {})
+    if returns:
+        lines.append("Returns:")
+        for return_name, return_type in returns.items():
+            lines.append(f"  {return_name}: {return_type}")
 
-        # Print each script
-        for primitive in primitives:
-            name = primitive.get("name", "unknown")
-            category_val = primitive.get("category", "uncategorized")
-            description = primitive.get("description", "")
-            click.echo(f"{name:<30} {category_val:<25} {description}")
+    return "\n".join(lines)
 
 
 @click.command()
 @click.argument("name")
 def show_script(name: str) -> None:
     """Show script documentation."""
-    registry = PrimitiveRegistry()
-
     try:
-        script_info = registry.get_primitive_info(name)
+        output = show_script_impl(name)
+        click.echo(output)
     except (FileNotFoundError, KeyError) as e:
         click.echo(f"Error: Script '{name}' not found.", err=True)
         raise click.ClickException(f"Script '{name}' not found.") from e
-
-    # Display script information
-    click.echo(f"Script: {script_info.get('name', 'unknown')}")
-    click.echo(f"Category: {script_info.get('category', 'uncategorized')}")
-    click.echo(f"Path: {script_info.get('path', 'unknown')}")
-    click.echo()
-
-    description = script_info.get("description", "No description available")
-    click.echo(f"Description: {description}")
-    click.echo()
-
-    # Show parameters if available
-    parameters = script_info.get("parameters", {})
-    if parameters:
-        click.echo("Parameters:")
-        for param_name, param_type in parameters.items():
-            click.echo(f"  {param_name}: {param_type}")
-        click.echo()
-
-    # Show return values if available
-    returns = script_info.get("returns", {})
-    if returns:
-        click.echo("Returns:")
-        for return_name, return_type in returns.items():
-            click.echo(f"  {return_name}: {return_type}")
 
 
 @click.command()
