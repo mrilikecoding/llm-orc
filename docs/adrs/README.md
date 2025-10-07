@@ -12,6 +12,7 @@ This directory contains Architecture Decision Records documenting key architectu
 | [004](004-bdd-llm-development-guardrails.md) | BDD as LLM Development Guardrails | Implemented | 100% |
 | [005](005-multi-turn-agent-conversations.md) | Multi-Turn Agent Conversations | Implemented | 70% |
 | [006](006-library-based-primitives-architecture.md) | Library-Based Primitives Architecture | Implemented | 100% |
+| [007](007-progressive-ensemble-validation-suite.md) | Progressive Ensemble Validation Suite | Accepted | 0% |
 
 ## ADR Overview
 
