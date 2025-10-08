@@ -1,5 +1,6 @@
 """BDD step definitions for ADR-007 Progressive Ensemble Validation Suite."""
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -144,7 +145,7 @@ def validation_ensemble_all_layers(
 
 
 @when("the ValidationEvaluator evaluates the ensemble results")
-async def evaluate_ensemble_results(
+def evaluate_ensemble_results(
     validation_framework: dict[str, Any],
     ensemble_execution_result: EnsembleExecutionResult,
 ) -> None:
@@ -152,15 +153,18 @@ async def evaluate_ensemble_results(
     evaluator = validation_framework["evaluator"]
     validation_config = validation_framework["validation_config"]
 
-    try:
-        result = await evaluator.evaluate(
-            ensemble_name="test-ensemble",
-            results=ensemble_execution_result,
-            validation_config=validation_config,
-        )
-        validation_framework["validation_result"] = result
-    except NotImplementedError as e:
-        validation_framework["validation_error"] = e
+    async def run_evaluation() -> None:
+        try:
+            result = await evaluator.evaluate(
+                ensemble_name="test-ensemble",
+                results=ensemble_execution_result,
+                validation_config=validation_config,
+            )
+            validation_framework["validation_result"] = result
+        except NotImplementedError as e:
+            validation_framework["validation_error"] = e
+
+    asyncio.run(run_evaluation())
 
 
 @then("structural validation should check execution properties")
@@ -241,7 +245,7 @@ def validation_ensemble_structural(validation_framework: dict[str, Any]) -> None
 
 
 @when("structural validation is performed")
-async def perform_structural_validation(
+def perform_structural_validation(
     validation_framework: dict[str, Any],
     ensemble_execution_result: EnsembleExecutionResult,
 ) -> None:
@@ -249,13 +253,16 @@ async def perform_structural_validation(
     evaluator = validation_framework["evaluator"]
     validation_config = validation_framework["validation_config"]
 
-    try:
-        result = await evaluator._evaluate_structural(
-            ensemble_execution_result, validation_config.structural
-        )
-        validation_framework["structural_result"] = result
-    except NotImplementedError as e:
-        validation_framework["structural_error"] = e
+    async def run_validation() -> None:
+        try:
+            result = await evaluator._evaluate_structural(
+                ensemble_execution_result, validation_config.structural
+            )
+            validation_framework["structural_result"] = result
+        except NotImplementedError as e:
+            validation_framework["structural_error"] = e
+
+    asyncio.run(run_validation())
 
 
 @then("required agents should be verified as present in execution")
@@ -309,6 +316,7 @@ def ensemble_with_user_input(validation_framework: dict[str, Any]) -> None:
 
 
 @given("the ensemble is configured with LLM persona simulation")
+@given("the ensemble is configured with LLM simulation")
 def ensemble_with_llm_simulation(validation_framework: dict[str, Any]) -> None:
     """Configure ensemble with LLM simulation."""
     validation_framework["test_mode_config"] = TestModeConfig(
@@ -324,7 +332,7 @@ def ensemble_with_llm_simulation(validation_framework: dict[str, Any]) -> None:
 
 
 @when("the ensemble executes in test mode")
-async def execute_ensemble_test_mode(validation_framework: dict[str, Any]) -> None:
+def execute_ensemble_test_mode(validation_framework: dict[str, Any]) -> None:
     """Execute ensemble in test mode."""
     # Stub - will trigger ensemble execution with test mode
     validation_framework["executed_in_test_mode"] = True
@@ -362,7 +370,7 @@ def script_handler_initialized(
 
 
 @when("user input is requested from an agent")
-async def request_user_input(validation_framework: dict[str, Any]) -> None:
+def request_user_input(validation_framework: dict[str, Any]) -> None:
     """Request user input from agent."""
     pass  # Minimum implementation to satisfy BDD scenario
 
@@ -395,7 +403,7 @@ def llm_generator_with_persona(
 
 
 @when("response generation is requested with prompt and context")
-async def request_response_generation(validation_framework: dict[str, Any]) -> None:
+def request_response_generation(validation_framework: dict[str, Any]) -> None:
     """Request response generation."""
     pass  # Minimum implementation to satisfy BDD scenario
 
@@ -436,7 +444,7 @@ def llm_generator_with_cache(validation_framework: dict[str, Any]) -> None:
 
 
 @when("the same prompt and context are provided multiple times")
-async def provide_repeated_prompts(validation_framework: dict[str, Any]) -> None:
+def provide_repeated_prompts(validation_framework: dict[str, Any]) -> None:
     """Provide repeated prompts."""
     pass  # Minimum implementation to satisfy BDD scenario
 
@@ -471,798 +479,798 @@ def check_deterministic_cache_keys(validation_framework: dict[str, Any]) -> None
 
 
 @given("a validation ensemble with schema requirements")
-def validation_ensemble_schema(_validation_framework: dict[str, Any]) -> None:
+def validation_ensemble_schema(validation_framework: dict[str, Any]) -> None:
     """Set up ensemble with schema validation requirements."""
     pass
 
 
 @when("schema validation is performed")
-async def perform_schema_validation(_validation_framework: dict[str, Any]) -> None:
+def perform_schema_validation(validation_framework: dict[str, Any]) -> None:
     """Perform schema validation."""
     pass
 
 
 @then("each agent output should be validated against declared schema")
-def check_agent_schema_validation(_validation_framework: dict[str, Any]) -> None:
+def check_agent_schema_validation(validation_framework: dict[str, Any]) -> None:
     """Verify agent outputs validated against schemas."""
     pass
 
 
 @then("required fields should be verified as present")
-def check_required_fields(_validation_framework: dict[str, Any]) -> None:
+def check_required_fields(validation_framework: dict[str, Any]) -> None:
     """Verify required fields present."""
     pass
 
 
 @then("field types should match schema definitions")
-def check_field_types(_validation_framework: dict[str, Any]) -> None:
+def check_field_types(validation_framework: dict[str, Any]) -> None:
     """Verify field types match."""
     pass
 
 
 @then("schema violations should provide clear error messages")
-def check_schema_violations(_validation_framework: dict[str, Any]) -> None:
+def check_schema_violations(validation_framework: dict[str, Any]) -> None:
     """Verify schema violations have clear messages."""
     pass
 
 
 @then("validation should use existing Pydantic infrastructure (ADR-001)")
-def check_pydantic_usage(_validation_framework: dict[str, Any]) -> None:
+def check_pydantic_usage(validation_framework: dict[str, Any]) -> None:
     """Verify Pydantic infrastructure usage."""
     pass
 
 
 @given("a validation ensemble with behavioral assertions")
-def validation_ensemble_behavioral(_validation_framework: dict[str, Any]) -> None:
+def validation_ensemble_behavioral(validation_framework: dict[str, Any]) -> None:
     """Set up ensemble with behavioral assertions."""
     pass
 
 
 @when("behavioral validation is performed")
-async def perform_behavioral_validation(_validation_framework: dict[str, Any]) -> None:
+def perform_behavioral_validation(validation_framework: dict[str, Any]) -> None:
     """Perform behavioral validation."""
     pass
 
 
 @then("Python assertion expressions should be evaluated safely")
-def check_assertion_evaluation(_validation_framework: dict[str, Any]) -> None:
+def check_assertion_evaluation(validation_framework: dict[str, Any]) -> None:
     """Verify assertions evaluated safely."""
     pass
 
 
 @then("execution context should be available to assertions")
-def check_execution_context(_validation_framework: dict[str, Any]) -> None:
+def check_execution_context(validation_framework: dict[str, Any]) -> None:
     """Verify execution context available."""
     pass
 
 
 @then("assertion failures should report descriptive error messages")
-def check_assertion_errors(_validation_framework: dict[str, Any]) -> None:
+def check_assertion_errors(validation_framework: dict[str, Any]) -> None:
     """Verify assertion errors are descriptive."""
     pass
 
 
 @then("assertion evaluation should handle exceptions gracefully")
-def check_assertion_exception_handling(_validation_framework: dict[str, Any]) -> None:
+def check_assertion_exception_handling(validation_framework: dict[str, Any]) -> None:
     """Verify exception handling."""
     pass
 
 
 @given("a validation ensemble with quantitative metrics")
-def validation_ensemble_quantitative(_validation_framework: dict[str, Any]) -> None:
+def validation_ensemble_quantitative(validation_framework: dict[str, Any]) -> None:
     """Set up ensemble with quantitative metrics."""
     pass
 
 
 @when("quantitative validation is performed")
-async def perform_quantitative_validation(
-    _validation_framework: dict[str, Any],
+def perform_quantitative_validation(
+    validation_framework: dict[str, Any],
 ) -> None:
     """Perform quantitative validation."""
     pass
 
 
 @then("metrics should be calculated from execution results")
-def check_metric_calculation(_validation_framework: dict[str, Any]) -> None:
+def check_metric_calculation(validation_framework: dict[str, Any]) -> None:
     """Verify metrics calculated."""
     pass
 
 
 @then("threshold comparisons should evaluate correctly (>, <, >=, <=, ==)")
-def check_threshold_comparisons(_validation_framework: dict[str, Any]) -> None:
+def check_threshold_comparisons(validation_framework: dict[str, Any]) -> None:
     """Verify threshold comparisons."""
     pass
 
 
 @then("metrics without thresholds should be recorded but not validated")
-def check_metrics_without_thresholds(_validation_framework: dict[str, Any]) -> None:
+def check_metrics_without_thresholds(validation_framework: dict[str, Any]) -> None:
     """Verify metrics without thresholds."""
     pass
 
 
 @then("metric failures should report expected vs actual values")
-def check_metric_failures(_validation_framework: dict[str, Any]) -> None:
+def check_metric_failures(validation_framework: dict[str, Any]) -> None:
     """Verify metric failure reporting."""
     pass
 
 
 @given("a validation ensemble with semantic validation enabled")
-def validation_ensemble_semantic(_validation_framework: dict[str, Any]) -> None:
+def validation_ensemble_semantic(validation_framework: dict[str, Any]) -> None:
     """Set up ensemble with semantic validation."""
     pass
 
 
 @when("semantic validation is performed")
-async def perform_semantic_validation(_validation_framework: dict[str, Any]) -> None:
+def perform_semantic_validation(validation_framework: dict[str, Any]) -> None:
     """Perform semantic validation."""
     pass
 
 
 @then("validator LLM should receive agent outputs and criteria")
-def check_validator_llm_inputs(_validation_framework: dict[str, Any]) -> None:
+def check_validator_llm_inputs(validation_framework: dict[str, Any]) -> None:
     """Verify validator LLM receives inputs."""
     pass
 
 
 @then("LLM should evaluate outputs against semantic criteria")
-def check_llm_evaluation(_validation_framework: dict[str, Any]) -> None:
+def check_llm_evaluation(validation_framework: dict[str, Any]) -> None:
     """Verify LLM evaluation."""
     pass
 
 
 @then("semantic validation should return pass/fail with justification")
-def check_semantic_results(_validation_framework: dict[str, Any]) -> None:
+def check_semantic_results(validation_framework: dict[str, Any]) -> None:
     """Verify semantic results."""
     pass
 
 
 @then("semantic validation should be optional and skippable")
-def check_semantic_optional(_validation_framework: dict[str, Any]) -> None:
+def check_semantic_optional(validation_framework: dict[str, Any]) -> None:
     """Verify semantic validation optional."""
     pass
 
 
 @given("an LLMResponseGenerator with helpful_user persona")
-def llm_generator_helpful_user(_validation_framework: dict[str, Any]) -> None:
+def llm_generator_helpful_user(validation_framework: dict[str, Any]) -> None:
     """Initialize LLM generator with helpful_user persona."""
     pass
 
 
 @when("responses are generated for user input prompts")
-async def generate_user_responses(_validation_framework: dict[str, Any]) -> None:
+def generate_user_responses(validation_framework: dict[str, Any]) -> None:
     """Generate user responses."""
     pass
 
 
 @then("responses should be realistic and contextually appropriate")
-def check_realistic_responses(_validation_framework: dict[str, Any]) -> None:
+def check_realistic_responses(validation_framework: dict[str, Any]) -> None:
     """Verify realistic responses."""
     pass
 
 
 @then("responses should follow persona characteristics (helpful vs critical)")
-def check_persona_characteristics(_validation_framework: dict[str, Any]) -> None:
+def check_persona_characteristics(validation_framework: dict[str, Any]) -> None:
     """Verify persona characteristics."""
     pass
 
 
 @then("default personas should include helpful_user, critical_reviewer, domain_expert")
-def check_default_personas(_validation_framework: dict[str, Any]) -> None:
+def check_default_personas(validation_framework: dict[str, Any]) -> None:
     """Verify default personas."""
     pass
 
 
 @given("validation ensemble configurations for different categories")
-def validation_ensemble_configs(_validation_framework: dict[str, Any]) -> None:
+def validation_ensemble_configs(validation_framework: dict[str, Any]) -> None:
     """Set up validation ensemble configurations."""
     pass
 
 
 @when("validation ensembles are loaded and parsed")
-async def load_validation_ensembles(_validation_framework: dict[str, Any]) -> None:
+def load_validation_ensembles(validation_framework: dict[str, Any]) -> None:
     """Load validation ensembles."""
     pass
 
 
 @then("ensembles should be able to declare any subset of validation layers")
-def check_subset_declaration(_validation_framework: dict[str, Any]) -> None:
+def check_subset_declaration(validation_framework: dict[str, Any]) -> None:
     """Verify subset declaration."""
     pass
 
 
 @then("ensembles without certain layers should skip those validations")
-def check_layer_skipping(_validation_framework: dict[str, Any]) -> None:
+def check_layer_skipping(validation_framework: dict[str, Any]) -> None:
     """Verify layer skipping."""
     pass
 
 
 @then("validation layer parsing should handle missing sections gracefully")
-def check_graceful_parsing(_validation_framework: dict[str, Any]) -> None:
+def check_graceful_parsing(validation_framework: dict[str, Any]) -> None:
     """Verify graceful parsing."""
     pass
 
 
 @given("a primitive validation ensemble with single script agent")
-def primitive_validation_ensemble(_validation_framework: dict[str, Any]) -> None:
+def primitive_validation_ensemble(validation_framework: dict[str, Any]) -> None:
     """Set up primitive validation ensemble."""
     pass
 
 
 @when("primitive validation is executed")
-async def execute_primitive_validation(_validation_framework: dict[str, Any]) -> None:
+def execute_primitive_validation(validation_framework: dict[str, Any]) -> None:
     """Execute primitive validation."""
     pass
 
 
 @then("script output should be validated against declared schema")
-def check_script_schema_validation(_validation_framework: dict[str, Any]) -> None:
+def check_script_schema_validation(validation_framework: dict[str, Any]) -> None:
     """Verify script schema validation."""
     pass
 
 
 @then("behavioral assertions should validate agent-specific properties")
-def check_agent_properties(_validation_framework: dict[str, Any]) -> None:
+def check_agent_properties(validation_framework: dict[str, Any]) -> None:
     """Verify agent properties."""
     pass
 
 
 @then("validation should complete for isolated script agent execution")
-def check_isolated_execution(_validation_framework: dict[str, Any]) -> None:
+def check_isolated_execution(validation_framework: dict[str, Any]) -> None:
     """Verify isolated execution."""
     pass
 
 
 @given("an integration validation ensemble with multiple dependent agents")
-def integration_validation_ensemble(_validation_framework: dict[str, Any]) -> None:
+def integration_validation_ensemble(validation_framework: dict[str, Any]) -> None:
     """Set up integration validation ensemble."""
     pass
 
 
 @when("integration validation is executed")
-async def execute_integration_validation(_validation_framework: dict[str, Any]) -> None:
+def execute_integration_validation(validation_framework: dict[str, Any]) -> None:
     """Execute integration validation."""
     pass
 
 
 @then("structural validation should verify execution order")
-def check_execution_order_validation(_validation_framework: dict[str, Any]) -> None:
+def check_execution_order_validation(validation_framework: dict[str, Any]) -> None:
     """Verify execution order."""
     pass
 
 
 @then("schema validation should verify data flow between agents")
-def check_data_flow(_validation_framework: dict[str, Any]) -> None:
+def check_data_flow(validation_framework: dict[str, Any]) -> None:
     """Verify data flow."""
     pass
 
 
 @then("behavioral assertions should validate composition properties")
-def check_composition_properties(_validation_framework: dict[str, Any]) -> None:
+def check_composition_properties(validation_framework: dict[str, Any]) -> None:
     """Verify composition properties."""
     pass
 
 
 @given("a conversational validation ensemble with user input agents")
-def conversational_validation_ensemble(_validation_framework: dict[str, Any]) -> None:
+def conversational_validation_ensemble(validation_framework: dict[str, Any]) -> None:
     """Set up conversational validation ensemble."""
     pass
 
 
 @when("conversational validation is executed in test mode")
-async def execute_conversational_validation(
-    _validation_framework: dict[str, Any],
+def execute_conversational_validation(
+    validation_framework: dict[str, Any],
 ) -> None:
     """Execute conversational validation."""
     pass
 
 
 @then("user input agents should receive LLM-simulated responses")
-def check_llm_simulated_responses(_validation_framework: dict[str, Any]) -> None:
+def check_llm_simulated_responses(validation_framework: dict[str, Any]) -> None:
     """Verify LLM simulated responses."""
     pass
 
 
 @then("conversation flow should be validated against behavioral assertions")
-def check_conversation_flow(_validation_framework: dict[str, Any]) -> None:
+def check_conversation_flow(validation_framework: dict[str, Any]) -> None:
     """Verify conversation flow."""
     pass
 
 
 @then("multi-turn execution should complete without blocking")
-def check_multiturn_execution(_validation_framework: dict[str, Any]) -> None:
+def check_multiturn_execution(validation_framework: dict[str, Any]) -> None:
     """Verify multi-turn execution."""
     pass
 
 
 @given("a research validation ensemble with quantitative metrics")
-def research_validation_ensemble(_validation_framework: dict[str, Any]) -> None:
+def research_validation_ensemble(validation_framework: dict[str, Any]) -> None:
     """Set up research validation ensemble."""
     pass
 
 
 @when("research validation is executed")
-async def execute_research_validation(_validation_framework: dict[str, Any]) -> None:
+def execute_research_validation(validation_framework: dict[str, Any]) -> None:
     """Execute research validation."""
     pass
 
 
 @then("network metrics should be calculated (clustering, path length)")
-def check_network_metrics(_validation_framework: dict[str, Any]) -> None:
+def check_network_metrics(validation_framework: dict[str, Any]) -> None:
     """Verify network metrics."""
     pass
 
 
 @then("consensus metrics should be measured if applicable")
-def check_consensus_metrics(_validation_framework: dict[str, Any]) -> None:
+def check_consensus_metrics(validation_framework: dict[str, Any]) -> None:
     """Verify consensus metrics."""
     pass
 
 
 @then("metrics without thresholds should be recorded for analysis")
-def check_metrics_recorded(_validation_framework: dict[str, Any]) -> None:
+def check_metrics_recorded(validation_framework: dict[str, Any]) -> None:
     """Verify metrics recorded."""
     pass
 
 
 @then("statistical analysis should be optional for multi-run experiments")
-def check_statistical_analysis(_validation_framework: dict[str, Any]) -> None:
+def check_statistical_analysis(validation_framework: dict[str, Any]) -> None:
     """Verify statistical analysis."""
     pass
 
 
 @given("an application validation ensemble with full workflow")
-def application_validation_ensemble(_validation_framework: dict[str, Any]) -> None:
+def application_validation_ensemble(validation_framework: dict[str, Any]) -> None:
     """Set up application validation ensemble."""
     pass
 
 
 @given("the ensemble includes script agents, LLM agents, and user input")
-def ensemble_includes_all_agents(_validation_framework: dict[str, Any]) -> None:
+def ensemble_includes_all_agents(validation_framework: dict[str, Any]) -> None:
     """Verify ensemble includes all agent types."""
     pass
 
 
 @when("application validation is executed in test mode")
-async def execute_application_validation(_validation_framework: dict[str, Any]) -> None:
+def execute_application_validation(validation_framework: dict[str, Any]) -> None:
     """Execute application validation."""
     pass
 
 
 @then("all validation layers should be evaluated as declared")
-def check_all_layers_evaluated(_validation_framework: dict[str, Any]) -> None:
+def check_all_layers_evaluated(validation_framework: dict[str, Any]) -> None:
     """Verify all layers evaluated."""
     pass
 
 
 @then("LLM simulation should handle user input requirements")
-def check_llm_simulation_handles_input(_validation_framework: dict[str, Any]) -> None:
+def check_llm_simulation_handles_input(validation_framework: dict[str, Any]) -> None:
     """Verify LLM simulation handles input."""
     pass
 
 
 @then("end-to-end workflow should complete successfully")
-def check_endtoend_workflow(_validation_framework: dict[str, Any]) -> None:
+def check_endtoend_workflow(validation_framework: dict[str, Any]) -> None:
     """Verify end-to-end workflow."""
     pass
 
 
 @given("an ensemble YAML with validation section")
-def ensemble_yaml_validation(_validation_framework: dict[str, Any]) -> None:
+def ensemble_yaml_validation(validation_framework: dict[str, Any]) -> None:
     """Set up ensemble YAML with validation."""
     pass
 
 
 @when("the validation configuration is parsed")
-async def parse_validation_config(_validation_framework: dict[str, Any]) -> None:
+def parse_validation_config(validation_framework: dict[str, Any]) -> None:
     """Parse validation configuration."""
     pass
 
 
 @then("structural validation config should parse with required_agents and timing")
-def check_structural_config_parsing(_validation_framework: dict[str, Any]) -> None:
+def check_structural_config_parsing(validation_framework: dict[str, Any]) -> None:
     """Verify structural config parsing."""
     pass
 
 
 @then("schema validation config should parse with agent-schema mappings")
-def check_schema_config_parsing(_validation_framework: dict[str, Any]) -> None:
+def check_schema_config_parsing(validation_framework: dict[str, Any]) -> None:
     """Verify schema config parsing."""
     pass
 
 
 @then("behavioral validation config should parse assertion expressions")
-def check_behavioral_config_parsing(_validation_framework: dict[str, Any]) -> None:
+def check_behavioral_config_parsing(validation_framework: dict[str, Any]) -> None:
     """Verify behavioral config parsing."""
     pass
 
 
 @then("quantitative validation config should parse metrics and thresholds")
-def check_quantitative_config_parsing(_validation_framework: dict[str, Any]) -> None:
+def check_quantitative_config_parsing(validation_framework: dict[str, Any]) -> None:
     """Verify quantitative config parsing."""
     pass
 
 
 @then("semantic validation config should parse criteria and validator model")
-def check_semantic_config_parsing(_validation_framework: dict[str, Any]) -> None:
+def check_semantic_config_parsing(validation_framework: dict[str, Any]) -> None:
     """Verify semantic config parsing."""
     pass
 
 
 @given("an ensemble YAML with test_mode section")
-def ensemble_yaml_test_mode(_validation_framework: dict[str, Any]) -> None:
+def ensemble_yaml_test_mode(validation_framework: dict[str, Any]) -> None:
     """Set up ensemble YAML with test_mode."""
     pass
 
 
 @when("the test mode configuration is parsed")
-async def parse_test_mode_config(_validation_framework: dict[str, Any]) -> None:
+def parse_test_mode_config(validation_framework: dict[str, Any]) -> None:
     """Parse test mode configuration."""
     pass
 
 
 @then("test mode enabled flag should be parsed correctly")
-def check_test_mode_flag(_validation_framework: dict[str, Any]) -> None:
+def check_test_mode_flag(validation_framework: dict[str, Any]) -> None:
     """Verify test mode flag."""
     pass
 
 
 @then("llm_simulation configuration should map agents to personas")
-def check_llm_simulation_mapping(_validation_framework: dict[str, Any]) -> None:
+def check_llm_simulation_mapping(validation_framework: dict[str, Any]) -> None:
     """Verify llm_simulation mapping."""
     pass
 
 
 @then("cached_responses should be parsed for deterministic testing")
-def check_cached_responses_parsing(_validation_framework: dict[str, Any]) -> None:
+def check_cached_responses_parsing(validation_framework: dict[str, Any]) -> None:
     """Verify cached_responses parsing."""
     pass
 
 
 @then("persona and model overrides should be supported per agent")
-def check_persona_overrides(_validation_framework: dict[str, Any]) -> None:
+def check_persona_overrides(validation_framework: dict[str, Any]) -> None:
     """Verify persona overrides."""
     pass
 
 
 @given("the existing Pydantic schema infrastructure from ADR-001")
-def existing_pydantic_infrastructure(_validation_framework: dict[str, Any]) -> None:
+def existing_pydantic_infrastructure(validation_framework: dict[str, Any]) -> None:
     """Verify existing Pydantic infrastructure."""
     pass
 
 
 @when("validation framework validates schema compliance")
-async def validate_schema_compliance(_validation_framework: dict[str, Any]) -> None:
+def validate_schema_compliance(validation_framework: dict[str, Any]) -> None:
     """Validate schema compliance."""
     pass
 
 
 @then("schema validation should use existing ScriptAgentInput/Output base classes")
-def check_script_agent_base_classes(_validation_framework: dict[str, Any]) -> None:
+def check_script_agent_base_classes(validation_framework: dict[str, Any]) -> None:
     """Verify base classes used."""
     pass
 
 
 @then("validation should leverage existing Pydantic validation infrastructure")
-def check_pydantic_infrastructure(_validation_framework: dict[str, Any]) -> None:
+def check_pydantic_infrastructure(validation_framework: dict[str, Any]) -> None:
     """Verify Pydantic infrastructure."""
     pass
 
 
 @then("backward compatibility should be maintained with current patterns")
-def check_backward_compatibility(_validation_framework: dict[str, Any]) -> None:
+def check_backward_compatibility(validation_framework: dict[str, Any]) -> None:
     """Verify backward compatibility."""
     pass
 
 
 @given("the testable script contract system from ADR-003")
-def script_contract_system(_validation_framework: dict[str, Any]) -> None:
+def script_contract_system(validation_framework: dict[str, Any]) -> None:
     """Verify script contract system."""
     pass
 
 
 @when("validation ensembles validate script agent outputs")
-async def validate_script_outputs(_validation_framework: dict[str, Any]) -> None:
+def validate_script_outputs(validation_framework: dict[str, Any]) -> None:
     """Validate script outputs."""
     pass
 
 
 @then("script contracts should be validated for compliance")
-def check_script_contracts(_validation_framework: dict[str, Any]) -> None:
+def check_script_contracts(validation_framework: dict[str, Any]) -> None:
     """Verify script contracts."""
     pass
 
 
 @then("test cases from contracts should be executable in validation mode")
-def check_contract_test_cases(_validation_framework: dict[str, Any]) -> None:
+def check_contract_test_cases(validation_framework: dict[str, Any]) -> None:
     """Verify contract test cases."""
     pass
 
 
 @then("schema compatibility from contracts should inform validation")
-def check_schema_compatibility(_validation_framework: dict[str, Any]) -> None:
+def check_schema_compatibility(validation_framework: dict[str, Any]) -> None:
     """Verify schema compatibility."""
     pass
 
 
 @given("the multi-turn conversation architecture from ADR-005")
-def multiturn_conversation_architecture(_validation_framework: dict[str, Any]) -> None:
+def multiturn_conversation_architecture(validation_framework: dict[str, Any]) -> None:
     """Verify multi-turn conversation architecture."""
     pass
 
 
 @when("conversational validation ensembles execute")
-async def execute_conversational_ensembles(
-    _validation_framework: dict[str, Any],
+def execute_conversational_ensembles(
+    validation_framework: dict[str, Any],
 ) -> None:
     """Execute conversational ensembles."""
     pass
 
 
 @then("conversation state should be maintained during validation")
-def check_conversation_state(_validation_framework: dict[str, Any]) -> None:
+def check_conversation_state(validation_framework: dict[str, Any]) -> None:
     """Verify conversation state."""
     pass
 
 
 @then("turn order should be validated in behavioral assertions")
-def check_turn_order(_validation_framework: dict[str, Any]) -> None:
+def check_turn_order(validation_framework: dict[str, Any]) -> None:
     """Verify turn order."""
     pass
 
 
 @then("LLM simulation should support multi-turn conversation context")
-def check_multiturn_context(_validation_framework: dict[str, Any]) -> None:
+def check_multiturn_context(validation_framework: dict[str, Any]) -> None:
     """Verify multi-turn context."""
     pass
 
 
 @given("the library-based primitives architecture from ADR-006")
-def library_primitives_architecture(_validation_framework: dict[str, Any]) -> None:
+def library_primitives_architecture(validation_framework: dict[str, Any]) -> None:
     """Verify library primitives architecture."""
     pass
 
 
 @when("validation ensembles use library primitives")
-async def use_library_primitives(_validation_framework: dict[str, Any]) -> None:
+def use_library_primitives(validation_framework: dict[str, Any]) -> None:
     """Use library primitives."""
     pass
 
 
 @then("primitive scripts should be discoverable and executable")
-def check_primitive_discovery(_validation_framework: dict[str, Any]) -> None:
+def check_primitive_discovery(validation_framework: dict[str, Any]) -> None:
     """Verify primitive discovery."""
     pass
 
 
 @then("category-specific schemas should be validated")
-def check_category_schemas(_validation_framework: dict[str, Any]) -> None:
+def check_category_schemas(validation_framework: dict[str, Any]) -> None:
     """Verify category schemas."""
     pass
 
 
 @then("library structure should support validation ensemble organization")
-def check_library_structure(_validation_framework: dict[str, Any]) -> None:
+def check_library_structure(validation_framework: dict[str, Any]) -> None:
     """Verify library structure."""
     pass
 
 
 @given("a validation ensemble with failing validation criteria")
-def failing_validation_criteria(_validation_framework: dict[str, Any]) -> None:
+def failing_validation_criteria(validation_framework: dict[str, Any]) -> None:
     """Set up failing validation criteria."""
     pass
 
 
 @when("validation is performed and criteria fail")
-async def perform_failing_validation(_validation_framework: dict[str, Any]) -> None:
+def perform_failing_validation(validation_framework: dict[str, Any]) -> None:
     """Perform failing validation."""
     pass
 
 
 @then("validation errors should be chained with original exception context")
-def check_error_chaining(_validation_framework: dict[str, Any]) -> None:
+def check_error_chaining(validation_framework: dict[str, Any]) -> None:
     """Verify error chaining."""
     pass
 
 
 @then("error messages should include validation-specific failure details")
-def check_error_details(_validation_framework: dict[str, Any]) -> None:
+def check_error_details(validation_framework: dict[str, Any]) -> None:
     """Verify error details."""
     pass
 
 
 @then("error context should guide developers to fix validation issues")
-def check_error_guidance(_validation_framework: dict[str, Any]) -> None:
+def check_error_guidance(validation_framework: dict[str, Any]) -> None:
     """Verify error guidance."""
     pass
 
 
 @given("an ensemble in test mode with LLM simulation configured")
-def ensemble_llm_simulation_configured(_validation_framework: dict[str, Any]) -> None:
+def ensemble_llm_simulation_configured(validation_framework: dict[str, Any]) -> None:
     """Set up ensemble with LLM simulation."""
     pass
 
 
 @when("LLM simulation fails due to model unavailability or errors")
-async def llm_simulation_fails(_validation_framework: dict[str, Any]) -> None:
+def llm_simulation_fails(validation_framework: dict[str, Any]) -> None:
     """Simulate LLM simulation failure."""
     pass
 
 
 @then("simulation errors should be caught and chained properly")
-def check_simulation_error_chaining(_validation_framework: dict[str, Any]) -> None:
+def check_simulation_error_chaining(validation_framework: dict[str, Any]) -> None:
     """Verify simulation error chaining."""
     pass
 
 
 @then("error messages should indicate which agent failed simulation")
-def check_agent_error_messages(_validation_framework: dict[str, Any]) -> None:
+def check_agent_error_messages(validation_framework: dict[str, Any]) -> None:
     """Verify agent error messages."""
     pass
 
 
 @then("error context should suggest fallback strategies")
-def check_fallback_strategies(_validation_framework: dict[str, Any]) -> None:
+def check_fallback_strategies(validation_framework: dict[str, Any]) -> None:
     """Verify fallback strategies."""
     pass
 
 
 @given("multiple validation runs with identical prompts and context")
-def multiple_validation_runs(_validation_framework: dict[str, Any]) -> None:
+def multiple_validation_runs(validation_framework: dict[str, Any]) -> None:
     """Set up multiple validation runs."""
     pass
 
 
 @when("validation executes repeatedly")
-async def execute_repeatedly(_validation_framework: dict[str, Any]) -> None:
+def execute_repeatedly(validation_framework: dict[str, Any]) -> None:
     """Execute validation repeatedly."""
     pass
 
 
 @then("cached responses should eliminate redundant LLM calls")
-def check_cache_eliminates_calls(_validation_framework: dict[str, Any]) -> None:
+def check_cache_eliminates_calls(validation_framework: dict[str, Any]) -> None:
     """Verify cache eliminates calls."""
     pass
 
 
 @then("validation performance should improve with cache hits")
-def check_performance_improvement(_validation_framework: dict[str, Any]) -> None:
+def check_performance_improvement(validation_framework: dict[str, Any]) -> None:
     """Verify performance improvement."""
     pass
 
 
 @then("cache should be persisted across validation sessions")
-def check_cache_persistence(_validation_framework: dict[str, Any]) -> None:
+def check_cache_persistence(validation_framework: dict[str, Any]) -> None:
     """Verify cache persistence."""
     pass
 
 
 @when("assertions are evaluated using Python expressions")
-async def evaluate_assertions(_validation_framework: dict[str, Any]) -> None:
+def evaluate_assertions(validation_framework: dict[str, Any]) -> None:
     """Evaluate assertions."""
     pass
 
 
 @then("assertion evaluation should occur in restricted context")
-def check_restricted_context(_validation_framework: dict[str, Any]) -> None:
+def check_restricted_context(validation_framework: dict[str, Any]) -> None:
     """Verify restricted context."""
     pass
 
 
 @then("dangerous operations should be prevented in assertions")
-def check_dangerous_operations(_validation_framework: dict[str, Any]) -> None:
+def check_dangerous_operations(validation_framework: dict[str, Any]) -> None:
     """Verify dangerous operations prevented."""
     pass
 
 
 @then("assertion syntax errors should be caught and reported safely")
-def check_syntax_errors(_validation_framework: dict[str, Any]) -> None:
+def check_syntax_errors(validation_framework: dict[str, Any]) -> None:
     """Verify syntax errors caught."""
     pass
 
 
 @given("a research validation ensemble with statistical analysis")
-def research_ensemble_statistics(_validation_framework: dict[str, Any]) -> None:
+def research_ensemble_statistics(validation_framework: dict[str, Any]) -> None:
     """Set up research ensemble with statistics."""
     pass
 
 
 @when("the ensemble is executed multiple times for experiments")
-async def execute_multiple_times(_validation_framework: dict[str, Any]) -> None:
+def execute_multiple_times(validation_framework: dict[str, Any]) -> None:
     """Execute multiple times."""
     pass
 
 
 @then("metrics should be recorded across all runs")
-def check_metrics_recorded_all_runs(_validation_framework: dict[str, Any]) -> None:
+def check_metrics_recorded_all_runs(validation_framework: dict[str, Any]) -> None:
     """Verify metrics recorded."""
     pass
 
 
 @then("statistical analysis should calculate correlations and ANOVA")
-def check_statistical_calculations(_validation_framework: dict[str, Any]) -> None:
+def check_statistical_calculations(validation_framework: dict[str, Any]) -> None:
     """Verify statistical calculations."""
     pass
 
 
 @then("results should be exportable to CSV for external analysis")
-def check_csv_export(_validation_framework: dict[str, Any]) -> None:
+def check_csv_export(validation_framework: dict[str, Any]) -> None:
     """Verify CSV export."""
     pass
 
 
 @then("research mode should preserve all quantitative measurements")
-def check_research_mode(_validation_framework: dict[str, Any]) -> None:
+def check_research_mode(validation_framework: dict[str, Any]) -> None:
     """Verify research mode."""
     pass
 
 
 @given("validation ensembles configured for automated testing")
-def validation_ensembles_automated(_validation_framework: dict[str, Any]) -> None:
+def validation_ensembles_automated(validation_framework: dict[str, Any]) -> None:
     """Set up automated validation ensembles."""
     pass
 
 
 @when("validation ensembles are invoked via CLI")
-async def invoke_via_cli(_validation_framework: dict[str, Any]) -> None:
+def invoke_via_cli(validation_framework: dict[str, Any]) -> None:
     """Invoke via CLI."""
     pass
 
 
 @then("--mode test flag should enable test mode execution")
-def check_test_mode_cli_flag(_validation_framework: dict[str, Any]) -> None:
+def check_test_mode_cli_flag(validation_framework: dict[str, Any]) -> None:
     """Verify test mode CLI flag."""
     pass
 
 
 @then("--verbose flag should provide detailed validation output")
-def check_verbose_flag(_validation_framework: dict[str, Any]) -> None:
+def check_verbose_flag(validation_framework: dict[str, Any]) -> None:
     """Verify verbose flag."""
     pass
 
 
 @then("validation results should be reported with pass/fail status")
-def check_validation_results_reporting(_validation_framework: dict[str, Any]) -> None:
+def check_validation_results_reporting(validation_framework: dict[str, Any]) -> None:
     """Verify results reporting."""
     pass
 
 
 @then("exit codes should indicate validation success or failure")
-def check_exit_codes(_validation_framework: dict[str, Any]) -> None:
+def check_exit_codes(validation_framework: dict[str, Any]) -> None:
     """Verify exit codes."""
     pass
 
 
 @given("completed validation of an ensemble")
-def completed_validation(_validation_framework: dict[str, Any]) -> None:
+def completed_validation(validation_framework: dict[str, Any]) -> None:
     """Set up completed validation."""
     pass
 
 
 @when("ValidationResult is constructed from validation outcomes")
-async def construct_validation_result(_validation_framework: dict[str, Any]) -> None:
+def construct_validation_result(validation_framework: dict[str, Any]) -> None:
     """Construct validation result."""
     pass
 
 
 @then("ensemble name and timestamp should be recorded")
-def check_ensemble_metadata(_validation_framework: dict[str, Any]) -> None:
+def check_ensemble_metadata(validation_framework: dict[str, Any]) -> None:
     """Verify ensemble metadata."""
     pass
 
 
 @then("overall passed status should reflect all validation layers")
-def check_overall_status(_validation_framework: dict[str, Any]) -> None:
+def check_overall_status(validation_framework: dict[str, Any]) -> None:
     """Verify overall status."""
     pass
 
 
 @then("individual validation layer results should be preserved")
-def check_individual_results(_validation_framework: dict[str, Any]) -> None:
+def check_individual_results(validation_framework: dict[str, Any]) -> None:
     """Verify individual results."""
     pass
 
 
 @then("result serialization should support reporting and analysis")
-def check_result_serialization(_validation_framework: dict[str, Any]) -> None:
+def check_result_serialization(validation_framework: dict[str, Any]) -> None:
     """Verify result serialization."""
     pass

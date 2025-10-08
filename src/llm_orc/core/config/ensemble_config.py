@@ -126,6 +126,8 @@ class EnsembleConfig:
     default_task: str | None = None
     task: str | None = None  # Backward compatibility
     relative_path: str | None = None  # For hierarchical display
+    validation: dict[str, Any] | None = None  # Validation configuration
+    test_mode: dict[str, Any] | None = None  # Test mode configuration
 
 
 class EnsembleLoader:
@@ -149,6 +151,8 @@ class EnsembleLoader:
             agents=data["agents"],
             default_task=default_task,
             task=data.get("task"),  # Keep for backward compatibility
+            validation=data.get("validation"),
+            test_mode=data.get("test_mode"),
         )
 
         # Validate agent dependencies
