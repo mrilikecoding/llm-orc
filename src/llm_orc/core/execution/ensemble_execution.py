@@ -25,6 +25,11 @@ from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHand
 from llm_orc.core.execution.streaming_progress_tracker import StreamingProgressTracker
 from llm_orc.core.execution.usage_collector import UsageCollector
 from llm_orc.core.models.model_factory import ModelFactory
+from llm_orc.core.validation import (
+    EnsembleExecutionResult,
+    ValidationConfig,
+    ValidationEvaluator,
+)
 from llm_orc.models.base import ModelInterface
 
 
@@ -631,6 +636,13 @@ class EnsembleExecutor:
             result, agent_usage, has_errors, start_time, adaptive_stats
         )
 
+        # Run validation if config is present
+        if config.validation is not None:
+            validation_result = await self._run_validation(
+                config, final_result, start_time
+            )
+            final_result["validation_result"] = validation_result
+
         # Save artifacts (don't fail execution if saving fails)
         try:
             self._artifact_manager.save_execution_results(
@@ -641,6 +653,56 @@ class EnsembleExecutor:
             pass
 
         return final_result
+
+    async def _run_validation(
+        self, config: EnsembleConfig, result: dict[str, Any], start_time: float
+    ) -> Any:
+        """Run validation on execution results.
+
+        Args:
+            config: Ensemble configuration
+            result: Execution results
+            start_time: Execution start time
+
+        Returns:
+            ValidationResult object
+        """
+        from datetime import datetime
+
+        # Parse validation config (mypy needs explicit type annotation)
+        validation_dict: dict[str, Any] = config.validation or {}
+        validation_config = ValidationConfig(**validation_dict)
+
+        # Convert execution results to EnsembleExecutionResult format
+        execution_order = [
+            agent["name"]
+            for agent in config.agents
+            if agent["name"] in result["results"]
+        ]
+
+        # Convert agent outputs, handling both dict and string responses
+        agent_outputs = {}
+        for agent_name, agent_result in result["results"].items():
+            response = agent_result.get("response", {})
+            # If response is a string, wrap it in a dict
+            if isinstance(response, str):
+                agent_outputs[agent_name] = {"output": response}
+            else:
+                agent_outputs[agent_name] = response
+
+        execution_time = time.time() - start_time
+
+        ensemble_result = EnsembleExecutionResult(
+            ensemble_name=config.name,
+            execution_order=execution_order,
+            agent_outputs=agent_outputs,
+            execution_time=execution_time,
+            timestamp=datetime.now(),
+        )
+
+        # Run validation
+        evaluator = ValidationEvaluator()
+        return await evaluator.evaluate(config.name, ensemble_result, validation_config)
 
     async def _execute_agent(
         self, agent_config: dict[str, Any], input_data: str

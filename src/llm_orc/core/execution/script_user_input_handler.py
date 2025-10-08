@@ -4,21 +4,37 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from llm_orc.core.communication.protocol import MessageProtocol
+from llm_orc.core.validation import LLMResponseGenerator
 from llm_orc.visualization.events import EventFactory
 
 
 class ScriptUserInputHandler:
-    """Handles detection and management of script user input requirements."""
+    """Handles detection and management of script user input requirements.
+
+    Supports two modes:
+    - Interactive mode (test_mode=False): Uses real stdin for user input
+    - Test mode (test_mode=True): Uses LLM simulation for automated testing
+    """
 
     def __init__(
-        self, event_emitter: Callable[[Any], Coroutine[Any, Any, None]] | None = None
+        self,
+        event_emitter: Callable[[Any], Coroutine[Any, Any, None]] | None = None,
+        test_mode: bool = False,
+        llm_config: dict[str, Any] | None = None,
     ) -> None:
-        """Initialize the handler with optional event emitter.
+        """Initialize the handler with optional event emitter and test mode.
 
         Args:
             event_emitter: Optional async function to emit events
+            test_mode: If True, use LLM simulation for user input
+            llm_config: LLM simulation configuration per agent
         """
         self.event_emitter = event_emitter
+        self.test_mode = test_mode
+        self.llm_simulators: dict[str, LLMResponseGenerator] = {}
+
+        if test_mode and llm_config:
+            self._initialize_simulators(llm_config)
 
     def requires_user_input(self, script_ref_or_content: str) -> bool:
         """Check if a script reference or content requires user input.
@@ -65,6 +81,56 @@ class ScriptUserInputHandler:
                 return True
 
         return False
+
+    def _initialize_simulators(self, llm_config: dict[str, Any]) -> None:
+        """Initialize LLM simulators from configuration.
+
+        Args:
+            llm_config: Dictionary mapping agent names to LLM configs
+        """
+        for agent_name, agent_llm_config in llm_config.items():
+            model = agent_llm_config.get("model", "qwen3:0.6b")
+            persona = agent_llm_config.get("persona", "helpful_user")
+            cached_responses = agent_llm_config.get("cached_responses", {})
+
+            self.llm_simulators[agent_name] = LLMResponseGenerator(
+                model=model,
+                persona=persona,
+                response_cache=cached_responses,
+            )
+
+    async def get_user_input(
+        self, agent_name: str, prompt: str, context: dict[str, Any]
+    ) -> str:
+        """Get user input - either from LLM simulation or real stdin.
+
+        Args:
+            agent_name: Name of the agent requesting input
+            prompt: Prompt to display to user
+            context: Execution context for LLM simulation
+
+        Returns:
+            User input as string
+
+        Raises:
+            RuntimeError: If test mode enabled but no simulator configured
+            NotImplementedError: If interactive mode (not implemented in this method)
+        """
+        if self.test_mode:
+            # Test mode - use LLM simulation
+            if agent_name not in self.llm_simulators:
+                raise RuntimeError(
+                    f"No LLM simulator configured for agent: {agent_name}"
+                )
+
+            simulator = self.llm_simulators[agent_name]
+            return await simulator.generate_response(prompt, context)
+
+        # Interactive mode - use real stdin
+        # This is not implemented here as it requires proper terminal handling
+        raise NotImplementedError(
+            "Interactive mode should use handle_input_request method"
+        )
 
     async def handle_input_request(
         self,

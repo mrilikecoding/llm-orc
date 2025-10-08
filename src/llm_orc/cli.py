@@ -7,6 +7,9 @@ from llm_orc.cli_commands import (
     list_ensembles_command,
     list_profiles_command,
     serve_ensemble,
+    validate_all_ensembles,
+    validate_ensemble,
+    validate_ensemble_category,
 )
 from llm_orc.cli_completion import (
     complete_ensemble_names,
@@ -282,6 +285,12 @@ def artifacts() -> None:
     pass
 
 
+@cli.group()
+def validate() -> None:
+    """Validation commands for testing ensembles."""
+    pass
+
+
 @scripts.command("list")
 @click.option(
     "--format",
@@ -346,6 +355,38 @@ def artifacts_show(name: str, format_type: str, execution: str | None) -> None:
     from llm_orc.cli_commands import artifacts_show_command
 
     artifacts_show_command(name, format_type, execution)
+
+
+@validate.command()
+@click.argument("ensemble_name", shell_complete=complete_ensemble_names)
+@click.option("--verbose", is_flag=True, help="Show detailed validation output")
+@click.option(
+    "--config-dir",
+    default=None,
+    help="Directory containing ensemble configurations",
+)
+def run(ensemble_name: str, verbose: bool, config_dir: str | None) -> None:
+    """Validate a single ensemble."""
+    validate_ensemble(ensemble_name, verbose, config_dir)
+
+
+@validate.command()
+@click.option(
+    "--category",
+    required=True,
+    help="Validation category (primitive, integration, etc.)",
+)
+@click.option("--verbose", is_flag=True, help="Show detailed validation output")
+def category(category: str, verbose: bool) -> None:
+    """Validate ensembles by category."""
+    validate_ensemble_category(category, verbose)
+
+
+@validate.command("all")
+@click.option("--verbose", is_flag=True, help="Show detailed validation output")
+def validate_all_command(verbose: bool) -> None:
+    """Validate all validation ensembles."""
+    validate_all_ensembles(verbose)
 
 
 @library.command()

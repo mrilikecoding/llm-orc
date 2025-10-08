@@ -2240,3 +2240,138 @@ class TestEnsembleExecutor:
 
         # Verify artifacts were saved (mocked)
         # The real implementation should handle save errors gracefully
+
+    @pytest.mark.asyncio
+    async def test_execute_with_validation_config(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Test that ensemble execution runs validation when config is present.
+
+        RED Phase: This test should fail until validation integration is implemented.
+        """
+        from unittest.mock import AsyncMock, Mock, patch
+
+        from llm_orc.core.validation import ValidationResult
+
+        # Create ensemble config with validation
+        config = EnsembleConfig(
+            name="validation_test",
+            description="Test validation integration",
+            agents=[
+                {"name": "agent1", "model_profile": "test-tester"},
+            ],
+            validation={
+                "structural": {
+                    "required_agents": ["agent1"],
+                    "max_execution_time": 30.0,
+                }
+            },
+        )
+
+        # Create mock model
+        mock_model = AsyncMock(spec=ModelInterface)
+        mock_model.generate_response.return_value = "Test response"
+        mock_model.get_last_usage.return_value = {
+            "total_tokens": 30,
+            "input_tokens": 20,
+            "output_tokens": 10,
+            "cost_usd": 0.005,
+            "duration_ms": 50,
+        }
+
+        role = RoleDefinition(name="tester", prompt="You are a tester")
+        executor = mock_ensemble_executor
+
+        # Mock validation evaluator
+        mock_validation_result = Mock(spec=ValidationResult)
+        mock_validation_result.passed = True
+        mock_validation_result.ensemble_name = "validation_test"
+
+        with (
+            patch.object(
+                executor, "_load_role_from_config", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
+            ) as mock_load_model,
+            patch.object(
+                executor, "_run_validation", new_callable=AsyncMock
+            ) as mock_run_validation,
+        ):
+            mock_load_role.return_value = role
+            mock_load_model.return_value = mock_model
+            mock_run_validation.return_value = mock_validation_result
+
+            # Execute ensemble
+            result = await executor.execute(config, input_data="Test validation")
+
+        # Verify result structure includes validation
+        assert result["ensemble"] == "validation_test"
+        assert result["status"] == "completed"
+        assert "validation_result" in result
+        assert result["validation_result"] is not None
+
+        # Verify validation was executed
+        validation_result = result["validation_result"]
+        assert validation_result.passed is True
+        assert validation_result.ensemble_name == "validation_test"
+
+    @pytest.mark.asyncio
+    async def test_execute_without_validation_config(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Test that ensemble execution skips validation when no config present.
+
+        This ensures backward compatibility.
+        """
+        from unittest.mock import AsyncMock
+
+        # Create ensemble config WITHOUT validation
+        config = EnsembleConfig(
+            name="no_validation_test",
+            description="Test without validation",
+            agents=[
+                {"name": "agent1", "model_profile": "test-tester"},
+            ],
+        )
+
+        # Create mock model
+        mock_model = AsyncMock(spec=ModelInterface)
+        mock_model.generate_response.return_value = "Test response"
+        mock_model.get_last_usage.return_value = {
+            "total_tokens": 30,
+            "input_tokens": 20,
+            "output_tokens": 10,
+            "cost_usd": 0.005,
+            "duration_ms": 50,
+        }
+
+        role = RoleDefinition(name="tester", prompt="You are a tester")
+        executor = mock_ensemble_executor
+
+        with (
+            patch.object(
+                executor, "_load_role_from_config", new_callable=AsyncMock
+            ) as mock_load_role,
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
+            ) as mock_load_model,
+        ):
+            mock_load_role.return_value = role
+            mock_load_model.return_value = mock_model
+
+            # Execute ensemble
+            result = await executor.execute(
+                config, input_data="Test without validation"
+            )
+
+        # Verify result structure does NOT include validation
+        assert result["ensemble"] == "no_validation_test"
+        assert result["status"] == "completed"
+        assert (
+            "validation_result" not in result or result.get("validation_result") is None
+        )
