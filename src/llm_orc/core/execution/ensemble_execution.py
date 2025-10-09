@@ -316,6 +316,13 @@ class EnsembleExecutor:
                 self._ensemble_metadata["processed_agent_requests"]
             )
 
+        # Add execution order for validation
+        final_result["execution_order"] = [
+            agent["name"]
+            for agent in config.agents
+            if agent["name"] in final_result["results"]
+        ]
+
         # Complete ensemble execution with progress controller
         if self._progress_controller:
             await self._progress_controller.complete_ensemble()
@@ -684,9 +691,15 @@ class EnsembleExecutor:
         agent_outputs = {}
         for agent_name, agent_result in result["results"].items():
             response = agent_result.get("response", {})
-            # If response is a string, wrap it in a dict
+            # If response is a string, try to parse as JSON first
             if isinstance(response, str):
-                agent_outputs[agent_name] = {"output": response}
+                try:
+                    import json as json_module
+
+                    agent_outputs[agent_name] = json_module.loads(response)
+                except (json_module.JSONDecodeError, ValueError):
+                    # Not JSON, wrap in dict
+                    agent_outputs[agent_name] = {"output": response}
             else:
                 agent_outputs[agent_name] = response
 

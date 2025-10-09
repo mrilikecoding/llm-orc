@@ -15,5 +15,6 @@
       "Bash(cat:*)"
     ],
     "deny": []
-  }
+  },
+  "disableAllHooks": false
 }

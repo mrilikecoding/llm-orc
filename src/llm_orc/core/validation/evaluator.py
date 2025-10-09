@@ -191,6 +191,7 @@ class ValidationEvaluator:
         execution_context = {
             "execution_order": results.execution_order,
             "agent_outputs": results.agent_outputs,
+            "results": results.agent_outputs,  # Alias for backward compatibility
             "execution_time": results.execution_time,
             "ensemble_name": results.ensemble_name,
             "Path": Path,

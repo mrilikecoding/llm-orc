@@ -77,6 +77,7 @@ class ScriptResolver:
         if library_base.exists():
             search_paths.extend(
                 [
+                    str(library_base / self.SCRIPTS_DIR),
                     str(library_base / self.PRIMITIVES_DIR / "python"),
                     str(library_base / self.PRIMITIVES_DIR),
                     str(library_base),

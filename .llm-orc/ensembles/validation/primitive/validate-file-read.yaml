@@ -1,0 +1,31 @@
+name: validate-file-read
+description: Primitive validation for file read script agent
+
+agents:
+  - name: read-test-file
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: "llm-orchestra-library/ensembles/validation/primitive/test-data.json"
+
+validation:
+  structural:
+    required_agents: [read-test-file]
+    max_execution_time: 10
+    min_execution_time: 0.01
+
+  schema:
+    - agent: read-test-file
+      required_fields: [success, content, path, size]
+
+  behavioral:
+    - name: success-flag-true
+      description: "Read operation should succeed"
+      assertion: "results['read-test-file']['success'] == True"
+
+    - name: content-not-empty
+      description: "File content should not be empty"
+      assertion: "results['read-test-file']['content'] is not None and len(results['read-test-file']['content']) > 0"
+
+    - name: contains-test-data
+      description: "File should contain expected test data"
+      assertion: "'test' in results['read-test-file']['content']"

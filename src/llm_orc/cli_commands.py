@@ -709,11 +709,33 @@ def validate_ensemble(
         )
 
         # Convert result dict to EnsembleExecutionResult
+        # Extract execution time from metadata
+        metadata = result_dict.get("metadata", {})
+        execution_time = metadata.get("completed_at", 0.0) - metadata.get(
+            "started_at", 0.0
+        )
+
+        # Convert agent outputs, parsing JSON responses
+        agent_outputs = {}
+        for agent_name, agent_result in result_dict.get("results", {}).items():
+            response = agent_result.get("response", {})
+            # If response is a string, try to parse as JSON first
+            if isinstance(response, str):
+                try:
+                    import json
+
+                    agent_outputs[agent_name] = json.loads(response)
+                except (json.JSONDecodeError, ValueError):
+                    # Not JSON, wrap in dict
+                    agent_outputs[agent_name] = {"output": response}
+            else:
+                agent_outputs[agent_name] = response
+
         execution_result = EnsembleExecutionResult(
             ensemble_name=result_dict.get("ensemble_name", ensemble_name),
             execution_order=result_dict.get("execution_order", []),
-            agent_outputs=result_dict.get("results", {}),
-            execution_time=result_dict.get("total_duration", 0.0),
+            agent_outputs=agent_outputs,
+            execution_time=execution_time,
         )
 
         # Parse validation config from dict to ValidationConfig
