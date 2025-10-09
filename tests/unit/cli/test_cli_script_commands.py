@@ -23,30 +23,30 @@ class TestScriptCommands:
         """Test basic scripts list command."""
         runner = CliRunner()
 
-        mock_resolver = Mock()
-        mock_resolver.list_available_scripts.return_value = [
+        mock_registry = Mock()
+        mock_registry.discover_primitives.return_value = [
             {
                 "name": "test-script.py",
-                "display_name": "test-script.py",
+                "category": "test",
                 "path": "/path/to/test-script.py",
-                "relative_path": None,
+                "description": "Test script",
             },
             {
                 "name": "analyze.sh",
-                "display_name": "analyze.sh",
+                "category": "analysis",
                 "path": "/path/to/analyze.sh",
-                "relative_path": None,
+                "description": "Analysis script",
             },
         ]
 
         with patch(
-            "llm_orc.core.execution.script_resolver.ScriptResolver",
-            return_value=mock_resolver,
+            "llm_orc.cli_modules.commands.script_commands.PrimitiveRegistry",
+            return_value=mock_registry,
         ):
             result = runner.invoke(cli, ["scripts", "list"])
 
             assert result.exit_code == 0
-            assert "Available scripts:" in result.output
+            assert "Available Scripts:" in result.output
             assert "test-script.py" in result.output
             assert "analyze.sh" in result.output
 
@@ -54,14 +54,18 @@ class TestScriptCommands:
         """Test scripts list command with JSON output."""
         runner = CliRunner()
 
-        mock_resolver = Mock()
-        mock_resolver.list_available_scripts.return_value = [
-            {"name": "test-script.py", "path": "/path/to/test-script.py"},
+        mock_registry = Mock()
+        mock_registry.discover_primitives.return_value = [
+            {
+                "name": "test-script.py",
+                "path": "/path/to/test-script.py",
+                "category": "test",
+            },
         ]
 
         with patch(
-            "llm_orc.core.execution.script_resolver.ScriptResolver",
-            return_value=mock_resolver,
+            "llm_orc.cli_modules.commands.script_commands.PrimitiveRegistry",
+            return_value=mock_registry,
         ):
             result = runner.invoke(cli, ["scripts", "list", "--format", "json"])
 
@@ -74,17 +78,17 @@ class TestScriptCommands:
         """Test scripts list command when no scripts available."""
         runner = CliRunner()
 
-        mock_resolver = Mock()
-        mock_resolver.list_available_scripts.return_value = []
+        mock_registry = Mock()
+        mock_registry.discover_primitives.return_value = []
 
         with patch(
-            "llm_orc.core.execution.script_resolver.ScriptResolver",
-            return_value=mock_resolver,
+            "llm_orc.cli_modules.commands.script_commands.PrimitiveRegistry",
+            return_value=mock_registry,
         ):
             result = runner.invoke(cli, ["scripts", "list"])
 
             assert result.exit_code == 0
-            assert "No scripts found in .llm-orc/scripts/" in result.output
+            assert "No scripts found" in result.output
 
     def test_scripts_show_command_basic(self) -> None:
         """Test basic scripts show command."""
@@ -93,23 +97,25 @@ class TestScriptCommands:
         script_info = {
             "name": "test-script.py",
             "path": "/path/to/test-script.py",
+            "category": "test",
             "description": "A test script",
-            "parameters": ["input", "output"],
+            "parameters": {"input": "str", "output": "str"},
         }
 
-        mock_resolver = Mock()
-        mock_resolver.get_script_info.return_value = script_info
+        mock_registry = Mock()
+        mock_registry.get_primitive_info.return_value = script_info
 
         with patch(
-            "llm_orc.core.execution.script_resolver.ScriptResolver",
-            return_value=mock_resolver,
+            "llm_orc.cli_modules.commands.script_commands.PrimitiveRegistry",
+            return_value=mock_registry,
         ):
             result = runner.invoke(cli, ["scripts", "show", "test-script.py"])
 
             assert result.exit_code == 0
             assert "Script: test-script.py" in result.output
             assert "Description: A test script" in result.output
-            assert "Parameters: input, output" in result.output
+            assert "input: str" in result.output
+            assert "output: str" in result.output
 
     def test_scripts_show_command_script_not_found(self) -> None:
         """Test scripts show command when script not found."""
