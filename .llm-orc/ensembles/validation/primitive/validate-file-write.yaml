@@ -1,0 +1,37 @@
+name: validate-file-write
+description: Primitive validation for file write script agent
+
+agents:
+  - name: write-test-file
+    script: primitives/file-ops/write_file.py
+    parameters:
+      path: ".llm-orc/artifacts/validation/test-output.txt"
+      content: "Validation test content\nLine 2\nLine 3"
+      encoding: "utf-8"
+
+validation:
+  structural:
+    required_agents: [write-test-file]
+    max_execution_time: 10
+    min_execution_time: 0.01
+
+  schema:
+    - agent: write-test-file
+      required_fields: [success, path, size, bytes_written]
+
+  behavioral:
+    - name: success-flag-true
+      description: "Write operation should succeed"
+      assertion: "results['write-test-file']['success'] == True"
+
+    - name: path-matches
+      description: "Output path should match configured path"
+      assertion: "results['write-test-file']['path'] == '.llm-orc/artifacts/validation/test-output.txt'"
+
+    - name: size-is-positive
+      description: "Written size should be positive"
+      assertion: "results['write-test-file']['size'] > 0"
+
+    - name: bytes-written-matches-size
+      description: "Bytes written should match content size"
+      assertion: "results['write-test-file']['bytes_written'] > 0"
