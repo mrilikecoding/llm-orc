@@ -18,7 +18,7 @@ class PrimitiveRegistry:
         self._primitive_cache: dict[str, dict[str, Any]] = {}
 
     def discover_primitives(self) -> list[dict[str, Any]]:
-        """Discover available primitive scripts in .llm-orc/scripts/primitives.
+        """Discover available primitive scripts in library and local directories.
 
         Returns:
             List of primitive metadata dictionaries
@@ -27,24 +27,67 @@ class PrimitiveRegistry:
         if cache_key in self._cache:
             return self._cache[cache_key]
 
-        primitives = []
         cwd = Path.cwd()
-        primitives_dir = cwd / ".llm-orc" / "scripts" / "primitives"
+        search_paths = [
+            cwd / ".llm-orc" / "scripts" / "primitives",
+            cwd / "llm-orchestra-library" / "scripts" / "primitives",
+        ]
 
-        if primitives_dir.exists():
-            # Find all Python script files in primitives directory
-            for script_file in primitives_dir.glob("*.py"):
-                primitive_info = {
-                    "name": script_file.name,
+        primitives = []
+        seen_names: set[str] = set()
+
+        for base_path in search_paths:
+            if base_path.exists():
+                primitives.extend(
+                    self._scan_primitives_directory(base_path, cwd, seen_names)
+                )
+
+        self._cache[cache_key] = primitives
+        return primitives
+
+    def _scan_primitives_directory(
+        self, base_path: Path, cwd: Path, seen_names: set[str]
+    ) -> list[dict[str, Any]]:
+        """Scan a directory for primitive scripts.
+
+        Args:
+            base_path: Base path to scan
+            cwd: Current working directory
+            seen_names: Set of already-seen script names
+
+        Returns:
+            List of primitive metadata dictionaries
+        """
+        primitives = []
+
+        for script_file in base_path.rglob("*.py"):
+            if script_file.name == "__init__.py":
+                continue
+
+            try:
+                relative_name = str(script_file.relative_to(base_path))
+            except ValueError:
+                continue
+
+            if relative_name in seen_names:
+                continue
+
+            seen_names.add(relative_name)
+
+            parts = script_file.relative_to(base_path).parts
+            category = parts[0] if len(parts) > 1 else "uncategorized"
+
+            primitives.append(
+                {
+                    "name": relative_name,
+                    "category": category,
                     "path": str(script_file),
                     "relative_path": str(script_file.relative_to(cwd)),
                     "type": "primitive",
                     "executable": script_file.stat().st_mode & 0o111 != 0,
                 }
-                primitives.append(primitive_info)
+            )
 
-        # Cache the results
-        self._cache[cache_key] = primitives
         return primitives
 
     def get_primitive_info(self, primitive_name: str) -> dict[str, Any]:
