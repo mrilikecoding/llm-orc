@@ -516,27 +516,35 @@ LLM Orchestra follows a configuration hierarchy:
 
 ### Library Path Configuration
 
-Control where `llm-orc init` finds primitive scripts using environment variables:
+Control where `llm-orc init` finds primitive scripts using environment variables or project-specific configuration:
 
 ```bash
-# Option 1: Custom library location (for your own script repos)
+# Option 1: Custom library location via environment variable
 export LLM_ORC_LIBRARY_PATH="/path/to/your/custom-library"
 llm-orc init
 
-# Option 2: Use local submodule (development default)
+# Option 2: Project-specific configuration via .llm-orc/.env
+mkdir -p .llm-orc
+echo 'LLM_ORC_LIBRARY_PATH=/path/to/your/custom-library' > .llm-orc/.env
+llm-orc init
+
+# Option 3: Use local submodule (development default)
 export LLM_ORC_LIBRARY_SOURCE=local
 llm-orc init
 
-# Option 3: Auto-detect library in current directory (no env vars needed)
+# Option 4: Auto-detect library in current directory (no configuration needed)
 # Looks for: ./llm-orchestra-library/scripts/primitives/
 llm-orc init
 ```
 
 **Priority order:**
-1. `LLM_ORC_LIBRARY_PATH` - Explicit custom location
-2. `LLM_ORC_LIBRARY_SOURCE=local` - Package submodule
-3. `./llm-orchestra-library/` - Current working directory
-4. No scripts installed (graceful fallback)
+1. `LLM_ORC_LIBRARY_PATH` environment variable - Explicit custom location (highest priority)
+2. `.llm-orc/.env` file - Project-specific configuration
+3. `LLM_ORC_LIBRARY_SOURCE=local` - Package submodule
+4. `./llm-orchestra-library/` - Current working directory auto-detection
+5. No scripts installed (graceful fallback)
+
+**Note**: Environment variables always take precedence over `.env` file settings, allowing temporary overrides without modifying project files.
 
 This allows developers to maintain their own script libraries while still using llm-orc's orchestration features.
 

@@ -1257,3 +1257,57 @@ class TestLibraryPathDiscovery:
 
         # Then - should return None
         assert result is None
+
+    def test_get_library_scripts_path_from_dotenv(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test library path discovery from .llm-orc/.env file."""
+        # Given - .env file in .llm-orc directory
+        monkeypatch.chdir(tmp_path)
+
+        llm_orc_dir = tmp_path / ".llm-orc"
+        llm_orc_dir.mkdir()
+
+        custom_lib = tmp_path / "my-env-library"
+        scripts_dir = custom_lib / "scripts" / "primitives"
+        scripts_dir.mkdir(parents=True)
+
+        # Create .env file with library path
+        env_file = llm_orc_dir / ".env"
+        env_file.write_text(f"LLM_ORC_LIBRARY_PATH={custom_lib}\n")
+
+        # When - no environment variables set (should load from .env)
+        with patch.dict("os.environ", {}, clear=True):
+            result = ConfigCommands._get_library_scripts_path()
+
+        # Then - should find library from .env
+        assert result == scripts_dir
+
+    def test_get_library_scripts_path_env_var_overrides_dotenv(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test that environment variable takes priority over .env file."""
+        # Given - both .env file and environment variable
+        monkeypatch.chdir(tmp_path)
+
+        llm_orc_dir = tmp_path / ".llm-orc"
+        llm_orc_dir.mkdir()
+
+        env_lib = tmp_path / "env-library"
+        env_scripts = env_lib / "scripts" / "primitives"
+        env_scripts.mkdir(parents=True)
+
+        dotenv_lib = tmp_path / "dotenv-library"
+        dotenv_scripts = dotenv_lib / "scripts" / "primitives"
+        dotenv_scripts.mkdir(parents=True)
+
+        # Create .env file
+        env_file = llm_orc_dir / ".env"
+        env_file.write_text(f"LLM_ORC_LIBRARY_PATH={dotenv_lib}\n")
+
+        # When - environment variable is set (should override .env)
+        with patch.dict("os.environ", {"LLM_ORC_LIBRARY_PATH": str(env_lib)}):
+            result = ConfigCommands._get_library_scripts_path()
+
+        # Then - should use environment variable, not .env
+        assert result == env_scripts

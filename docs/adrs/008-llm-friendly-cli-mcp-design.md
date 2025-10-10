@@ -349,9 +349,16 @@ def _get_library_scripts_path() -> Path | None:
 
     Priority order:
     1. LLM_ORC_LIBRARY_PATH env var (custom location)
-    2. LLM_ORC_LIBRARY_SOURCE=local (submodule)
-    3. Current working directory (llm-orchestra-library/)
+    2. .llm-orc/.env file (project-specific config)
+    3. LLM_ORC_LIBRARY_SOURCE=local (submodule)
+    4. Current working directory (llm-orchestra-library/)
     """
+    # Load .llm-orc/.env if it exists (but don't override existing env vars)
+    dotenv_path = Path.cwd() / ".llm-orc" / ".env"
+    if dotenv_path.exists():
+        from dotenv import load_dotenv
+        load_dotenv(dotenv_path, override=False)
+
     # Check for custom library path
     custom_path = os.environ.get("LLM_ORC_LIBRARY_PATH")
     if custom_path:
@@ -402,10 +409,13 @@ def copy_library_primitives_to_local():
     return script_count
 ```
 
-**Environment variable support:**
-- `LLM_ORC_LIBRARY_PATH`: Point to custom library location (for users with their own repos)
+**Configuration options:**
+- `LLM_ORC_LIBRARY_PATH` env var: Point to custom library location (for users with their own repos)
+- `.llm-orc/.env` file: Project-specific configuration (environment variables override this)
 - `LLM_ORC_LIBRARY_SOURCE=local`: Use package submodule (development default)
 - Auto-detect: Looks for `llm-orchestra-library/` in current directory
+
+**Priority**: Environment variables always take precedence over `.env` file settings, allowing temporary overrides without modifying project files.
 
 ### Phase 5: MCP Tool Definitions
 
