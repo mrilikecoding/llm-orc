@@ -1197,3 +1197,63 @@ class TestConfigCommandsCLI:
 
             assert result.exit_code == 0
             mock_reset.assert_called_once_with(True, True, "test")
+
+
+class TestLibraryPathDiscovery:
+    """Test library path discovery with environment variables."""
+
+    def test_get_library_scripts_path_with_custom_env(self, tmp_path: Path) -> None:
+        """Test library path discovery with LLM_ORC_LIBRARY_PATH env var."""
+        # Given - custom library location
+        custom_lib = tmp_path / "my-custom-library"
+        scripts_dir = custom_lib / "scripts" / "primitives"
+        scripts_dir.mkdir(parents=True)
+
+        # When - set environment variable
+        with patch.dict("os.environ", {"LLM_ORC_LIBRARY_PATH": str(custom_lib)}):
+            result = ConfigCommands._get_library_scripts_path()
+
+        # Then - should find custom location
+        assert result == scripts_dir
+
+    def test_get_library_scripts_path_custom_not_found(self, tmp_path: Path) -> None:
+        """Test library path returns None when custom path doesn't exist."""
+        # Given - non-existent custom library
+        nonexistent = tmp_path / "does-not-exist"
+
+        # When - set environment variable to non-existent path
+        with patch.dict("os.environ", {"LLM_ORC_LIBRARY_PATH": str(nonexistent)}):
+            result = ConfigCommands._get_library_scripts_path()
+
+        # Then - should return None
+        assert result is None
+
+    def test_get_library_scripts_path_falls_back_to_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test library path falls back to cwd/llm-orchestra-library."""
+        # Given - library in current working directory
+        monkeypatch.chdir(tmp_path)
+        lib_dir = tmp_path / "llm-orchestra-library" / "scripts" / "primitives"
+        lib_dir.mkdir(parents=True)
+
+        # When - no environment variables set
+        with patch.dict("os.environ", {}, clear=True):
+            result = ConfigCommands._get_library_scripts_path()
+
+        # Then - should find cwd library
+        assert result == lib_dir
+
+    def test_get_library_scripts_path_returns_none_when_not_found(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test library path returns None when library not found anywhere."""
+        # Given - empty directory with no library
+        monkeypatch.chdir(tmp_path)
+
+        # When - no environment variables, no library in cwd
+        with patch.dict("os.environ", {}, clear=True):
+            result = ConfigCommands._get_library_scripts_path()
+
+        # Then - should return None
+        assert result is None

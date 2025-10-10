@@ -1,5 +1,6 @@
 """Configuration management CLI commands."""
 
+import os
 import shutil
 from pathlib import Path
 
@@ -255,16 +256,53 @@ class ConfigCommands:
             raise click.ClickException(str(e)) from e
 
     @staticmethod
+    def _get_library_scripts_path() -> Path | None:
+        """Get path to library scripts directory.
+
+        Supports:
+        1. LLM_ORC_LIBRARY_PATH env var (custom location)
+        2. LLM_ORC_LIBRARY_SOURCE=local (submodule)
+        3. Current working directory (llm-orchestra-library/)
+
+        Returns:
+            Path to library scripts/primitives directory, or None if not found
+        """
+        # Check for custom library path
+        custom_path = os.environ.get("LLM_ORC_LIBRARY_PATH")
+        if custom_path:
+            library_scripts = Path(custom_path) / "scripts" / "primitives"
+            if library_scripts.exists():
+                return library_scripts
+            return None
+
+        # Check for library source mode
+        library_source = os.environ.get("LLM_ORC_LIBRARY_SOURCE", "local")
+
+        if library_source == "local":
+            # Try submodule relative to package installation
+            package_root = Path(__file__).parent.parent.parent.parent
+            submodule_path = package_root / "llm-orchestra-library"
+            if submodule_path.exists():
+                return submodule_path / "scripts" / "primitives"
+
+        # Try current working directory
+        cwd_path = Path.cwd() / "llm-orchestra-library"
+        if cwd_path.exists():
+            return cwd_path / "scripts" / "primitives"
+
+        return None
+
+    @staticmethod
     def _install_library_primitives() -> int:
         """Copy primitive scripts from library to .llm-orc/scripts/.
 
         Returns:
             Number of scripts installed
         """
-        library_scripts = Path("llm-orchestra-library") / "scripts" / "primitives"
+        library_scripts = ConfigCommands._get_library_scripts_path()
         local_scripts = Path(".llm-orc") / "scripts" / "primitives"
 
-        if not library_scripts.exists():
+        if not library_scripts:
             return 0
 
         script_count = 0
