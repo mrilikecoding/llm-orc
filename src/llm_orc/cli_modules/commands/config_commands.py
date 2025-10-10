@@ -213,8 +213,13 @@ class ConfigCommands:
     """Configuration management commands."""
 
     @staticmethod
-    def init_local_config(project_name: str | None) -> None:
-        """Initialize local .llm-orc configuration for current project."""
+    def init_local_config(project_name: str | None, with_scripts: bool = True) -> None:
+        """Initialize local .llm-orc configuration for current project.
+
+        Args:
+            project_name: Optional project name (defaults to directory name)
+            with_scripts: Install primitive scripts from library (default: True)
+        """
         config_manager = ConfigurationManager()
 
         try:
@@ -225,11 +230,60 @@ class ConfigCommands:
             click.echo("  - models/      (shared model configurations)")
             click.echo("  - scripts/     (project-specific scripts)")
             click.echo("  - config.yaml  (project configuration)")
+
+            if with_scripts:
+                # Install primitive scripts from library
+                script_count = ConfigCommands._install_library_primitives()
+                if script_count > 0:
+                    click.echo(f"✓ Installed {script_count} primitive scripts")
+                    click.echo("\nReady! Try:")
+                    click.echo(
+                        "  llm-orc scripts list          # See installed primitives"
+                    )
+                    click.echo(
+                        "  llm-orc list-ensembles        # See example ensembles"
+                    )
+                else:
+                    echo_info("No library primitives found to install")
+            else:
+                echo_info("Skipped primitive script installation (--no-scripts)")
+
             echo_info(
                 "You can now create project-specific ensembles in .llm-orc/ensembles/"
             )
         except ValueError as e:
             raise click.ClickException(str(e)) from e
+
+    @staticmethod
+    def _install_library_primitives() -> int:
+        """Copy primitive scripts from library to .llm-orc/scripts/.
+
+        Returns:
+            Number of scripts installed
+        """
+        library_scripts = Path("llm-orchestra-library") / "scripts" / "primitives"
+        local_scripts = Path(".llm-orc") / "scripts" / "primitives"
+
+        if not library_scripts.exists():
+            return 0
+
+        script_count = 0
+        # Copy each category directory
+        for category_dir in library_scripts.iterdir():
+            if category_dir.is_dir() and category_dir.name != "__pycache__":
+                dest = local_scripts / category_dir.name
+                dest.mkdir(parents=True, exist_ok=True)
+
+                # Copy all Python scripts in the category
+                for script in category_dir.glob("*.py"):
+                    if script.name != "__init__.py":
+                        dest_script = dest / script.name
+                        shutil.copy2(script, dest_script)
+                        # Make executable
+                        dest_script.chmod(dest_script.stat().st_mode | 0o111)
+                        script_count += 1
+
+        return script_count
 
     @staticmethod
     def reset_global_config(backup: bool, preserve_auth: bool) -> None:

@@ -167,21 +167,38 @@ def list_profiles() -> None:
     list_profiles_command()
 
 
+@cli.command()
+@click.option(
+    "--project-name",
+    default=None,
+    help="Name for the project (defaults to directory name)",
+)
+@click.option(
+    "--no-scripts",
+    is_flag=True,
+    help="Skip installing primitive scripts from library",
+)
+def init(project_name: str | None, no_scripts: bool) -> None:
+    """Initialize llm-orc project with scripts and examples."""
+    init_local_config(project_name, with_scripts=not no_scripts)
+
+
 @cli.group()
 def config() -> None:
     """Configuration management commands."""
     pass
 
 
-@config.command()
+@config.command("init")
 @click.option(
     "--project-name",
     default=None,
     help="Name for the project (defaults to directory name)",
 )
-def init(project_name: str | None) -> None:
-    """Initialize local .llm-orc configuration for current project."""
-    init_local_config(project_name)
+def config_init_deprecated(project_name: str | None) -> None:
+    """(Deprecated) Initialize local config. Use 'llm-orc init' instead."""
+    click.echo("Note: 'llm-orc config init' is deprecated. Use 'llm-orc init' instead.")
+    init_local_config(project_name, with_scripts=True)
 
 
 @config.command("reset-global")

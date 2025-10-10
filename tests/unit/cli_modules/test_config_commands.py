@@ -1139,7 +1139,7 @@ class TestConfigCommandsCLI:
             )
 
             assert result.exit_code == 0
-            mock_init.assert_called_once_with("test-project")
+            mock_init.assert_called_once_with("test-project", with_scripts=True)
 
     def test_config_init_cli_error(self, runner: CliRunner) -> None:
         """Test config init CLI error handling."""
