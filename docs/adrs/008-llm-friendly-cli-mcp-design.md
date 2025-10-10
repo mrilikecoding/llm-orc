@@ -342,30 +342,70 @@ def cli():
 
 ### Phase 4: Script Installation
 
-**Implement library script copying:**
+**Implement library script copying with configurable path:**
 ```python
+def _get_library_scripts_path() -> Path | None:
+    """Get path to library scripts directory.
+
+    Priority order:
+    1. LLM_ORC_LIBRARY_PATH env var (custom location)
+    2. LLM_ORC_LIBRARY_SOURCE=local (submodule)
+    3. Current working directory (llm-orchestra-library/)
+    """
+    # Check for custom library path
+    custom_path = os.environ.get("LLM_ORC_LIBRARY_PATH")
+    if custom_path:
+        library_scripts = Path(custom_path) / "scripts" / "primitives"
+        if library_scripts.exists():
+            return library_scripts
+        return None
+
+    # Check for library source mode
+    library_source = os.environ.get("LLM_ORC_LIBRARY_SOURCE", "local")
+    if library_source == "local":
+        package_root = Path(__file__).parent.parent.parent.parent
+        submodule_path = package_root / "llm-orchestra-library"
+        if submodule_path.exists():
+            return submodule_path / "scripts" / "primitives"
+
+    # Try current working directory
+    cwd_path = Path.cwd() / "llm-orchestra-library"
+    if cwd_path.exists():
+        return cwd_path / "scripts" / "primitives"
+
+    return None
+
 def copy_library_primitives_to_local():
     """Copy primitive scripts from library to .llm-orc/scripts/."""
-    library_scripts = Path(__file__).parent.parent / "llm-orchestra-library" / "scripts" / "primitives"
+    library_scripts = _get_library_scripts_path()
     local_scripts = Path(".llm-orc/scripts/primitives")
 
-    if not library_scripts.exists():
-        echo_warning("Library scripts not found. Using git submodule?")
-        return
+    if not library_scripts:
+        return 0
 
+    script_count = 0
     # Copy each category
     for category_dir in library_scripts.iterdir():
-        if category_dir.is_dir():
+        if category_dir.is_dir() and category_dir.name != "__pycache__":
             dest = local_scripts / category_dir.name
-            shutil.copytree(category_dir, dest, dirs_exist_ok=True)
+            dest.mkdir(parents=True, exist_ok=True)
 
-            # Make scripts executable
-            for script in dest.glob("**/*.py"):
-                script.chmod(script.stat().st_mode | 0o111)
+            # Copy all Python scripts in the category
+            for script in category_dir.glob("*.py"):
+                if script.name != "__init__.py":
+                    dest_script = dest / script.name
+                    shutil.copy2(script, dest_script)
+                    # Make executable
+                    dest_script.chmod(dest_script.stat().st_mode | 0o111)
+                    script_count += 1
 
-    script_count = len(list(local_scripts.glob("**/*.py")))
-    echo_success(f"Installed {script_count} primitive scripts")
+    return script_count
 ```
+
+**Environment variable support:**
+- `LLM_ORC_LIBRARY_PATH`: Point to custom library location (for users with their own repos)
+- `LLM_ORC_LIBRARY_SOURCE=local`: Use package submodule (development default)
+- Auto-detect: Looks for `llm-orchestra-library/` in current directory
 
 ### Phase 5: MCP Tool Definitions
 

@@ -514,6 +514,32 @@ LLM Orchestra follows a configuration hierarchy:
 2. **Global user configuration** (`~/.config/llm-orc/`)
 3. **Command-line options** (highest priority)
 
+### Library Path Configuration
+
+Control where `llm-orc init` finds primitive scripts using environment variables:
+
+```bash
+# Option 1: Custom library location (for your own script repos)
+export LLM_ORC_LIBRARY_PATH="/path/to/your/custom-library"
+llm-orc init
+
+# Option 2: Use local submodule (development default)
+export LLM_ORC_LIBRARY_SOURCE=local
+llm-orc init
+
+# Option 3: Auto-detect library in current directory (no env vars needed)
+# Looks for: ./llm-orchestra-library/scripts/primitives/
+llm-orc init
+```
+
+**Priority order:**
+1. `LLM_ORC_LIBRARY_PATH` - Explicit custom location
+2. `LLM_ORC_LIBRARY_SOURCE=local` - Package submodule
+3. `./llm-orchestra-library/` - Current working directory
+4. No scripts installed (graceful fallback)
+
+This allows developers to maintain their own script libraries while still using llm-orc's orchestration features.
+
 ### XDG Base Directory Support
 Configurations follow the XDG Base Directory specification:
 - Global config: `~/.config/llm-orc/` (or `$XDG_CONFIG_HOME/llm-orc/`)
