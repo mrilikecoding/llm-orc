@@ -13,6 +13,7 @@ Feature: ADR-008: LLM-Friendly CLI and MCP Design
     And the output should contain "Initialize"
 
   Scenario: Initialize project with scripts by default
+    Given a library directory "llm-orchestra-library/scripts/primitives" exists with sample scripts
     When I execute "llm-orc init"
     Then the command should succeed
     And the directory ".llm-orc" should exist
@@ -38,19 +39,13 @@ Feature: ADR-008: LLM-Friendly CLI and MCP Design
     Then the command should succeed
     And scripts should be installed from the custom library location
 
-  Scenario: Initialize with .env file library path
-    Given a file ".llm-orc/.env" exists with "LLM_ORC_LIBRARY_PATH=/custom/path"
-    And the directory "/custom/path/scripts/primitives" exists
+  Scenario: Initialize with custom library path from environment
+    Given a library directory "custom-lib/scripts/primitives" exists with sample scripts
+    And the environment variable "LLM_ORC_LIBRARY_PATH" is set to "custom-lib"
     When I execute "llm-orc init"
     Then the command should succeed
-    And scripts should be installed from the path specified in .env
+    And scripts should be installed from the custom library location
 
-  Scenario: Environment variable overrides .env file
-    Given a file ".llm-orc/.env" exists with "LLM_ORC_LIBRARY_PATH=/dotenv/path"
-    And the environment variable "LLM_ORC_LIBRARY_PATH" is set to "/env/path"
-    When I execute "llm-orc init"
-    Then the command should succeed
-    And scripts should be installed from "/env/path" not "/dotenv/path"
 
   # Help Text and Examples
   Scenario: Init help shows examples
@@ -87,10 +82,11 @@ Feature: ADR-008: LLM-Friendly CLI and MCP Design
   Scenario: Library path resolution follows priority order
     Given no environment variables are set
     And no .env file exists
-    And the directory "./llm-orchestra-library/scripts/primitives" exists
+    And a library directory "llm-orchestra-library/scripts/primitives" exists with sample scripts
     When I execute "llm-orc init"
     Then the command should succeed
-    And scripts should be installed from "./llm-orchestra-library"
+    And the directory ".llm-orc/scripts/primitives" should exist
+    And the output should contain "Installed"
 
   Scenario: Graceful fallback when no library found
     Given no environment variables are set

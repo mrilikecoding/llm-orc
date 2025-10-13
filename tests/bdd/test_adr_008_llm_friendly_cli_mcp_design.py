@@ -93,16 +93,43 @@ def initialized_llm_orc(cli_context: dict[str, Any]) -> None:
 def env_var_library_path(
     cli_context: dict[str, Any], library_path: Path, var_name: str
 ) -> None:
-    """Set environment variable to library path."""
+    """Set environment variable to library path fixture."""
     os.environ[var_name] = str(library_path)
     cli_context["env_vars"][var_name] = str(library_path)
+
+
+@given(parsers.parse('the environment variable "{var_name}" is set to "{value}"'))
+def env_var_to_value(cli_context: dict[str, Any], var_name: str, value: str) -> None:
+    """Set environment variable to specific value (test-relative if needed)."""
+    # Convert test_dir-relative paths
+    if not value.startswith("/"):
+        value = str(cli_context["test_dir"] / value)
+    elif value.startswith("/"):
+        # Convert absolute-looking paths to test-relative
+        value = str(cli_context["test_dir"] / value.lstrip("/"))
+
+    os.environ[var_name] = value
+    cli_context["env_vars"][var_name] = value
 
 
 @given(parsers.parse('a file "{file_path}" exists with "{content}"'))
 def create_file_with_content(
     cli_context: dict[str, Any], file_path: str, content: str
 ) -> None:
-    """Create a file with specified content."""
+    """Create a file with specified content.
+
+    For paths in content that look absolute (e.g., /custom/path),
+    convert them to test-relative paths.
+    """
+    # Handle absolute-looking paths in content by converting to test-relative
+    if "=" in content:
+        key, value = content.split("=", 1)
+        if value.startswith("/"):
+            # Convert /custom/path to test_dir/custom/path
+            relative_value = value.lstrip("/")
+            test_value = str(cli_context["test_dir"] / relative_value)
+            content = f"{key}={test_value}"
+
     full_path = cli_context["test_dir"] / file_path
     full_path.parent.mkdir(parents=True, exist_ok=True)
     full_path.write_text(content)
@@ -110,7 +137,15 @@ def create_file_with_content(
 
 @given(parsers.parse('the directory "{dir_path}" exists'))
 def create_directory(cli_context: dict[str, Any], dir_path: str) -> None:
-    """Create a directory."""
+    """Create a directory.
+
+    For paths that look absolute (e.g., /custom/path),
+    convert them to test-relative paths.
+    """
+    # Handle absolute-looking paths by converting to test-relative
+    if dir_path.startswith("/"):
+        dir_path = dir_path.lstrip("/")
+
     full_path = cli_context["test_dir"] / dir_path
     full_path.mkdir(parents=True, exist_ok=True)
 
@@ -118,6 +153,10 @@ def create_directory(cli_context: dict[str, Any], dir_path: str) -> None:
 @given(parsers.parse('the directory "{dir_path}" does not exist'))
 def ensure_directory_not_exists(cli_context: dict[str, Any], dir_path: str) -> None:
     """Ensure directory does not exist."""
+    # Handle absolute-looking paths
+    if dir_path.startswith("/"):
+        dir_path = dir_path.lstrip("/")
+
     full_path = cli_context["test_dir"] / dir_path
     if full_path.exists():
         shutil.rmtree(full_path)
@@ -139,6 +178,25 @@ def no_env_file(cli_context: dict[str, Any]) -> None:
     env_file = cli_context["test_dir"] / ".llm-orc" / ".env"
     if env_file.exists():
         env_file.unlink()
+
+
+@given(parsers.parse('a library directory "{dir_path}" exists with sample scripts'))
+def library_directory_with_scripts(cli_context: dict[str, Any], dir_path: str) -> None:
+    """Create a library directory with sample scripts."""
+    full_path = cli_context["test_dir"] / dir_path
+
+    # Create some mock primitive categories and scripts
+    for category in ["file-ops", "data-transform", "control-flow"]:
+        category_dir = full_path / category
+        category_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create a simple mock script
+        script_file = category_dir / f"{category}_example.py"
+        script_file.write_text(
+            f'"""Mock {category} primitive script."""\n\n'
+            "def main():\n"
+            '    return "mock output"\n'
+        )
 
 
 # When steps

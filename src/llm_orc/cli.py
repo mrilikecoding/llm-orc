@@ -179,7 +179,28 @@ def list_profiles() -> None:
     help="Skip installing primitive scripts from library",
 )
 def init(project_name: str | None, no_scripts: bool) -> None:
-    """Initialize llm-orc project with scripts and examples."""
+    """Initialize llm-orc project with scripts and examples.
+
+    Creates .llm-orc/ directory with:
+      - Primitive scripts from library (file-ops, data-transform, etc.)
+      - Example ensembles demonstrating patterns
+      - Configuration templates
+
+    \b
+    Examples:
+      # Initialize with all defaults
+      llm-orc init
+
+      # Initialize without primitive scripts
+      llm-orc init --no-scripts
+
+      # Specify project name
+      llm-orc init --project-name my-ensemble-project
+
+    Ready! After init, try:
+      llm-orc scripts list          # See installed primitives
+      llm-orc list-ensembles        # See example ensembles
+    """
     init_local_config(project_name, with_scripts=not no_scripts)
 
 
