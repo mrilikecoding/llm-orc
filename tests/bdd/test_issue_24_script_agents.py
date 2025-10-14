@@ -25,8 +25,9 @@ def ensemble_configuration(bdd_context: dict[str, Any]) -> None:
 @given("a script agent discovery system")
 def script_discovery_system(bdd_context: dict[str, Any]) -> None:
     """Provide script discovery and resolution capabilities."""
-    # TODO: Implement ScriptResolver
-    bdd_context["script_resolver"] = None
+    # script_resolver is already configured in bdd_context fixture
+    # with test primitives directory
+    assert bdd_context["script_resolver"] is not None, "script_resolver not configured"
 
 
 @given("proper Pydantic schema validation")
@@ -252,9 +253,7 @@ def validate_type_preservation(bdd_context: dict[str, Any]) -> None:
 @given('a story generator script configured for "cyberpunk" theme')
 def story_generator_script(bdd_context: dict[str, Any]) -> None:
     """Provide a story generator script for testing."""
-    from llm_orc.core.execution.script_resolver import ScriptResolver
-
-    resolver = ScriptResolver()
+    resolver = bdd_context["script_resolver"]
     script_path = resolver.resolve_script_path("primitives/ai/generate_story_prompt.py")
 
     bdd_context["story_generator"] = {
