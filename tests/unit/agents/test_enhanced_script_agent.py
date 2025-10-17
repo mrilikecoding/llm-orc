@@ -409,3 +409,159 @@ print(json.dumps(result))
             assert parsed_result["type"] == "normal"
         finally:
             Path(script_path).unlink(missing_ok=True)
+
+
+class TestEnhancedScriptAgentADR001:
+    """Test ADR-001 Pydantic schema-based execution."""
+
+    async def test_execute_with_schema_success(self) -> None:
+        """Test execute_with_schema with valid input."""
+        from llm_orc.schemas.script_agent import ScriptAgentInput
+
+        # Create test script
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False
+        ) as script_file:
+            script_file.write(
+                """#!/usr/bin/env python3
+import sys
+import json
+
+data = json.loads(sys.stdin.read())
+print(json.dumps({"success": True, "data": data["input"], "error": None}))
+"""
+            )
+            script_path = script_file.name
+
+        try:
+            config = {"script": script_path}
+            agent = EnhancedScriptAgent("test_agent", config)
+
+            # Create valid input schema
+            input_schema = ScriptAgentInput(
+                agent_name="test_agent",
+                input_data="test input",
+                dependencies={},
+                context={},
+            )
+
+            # Execute with schema
+            result = await agent.execute_with_schema(input_schema)
+
+            # Verify result
+            assert result.success is True
+            assert result.data == "test input"
+            assert result.error is None
+        finally:
+            Path(script_path).unlink(missing_ok=True)
+
+    async def test_execute_with_schema_non_json_wrapped(self) -> None:
+        """Test execute_with_schema wraps non-JSON output gracefully."""
+        from llm_orc.schemas.script_agent import ScriptAgentInput
+
+        # Create script that outputs non-JSON
+        # EnhancedScriptAgent wraps this in {"success": True, "output": "..."}
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False
+        ) as script_file:
+            script_file.write(
+                """#!/usr/bin/env python3
+print("This is not JSON")
+"""
+            )
+            script_path = script_file.name
+
+        try:
+            config = {"script": script_path}
+            agent = EnhancedScriptAgent("test_agent", config)
+
+            input_schema = ScriptAgentInput(
+                agent_name="test_agent",
+                input_data="test",
+                dependencies={},
+                context={},
+            )
+
+            # Execute wraps non-JSON output in success response
+            result = await agent.execute_with_schema(input_schema)
+
+            # Should succeed but data contains the wrapped output
+            assert result.success is True
+        finally:
+            Path(script_path).unlink(missing_ok=True)
+
+    async def test_execute_with_schema_execution_error(self) -> None:
+        """Test execute_with_schema handles execution errors."""
+        from llm_orc.schemas.script_agent import ScriptAgentInput
+
+        # Script that doesn't exist
+        config = {"script": "/nonexistent/script.py"}
+        agent = EnhancedScriptAgent("test_agent", config)
+
+        input_schema = ScriptAgentInput(
+            agent_name="test_agent",
+            input_data="test",
+            dependencies={},
+            context={},
+        )
+
+        # Execute should handle execution error gracefully
+        result = await agent.execute_with_schema(input_schema)
+
+        assert result.success is False
+        assert result.error is not None
+
+    async def test_execute_with_schema_json_success(self) -> None:
+        """Test execute_with_schema_json with valid input."""
+        # Create test script
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False
+        ) as script_file:
+            script_file.write(
+                """#!/usr/bin/env python3
+import os
+import json
+
+input_data = json.loads(os.environ.get('INPUT_DATA', '{}'))
+output = {"success": True, "data": input_data.get("input_data"), "error": None}
+print(json.dumps(output))
+"""
+            )
+            script_path = script_file.name
+
+        try:
+            config = {"script": script_path}
+            agent = EnhancedScriptAgent("test_agent", config)
+
+            # Create valid ScriptAgentInput JSON
+            input_json = json.dumps(
+                {
+                    "agent_name": "test_agent",
+                    "input_data": "test input",
+                    "dependencies": {},
+                    "context": {},
+                }
+            )
+
+            # Execute with schema JSON
+            result = await agent.execute_with_schema_json(input_json)
+
+            # Parse result
+            parsed_result = json.loads(result)
+            assert parsed_result["success"] is True
+            assert parsed_result["data"] == "test input"
+        finally:
+            Path(script_path).unlink(missing_ok=True)
+
+    async def test_execute_with_schema_json_invalid_input(self) -> None:
+        """Test execute_with_schema_json with invalid input JSON."""
+        config = {"script": "nonexistent.py"}
+        agent = EnhancedScriptAgent("test_agent", config)
+
+        # Pass invalid JSON
+        result = await agent.execute_with_schema_json("not valid json")
+
+        # Should return error in ScriptAgentOutput format
+        parsed_result = json.loads(result)
+        assert parsed_result["success"] is False
+        assert "error" in parsed_result
