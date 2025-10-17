@@ -63,6 +63,11 @@ class ScriptResolver:
         cwd = Path(os.getcwd())
         search_paths = []
 
+        # Priority 0: Test primitives directory (for BDD tests)
+        test_primitives_dir = os.environ.get("LLM_ORC_TEST_PRIMITIVES_DIR")
+        if test_primitives_dir:
+            search_paths.append(test_primitives_dir)
+
         # Priority 1: Local project paths
         search_paths.extend(
             [

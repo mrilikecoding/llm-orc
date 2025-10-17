@@ -15,7 +15,7 @@ from tests.fixtures.test_primitives import TestPrimitiveFactory
 
 
 @pytest.fixture
-def test_primitives_dir(tmp_path: Path) -> Path:
+def test_primitives_dir(tmp_path: Path) -> Generator[Path, None, None]:
     """Setup test primitives directory with mock scripts."""
     primitives_dir = tmp_path / "primitives"
     primitives_dir.mkdir(parents=True, exist_ok=True)
@@ -29,7 +29,17 @@ def test_primitives_dir(tmp_path: Path) -> Path:
     _create_file_ops_primitives(primitives_dir)
     _create_network_primitives(primitives_dir)
 
-    return primitives_dir
+    # Set environment variable so all ScriptResolvers can find test primitives
+    old_env = os.environ.get("LLM_ORC_TEST_PRIMITIVES_DIR")
+    os.environ["LLM_ORC_TEST_PRIMITIVES_DIR"] = str(primitives_dir.parent)
+
+    yield primitives_dir
+
+    # Cleanup: restore environment variable
+    if old_env:
+        os.environ["LLM_ORC_TEST_PRIMITIVES_DIR"] = old_env
+    else:
+        os.environ.pop("LLM_ORC_TEST_PRIMITIVES_DIR", None)
 
 
 def _create_ai_primitives(primitives_dir: Path) -> None:
@@ -40,7 +50,9 @@ def _create_ai_primitives(primitives_dir: Path) -> None:
     # Create generate_story_prompt.py
     story_prompt_script = ai_dir / "generate_story_prompt.py"
     story_prompt_script.write_text("""#!/usr/bin/env python3
-\"\"\"Test AI primitive for story prompt generation.\"\"\"
+\"\"\"Test AI primitive for story prompt generation.
+Follows ADR-001 PromptGeneratorOutput pattern with top-level fields.
+\"\"\"
 import json
 import os
 import sys
@@ -49,15 +61,42 @@ def main():
     try:
         input_data = json.loads(os.environ.get('INPUT_DATA', '{}'))
         theme = input_data.get('theme', 'generic')
+        character_type = input_data.get('character_type', 'protagonist')
 
-        # Mock story prompt generation
+        # Generate contextual prompt with rich theming (ADR-001 compliant)
+        if theme == "cyberpunk":
+            generated_prompt = (
+                f"A cyberpunk detective story set in neo-tokyo with neon-lit "
+                f"data networks featuring a {character_type} with neural implants"
+            )
+        else:
+            generated_prompt = f"A {theme} story about a {character_type}"
+
+        # ADR-001 PromptGeneratorOutput: top-level fields
         result = {
             "success": True,
-            "data": f"A {theme} story about...",
-            "story_prompt": f"Generate a {theme} narrative",
-            "theme_used": theme,
-            "supports_agent_requests": True,
-            "metadata": {"is_test_mode": True}
+            "data": None,  # Optional field per ScriptAgentOutput
+            "generated_prompt": generated_prompt,
+            "context_metadata": {
+                "theme": theme,
+                "character_type": character_type,
+                "is_test_mode": True
+            },
+            "agent_requests": [
+                {
+                    "target_agent_type": "user_input",
+                    "parameters": {
+                        "prompt": generated_prompt,
+                        "multiline": False,
+                        "context": {
+                            "theme": theme,
+                            "character_type": character_type,
+                            "generator": "story_prompt_generator"
+                        }
+                    },
+                    "priority": 0
+                }
+            ]
         }
 
         print(json.dumps(result))
@@ -77,6 +116,51 @@ def _create_file_ops_primitives(primitives_dir: Path) -> None:
     file_ops_dir = primitives_dir / "file-ops"
     file_ops_dir.mkdir(exist_ok=True)
 
+    # Create read_file.py
+    read_file_script = file_ops_dir / "read_file.py"
+    read_file_script.write_text("""#!/usr/bin/env python3
+\"\"\"Test primitive for file reading.\"\"\"
+import json
+import os
+import sys
+
+def main():
+    try:
+        input_data = json.loads(os.environ.get('INPUT_DATA', '{}'))
+        file_path = input_data.get('file_path')
+
+        # Mock file reading with config.json structure
+        mock_config = {
+            "database": {
+                "host": "localhost",
+                "port": 5432,
+                "name": "test_db"
+            },
+            "server": {
+                "port": 8080
+            }
+        }
+        result = {
+            "success": True,
+            "data": {
+                "content": json.dumps(mock_config),
+                "size": len(json.dumps(mock_config)),
+                "path": file_path
+            },
+            "metadata": {"is_test_mode": True}
+        }
+
+        print(json.dumps(result))
+
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e)}))
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+""")
+    read_file_script.chmod(0o755)
+
     # Create json_extract.py
     json_extract_script = file_ops_dir / "json_extract.py"
     json_extract_script.write_text("""#!/usr/bin/env python3
@@ -91,11 +175,18 @@ def main():
         json_path = input_data.get('json_path', '$.data')
         source_data = input_data.get('source_data', {})
 
-        # Mock JSON extraction
+        # Mock JSON extraction - extract from source_data based on json_path
+        # For json_path like "$.database", extract the database section
+        extracted_key = json_path.split('.')[-1] if '.' in json_path else json_path
+        extracted_value = source_data.get(extracted_key, {})
+
         result = {
             "success": True,
-            "data": source_data.get('data', 'extracted_value'),
-            "path_used": json_path,
+            "data": {
+                "extracted_value": extracted_value,
+                "key": extracted_key,
+                "path_used": json_path
+            },
             "metadata": {"is_test_mode": True}
         }
 
@@ -124,11 +215,17 @@ def main():
         file_path = input_data.get('file_path')
         content = input_data.get('content', '')
 
+        # Actually write the file for testing
+        with open(file_path, 'w') as f:
+            f.write(content)
+
         result = {
             "success": True,
-            "data": f"Wrote {len(content)} bytes",
-            "bytes_written": len(content),
-            "file_path": file_path,
+            "data": {
+                "bytes_written": len(content),
+                "path": file_path,
+                "status": "written"
+            },
             "metadata": {"is_test_mode": True}
         }
 
@@ -227,8 +324,16 @@ def main():
 
         result = {
             "success": True,
-            "data": {"centrality_scores": {"node1": 0.8, "node2": 0.6}},
-            "analysis_type": "centrality",
+            "data": {
+                "analysis_results": {
+                    "centrality_scores": {"node1": 0.8, "node2": 0.6, "node3": 0.4},
+                    "node_rankings": ["node1", "node2", "node3"],
+                    "analysis_metadata": {
+                        "algorithm": "betweenness_centrality",
+                        "timestamp": "2025-10-14T00:00:00Z"
+                    }
+                }
+            },
             "metadata": {"is_test_mode": True}
         }
 
