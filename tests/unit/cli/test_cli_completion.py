@@ -8,7 +8,11 @@ import click
 import yaml
 
 from llm_orc.cli import cli
-from llm_orc.cli_completion import complete_ensemble_names, complete_providers
+from llm_orc.cli_completion import (
+    complete_ensemble_names,
+    complete_library_ensemble_paths,
+    complete_providers,
+)
 
 
 class TestEnsembleNameCompletion:
@@ -93,6 +97,41 @@ class TestEnsembleNameCompletion:
 
         # Should return empty list, not raise exception
         assert result == []
+
+    @patch("llm_orc.cli_completion.ConfigurationManager")
+    def test_complete_ensemble_names_uses_config_manager_without_config_dir(
+        self, mock_config_manager_class: Mock
+    ) -> None:
+        """Should use ConfigurationManager when config_dir not provided."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create test ensemble file
+            ensemble_content = {
+                "name": "managed-ensemble",
+                "description": "Test",
+                "agents": [],
+            }
+            (temp_path / "managed-ensemble.yaml").write_text(
+                yaml.dump(ensemble_content)
+            )
+
+            # Mock the ConfigurationManager instance
+            mock_instance = Mock()
+            mock_instance.get_ensembles_dirs.return_value = [temp_path]
+            mock_config_manager_class.return_value = mock_instance
+
+            # Create context without config_dir parameter
+            ctx = Mock(spec=click.Context)
+            ctx.params = {}
+            param = Mock(spec=click.Parameter)
+
+            result = complete_ensemble_names(ctx, param, "managed")
+
+            # Should use ConfigurationManager and return ensemble
+            mock_config_manager_class.assert_called_once()
+            mock_instance.get_ensembles_dirs.assert_called_once()
+            assert result == ["managed-ensemble"]
 
 
 class TestProviderCompletion:
@@ -183,6 +222,122 @@ class TestCLICompletionIntegration:
         assert hasattr(provider_param, "shell_complete"), "No shell_complete attribute"
         # Check it's not the default parameter shell_complete
         assert provider_param.shell_complete is not None, "shell_complete is None"
+
+
+class TestLibraryEnsemblePathCompletion:
+    """Test completion of library ensemble paths."""
+
+    @patch("llm_orc.cli_library.library.get_library_categories")
+    def test_complete_library_paths_returns_categories_without_slash(
+        self, mock_get_categories: Mock
+    ) -> None:
+        """Should return category list when input has no slash."""
+        mock_get_categories.return_value = [
+            "code-analysis",
+            "data-processing",
+            "security",
+        ]
+
+        ctx = Mock(spec=click.Context)
+        param = Mock(spec=click.Parameter)
+
+        result = complete_library_ensemble_paths(ctx, param, "")
+
+        # Should return all categories with trailing slashes
+        assert result == ["code-analysis/", "data-processing/", "security/"]
+
+    @patch("llm_orc.cli_library.library.get_library_categories")
+    def test_complete_library_paths_filters_categories(
+        self, mock_get_categories: Mock
+    ) -> None:
+        """Should filter categories by incomplete input."""
+        mock_get_categories.return_value = [
+            "code-analysis",
+            "code-review",
+            "data-processing",
+        ]
+
+        ctx = Mock(spec=click.Context)
+        param = Mock(spec=click.Parameter)
+
+        result = complete_library_ensemble_paths(ctx, param, "code")
+
+        # Should only return categories starting with "code"
+        assert result == ["code-analysis/", "code-review/"]
+
+    @patch("llm_orc.cli_library.library.get_category_ensembles")
+    @patch("llm_orc.cli_library.library.get_library_categories")
+    def test_complete_library_paths_completes_ensemble_names(
+        self, mock_get_categories: Mock, mock_get_ensembles: Mock
+    ) -> None:
+        """Should complete ensemble names within category."""
+        mock_get_categories.return_value = ["security"]
+        mock_get_ensembles.return_value = [
+            {"name": "vulnerability-scan"},
+            {"name": "penetration-test"},
+        ]
+
+        ctx = Mock(spec=click.Context)
+        param = Mock(spec=click.Parameter)
+
+        result = complete_library_ensemble_paths(ctx, param, "security/")
+
+        # Should return ensemble paths
+        assert result == ["security/penetration-test", "security/vulnerability-scan"]
+
+    @patch("llm_orc.cli_library.library.get_category_ensembles")
+    @patch("llm_orc.cli_library.library.get_library_categories")
+    def test_complete_library_paths_filters_ensemble_names(
+        self, mock_get_categories: Mock, mock_get_ensembles: Mock
+    ) -> None:
+        """Should filter ensemble names by partial input."""
+        mock_get_categories.return_value = ["security"]
+        mock_get_ensembles.return_value = [
+            {"name": "vulnerability-scan"},
+            {"name": "vulnerability-report"},
+            {"name": "penetration-test"},
+        ]
+
+        ctx = Mock(spec=click.Context)
+        param = Mock(spec=click.Parameter)
+
+        result = complete_library_ensemble_paths(ctx, param, "security/vuln")
+
+        # Should only return ensembles starting with "vuln"
+        assert result == [
+            "security/vulnerability-report",
+            "security/vulnerability-scan",
+        ]
+
+    @patch("llm_orc.cli_library.library.get_library_categories")
+    def test_complete_library_paths_returns_empty_for_invalid_category(
+        self, mock_get_categories: Mock
+    ) -> None:
+        """Should return empty list for invalid category."""
+        mock_get_categories.return_value = ["security", "code-analysis"]
+
+        ctx = Mock(spec=click.Context)
+        param = Mock(spec=click.Parameter)
+
+        result = complete_library_ensemble_paths(ctx, param, "invalid/test")
+
+        # Should return empty list for non-existent category
+        assert result == []
+
+    @patch("llm_orc.cli_library.library.get_library_categories")
+    def test_complete_library_paths_handles_errors_gracefully(
+        self, mock_get_categories: Mock
+    ) -> None:
+        """Should return empty list on errors."""
+        mock_get_categories.side_effect = Exception("API error")
+
+        ctx = Mock(spec=click.Context)
+        param = Mock(spec=click.Parameter)
+
+        result = complete_library_ensemble_paths(ctx, param, "test")
+
+        # Should return empty list, not raise exception
+        assert result == []
 
 
 class TestCompletionCommand:

@@ -885,6 +885,8 @@ class TestArtifactManagerScriptArtifacts:
         self, artifact_manager: ArtifactManager, temp_dir: Path
     ) -> None:
         """GREEN PHASE: Test getting script artifacts."""
+        import time
+
         from llm_orc.schemas.script_agent import ScriptAgentOutput
 
         # Create and save multiple artifacts
@@ -897,6 +899,9 @@ class TestArtifactManagerScriptArtifacts:
             script_output=script_output1,
             input_hash="hash1",
         )
+
+        # Small delay to ensure different timestamps
+        time.sleep(0.001)
 
         artifact_manager.save_script_artifact(
             agent_name="test_agent",

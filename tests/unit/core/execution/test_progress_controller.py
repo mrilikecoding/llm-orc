@@ -38,7 +38,7 @@ class TestProgressControllerInterface:
         with pytest.raises(TypeError, match="Can't instantiate abstract class"):
             IncompleteController()  # type: ignore
 
-    def test_progress_controller_complete_implementation(self) -> None:
+    async def test_progress_controller_complete_implementation(self) -> None:
         """Test that a complete implementation can be instantiated."""
 
         class CompleteController(ProgressController):
@@ -60,6 +60,13 @@ class TestProgressControllerInterface:
         # Should not raise
         controller = CompleteController()
         assert isinstance(controller, ProgressController)
+
+        # Exercise all methods to ensure they work
+        controller.pause_for_user_input("test", "prompt")
+        controller.resume_from_user_input("test")
+        await controller.start_ensemble("ensemble")
+        await controller.update_agent_progress("agent", "status")
+        await controller.complete_ensemble()
 
 
 class TestNoOpProgressController:
@@ -124,6 +131,44 @@ class TestNoOpProgressController:
         # Verify calls were made
         assert controller.pause_for_user_input.call_count == 2
         assert controller.resume_from_user_input.call_count == 2
+
+    async def test_noop_start_ensemble(self) -> None:
+        """Test that start_ensemble does nothing."""
+        controller = NoOpProgressController()
+
+        # Should not raise any exceptions
+        await controller.start_ensemble("test_ensemble")
+        await controller.start_ensemble("")
+
+    async def test_noop_update_agent_progress(self) -> None:
+        """Test that update_agent_progress does nothing."""
+        controller = NoOpProgressController()
+
+        # Should not raise any exceptions
+        await controller.update_agent_progress("agent1", "running")
+        await controller.update_agent_progress("agent2", "completed")
+        await controller.update_agent_progress("", "")
+
+    async def test_noop_complete_ensemble(self) -> None:
+        """Test that complete_ensemble does nothing."""
+        controller = NoOpProgressController()
+
+        # Should not raise any exceptions
+        await controller.complete_ensemble()
+        await controller.complete_ensemble()
+
+    async def test_noop_async_workflow(self) -> None:
+        """Test a complete async workflow with NoOp controller."""
+        controller = NoOpProgressController()
+
+        # Simulate full ensemble workflow
+        await controller.start_ensemble("test_ensemble")
+        await controller.update_agent_progress("agent1", "starting")
+        await controller.update_agent_progress("agent1", "running")
+        await controller.update_agent_progress("agent1", "completed")
+        await controller.update_agent_progress("agent2", "starting")
+        await controller.update_agent_progress("agent2", "completed")
+        await controller.complete_ensemble()
 
 
 class TestCustomProgressController:
