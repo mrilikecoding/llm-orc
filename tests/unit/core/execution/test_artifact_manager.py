@@ -1048,3 +1048,387 @@ class TestArtifactManagerEndToEndIntegration:
             )
             assert execution is not None
             assert execution["task"] == expected_data["task"]
+
+
+class TestArtifactManagerEdgeCases:
+    """Test edge cases and error paths for ArtifactManager."""
+
+    def test_format_duration_milliseconds(
+        self, artifact_manager: ArtifactManager
+    ) -> None:
+        """Test _format_duration with duration less than 1000ms."""
+        # Duration < 1000ms should return in ms format
+        result = artifact_manager._format_duration(500)
+        assert result == "500ms"
+
+        result = artifact_manager._format_duration(999)
+        assert result == "999ms"
+
+    def test_get_latest_results_no_symlink(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test get_latest_results when latest symlink doesn't exist."""
+        # Create ensemble dir without latest symlink
+        ensemble_dir = temp_dir / ".llm-orc" / "artifacts" / "test_ensemble"
+        ensemble_dir.mkdir(parents=True)
+
+        result = artifact_manager.get_latest_results("test_ensemble")
+        assert result is None
+
+    def test_get_latest_results_no_execution_json(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test get_latest_results when execution.json doesn't exist."""
+        # Create ensemble dir with symlink but no execution.json
+        ensemble_dir = temp_dir / ".llm-orc" / "artifacts" / "test_ensemble"
+        ensemble_dir.mkdir(parents=True)
+
+        # Create target directory
+        target_dir = ensemble_dir / "20240101-120000-000"
+        target_dir.mkdir()
+
+        # Create symlink
+        latest_link = ensemble_dir / "latest"
+        latest_link.symlink_to(target_dir)
+
+        result = artifact_manager.get_latest_results("test_ensemble")
+        assert result is None
+
+    def test_get_latest_results_invalid_json(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test get_latest_results with invalid JSON."""
+        ensemble_dir = temp_dir / ".llm-orc" / "artifacts" / "test_ensemble"
+        ensemble_dir.mkdir(parents=True)
+
+        target_dir = ensemble_dir / "20240101-120000-000"
+        target_dir.mkdir()
+
+        # Create invalid JSON file
+        execution_json = target_dir / "execution.json"
+        execution_json.write_text("not valid json {")
+
+        latest_link = ensemble_dir / "latest"
+        latest_link.symlink_to(target_dir)
+
+        result = artifact_manager.get_latest_results("test_ensemble")
+        assert result is None
+
+    def test_get_latest_results_non_dict_json(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test get_latest_results with JSON that isn't a dict."""
+        ensemble_dir = temp_dir / ".llm-orc" / "artifacts" / "test_ensemble"
+        ensemble_dir.mkdir(parents=True)
+
+        target_dir = ensemble_dir / "20240101-120000-000"
+        target_dir.mkdir()
+
+        # Create JSON that's a list, not a dict
+        execution_json = target_dir / "execution.json"
+        execution_json.write_text(json.dumps(["not", "a", "dict"]))
+
+        latest_link = ensemble_dir / "latest"
+        latest_link.symlink_to(target_dir)
+
+        result = artifact_manager.get_latest_results("test_ensemble")
+        assert result is None
+
+    def test_get_execution_results_no_directory(
+        self, artifact_manager: ArtifactManager
+    ) -> None:
+        """Test get_execution_results when execution directory doesn't exist."""
+        result = artifact_manager.get_execution_results(
+            "nonexistent", "20240101-120000-000"
+        )
+        assert result is None
+
+    def test_get_execution_results_no_execution_json(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test get_execution_results when execution.json doesn't exist."""
+        ensemble_dir = temp_dir / ".llm-orc" / "artifacts" / "test_ensemble"
+        execution_dir = ensemble_dir / "20240101-120000-000"
+        execution_dir.mkdir(parents=True)
+
+        result = artifact_manager.get_execution_results(
+            "test_ensemble", "20240101-120000-000"
+        )
+        assert result is None
+
+    def test_get_execution_results_invalid_json(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test get_execution_results with invalid JSON."""
+        ensemble_dir = temp_dir / ".llm-orc" / "artifacts" / "test_ensemble"
+        execution_dir = ensemble_dir / "20240101-120000-000"
+        execution_dir.mkdir(parents=True)
+
+        execution_json = execution_dir / "execution.json"
+        execution_json.write_text("invalid json")
+
+        result = artifact_manager.get_execution_results(
+            "test_ensemble", "20240101-120000-000"
+        )
+        assert result is None
+
+    def test_save_script_artifact_empty_names(
+        self, artifact_manager: ArtifactManager
+    ) -> None:
+        """Test save_script_artifact with empty agent_name or script_name."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        script_output = ScriptAgentOutput(success=True, data="test")
+
+        with pytest.raises(ValueError, match="agent_name and script_name are required"):
+            artifact_manager.save_script_artifact(
+                agent_name="",
+                script_name="test.py",
+                script_output=script_output,
+                input_hash="hash1",
+            )
+
+        with pytest.raises(ValueError, match="agent_name and script_name are required"):
+            artifact_manager.save_script_artifact(
+                agent_name="test_agent",
+                script_name="",
+                script_output=script_output,
+                input_hash="hash1",
+            )
+
+    def test_save_script_artifact_with_relative_path(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test save_script_artifact with relative_path."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        script_output = ScriptAgentOutput(success=True, data="test")
+
+        artifact_path = artifact_manager.save_script_artifact(
+            agent_name="test_agent",
+            script_name="test.py",
+            script_output=script_output,
+            input_hash="hash1",
+            relative_path="project/subdir",
+        )
+
+        # Should create in relative path
+        assert "project/subdir/test_agent" in str(artifact_path)
+        assert artifact_path.exists()
+
+    def test_save_script_artifact_permission_error(
+        self, artifact_manager: ArtifactManager
+    ) -> None:
+        """Test save_script_artifact handles permission errors."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        script_output = ScriptAgentOutput(success=True, data="test")
+
+        with patch(
+            "pathlib.Path.mkdir", side_effect=PermissionError("Permission denied")
+        ):
+            with pytest.raises(
+                PermissionError,
+                match="Permission denied creating script artifact directory",
+            ):
+                artifact_manager.save_script_artifact(
+                    agent_name="test_agent",
+                    script_name="test.py",
+                    script_output=script_output,
+                    input_hash="hash1",
+                )
+
+    def test_save_script_artifact_serialization_error(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test save_script_artifact handles JSON serialization errors."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        script_output = ScriptAgentOutput(success=True, data="test")
+
+        # Mock json.dump to raise TypeError
+        with patch("json.dump", side_effect=TypeError("Cannot serialize")):
+            with pytest.raises(
+                TypeError, match="Script output cannot be serialized to JSON"
+            ):
+                artifact_manager.save_script_artifact(
+                    agent_name="test_agent",
+                    script_name="test.py",
+                    script_output=script_output,
+                    input_hash="hash1",
+                )
+
+    def test_validate_script_output_success_none(
+        self, artifact_manager: ArtifactManager
+    ) -> None:
+        """Test validate_script_output when success field is None."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        # Create output with success=None using model_construct to bypass validation
+        script_output = ScriptAgentOutput.model_construct(
+            success=None, data="test", agent_requests=[]
+        )
+
+        with pytest.raises(ValueError, match="success field is required"):
+            artifact_manager.validate_script_output(script_output)
+
+    def test_validate_script_output_invalid_agent_requests(
+        self, artifact_manager: ArtifactManager
+    ) -> None:
+        """Test validate_script_output with invalid agent_requests."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        # Create mock request object without required fields
+        class MockRequest:
+            pass
+
+        mock_request = MockRequest()
+
+        script_output = ScriptAgentOutput.model_construct(
+            success=True,
+            data="test",
+            agent_requests=[mock_request],  # type: ignore
+        )
+
+        with pytest.raises(ValueError, match="must have target_agent_type"):
+            artifact_manager.validate_script_output(script_output)
+
+    def test_get_script_artifacts_with_relative_path(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test get_script_artifacts with relative_path."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        script_output = ScriptAgentOutput(success=True, data="test")
+
+        # Save artifact with relative path
+        artifact_manager.save_script_artifact(
+            agent_name="test_agent",
+            script_name="test.py",
+            script_output=script_output,
+            input_hash="hash1",
+            relative_path="project/subdir",
+        )
+
+        # Retrieve with relative path
+        artifacts = artifact_manager.get_script_artifacts(
+            "test_agent", relative_path="project/subdir"
+        )
+
+        assert len(artifacts) == 1
+        assert "project/subdir/test_agent" in str(artifacts[0]["path"])
+
+    def test_get_script_artifacts_invalid_metadata_json(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test get_script_artifacts skips artifacts with invalid metadata JSON."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        script_output = ScriptAgentOutput(success=True, data="test")
+
+        # Save normal artifact
+        artifact_manager.save_script_artifact(
+            agent_name="test_agent",
+            script_name="test.py",
+            script_output=script_output,
+            input_hash="hash1",
+        )
+
+        # Create a malformed artifact directory
+        artifacts_dir = temp_dir / ".llm-orc" / "artifacts" / "scripts" / "test_agent"
+        bad_dir = artifacts_dir / "20240101-120000-000"
+        bad_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write invalid JSON metadata
+        metadata_file = bad_dir / "metadata.json"
+        metadata_file.write_text("invalid json {")
+
+        # Should skip the bad artifact and return only the good one
+        artifacts = artifact_manager.get_script_artifacts("test_agent")
+        assert len(artifacts) == 1
+
+    def test_share_artifact_output_file_not_exists(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test share_artifact when output.json doesn't exist."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        script_output = ScriptAgentOutput(success=True, data="test")
+
+        # Save artifact
+        artifact_manager.save_script_artifact(
+            agent_name="source_agent",
+            script_name="test.py",
+            script_output=script_output,
+            input_hash="test_hash",
+        )
+
+        # Clear the cache to force filesystem lookup
+        artifact_manager._artifact_cache.clear()
+
+        # Delete the output.json file
+        artifacts_dir = temp_dir / ".llm-orc" / "artifacts" / "scripts" / "source_agent"
+        for item in artifacts_dir.iterdir():
+            if item.is_dir():
+                output_file = item / "output.json"
+                if output_file.exists():
+                    output_file.unlink()
+
+        # Should return False when output file doesn't exist
+        result = artifact_manager.share_artifact(
+            source_agent="source_agent",
+            target_agent="target_agent",
+            artifact_id="test_hash",
+        )
+        assert result is False
+
+    def test_share_artifact_invalid_output_json(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test share_artifact with invalid output JSON."""
+        from llm_orc.schemas.script_agent import ScriptAgentOutput
+
+        script_output = ScriptAgentOutput(success=True, data="test")
+
+        # Save artifact
+        artifact_manager.save_script_artifact(
+            agent_name="source_agent",
+            script_name="test.py",
+            script_output=script_output,
+            input_hash="test_hash",
+        )
+
+        # Clear the cache to force filesystem lookup
+        artifact_manager._artifact_cache.clear()
+
+        # Corrupt the output.json file
+        artifacts_dir = temp_dir / ".llm-orc" / "artifacts" / "scripts" / "source_agent"
+        for item in artifacts_dir.iterdir():
+            if item.is_dir():
+                output_file = item / "output.json"
+                if output_file.exists():
+                    output_file.write_text("invalid json")
+
+        # Should return False when JSON is invalid
+        result = artifact_manager.share_artifact(
+            source_agent="source_agent",
+            target_agent="target_agent",
+            artifact_id="test_hash",
+        )
+        assert result is False
+
+    def test_generate_input_hash_with_parameters(
+        self, artifact_manager: ArtifactManager
+    ) -> None:
+        """Test _generate_input_hash with parameters."""
+        hash1 = artifact_manager._generate_input_hash(
+            "test input", {"param1": "value1", "param2": "value2"}
+        )
+
+        # Same input and params should generate same hash
+        hash2 = artifact_manager._generate_input_hash(
+            "test input", {"param2": "value2", "param1": "value1"}
+        )
+
+        assert hash1 == hash2
+        assert len(hash1) == 16  # Should be first 16 chars of SHA-256
