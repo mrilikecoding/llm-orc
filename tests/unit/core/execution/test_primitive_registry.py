@@ -213,7 +213,7 @@ print(json.dumps({"success": True, "data": "test", "agent_requests": []}))
             assert info1["name"] == "cached.py"
 
     def test_get_primitive_info_raises_for_unknown_primitive(self) -> None:
-        """Test that get_primitive_info raises FileNotFoundError for unknown primitives."""
+        """Test FileNotFoundError for unknown primitives."""
         registry = PrimitiveRegistry()
 
         with TemporaryDirectory() as temp_dir:
@@ -323,3 +323,112 @@ print(json.dumps({"success": True, "data": "test", "agent_requests": []}))
                 # Verify caches are empty
                 assert len(registry._cache) == 0
                 assert len(registry._primitive_cache) == 0
+
+    def test_discover_primitives_skips_duplicates(self) -> None:
+        """Test that duplicate script names are skipped."""
+        registry = PrimitiveRegistry()
+
+        with TemporaryDirectory() as temp_dir:
+            # Create two search paths with same script name
+            dir1 = Path(temp_dir) / ".llm-orc" / "scripts" / "primitives"
+            dir2 = Path(temp_dir) / "llm-orchestra-library" / "scripts" / "primitives"
+            dir1.mkdir(parents=True)
+            dir2.mkdir(parents=True)
+
+            # Create same script in both locations
+            (dir1 / "duplicate.py").write_text("#!/usr/bin/env python3")
+            (dir2 / "duplicate.py").write_text("#!/usr/bin/env python3")
+
+            with patch("pathlib.Path.cwd", return_value=Path(temp_dir)):
+                primitives = registry.discover_primitives()
+
+            # Should only find one instance (first one wins)
+            duplicate_count = sum(1 for p in primitives if p["name"] == "duplicate.py")
+            assert duplicate_count == 1
+
+    def test_validate_primitive_handles_timeout(self) -> None:
+        """Test validation of primitive that times out."""
+        registry = PrimitiveRegistry()
+
+        with TemporaryDirectory() as temp_dir:
+            primitives_dir = Path(temp_dir) / ".llm-orc" / "scripts" / "primitives"
+            primitives_dir.mkdir(parents=True)
+
+            # Create primitive that sleeps longer than timeout
+            primitive_file = primitives_dir / "timeout.py"
+            primitive_file.write_text("""#!/usr/bin/env python3
+import time
+time.sleep(20)  # Sleep longer than the 10s timeout
+""")
+            primitive_file.chmod(0o755)
+
+            with patch("pathlib.Path.cwd", return_value=Path(temp_dir)):
+                result = registry.validate_primitive("timeout.py")
+
+            assert result["valid"] is False
+            assert "timed out" in result["error"]
+
+    def test_validate_primitive_handles_generic_exception(self) -> None:
+        """Test validation handles generic exceptions during execution."""
+        registry = PrimitiveRegistry()
+
+        with TemporaryDirectory() as temp_dir:
+            primitives_dir = Path(temp_dir) / ".llm-orc" / "scripts" / "primitives"
+            primitives_dir.mkdir(parents=True)
+
+            # Create a valid primitive file
+            primitive_file = primitives_dir / "test.py"
+            primitive_file.write_text("""#!/usr/bin/env python3
+import json
+print(json.dumps({"success": True, "data": "test", "agent_requests": []}))
+""")
+            primitive_file.chmod(0o755)
+
+            with patch("pathlib.Path.cwd", return_value=Path(temp_dir)):
+                # Mock subprocess.run to raise a generic exception
+                with patch("subprocess.run", side_effect=RuntimeError("Test error")):
+                    result = registry.validate_primitive("test.py")
+
+            assert result["valid"] is False
+            assert "Execution error" in result["error"]
+
+    def test_extract_primitive_metadata_handles_unreadable_file(self) -> None:
+        """Test metadata extraction handles unreadable files gracefully."""
+        registry = PrimitiveRegistry()
+
+        # Test with a file path that doesn't exist
+        metadata = registry._extract_primitive_metadata("/nonexistent/file.py")
+
+        # Should return empty metadata without raising exception
+        assert metadata["description"] == ""
+        assert metadata["input_schema"] == ""
+        assert metadata["output_schema"] == ""
+        assert metadata["dependencies"] == []
+
+    def test_scan_primitives_handles_non_relative_paths(self) -> None:
+        """Test that scanning handles files that aren't relative to base_path."""
+
+        registry = PrimitiveRegistry()
+
+        with TemporaryDirectory() as temp_dir:
+            primitives_dir = Path(temp_dir) / ".llm-orc" / "scripts" / "primitives"
+            primitives_dir.mkdir(parents=True)
+
+            # Create a normal primitive
+            normal_file = primitives_dir / "normal.py"
+            normal_file.write_text("#!/usr/bin/env python3")
+            normal_file.chmod(0o755)
+
+            # Mock rglob to return a path outside base_path
+            outside_path = Path("/outside/path/script.py")
+
+            def mock_rglob(self: Path, pattern: str) -> list[Path]:
+                return [normal_file, outside_path]
+
+            with patch("pathlib.Path.cwd", return_value=Path(temp_dir)):
+                with patch.object(Path, "rglob", mock_rglob):
+                    primitives = registry.discover_primitives()
+
+            # Should only include normal.py, skip the outside path
+            assert len(primitives) == 1
+            assert primitives[0]["name"] == "normal.py"
