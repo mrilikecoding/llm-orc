@@ -316,3 +316,61 @@ class TestEventFactory:
         )
 
         assert event.data["intermediate_result"] is None
+
+    def test_user_input_required(self) -> None:
+        """Test user input required event creation."""
+        event = EventFactory.user_input_required(
+            agent_name="test_agent",
+            ensemble_name="test_ensemble",
+            execution_id="test_exec_id",
+            prompt="Enter value:",
+            script_path="/path/to/script.py",
+        )
+
+        assert event.event_type == ExecutionEventType.USER_INPUT_REQUIRED
+        assert event.agent_name == "test_agent"
+        assert event.data["prompt"] == "Enter value:"
+        assert event.data["script_path"] == "/path/to/script.py"
+        assert event.data["status"] == "waiting_for_input"
+
+    def test_user_input_received(self) -> None:
+        """Test user input received event creation."""
+        event = EventFactory.user_input_received(
+            agent_name="test_agent",
+            ensemble_name="test_ensemble",
+            execution_id="test_exec_id",
+            user_input="user response",
+            script_path="/path/to/script.py",
+        )
+
+        assert event.event_type == ExecutionEventType.USER_INPUT_RECEIVED
+        assert event.agent_name == "test_agent"
+        assert event.data["user_input"] == "user response"
+        assert event.data["script_path"] == "/path/to/script.py"
+        assert event.data["status"] == "input_received"
+
+    def test_streaming_paused(self) -> None:
+        """Test streaming paused event creation."""
+        event = EventFactory.streaming_paused(
+            ensemble_name="test_ensemble",
+            execution_id="test_exec_id",
+            reason="user requested pause",
+        )
+
+        assert event.event_type == ExecutionEventType.STREAMING_PAUSED
+        assert event.ensemble_name == "test_ensemble"
+        assert event.data["reason"] == "user requested pause"
+        assert event.data["status"] == "paused"
+
+    def test_streaming_resumed(self) -> None:
+        """Test streaming resumed event creation."""
+        event = EventFactory.streaming_resumed(
+            ensemble_name="test_ensemble",
+            execution_id="test_exec_id",
+            reason="user resumed",
+        )
+
+        assert event.event_type == ExecutionEventType.STREAMING_RESUMED
+        assert event.ensemble_name == "test_ensemble"
+        assert event.data["reason"] == "user resumed"
+        assert event.data["status"] == "resumed"

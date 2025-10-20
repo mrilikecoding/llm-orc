@@ -1285,9 +1285,7 @@ class TestArtifactManagerEdgeCases:
         mock_request = MockRequest()
 
         script_output = ScriptAgentOutput.model_construct(
-            success=True,
-            data="test",
-            agent_requests=[mock_request],  # type: ignore
+            success=True, data="test", agent_requests=[mock_request]
         )
 
         with pytest.raises(ValueError, match="must have target_agent_type"):
