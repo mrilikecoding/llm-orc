@@ -240,3 +240,189 @@ class TestScriptCacheConfig:
         assert config.max_size == 500
         assert config.persist_to_artifacts is True
         assert config.artifact_base_dir == Path("/tmp/cache")
+
+
+class TestScriptCacheArtifactPersistence:
+    """Test suite for artifact persistence edge cases."""
+
+    def test_load_from_artifacts_no_artifact_manager(self) -> None:
+        """Test _load_from_artifacts returns None with no manager (line 196)."""
+        config = ScriptCacheConfig(persist_to_artifacts=False)
+        cache = ScriptCache(config)
+
+        result = cache._load_from_artifacts("some_key")
+
+        assert result is None
+
+    def test_load_from_artifacts_file_not_exists(self) -> None:
+        """Test _load_from_artifacts returns None when file missing (line 204)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = ScriptCacheConfig(
+                persist_to_artifacts=True,
+                artifact_base_dir=Path(temp_dir),
+            )
+            cache = ScriptCache(config)
+
+            result = cache._load_from_artifacts("nonexistent_key")
+
+            assert result is None
+
+    def test_load_from_artifacts_ttl_expired(self) -> None:
+        """Test _load_from_artifacts handles TTL expiration (lines 211-212)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = ScriptCacheConfig(
+                persist_to_artifacts=True,
+                artifact_base_dir=Path(temp_dir),
+                ttl_seconds=1,  # 1 second TTL
+            )
+            cache = ScriptCache(config)
+
+            # Save a cache entry
+            cache._save_to_artifacts("test_key", {"data": "test"})
+
+            # Wait for TTL to expire
+            time.sleep(1.1)
+
+            # Should return None and delete the file
+            result = cache._load_from_artifacts("test_key")
+
+            assert result is None
+            # Verify file was deleted
+            cache_file = Path(temp_dir) / ".llm-orc" / "cache" / "test_key.json"
+            assert not cache_file.exists()
+
+    def test_load_from_artifacts_invalid_json(self) -> None:
+        """Test _load_from_artifacts handles JSONDecodeError (lines 216-217)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = ScriptCacheConfig(
+                persist_to_artifacts=True,
+                artifact_base_dir=Path(temp_dir),
+            )
+            cache = ScriptCache(config)
+
+            # Create cache file with invalid JSON
+            cache_dir = Path(temp_dir) / ".llm-orc" / "cache"
+            cache_dir.mkdir(parents=True)
+            cache_file = cache_dir / "bad_key.json"
+            cache_file.write_text("not valid json {")
+
+            result = cache._load_from_artifacts("bad_key")
+
+            assert result is None
+
+    def test_load_from_artifacts_missing_keys(self) -> None:
+        """Test _load_from_artifacts handles KeyError (lines 216-217)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = ScriptCacheConfig(
+                persist_to_artifacts=True,
+                artifact_base_dir=Path(temp_dir),
+            )
+            cache = ScriptCache(config)
+
+            # Create cache file with missing required keys
+            cache_dir = Path(temp_dir) / ".llm-orc" / "cache"
+            cache_dir.mkdir(parents=True)
+            cache_file = cache_dir / "incomplete_key.json"
+            cache_file.write_text('{"incomplete": "data"}')
+
+            result = cache._load_from_artifacts("incomplete_key")
+
+            assert result is None
+
+    def test_save_to_artifacts_no_artifact_manager(self) -> None:
+        """Test _save_to_artifacts returns early when no artifact manager (line 227)."""
+        config = ScriptCacheConfig(persist_to_artifacts=False)
+        cache = ScriptCache(config)
+
+        # Should not raise, just return early
+        cache._save_to_artifacts("test_key", {"data": "test"})
+
+    def test_save_to_artifacts_os_error(self) -> None:
+        """Test _save_to_artifacts handles OSError silently (lines 245-247)."""
+        config = ScriptCacheConfig(
+            persist_to_artifacts=True,
+            artifact_base_dir=Path("/invalid/read-only/path"),
+        )
+        cache = ScriptCache(config)
+
+        # Should not raise, silently ignore error
+        cache._save_to_artifacts("test_key", {"data": "test"})
+
+    def test_save_to_artifacts_type_error(self) -> None:
+        """Test _save_to_artifacts handles non-serializable data (lines 245-247)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = ScriptCacheConfig(
+                persist_to_artifacts=True,
+                artifact_base_dir=Path(temp_dir),
+            )
+            cache = ScriptCache(config)
+
+            # Try to save non-JSON-serializable data
+            non_serializable = {
+                "data": lambda: None
+            }  # Functions can't be JSON serialized
+
+            # Should not raise, silently ignore error
+            cache._save_to_artifacts("test_key", non_serializable)
+
+    def test_clear_artifacts_no_artifact_manager(self) -> None:
+        """Test _clear_artifacts returns early when no artifact manager (line 251)."""
+        config = ScriptCacheConfig(persist_to_artifacts=False)
+        cache = ScriptCache(config)
+
+        # Should not raise, just return early
+        cache._clear_artifacts()
+
+    def test_clear_artifacts_removes_cache_files(self) -> None:
+        """Test _clear_artifacts removes all cache files (lines 254-258)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = ScriptCacheConfig(
+                persist_to_artifacts=True,
+                artifact_base_dir=Path(temp_dir),
+            )
+            cache = ScriptCache(config)
+
+            # Create multiple cache files
+            cache._save_to_artifacts("key1", {"data": "test1"})
+            cache._save_to_artifacts("key2", {"data": "test2"})
+
+            cache_dir = Path(temp_dir) / ".llm-orc" / "cache"
+            assert len(list(cache_dir.glob("*.json"))) == 2
+
+            # Clear artifacts
+            cache._clear_artifacts()
+
+            # All cache files should be removed
+            assert len(list(cache_dir.glob("*.json"))) == 0
+
+    def test_clear_artifacts_handles_os_error(self) -> None:
+        """Test _clear_artifacts handles OSError silently (lines 259-261)."""
+        config = ScriptCacheConfig(
+            persist_to_artifacts=True,
+            artifact_base_dir=Path("/invalid/path"),
+        )
+        cache = ScriptCache(config)
+
+        # Should not raise, silently ignore error
+        cache._clear_artifacts()
+
+    def test_clear_cache_clears_artifacts(self) -> None:
+        """Test clear() calls _clear_artifacts with manager (line 168)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = ScriptCacheConfig(
+                persist_to_artifacts=True,
+                artifact_base_dir=Path(temp_dir),
+            )
+            cache = ScriptCache(config)
+
+            # Create cache entry
+            cache._save_to_artifacts("test_key", {"data": "test"})
+
+            cache_dir = Path(temp_dir) / ".llm-orc" / "cache"
+            assert len(list(cache_dir.glob("*.json"))) == 1
+
+            # Clear cache should clear artifacts
+            cache.clear()
+
+            # Artifact should be removed
+            assert len(list(cache_dir.glob("*.json"))) == 0
