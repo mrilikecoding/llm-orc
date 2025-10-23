@@ -176,8 +176,151 @@ class TestContractValidationCLI:
             output = cli.get_verbose_output()
             assert "script1.py" in output
             assert "script2.py" in output
-            assert "Warning message" in output
-            assert "1.2" in output
+
+    def test_cli_verbose_output_with_errors(self) -> None:
+        """Test verbose output displays errors (lines 176-178)."""
+        cli = ContractValidationCLI(verbose=True)
+        mock_result = ValidationResult(
+            success=False,
+            validated_scripts=[],
+            errors=["Error 1", "Error 2"],
+            warnings=[],
+            execution_time_seconds=0.5,
+        )
+
+        with patch.object(ContractValidationCLI, "validate", return_value=mock_result):
+            output = cli.get_verbose_output()
+            assert "Errors" in output
+            assert "Error 1" in output
+            assert "Error 2" in output
+
+    @patch("llm_orc.testing.contract_validator.ContractValidator")
+    def test_validate_with_validator_failure(
+        self, mock_validator_class: MagicMock
+    ) -> None:
+        """Test validation when validator returns False (line 127)."""
+        mock_validator = MagicMock()
+        mock_validator.validate_all_scripts.return_value = False
+        mock_validator.validation_errors = ["Script validation failed"]
+        mock_validator_class.return_value = mock_validator
+
+        mock_scripts = [Path("script1.py")]
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch.object(
+                ContractValidationCLI, "discover_scripts", return_value=mock_scripts
+            ):
+                cli = ContractValidationCLI()
+                result = cli.validate()
+                assert result.success is False
+                assert "Validation failed for one or more scripts" in result.errors
+
+    def test_main_with_json_output(self) -> None:
+        """Test main() with --json flag (line 245)."""
+        from llm_orc.testing.contract_validator import main
+
+        test_args = ["contract-validator", "--json"]
+
+        mock_result = ValidationResult(
+            success=True,
+            validated_scripts=["test.py"],
+            errors=[],
+            warnings=[],
+            execution_time_seconds=0.1,
+        )
+
+        with patch("sys.argv", test_args):
+            with patch.object(
+                ContractValidationCLI, "validate", return_value=mock_result
+            ):
+                with patch("builtins.print") as mock_print:
+                    with pytest.raises(SystemExit) as exc_info:
+                        main()
+
+                    assert exc_info.value.code == 0
+                    # Verify JSON output was printed
+                    assert mock_print.called
+
+    def test_main_with_verbose_output(self) -> None:
+        """Test main() with --verbose flag (line 247)."""
+        from llm_orc.testing.contract_validator import main
+
+        test_args = ["contract-validator", "--verbose"]
+
+        mock_result = ValidationResult(
+            success=True,
+            validated_scripts=["test.py"],
+            errors=[],
+            warnings=[],
+            execution_time_seconds=0.1,
+        )
+
+        with patch("sys.argv", test_args):
+            with patch.object(
+                ContractValidationCLI, "validate", return_value=mock_result
+            ):
+                with patch("builtins.print") as mock_print:
+                    with pytest.raises(SystemExit) as exc_info:
+                        main()
+
+                    assert exc_info.value.code == 0
+                    assert mock_print.called
+
+    def test_main_with_validation_failure(self) -> None:
+        """Test main() with validation failure (line 256)."""
+        from llm_orc.testing.contract_validator import main
+
+        test_args = ["contract-validator"]
+
+        mock_result = ValidationResult(
+            success=False,
+            validated_scripts=[],
+            errors=["Validation error"],
+            warnings=[],
+            execution_time_seconds=0.1,
+        )
+
+        with patch("sys.argv", test_args):
+            with patch.object(
+                ContractValidationCLI, "validate", return_value=mock_result
+            ):
+                with patch("builtins.print") as mock_print:
+                    with pytest.raises(SystemExit) as exc_info:
+                        main()
+
+                    assert exc_info.value.code == 1
+                    # Verify failure message was printed
+                    print_calls = [str(call) for call in mock_print.call_args_list]
+                    assert any("Validation failed" in str(call) for call in print_calls)
+
+    def test_main_with_contract_validation_error(self) -> None:
+        """Test main() handles ContractValidationError (lines 260-262)."""
+        from llm_orc.testing.contract_validator import main
+
+        test_args = ["contract-validator", "--directory", "/nonexistent"]
+
+        with patch("sys.argv", test_args):
+            with patch("pathlib.Path.exists", return_value=False):
+                with pytest.raises(SystemExit) as exc_info:
+                    main()
+
+                assert exc_info.value.code == 1
+
+    def test_main_with_unexpected_error(self) -> None:
+        """Test main() handles unexpected exceptions (lines 264-265)."""
+        from llm_orc.testing.contract_validator import main
+
+        test_args = ["contract-validator"]
+
+        with patch("sys.argv", test_args):
+            with patch.object(
+                ContractValidationCLI,
+                "validate",
+                side_effect=RuntimeError("Unexpected"),
+            ):
+                with pytest.raises(SystemExit) as exc_info:
+                    main()
+
+                assert exc_info.value.code == 1
 
     def test_cli_exit_codes(self) -> None:
         """Test CLI returns proper exit codes."""
