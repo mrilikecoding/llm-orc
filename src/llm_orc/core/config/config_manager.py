@@ -128,16 +128,37 @@ class ConfigurationManager:
         return self._local_config_dir
 
     def get_ensembles_dirs(self) -> list[Path]:
-        """Get ensemble directories in priority order (local first, then global)."""
-        dirs = []
+        """Get ensemble directories in priority order (local → library → global).
 
-        # Local config takes precedence
+        Library path resolution:
+        1. LLM_ORC_LIBRARY_PATH env var (custom location)
+        2. Current directory/llm-orchestra-library (submodule)
+        """
+        dirs = []
+        cwd = Path.cwd()
+
+        # Priority 1: Local config takes precedence
         if self._local_config_dir:
             local_ensembles = self._local_config_dir / "ensembles"
             if local_ensembles.exists():
                 dirs.append(local_ensembles)
 
-        # Global config as fallback
+        # Priority 2: Library ensembles
+        # Check for custom library path from environment
+        import os
+
+        library_path_env = os.environ.get("LLM_ORC_LIBRARY_PATH")
+        if library_path_env:
+            library_ensembles = Path(library_path_env) / "ensembles"
+            if library_ensembles.exists():
+                dirs.append(library_ensembles)
+        else:
+            # Default: check for library submodule in current directory
+            library_ensembles = cwd / "llm-orchestra-library" / "ensembles"
+            if library_ensembles.exists():
+                dirs.append(library_ensembles)
+
+        # Priority 3: Global config as fallback
         global_ensembles = self._global_config_dir / "ensembles"
         if global_ensembles.exists():
             dirs.append(global_ensembles)

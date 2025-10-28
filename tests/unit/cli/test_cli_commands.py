@@ -1289,7 +1289,7 @@ class TestListEnsemblesHelperMethods:
                 [mock_global_ensemble],
             ]
 
-            local_ensembles, global_ensembles = (
+            local_ensembles, library_ensembles, global_ensembles = (
                 llm_orc.cli_commands._get_grouped_ensembles(
                     config_manager, ensemble_dirs
                 )
@@ -1297,6 +1297,7 @@ class TestListEnsemblesHelperMethods:
 
         # Then
         assert local_ensembles == [mock_local_ensemble]
+        assert library_ensembles == []
         assert global_ensembles == [mock_global_ensemble]
         assert mock_loader.list_ensembles.call_count == 2
 
@@ -1317,7 +1318,7 @@ class TestListEnsemblesHelperMethods:
             mock_loader_class.return_value = mock_loader
             mock_loader.list_ensembles.return_value = [mock_ensemble]
 
-            local_ensembles, global_ensembles = (
+            local_ensembles, library_ensembles, global_ensembles = (
                 llm_orc.cli_commands._get_grouped_ensembles(
                     config_manager, ensemble_dirs
                 )
@@ -1325,6 +1326,7 @@ class TestListEnsemblesHelperMethods:
 
         # Then
         assert local_ensembles == []
+        assert library_ensembles == []
         assert global_ensembles == [mock_ensemble]
 
     def test_display_grouped_ensembles_both_types(self) -> None:
@@ -1349,7 +1351,7 @@ class TestListEnsemblesHelperMethods:
         # When
         with patch("click.echo") as mock_echo:
             llm_orc.cli_commands._display_grouped_ensembles(
-                config_manager, local_ensembles, global_ensembles
+                config_manager, local_ensembles, [], global_ensembles
             )
 
         # Then
@@ -1379,7 +1381,7 @@ class TestListEnsemblesHelperMethods:
         # When
         with patch("click.echo") as mock_echo:
             llm_orc.cli_commands._display_grouped_ensembles(
-                config_manager, local_ensembles, global_ensembles
+                config_manager, local_ensembles, [], global_ensembles
             )
 
         # Then

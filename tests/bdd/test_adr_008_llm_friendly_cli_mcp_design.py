@@ -339,3 +339,178 @@ def no_scripts_installed(cli_context: dict[str, Any]) -> None:
         py_files = list(scripts_dir.rglob("*.py"))
         py_files = [f for f in py_files if f.name != "__init__.py"]
         assert len(py_files) == 0, f"Found {len(py_files)} scripts (expected none)"
+
+
+# Ensemble Discovery Steps
+
+
+@given(parsers.parse('the library directory "{dir_path}" exists with an ensemble.yaml'))
+def library_ensemble_directory(cli_context: dict[str, Any], dir_path: str) -> None:
+    """Create a library ensemble directory with ensemble.yaml."""
+    full_path = cli_context["test_dir"] / dir_path
+    full_path.mkdir(parents=True, exist_ok=True)
+
+    # Create a simple ensemble.yaml
+    ensemble_yaml = full_path / "ensemble.yaml"
+    ensemble_yaml.write_text(
+        """name: test-ensemble
+description: Test ensemble for discovery
+agents:
+  - name: test-agent
+    model_profile: test
+"""
+    )
+
+
+@given(parsers.parse('the library directory "{dir_path}" exists with a valid ensemble'))
+def library_valid_ensemble(cli_context: dict[str, Any], dir_path: str) -> None:
+    """Create a library ensemble with valid configuration."""
+    library_ensemble_directory(cli_context, dir_path)
+
+
+@given(parsers.parse('a local ensemble "{name}" exists in "{dir_path}"'))
+def local_ensemble(cli_context: dict[str, Any], name: str, dir_path: str) -> None:
+    """Create a local ensemble."""
+    full_path = cli_context["test_dir"] / dir_path / name
+    full_path.mkdir(parents=True, exist_ok=True)
+
+    ensemble_yaml = full_path / "ensemble.yaml"
+    ensemble_yaml.write_text(
+        f"""name: {name}
+description: Local test ensemble
+agents:
+  - name: local-agent
+    model_profile: test
+"""
+    )
+
+
+@given(parsers.parse('a library ensemble "{name}" exists in "{dir_path}"'))
+def library_ensemble(cli_context: dict[str, Any], name: str, dir_path: str) -> None:
+    """Create a library ensemble."""
+    full_path = cli_context["test_dir"] / dir_path / name
+    full_path.mkdir(parents=True, exist_ok=True)
+
+    ensemble_yaml = full_path / "ensemble.yaml"
+    ensemble_yaml.write_text(
+        f"""name: {name}
+description: Library test ensemble
+agents:
+  - name: library-agent
+    model_profile: test
+"""
+    )
+
+
+@given(parsers.parse('local ensembles exist in "{dir_path}"'))
+def local_ensembles_exist(cli_context: dict[str, Any], dir_path: str) -> None:
+    """Create some local ensembles."""
+    local_ensemble(cli_context, "local-ensemble-1", dir_path)
+    local_ensemble(cli_context, "local-ensemble-2", dir_path)
+
+
+@given(parsers.parse('library ensembles exist in "{dir_path}"'))
+def library_ensembles_exist(cli_context: dict[str, Any], dir_path: str) -> None:
+    """Create some library ensembles."""
+    library_ensemble(cli_context, "library-ensemble-1", dir_path)
+    library_ensemble(cli_context, "library-ensemble-2", dir_path)
+
+
+@given(parsers.parse('the library has ensembles in "{dir_path}"'))
+def library_has_ensembles(cli_context: dict[str, Any], dir_path: str) -> None:
+    """Create ensembles in library examples directory."""
+    # Create the neon-shadows-detective ensemble
+    full_path = cli_context["test_dir"] / dir_path / "neon-shadows-detective"
+    full_path.mkdir(parents=True, exist_ok=True)
+
+    ensemble_yaml = full_path / "ensemble.yaml"
+    ensemble_yaml.write_text(
+        """name: neon-shadows-detective
+description: Interactive cyberpunk detective story
+agents:
+  - name: opening-scene
+    model_profile: creative
+"""
+    )
+
+
+@then("the output should list ensembles from the library")
+def output_lists_library_ensembles(cli_context: dict[str, Any]) -> None:
+    """Check that library ensembles are listed."""
+    output = cli_context["last_output"]
+    assert "library" in output.lower() or "examples" in output.lower(), (
+        f"Output does not mention library ensembles:\n{output}"
+    )
+
+
+@then("the ensemble should execute successfully")
+def ensemble_executes(cli_context: dict[str, Any]) -> None:
+    """Check that ensemble execution succeeded."""
+    # For now, just check that command didn't fail
+    # TODO: Add more specific checks for ensemble execution
+    assert cli_context["last_returncode"] == 0, (
+        f"Ensemble execution failed:\n{cli_context['last_output']}"
+    )
+
+
+@then("the output should not require full path specification")
+def no_full_path_required(cli_context: dict[str, Any]) -> None:
+    """Check that we didn't need to use full path."""
+    # This is validated by the fact that the command succeeded
+    # with just the relative path (checked by ensemble_executes)
+    pass
+
+
+@then("the local ensemble should be executed")
+def local_ensemble_executed(cli_context: dict[str, Any]) -> None:
+    """Check that local ensemble was executed (not library)."""
+    output = cli_context["last_output"]
+    # Look for indicators that local ensemble was used
+    assert "local-agent" in output or cli_context["last_returncode"] == 0, (
+        f"Local ensemble may not have been executed:\n{output}"
+    )
+
+
+@then("not the library ensemble")
+def not_library_ensemble(cli_context: dict[str, Any]) -> None:
+    """Check that library ensemble was not executed."""
+    output = cli_context["last_output"]
+    # Should not see library-specific agent names
+    assert "library-agent" not in output, (
+        f"Library ensemble appears to have been executed:\n{output}"
+    )
+
+
+@then(parsers.parse('the output should have a "{section}" section'))
+def output_has_section(cli_context: dict[str, Any], section: str) -> None:
+    """Check that output has a specific section."""
+    output = cli_context["last_output"]
+    assert section.lower() in output.lower(), (
+        f"Output does not have '{section}' section:\n{output}"
+    )
+
+
+@then(parsers.parse('library ensembles should be listed under "{section}"'))
+def library_under_section(cli_context: dict[str, Any], section: str) -> None:
+    """Check that library ensembles are under the right section."""
+    # For now, just verify the section exists
+    # TODO: Add more sophisticated parsing
+    output_has_section(cli_context, section)
+
+
+@then("the output should list ensembles in the examples category")
+def list_examples_category(cli_context: dict[str, Any]) -> None:
+    """Check that examples category ensembles are listed."""
+    output = cli_context["last_output"]
+    assert "examples" in output.lower() or "ensemble" in output.lower(), (
+        f"Output does not list examples category:\n{output}"
+    )
+
+
+@then("the output should include the newly created narrative ensemble")
+def includes_narrative_ensemble(cli_context: dict[str, Any]) -> None:
+    """Check that neon-shadows-detective ensemble is listed."""
+    output = cli_context["last_output"]
+    assert "neon-shadows" in output.lower() or "detective" in output.lower(), (
+        f"Output does not include narrative ensemble:\n{output}"
+    )

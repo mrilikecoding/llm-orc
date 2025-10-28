@@ -86,37 +86,43 @@ def _find_ensemble_config(
 
 def _get_grouped_ensembles(
     config_manager: ConfigurationManager, ensemble_dirs: list[Path]
-) -> tuple[list[EnsembleConfig], list[EnsembleConfig]]:
-    """Group ensembles into local and global categories.
+) -> tuple[list[EnsembleConfig], list[EnsembleConfig], list[EnsembleConfig]]:
+    """Group ensembles into local, library, and global categories.
 
     Args:
         config_manager: Configuration manager instance
         ensemble_dirs: List of ensemble directories to search
 
     Returns:
-        tuple: (local_ensembles, global_ensembles)
+        tuple: (local_ensembles, library_ensembles, global_ensembles)
     """
     loader = EnsembleLoader()
     local_ensembles: list[EnsembleConfig] = []
+    library_ensembles: list[EnsembleConfig] = []
     global_ensembles: list[EnsembleConfig] = []
+    cwd = Path.cwd()
 
     for dir_path in ensemble_dirs:
         ensembles = loader.list_ensembles(str(dir_path))
         is_local = config_manager.local_config_dir and str(dir_path).startswith(
             str(config_manager.local_config_dir)
         )
+        is_library = str(dir_path).startswith(str(cwd / "llm-orchestra-library"))
 
         if is_local:
             local_ensembles.extend(ensembles)
+        elif is_library:
+            library_ensembles.extend(ensembles)
         else:
             global_ensembles.extend(ensembles)
 
-    return local_ensembles, global_ensembles
+    return local_ensembles, library_ensembles, global_ensembles
 
 
 def _display_grouped_ensembles(
     config_manager: ConfigurationManager,
     local_ensembles: Sequence[EnsembleConfig],
+    library_ensembles: Sequence[EnsembleConfig],
     global_ensembles: Sequence[EnsembleConfig],
 ) -> None:
     """Display grouped ensembles with proper formatting.
@@ -124,6 +130,7 @@ def _display_grouped_ensembles(
     Args:
         config_manager: Configuration manager instance
         local_ensembles: List of local ensemble configs
+        library_ensembles: List of library ensemble configs
         global_ensembles: List of global ensemble configs
     """
     click.echo("Available ensembles:")
@@ -133,6 +140,19 @@ def _display_grouped_ensembles(
         click.echo("\n📁 Local Repo (.llm-orc/ensembles):")
         for ensemble in sorted(
             local_ensembles, key=lambda e: (e.relative_path or "", e.name)
+        ):
+            display_name = (
+                f"{ensemble.relative_path}/{ensemble.name}"
+                if ensemble.relative_path
+                else ensemble.name
+            )
+            click.echo(f"  {display_name}: {ensemble.description}")
+
+    # Show library ensembles
+    if library_ensembles:
+        click.echo("\n📚 Library (llm-orchestra-library/ensembles):")
+        for ensemble in sorted(
+            library_ensembles, key=lambda e: (e.relative_path or "", e.name)
         ):
             display_name = (
                 f"{ensemble.relative_path}/{ensemble.name}"
@@ -386,12 +406,12 @@ def list_ensembles_command(config_dir: str | None) -> None:
             return
 
         # Get grouped ensembles using helper method
-        local_ensembles, global_ensembles = _get_grouped_ensembles(
+        local_ensembles, library_ensembles, global_ensembles = _get_grouped_ensembles(
             config_manager, ensemble_dirs
         )
 
         # Check if we have any ensembles at all
-        if not local_ensembles and not global_ensembles:
+        if not local_ensembles and not library_ensembles and not global_ensembles:
             click.echo("No ensembles found in any configured directories:")
             for dir_path in ensemble_dirs:
                 click.echo(f"  {dir_path}")
@@ -399,7 +419,9 @@ def list_ensembles_command(config_dir: str | None) -> None:
             return
 
         # Display grouped ensembles using helper method
-        _display_grouped_ensembles(config_manager, local_ensembles, global_ensembles)
+        _display_grouped_ensembles(
+            config_manager, local_ensembles, library_ensembles, global_ensembles
+        )
     else:
         # Use specified config directory
         loader = EnsembleLoader()

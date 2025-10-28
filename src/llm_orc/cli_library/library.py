@@ -14,11 +14,29 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 def _get_library_source_config() -> tuple[str, str]:
     """Get library source configuration from environment or defaults.
 
+    Priority order:
+    1. LLM_ORC_LIBRARY_PATH env var (custom location)
+    2. LLM_ORC_LIBRARY_SOURCE=local (package submodule)
+    3. Current working directory (llm-orchestra-library/)
+    4. Remote GitHub (default)
+
     Returns:
         Tuple of (source_type, source_path) where source_type is 'local' or 'remote'
     """
-    library_source = os.environ.get("LLM_ORC_LIBRARY_SOURCE", "remote")
+    # Priority 1: Custom library path from environment
+    library_path_env = os.environ.get("LLM_ORC_LIBRARY_PATH")
+    if library_path_env:
+        library_path = Path(library_path_env)
+        if library_path.exists():
+            return "local", str(library_path)
 
+    # Priority 2: Check current working directory first (for tests and local usage)
+    cwd_library = Path.cwd() / "llm-orchestra-library"
+    if cwd_library.exists():
+        return "local", str(cwd_library)
+
+    # Priority 3: Use package submodule if LLM_ORC_LIBRARY_SOURCE=local
+    library_source = os.environ.get("LLM_ORC_LIBRARY_SOURCE", "remote")
     if library_source == "local":
         # Use local submodule - find it relative to this file
         # Go up from src/llm_orc/cli_library/ to project root
@@ -31,25 +49,42 @@ def _get_library_source_config() -> tuple[str, str]:
                 "LLM_ORC_LIBRARY_SOURCE=remote"
             )
         return "local", str(local_path)
-    else:
-        # Use remote GitHub
-        return (
-            "remote",
-            "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main",
-        )
+
+    # Priority 4: Use remote GitHub (default)
+    return (
+        "remote",
+        "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main",
+    )
 
 
 def get_library_categories() -> list[str]:
-    """Get list of available library categories."""
-    categories = [
-        "code-analysis",
-        "idea-exploration",
-        "research-analysis",
-        "decision-support",
-        "problem-decomposition",
-        "learning-facilitation",
-    ]
-    return categories
+    """Get list of available library categories by scanning the library directory."""
+    source_type, source_path = _get_library_source_config()
+
+    if source_type == "local":
+        # Scan local library directory for actual categories
+        ensembles_dir = Path(source_path) / "ensembles"
+        if not ensembles_dir.exists():
+            return []
+
+        # Get all subdirectories as categories
+        categories = [
+            d.name
+            for d in ensembles_dir.iterdir()
+            if d.is_dir() and not d.name.startswith(".")
+        ]
+        return sorted(categories)
+    else:
+        # Hardcoded list for remote (can't easily scan remote directories)
+        categories = [
+            "code-analysis",
+            "idea-exploration",
+            "research-analysis",
+            "decision-support",
+            "problem-decomposition",
+            "learning-facilitation",
+        ]
+        return categories
 
 
 def get_library_categories_with_descriptions() -> list[tuple[str, str]]:
@@ -78,15 +113,18 @@ def get_category_ensembles(category: str) -> list[dict[str, Any]]:
 def _get_local_category_ensembles(
     category: str, library_path: Path
 ) -> list[dict[str, Any]]:
-    """Get ensembles from local library directory."""
+    """Get ensembles from local library, recursively searching subdirectories."""
     ensembles_dir = library_path / "ensembles" / category
     if not ensembles_dir.exists():
         return []
 
     ensembles = []
-    for yaml_file in ensembles_dir.glob("*.yaml"):
+    # Use rglob to recursively search for YAML files in subdirectories
+    for yaml_file in ensembles_dir.rglob("*.yaml"):
         ensemble_name = yaml_file.stem
-        ensemble_path = f"{category}/{yaml_file.name}"
+        # Calculate relative path from category directory
+        relative_path = yaml_file.relative_to(ensembles_dir)
+        ensemble_path = f"{category}/{relative_path}"
 
         # Try to read ensemble content to get description
         try:

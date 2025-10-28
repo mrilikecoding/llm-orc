@@ -96,3 +96,42 @@ Feature: ADR-008: LLM-Friendly CLI and MCP Design
     Then the command should succeed
     And the output should indicate "No library primitives found"
     And no scripts should be installed
+
+  # Ensemble Discovery from Library
+  Scenario: Discover ensembles from library submodule
+    Given I have initialized llm-orc
+    And the library directory "llm-orchestra-library/ensembles/examples/test-ensemble" exists with an ensemble.yaml
+    When I execute "llm-orc list-ensembles"
+    Then the output should list ensembles from the library
+    And the output should contain "examples/test-ensemble"
+
+  Scenario: Invoke ensemble from library by relative path
+    Given I have initialized llm-orc
+    And the library directory "llm-orchestra-library/ensembles/examples/test-ensemble" exists with a valid ensemble
+    When I execute "llm-orc invoke examples/test-ensemble"
+    Then the ensemble should execute successfully
+    And the output should not require full path specification
+
+  Scenario: Library ensembles have lower priority than local ensembles
+    Given I have initialized llm-orc
+    And a local ensemble "my-ensemble" exists in ".llm-orc/ensembles"
+    And a library ensemble "my-ensemble" exists in "llm-orchestra-library/ensembles"
+    When I execute "llm-orc invoke my-ensemble"
+    Then the local ensemble should be executed
+    And not the library ensemble
+
+  Scenario: List ensembles shows library ensembles in separate section
+    Given I have initialized llm-orc
+    And local ensembles exist in ".llm-orc/ensembles"
+    And library ensembles exist in "llm-orchestra-library/ensembles"
+    When I execute "llm-orc list-ensembles"
+    Then the output should have a "Local" section
+    And the output should have a "Library" section
+    And library ensembles should be listed under "Library"
+
+  Scenario: Browse library ensembles by category
+    Given I have initialized llm-orc
+    And the library has ensembles in "llm-orchestra-library/ensembles/examples"
+    When I execute "llm-orc library browse examples"
+    Then the output should list ensembles in the examples category
+    And the output should include the newly created narrative ensemble
