@@ -240,7 +240,15 @@ class TestLibraryDynamicFetching:
         """Should fetch ensembles from GitHub API for all categories."""
         from llm_orc.cli_library.library import get_category_ensembles
 
-        with patch("requests.get") as mock_get:
+        with (
+            patch(
+                "llm_orc.cli_library.library._get_library_source_config"
+            ) as mock_source_config,
+            patch("requests.get") as mock_get,
+        ):
+            # Force remote mode for this test
+            mock_source_config.return_value = ("remote", "")
+
             # Mock API response
             mock_response = mock_get.return_value
             mock_response.raise_for_status.return_value = None
@@ -319,7 +327,15 @@ class TestLibraryTemplateFetching:
         """Should fetch template content from GitHub API."""
         from llm_orc.cli_library.library import get_template_content
 
-        with patch("requests.get") as mock_get:
+        with (
+            patch(
+                "llm_orc.cli_library.library._get_library_source_config"
+            ) as mock_source_config,
+            patch("requests.get") as mock_get,
+        ):
+            # Force remote mode for this test
+            mock_source_config.return_value = ("remote", "")
+
             # Mock successful response
             mock_response = mock_get.return_value
             mock_response.raise_for_status.return_value = None
@@ -558,9 +574,15 @@ agents:
 """
 
         with (
+            patch(
+                "llm_orc.cli_library.library._get_library_source_config"
+            ) as mock_source_config,
             patch("requests.get") as mock_get,
             patch("llm_orc.cli_library.library.fetch_ensemble_content") as mock_fetch,
         ):
+            # Force remote mode for this test
+            mock_source_config.return_value = ("remote", "")
+
             # Mock API response
             mock_response = mock_get.return_value
             mock_response.raise_for_status.return_value = None
@@ -586,7 +608,15 @@ agents:
         """Should handle network errors gracefully."""
         from llm_orc.cli_library.library import get_category_ensembles
 
-        with patch("requests.get") as mock_get:
+        with (
+            patch(
+                "llm_orc.cli_library.library._get_library_source_config"
+            ) as mock_source_config,
+            patch("requests.get") as mock_get,
+        ):
+            # Force remote mode for this test
+            mock_source_config.return_value = ("remote", "")
+
             # Mock network timeout
             mock_get.side_effect = requests.exceptions.Timeout("Request timed out")
 
@@ -624,9 +654,15 @@ agents:
         invalid_yaml_content = "name: test\ninvalid: yaml: content: [unclosed"
 
         with (
+            patch(
+                "llm_orc.cli_library.library._get_library_source_config"
+            ) as mock_source_config,
             patch("requests.get") as mock_get,
             patch("llm_orc.cli_library.library.fetch_ensemble_content") as mock_fetch,
         ):
+            # Force remote mode for this test
+            mock_source_config.return_value = ("remote", "")
+
             # Mock API response
             mock_response = mock_get.return_value
             mock_response.raise_for_status.return_value = None
@@ -654,7 +690,15 @@ agents:
     model: claude-3-5-sonnet
 """
 
-        with patch("requests.get") as mock_get:
+        with (
+            patch(
+                "llm_orc.cli_library.library._get_library_source_config"
+            ) as mock_source_config,
+            patch("requests.get") as mock_get,
+        ):
+            # Force remote mode for this test
+            mock_source_config.return_value = ("remote", "")
+
             mock_response = mock_get.return_value
             mock_response.raise_for_status.return_value = None
             mock_response.text = mock_content
@@ -937,7 +981,15 @@ class TestLibraryEdgeCases:
         """Should add .yaml extension when not present."""
         from llm_orc.cli_library.library import fetch_ensemble_content
 
-        with patch("requests.get") as mock_get:
+        with (
+            patch(
+                "llm_orc.cli_library.library._get_library_source_config"
+            ) as mock_source_config,
+            patch("requests.get") as mock_get,
+        ):
+            # Force remote mode for this test
+            mock_source_config.return_value = ("remote", "")
+
             mock_response = mock_get.return_value
             mock_response.raise_for_status.return_value = None
             mock_response.text = "ensemble content"
@@ -956,7 +1008,15 @@ class TestLibraryEdgeCases:
         """Should add .yaml extension to template name when not present."""
         from llm_orc.cli_library.library import get_template_content
 
-        with patch("requests.get") as mock_get:
+        with (
+            patch(
+                "llm_orc.cli_library.library._get_library_source_config"
+            ) as mock_source_config,
+            patch("requests.get") as mock_get,
+        ):
+            # Force remote mode for this test
+            mock_source_config.return_value = ("remote", "")
+
             mock_response = mock_get.return_value
             mock_response.raise_for_status.return_value = None
             mock_response.text = "template content"
