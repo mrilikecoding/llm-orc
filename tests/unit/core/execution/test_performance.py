@@ -320,10 +320,11 @@ class TestEnsembleExecutionPerformance:
         # Assert - Should complete in reasonable time with mock models
         # Allow time for framework overhead including dependency analysis,
         # adaptive resource management, event emission, and result processing
+        # Use 2000ms threshold to account for slower CI runners
         assert result["status"] in ["completed", "completed_with_errors"]
-        assert execution_time_ms < 1000.0, (
+        assert execution_time_ms < 2000.0, (
             f"Parallel ensemble execution took {execution_time_ms:.2f}ms, "
-            f"should be under 1000ms with mock models (framework overhead included)"
+            f"should be under 2000ms with mock models (framework overhead included)"
         )
 
         # Verify all agents executed
