@@ -119,6 +119,23 @@ def _get_grouped_ensembles(
     return local_ensembles, library_ensembles, global_ensembles
 
 
+def _format_ensemble_display_name(ensemble: EnsembleConfig) -> str:
+    """Format ensemble name for display."""
+    if ensemble.relative_path:
+        return f"{ensemble.relative_path}/{ensemble.name}"
+    return ensemble.name
+
+
+def _display_ensemble_group(ensembles: Sequence[EnsembleConfig], header: str) -> None:
+    """Display a group of ensembles with header."""
+    if not ensembles:
+        return
+    click.echo(f"\n{header}")
+    for ensemble in sorted(ensembles, key=lambda e: (e.relative_path or "", e.name)):
+        display_name = _format_ensemble_display_name(ensemble)
+        click.echo(f"  {display_name}: {ensemble.description}")
+
+
 def _display_grouped_ensembles(
     config_manager: ConfigurationManager,
     local_ensembles: Sequence[EnsembleConfig],
@@ -135,45 +152,13 @@ def _display_grouped_ensembles(
     """
     click.echo("Available ensembles:")
 
-    # Show local ensembles first
-    if local_ensembles:
-        click.echo("\n📁 Local Repo (.llm-orc/ensembles):")
-        for ensemble in sorted(
-            local_ensembles, key=lambda e: (e.relative_path or "", e.name)
-        ):
-            display_name = (
-                f"{ensemble.relative_path}/{ensemble.name}"
-                if ensemble.relative_path
-                else ensemble.name
-            )
-            click.echo(f"  {display_name}: {ensemble.description}")
+    _display_ensemble_group(local_ensembles, "📁 Local Repo (.llm-orc/ensembles):")
+    _display_ensemble_group(
+        library_ensembles, "📚 Library (llm-orchestra-library/ensembles):"
+    )
 
-    # Show library ensembles
-    if library_ensembles:
-        click.echo("\n📚 Library (llm-orchestra-library/ensembles):")
-        for ensemble in sorted(
-            library_ensembles, key=lambda e: (e.relative_path or "", e.name)
-        ):
-            display_name = (
-                f"{ensemble.relative_path}/{ensemble.name}"
-                if ensemble.relative_path
-                else ensemble.name
-            )
-            click.echo(f"  {display_name}: {ensemble.description}")
-
-    # Show global ensembles
-    if global_ensembles:
-        global_config_label = f"Global ({config_manager.global_config_dir}/ensembles)"
-        click.echo(f"\n🌐 {global_config_label}:")
-        for ensemble in sorted(
-            global_ensembles, key=lambda e: (e.relative_path or "", e.name)
-        ):
-            display_name = (
-                f"{ensemble.relative_path}/{ensemble.name}"
-                if ensemble.relative_path
-                else ensemble.name
-            )
-            click.echo(f"  {display_name}: {ensemble.description}")
+    global_header = f"🌐 Global ({config_manager.global_config_dir}/ensembles):"
+    _display_ensemble_group(global_ensembles, global_header)
 
 
 def _determine_ensemble_directories(
@@ -819,6 +804,16 @@ def validate_all_ensembles(verbose: bool) -> None:
     raise SystemExit(1)
 
 
+def _display_layer_result(layer: str, result: Any) -> None:
+    """Display a single validation layer result."""
+    if result is None:
+        return
+    status = "PASS" if result.passed else "FAIL"
+    click.echo(f"  {layer}: {status}")
+    for error in result.errors or []:
+        click.echo(f"    - {error}")
+
+
 def _display_validation_result(validation_result: Any, verbose: bool) -> None:
     """Display validation result with formatting.
 
@@ -826,21 +821,13 @@ def _display_validation_result(validation_result: Any, verbose: bool) -> None:
         validation_result: ValidationResult from evaluator
         verbose: Show detailed output
     """
-    if validation_result.passed:
-        click.echo("Validation PASSED")
-    else:
-        click.echo("Validation FAILED")
+    status = "PASSED" if validation_result.passed else "FAILED"
+    click.echo(f"Validation {status}")
 
     if verbose:
         click.echo("\nValidation Layer Results:")
         for layer, result in validation_result.results.items():
-            if result is None:
-                continue
-            status = "PASS" if result.passed else "FAIL"
-            click.echo(f"  {layer}: {status}")
-            if result.errors:
-                for error in result.errors:
-                    click.echo(f"    - {error}")
+            _display_layer_result(layer, result)
 
 
 def _display_artifact_text_format(ensemble_name: str, results: dict[str, Any]) -> None:
