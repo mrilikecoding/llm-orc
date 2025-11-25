@@ -7,68 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2025-11-25
+
 ### Added
-- [#24] **Comprehensive Script Agent Infrastructure** - Complete script execution engine
-  - Script agent execution engine with robust security controls and multi-language support
-  - Full ensemble integration with implicit agent type detection
-  - Artifact management system for saving execution results
-  - Advanced script resolution and discovery system
-  - Secure execution with comprehensive safety controls
-  - CLI commands for script discovery and management (`scripts list`, `scripts show`, `scripts test`)
-  - Local and remote library source configuration support
-  - Idempotent initialization with flexible profile management
-  - Enhanced configuration handling for complex script environments
+- **[#24] Script Agent System** - Complete infrastructure for script-based agents in ensembles
+  - **EnhancedScriptAgent**: JSON stdin/stdout contract with Pydantic schema validation
+  - **ScriptResolver**: Priority-based script discovery from `.llm-orc/scripts/` directories
+  - **ArtifactManager**: Timestamped execution results with JSON and Markdown output
+  - **Implicit agent type detection**: Auto-detect script vs LLM agents by configuration fields
+  - **Human-in-the-loop workflows**: Interactive user input primitives for research validation
+  - **CLI commands**: `scripts list`, `scripts show`, `scripts test` for script management
+  - **Library integration**: Automatic primitive script installation from llm-orchestra-library
 
-### In Progress
-- [#24] **Enhanced Script Agent Support** - 80% complete - **FULLY FUNCTIONAL**
-  - ✅ Core infrastructure (ScriptResolver, EnhancedScriptAgent) - 95% complete (commits: 379eb5c, ecd4276, b4a2d94, 9009b12, 0b658d8)
-  - ✅ Script-LLM interoperability with JSON I/O support working
-  - ✅ Artifact management system with timestamped execution persistence and cleanup
-  - ✅ Script resolution and discovery from project `.llm-orc/scripts/` directories
-  - ✅ Research use cases - 95% complete with working examples and ensembles
-    - ✅ File operations and data transformation scripts
-    - ✅ Human-in-the-loop research workflows with user input handling
-    - ✅ Control flow and parameter injection systems
-    - ✅ Complex interactive flows with ensemble integration
-  - ✅ Testing coverage comprehensive for all core functionality (100% critical paths)
-  - ⏳ CLI commands for script/artifact management - 50% complete
-    - ✅ Basic `scripts list`, `scripts show`, `scripts test` commands
-    - ✅ Script user input handler integration for interactive flows
-    - ❌ Advanced script discovery and management commands pending
-    - ❌ Artifact browsing and cleanup commands needed
-  - ⏳ **Event-Driven Architecture Implementation** - 30% complete - **TDD IN PROGRESS**
-    - ✅ Base Event Pydantic model with validation and serialization (src/llm_orc/core/events/base.py)
-    - ⏳ UserInputRequiredEvent implementation in progress (tests written, implementation 90% complete)
-    - 📋 **Next Steps**: 
-      - Complete UserInputRequiredEvent tests and implementation
-      - Create GetUserInputScript Pydantic schema for script validation
-      - Integrate event system with streaming progress display for interactive pause/resume
-      - Update ScriptUserInputHandler to emit typed events
-      - Test event-driven user input flow end-to-end
-    - 🎯 **Goal**: Replace current user input handling with type-safe event-driven system
-  - 🔍 Next: Complete Pydantic event system and advanced CLI management
-  - 📊 **Status**: All primary research workflows operational, event system foundation in place
-  
-### Development Notes - Issue #24 Progress
-- **Primary Completion**: Script-LLM ecosystem fully operational with working ensembles and test coverage
-- **Remaining Work**: Advanced CLI commands for script discovery/browsing and artifact management
-- **Traceability**: All core functionality validated through comprehensive test suite and example ensembles
-- **Impact**: Ready for research use cases with human-in-the-loop workflows and complex data processing
-- **Performance**: Script execution integrated with ensemble artifact management and cleanup
+- **Primitive Script Library** - Ready-to-use scripts for common operations
+  - `file-ops/`: read_file.py, write_file.py for file I/O
+  - `user-interaction/`: get_user_input.py, confirm_action.py for interactive workflows
+  - `data-transform/`: json_extract.py for data manipulation
+  - `control-flow/`: replicate_n_times.py for execution control
 
-- Script Template Library Development
-  - ✅ Primitive script collection for common use cases
-    - ✅ File operations scripts
-    - ✅ User interaction scripts
-    - ✅ Data transformation scripts
-    - ✅ Control flow management scripts
-  - ✅ Full integration with llm-orchestra-library for script templates
-  - ✅ Default script installation during llm-orc init
-  - 🔍 Finalizing advanced use case template development
-    - Ongoing: Interactive game scenarios
-    - Ongoing: Swarm intelligence workflows
-    - Ongoing: Human-in-the-loop research configurations
-  - 🔍 Completing script category management documentation
+- **Pydantic Schema System** - Type-safe interfaces for script agents
+  - `ScriptAgentInput/Output` schemas for contract validation
+  - `ConversationState` for multi-turn conversation tracking
+  - Event-driven architecture foundation with base Event model
+
+- **BDD Test Suite** - 164 behavioral scenarios validating all ADRs
+  - ADR-001: Pydantic script interfaces
+  - ADR-002: Composable primitive system
+  - ADR-003: Testable script contracts
+  - ADR-005: Multi-turn conversations
+  - ADR-006: Library-based primitives architecture
+  - ADR-007: Progressive ensemble validation
+  - ADR-008: LLM-friendly CLI and MCP design
+
+### Changed
+- **Library source configuration**: Require explicit `LLM_ORC_LIBRARY_SOURCE` for remote fetching
+- **Init behavior**: Graceful fallback when no library is configured (no scripts installed by default)
+- **Configuration hierarchy**: `with_scripts` parameter propagated through init chain
+
+### Technical
+- 142 commits implementing Issue #24 requirements
+- 2,331 tests passing with 93.5% coverage
+- Full compliance with ruff, mypy strict, and complexipy standards
+- Security controls for script execution with command validation
 
 ## [0.10.1] - 2025-08-07
 
