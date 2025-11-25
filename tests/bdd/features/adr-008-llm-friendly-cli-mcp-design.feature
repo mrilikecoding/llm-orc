@@ -25,6 +25,7 @@ Feature: ADR-008: LLM-Friendly CLI and MCP Design
     When I execute "llm-orc init --no-scripts"
     Then the command should succeed
     And the directory ".llm-orc" should exist
+    And the output should contain "Skipped primitive script installation"
     And the directory ".llm-orc/scripts/primitives" should not contain any scripts
 
   Scenario: Initialize with custom project name
