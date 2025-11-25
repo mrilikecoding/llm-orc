@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.11.0] - 2025-11-25
+
+### Added
+- **[#24] Script Agent System** - Complete infrastructure for script-based agents in ensembles
+  - **EnhancedScriptAgent**: JSON stdin/stdout contract with Pydantic schema validation
+  - **ScriptResolver**: Priority-based script discovery from `.llm-orc/scripts/` directories
+  - **ArtifactManager**: Timestamped execution results with JSON and Markdown output
+  - **Implicit agent type detection**: Auto-detect script vs LLM agents by configuration fields
+  - **Human-in-the-loop workflows**: Interactive user input primitives for research validation
+  - **CLI commands**: `scripts list`, `scripts show`, `scripts test` for script management
+  - **Library integration**: Automatic primitive script installation from llm-orchestra-library
+
+- **Primitive Script Library** - Ready-to-use scripts for common operations
+  - `file-ops/`: read_file.py, write_file.py for file I/O
+  - `user-interaction/`: get_user_input.py, confirm_action.py for interactive workflows
+  - `data-transform/`: json_extract.py for data manipulation
+  - `control-flow/`: replicate_n_times.py for execution control
+
+- **Pydantic Schema System** - Type-safe interfaces for script agents
+  - `ScriptAgentInput/Output` schemas for contract validation
+  - `ConversationState` for multi-turn conversation tracking
+  - Event-driven architecture foundation with base Event model
+
+- **BDD Test Suite** - 164 behavioral scenarios validating all ADRs
+  - ADR-001: Pydantic script interfaces
+  - ADR-002: Composable primitive system
+  - ADR-003: Testable script contracts
+  - ADR-005: Multi-turn conversations
+  - ADR-006: Library-based primitives architecture
+  - ADR-007: Progressive ensemble validation
+  - ADR-008: LLM-friendly CLI and MCP design
+
+### Changed
+- **Library source configuration**: Require explicit `LLM_ORC_LIBRARY_SOURCE` for remote fetching
+- **Init behavior**: Graceful fallback when no library is configured (no scripts installed by default)
+- **Configuration hierarchy**: `with_scripts` parameter propagated through init chain
+
+### Technical
+- 142 commits implementing Issue #24 requirements
+- 2,331 tests passing with 93.5% coverage
+- Full compliance with ruff, mypy strict, and complexipy standards
+- Security controls for script execution with command validation
+
 ## [0.10.1] - 2025-08-07
 
 ### Fixed

@@ -20,6 +20,7 @@ Mix expensive cloud models with free local models - use Claude for strategic ins
 
 - **Multi-Agent Ensembles**: Coordinate specialized agents with flexible dependency graphs
 - **Agent Dependencies**: Define which agents depend on others for sophisticated orchestration patterns
+- **Script Agent Integration**: Execute custom scripts alongside LLM agents with JSON I/O communication
 - **Model Profiles**: Simplified configuration with named shortcuts for model + provider combinations
 - **Cost Optimization**: Mix expensive and free models based on what each task needs
 - **Streaming Output**: Real-time progress updates during ensemble execution
@@ -27,6 +28,7 @@ Mix expensive cloud models with free local models - use Claude for strategic ins
 - **Secure Authentication**: Encrypted API key storage with easy credential management
 - **YAML Configuration**: Easy ensemble setup with readable config files
 - **Usage Tracking**: Token counting, cost estimation, and timing metrics
+- **Artifact Management**: Automatic saving of execution results with timestamped persistence
 
 ## Installation
 
@@ -234,6 +236,26 @@ llm-orc config reset-local --reset-ensembles --no-backup   # Reset including ens
 
 ```
 
+### Script Management
+
+LLM Orchestra includes powerful script agent integration for executing custom scripts alongside LLM agents:
+
+```bash
+# List available scripts in your project
+llm-orc scripts list
+
+# Show detailed information about a script
+llm-orc scripts show file_operations/read_file.py
+
+# Test a script with parameters
+llm-orc scripts test file_operations/read_file.py --parameters '{"filepath": "example.txt"}'
+
+# Scripts are discovered from .llm-orc/scripts/ directories
+# Results are automatically saved to .llm-orc/artifacts/ with timestamps
+```
+
+Script agents use JSON I/O for seamless integration with LLM agents, enabling powerful hybrid workflows where scripts provide data and context for LLM analysis.
+
 ## Ensemble Library
 
 Looking for pre-built ensembles? Check out the [LLM Orchestra Library](https://github.com/mrilikecoding/llm-orchestra-library) - a curated collection of analytical ensembles for code review, research analysis, decision support, and more.
@@ -259,6 +281,33 @@ llm-orc library copy code-analysis/security-review
 # Copy an ensemble to your global configuration
 llm-orc library copy code-analysis/security-review --global
 ```
+
+#### Library Source Configuration
+
+By default, LLM Orchestra fetches library content from the remote GitHub repository. For development purposes, you can use a local copy of the library:
+
+```bash
+# Use remote GitHub library (default)
+llm-orc library browse research-analysis
+
+# Use local library for development
+export LLM_ORC_LIBRARY_SOURCE=local
+llm-orc library browse research-analysis  # Uses local submodule
+llm-orc init                              # Copies from local submodule
+
+# Switch back to remote
+unset LLM_ORC_LIBRARY_SOURCE
+```
+
+**When to use local library:**
+- Testing changes to library ensembles before publishing
+- Working on feature branches of the llm-orchestra-library
+- Offline development (when remote access unavailable)
+- Custom ensemble development and testing
+
+**Requirements for local library:**
+- The `llm-orchestra-library` submodule must be initialized and present
+- Clear error messages guide you if the local library is not found
 
 ## Use Cases
 
@@ -464,6 +513,40 @@ LLM Orchestra follows a configuration hierarchy:
 1. **Local project configuration** (`.llm-orc/` in current directory)
 2. **Global user configuration** (`~/.config/llm-orc/`)
 3. **Command-line options** (highest priority)
+
+### Library Path Configuration
+
+Control where `llm-orc init` finds primitive scripts using environment variables or project-specific configuration:
+
+```bash
+# Option 1: Custom library location via environment variable
+export LLM_ORC_LIBRARY_PATH="/path/to/your/custom-library"
+llm-orc init
+
+# Option 2: Project-specific configuration via .llm-orc/.env
+mkdir -p .llm-orc
+echo 'LLM_ORC_LIBRARY_PATH=/path/to/your/custom-library' > .llm-orc/.env
+llm-orc init
+
+# Option 3: Use local submodule (development default)
+export LLM_ORC_LIBRARY_SOURCE=local
+llm-orc init
+
+# Option 4: Auto-detect library in current directory (no configuration needed)
+# Looks for: ./llm-orchestra-library/scripts/primitives/
+llm-orc init
+```
+
+**Priority order:**
+1. `LLM_ORC_LIBRARY_PATH` environment variable - Explicit custom location (highest priority)
+2. `.llm-orc/.env` file - Project-specific configuration
+3. `LLM_ORC_LIBRARY_SOURCE=local` - Package submodule
+4. `./llm-orchestra-library/` - Current working directory auto-detection
+5. No scripts installed (graceful fallback)
+
+**Note**: Environment variables always take precedence over `.env` file settings, allowing temporary overrides without modifying project files.
+
+This allows developers to maintain their own script libraries while still using llm-orc's orchestration features.
 
 ### XDG Base Directory Support
 Configurations follow the XDG Base Directory specification:

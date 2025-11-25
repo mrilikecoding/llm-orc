@@ -44,6 +44,17 @@ async def run_streaming_execution(
         initial_tree = create_dependency_tree(ensemble_config.agents, agent_statuses)
 
         with console.status(initial_tree, spinner="dots") as status:
+            # Create progress controller for synchronous user input handling
+            from llm_orc.cli_modules.utils.rich_progress_controller import (
+                RichProgressController,
+            )
+
+            progress_controller = RichProgressController(
+                console, status, agent_statuses, ensemble_config.agents
+            )
+
+            # Provide the executor with direct progress control for user input
+            executor._progress_controller = progress_controller
             async for event in executor.execute_streaming(ensemble_config, input_data):
                 event_type = event["type"]
 
@@ -327,6 +338,14 @@ def _handle_streaming_event_with_status(
         return _handle_execution_completed_event(
             event, ensemble_config, status, console, detailed
         )
+    elif event_type == "user_input_required":
+        status_changed = _handle_user_input_required_event(
+            event, ensemble_config, status, console
+        )
+    elif event_type == "user_input_completed":
+        status_changed = _handle_user_input_completed_event(
+            event, agent_statuses, ensemble_config
+        )
     else:
         status_changed = False
 
@@ -499,3 +518,34 @@ def _display_json_results(result: dict[str, Any], ensemble_config: Any) -> None:
         # Fallback error handling
         error_output = {"error": str(e), "config": {"type": "error_config"}}
         click.echo(json.dumps(error_output, indent=2))
+
+
+def _handle_user_input_required_event(
+    event: dict[str, Any],
+    ensemble_config: Any,
+    status: dict[str, Any],
+    console: Any,
+) -> bool:
+    """Handle user input required event."""
+    # Extract data from the correct nested structure
+    event_data = event.get("data", {})
+    agent_name = event_data.get("agent_name", "unknown")
+    message = event_data.get("message", "Input required")
+
+    console.print(f"[yellow]⏸️  {agent_name}: {message}[/yellow]")
+    return False
+
+
+def _handle_user_input_completed_event(
+    event: dict[str, Any],
+    agent_statuses: dict[str, Any],
+    ensemble_config: Any,
+) -> bool:
+    """Handle user input completed event."""
+    # Extract data from the correct nested structure
+    event_data = event.get("data", {})
+    agent_name = event_data.get("agent_name", "unknown")
+    # Set agent status back to running (updated to completed when agent finishes)
+    if agent_name in agent_statuses:
+        agent_statuses[agent_name] = "running"
+    return True

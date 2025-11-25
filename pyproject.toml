@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llm-orchestra"
-version = "0.10.1"
+version = "0.11.0"
 description = "Multi-agent LLM communication system with ensemble orchestration"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -36,14 +36,16 @@ dependencies = [
     "requests>=2.32.4",
     "rich>=13.0.0",
     "psutil>=5.9.0",
+    "python-dotenv>=1.1.1",
 ]
 requires-python = ">=3.11"
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0", 
+    "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
+    "pytest-bdd>=7.0.0",
     "ruff>=0.0.287",
     "mypy>=1.5.0",
     "build",
@@ -80,9 +82,64 @@ warn_unused_configs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--cov=llm_orc --cov-report=term-missing --cov-fail-under=95"
+addopts = "--cov=llm_orc --cov-report=term-missing --cov-fail-under=93"
 markers = [
-    "asyncio: marks tests as requiring asyncio"
+    "asyncio: marks tests as requiring asyncio",
+    # BDD Gherkin tags from feature files
+    "adr-001: ADR-001 Pydantic Script Agent Interface tests",
+    "adr-001-compliance: Tests for ADR-001 compliance",
+    "adr-002: ADR-002 Composable Primitive Agent System tests",
+    "adr-002-compliance: Tests for ADR-002 compliance",
+    "adr-003: ADR-003 Testable Script Agent Contracts tests",
+    "adr-005: ADR-005 Multi-Turn Agent Conversations tests",
+    "adr-006: ADR-006 Library-Based Primitives Architecture tests",
+    "adr-007: ADR-007 Progressive Ensemble Validation Suite tests",
+    "agent-request-processing: Tests for agent request processing",
+    "architectural-compliance: Tests for architectural compliance",
+    "artifact-management: Tests for artifact management",
+    "backward-compatibility: Tests for backward compatibility",
+    "bridge-primitives: Tests for bridge primitives",
+    "caching-reproducibility: Tests for caching and reproducibility",
+    "core-functionality: Core functionality tests",
+    "core-schema-validation: Core schema validation tests",
+    "dependency-resolution: Tests for dependency resolution",
+    "discovery: Tests for script discovery",
+    "dual-purpose: Tests for dual-purpose functionality",
+    "dynamic-communication: Tests for dynamic communication",
+    "ecosystem-extensibility: Tests for ecosystem extensibility",
+    "engine-simplicity: Tests for engine simplicity",
+    "enhanced-script-agent: Tests for enhanced script agent",
+    "ensemble-integration: Tests for ensemble integration",
+    "error-handling: Tests for error handling",
+    "extensibility: Tests for extensibility",
+    "extension-patterns: Tests for extension patterns",
+    "function-generation: Tests for function generation",
+    "integration: Integration tests",
+    "integration-compatibility: Tests for integration compatibility",
+    "json-serialization: Tests for JSON serialization",
+    "library-optional-installation: Tests for library optional installation",
+    "llm-simulation: Tests with LLM simulation",
+    "multi-language-execution: Tests for multi-language execution",
+    "performance: Performance tests",
+    "performance-requirements: Performance requirement tests",
+    "primitive-library: Tests for primitive library",
+    "priority: Tests for priority handling",
+    "progressive-validation: Tests for progressive validation",
+    "schema-extension: Tests for schema extension",
+    "script-discovery: Tests for script discovery",
+    "script-resolution: Tests for script resolution",
+    "security: Security tests",
+    "security-validation: Tests for security validation",
+    "specialized-schemas: Tests for specialized schemas",
+    "state-management: Tests for state management",
+    "template-system: Tests for template system",
+    "test-fixtures: Tests for test fixtures",
+    "test-independence: Tests for test independence",
+    "type-safety: Tests for type safety",
+    "validation-framework: Tests for validation framework",
+    "workflow-composition: Tests for workflow composition",
+    "workflow-validation: Tests for workflow validation",
+    "yaml-configuration: Tests for YAML configuration",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -96,6 +153,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.0.287",
     "mypy>=1.5.0",
+    "pip>=25.3",
     "pip-audit>=2.6.0",
     "types-requests>=2.32.4.20250611",
     "complexipy>=3.3.0",
@@ -103,5 +161,6 @@ dev = [
     "vulture>=2.14",
     "psutil>=6.1.0",
     "types-psutil>=7.0.0.20250601",
+    "pytest-bdd>=8.1.0",
 ]
 

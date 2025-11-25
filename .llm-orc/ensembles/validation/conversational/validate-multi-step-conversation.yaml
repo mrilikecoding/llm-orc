@@ -1,0 +1,74 @@
+name: validate-multi-step-conversation
+description: Conversational validation for multi-step processing pipeline
+
+agents:
+  - name: step1-read-config
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: ".llm-orc/ensembles/validation/integration/test-data-1.json"
+
+  - name: step2-extract-metadata
+    script: primitives/data-transform/json_extract.py
+    parameters:
+      json_data: '{"session": "A1", "user": "alice", "action": "read"}'
+      fields: ["session", "user"]
+    depends_on: [step1-read-config]
+
+  - name: step3-generate-parameters
+    script: primitives/control-flow/replicate_n_times.py
+    parameters:
+      replications: 3
+      seed: 555
+    depends_on: [step2-extract-metadata]
+
+  - name: step4-read-additional-data
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: ".llm-orc/ensembles/validation/integration/test-data-2.json"
+    depends_on: [step3-generate-parameters]
+
+  - name: step5-finalize
+    script: primitives/file-ops/write_file.py
+    parameters:
+      path: ".llm-orc/artifacts/validation/multi-step-result.txt"
+      content: "Multi-step conversation complete with 5 steps"
+    depends_on: [step4-read-additional-data]
+
+validation:
+  structural:
+    required_agents: [step1-read-config, step2-extract-metadata, step3-generate-parameters, step4-read-additional-data, step5-finalize]
+    max_execution_time: 20
+    min_execution_time: 0.01
+
+  schema:
+    - agent: step1-read-config
+      required_fields: [success]
+    - agent: step2-extract-metadata
+      required_fields: [success, extracted]
+    - agent: step3-generate-parameters
+      required_fields: [success, replications]
+    - agent: step4-read-additional-data
+      required_fields: [success]
+    - agent: step5-finalize
+      required_fields: [success]
+
+  behavioral:
+    - name: all-steps-complete
+      description: "All 5 conversation steps should complete"
+      assertion: "len(execution_order) == 5"
+
+    - name: strict-sequential-order
+      description: "Steps should execute in exact dependency order"
+      assertion: "execution_order == ['step1-read-config', 'step2-extract-metadata', 'step3-generate-parameters', 'step4-read-additional-data', 'step5-finalize']"
+
+    - name: all-steps-succeed
+      description: "All steps should succeed"
+      assertion: "all(results[a]['success'] for a in execution_order)"
+
+    - name: metadata-extracted
+      description: "Step 2 should extract session and user"
+      assertion: "'session' in results['step2-extract-metadata']['extracted'] and 'user' in results['step2-extract-metadata']['extracted']"
+
+    - name: parameters-generated
+      description: "Step 3 should generate 3 replications"
+      assertion: "len(results['step3-generate-parameters']['replications']) == 3"

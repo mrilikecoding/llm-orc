@@ -1,0 +1,93 @@
+name: expert-validated-analysis
+description: |
+  Human-in-the-loop research workflow demonstrating expert validation at key stages.
+  Shows script-LLM-human collaboration for rigorous research methodology.
+
+agents:
+  # Initial automated data analysis
+  - name: data-preprocessing
+    script: primitives/data-transform/preprocess_data.py
+    parameters:
+      cleaning_steps: [remove_outliers, normalize, validate]
+      output_format: structured
+      
+  # LLM generates initial hypothesis
+  - name: hypothesis-generation
+    model_profile: research-analyst
+    depends_on: [data-preprocessing]
+    system_prompt: |
+      Based on the preprocessed data, generate research hypotheses for investigation.
+      
+      Provide:
+      1. Primary research question
+      2. 3-5 testable hypotheses
+      3. Methodology suggestions
+      4. Expected outcomes and implications
+      
+      Format as structured research proposal.
+      
+  # Human expert review checkpoint
+  - name: expert-hypothesis-review
+    script: primitives/user-interaction/expert_review.py
+    depends_on: [hypothesis-generation]
+    parameters:
+      review_type: hypothesis_validation
+      timeout_minutes: 30
+      expert_questions:
+        - "Are the hypotheses scientifically sound?"
+        - "Do they address the core research question?"
+        - "Are the methodologies appropriate?"
+        - "Any missing considerations?"
+      
+  # Conduct statistical analysis based on approved hypotheses
+  - name: statistical-analysis
+    script: primitives/research/hypothesis_testing.py
+    depends_on: [expert-hypothesis-review]
+    parameters:
+      tests: [t_test, chi_square, regression]
+      confidence_level: 0.95
+      multiple_comparisons: bonferroni
+      
+  # LLM interprets statistical results
+  - name: results-interpretation
+    model_profile: research-analyst
+    depends_on: [statistical-analysis]
+    system_prompt: |
+      Interpret the statistical analysis results in the context of the research hypotheses.
+      
+      For each hypothesis:
+      1. Statistical test results and significance
+      2. Effect sizes and practical significance
+      3. Limitations and assumptions
+      4. Implications for the research question
+      
+      Maintain scientific rigor and acknowledge uncertainties.
+      
+  # Final human expert validation
+  - name: expert-final-review
+    script: primitives/user-interaction/expert_review.py
+    depends_on: [results-interpretation]
+    parameters:
+      review_type: final_validation
+      timeout_minutes: 45
+      expert_questions:
+        - "Do you agree with the statistical interpretations?"
+        - "Are the conclusions supported by the evidence?"
+        - "Any concerns about methodology or analysis?"
+        - "Recommendations for revision or publication?"
+        
+  # Generate final research report
+  - name: research-synthesis
+    model_profile: synthesis-agent
+    depends_on: [expert-final-review]
+    system_prompt: |
+      Create a comprehensive research report incorporating expert feedback.
+      
+      Structure:
+      1. Abstract and introduction
+      2. Methods and data analysis approach
+      3. Results with statistical evidence
+      4. Discussion of findings and limitations
+      5. Conclusions and future research directions
+      
+      Integrate all expert feedback and maintain research standards.

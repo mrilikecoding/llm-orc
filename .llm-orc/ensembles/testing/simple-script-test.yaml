@@ -1,0 +1,8 @@
+name: simple-script-test
+description: Test just script execution
+
+agents:
+  - name: text-analyzer
+    script: scripts/analyze_text.py
+    parameters:
+      text: "Hello world! This is a test."

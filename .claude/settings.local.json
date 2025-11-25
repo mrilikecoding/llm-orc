@@ -1,8 +1,20 @@
 {
   "permissions": {
     "allow": [
-      "Bash(uv run pytest:*)"
+      "Bash(uv run pytest:*)",
+      "Bash(gh issue view:*)",
+      "Bash(make lint:*)",
+      "Bash(make test:*)",
+      "Bash(uv run:*)",
+      "Bash(find:*)",
+      "Bash(pytest:*)",
+      "Bash(.claude/hooks/testing-pyramid-gate.sh:*)",
+      "Bash(awk:*)",
+      "Bash(xargs:*)",
+      "Bash(grep:*)",
+      "Bash(cat:*)"
     ],
     "deny": []
-  }
+  },
+  "disableAllHooks": false
 }

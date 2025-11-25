@@ -1,0 +1,54 @@
+name: validate-error-handling
+description: Integration validation for error handling in script execution
+
+agents:
+  - name: read-nonexistent-file
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: "/nonexistent/path/to/file.txt"
+
+  - name: extract-from-invalid-json
+    script: primitives/data-transform/json_extract.py
+    parameters:
+      json_data: "not valid json {{"
+      fields: ["test"]
+
+  - name: read-valid-file
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: ".llm-orc/ensembles/validation/integration/test-data-1.json"
+
+validation:
+  structural:
+    required_agents: [read-nonexistent-file, extract-from-invalid-json, read-valid-file]
+    max_execution_time: 15
+    min_execution_time: 0.01
+
+  schema:
+    - agent: read-nonexistent-file
+      required_fields: [success]
+    - agent: extract-from-invalid-json
+      required_fields: [success]
+    - agent: read-valid-file
+      required_fields: [success, content]
+
+  behavioral:
+    - name: nonexistent-file-fails
+      description: "Reading nonexistent file should fail gracefully"
+      assertion: "results['read-nonexistent-file']['success'] == False"
+
+    - name: invalid-json-fails
+      description: "Extracting from invalid JSON should fail gracefully"
+      assertion: "results['extract-from-invalid-json']['success'] == False"
+
+    - name: valid-file-succeeds
+      description: "Reading valid file should succeed"
+      assertion: "results['read-valid-file']['success'] == True"
+
+    - name: all-agents-executed
+      description: "All agents should execute despite errors"
+      assertion: "len(execution_order) == 3"
+
+    - name: errors-have-messages
+      description: "Failed agents should have error messages"
+      assertion: "'error' in results['read-nonexistent-file'] and 'error' in results['extract-from-invalid-json']"

@@ -1,0 +1,14 @@
+name: two-script-test
+description: Test two script agents in sequence
+
+agents:
+  - name: first-script
+    script: scripts/analyze_text.py
+    parameters:
+      text: "Testing two agents."
+    
+  - name: second-script
+    script: scripts/test-script.py
+    parameters:
+      action: "process"
+    depends_on: [first-script]

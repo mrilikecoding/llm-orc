@@ -7,6 +7,9 @@ from llm_orc.cli_commands import (
     list_ensembles_command,
     list_profiles_command,
     serve_ensemble,
+    validate_all_ensembles,
+    validate_ensemble,
+    validate_ensemble_category,
 )
 from llm_orc.cli_completion import (
     complete_ensemble_names,
@@ -164,21 +167,59 @@ def list_profiles() -> None:
     list_profiles_command()
 
 
+@cli.command()
+@click.option(
+    "--project-name",
+    default=None,
+    help="Name for the project (defaults to directory name)",
+)
+@click.option(
+    "--no-scripts",
+    is_flag=True,
+    help="Skip installing primitive scripts from library",
+)
+def init(project_name: str | None, no_scripts: bool) -> None:
+    """Initialize llm-orc project with scripts and examples.
+
+    Creates .llm-orc/ directory with:
+      - Primitive scripts from library (file-ops, data-transform, etc.)
+      - Example ensembles demonstrating patterns
+      - Configuration templates
+
+    \b
+    Examples:
+      # Initialize with all defaults
+      llm-orc init
+
+      # Initialize without primitive scripts
+      llm-orc init --no-scripts
+
+      # Specify project name
+      llm-orc init --project-name my-ensemble-project
+
+    Ready! After init, try:
+      llm-orc scripts list          # See installed primitives
+      llm-orc list-ensembles        # See example ensembles
+    """
+    init_local_config(project_name, with_scripts=not no_scripts)
+
+
 @cli.group()
 def config() -> None:
     """Configuration management commands."""
     pass
 
 
-@config.command()
+@config.command("init")
 @click.option(
     "--project-name",
     default=None,
     help="Name for the project (defaults to directory name)",
 )
-def init(project_name: str | None) -> None:
-    """Initialize local .llm-orc configuration for current project."""
-    init_local_config(project_name)
+def config_init_deprecated(project_name: str | None) -> None:
+    """(Deprecated) Initialize local config. Use 'llm-orc init' instead."""
+    click.echo("Note: 'llm-orc config init' is deprecated. Use 'llm-orc init' instead.")
+    init_local_config(project_name, with_scripts=True)
 
 
 @config.command("reset-global")
@@ -268,6 +309,122 @@ def auth() -> None:
 def library() -> None:
     """Library management commands for browsing and copying ensembles."""
     pass
+
+
+@cli.group()
+def scripts() -> None:
+    """Script management commands."""
+    pass
+
+
+@cli.group()
+def artifacts() -> None:
+    """Artifact management commands."""
+    pass
+
+
+@cli.group()
+def validate() -> None:
+    """Validation commands for testing ensembles."""
+    pass
+
+
+@scripts.command("list")
+@click.option(
+    "--format",
+    "format_type",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format",
+)
+def scripts_list(format_type: str) -> None:
+    """List available scripts."""
+    from llm_orc.cli_commands import scripts_list_command
+
+    scripts_list_command(format_type)
+
+
+@scripts.command("show")
+@click.argument("name")
+def scripts_show(name: str) -> None:
+    """Show script documentation."""
+    from llm_orc.cli_commands import scripts_show_command
+
+    scripts_show_command(name)
+
+
+@scripts.command("test")
+@click.argument("name")
+@click.option("--parameters", help="JSON parameters for the script")
+def scripts_test(name: str, parameters: str | None) -> None:
+    """Test script with parameters."""
+    from llm_orc.cli_commands import scripts_test_command
+
+    scripts_test_command(name, parameters)
+
+
+@artifacts.command("list")
+@click.option(
+    "--format",
+    "format_type",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format",
+)
+def artifacts_list(format_type: str) -> None:
+    """List execution artifacts."""
+    from llm_orc.cli_commands import artifacts_list_command
+
+    artifacts_list_command(format_type)
+
+
+@artifacts.command("show")
+@click.argument("name")
+@click.option(
+    "--format",
+    "format_type",
+    type=click.Choice(["text", "json"]),
+    default="text",
+    help="Output format",
+)
+@click.option("--execution", help="Specific execution timestamp")
+def artifacts_show(name: str, format_type: str, execution: str | None) -> None:
+    """Show latest results."""
+    from llm_orc.cli_commands import artifacts_show_command
+
+    artifacts_show_command(name, format_type, execution)
+
+
+@validate.command()
+@click.argument("ensemble_name", shell_complete=complete_ensemble_names)
+@click.option("--verbose", is_flag=True, help="Show detailed validation output")
+@click.option(
+    "--config-dir",
+    default=None,
+    help="Directory containing ensemble configurations",
+)
+def run(ensemble_name: str, verbose: bool, config_dir: str | None) -> None:
+    """Validate a single ensemble."""
+    validate_ensemble(ensemble_name, verbose, config_dir)
+
+
+@validate.command()
+@click.option(
+    "--category",
+    required=True,
+    help="Validation category (primitive, integration, etc.)",
+)
+@click.option("--verbose", is_flag=True, help="Show detailed validation output")
+def category(category: str, verbose: bool) -> None:
+    """Validate ensembles by category."""
+    validate_ensemble_category(category, verbose)
+
+
+@validate.command("all")
+@click.option("--verbose", is_flag=True, help="Show detailed validation output")
+def validate_all_command(verbose: bool) -> None:
+    """Validate all validation ensembles."""
+    validate_all_ensembles(verbose)
 
 
 @library.command()
@@ -386,6 +543,7 @@ def help_command() -> None:
 
     # Command mappings with their aliases
     commands_with_aliases = [
+        ("artifacts", "ar", "Artifact management commands."),
         ("auth", "a", "Authentication management commands."),
         ("config", "c", "Configuration management commands."),
         ("help", "h", "Show help for llm-orc commands."),
@@ -401,6 +559,7 @@ def help_command() -> None:
             "lp",
             "List available model profiles with their provider/model...",
         ),
+        ("scripts", "sc", "Script management commands."),
         ("serve", "s", "Serve an ensemble as an MCP server."),
     ]
 
@@ -419,6 +578,8 @@ cli.add_command(invoke, name="i")
 cli.add_command(auth, name="a")
 cli.add_command(config, name="c")
 cli.add_command(library, name="l")
+cli.add_command(scripts, name="sc")
+cli.add_command(artifacts, name="ar")
 cli.add_command(list_ensembles, name="le")
 cli.add_command(list_profiles, name="lp")
 cli.add_command(serve, name="s")

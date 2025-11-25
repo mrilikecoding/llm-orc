@@ -52,7 +52,11 @@ def _perform_cycle_detection(
     if agent_config:
         dependencies = agent_config.get("depends_on", [])
         for dep in dependencies:
-            if _perform_cycle_detection(dep, agents, visited, recursion_stack):
+            # Handle both simple string and conditional dict dependencies
+            dep_name = dep if isinstance(dep, str) else dep.get("agent_name")
+            if dep_name and _perform_cycle_detection(
+                dep_name, agents, visited, recursion_stack
+            ):
                 return True
 
     recursion_stack.remove(agent_name)
@@ -98,9 +102,11 @@ def _check_missing_dependencies(agents: list[dict[str, Any]]) -> None:
     for agent in agents:
         dependencies = agent.get("depends_on", [])
         for dep in dependencies:
-            if dep not in agent_names:
+            # Handle both simple string dependencies and conditional dict dependencies
+            dep_name = dep if isinstance(dep, str) else dep.get("agent_name")
+            if dep_name and dep_name not in agent_names:
                 raise ValueError(
-                    f"Agent '{agent['name']}' has missing dependency: '{dep}'"
+                    f"Agent '{agent['name']}' has missing dependency: '{dep_name}'"
                 )
 
 
@@ -125,6 +131,9 @@ class EnsembleConfig:
     agents: list[dict[str, Any]]
     default_task: str | None = None
     task: str | None = None  # Backward compatibility
+    relative_path: str | None = None  # For hierarchical display
+    validation: dict[str, Any] | None = None  # Validation configuration
+    test_mode: dict[str, Any] | None = None  # Test mode configuration
 
 
 class EnsembleLoader:
@@ -148,6 +157,8 @@ class EnsembleLoader:
             agents=data["agents"],
             default_task=default_task,
             task=data.get("task"),  # Keep for backward compatibility
+            validation=data.get("validation"),
+            test_mode=data.get("test_mode"),
         )
 
         # Validate agent dependencies
@@ -156,24 +167,39 @@ class EnsembleLoader:
         return config
 
     def list_ensembles(self, directory: str) -> list[EnsembleConfig]:
-        """List all ensemble configurations in a directory."""
+        """List all ensemble configurations in a directory and subdirectories."""
         dir_path = Path(directory)
         if not dir_path.exists():
             return []
 
         ensembles = []
-        for yaml_file in dir_path.glob("*.yaml"):
+        # Use rglob for recursive search in subdirectories
+        for yaml_file in dir_path.rglob("*.yaml"):
             try:
                 config = self.load_from_file(str(yaml_file))
+                # Store relative path for hierarchical display
+                relative_path = yaml_file.relative_to(dir_path)
+                config.relative_path = (
+                    str(relative_path.parent)
+                    if relative_path.parent != Path(".")
+                    else None
+                )
                 ensembles.append(config)
             except Exception:
                 # Skip invalid files
                 continue
 
         # Also check for .yml files
-        for yml_file in dir_path.glob("*.yml"):
+        for yml_file in dir_path.rglob("*.yml"):
             try:
                 config = self.load_from_file(str(yml_file))
+                # Store relative path for hierarchical display
+                relative_path = yml_file.relative_to(dir_path)
+                config.relative_path = (
+                    str(relative_path.parent)
+                    if relative_path.parent != Path(".")
+                    else None
+                )
                 ensembles.append(config)
             except Exception:
                 # Skip invalid files
@@ -190,9 +216,37 @@ class EnsembleLoader:
         _detect_circular_dependencies(agents)
 
     def find_ensemble(self, directory: str, name: str) -> EnsembleConfig | None:
-        """Find an ensemble by name in a directory."""
+        """Find an ensemble by name in a directory, supporting hierarchical names.
+
+        Supports matching by:
+        - Simple name: "my-ensemble"
+        - Full hierarchical name: "examples/my-ensemble/my-ensemble"
+        - Directory path (if name matches): "examples/my-ensemble"
+        """
         ensembles = self.list_ensembles(directory)
         for ensemble in ensembles:
-            if ensemble.name == name:
+            # Build potential matching patterns
+            display_name = (
+                f"{ensemble.relative_path}/{ensemble.name}"
+                if ensemble.relative_path
+                else ensemble.name
+            )
+
+            # Also support matching by directory path (relative_path alone)
+            # if the last component matches the ensemble name
+            directory_path = ensemble.relative_path
+
+            # Check all matching patterns
+            if ensemble.name == name or display_name == name:
                 return ensemble
+
+            # Support "examples/neon-shadows" matching an ensemble at
+            # examples/neon-shadows/ensemble.yaml with name: neon-shadows
+            if (
+                directory_path
+                and directory_path == name
+                and name.endswith(ensemble.name)
+            ):
+                return ensemble
+
         return None

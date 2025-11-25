@@ -376,7 +376,7 @@ class ClaudeCLIModel(ModelInterface):
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
                 None,
-                lambda: subprocess.run(
+                lambda: subprocess.run(  # nosec B603
                     [self.claude_path, "--no-api-key"],
                     input=cli_input,
                     text=True,

@@ -1,0 +1,69 @@
+name: validate-research-replication
+description: Research validation for replication study pattern
+
+agents:
+  - name: setup-experiment
+    script: primitives/control-flow/replicate_n_times.py
+    parameters:
+      replications: 10
+      seed: 12345
+
+  - name: collect-baseline-data
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: ".llm-orc/ensembles/validation/integration/test-data-1.json"
+    depends_on: [setup-experiment]
+
+  - name: collect-comparison-data
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: ".llm-orc/ensembles/validation/integration/test-data-2.json"
+    depends_on: [setup-experiment]
+
+  - name: save-replication-config
+    script: primitives/file-ops/write_file.py
+    parameters:
+      path: ".llm-orc/artifacts/validation/replication-config.txt"
+      content: "Research replication with 10 runs complete"
+    depends_on: [collect-baseline-data, collect-comparison-data]
+
+validation:
+  structural:
+    required_agents: [setup-experiment, collect-baseline-data, collect-comparison-data, save-replication-config]
+    max_execution_time: 20
+    min_execution_time: 0.01
+
+  schema:
+    - agent: setup-experiment
+      required_fields: [success, replications, total_replications]
+    - agent: collect-baseline-data
+      required_fields: [success, content]
+    - agent: collect-comparison-data
+      required_fields: [success, content]
+    - agent: save-replication-config
+      required_fields: [success, path]
+
+  behavioral:
+    - name: experiment-setup-complete
+      description: "Experiment setup should generate replications"
+      assertion: "results['setup-experiment']['total_replications'] == 10"
+
+    - name: baseline-data-collected
+      description: "Baseline data should be collected"
+      assertion: "results['collect-baseline-data']['success'] == True"
+
+    - name: comparison-data-collected
+      description: "Comparison data should be collected"
+      assertion: "results['collect-comparison-data']['success'] == True"
+
+    - name: config-saved
+      description: "Replication config should be saved"
+      assertion: "results['save-replication-config']['success'] == True"
+
+    - name: all-agents-executed
+      description: "All 4 agents should execute"
+      assertion: "len(execution_order) == 4"
+
+    - name: replication-list-complete
+      description: "Should have 10 replication configs"
+      assertion: "len(results['setup-experiment']['replications']) == 10"
