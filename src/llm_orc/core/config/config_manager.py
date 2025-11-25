@@ -246,8 +246,15 @@ class ConfigurationManager:
             else:
                 base[key] = value
 
-    def init_local_config(self, project_name: str | None = None) -> None:
-        """Initialize local configuration in current directory (idempotent)."""
+    def init_local_config(
+        self, project_name: str | None = None, with_scripts: bool = True
+    ) -> None:
+        """Initialize local configuration in current directory (idempotent).
+
+        Args:
+            project_name: Optional project name (defaults to directory name)
+            with_scripts: Install primitive scripts from library (default: True)
+        """
         local_dir = Path.cwd() / ".llm-orc"
 
         # Create directory structure (idempotent)
@@ -302,7 +309,8 @@ class ConfigurationManager:
                     shutil.copy2(example_template, local_ensemble_file)
 
         # Copy primitive scripts from llm-orchestra-library GitHub repo (idempotent)
-        self._copy_primitive_scripts(local_dir / "scripts")
+        if with_scripts:
+            self._copy_primitive_scripts(local_dir / "scripts")
 
         # Copy profile templates to local profiles directory (idempotent)
         self._copy_profile_templates(local_dir / "profiles")

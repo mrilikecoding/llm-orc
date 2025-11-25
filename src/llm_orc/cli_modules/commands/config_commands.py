@@ -174,9 +174,9 @@ def _reset_and_initialize_local_config(
     # Remove existing local config
     shutil.rmtree(local_config_dir)
 
-    # Initialize fresh local config
+    # Initialize fresh local config (with scripts by default for reset)
     try:
-        config_manager.init_local_config(project_name)
+        config_manager.init_local_config(project_name, with_scripts=True)
         click.echo("📋 Created fresh local config from template")
     except ValueError as e:
         raise click.ClickException(str(e)) from e
@@ -224,7 +224,7 @@ class ConfigCommands:
         config_manager = ConfigurationManager()
 
         try:
-            config_manager.init_local_config(project_name)
+            config_manager.init_local_config(project_name, with_scripts=with_scripts)
             echo_success("Local configuration initialized successfully!")
             click.echo("Created .llm-orc directory with:")
             click.echo("  - ensembles/   (project-specific ensembles)")

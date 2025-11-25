@@ -46,7 +46,9 @@ class TestConfigCommands:
             ConfigCommands.init_local_config(project_name)
 
             # Then
-            mock_config_manager.init_local_config.assert_called_once_with(project_name)
+            mock_config_manager.init_local_config.assert_called_once_with(
+                project_name, with_scripts=True
+            )
 
     def test_init_local_config_value_error(self, temp_dir: str) -> None:
         """Test local config initialization with ValueError."""
@@ -533,7 +535,7 @@ class TestConfigCommands:
                         mock_copytree.assert_called_once()
                         mock_rmtree.assert_called()
                         mock_config_manager.init_local_config.assert_called_once_with(
-                            "test"
+                            "test", with_scripts=True
                         )
 
         finally:
@@ -576,7 +578,7 @@ class TestConfigCommands:
                         # Then
                         mock_rmtree.assert_called_once()
                         mock_config_manager.init_local_config.assert_called_once_with(
-                            "test"
+                            "test", with_scripts=True
                         )
                         # Should restore ensemble files
                         assert mock_write_text.call_count >= 0
@@ -1023,7 +1025,9 @@ class TestResetLocalConfigHelperMethods:
                 mock_config_manager_class.return_value = mock_config_manager
 
                 # Mock init_local_config to recreate the directory
-                def mock_init(project_name: str | None) -> None:
+                def mock_init(
+                    project_name: str | None, with_scripts: bool = True
+                ) -> None:
                     local_config_dir.mkdir(parents=True, exist_ok=True)
 
                 mock_config_manager.init_local_config.side_effect = mock_init
@@ -1037,7 +1041,7 @@ class TestResetLocalConfigHelperMethods:
                 assert local_config_dir.exists()
                 assert not (local_config_dir / "old_file.txt").exists()
                 mock_config_manager.init_local_config.assert_called_once_with(
-                    "test-project"
+                    "test-project", with_scripts=True
                 )
         finally:
             os.chdir(original_cwd)

@@ -35,26 +35,27 @@ def _get_library_source_config() -> tuple[str, str]:
     if cwd_library.exists():
         return "local", str(cwd_library)
 
-    # Priority 3: Use package submodule if LLM_ORC_LIBRARY_SOURCE=local
-    library_source = os.environ.get("LLM_ORC_LIBRARY_SOURCE", "remote")
+    # Priority 3: Check package submodule only if LLM_ORC_LIBRARY_SOURCE=local
+    # is explicitly set
+    library_source = os.environ.get("LLM_ORC_LIBRARY_SOURCE")
     if library_source == "local":
-        # Use local submodule - find it relative to this file
-        # Go up from src/llm_orc/cli_library/ to project root
+        # Explicitly requested local - check package-relative path
         current_dir = Path(__file__).parent.parent.parent.parent
         local_path = current_dir / "llm-orchestra-library"
-        if not local_path.exists():
-            raise FileNotFoundError(
-                f"Local llm-orchestra-library not found at {local_path}. "
-                "Please ensure submodule is initialized or set "
-                "LLM_ORC_LIBRARY_SOURCE=remote"
-            )
-        return "local", str(local_path)
+        if local_path.exists():
+            return "local", str(local_path)
+        # Local explicitly requested but not found - return empty path
+        return "local", ""
+    elif library_source == "remote":
+        # Explicitly requested remote - use GitHub
+        return (
+            "remote",
+            "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main",
+        )
 
-    # Priority 4: Use remote GitHub (default)
-    return (
-        "remote",
-        "https://raw.githubusercontent.com/mrilikecoding/llm-orchestra-library/main",
-    )
+    # Priority 4: No explicit config - gracefully return nothing
+    # This allows the system to work without a library (no scripts installed)
+    return "local", ""
 
 
 def get_library_categories() -> list[str]:
