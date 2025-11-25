@@ -1028,7 +1028,8 @@ def ensemble_with_script_and_llm_agents(bdd_context: dict[str, Any]) -> None:
             },
             {
                 "name": "pattern-interpreter",
-                "model_profile": "default-local",
+                "model": "mock-gpt-4",
+                "provider": "openai",
                 "prompt_template": "Analyze network topology data: {context}",
                 "dependencies": {"context": "network-analyzer.analysis_results"},
             },

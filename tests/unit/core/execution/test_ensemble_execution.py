@@ -721,20 +721,21 @@ class TestEnsembleExecutor:
         """Test fallback to explicit model+provider when no model_profile."""
         executor = mock_ensemble_executor
 
+        # Mock the model loading to avoid auth issues in CI
+        mock_model = AsyncMock(spec=ModelInterface)
+        mock_model.generate_response.return_value = "Test response"
+
         with patch(
             "llm_orc.core.config.config_manager.ConfigurationManager"
         ) as mock_config_manager_class:
             mock_config_manager = mock_config_manager_class.return_value
 
-            with patch(
-                "llm_orc.core.auth.authentication.CredentialStorage"
-            ) as mock_credential_storage:
-                mock_storage_instance = mock_credential_storage.return_value
-                mock_storage_instance.get_auth_method.return_value = None
-
+            with patch.object(
+                executor._model_factory, "load_model", return_value=mock_model
+            ):
                 # This should use explicit model+provider, not call
                 # resolve_model_profile
-                await executor._model_factory.load_model_from_agent_config(
+                result = await executor._model_factory.load_model_from_agent_config(
                     {
                         "name": "agent1",
                         "model": "claude-3-5-sonnet-20241022",
@@ -744,6 +745,8 @@ class TestEnsembleExecutor:
 
                 # Verify that resolve_model_profile was NOT called
                 mock_config_manager.resolve_model_profile.assert_not_called()
+                # Verify we got the mocked model back
+                assert result == mock_model
 
     @pytest.mark.asyncio
     async def test_execute_dependency_based_ensemble(

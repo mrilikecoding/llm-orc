@@ -758,7 +758,7 @@ class EnsembleExecutor:
         # Implicit type detection based on fields present
         if "script" in agent_config:
             return "script"
-        elif "model_profile" in agent_config:
+        elif "model_profile" in agent_config or "model" in agent_config:
             return "llm"
 
         return None
