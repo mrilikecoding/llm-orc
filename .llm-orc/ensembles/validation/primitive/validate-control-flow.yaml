@@ -1,0 +1,40 @@
+name: validate-control-flow
+description: Primitive validation for replication control flow script agent
+
+agents:
+  - name: generate-replications
+    script: primitives/control-flow/replicate_n_times.py
+    parameters:
+      replications: 5
+      seed: 42
+
+validation:
+  structural:
+    required_agents: [generate-replications]
+    max_execution_time: 10
+    min_execution_time: 0.01
+
+  schema:
+    - agent: generate-replications
+      required_fields: [success, replications, total_replications, base_seed]
+
+  behavioral:
+    - name: success-flag-true
+      description: "Replication generation should succeed"
+      assertion: "results['generate-replications']['success'] == True"
+
+    - name: correct-replication-count
+      description: "Should generate 5 replications"
+      assertion: "results['generate-replications']['total_replications'] == 5"
+
+    - name: replications-list-length
+      description: "Replications list should have 5 items"
+      assertion: "len(results['generate-replications']['replications']) == 5"
+
+    - name: seed-preserved
+      description: "Base seed should match configured value"
+      assertion: "results['generate-replications']['base_seed'] == 42"
+
+    - name: replication-has-required-fields
+      description: "Each replication should have required fields"
+      assertion: "all('replication_id' in r and 'random_seed' in r for r in results['generate-replications']['replications'])"

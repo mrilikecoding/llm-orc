@@ -1,0 +1,61 @@
+name: validate-fan-out-fan-in
+description: Integration validation for fan-out and fan-in execution pattern
+
+agents:
+  - name: generate-base-replications
+    script: primitives/control-flow/replicate_n_times.py
+    parameters:
+      replications: 5
+      seed: 42
+
+  - name: read-data-1
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: ".llm-orc/ensembles/validation/integration/test-data-1.json"
+    depends_on: [generate-base-replications]
+
+  - name: read-data-2
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: ".llm-orc/ensembles/validation/integration/test-data-2.json"
+    depends_on: [generate-base-replications]
+
+  - name: write-output
+    script: primitives/file-ops/write_file.py
+    parameters:
+      path: ".llm-orc/artifacts/validation/fan-out-result.txt"
+      content: "Fan-out-fan-in complete"
+    depends_on: [read-data-1, read-data-2]
+
+validation:
+  structural:
+    required_agents: [generate-base-replications, read-data-1, read-data-2, write-output]
+    max_execution_time: 15
+    min_execution_time: 0.01
+
+  schema:
+    - agent: generate-base-replications
+      required_fields: [success, replications]
+    - agent: read-data-1
+      required_fields: [success, content]
+    - agent: read-data-2
+      required_fields: [success, content]
+    - agent: write-output
+      required_fields: [success, path]
+
+  behavioral:
+    - name: all-agents-succeed
+      description: "All agents should complete successfully"
+      assertion: "all(results[a]['success'] for a in execution_order)"
+
+    - name: base-executed-first
+      description: "Base replication should execute before reads"
+      assertion: "execution_order.index('generate-base-replications') < execution_order.index('read-data-1')"
+
+    - name: reads-before-write
+      description: "Both reads should complete before write"
+      assertion: "execution_order.index('read-data-1') < execution_order.index('write-output') and execution_order.index('read-data-2') < execution_order.index('write-output')"
+
+    - name: correct-execution-order-length
+      description: "Should have 4 agents in execution order"
+      assertion: "len(execution_order) == 4"

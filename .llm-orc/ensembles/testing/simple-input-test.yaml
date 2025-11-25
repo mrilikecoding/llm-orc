@@ -1,0 +1,6 @@
+name: simple-input-test
+description: Test simple input without complex config
+
+agents:
+  - name: simple-input
+    script: test_simple_input.py

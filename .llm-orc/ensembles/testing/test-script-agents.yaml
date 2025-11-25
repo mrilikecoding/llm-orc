@@ -1,0 +1,14 @@
+name: test-script-agents
+description: Test ensemble to verify script agent functionality
+
+agents:
+  - name: script-test
+    script: scripts/test-script.py
+    parameters:
+      test_param: "hello world"
+      number: 42
+    
+  - name: analyze-script-output
+    model_profile: default-sonnet
+    system_prompt: "You are an analyzer. Summarize the script output you receive."
+    depends_on: [script-test]

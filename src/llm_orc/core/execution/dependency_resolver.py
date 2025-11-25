@@ -35,40 +35,87 @@ class DependencyResolver:
                 enhanced_inputs[agent_name] = base_input
                 continue
 
-            # Build structured dependency results for this specific agent
-            dependency_results = []
-            for dep_name in dependencies:
-                if (
-                    dep_name in results_dict
-                    and results_dict[dep_name].get("status") == "success"
-                ):
-                    response = results_dict[dep_name]["response"]
-                    # Get agent role/profile for better attribution
-                    dep_role = self._get_agent_role_description(dep_name)
-                    role_text = f" ({dep_role})" if dep_role else ""
-
-                    dependency_results.append(
-                        f"Agent {dep_name}{role_text}:\n{response}"
-                    )
+            dependency_results = self._extract_successful_dependency_results(
+                dependencies, results_dict
+            )
 
             if dependency_results:
-                deps_text = "\n\n".join(dependency_results)
                 enhanced_inputs[agent_name] = (
-                    f"You are {agent_name}. Please respond to the following input, "
-                    f"taking into account the results from the previous agents "
-                    f"in the dependency chain.\n\n"
-                    f"Original Input:\n{base_input}\n\n"
-                    f"Previous Agent Results (for your reference):\n"
-                    f"{deps_text}\n\n"
-                    f"Please provide your own analysis as {agent_name}, building upon "
-                    f"(but not simply repeating) the previous results."
+                    self._build_enhanced_input_with_dependencies(
+                        agent_name, base_input, dependency_results
+                    )
                 )
             else:
                 enhanced_inputs[agent_name] = (
-                    f"You are {agent_name}. Please respond to: {base_input}"
+                    self._build_enhanced_input_no_dependencies(agent_name, base_input)
                 )
 
         return enhanced_inputs
+
+    def _extract_successful_dependency_results(
+        self, dependencies: list[str], results_dict: dict[str, Any]
+    ) -> list[str]:
+        """Extract successful dependency results with role attribution.
+
+        Args:
+            dependencies: List of dependency names
+            results_dict: Dictionary of previous agent results
+
+        Returns:
+            List of formatted dependency result strings
+        """
+        dependency_results = []
+        for dep_name in dependencies:
+            if (
+                dep_name in results_dict
+                and results_dict[dep_name].get("status") == "success"
+            ):
+                response = results_dict[dep_name]["response"]
+                dep_role = self._get_agent_role_description(dep_name)
+                role_text = f" ({dep_role})" if dep_role else ""
+
+                dependency_results.append(f"Agent {dep_name}{role_text}:\n{response}")
+
+        return dependency_results
+
+    def _build_enhanced_input_with_dependencies(
+        self, agent_name: str, base_input: str, dependency_results: list[str]
+    ) -> str:
+        """Build enhanced input with dependency results.
+
+        Args:
+            agent_name: Name of the target agent
+            base_input: Original input text
+            dependency_results: List of formatted dependency result strings
+
+        Returns:
+            Enhanced input string with dependencies
+        """
+        deps_text = "\n\n".join(dependency_results)
+        return (
+            f"You are {agent_name}. Please respond to the following input, "
+            f"taking into account the results from the previous agents "
+            f"in the dependency chain.\n\n"
+            f"Original Input:\n{base_input}\n\n"
+            f"Previous Agent Results (for your reference):\n"
+            f"{deps_text}\n\n"
+            f"Please provide your own analysis as {agent_name}, building upon "
+            f"(but not simply repeating) the previous results."
+        )
+
+    def _build_enhanced_input_no_dependencies(
+        self, agent_name: str, base_input: str
+    ) -> str:
+        """Build enhanced input for agent without dependencies.
+
+        Args:
+            agent_name: Name of the target agent
+            base_input: Original input text
+
+        Returns:
+            Simple enhanced input string
+        """
+        return f"You are {agent_name}. Please respond to: {base_input}"
 
     def has_dependencies(self, agent_config: dict[str, Any]) -> bool:
         """Check if an agent has dependencies."""

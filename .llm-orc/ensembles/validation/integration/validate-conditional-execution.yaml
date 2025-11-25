@@ -1,0 +1,57 @@
+name: validate-conditional-execution
+description: Integration validation for conditional execution with depends_on
+
+agents:
+  - name: step1-read-file
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: ".llm-orc/ensembles/validation/integration/test-data-1.json"
+
+  - name: step2-generate-config
+    script: primitives/control-flow/replicate_n_times.py
+    parameters:
+      replications: 2
+      seed: 999
+    depends_on: [step1-read-file]
+
+  - name: step3-write-output
+    script: primitives/file-ops/write_file.py
+    parameters:
+      path: ".llm-orc/artifacts/validation/conditional-output.txt"
+      content: "Conditional execution complete"
+    depends_on: [step2-generate-config]
+
+validation:
+  structural:
+    required_agents: [step1-read-file, step2-generate-config, step3-write-output]
+    max_execution_time: 15
+    min_execution_time: 0.01
+
+  schema:
+    - agent: step1-read-file
+      required_fields: [success, content]
+    - agent: step2-generate-config
+      required_fields: [success, replications]
+    - agent: step3-write-output
+      required_fields: [success, path]
+
+  behavioral:
+    - name: all-agents-succeed
+      description: "All agents should complete successfully"
+      assertion: "all(results[a]['success'] for a in execution_order)"
+
+    - name: step1-before-step2
+      description: "Step 1 should execute before step 2"
+      assertion: "execution_order.index('step1-read-file') < execution_order.index('step2-generate-config')"
+
+    - name: step2-before-step3
+      description: "Step 2 should execute before step 3"
+      assertion: "execution_order.index('step2-generate-config') < execution_order.index('step3-write-output')"
+
+    - name: sequential-execution
+      description: "Execution order should be sequential"
+      assertion: "execution_order == ['step1-read-file', 'step2-generate-config', 'step3-write-output']"
+
+    - name: output-file-written
+      description: "Output file should be written successfully"
+      assertion: "results['step3-write-output']['path'] == '.llm-orc/artifacts/validation/conditional-output.txt'"

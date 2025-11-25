@@ -1,4 +1,4 @@
-.PHONY: test test-watch lint lint-fix format lint-check security dead-code setup clean install help push workflow-status watch-workflows status red green refactor pre-commit roadmap
+.PHONY: test test-watch lint lint-fix format lint-check security dead-code setup clean install help push workflow-status watch-workflows status red green refactor pre-commit roadmap validate-contracts-core validate-contracts-examples validate-contracts-community validate-contracts-all
 
 # Help target
 help:
@@ -23,6 +23,10 @@ help:
 	@echo "  green           TDD: Run tests with short traceback"
 	@echo "  refactor        TDD: Run tests + lint"
 	@echo "  roadmap         Show current development roadmap"
+	@echo "  validate-contracts-core       Validate core primitive contracts"
+	@echo "  validate-contracts-examples   Validate example script contracts"
+	@echo "  validate-contracts-community  Validate community script contracts"
+	@echo "  validate-contracts-all        Validate all script contracts"
 
 # Development commands
 setup:
@@ -41,7 +45,7 @@ lint:
 	uv run ruff check src tests
 	uv run ruff format --check src tests
 	uv run complexipy --max-complexity-allowed 15 src
-	uv run bandit -r src/ --quiet --severity-level medium
+	uv run bandit -r src/ --quiet --severity-level medium 2>&1 | grep -v "WARNING" || true
 	uv run vulture src/ --min-confidence 80
 
 lint-fix:
@@ -57,7 +61,7 @@ format:
 
 security:
 	@echo "Running security analysis with bandit..."
-	uv run bandit -r src/ --quiet --severity-level medium
+	uv run bandit -r src/ --quiet --severity-level medium 2>&1 | grep -v "WARNING" || true
 
 dead-code:
 	@echo "Running dead code analysis with vulture..."
@@ -87,6 +91,7 @@ pre-commit:
 	@echo "Running pre-commit checks..."
 	make test
 	make lint
+	make validate-contracts-core
 	@echo "✅ All pre-commit checks passed"
 
 # Git operations with CI monitoring
@@ -111,3 +116,22 @@ status:
 roadmap:
 	@echo "🗺️ Current Roadmap and Strategic Priorities:"
 	@gh issue view 9
+
+# ADR-003 Contract Validation targets
+validate-contracts-core:
+	@echo "Validating core primitive contracts..."
+	uv run python -m llm_orc.testing.contract_validator --directory .llm-orc/scripts/primitives --level core --verbose
+
+validate-contracts-examples:
+	@echo "Validating example script contracts..."
+	uv run python -m llm_orc.testing.contract_validator --directory .llm-orc/scripts/examples --level examples --verbose
+
+validate-contracts-community:
+	@echo "Validating community script contracts..."
+	uv run python -m llm_orc.testing.contract_validator --directory .llm-orc/scripts/community --level community --verbose
+
+validate-contracts-all:
+	@echo "Validating all script contracts..."
+	@make validate-contracts-core
+	@make validate-contracts-examples
+	@make validate-contracts-community

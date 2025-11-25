@@ -1,0 +1,108 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/load-agents.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/feature-context.sh",
+            "description": "Provide feature development context on non-main branches"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/testing-pyramid-gate.sh",
+            "description": "Show testing pyramid health on session start"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/agent-advisor.sh",
+            "description": "Suggest relevant specialized agents based on current context"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/session-start-adr-summary.sh",
+            "description": "Show ADR progress summary and priorities for session planning"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/adr-implementation-orchestrator.sh",
+            "description": "Check for ADRs ready for automated BDD→TDD→Code orchestration"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/testing-pyramid-gate.sh",
+            "description": "Validate testing pyramid before commit"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/test-coverage-gate.sh",
+            "description": "Ensure 95% coverage before commit"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/bdd-development-gate.sh",
+            "description": "Validate BDD compliance before commit"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/auto-lint.sh",
+            "description": "Auto-format Python code after file changes"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/complexity-gate.sh",
+            "description": "Check code complexity after changes"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/adr-lifecycle-manager.sh",
+            "description": "Manage ADR status transitions based on BDD progress and implementation milestones"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/adr-implementation-orchestrator.sh",
+            "description": "Orchestrate BDD→TDD→Code when ADRs are updated with 'In Progress' status"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/intelligent-post-edit.sh",
+            "description": "Context-aware agent triggering based on file patterns"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/test-coverage-gate.sh",
+            "description": "Validate coverage after test runs"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/bdd-test-migrator.sh",
+            "description": "Migrate passing unit tests to proper module locations after BDD scenarios pass"
+          }
+        ]
+      }
+    ]
+  }
+}

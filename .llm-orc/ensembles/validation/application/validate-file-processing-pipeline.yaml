@@ -1,0 +1,87 @@
+name: validate-file-processing-pipeline
+description: Application validation for end-to-end file processing pipeline
+
+agents:
+  - name: read-input-file
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: ".llm-orc/ensembles/validation/integration/test-data-1.json"
+
+  - name: extract-fields
+    script: primitives/data-transform/json_extract.py
+    parameters:
+      json_data: '{"name": "Pipeline", "version": "1.0", "status": "active"}'
+      fields: ["name", "version", "status"]
+    depends_on: [read-input-file]
+
+  - name: generate-output-config
+    script: primitives/control-flow/replicate_n_times.py
+    parameters:
+      replications: 5
+      seed: 777
+    depends_on: [extract-fields]
+
+  - name: write-intermediate-result
+    script: primitives/file-ops/write_file.py
+    parameters:
+      path: ".llm-orc/artifacts/validation/pipeline-intermediate.txt"
+      content: "Intermediate processing complete"
+    depends_on: [generate-output-config]
+
+  - name: read-validation-data
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: ".llm-orc/ensembles/validation/integration/test-data-2.json"
+    depends_on: [write-intermediate-result]
+
+  - name: write-final-output
+    script: primitives/file-ops/write_file.py
+    parameters:
+      path: ".llm-orc/artifacts/validation/pipeline-final.txt"
+      content: "File processing pipeline complete - 6 steps executed"
+    depends_on: [read-validation-data]
+
+validation:
+  structural:
+    required_agents: [read-input-file, extract-fields, generate-output-config, write-intermediate-result, read-validation-data, write-final-output]
+    max_execution_time: 25
+    min_execution_time: 0.01
+
+  schema:
+    - agent: read-input-file
+      required_fields: [success, content]
+    - agent: extract-fields
+      required_fields: [success, extracted]
+    - agent: generate-output-config
+      required_fields: [success, replications]
+    - agent: write-intermediate-result
+      required_fields: [success, path]
+    - agent: read-validation-data
+      required_fields: [success, content]
+    - agent: write-final-output
+      required_fields: [success, path]
+
+  behavioral:
+    - name: pipeline-completes-all-steps
+      description: "All 6 pipeline steps should complete"
+      assertion: "len(execution_order) == 6"
+
+    - name: sequential-execution-order
+      description: "Pipeline should execute in dependency order"
+      assertion: "execution_order == ['read-input-file', 'extract-fields', 'generate-output-config', 'write-intermediate-result', 'read-validation-data', 'write-final-output']"
+
+    - name: all-steps-succeed
+      description: "All pipeline steps should succeed"
+      assertion: "all(results[a]['success'] for a in execution_order)"
+
+    - name: fields-extracted
+      description: "Should extract all 3 fields"
+      assertion: "len(results['extract-fields']['extracted']) == 3"
+
+    - name: config-generated
+      description: "Should generate 5 replication configs"
+      assertion: "len(results['generate-output-config']['replications']) == 5"
+
+    - name: final-output-written
+      description: "Final output should be written successfully"
+      assertion: "results['write-final-output']['path'] == '.llm-orc/artifacts/validation/pipeline-final.txt'"

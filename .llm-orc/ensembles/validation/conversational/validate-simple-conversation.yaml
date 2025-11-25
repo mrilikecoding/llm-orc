@@ -1,0 +1,57 @@
+name: validate-simple-conversation
+description: Conversational validation for sequential data flow between agents
+
+agents:
+  - name: gather-data
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: ".llm-orc/ensembles/validation/integration/test-data-1.json"
+
+  - name: process-data
+    script: primitives/data-transform/json_extract.py
+    parameters:
+      json_data: '{"step": 1, "status": "processing"}'
+      fields: ["step", "status"]
+    depends_on: [gather-data]
+
+  - name: store-result
+    script: primitives/file-ops/write_file.py
+    parameters:
+      path: ".llm-orc/artifacts/validation/conversation-result.txt"
+      content: "Simple conversation complete"
+    depends_on: [process-data]
+
+validation:
+  structural:
+    required_agents: [gather-data, process-data, store-result]
+    max_execution_time: 15
+    min_execution_time: 0.01
+
+  schema:
+    - agent: gather-data
+      required_fields: [success, content]
+    - agent: process-data
+      required_fields: [success, extracted]
+    - agent: store-result
+      required_fields: [success, path]
+
+  behavioral:
+    - name: conversation-flow-complete
+      description: "All conversation steps should complete"
+      assertion: "all(results[a]['success'] for a in execution_order)"
+
+    - name: sequential-order
+      description: "Agents should execute in dependency order"
+      assertion: "execution_order == ['gather-data', 'process-data', 'store-result']"
+
+    - name: data-gathered
+      description: "Data gathering should succeed"
+      assertion: "results['gather-data']['success'] == True"
+
+    - name: data-processed
+      description: "Data processing should extract fields"
+      assertion: "'step' in results['process-data']['extracted']"
+
+    - name: result-stored
+      description: "Result should be stored successfully"
+      assertion: "results['store-result']['success'] == True"

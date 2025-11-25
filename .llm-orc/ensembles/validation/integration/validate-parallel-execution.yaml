@@ -1,0 +1,66 @@
+name: validate-parallel-execution
+description: Integration validation for parallel agent execution
+
+agents:
+  - name: read-file-1
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: ".llm-orc/ensembles/validation/integration/test-data-1.json"
+
+  - name: read-file-2
+    script: primitives/file-ops/read_file.py
+    parameters:
+      path: ".llm-orc/ensembles/validation/integration/test-data-2.json"
+
+  - name: replicate-small
+    script: primitives/control-flow/replicate_n_times.py
+    parameters:
+      replications: 3
+      seed: 100
+
+  - name: replicate-large
+    script: primitives/control-flow/replicate_n_times.py
+    parameters:
+      replications: 3
+      seed: 200
+
+validation:
+  structural:
+    required_agents: [read-file-1, read-file-2, replicate-small, replicate-large]
+    max_execution_time: 15
+    min_execution_time: 0.01
+
+  schema:
+    - agent: read-file-1
+      required_fields: [success, content]
+    - agent: read-file-2
+      required_fields: [success, content]
+    - agent: replicate-small
+      required_fields: [success, replications]
+    - agent: replicate-large
+      required_fields: [success, replications]
+
+  behavioral:
+    - name: all-agents-succeed
+      description: "All agents should complete successfully"
+      assertion: "all(results[a]['success'] for a in ['read-file-1', 'read-file-2', 'replicate-small', 'replicate-large'])"
+
+    - name: file1-has-content
+      description: "File 1 should have content"
+      assertion: "len(results['read-file-1']['content']) > 0"
+
+    - name: file2-has-content
+      description: "File 2 should have content"
+      assertion: "len(results['read-file-2']['content']) > 0"
+
+    - name: replicate-small-count
+      description: "Small replication should have 3 items"
+      assertion: "len(results['replicate-small']['replications']) == 3"
+
+    - name: replicate-large-count
+      description: "Large replication should have 3 items"
+      assertion: "len(results['replicate-large']['replications']) == 3"
+
+    - name: all-four-agents-executed
+      description: "All four independent agents should execute"
+      assertion: "len(execution_order) == 4"

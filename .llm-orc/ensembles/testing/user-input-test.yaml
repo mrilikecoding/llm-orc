@@ -1,0 +1,16 @@
+name: user-input-test
+description: Simple test ensemble with user input script
+
+agents:
+  - name: get-input
+    script: primitives/user-interaction/get_user_input.py
+    parameters:
+      prompt: "What is your name?"
+      multiline: false
+      
+  - name: echo-result
+    script: primitives/file-ops/write_file.py
+    depends_on: [get-input]
+    parameters:
+      path: "user_response.txt"
+      content: "User said: ${get-input.output}"

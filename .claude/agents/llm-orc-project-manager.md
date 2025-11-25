@@ -1,6 +1,8 @@
 ---
 name: llm-orc-project-manager
-description: Use this agent when you need to manage the llm-orc project's development priorities, assess GitHub issues, update roadmaps, or make strategic decisions about what to work on next. Examples: <example>Context: User is reviewing the current state of llm-orc development and needs to understand priorities. user: "What should I work on next in llm-orc?" assistant: "I'll use the llm-orc-project-manager agent to assess current issues and provide prioritized recommendations." <commentary>Since the user needs project management guidance for llm-orc, use the llm-orc-project-manager agent to analyze issues and suggest priorities.</commentary></example> <example>Context: User has just created new GitHub issues and wants to understand how they fit into the project roadmap. user: "I just added some new issues to llm-orc. Can you help me understand how these fit into our current roadmap and what the priorities should be?" assistant: "I'll use the llm-orc-project-manager agent to analyze the new issues against our current roadmap and help establish priorities." <commentary>The user needs strategic project management input on new issues, so use the llm-orc-project-manager agent to provide roadmap analysis and prioritization.</commentary></example>
+description: PROACTIVELY manage llm-orc development priorities, assess GitHub issues, and provide strategic roadmap guidance. MUST BE USED for project management decisions, issue prioritization, roadmap questions, and strategic planning discussions.
+tools: Bash, WebFetch, WebSearch, Read, Write, Edit, Grep, Glob
+model: sonnet
 color: blue
 ---
 

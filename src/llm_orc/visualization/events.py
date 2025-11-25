@@ -36,6 +36,12 @@ class ExecutionEventType(Enum):
     DEBUG_BREAKPOINT = "debug_breakpoint"
     DEBUG_STEP = "debug_step"
 
+    # User interaction events
+    USER_INPUT_REQUIRED = "user_input_required"
+    USER_INPUT_RECEIVED = "user_input_received"
+    STREAMING_PAUSED = "streaming_paused"
+    STREAMING_RESUMED = "streaming_resumed"
+
 
 @dataclass
 class ExecutionEvent:
@@ -265,5 +271,85 @@ class EventFactory:
             data={
                 "error": error,
                 "status": "failed",
+            },
+        )
+
+    @staticmethod
+    def user_input_required(
+        agent_name: str,
+        ensemble_name: str,
+        execution_id: str,
+        prompt: str,
+        script_path: str,
+    ) -> ExecutionEvent:
+        """Create user input required event."""
+        return ExecutionEvent(
+            event_type=ExecutionEventType.USER_INPUT_REQUIRED,
+            timestamp=datetime.now(),
+            agent_name=agent_name,
+            ensemble_name=ensemble_name,
+            execution_id=execution_id,
+            data={
+                "prompt": prompt,
+                "script_path": script_path,
+                "status": "waiting_for_input",
+            },
+        )
+
+    @staticmethod
+    def user_input_received(
+        agent_name: str,
+        ensemble_name: str,
+        execution_id: str,
+        user_input: str,
+        script_path: str,
+    ) -> ExecutionEvent:
+        """Create user input received event."""
+        return ExecutionEvent(
+            event_type=ExecutionEventType.USER_INPUT_RECEIVED,
+            timestamp=datetime.now(),
+            agent_name=agent_name,
+            ensemble_name=ensemble_name,
+            execution_id=execution_id,
+            data={
+                "user_input": user_input,
+                "script_path": script_path,
+                "status": "input_received",
+            },
+        )
+
+    @staticmethod
+    def streaming_paused(
+        ensemble_name: str,
+        execution_id: str,
+        reason: str,
+    ) -> ExecutionEvent:
+        """Create streaming paused event."""
+        return ExecutionEvent(
+            event_type=ExecutionEventType.STREAMING_PAUSED,
+            timestamp=datetime.now(),
+            ensemble_name=ensemble_name,
+            execution_id=execution_id,
+            data={
+                "reason": reason,
+                "status": "paused",
+            },
+        )
+
+    @staticmethod
+    def streaming_resumed(
+        ensemble_name: str,
+        execution_id: str,
+        reason: str,
+    ) -> ExecutionEvent:
+        """Create streaming resumed event."""
+        return ExecutionEvent(
+            event_type=ExecutionEventType.STREAMING_RESUMED,
+            timestamp=datetime.now(),
+            ensemble_name=ensemble_name,
+            execution_id=execution_id,
+            data={
+                "reason": reason,
+                "status": "resumed",
             },
         )

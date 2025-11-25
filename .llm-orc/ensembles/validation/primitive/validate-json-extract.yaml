@@ -1,0 +1,40 @@
+name: validate-json-extract
+description: Primitive validation for JSON extraction script agent
+
+agents:
+  - name: extract-json-fields
+    script: primitives/data-transform/json_extract.py
+    parameters:
+      json_data: '{"name": "Alice", "age": 30, "city": "Seattle", "role": "Engineer"}'
+      fields: ["name", "age", "city"]
+
+validation:
+  structural:
+    required_agents: [extract-json-fields]
+    max_execution_time: 10
+    min_execution_time: 0.01
+
+  schema:
+    - agent: extract-json-fields
+      required_fields: [success, extracted, missing_fields, total_fields, extracted_count]
+
+  behavioral:
+    - name: success-flag-true
+      description: "Extraction operation should succeed"
+      assertion: "results['extract-json-fields']['success'] == True"
+
+    - name: extracted-correct-count
+      description: "Should extract 3 fields"
+      assertion: "results['extract-json-fields']['extracted_count'] == 3"
+
+    - name: no-missing-fields
+      description: "Should have no missing fields"
+      assertion: "len(results['extract-json-fields']['missing_fields']) == 0"
+
+    - name: contains-name-field
+      description: "Extracted data should contain name"
+      assertion: "'name' in results['extract-json-fields']['extracted']"
+
+    - name: name-value-correct
+      description: "Name should be Alice"
+      assertion: "results['extract-json-fields']['extracted']['name'] == 'Alice'"

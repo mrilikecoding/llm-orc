@@ -46,6 +46,42 @@ LLM Orchestra is a multi-agent LLM communication system designed for ensemble or
 - **Phase optimization**: Groups independent agents for parallel execution
 - **Validation**: Ensures all dependencies are satisfied
 
+### Script Agent Infrastructure
+
+#### EnhancedScriptAgent (`llm_orc/agents/enhanced_script_agent.py`)
+- **JSON I/O Support**: Structured input/output communication with scripts
+- **Script Resolution**: Automatic discovery and path resolution for project scripts
+- **Parameter Injection**: Configuration parameters passed as JSON to scripts
+- **Context Sharing**: Results from script agents become context for LLM agents
+
+#### ScriptResolver (`llm_orc/core/execution/script_resolver.py`)
+- **Script Discovery**: Finds scripts in project `.llm-orc/scripts/` directories
+- **Path Resolution**: Resolves relative script paths within project structure
+- **Metadata Extraction**: Extracts documentation and parameters from script headers
+- **Validation**: Ensures scripts are executable and have proper permissions
+
+#### ArtifactManager (`llm_orc/core/execution/artifact_manager.py`)
+- **Execution Persistence**: Saves ensemble results to structured artifact directories
+- **Timestamped Storage**: Creates versioned execution records with timestamps
+- **Markdown Generation**: Converts execution results to readable markdown reports
+- **Latest Symlinks**: Maintains easy access to most recent execution results
+
+### Library Integration
+
+#### LLM Orchestra Library (`llm-orchestra-library/` submodule)
+- **Primitive Scripts**: Reusable building blocks for common operations
+  - File operations: Read/write files with JSON I/O
+  - User interaction: Human-in-the-loop workflows  
+  - Data transformation: JSON manipulation and formatting
+  - Control flow: Loops, replication, and conditional execution
+- **Specialized Scripts**: Domain-specific tools
+  - Network science: Topology generation and analysis
+  - Research: Statistical tests and experimental design
+- **Library Management**: Dynamic source configuration
+  - Local submodule support for development
+  - Remote GitHub fallback for production
+  - Automatic script copying during initialization
+
 ### Configuration System
 
 #### EnsembleConfig (`llm_orc/core/config/ensemble_config.py`)
@@ -86,11 +122,26 @@ User Input → Ensemble Config → Dependency Resolution → Phase Execution →
 
 ### Agent Execution Flow
 
+#### LLM Agent Flow
 ```
 Agent Config → Model Profile → Provider Instance → LLM API Call → Response Processing
       ↓              ↓              ↓                ↓               ↓
   Validation    Model + Auth    HTTP Client      Stream Handler    Usage Tracking
 ```
+
+#### Script Agent Flow
+```
+Agent Config → Script Resolution → Process Execution → JSON I/O → Result Processing
+      ↓              ↓                  ↓              ↓             ↓
+  Validation    Script Discovery   Subprocess Call   Data Exchange  Usage Tracking
+```
+
+#### Agent Type Detection
+- **Implicit Detection**: Determined by configuration fields present
+  - `script` field → Script agent execution
+  - `model_profile` field → LLM agent execution
+- **Explicit Override**: `type: script` or `type: llm` field for backward compatibility
+- **Hybrid Workflows**: Script agents can provide context data for LLM agents
 
 ### Dependency Resolution
 
@@ -121,6 +172,8 @@ Ensemble → Agent Dependencies → Dependency Graph → Execution Phases → Pa
 - **Multiple Output Formats**: Rich, JSON, and text output modes
 - **Real-time Streaming**: Progress updates during ensemble execution
 - **Configuration Management**: Global and local config hierarchies
+- **Script Management**: `scripts list`, `scripts show`, `scripts test` commands for development workflow
+- **Artifact Management**: `artifacts list`, `artifacts show` commands for execution result inspection
 
 ### API Integration
 - **RESTful Interface**: HTTP API for programmatic access
@@ -164,8 +217,10 @@ Ensemble → Agent Dependencies → Dependency Graph → Execution Phases → Pa
 
 ### Analysis Extensions
 - **Custom Agents**: Domain-specific agent implementations
-- **Analysis Pipelines**: Multi-stage processing workflows
+- **Script Agent Integration**: Execute custom scripts as agents with JSON I/O
+- **Analysis Pipelines**: Multi-stage processing workflows combining scripts and LLMs
 - **Result Processors**: Custom synthesis and aggregation logic
+- **Hybrid Workflows**: Script agents providing context and data for LLM processing
 - **Metrics Collection**: Performance and quality measurement hooks
 
 ## Testing Architecture

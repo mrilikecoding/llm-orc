@@ -16,7 +16,9 @@ jobs:
     
     steps:
     - uses: actions/checkout@v4
-    
+      with:
+        submodules: recursive
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
@@ -33,7 +35,7 @@ jobs:
     
     - name: Run tests
       run: |
-        uv run pytest --cov=src --cov-report=xml --cov-report=term-missing --cov-fail-under=95
+        make test
     
     - name: Upload coverage to Codecov
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
@@ -46,8 +48,8 @@ jobs:
     
     - name: Run linting
       run: |
-        uv run ruff check .
-        uv run ruff format --check .
+        uv run ruff check . --exclude llm-orchestra-library --exclude .claude --exclude .llm-orc
+        uv run ruff format --check . --exclude llm-orchestra-library --exclude .claude --exclude .llm-orc
     
     - name: Run type checking
       run: |
@@ -55,10 +57,12 @@ jobs:
 
   security:
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+      with:
+        submodules: recursive
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:

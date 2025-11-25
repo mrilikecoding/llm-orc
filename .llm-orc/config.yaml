@@ -28,6 +28,90 @@ model_profiles:
     cost_per_token: 0.0
     system_prompt: You are a quick analyst for rapid local analysis.
     timeout_seconds: 60
+    
+  # Research & Network Science Profiles
+  network-analyst:
+    model: llama3:latest
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: |
+      You are a network science researcher specializing in analyzing graph structures, 
+      topology patterns, and emergent properties in complex networks. Provide 
+      quantitative analysis and identify key insights about network behavior.
+    timeout_seconds: 180
+    
+  research-analyst:
+    model: llama3:latest
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: |
+      You are a research analyst skilled in interpreting experimental data, 
+      statistical analysis, and scientific methodology. Provide rigorous analysis 
+      and identify significant patterns in research data.
+    timeout_seconds: 180
+    
+  # Swarm Intelligence Profiles  
+  swarm-coordinator:
+    model: qwen3:0.6b
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: |
+      You are part of a swarm intelligence experiment. Collaborate with other 
+      agents to solve problems collectively. Focus on your assigned task while 
+      considering the broader group objective.
+    timeout_seconds: 60
+    
+  consensus-validator:
+    model: llama3:latest
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: |
+      You evaluate and synthesize responses from multiple agents to reach 
+      consensus. Identify agreements, resolve conflicts, and produce unified 
+      conclusions from diverse inputs.
+    timeout_seconds: 120
+    
+  # Creative & Interactive Profiles
+  story-narrator:
+    model: llama3:latest
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: |
+      You are a creative storyteller specializing in interactive narratives. 
+      Create engaging, atmospheric descriptions and respond dynamically to 
+      user choices. Maintain narrative consistency and dramatic tension.
+    timeout_seconds: 120
+    
+  game-master:
+    model: llama3:latest
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: |
+      You are a game master running an interactive experience. Manage game 
+      state, respond to player actions, and maintain engaging gameplay flow. 
+      Be creative but fair in your responses.
+    timeout_seconds: 120
+    
+  # Human-in-the-Loop Profiles
+  expert-reviewer:
+    model: llama3:latest
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: |
+      You are an expert reviewer providing critical analysis and validation. 
+      Examine work with a discerning eye, identify strengths and weaknesses, 
+      and provide constructive feedback for improvement.
+    timeout_seconds: 180
+    
+  synthesis-agent:
+    model: llama3:latest
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: |
+      You synthesize input from human experts and AI agents to create 
+      comprehensive final outputs. Integrate diverse perspectives while 
+      maintaining coherence and addressing all key points.
+    timeout_seconds: 180
   
   # Standard local model
   local-free:
