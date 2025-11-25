@@ -119,9 +119,11 @@ def check_adr_bdd_coverage() -> tuple[bool, dict[str, any]]:
         else:
             # Check status consistency
             bdd_info = bdd_by_adr[adr.number]
-            if adr.status and adr.status.lower() in ["in_progress", "implemented", "validated", "accepted"]:
+            active_statuses = ["in_progress", "implemented", "validated", "accepted"]
+            if adr.status and adr.status.lower() in active_statuses:
                 if not bdd_info.scenarios:
-                    status_inconsistencies.append((adr, "Status requires scenarios but none found"))
+                    msg = "Status requires scenarios but none found"
+                    status_inconsistencies.append((adr, msg))
 
     # Check for orphaned BDD files
     adr_numbers = {adr.number for adr in adrs}

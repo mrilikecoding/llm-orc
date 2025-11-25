@@ -48,8 +48,8 @@ jobs:
     
     - name: Run linting
       run: |
-        uv run ruff check . --exclude llm-orchestra-library
-        uv run ruff format --check . --exclude llm-orchestra-library
+        uv run ruff check . --exclude llm-orchestra-library --exclude .claude --exclude .llm-orc
+        uv run ruff format --check . --exclude llm-orchestra-library --exclude .claude --exclude .llm-orc
     
     - name: Run type checking
       run: |
