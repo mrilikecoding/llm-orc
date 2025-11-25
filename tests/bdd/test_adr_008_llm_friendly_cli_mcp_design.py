@@ -72,6 +72,11 @@ def directory_without_config(cli_context: dict[str, Any]) -> None:
     if llm_orc_dir.exists():
         shutil.rmtree(llm_orc_dir)
 
+    # Also remove any library directory to ensure clean test environment
+    library_dir = cli_context["test_dir"] / "llm-orchestra-library"
+    if library_dir.exists():
+        shutil.rmtree(library_dir)
+
 
 @given("I have initialized llm-orc")
 def initialized_llm_orc(cli_context: dict[str, Any]) -> None:
