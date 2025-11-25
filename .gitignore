@@ -24,6 +24,7 @@ MANIFEST
 
 # Testing
 .coverage
+.coverage.*
 .pytest_cache/
 .tox/
 .nox/
