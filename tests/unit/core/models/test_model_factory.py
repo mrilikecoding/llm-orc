@@ -128,9 +128,10 @@ class TestModelFactory:
         model = await model_factory.load_model("mock-test-model")
 
         assert hasattr(model, "generate_response")
-        # Mock should return specific response
+        # Mock should return response echoing input with analytical keywords
         response = await model.generate_response("test", "system prompt")
-        assert response == "Response from mock-test-model"
+        assert "test" in response.lower()
+        assert "analysis" in response.lower() or "pattern" in response.lower()
 
     async def test_load_model_no_auth_ollama_provider(
         self, model_factory: ModelFactory, mock_credential_storage: Mock
