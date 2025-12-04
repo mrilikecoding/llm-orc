@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2025-12-04
+
+### Added
+- `set_project` MCP tool for multi-project support
+  - Allows MCP server to operate on any project directory
+  - ConfigurationManager accepts optional `project_dir` parameter
+  - All subsequent tool calls use the specified project's config
+  - Updated `get_help` with `context_management` category
+
 ## [0.12.0] - 2025-12-04
 
 ### Added
