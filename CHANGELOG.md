@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2025-12-04
+
+### Added
+- **MCP Server Architecture (ADR-009)** - Model Context Protocol server for Claude Code integration
+  - **25 MCP tools** organized by category: core execution, provider discovery, CRUD operations
+  - **FastMCP SDK integration** with decorator-based tool and resource registration
+  - **Streaming progress** via FastMCP Context for real-time execution feedback
+  - **Automatic artifact storage** with JSON and Markdown output for each execution
+
+- **Core Execution Tools**
+  - `invoke` - Execute ensembles with streaming progress and artifact storage
+  - `list_ensembles` - List all ensembles from local/library/global sources
+  - `validate_ensemble` - Validate configuration, profiles, and dependencies
+  - `update_ensemble` - Modify ensemble config with dry-run and backup support
+  - `analyze_execution` - Analyze execution artifact data
+
+- **Provider Discovery**
+  - `get_provider_status` - Show available providers and Ollama models
+  - `check_ensemble_runnable` - Validate ensemble can run, suggest local alternatives
+
+- **CRUD Operations**
+  - Ensemble: `create_ensemble`, `delete_ensemble`
+  - Profile: `list_profiles`, `create_profile`, `update_profile`, `delete_profile`
+  - Script: `list_scripts`, `get_script`, `test_script`, `create_script`, `delete_script`
+  - Library: `library_browse`, `library_search`, `library_copy`, `library_info`
+  - Artifact: `delete_artifact`, `cleanup_artifacts`
+
+- **Agent Onboarding**
+  - `get_help` - Comprehensive documentation for agents using the MCP server
+  - Directory structure, YAML schemas, tool categories, and workflow patterns
+
+- **MCP Resources** (read-only data access)
+  - `llm-orc://ensembles` - List all available ensembles
+  - `llm-orc://ensemble/{name}` - Get complete ensemble configuration
+  - `llm-orc://profiles` - List available model profiles
+  - `llm-orc://artifacts/{ensemble}` - List execution artifacts
+  - `llm-orc://artifact/{ensemble}/{id}` - Get individual artifact details
+  - `llm-orc://metrics/{ensemble}` - Get aggregated execution metrics
+
+- **CLI Integration**
+  - `llm-orc mcp serve` - Start MCP server for Claude Code
+  - HTTP transport option for debugging
+
+### Technical
+- 64 BDD scenarios validating MCP server behavior
+- 118 unit tests for MCP server components
+- Dependency injection for testability
+- Test injection points for mocking Ollama status
+
 ## [0.11.0] - 2025-11-25
 
 ### Added
