@@ -488,7 +488,7 @@ Phase 2 tools are implemented:
 - **Medium Priority** ✓: Profile CRUD (`list_profiles`, `create_profile`, `update_profile`, `delete_profile`), `delete_artifact`, `cleanup_artifacts`
 - **Low Priority** ✓: `get_script`, `test_script`, `create_script`, `delete_script`, `library_search`, `library_info`
 
-## Phase 3: Provider & Model Discovery
+## Phase 3: Provider & Model Discovery (Complete)
 
 Phase 3 focuses on helping users understand what models are available and adapt ensembles to work with local models. This supports the local-first philosophy where users prefer Ollama over cloud providers.
 
