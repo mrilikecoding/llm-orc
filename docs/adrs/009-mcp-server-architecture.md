@@ -310,7 +310,7 @@ src/llm_orc/mcp/
 
 tests/unit/mcp_server/
 ├── __init__.py
-└── test_server_v2.py    # 31 unit tests
+└── test_server_v2.py    # 88 unit tests
 
 .mcp.json                # Claude Code MCP configuration
 ```
@@ -337,9 +337,9 @@ Restart Claude Code. MCP tools become available as `mcp__llm-orc__*`.
 
 See the [Claude Code MCP Validation Runbook](#claude-code-mcp-validation-runbook) below.
 
-## Phase 2: Full CRUD Operations (Planned)
+## Phase 2: Full CRUD Operations (Complete)
 
-To support the Local Web UI (ADR-010) and provide a complete API, the following tools will be added:
+All Phase 2 tools are now implemented. The following tools support the Local Web UI (ADR-010) and provide a complete API:
 
 ### Ensemble CRUD
 
@@ -481,11 +481,12 @@ tools:
 | Artifacts | Auto on `invoke` | Resources | N/A | `delete_artifact`, `cleanup_artifacts` |
 | Library | N/A (read-only) | `library_browse`, `library_search`, `library_info` | N/A | N/A |
 
-### Implementation Priority
+### Implementation Status
 
-1. **High** (needed for Web UI): `create_ensemble`, `delete_ensemble`, `list_scripts`, `library_browse`, `library_copy`
-2. **Medium**: Profile CRUD, `delete_artifact`, `cleanup_artifacts`
-3. **Low**: `test_script`, `library_search`, `create_script`
+All tools are implemented:
+- **High Priority** ✓: `create_ensemble`, `delete_ensemble`, `list_scripts`, `library_browse`, `library_copy`
+- **Medium Priority** ✓: Profile CRUD (`list_profiles`, `create_profile`, `update_profile`, `delete_profile`), `delete_artifact`, `cleanup_artifacts`
+- **Low Priority** ✓: `get_script`, `test_script`, `create_script`, `delete_script`, `library_search`, `library_info`
 
 ## Claude Code MCP Validation Runbook
 
@@ -554,6 +555,50 @@ ls -la .llm-orc/artifacts/validate-ollama/latest/
 
 Expected: `execution.json` and `execution.md` exist.
 
+### Step 8: List Profiles
+
+```
+Tool: mcp__llm-orc__list_profiles
+Parameters: (none, or provider = "ollama" to filter)
+Expected: {"profiles": [...], "count": N}
+```
+
+### Step 9: Library Search
+
+```
+Tool: mcp__llm-orc__library_search
+Parameters: query = "review"
+Expected: {"query": "review", "results": {"ensembles": [...], "scripts": [...]}, "total": N}
+```
+
+### Step 10: Library Info
+
+```
+Tool: mcp__llm-orc__library_info
+Parameters: (none)
+Expected: {"path": "...", "exists": true, "ensembles_count": N, "scripts_count": N, "categories": [...]}
+```
+
+### Step 11: List Scripts
+
+```
+Tool: mcp__llm-orc__list_scripts
+Parameters: (none, or category = "extraction")
+Expected: {"scripts": [...], "categories": [...]}
+```
+
+### Step 12: Create and Delete Ensemble (CRUD Test)
+
+```
+Tool: mcp__llm-orc__create_ensemble
+Parameters: name = "test-crud-ensemble", description = "Test ensemble", agents = []
+Expected: {"created": true, "path": "..."}
+
+Tool: mcp__llm-orc__delete_ensemble
+Parameters: ensemble_name = "test-crud-ensemble", confirm = true
+Expected: {"deleted": true, "name": "test-crud-ensemble"}
+```
+
 ### Validation Checklist
 
 | Step | Check | Pass Criteria |
@@ -565,6 +610,11 @@ Expected: `execution.json` and `execution.md` exist.
 | 5 | Resources readable | Returns valid JSON |
 | 6 | Resource list works | Returns 2 resources |
 | 7 | Artifacts stored | Directory with execution.json exists |
+| 8 | List profiles | Returns profile array with count |
+| 9 | Library search | Returns search results with total |
+| 10 | Library info | Returns library metadata |
+| 11 | List scripts | Returns scripts by category |
+| 12 | CRUD works | Create and delete ensemble succeeds |
 
 ## References
 
