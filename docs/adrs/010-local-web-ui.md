@@ -69,7 +69,7 @@ validation_rules:
   - "No authentication required (local-only server)"
 
 related_adrs:
-  - "ADR-009: MCP Server Architecture (shares backend logic)"
+  - "ADR-009: MCP Server Architecture (shares backend logic, provides resources)"
   - "ADR-008: LLM-Friendly CLI (consistent data formats)"
 
 implementation_scope:
@@ -90,12 +90,13 @@ As llm-orc usage grows beyond simple CLI invocations, managing ensembles becomes
 - **Metrics tracking**: No aggregated view of cost/performance over time
 - **Configuration iteration**: Edit YAML → run → check output cycle is slow
 
-The Plexus integration spec envisions Manza as the ultimate UI, but that requires:
-1. Completed MCP server (ADR-009)
-2. Plexus knowledge graph
-3. Manza component development
+A local web UI provides immediate value for:
+- Visual ensemble management without needing external tools
+- Artifact browsing and comparison
+- Execution monitoring with streaming output
+- Metrics tracking over time
 
-A local web UI provides immediate value and serves as a prototype for Manza integration.
+The MCP server (ADR-009) exposes the same data as resources, enabling external tools like Manza to integrate. The local web UI serves users who want a standalone experience.
 
 ## Decision
 
@@ -382,14 +383,14 @@ src/llm_orc/web/
 1. **Maintenance burden**: Another surface to maintain
 2. **Frontend complexity**: Adds JS build tooling to Python project
 3. **Potential divergence**: UI patterns might not match Manza
-4. **Limited features**: Won't have Plexus graph analysis
+4. **Duplication with MCP**: Some features overlap with MCP resources
 
-### Migration to Manza
+### Relationship to MCP
 
-When Manza integration is ready:
-1. Extract reusable components (graph viz, artifact viewer)
-2. Keep `llm-orc web` as lightweight alternative
-3. Or deprecate in favor of Manza-only workflow
+The web UI and MCP server share the same underlying data:
+- Both use `ConfigurationManager`, `EnsembleExecutor`, `ArtifactManager`
+- Web UI could potentially consume MCP resources, but direct Python imports are simpler
+- External tools (Manza, etc.) should use MCP; local users can use either
 
 ## Alternatives Considered
 
@@ -441,4 +442,4 @@ When Manza integration is ready:
 - [Preact](https://preactjs.com/)
 - [Dagre - Directed Graph Layout](https://github.com/dagrejs/dagre)
 - [Vite](https://vitejs.dev/)
-- [Plexus Integration Spec](../../../manza/docs/specs/plexus/plexus-llm-orc-mcp-integration.md)
+- [ADR-009: MCP Server Architecture](./009-mcp-server-architecture.md)

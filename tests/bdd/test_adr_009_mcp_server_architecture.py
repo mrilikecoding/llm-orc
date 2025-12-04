@@ -1,4 +1,4 @@
-"""BDD step definitions for ADR-009 MCP Server Architecture and Plexus Integration."""
+"""BDD step definitions for ADR-009 MCP Server Architecture."""
 
 import asyncio
 import json
@@ -10,7 +10,7 @@ import pytest
 from pytest_bdd import given, scenarios, then, when
 
 # Load all scenarios from the feature file
-scenarios("features/adr-009-mcp-server-plexus-integration.feature")
+scenarios("features/adr-009-mcp-server-architecture.feature")
 
 
 def _create_mock_config_manager(
