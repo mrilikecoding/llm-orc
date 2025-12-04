@@ -1,7 +1,7 @@
 # ADR-009: MCP Server Architecture and Plexus Integration
 
 ## Status
-Proposed
+Implemented
 
 ## BDD Mapping Hints
 ```yaml
@@ -292,6 +292,279 @@ src/llm_orc/mcp/
 - Integration tests with mock MCP client
 - End-to-end tests with real stdio transport
 - Plexus integration tests (when Plexus MCP exists)
+
+## Implementation Progress
+
+### Phase 1: Core MCP Server (Complete - 2025-12-03)
+
+**What was implemented:**
+
+1. **MCPServerV2 class** (`src/llm_orc/mcp/server.py`)
+   - Uses official FastMCP SDK with decorator-based registration
+   - Resources registered via `@self._mcp.resource()` decorators
+   - Tools registered via `@self._mcp.tool()` decorators
+   - `run()` method exposes FastMCP's stdio transport
+
+2. **Resources implemented:**
+   - `llm-orc://ensembles` - List all ensembles with metadata
+   - `llm-orc://profiles` - List model profiles
+   - `llm-orc://ensemble/{name}` - Get specific ensemble config
+   - `llm-orc://artifacts/{ensemble}` - List artifacts for ensemble
+   - `llm-orc://artifact/{ensemble}/{id}` - Individual artifact details
+   - `llm-orc://metrics/{ensemble}` - Aggregated metrics
+
+3. **Tools implemented:**
+   - `invoke` - Execute ensemble with input
+   - `validate_ensemble` - Validate ensemble configuration
+   - `list_ensembles` - List available ensembles
+
+4. **CLI command:**
+   - `llm-orc mcp serve` - Starts MCP server on stdio transport
+   - `llm-orc mcp serve --transport http --port 8080` - HTTP option (not yet implemented)
+   - Alias: `llm-orc m serve`
+
+5. **Claude Code integration:**
+   - `.mcp.json` created at project root
+   - Configured to run `uv run llm-orc mcp serve`
+
+6. **BDD tests:**
+   - 23 scenarios passing in `tests/bdd/test_adr_009_mcp_server_plexus_integration.py`
+   - Full coverage of resources, tools, streaming, and server lifecycle
+
+### Phase 2: Tools and Streaming (Complete - 2025-12-03)
+
+**Tools added:**
+- `update_ensemble` - Registered with FastMCP decorator, supports dry_run and backup
+- `analyze_execution` - Registered with FastMCP decorator for artifact analysis
+
+**HTTP transport:**
+- `llm-orc mcp serve --transport http --port 8080` now works
+- Uses FastMCP's `sse_app()` with uvicorn
+
+**Streaming improvements:**
+- `invoke` tool now uses FastMCP Context for real-time progress
+- `ctx.report_progress()` reports agent completion progress
+- `ctx.info()`, `ctx.warning()`, `ctx.error()` for event logging
+- Streams actual execution events from `EnsembleExecutor.execute_streaming()`
+
+### Phase 2.5: Artifact Resource (Complete - 2025-12-03)
+
+**Resource added:**
+- `llm-orc://artifact/{ensemble}/{artifact_id}` - Individual artifact details
+- Updated artifact directory structure to `{ensemble}/{id}/execution.json`
+- Fixed metadata field mapping (started_at, duration, agents_used)
+
+### Phase 3: Remaining Work (Future)
+
+**Plexus integration:**
+- `PlexusClient` class for post-execution callbacks
+- Configuration in `.llm-orc/config.yaml`
+- Optional feature flag
+
+### Files Structure
+
+```
+src/llm_orc/mcp/
+├── __init__.py          # Exports MCPServerV2
+└── server.py            # MCPServerV2 with FastMCP integration (~1020 lines)
+
+.mcp.json                # Claude Code MCP configuration
+```
+
+### How to Test
+
+```bash
+# Run BDD tests
+uv run pytest tests/bdd/test_adr_009_mcp_server_plexus_integration.py -v
+
+# Start MCP server manually
+uv run llm-orc mcp serve
+
+# Test with Claude Code
+# Restart Claude Code to pick up .mcp.json, then tools should be available
+```
+
+### Claude Code MCP Validation Runbook
+
+This runbook documents how Claude (via Claude Code) can validate the MCP integration
+is working correctly. These steps use the actual MCP tools available in the session.
+
+#### Prerequisites
+
+- `.mcp.json` configured in project root
+- Claude Code session started (MCP server auto-launches)
+- Ollama running locally (for `validate-ollama` ensemble)
+
+#### Step 1: Verify MCP Server Connection
+
+List available ensembles to confirm the server is responding:
+
+```
+Tool: mcp__llm-orc__list_ensembles
+Expected: JSON array of ensembles with name, source, agent_count, description
+```
+
+Example validation:
+```json
+[
+  {"name": "validate-ollama", "source": "global", "agent_count": 1, ...},
+  {"name": "security-review", "source": "global", "agent_count": 4, ...}
+]
+```
+
+#### Step 2: Validate Ensemble Configuration (Passing)
+
+Test the validation tool with a known-good ensemble:
+
+```
+Tool: mcp__llm-orc__validate_ensemble
+Parameters: ensemble_name = "validate-ollama"
+Expected: {"valid": true, "details": {"errors": [], "agent_count": 1}}
+```
+
+#### Step 3: Validate Ensemble Configuration (Failing)
+
+Test the validation tool with an ensemble that has configuration errors:
+
+```
+Tool: mcp__llm-orc__validate_ensemble
+Parameters: ensemble_name = "security-review"
+Expected: {"valid": false, "details": {"errors": ["Agent '...' uses unknown profile 'default'"], "agent_count": 4}}
+```
+
+This verifies that validation catches real configuration issues like missing model profiles.
+
+#### Step 4: Execute an Ensemble (With Artifact Storage)
+
+Invoke a simple ensemble to test execution and streaming:
+
+```
+Tool: mcp__llm-orc__invoke
+Parameters:
+  ensemble_name = "validate-ollama"
+  input_data = "What is 2+2? Answer with just the number."
+Expected: {"results": {"validator": {"response": "4", "status": "success"}}, ...}
+```
+
+During execution, the MCP server reports progress via:
+- `ctx.report_progress(progress, total)` - Agent completion count
+- `ctx.info()` - Agent start/complete messages
+
+**Important**: The MCP invoke tool now saves artifacts automatically. Verify in Step 7.
+
+#### Step 5: Read MCP Resources
+
+Test resource reading via the MCP resource tools:
+
+```
+Tool: ReadMcpResourceTool
+Parameters:
+  server = "llm-orc"
+  uri = "llm-orc://ensembles"
+Expected: JSON list of all ensembles
+```
+
+```
+Tool: ReadMcpResourceTool
+Parameters:
+  server = "llm-orc"
+  uri = "llm-orc://profiles"
+Expected: JSON list of model profiles with provider/model info
+```
+
+#### Step 6: List Available Resources
+
+Check what resources the MCP server advertises:
+
+```
+Tool: ListMcpResourcesTool
+Parameters: server = "llm-orc"
+Expected: Static resources (ensembles, profiles) - templated resources discovered separately
+```
+
+#### Step 7: Verify Artifact Storage (After Execution)
+
+After running invoke in Step 4, verify artifacts were saved:
+
+```bash
+ls -la .llm-orc/artifacts/validate-ollama/
+```
+
+Expected structure:
+```
+validate-ollama/
+├── {timestamp}/
+│   ├── execution.json
+│   └── execution.md
+└── latest -> {timestamp}
+```
+
+You can also read the artifact content:
+```bash
+cat .llm-orc/artifacts/validate-ollama/latest/execution.json
+```
+
+Expected fields: `ensemble_name`, `input`, `timestamp`, `status`, `results`, `agents`
+
+#### Validation Checklist
+
+| Step | Check | Tool/Command | Pass Criteria |
+|------|-------|--------------|---------------|
+| 1 | Server responds | `list_ensembles` | Returns JSON array (68+ ensembles) |
+| 2 | Validation passes | `validate_ensemble("validate-ollama")` | Returns `valid: true` |
+| 3 | Validation catches errors | `validate_ensemble("security-review")` | Returns `valid: false` with errors |
+| 4 | Execution works | `invoke` | Returns results with `status: success` |
+| 5 | Resources readable | `ReadMcpResourceTool` | Returns valid JSON |
+| 6 | Resource list works | `ListMcpResourcesTool` | Returns 2 resources |
+| 7 | Artifacts stored | `ls .llm-orc/artifacts/` | Directory with execution.json exists |
+
+#### Troubleshooting
+
+**MCP tools not available:**
+- Restart Claude Code to reload `.mcp.json`
+- Check `.mcp.json` has correct command: `uv run llm-orc mcp serve`
+
+**Invoke fails with model errors:**
+- Ensure Ollama is running: `ollama list`
+- Check model exists: `ollama pull llama3`
+
+**Artifacts not found:**
+- Verify working directory is project root
+- Check `.llm-orc/artifacts/` exists
+
+#### Example Validation Session
+
+```
+# 1. List ensembles
+> mcp__llm-orc__list_ensembles
+✓ Returns 68 ensembles from local/library/global sources
+
+# 2. Validate good config
+> mcp__llm-orc__validate_ensemble("validate-ollama")
+✓ Returns valid: true, agent_count: 1
+
+# 3. Validate bad config
+> mcp__llm-orc__validate_ensemble("security-review")
+✓ Returns valid: false, errors: ["Agent '...' uses unknown profile 'default'"]
+
+# 4. Execute simple ensemble
+> mcp__llm-orc__invoke("validate-ollama", "Say hello")
+✓ Returns validator response with status: success
+
+# 5. Read profiles resource
+> ReadMcpResourceTool(server="llm-orc", uri="llm-orc://profiles")
+✓ Returns list of model profiles
+
+# 6. List resources
+> ListMcpResourcesTool(server="llm-orc")
+✓ Returns 2 resources (ensembles, profiles)
+
+# 7. Verify artifacts
+> ls .llm-orc/artifacts/validate-ollama/latest/
+✓ execution.json and execution.md exist
+
+All checks passed - MCP integration verified.
+```
 
 ## References
 
