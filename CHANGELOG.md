@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2] - 2025-12-04
+
+### Fixed
+- MCP server graceful shutdown on Ctrl+C (no more threading exceptions)
+- Clearer MCP server output: minimal for stdio, detailed for HTTP transport
+
+### Changed
+- HTTP transport now shows endpoint URLs for web UI integration
+- Reduced Homebrew package size from 99MB to ~58MB
+
 ## [0.12.1] - 2025-12-04
 
 ### Added
