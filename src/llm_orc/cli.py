@@ -349,18 +349,43 @@ def mcp_serve(transport: str, port: int) -> None:
     Uses the new MCPServerV2 with full resource and tool support.
     Default transport is stdio for MCP client compatibility.
     """
+    import signal
+    import sys
+
     from llm_orc.mcp import MCPServerV2
+
+    def handle_shutdown(_signum: int, _frame: object) -> None:
+        """Handle shutdown signals gracefully."""
+        click.echo("\nShutting down MCP server...", err=True)
+        sys.exit(0)
+
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, handle_shutdown)
+    signal.signal(signal.SIGTERM, handle_shutdown)
 
     server = MCPServerV2()
 
     if transport == "stdio":
-        click.echo("Starting MCP server on stdio transport...", err=True)
-        server.run()
+        # Minimal output for stdio - it's typically auto-spawned by MCP clients
+        # and the output goes to their logs, not a user terminal
+        click.echo("llm-orc MCP server ready", err=True)
+        try:
+            server.run()
+        except KeyboardInterrupt:
+            click.echo("Shutting down", err=True)
     else:
-        click.echo(f"Starting MCP server on HTTP port {port}...", err=True)
-        url = f"http://localhost:{port}/mcp/"
-        click.echo(f"Server will be available at {url}", err=True)
-        server.run(transport="http", port=port)
+        # Detailed output for HTTP - user is manually running for web UI or debugging
+        click.echo(f"MCP server ready at http://localhost:{port}/mcp/", err=True)
+        click.echo("", err=True)
+        click.echo("Endpoints:", err=True)
+        click.echo(f"  SSE stream: http://localhost:{port}/mcp/sse", err=True)
+        click.echo(f"  Messages:   http://localhost:{port}/mcp/messages", err=True)
+        click.echo("", err=True)
+        click.echo("Press Ctrl+C to stop", err=True)
+        try:
+            server.run(transport="http", port=port)
+        except KeyboardInterrupt:
+            click.echo("\nShutting down MCP server...", err=True)
 
 
 @scripts.command("list")
