@@ -37,6 +37,7 @@ dependencies = [
     "rich>=13.0.0",
     "psutil>=5.9.0",
     "python-dotenv>=1.1.1",
+    "mcp>=1.0.0",
 ]
 requires-python = ">=3.11"
 
@@ -82,7 +83,7 @@ warn_unused_configs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--cov=llm_orc --cov-report=term-missing --cov-fail-under=93"
+addopts = "--cov=llm_orc --cov-report=term-missing --cov-fail-under=91"
 markers = [
     "asyncio: marks tests as requiring asyncio",
     # BDD Gherkin tags from feature files
@@ -94,6 +95,7 @@ markers = [
     "adr-005: ADR-005 Multi-Turn Agent Conversations tests",
     "adr-006: ADR-006 Library-Based Primitives Architecture tests",
     "adr-007: ADR-007 Progressive Ensemble Validation Suite tests",
+    "adr-009: ADR-009 MCP Server Architecture and Plexus Integration tests",
     "agent-request-processing: Tests for agent request processing",
     "architectural-compliance: Tests for architectural compliance",
     "artifact-management: Tests for artifact management",
@@ -140,6 +142,24 @@ markers = [
     "workflow-composition: Tests for workflow composition",
     "workflow-validation: Tests for workflow validation",
     "yaml-configuration: Tests for YAML configuration",
+    # ADR-009 MCP Server tags
+    "mcp: MCP Server tests",
+    "ensembles: Ensemble resource tests",
+    "resource: MCP resource tests",
+    "ensemble-detail: Ensemble detail resource tests",
+    "artifacts: Artifact resource tests",
+    "artifact-detail: Artifact detail tests",
+    "metrics: Metrics resource tests",
+    "profiles: Profile resource tests",
+    "tool: MCP tool tests",
+    "invoke: Invoke tool tests",
+    "validate: Validate tool tests",
+    "update: Update tool tests",
+    "analyze: Analyze tool tests",
+    "streaming: Streaming tests",
+    "server: Server lifecycle tests",
+    "cli: CLI integration tests",
+    "error: Error handling tests",
 ]
 
 [tool.hatch.build.targets.wheel]

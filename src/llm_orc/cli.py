@@ -329,6 +329,40 @@ def validate() -> None:
     pass
 
 
+@cli.group()
+def mcp() -> None:
+    """MCP (Model Context Protocol) server commands."""
+    pass
+
+
+@mcp.command("serve")
+@click.option(
+    "--transport",
+    type=click.Choice(["stdio", "http"]),
+    default="stdio",
+    help="Transport type (stdio for MCP clients, http for debugging)",
+)
+@click.option("--port", default=8080, help="Port for HTTP transport")
+def mcp_serve(transport: str, port: int) -> None:
+    """Start the MCP server exposing all ensembles.
+
+    Uses the new MCPServerV2 with full resource and tool support.
+    Default transport is stdio for MCP client compatibility.
+    """
+    from llm_orc.mcp import MCPServerV2
+
+    server = MCPServerV2()
+
+    if transport == "stdio":
+        click.echo("Starting MCP server on stdio transport...", err=True)
+        server.run()
+    else:
+        click.echo(f"Starting MCP server on HTTP port {port}...", err=True)
+        url = f"http://localhost:{port}/mcp/"
+        click.echo(f"Server will be available at {url}", err=True)
+        server.run(transport="http", port=port)
+
+
 @scripts.command("list")
 @click.option(
     "--format",
@@ -583,6 +617,7 @@ cli.add_command(artifacts, name="ar")
 cli.add_command(list_ensembles, name="le")
 cli.add_command(list_profiles, name="lp")
 cli.add_command(serve, name="s")
+cli.add_command(mcp, name="m")
 cli.add_command(help_command, name="help")
 cli.add_command(help_command, name="h")
 
