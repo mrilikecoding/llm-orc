@@ -150,29 +150,82 @@ llm-orc web --host 0.0.0.0  # WARNING: exposes to network
 
 ### 3. REST API Design
 
+The REST API maps directly to MCP tools from ADR-009, enabling consistent behavior across interfaces.
+
 ```yaml
-# Ensembles
-GET  /api/ensembles              # List all ensembles (grouped by source)
-GET  /api/ensembles/{name}       # Get ensemble config and metadata
-POST /api/ensembles/{name}/execute  # Execute (non-streaming, returns artifact_id)
+# Ensembles (CRUD)
+GET    /api/ensembles                    # list_ensembles tool
+GET    /api/ensembles/{name}             # llm-orc://ensemble/{name} resource
+POST   /api/ensembles                    # create_ensemble tool
+PUT    /api/ensembles/{name}             # update_ensemble tool
+DELETE /api/ensembles/{name}             # delete_ensemble tool
+POST   /api/ensembles/{name}/execute     # invoke tool
+POST   /api/ensembles/{name}/validate    # validate_ensemble tool
+
+# Profiles (CRUD)
+GET    /api/profiles                     # llm-orc://profiles resource
+POST   /api/profiles                     # create_profile tool
+PUT    /api/profiles/{name}              # update_profile tool
+DELETE /api/profiles/{name}              # delete_profile tool
+
+# Scripts (CRUD)
+GET    /api/scripts                      # list_scripts tool
+GET    /api/scripts/{category}/{name}    # get_script tool
+POST   /api/scripts                      # create_script tool
+DELETE /api/scripts/{category}/{name}    # delete_script tool
+POST   /api/scripts/{category}/{name}/test  # test_script tool
+
+# Library (Read-only)
+GET    /api/library                      # library_browse tool
+GET    /api/library/search?q=...         # library_search tool
+GET    /api/library/{path}               # library_info tool
+POST   /api/library/copy                 # library_copy tool
 
 # Artifacts
-GET  /api/artifacts                     # List all artifacts (paginated)
-GET  /api/artifacts/{ensemble}          # List artifacts for ensemble
-GET  /api/artifacts/{ensemble}/{id}     # Get single artifact
-GET  /api/artifacts/{ensemble}/{id}/raw # Get raw JSON artifact
-DELETE /api/artifacts/{ensemble}/{id}   # Delete artifact
+GET    /api/artifacts                    # List all (paginated)
+GET    /api/artifacts/{ensemble}         # llm-orc://artifacts/{ensemble} resource
+GET    /api/artifacts/{ensemble}/{id}    # llm-orc://artifact/{ensemble}/{id} resource
+DELETE /api/artifacts/{ensemble}/{id}    # delete_artifact tool
+POST   /api/artifacts/cleanup            # cleanup_artifacts tool
+POST   /api/artifacts/{id}/analyze       # analyze_execution tool
 
 # Metrics
-GET  /api/metrics                  # Global metrics summary
-GET  /api/metrics/{ensemble}       # Ensemble-specific metrics
+GET    /api/metrics                      # Global summary
+GET    /api/metrics/{ensemble}           # llm-orc://metrics/{ensemble} resource
 
-# Profiles
-GET  /api/profiles                 # List model profiles
-
-# Config
-GET  /api/config                   # Current configuration
+# Config (Read-only)
+GET    /api/config                       # Current configuration
 ```
+
+### 3.1 MCP Tool Mapping
+
+The Web UI backend calls MCP tools internally, ensuring consistent behavior:
+
+```python
+from llm_orc.mcp import MCPServerV2
+
+class EnsemblesAPI:
+    def __init__(self):
+        self.mcp = MCPServerV2()
+
+    async def list_ensembles(self) -> list[dict]:
+        """GET /api/ensembles"""
+        return await self.mcp._read_ensembles_resource()
+
+    async def create_ensemble(self, data: dict) -> dict:
+        """POST /api/ensembles"""
+        return await self.mcp._create_ensemble_tool(data)
+
+    async def execute_ensemble(self, name: str, input_data: str) -> dict:
+        """POST /api/ensembles/{name}/execute"""
+        # Uses streaming internally, returns final result
+        return await self.mcp._invoke_tool(name, input_data)
+```
+
+This approach:
+- Reuses all MCP validation and business logic
+- Ensures CLI, MCP, and Web UI behave identically
+- Reduces code duplication
 
 ### 4. WebSocket for Streaming Execution
 
@@ -214,28 +267,62 @@ ws.onmessage = (event) => {
 #### 5.1 Ensembles Page (`/`)
 - Tree view grouped by source (Local, Library, Global)
 - Search/filter functionality
-- Quick actions: Execute, View, Copy
+- Quick actions: Execute, View, Copy, Delete
+- **Create button**: Opens ensemble editor (new or from template)
+- **Import from Library**: Browse and copy library ensembles
 
 #### 5.2 Ensemble Detail (`/ensemble/{name}`)
-- **Config tab**: Syntax-highlighted YAML
+- **Config tab**: Syntax-highlighted YAML with inline editing
 - **Graph tab**: Interactive dependency visualization
-- **Agents tab**: List with model profiles, roles
+- **Agents tab**: List with model profiles, roles - editable for local ensembles
 - **Execute tab**: Input form with streaming output console
 - **Artifacts tab**: Execution history for this ensemble
+- **Edit/Delete buttons**: For local ensembles only (library/global are read-only)
 
-#### 5.3 Artifacts Browser (`/artifacts`)
+#### 5.3 Ensemble Editor (`/ensemble/new` or `/ensemble/{name}/edit`)
+- YAML editor with syntax highlighting and validation
+- Visual agent builder (drag-and-drop)
+- Profile selector dropdown
+- Dependency graph preview
+- Validate before save (uses `validate_ensemble` tool)
+
+#### 5.4 Scripts Page (`/scripts`)
+- List of primitive scripts by category
+- **View**: Source code with syntax highlighting
+- **Test**: Run with sample input (uses `test_script` tool)
+- **Create**: New script from template
+- **Delete**: Remove script (with confirmation)
+- **Import from Library**: Browse and copy library scripts
+
+#### 5.5 Library Browser (`/library`)
+- Browse library ensembles and scripts
+- Search functionality
+- Preview before copying
+- Copy to local with one click (uses `library_copy` tool)
+- Shows which items are already installed locally
+
+#### 5.6 Profiles Page (`/profiles`)
+- List all model profiles with provider, model, cost info
+- **Create**: New profile form
+- **Edit**: Modify existing profile
+- **Delete**: Remove profile (warns if in use by ensembles)
+- **Test**: Quick connectivity test
+
+#### 5.7 Artifacts Browser (`/artifacts`)
 - Sortable table: timestamp, ensemble, status, cost, duration
 - Filter by ensemble, date range, status
 - Bulk delete capability
+- Cleanup old artifacts (uses `cleanup_artifacts` tool)
 
-#### 5.4 Artifact Detail (`/artifacts/{ensemble}/{id}`)
+#### 5.8 Artifact Detail (`/artifacts/{ensemble}/{id}`)
 - **Overview**: Status, cost, duration, timestamp
 - **Results**: Formatted agent outputs with syntax highlighting
 - **Synthesis**: Final synthesized output
 - **Raw**: JSON viewer with copy button
 - **Compare**: Select another artifact for diff view
+- **Delete**: Remove this artifact
 
-#### 5.5 Metrics Dashboard (`/metrics`)
+#### 5.9 Metrics Dashboard (`/metrics`)
 - **Summary cards**: Total executions, success rate, total cost
 - **Charts**:
   - Executions over time
@@ -244,10 +331,11 @@ ws.onmessage = (event) => {
   - Agent performance comparison
 - **Table**: Per-ensemble breakdown
 
-#### 5.6 Settings (`/settings`)
-- View current configuration (read-only)
+#### 5.10 Settings (`/settings`)
+- View current configuration
 - Model profiles overview
 - Link to config file locations
+- llm-orc version info
 
 ### 6. Technology Choices
 

@@ -288,14 +288,155 @@ Restart Claude Code. MCP tools become available as `mcp__llm-orc__*`.
 
 See the [Claude Code MCP Validation Runbook](#claude-code-mcp-validation-runbook) below.
 
-## Potential Future Enhancements
+## Phase 2: Full CRUD Operations (Planned)
 
-These are NOT planned but could be added if needed:
+To support the Local Web UI (ADR-010) and provide a complete API, the following tools will be added:
 
-1. **Script tools** - `scripts_list`, `scripts_test` (mentioned in ADR-008)
-2. **Library tools** - `library_browse`, `library_copy` (mentioned in ADR-008)
-3. **Init tool** - `init_project` (may not make sense for MCP)
-4. **Artifact deletion** - `delete_artifact` tool
+### Ensemble CRUD
+
+```yaml
+tools:
+  - name: create_ensemble
+    description: Create a new ensemble from scratch or template
+    inputSchema:
+      name: string (required)
+      description: string
+      agents: array (required)
+      from_template: string (optional, copy from existing)
+
+  - name: delete_ensemble
+    description: Delete an ensemble (with confirmation)
+    inputSchema:
+      ensemble_name: string (required)
+      confirm: boolean (required, must be true)
+```
+
+### Profile CRUD
+
+```yaml
+tools:
+  - name: list_profiles
+    description: List all model profiles with details
+    # Already available as resource, but tool provides filtering
+
+  - name: create_profile
+    description: Create a new model profile
+    inputSchema:
+      name: string (required)
+      provider: string (required)
+      model: string (required)
+      system_prompt: string
+      timeout_seconds: number
+
+  - name: update_profile
+    description: Update an existing profile
+    inputSchema:
+      name: string (required)
+      changes: object (required)
+
+  - name: delete_profile
+    description: Delete a model profile
+    inputSchema:
+      name: string (required)
+      confirm: boolean (required)
+```
+
+### Script Management
+
+```yaml
+tools:
+  - name: list_scripts
+    description: List available primitive scripts
+    inputSchema:
+      category: string (optional, filter by category)
+
+  - name: get_script
+    description: Get script source and metadata
+    inputSchema:
+      script_path: string (required)
+
+  - name: test_script
+    description: Test a script with sample input
+    inputSchema:
+      script_path: string (required)
+      test_input: object (required)
+
+  - name: create_script
+    description: Create a new primitive script
+    inputSchema:
+      category: string (required)
+      name: string (required)
+      source: string (required)
+
+  - name: delete_script
+    description: Delete a script
+    inputSchema:
+      script_path: string (required)
+      confirm: boolean (required)
+```
+
+### Library Operations
+
+```yaml
+tools:
+  - name: library_browse
+    description: Browse library ensembles and scripts
+    inputSchema:
+      type: enum[ensembles, scripts, all] (default: all)
+      category: string (optional)
+
+  - name: library_search
+    description: Search library by keyword
+    inputSchema:
+      query: string (required)
+      type: enum[ensembles, scripts, all]
+
+  - name: library_copy
+    description: Copy from library to local project
+    inputSchema:
+      source: string (required, library path)
+      destination: string (optional, defaults to .llm-orc/)
+      overwrite: boolean (default: false)
+
+  - name: library_info
+    description: Get detailed info about a library item
+    inputSchema:
+      path: string (required)
+```
+
+### Artifact Management
+
+```yaml
+tools:
+  - name: delete_artifact
+    description: Delete an execution artifact
+    inputSchema:
+      artifact_id: string (required, format: ensemble/timestamp)
+      confirm: boolean (required)
+
+  - name: cleanup_artifacts
+    description: Delete old artifacts
+    inputSchema:
+      ensemble_name: string (optional, all if not specified)
+      older_than_days: number (required)
+      dry_run: boolean (default: true)
+```
+
+### CRUD Summary
+
+| Resource | Create | Read | Update | Delete |
+|----------|--------|------|--------|--------|
+| Ensembles | `create_ensemble` | `list_ensembles`, resources | `update_ensemble` | `delete_ensemble` |
+| Profiles | `create_profile` | `list_profiles`, resource | `update_profile` | `delete_profile` |
+| Scripts | `create_script` | `list_scripts`, `get_script` | Edit via `create_script` | `delete_script` |
+| Artifacts | Auto on `invoke` | Resources | N/A | `delete_artifact`, `cleanup_artifacts` |
+| Library | N/A (read-only) | `library_browse`, `library_search`, `library_info` | N/A | N/A |
+
+### Implementation Priority
+
+1. **High** (needed for Web UI): `create_ensemble`, `delete_ensemble`, `list_scripts`, `library_browse`, `library_copy`
+2. **Medium**: Profile CRUD, `delete_artifact`, `cleanup_artifacts`
+3. **Low**: `test_script`, `library_search`, `create_script`
 
 ## Claude Code MCP Validation Runbook
 
