@@ -41,8 +41,10 @@ class MCPServerV2:
     tools for ensemble management and execution.
     """
 
-    # Optional test override for library directory
+    # Optional test overrides for directories
     _test_library_dir: Path | None = None
+    _test_scripts_dir: Path | None = None
+    _test_artifacts_base: Path | None = None
 
     def __init__(self, config_manager: ConfigurationManager | None = None) -> None:
         """Initialize MCP server.
@@ -375,6 +377,90 @@ class MCPServerV2:
                     "dry_run": dry_run,
                 }
             )
+            return json.dumps(result, indent=2)
+
+        self._setup_script_tools()
+        self._setup_library_extra_tools()
+
+    def _setup_script_tools(self) -> None:
+        """Register script management tools."""
+
+        @self._mcp.tool()
+        async def get_script(name: str, category: str) -> str:
+            """Get script details.
+
+            Args:
+                name: Script name
+                category: Script category
+            """
+            result = await self._get_script_tool({"name": name, "category": category})
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def test_script(
+            name: str,
+            category: str,
+            input: str,  # noqa: A002
+        ) -> str:
+            """Test a script with sample input.
+
+            Args:
+                name: Script name
+                category: Script category
+                input: Test input data
+            """
+            result = await self._test_script_tool(
+                {"name": name, "category": category, "input": input}
+            )
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def create_script(
+            name: str, category: str, template: str = "basic"
+        ) -> str:
+            """Create a new primitive script.
+
+            Args:
+                name: Script name
+                category: Script category
+                template: Template to use (basic, extraction, etc.)
+            """
+            result = await self._create_script_tool(
+                {"name": name, "category": category, "template": template}
+            )
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def delete_script(name: str, category: str, confirm: bool = False) -> str:
+            """Delete a script.
+
+            Args:
+                name: Script name
+                category: Script category
+                confirm: Must be True to actually delete
+            """
+            result = await self._delete_script_tool(
+                {"name": name, "category": category, "confirm": confirm}
+            )
+            return json.dumps(result, indent=2)
+
+    def _setup_library_extra_tools(self) -> None:
+        """Register library extra tools."""
+
+        @self._mcp.tool()
+        async def library_search(query: str) -> str:
+            """Search library content.
+
+            Args:
+                query: Search query
+            """
+            result = await self._library_search_tool({"query": query})
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def library_info() -> str:
+            """Get library information."""
+            result = await self._library_info_tool({})
             return json.dumps(result, indent=2)
 
     async def handle_initialize(self) -> dict[str, Any]:
@@ -832,7 +918,7 @@ class MCPServerV2:
             # Ensemble CRUD
             "create_ensemble": self._create_ensemble_tool,
             "delete_ensemble": self._delete_ensemble_tool,
-            # Scripts and library
+            # Scripts and library (high priority)
             "list_scripts": self._list_scripts_tool,
             "library_browse": self._library_browse_tool,
             "library_copy": self._library_copy_tool,
@@ -844,6 +930,14 @@ class MCPServerV2:
             # Artifact management
             "delete_artifact": self._delete_artifact_tool,
             "cleanup_artifacts": self._cleanup_artifacts_tool,
+            # Script management (low priority)
+            "get_script": self._get_script_tool,
+            "test_script": self._test_script_tool,
+            "create_script": self._create_script_tool,
+            "delete_script": self._delete_script_tool,
+            # Library extras (low priority)
+            "library_search": self._library_search_tool,
+            "library_info": self._library_info_tool,
         }
         return handlers.get(name)
 
@@ -1421,6 +1515,8 @@ class MCPServerV2:
         Returns:
             Creation result.
         """
+        import yaml
+
         name = arguments.get("name")
         description = arguments.get("description", "")
         agents = arguments.get("agents", [])
@@ -1429,24 +1525,7 @@ class MCPServerV2:
         if not name:
             raise ValueError("name is required")
 
-        # Get the local ensembles directory
-        ensemble_dirs = self.config_manager.get_ensembles_dirs()
-        local_dir: Path | None = None
-
-        for dir_path in ensemble_dirs:
-            path = Path(dir_path)
-            if ".llm-orc" in str(path) and "library" not in str(path):
-                local_dir = path
-                break
-
-        if not local_dir:
-            # Use first directory as fallback
-            local_dir = Path(ensemble_dirs[0]) if ensemble_dirs else None
-
-        if not local_dir:
-            raise ValueError("No ensemble directory available")
-
-        # Check if ensemble already exists
+        local_dir = self._get_local_ensembles_dir()
         target_file = local_dir / f"{name}.yaml"
         if target_file.exists():
             raise ValueError(f"Ensemble already exists: {name}")
@@ -1454,25 +1533,11 @@ class MCPServerV2:
         # If from_template, copy from existing ensemble
         agents_copied = 0
         if from_template:
-            template_config = self._find_ensemble_by_name(from_template)
-            if not template_config:
-                raise ValueError(f"Template ensemble not found: {from_template}")
-            # Copy agents from template
-            agents = []
-            for agent in template_config.agents:
-                agents.append(
-                    {
-                        "name": _get_agent_attr(agent, "name"),
-                        "model_profile": _get_agent_attr(agent, "model_profile"),
-                        "depends_on": _get_agent_attr(agent, "depends_on") or [],
-                    }
-                )
-            agents_copied = len(agents)
-            description = description or template_config.description
+            agents, description, agents_copied = self._copy_from_template(
+                from_template, description
+            )
 
         # Build YAML content
-        import yaml
-
         ensemble_data = {
             "name": name,
             "description": description,
@@ -1489,6 +1554,59 @@ class MCPServerV2:
             "path": str(target_file),
             "agents_copied": agents_copied,
         }
+
+    def _get_local_ensembles_dir(self) -> Path:
+        """Get the local ensembles directory for writing.
+
+        Returns:
+            Path to local ensembles directory.
+
+        Raises:
+            ValueError: If no ensemble directory is available.
+        """
+        ensemble_dirs = self.config_manager.get_ensembles_dirs()
+
+        for dir_path in ensemble_dirs:
+            path = Path(dir_path)
+            if ".llm-orc" in str(path) and "library" not in str(path):
+                return path
+
+        if ensemble_dirs:
+            return Path(ensemble_dirs[0])
+
+        raise ValueError("No ensemble directory available")
+
+    def _copy_from_template(
+        self, template_name: str, description: str
+    ) -> tuple[list[dict[str, Any]], str, int]:
+        """Copy agents and description from a template ensemble.
+
+        Args:
+            template_name: Name of the template ensemble.
+            description: Current description (may be overwritten if empty).
+
+        Returns:
+            Tuple of (agents list, description, agents_copied count).
+
+        Raises:
+            ValueError: If template not found.
+        """
+        template_config = self._find_ensemble_by_name(template_name)
+        if not template_config:
+            raise ValueError(f"Template ensemble not found: {template_name}")
+
+        agents: list[dict[str, Any]] = []
+        for agent in template_config.agents:
+            agents.append(
+                {
+                    "name": _get_agent_attr(agent, "name"),
+                    "model_profile": _get_agent_attr(agent, "model_profile"),
+                    "depends_on": _get_agent_attr(agent, "depends_on") or [],
+                }
+            )
+
+        final_description = description or template_config.description
+        return agents, final_description, len(agents)
 
     async def _delete_ensemble_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Delete an ensemble.
@@ -1900,9 +2018,6 @@ class MCPServerV2:
     # Artifact Management Tool Implementations
     # =========================================================================
 
-    # Optional test override for artifacts directory
-    _test_artifacts_base: Path | None = None
-
     def _get_artifacts_base(self) -> Path:
         """Get artifacts base directory."""
         if self._test_artifacts_base is not None:
@@ -1958,7 +2073,6 @@ class MCPServerV2:
         Returns:
             Cleanup result.
         """
-        import shutil
         import time
 
         ensemble_name = arguments.get("ensemble_name")
@@ -1968,17 +2082,54 @@ class MCPServerV2:
         artifacts_base = self._get_artifacts_base()
         cutoff_time = time.time() - (older_than_days * 24 * 60 * 60)
 
+        ensemble_dirs = self._get_ensemble_artifact_dirs(artifacts_base, ensemble_name)
+        would_delete, deleted = self._process_old_artifacts(
+            ensemble_dirs, cutoff_time, dry_run
+        )
+
+        if dry_run:
+            return {
+                "dry_run": True,
+                "would_delete": would_delete,
+                "count": len(would_delete),
+            }
+        return {"dry_run": False, "deleted": deleted, "count": len(deleted)}
+
+    def _get_ensemble_artifact_dirs(
+        self, artifacts_base: Path, ensemble_name: str | None
+    ) -> list[Path]:
+        """Get list of ensemble artifact directories to check.
+
+        Args:
+            artifacts_base: Base artifacts directory.
+            ensemble_name: Optional specific ensemble to check.
+
+        Returns:
+            List of ensemble directories.
+        """
+        if ensemble_name:
+            return [artifacts_base / ensemble_name]
+        if artifacts_base.exists():
+            return [d for d in artifacts_base.iterdir() if d.is_dir()]
+        return []
+
+    def _process_old_artifacts(
+        self, ensemble_dirs: list[Path], cutoff_time: float, dry_run: bool
+    ) -> tuple[list[str], list[str]]:
+        """Process and optionally delete old artifacts.
+
+        Args:
+            ensemble_dirs: List of ensemble directories to check.
+            cutoff_time: Unix timestamp cutoff for deletion.
+            dry_run: If True, don't actually delete.
+
+        Returns:
+            Tuple of (would_delete list, deleted list).
+        """
+        import shutil
+
         would_delete: list[str] = []
         deleted: list[str] = []
-
-        # Determine which ensemble directories to check
-        if ensemble_name:
-            ensemble_dirs = [artifacts_base / ensemble_name]
-        else:
-            if artifacts_base.exists():
-                ensemble_dirs = [d for d in artifacts_base.iterdir() if d.is_dir()]
-            else:
-                ensemble_dirs = []
 
         for ensemble_dir in ensemble_dirs:
             if not ensemble_dir.exists():
@@ -1988,7 +2139,6 @@ class MCPServerV2:
                 if not artifact_dir.is_dir():
                     continue
 
-                # Check modification time
                 mtime = artifact_dir.stat().st_mtime
                 if mtime < cutoff_time:
                     artifact_id = f"{ensemble_dir.name}/{artifact_dir.name}"
@@ -1998,15 +2148,389 @@ class MCPServerV2:
                         shutil.rmtree(artifact_dir)
                         deleted.append(artifact_id)
 
-        if dry_run:
+        return would_delete, deleted
+
+    # =========================================================================
+    # Script Management Tool Implementations (Low Priority)
+    # =========================================================================
+
+    def _get_scripts_dir(self) -> Path:
+        """Get scripts directory path.
+
+        Returns:
+            Path to scripts directory.
+        """
+        if self._test_scripts_dir is not None:
+            return self._test_scripts_dir
+        return Path.cwd() / ".llm-orc" / "scripts"
+
+    async def _get_script_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Get script details.
+
+        Args:
+            arguments: Tool arguments including name and category.
+
+        Returns:
+            Script details.
+        """
+        name = arguments.get("name")
+        category = arguments.get("category")
+
+        if not name:
+            raise ValueError("name is required")
+        if not category:
+            raise ValueError("category is required")
+
+        scripts_dir = self._get_scripts_dir()
+        script_file = scripts_dir / category / f"{name}.py"
+
+        if not script_file.exists():
+            raise ValueError(f"Script '{category}/{name}' not found")
+
+        content = script_file.read_text()
+        description = self._extract_docstring(content)
+
+        return {
+            "name": name,
+            "category": category,
+            "path": str(script_file),
+            "description": description,
+            "source": content,
+        }
+
+    def _extract_docstring(self, content: str) -> str:
+        """Extract module docstring from Python source code.
+
+        Args:
+            content: Python source code.
+
+        Returns:
+            Extracted docstring or empty string if not found.
+        """
+        lines = content.split("\n")
+        in_docstring = False
+        docstring_lines: list[str] = []
+
+        for line in lines:
+            if '"""' in line or "'''" in line:
+                if in_docstring:
+                    break
+                in_docstring = True
+                # Handle single-line docstring
+                if line.count('"""') == 2 or line.count("'''") == 2:
+                    return self._strip_docstring_quotes(line.strip())
+            elif in_docstring:
+                docstring_lines.append(line)
+
+        if docstring_lines:
+            return "\n".join(docstring_lines).strip()
+        return ""
+
+    def _strip_docstring_quotes(self, text: str) -> str:
+        """Remove docstring quote marks from text.
+
+        Args:
+            text: Text with potential docstring quotes.
+
+        Returns:
+            Text with quotes removed.
+        """
+        for quote in ('"""', "'''"):
+            if text.startswith(quote):
+                text = text[3:]
+            if text.endswith(quote):
+                text = text[:-3]
+        return text.strip()
+
+    async def _test_script_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Test a script with sample input.
+
+        Args:
+            arguments: Tool arguments including name, category, and input.
+
+        Returns:
+            Test result.
+        """
+        import subprocess
+        import sys
+
+        name = arguments.get("name")
+        category = arguments.get("category")
+        input_data = arguments.get("input", "")
+
+        if not name:
+            raise ValueError("name is required")
+        if not category:
+            raise ValueError("category is required")
+
+        scripts_dir = self._get_scripts_dir()
+        script_file = scripts_dir / category / f"{name}.py"
+
+        if not script_file.exists():
+            raise ValueError(f"Script '{category}/{name}' not found")
+
+        # Run the script with input
+        try:
+            result = subprocess.run(
+                [sys.executable, str(script_file)],
+                input=input_data,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
             return {
-                "dry_run": True,
-                "would_delete": would_delete,
-                "count": len(would_delete),
+                "success": result.returncode == 0,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "return_code": result.returncode,
             }
-        else:
+        except subprocess.TimeoutExpired:
             return {
-                "dry_run": False,
-                "deleted": deleted,
-                "count": len(deleted),
+                "success": False,
+                "error": "Script execution timed out",
             }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+            }
+
+    async def _create_script_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Create a new script.
+
+        Args:
+            arguments: Tool arguments including name, category, and template.
+
+        Returns:
+            Creation result.
+        """
+        name = arguments.get("name")
+        category = arguments.get("category")
+        template = arguments.get("template", "basic")
+
+        if not name:
+            raise ValueError("name is required")
+        if not category:
+            raise ValueError("category is required")
+
+        scripts_dir = self._get_scripts_dir()
+        category_dir = scripts_dir / category
+        script_file = category_dir / f"{name}.py"
+
+        if script_file.exists():
+            raise ValueError(f"Script '{category}/{name}' already exists")
+
+        # Generate script from template
+        if template == "extraction":
+            content = f'''"""Extraction script: {name}
+
+Extracts structured data from input text.
+"""
+
+import json
+import sys
+
+
+def extract(text: str) -> dict:
+    """Extract data from text."""
+    # TODO: Implement extraction logic
+    return {{"input_length": len(text)}}
+
+
+if __name__ == "__main__":
+    input_text = sys.stdin.read()
+    result = extract(input_text)
+    print(json.dumps(result))
+'''
+        else:  # basic template
+            content = f'''"""Primitive script: {name}
+
+Process input and produce output.
+"""
+
+import sys
+
+
+def process(text: str) -> str:
+    """Process input text."""
+    # TODO: Implement processing logic
+    return text
+
+
+if __name__ == "__main__":
+    input_text = sys.stdin.read()
+    result = process(input_text)
+    print(result)
+'''
+
+        # Create directory and file
+        category_dir.mkdir(parents=True, exist_ok=True)
+        script_file.write_text(content)
+
+        return {
+            "created": True,
+            "path": str(script_file),
+            "template": template,
+        }
+
+    async def _delete_script_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Delete a script.
+
+        Args:
+            arguments: Tool arguments including name, category, and confirm.
+
+        Returns:
+            Deletion result.
+        """
+        name = arguments.get("name")
+        category = arguments.get("category")
+        confirm = arguments.get("confirm", False)
+
+        if not name:
+            raise ValueError("name is required")
+        if not category:
+            raise ValueError("category is required")
+        if not confirm:
+            raise ValueError("Confirmation required to delete script")
+
+        scripts_dir = self._get_scripts_dir()
+        script_file = scripts_dir / category / f"{name}.py"
+
+        if not script_file.exists():
+            raise ValueError(f"Script '{category}/{name}' not found")
+
+        script_file.unlink()
+
+        return {
+            "deleted": True,
+            "name": name,
+            "category": category,
+        }
+
+    # =========================================================================
+    # Library Extras Tool Implementations (Low Priority)
+    # =========================================================================
+
+    async def _library_search_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Search library content.
+
+        Args:
+            arguments: Tool arguments including query.
+
+        Returns:
+            Search results.
+        """
+        query = arguments.get("query", "").lower()
+
+        if not query:
+            raise ValueError("query is required")
+
+        library_dir = self._get_library_dir()
+        ensemble_results = self._search_library_ensembles(library_dir, query)
+        script_results = self._search_library_scripts(library_dir, query)
+
+        return {
+            "query": query,
+            "results": {
+                "ensembles": ensemble_results,
+                "scripts": script_results,
+            },
+            "total": len(ensemble_results) + len(script_results),
+        }
+
+    def _search_library_ensembles(
+        self, library_dir: Path, query: str
+    ) -> list[dict[str, Any]]:
+        """Search ensembles in library directory by query."""
+        results: list[dict[str, Any]] = []
+        ensembles_dir = library_dir / "ensembles"
+
+        if not ensembles_dir.exists():
+            return results
+
+        for yaml_file in ensembles_dir.glob("**/*.yaml"):
+            try:
+                config = self.ensemble_loader.load_from_file(str(yaml_file))
+                if config:
+                    name_match = query in config.name.lower()
+                    desc_match = query in (config.description or "").lower()
+                    if name_match or desc_match:
+                        results.append(
+                            {
+                                "name": config.name,
+                                "description": config.description,
+                                "path": str(yaml_file),
+                                "match": "name" if name_match else "description",
+                            }
+                        )
+            except Exception:
+                continue
+
+        return results
+
+    def _search_library_scripts(
+        self, library_dir: Path, query: str
+    ) -> list[dict[str, Any]]:
+        """Search scripts in library directory by query."""
+        results: list[dict[str, Any]] = []
+        scripts_dir = library_dir / "scripts"
+
+        if not scripts_dir.exists():
+            return results
+
+        for category_dir in scripts_dir.iterdir():
+            if not category_dir.is_dir():
+                continue
+            for script_file in category_dir.glob("*.py"):
+                name_match = query in script_file.stem.lower()
+                cat_match = query in category_dir.name.lower()
+                if name_match or cat_match:
+                    results.append(
+                        {
+                            "name": script_file.stem,
+                            "category": category_dir.name,
+                            "path": str(script_file),
+                            "match": "name" if name_match else "category",
+                        }
+                    )
+
+        return results
+
+    async def _library_info_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Get library information.
+
+        Args:
+            arguments: Tool arguments (unused).
+
+        Returns:
+            Library info.
+        """
+        library_dir = self._get_library_dir()
+
+        info: dict[str, Any] = {
+            "path": str(library_dir),
+            "exists": library_dir.exists(),
+            "ensembles_count": 0,
+            "scripts_count": 0,
+            "categories": [],
+        }
+
+        if not library_dir.exists():
+            return info
+
+        # Count ensembles
+        ensembles_dir = library_dir / "ensembles"
+        if ensembles_dir.exists():
+            info["ensembles_count"] = len(list(ensembles_dir.glob("**/*.yaml")))
+
+        # Count scripts and categories
+        scripts_dir = library_dir / "scripts"
+        if scripts_dir.exists():
+            categories: list[str] = []
+            for category_dir in scripts_dir.iterdir():
+                if category_dir.is_dir():
+                    categories.append(category_dir.name)
+                    info["scripts_count"] += len(list(category_dir.glob("*.py")))
+            info["categories"] = sorted(categories)
+
+        return info

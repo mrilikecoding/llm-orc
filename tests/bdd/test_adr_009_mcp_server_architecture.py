@@ -2357,3 +2357,427 @@ def call_cleanup_artifacts_tool(bdd_context: dict[str, Any], datatable: Any) -> 
             return None
 
     bdd_context["tool_result"] = asyncio.run(_call())
+
+
+# =============================================================================
+# Phase 2 Low Priority: Script Management Step Definitions
+# =============================================================================
+
+
+@given(parsers.parse('a script named "{name}" exists in category "{category}"'))
+def script_exists_in_category(
+    bdd_context: dict[str, Any], tmp_path: Path, name: str, category: str
+) -> None:
+    """Create a script in the given category."""
+    scripts_dir = tmp_path / ".llm-orc" / "scripts" / category
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    script_file = scripts_dir / f"{name}.py"
+    script_file.write_text(
+        f'''"""Script: {name}"""
+
+def run(input_data: str) -> str:
+    """Run the script."""
+    return f"Processed: {{input_data}}"
+'''
+    )
+    bdd_context["scripts_dir"] = tmp_path / ".llm-orc" / "scripts"
+    bdd_context["script_name"] = name
+    bdd_context["script_category"] = category
+    _reconfigure_server_with_scripts(bdd_context, tmp_path)
+
+
+@given("a local scripts directory exists")
+def local_scripts_dir_exists(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Create local scripts directory."""
+    scripts_dir = tmp_path / ".llm-orc" / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    bdd_context["scripts_dir"] = scripts_dir
+    _reconfigure_server_with_scripts(bdd_context, tmp_path)
+
+
+def _reconfigure_server_with_scripts(
+    bdd_context: dict[str, Any], tmp_path: Path
+) -> None:
+    """Reconfigure server with scripts directory."""
+    from unittest.mock import MagicMock
+
+    from llm_orc.mcp.server import MCPServerV2
+
+    mock_config = MagicMock()
+    ensembles_dir = tmp_path / ".llm-orc" / "ensembles"
+    ensembles_dir.mkdir(parents=True, exist_ok=True)
+    mock_config.get_ensembles_dirs.return_value = [str(ensembles_dir)]
+    mock_config.get_profiles_dirs.return_value = []
+    server = MCPServerV2(config_manager=mock_config)
+    server._test_scripts_dir = tmp_path / ".llm-orc" / "scripts"
+    bdd_context["mcp_server"] = server
+    bdd_context["mcp_available"] = True
+
+
+@when('I call the "get_script" tool with:', target_fixture="get_script_dt")
+def call_get_script_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call get_script tool with arguments."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("get_script", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "test_script" tool with:', target_fixture="test_script_dt")
+def call_test_script_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call test_script tool with arguments."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("test_script", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "create_script" tool with:', target_fixture="create_script_dt")
+def call_create_script_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call create_script tool with arguments."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("create_script", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "delete_script" tool with:', target_fixture="delete_script_dt")
+def call_delete_script_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call delete_script tool with arguments."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("delete_script", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@then("I should receive the script details")
+def receive_script_details(bdd_context: dict[str, Any]) -> None:
+    """Verify script details received."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+
+
+@then("the script should have name, category, and path")
+def script_has_required_fields(bdd_context: dict[str, Any]) -> None:
+    """Verify script has required fields."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    assert "name" in result, "Script should have name"
+    assert "category" in result, "Script should have category"
+    assert "path" in result, "Script should have path"
+
+
+@then("the error should indicate script not found")
+def error_indicates_script_not_found(bdd_context: dict[str, Any]) -> None:
+    """Verify error indicates script not found."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    error = bdd_context.get("tool_error", "")
+    assert "not found" in error.lower(), f"Error should indicate not found: {error}"
+
+
+@then("I should receive script test results")
+def receive_script_test_results(bdd_context: dict[str, Any]) -> None:
+    """Verify script test results received."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+
+
+@then("the result should indicate success or failure")
+def result_indicates_success_or_failure(bdd_context: dict[str, Any]) -> None:
+    """Verify result has success/failure indication."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    assert "success" in result or "error" in result, "Result should indicate outcome"
+
+
+@then("the script should be created successfully")
+def script_created_successfully(bdd_context: dict[str, Any]) -> None:
+    """Verify script was created."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    assert result.get("created", False) is True, "Script should be created"
+
+
+@then("the script file should exist")
+def script_file_exists(bdd_context: dict[str, Any]) -> None:
+    """Verify script file exists."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    path = result.get("path")
+    if path:
+        assert Path(path).exists(), f"Script file should exist at {path}"
+
+
+@then("the error should indicate script already exists")
+def error_indicates_script_exists(bdd_context: dict[str, Any]) -> None:
+    """Verify error indicates script exists."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    error = bdd_context.get("tool_error", "")
+    assert "exists" in error.lower() or "already" in error.lower(), (
+        f"Error should indicate script exists: {error}"
+    )
+
+
+@then("the script should be deleted successfully")
+def script_deleted_successfully(bdd_context: dict[str, Any]) -> None:
+    """Verify script was deleted."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    assert result.get("deleted", False) is True, "Script should be deleted"
+
+
+@then("the script file should not exist")
+def script_file_not_exists(bdd_context: dict[str, Any]) -> None:
+    """Verify script file does not exist."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    scripts_dir = bdd_context.get("scripts_dir")
+    name = bdd_context.get("script_name")
+    category = bdd_context.get("script_category")
+    if scripts_dir and name and category:
+        script_file = scripts_dir / category / f"{name}.py"
+        assert not script_file.exists(), f"Script should not exist: {script_file}"
+
+
+# =============================================================================
+# Phase 2 Low Priority: Library Extras Step Definitions
+# =============================================================================
+
+
+@given("the library contains ensembles and scripts")
+def library_has_content(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Set up library with ensembles and scripts."""
+    library_dir = tmp_path / "library"
+
+    # Create ensembles
+    ensembles_dir = library_dir / "ensembles"
+    ensembles_dir.mkdir(parents=True, exist_ok=True)
+    (ensembles_dir / "code-review.yaml").write_text(
+        "name: code-review\ndescription: Code review ensemble\n"
+    )
+    (ensembles_dir / "test-runner.yaml").write_text(
+        "name: test-runner\ndescription: Test runner ensemble\n"
+    )
+
+    # Create scripts
+    scripts_dir = library_dir / "scripts" / "extraction"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    (scripts_dir / "json_extract.py").write_text('"""JSON extraction script."""\n')
+
+    bdd_context["library_dir"] = library_dir
+    _reconfigure_server_with_library(bdd_context, tmp_path, library_dir)
+
+
+@given("the library is configured")
+def library_is_configured(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Set up configured library."""
+    library_dir = tmp_path / "library"
+    ensembles_dir = library_dir / "ensembles"
+    ensembles_dir.mkdir(parents=True, exist_ok=True)
+    (ensembles_dir / "sample.yaml").write_text("name: sample\n")
+
+    bdd_context["library_dir"] = library_dir
+    _reconfigure_server_with_library(bdd_context, tmp_path, library_dir)
+
+
+def _reconfigure_server_with_library(
+    bdd_context: dict[str, Any], tmp_path: Path, library_dir: Path
+) -> None:
+    """Reconfigure server with library directory."""
+    from unittest.mock import MagicMock
+
+    from llm_orc.mcp.server import MCPServerV2
+
+    mock_config = MagicMock()
+    ensembles_dir = tmp_path / ".llm-orc" / "ensembles"
+    ensembles_dir.mkdir(parents=True, exist_ok=True)
+    mock_config.get_ensembles_dirs.return_value = [str(ensembles_dir)]
+    mock_config.get_profiles_dirs.return_value = []
+    server = MCPServerV2(config_manager=mock_config)
+    server._test_library_dir = library_dir
+    bdd_context["mcp_server"] = server
+    bdd_context["mcp_available"] = True
+
+
+@when('I call the "library_search" tool with:', target_fixture="lib_search_dt")
+def call_library_search_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call library_search tool with arguments."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("library_search", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "library_info" tool')
+def call_library_info_tool(bdd_context: dict[str, Any]) -> None:
+    """Call library_info tool without arguments."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("library_info", {})
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@then("I should receive search results")
+def receive_search_results(bdd_context: dict[str, Any]) -> None:
+    """Verify search results received."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    assert "results" in result, "Result should have results"
+
+
+@then("results should include matching ensembles or scripts")
+def results_include_matches(bdd_context: dict[str, Any]) -> None:
+    """Verify results include matches."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    results = result.get("results", [])
+    assert len(results) > 0, "Should have at least one match"
+
+
+@then("I should receive empty search results")
+def receive_empty_search_results(bdd_context: dict[str, Any]) -> None:
+    """Verify empty search results."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    # Check total count (results is dict with ensembles/scripts lists)
+    total = result.get("total", 0)
+    assert total == 0, f"Should have no matches, got total={total}"
+
+
+@then("I should receive library metadata")
+def receive_library_metadata(bdd_context: dict[str, Any]) -> None:
+    """Verify library metadata received."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+
+
+@then("the metadata should include path and counts")
+def metadata_includes_path_and_counts(bdd_context: dict[str, Any]) -> None:
+    """Verify metadata has path and counts."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    assert "path" in result, "Metadata should have path"
+    # Implementation uses ensembles_count and scripts_count
+    assert "ensembles_count" in result or "ensemble_count" in result, (
+        f"Metadata should have ensemble count, got: {list(result.keys())}"
+    )

@@ -439,3 +439,105 @@ Feature: MCP Server Architecture
       | dry_run         | false                                |
     Then only "ensemble-a" artifacts should be deleted
     And "ensemble-b" artifacts should remain
+
+  # =========================================================================
+  # Phase 2 Low Priority: Script Management
+  # =========================================================================
+
+  # Tool: Get script details
+  @tool @script @phase2
+  Scenario: Get script details
+    Given a script named "json_extract" exists in category "extraction"
+    When I call the "get_script" tool with:
+      | name     | json_extract                           |
+      | category | extraction                             |
+    Then I should receive the script details
+    And the script should have name, category, and path
+
+  @tool @script @phase2 @error
+  Scenario: Get non-existent script fails
+    When I call the "get_script" tool with:
+      | name     | nonexistent                            |
+      | category | extraction                             |
+    Then I should receive a tool error
+    And the error should indicate script not found
+
+  # Tool: Test script
+  @tool @script @phase2
+  Scenario: Test a script with sample input
+    Given a script named "json_extract" exists in category "extraction"
+    When I call the "test_script" tool with:
+      | name     | json_extract                           |
+      | category | extraction                             |
+      | input    | {"data": "test"}                       |
+    Then I should receive script test results
+    And the result should indicate success or failure
+
+  # Tool: Create script
+  @tool @script @phase2
+  Scenario: Create a new primitive script
+    Given a local scripts directory exists
+    When I call the "create_script" tool with:
+      | name     | my_new_script                          |
+      | category | custom                                 |
+      | template | basic                                  |
+    Then the script should be created successfully
+    And the script file should exist
+
+  @tool @script @phase2 @error
+  Scenario: Create script fails if already exists
+    Given a script named "existing_script" exists in category "custom"
+    When I call the "create_script" tool with:
+      | name     | existing_script                        |
+      | category | custom                                 |
+    Then I should receive a tool error
+    And the error should indicate script already exists
+
+  # Tool: Delete script
+  @tool @script @phase2
+  Scenario: Delete an existing script
+    Given a script named "to_delete" exists in category "custom"
+    When I call the "delete_script" tool with:
+      | name     | to_delete                              |
+      | category | custom                                 |
+      | confirm  | true                                   |
+    Then the script should be deleted successfully
+    And the script file should not exist
+
+  @tool @script @phase2 @error
+  Scenario: Delete script requires confirmation
+    Given a script named "protected" exists in category "custom"
+    When I call the "delete_script" tool with:
+      | name     | protected                              |
+      | category | custom                                 |
+      | confirm  | false                                  |
+    Then I should receive a tool error
+    And the error should indicate confirmation required
+
+  # =========================================================================
+  # Phase 2 Low Priority: Library Extras
+  # =========================================================================
+
+  # Tool: Library search
+  @tool @library @phase2
+  Scenario: Search library content
+    Given the library contains ensembles and scripts
+    When I call the "library_search" tool with:
+      | query | code-review                              |
+    Then I should receive search results
+    And results should include matching ensembles or scripts
+
+  @tool @library @phase2
+  Scenario: Search library with no matches
+    Given the library contains ensembles and scripts
+    When I call the "library_search" tool with:
+      | query | zzz_nonexistent_zzz                      |
+    Then I should receive empty search results
+
+  # Tool: Library info
+  @tool @library @phase2
+  Scenario: Get library information
+    Given the library is configured
+    When I call the "library_info" tool
+    Then I should receive library metadata
+    And the metadata should include path and counts

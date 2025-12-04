@@ -261,7 +261,7 @@ llm-orc m serve
 - `llm-orc mcp serve --transport http --port 8080` - HTTP/SSE transport
 
 **Tests**:
-- 49 BDD scenarios in `tests/bdd/test_adr_009_mcp_server_architecture.py`
+- 59 BDD scenarios in `tests/bdd/test_adr_009_mcp_server_architecture.py`
 - 31 unit tests in `tests/unit/mcp_server/test_server_v2.py`
 
 ### Phase 2 Medium Priority: Complete (2025-12-04)
@@ -281,23 +281,32 @@ llm-orc m serve
 - Refactored `_setup_crud_tools` into separate methods to reduce complexity
 - Used dispatch dict pattern in `call_tool` to reduce complexity
 
-### Phase 2 Low Priority: Planned
+### Phase 2 Low Priority: Complete (2025-12-03)
 
-**Script Management** (not yet implemented):
-- `test_script` - Test a script with sample input
-- `create_script` - Create new primitive scripts
-- `delete_script` - Delete scripts
+**Script Management**:
+- `get_script` - Get script details (source, description, path)
+- `test_script` - Test a script with sample input (runs script with stdin)
+- `create_script` - Create new primitive scripts (basic or extraction template)
+- `delete_script` - Delete scripts with confirmation
 
-**Library Extras** (not yet implemented):
-- `library_search` - Search library content
-- `library_info` - Get detailed library info
+**Library Extras**:
+- `library_search` - Search library ensembles and scripts by keyword
+- `library_info` - Get library metadata (path, exists, counts, categories)
+
+**Infrastructure Improvements**:
+- Added `_test_scripts_dir` class attribute for testing
+- Added `_get_scripts_dir()` helper method
+- Extracted `_extract_docstring()` and `_strip_docstring_quotes()` helpers
+- Extracted `_get_local_ensembles_dir()` and `_copy_from_template()` methods
+- Extracted `_get_ensemble_artifact_dirs()` and `_process_old_artifacts()` methods
+- Added search helpers: `_search_library_ensembles()`, `_search_library_scripts()`
 
 ### Files
 
 ```
 src/llm_orc/mcp/
 ├── __init__.py          # Exports MCPServerV2
-└── server.py            # MCPServerV2 implementation (~2000 lines)
+└── server.py            # MCPServerV2 implementation (~2500 lines)
 
 tests/unit/mcp_server/
 ├── __init__.py
