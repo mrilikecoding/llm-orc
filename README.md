@@ -256,6 +256,46 @@ llm-orc scripts test file_operations/read_file.py --parameters '{"filepath": "ex
 
 Script agents use JSON I/O for seamless integration with LLM agents, enabling powerful hybrid workflows where scripts provide data and context for LLM analysis.
 
+### MCP Server
+
+LLM Orchestra includes a Model Context Protocol (MCP) server that exposes ensembles, artifacts, and metrics as MCP resources. This enables integration with MCP clients like Claude Code, Claude Desktop, and other tools.
+
+**Resources** (read-only data access):
+- `llm-orc://ensembles` - List all available ensembles
+- `llm-orc://ensemble/{name}` - Get specific ensemble configuration
+- `llm-orc://artifacts/{ensemble}` - List execution artifacts
+- `llm-orc://artifact/{ensemble}/{id}` - Get artifact details
+- `llm-orc://metrics/{ensemble}` - Get aggregated metrics
+- `llm-orc://profiles` - List model profiles
+
+**Tools** (actions):
+- `invoke` - Execute an ensemble with input (streams progress via MCP)
+- `list_ensembles` - List all available ensembles with metadata
+- `validate_ensemble` - Validate ensemble configuration and model profiles
+- `update_ensemble` - Modify ensemble (dry-run and backup supported)
+- `analyze_execution` - Analyze execution artifacts
+
+**CLI Usage**:
+```bash
+# Start MCP server (stdio transport for MCP clients)
+llm-orc mcp serve
+
+# Start with HTTP transport for debugging
+llm-orc mcp serve --transport http --port 8080
+```
+
+**Claude Code Integration** (`.mcp.json`):
+```json
+{
+  "mcpServers": {
+    "llm-orc": {
+      "command": "uv",
+      "args": ["run", "llm-orc", "mcp", "serve"]
+    }
+  }
+}
+```
+
 ## Ensemble Library
 
 Looking for pre-built ensembles? Check out the [LLM Orchestra Library](https://github.com/mrilikecoding/llm-orchestra-library) - a curated collection of analytical ensembles for code review, research analysis, decision support, and more.

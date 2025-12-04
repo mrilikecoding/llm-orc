@@ -110,6 +110,39 @@ LLM Orchestra is a multi-agent LLM communication system designed for ensemble or
 - **Connection management**: Handles HTTP clients and connection pooling
 - **Error recovery**: Fallback strategies for provider failures
 
+### MCP Server Integration
+
+#### MCPServerV2 (`llm_orc/mcp/server.py`)
+LLM Orchestra implements a Model Context Protocol (MCP) server using the FastMCP SDK, enabling integration with MCP clients like Claude Code and Claude Desktop.
+
+**Resources** (read-only data access):
+- `llm-orc://ensembles` - List all available ensembles with metadata
+- `llm-orc://ensemble/{name}` - Get complete ensemble configuration
+- `llm-orc://artifacts/{ensemble}` - List execution artifacts for an ensemble
+- `llm-orc://artifact/{ensemble}/{id}` - Get individual artifact details
+- `llm-orc://metrics/{ensemble}` - Get aggregated metrics (success rate, avg cost, duration)
+- `llm-orc://profiles` - List available model profiles
+
+**Tools** (actions):
+- `invoke` - Execute an ensemble with input (streams progress via MCP protocol)
+- `list_ensembles` - List all available ensembles with metadata
+- `validate_ensemble` - Validate ensemble configuration, dependencies, and model profiles
+- `update_ensemble` - Modify ensemble configuration (supports dry-run and backup)
+- `analyze_execution` - Analyze execution artifacts
+
+**Streaming Support**:
+The `invoke` tool streams progress via FastMCP Context:
+- `ctx.report_progress(completed, total)` - Agent completion progress
+- `ctx.info()` / `ctx.warning()` / `ctx.error()` - Event logging
+- Events: `execution_started`, `agent_started`, `agent_completed`, `execution_completed`
+
+**Artifact Storage**:
+Executions via MCP automatically save artifacts to `.llm-orc/artifacts/{ensemble}/{timestamp}/`:
+- `execution.json` - Full execution data with results, metrics, and resource usage
+- `execution.md` - Human-readable markdown report
+
+**Architecture follows ADR-009**: MCP Server Architecture and Plexus Integration
+
 ## Data Flow Architecture
 
 ### Request Processing Pipeline

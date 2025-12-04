@@ -794,11 +794,13 @@ class MCPServerV2:
         # Extract agent info from results
         for agent_name, agent_result in results.items():
             if isinstance(agent_result, dict):
-                artifact_data["agents"].append({
-                    "name": agent_name,
-                    "status": agent_result.get("status", "unknown"),
-                    "result": agent_result.get("response", ""),
-                })
+                artifact_data["agents"].append(
+                    {
+                        "name": agent_name,
+                        "status": agent_result.get("status", "unknown"),
+                        "result": agent_result.get("response", ""),
+                    }
+                )
 
         try:
             artifact_path = self.artifact_manager.save_execution_results(
@@ -951,8 +953,7 @@ class MCPServerV2:
 
                 if not provider_registry.provider_exists(provider):
                     errors.append(
-                        f"Profile '{model_profile}' uses unknown provider "
-                        f"'{provider}'"
+                        f"Profile '{model_profile}' uses unknown provider '{provider}'"
                     )
 
             if not profile_config.get("model"):
