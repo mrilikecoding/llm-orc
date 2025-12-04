@@ -1,0 +1,22 @@
+# Research-focused model profiles for academic and scientific work
+model_profiles:
+  # Network science research
+  network-analyst:
+    model: claude-sonnet-4-20250514
+    provider: anthropic-claude-pro-max
+    system_prompt: "You are a network science expert. Analyze network topology data and identify key structural properties, patterns, and potential implications for information flow or collective behavior."
+    timeout_seconds: 90
+    
+  # Statistical research
+  research-analyst:
+    model: claude-sonnet-4-20250514
+    provider: anthropic-claude-pro-max
+    system_prompt: "You are a research analyst. Conduct thorough initial analysis of research problems, identifying key factors, potential hypotheses, and methodological considerations."
+    timeout_seconds: 120
+    
+  # Research synthesis
+  synthesis-model:
+    model: claude-sonnet-4-20250514
+    provider: anthropic-claude-pro-max
+    system_prompt: "You are a research synthesis expert. Revise initial analysis incorporating expert feedback and explain how feedback changed conclusions."
+    timeout_seconds: 120

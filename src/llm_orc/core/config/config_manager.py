@@ -165,6 +165,41 @@ class ConfigurationManager:
 
         return dirs
 
+    def get_profiles_dirs(self) -> list[Path]:
+        """Get profile directories in priority order (local → library → global).
+
+        Library path resolution:
+        1. LLM_ORC_LIBRARY_PATH env var (custom location)
+        2. Current directory/llm-orchestra-library (submodule)
+        """
+        dirs: list[Path] = []
+        cwd = Path.cwd()
+
+        # Priority 1: Local config takes precedence
+        if self._local_config_dir:
+            local_profiles = self._local_config_dir / "profiles"
+            if local_profiles.exists():
+                dirs.append(local_profiles)
+
+        # Priority 2: Library profiles
+        library_path_env = os.environ.get("LLM_ORC_LIBRARY_PATH")
+        if library_path_env:
+            library_profiles = Path(library_path_env) / "profiles"
+            if library_profiles.exists():
+                dirs.append(library_profiles)
+        else:
+            # Default: check for library submodule in current directory
+            library_profiles = cwd / "llm-orchestra-library" / "profiles"
+            if library_profiles.exists():
+                dirs.append(library_profiles)
+
+        # Priority 3: Global config as fallback
+        global_profiles = self._global_config_dir / "profiles"
+        if global_profiles.exists():
+            dirs.append(global_profiles)
+
+        return dirs
+
     def get_credentials_file(self) -> Path:
         """Get the credentials file path (always in global config)."""
         return self._global_config_dir / "credentials.yaml"

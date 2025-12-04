@@ -110,6 +110,76 @@ LLM Orchestra is a multi-agent LLM communication system designed for ensemble or
 - **Connection management**: Handles HTTP clients and connection pooling
 - **Error recovery**: Fallback strategies for provider failures
 
+### MCP Server Integration
+
+#### MCPServerV2 (`llm_orc/mcp/server.py`)
+LLM Orchestra implements a Model Context Protocol (MCP) server using the FastMCP SDK, enabling integration with MCP clients like Claude Code and Claude Desktop.
+
+**Resources** (read-only data access):
+- `llm-orc://ensembles` - List all available ensembles with metadata
+- `llm-orc://ensemble/{name}` - Get complete ensemble configuration
+- `llm-orc://profiles` - List available model profiles
+- `llm-orc://artifacts/{ensemble}` - List execution artifacts for an ensemble
+- `llm-orc://artifact/{ensemble}/{id}` - Get individual artifact details
+- `llm-orc://metrics/{ensemble}` - Get aggregated metrics (success rate, avg cost, duration)
+
+**Tools** (25 total, organized by category):
+
+*Core Execution:*
+- `invoke` - Execute ensemble with streaming progress, saves artifacts automatically
+- `list_ensembles` - List all ensembles from local/library/global sources
+- `validate_ensemble` - Validate config, profiles, and dependencies
+- `update_ensemble` - Modify ensemble config (supports dry-run and backup)
+- `analyze_execution` - Analyze execution artifact data
+
+*Provider Discovery:*
+- `get_provider_status` - Show available providers and Ollama models
+- `check_ensemble_runnable` - Check if ensemble can run with current providers, suggest alternatives
+
+*Ensemble CRUD:*
+- `create_ensemble` - Create new ensemble from scratch or template
+- `delete_ensemble` - Delete ensemble (requires confirmation)
+
+*Profile CRUD:*
+- `list_profiles` - List profiles with optional provider filter
+- `create_profile` - Create new model profile
+- `update_profile` - Update existing profile
+- `delete_profile` - Delete profile (requires confirmation)
+
+*Script Management:*
+- `list_scripts` - List primitive scripts by category
+- `get_script` - Get script source and metadata
+- `test_script` - Test script with sample input
+- `create_script` - Create new primitive script
+- `delete_script` - Delete script (requires confirmation)
+
+*Library Operations:*
+- `library_browse` - Browse library ensembles and scripts
+- `library_copy` - Copy from library to local project
+- `library_search` - Search library by keyword
+- `library_info` - Get library metadata and statistics
+
+*Artifact Management:*
+- `delete_artifact` - Delete individual execution artifact
+- `cleanup_artifacts` - Delete old artifacts (supports dry-run)
+
+*Help:*
+- `get_help` - Get comprehensive documentation (directory structure, schemas, workflows)
+
+**Streaming Support**:
+The `invoke` tool streams progress via FastMCP Context:
+- `ctx.report_progress(completed, total)` - Agent completion progress
+- `ctx.info()` / `ctx.warning()` / `ctx.error()` - Event logging
+- Events: `execution_started`, `agent_started`, `agent_completed`, `execution_completed`
+
+**Artifact Storage**:
+Executions via MCP automatically save artifacts to `.llm-orc/artifacts/{ensemble}/{timestamp}/`:
+- `execution.json` - Full execution data with results, metrics, and resource usage
+- `execution.md` - Human-readable markdown report
+- `latest` symlink - Points to most recent execution
+
+**Architecture follows ADR-009**: MCP Server Architecture
+
 ## Data Flow Architecture
 
 ### Request Processing Pipeline

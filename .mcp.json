@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "llm-orc": {
+      "command": "uv",
+      "args": ["run", "llm-orc", "mcp", "serve"],
+      "env": {}
+    }
+  }
+}
