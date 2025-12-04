@@ -655,6 +655,30 @@ Parameters: ensemble_name = "test-crud-ensemble", confirm = true
 Expected: {"deleted": true, "name": "test-crud-ensemble"}
 ```
 
+### Step 13: Get Provider Status
+
+```
+Tool: mcp__llm-orc__get_provider_status
+Parameters: (none)
+Expected: {"providers": {"ollama": {"available": true, "models": [...]}, "anthropic-api": {"available": false}, ...}}
+```
+
+### Step 14: Check Ensemble Runnable
+
+```
+Tool: mcp__llm-orc__check_ensemble_runnable
+Parameters: ensemble_name = "validate-ollama"
+Expected: {"ensemble": "validate-ollama", "runnable": true, "agents": [{"name": "validator", "status": "available", ...}]}
+```
+
+### Step 15: Check Ensemble with Missing Provider
+
+```
+Tool: mcp__llm-orc__check_ensemble_runnable
+Parameters: ensemble_name = "startup-advisory-board"
+Expected: {"ensemble": "startup-advisory-board", "runnable": false, "agents": [...with alternatives suggested...]}
+```
+
 ### Validation Checklist
 
 | Step | Check | Pass Criteria |
@@ -671,6 +695,9 @@ Expected: {"deleted": true, "name": "test-crud-ensemble"}
 | 10 | Library info | Returns library metadata |
 | 11 | List scripts | Returns scripts by category |
 | 12 | CRUD works | Create and delete ensemble succeeds |
+| 13 | Provider status | Returns Ollama availability and models |
+| 14 | Runnable check (good) | Returns `runnable: true` for Ollama ensemble |
+| 15 | Runnable check (missing) | Returns `runnable: false` with alternatives |
 
 ## References
 
