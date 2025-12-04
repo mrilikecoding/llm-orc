@@ -11,10 +11,22 @@ import yaml
 class ConfigurationManager:
     """Manages configuration directories and file locations."""
 
-    def __init__(self) -> None:
-        """Initialize configuration manager."""
+    def __init__(self, project_dir: Path | None = None) -> None:
+        """Initialize configuration manager.
+
+        Args:
+            project_dir: Optional project directory. If provided, uses
+                project_dir/.llm-orc as local config instead of discovering
+                from cwd.
+        """
         self._global_config_dir = self._get_global_config_dir()
-        self._local_config_dir = self._discover_local_config()
+        if project_dir is not None:
+            # Use explicit project directory
+            llm_orc_dir = project_dir / ".llm-orc"
+            self._local_config_dir = llm_orc_dir if llm_orc_dir.exists() else None
+        else:
+            # Discover from cwd
+            self._local_config_dir = self._discover_local_config()
 
         # Create global config directory and setup defaults
         self._global_config_dir.mkdir(parents=True, exist_ok=True)

@@ -110,6 +110,7 @@ class MCPServerV2:
             config_manager: Configuration manager instance. Creates default if None.
             executor: Ensemble executor instance. Creates default if None.
         """
+        self._project_path: Path | None = None
         self.config_manager = config_manager or ConfigurationManager()
         self.ensemble_loader = EnsembleLoader()
         self.artifact_manager = ArtifactManager()
@@ -117,6 +118,11 @@ class MCPServerV2:
         self._mcp = FastMCP("llm-orc")
         self._setup_resources()
         self._setup_tools()
+
+    @property
+    def project_path(self) -> Path | None:
+        """Get the current project path."""
+        return self._project_path
 
     def _get_executor(self) -> EnsembleExecutor:
         """Get or create the ensemble executor.
@@ -172,10 +178,25 @@ class MCPServerV2:
 
     def _setup_tools(self) -> None:
         """Register MCP tools with FastMCP."""
+        self._setup_context_tools()
         self._setup_core_tools()
         self._setup_crud_tools()
         self._setup_provider_discovery_tools()
         self._setup_help_tool()
+
+    def _setup_context_tools(self) -> None:
+        """Register context management tools."""
+        server = self  # Capture for closure
+
+        @self._mcp.tool()
+        async def set_project(path: str) -> str:
+            """Set the active project directory for subsequent operations.
+
+            Args:
+                path: Path to the project directory
+            """
+            result = server._handle_set_project(path)
+            return json.dumps(result, indent=2)
 
     def _setup_core_tools(self) -> None:
         """Register core MCP tools."""
@@ -672,6 +693,9 @@ class MCPServerV2:
     def _get_tools_help(self) -> dict[str, str]:
         """Get tool category documentation."""
         return {
+            "context_management": (
+                "set_project - Set active project directory for all operations"
+            ),
             "core_execution": (
                 "invoke, list_ensembles, validate_ensemble, "
                 "update_ensemble, analyze_execution"
@@ -694,23 +718,30 @@ class MCPServerV2:
     def _get_workflow_help(self) -> dict[str, list[str]]:
         """Get common workflow documentation."""
         return {
+            "start_session": [
+                "1. set_project - Point to project directory (optional)",
+                "2. get_provider_status - See available models",
+                "3. list_ensembles - Find available ensembles",
+            ],
             "discover_and_run": [
-                "1. get_provider_status - See available models",
+                "1. set_project - Set project context (if not done)",
                 "2. list_ensembles - Find available ensembles",
                 "3. check_ensemble_runnable - Verify it can run",
                 "4. invoke - Execute the ensemble",
             ],
             "adapt_from_library": [
-                "1. library_search - Find relevant ensembles",
-                "2. library_copy - Copy to local project",
-                "3. update_ensemble - Adapt for local models",
-                "4. invoke - Run the adapted ensemble",
+                "1. set_project - Set target project",
+                "2. library_search - Find relevant ensembles",
+                "3. library_copy - Copy to local project",
+                "4. update_ensemble - Adapt for local models",
+                "5. invoke - Run the adapted ensemble",
             ],
             "create_new_ensemble": [
-                "1. list_profiles - See available model profiles",
-                "2. create_ensemble - Create with agents",
-                "3. validate_ensemble - Check configuration",
-                "4. invoke - Test execution",
+                "1. set_project - Set project context",
+                "2. list_profiles - See available model profiles",
+                "3. create_ensemble - Create with agents",
+                "4. validate_ensemble - Check configuration",
+                "5. invoke - Test execution",
             ],
         }
 
@@ -1161,6 +1192,8 @@ class MCPServerV2:
         """
         # Build dispatch table mapping tool names to handlers
         handlers: dict[str, Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]] = {
+            # Context management
+            "set_project": self._set_project_tool,
             # Core tools
             "invoke": self._invoke_tool,
             "validate_ensemble": self._validate_ensemble_tool,
@@ -1196,6 +1229,55 @@ class MCPServerV2:
             "get_help": self._help_tool,
         }
         return handlers.get(name)
+
+    async def _set_project_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Execute set_project tool.
+
+        Args:
+            arguments: Tool arguments including path.
+
+        Returns:
+            Project context result.
+        """
+        path = arguments.get("path", "")
+        return self._handle_set_project(path)
+
+    def _handle_set_project(self, path: str) -> dict[str, Any]:
+        """Handle set_project logic.
+
+        Args:
+            path: Project directory path.
+
+        Returns:
+            Result dict with status and project info.
+        """
+        project_dir = Path(path).resolve()
+
+        # Validate path exists
+        if not project_dir.exists():
+            return {
+                "status": "error",
+                "error": f"Path does not exist: {path}",
+            }
+
+        # Update project path
+        self._project_path = project_dir
+
+        # Recreate config manager with new project path
+        self.config_manager = ConfigurationManager(project_dir=project_dir)
+
+        # Build result
+        result: dict[str, Any] = {
+            "status": "ok",
+            "project_path": str(project_dir),
+        }
+
+        # Add note if no .llm-orc directory
+        llm_orc_dir = project_dir / ".llm-orc"
+        if not llm_orc_dir.exists():
+            result["note"] = "No .llm-orc directory found; using global config only"
+
+        return result
 
     async def _invoke_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute invoke tool.
