@@ -260,31 +260,9 @@ Script agents use JSON I/O for seamless integration with LLM agents, enabling po
 
 LLM Orchestra includes a Model Context Protocol (MCP) server that exposes ensembles, artifacts, and metrics as MCP resources. This enables integration with MCP clients like Claude Code, Claude Desktop, and other tools.
 
-**Resources** (read-only data access):
-- `llm-orc://ensembles` - List all available ensembles
-- `llm-orc://ensemble/{name}` - Get specific ensemble configuration
-- `llm-orc://artifacts/{ensemble}` - List execution artifacts
-- `llm-orc://artifact/{ensemble}/{id}` - Get artifact details
-- `llm-orc://metrics/{ensemble}` - Get aggregated metrics
-- `llm-orc://profiles` - List model profiles
+#### Quick Start
 
-**Tools** (actions):
-- `invoke` - Execute an ensemble with input (streams progress via MCP)
-- `list_ensembles` - List all available ensembles with metadata
-- `validate_ensemble` - Validate ensemble configuration and model profiles
-- `update_ensemble` - Modify ensemble (dry-run and backup supported)
-- `analyze_execution` - Analyze execution artifacts
-
-**CLI Usage**:
-```bash
-# Start MCP server (stdio transport for MCP clients)
-llm-orc mcp serve
-
-# Start with HTTP transport for debugging
-llm-orc mcp serve --transport http --port 8080
-```
-
-**Claude Code Integration** (`.mcp.json`):
+1. Add `.mcp.json` to your project root:
 ```json
 {
   "mcpServers": {
@@ -294,6 +272,113 @@ llm-orc mcp serve --transport http --port 8080
     }
   }
 }
+```
+
+2. Restart Claude Code - MCP tools appear as `mcp__llm-orc__*`
+
+3. Try it:
+```
+mcp__llm-orc__list_ensembles        # See available ensembles
+mcp__llm-orc__get_provider_status   # Check which models are available
+mcp__llm-orc__invoke                # Run an ensemble
+```
+
+#### Resources (Read-Only Data)
+
+| Resource | Description |
+|----------|-------------|
+| `llm-orc://ensembles` | List all available ensembles with metadata |
+| `llm-orc://ensemble/{name}` | Get specific ensemble configuration |
+| `llm-orc://profiles` | List model profiles |
+| `llm-orc://artifacts/{ensemble}` | List execution artifacts for an ensemble |
+| `llm-orc://artifact/{ensemble}/{id}` | Get individual artifact details |
+| `llm-orc://metrics/{ensemble}` | Get aggregated metrics (success rate, cost, duration) |
+
+#### Tools (24 Total)
+
+**Core Execution**
+| Tool | Description |
+|------|-------------|
+| `invoke` | Execute ensemble with streaming progress, saves artifacts automatically |
+| `list_ensembles` | List all ensembles from local/library/global sources |
+| `validate_ensemble` | Check config validity, profile availability, and dependencies |
+| `update_ensemble` | Modify ensemble config (supports dry-run and backup) |
+| `analyze_execution` | Analyze execution artifact data |
+
+**Provider Discovery** - Check what's available before running
+| Tool | Description |
+|------|-------------|
+| `get_provider_status` | Show available providers and Ollama models |
+| `check_ensemble_runnable` | Check if ensemble can run, suggest local alternatives |
+
+**Ensemble Management**
+| Tool | Description |
+|------|-------------|
+| `create_ensemble` | Create new ensemble from scratch or template |
+| `delete_ensemble` | Delete ensemble (requires confirmation) |
+
+**Profile Management**
+| Tool | Description |
+|------|-------------|
+| `list_profiles` | List profiles with optional provider filter |
+| `create_profile` | Create new model profile |
+| `update_profile` | Update existing profile |
+| `delete_profile` | Delete profile (requires confirmation) |
+
+**Script Management**
+| Tool | Description |
+|------|-------------|
+| `list_scripts` | List primitive scripts by category |
+| `get_script` | Get script source and metadata |
+| `test_script` | Test script with sample input |
+| `create_script` | Create new primitive script |
+| `delete_script` | Delete script (requires confirmation) |
+
+**Library Operations**
+| Tool | Description |
+|------|-------------|
+| `library_browse` | Browse library ensembles and scripts |
+| `library_copy` | Copy from library to local project |
+| `library_search` | Search library by keyword |
+| `library_info` | Get library metadata and statistics |
+
+**Artifact Management**
+| Tool | Description |
+|------|-------------|
+| `delete_artifact` | Delete individual execution artifact |
+| `cleanup_artifacts` | Delete old artifacts (supports dry-run) |
+
+#### Example Workflow
+
+```
+# 1. Check what's available
+mcp__llm-orc__get_provider_status
+# → Shows Ollama running with llama3, mistral models
+
+# 2. Find an ensemble
+mcp__llm-orc__library_search query="code review"
+# → Found: code-analysis/security-review
+
+# 3. Check if it can run locally
+mcp__llm-orc__check_ensemble_runnable ensemble_name="security-review"
+# → Shows which profiles need local alternatives
+
+# 4. Copy and adapt
+mcp__llm-orc__library_copy source="code-analysis/security-review"
+mcp__llm-orc__update_ensemble ensemble_name="security-review" changes={"agents": [...]}
+
+# 5. Run it
+mcp__llm-orc__invoke ensemble_name="security-review" input_data="Review this code..."
+```
+
+#### CLI Usage
+
+```bash
+# Start MCP server (stdio transport for MCP clients)
+llm-orc mcp serve
+
+# Start with HTTP transport for debugging
+llm-orc mcp serve --transport http --port 8080
 ```
 
 ## Ensemble Library

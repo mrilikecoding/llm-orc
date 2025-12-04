@@ -2910,21 +2910,40 @@ if __name__ == "__main__":
             with open(yaml_file) as f:
                 data = yaml.safe_load(f) or {}
 
-            # Handle different profile file formats
-            if "model_profiles" in data:
-                # Dict format: model_profiles: {name: {config...}}
-                for name, config in data["model_profiles"].items():
-                    if isinstance(config, dict):
-                        config["name"] = name
-                        profiles[name] = config
-            elif "profiles" in data:
-                # List format: profiles: [{name: ..., ...}]
-                for p in data["profiles"]:
-                    name = p.get("name", "")
-                    if name:
-                        profiles[name] = p
-            elif "name" in data:
-                # Single profile format
-                profiles[data["name"]] = data
+            self._parse_profile_data(data, profiles)
         except Exception:
             pass
+
+    def _parse_profile_data(
+        self, data: dict[str, Any], profiles: dict[str, dict[str, Any]]
+    ) -> None:
+        """Parse profile data from various YAML formats.
+
+        Args:
+            data: Parsed YAML data.
+            profiles: Dict to populate with profiles.
+        """
+        if "model_profiles" in data:
+            self._parse_dict_format_profiles(data["model_profiles"], profiles)
+        elif "profiles" in data:
+            self._parse_list_format_profiles(data["profiles"], profiles)
+        elif "name" in data:
+            profiles[data["name"]] = data
+
+    def _parse_dict_format_profiles(
+        self, model_profiles: dict[str, Any], profiles: dict[str, dict[str, Any]]
+    ) -> None:
+        """Parse dict format: model_profiles: {name: {config...}}."""
+        for name, config in model_profiles.items():
+            if isinstance(config, dict):
+                config["name"] = name
+                profiles[name] = config
+
+    def _parse_list_format_profiles(
+        self, profile_list: list[dict[str, Any]], profiles: dict[str, dict[str, Any]]
+    ) -> None:
+        """Parse list format: profiles: [{name: ..., ...}]."""
+        for p in profile_list:
+            name = p.get("name", "")
+            if name:
+                profiles[name] = p
