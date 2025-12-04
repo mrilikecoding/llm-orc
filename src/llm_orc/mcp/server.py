@@ -97,6 +97,7 @@ class MCPServerV2:
     _test_library_dir: Path | None = None
     _test_scripts_dir: Path | None = None
     _test_artifacts_base: Path | None = None
+    _test_ollama_status: dict[str, Any] | None = None
 
     def __init__(
         self,
@@ -2054,11 +2055,15 @@ class MCPServerV2:
             # Default to local .llm-orc directory
             ensemble_dirs = self.config_manager.get_ensembles_dirs()
             local_dir = Path.cwd() / ".llm-orc"
+            library_dir = self._get_library_dir()
 
             # Try to find a local (non-library) ensembles dir
             for dir_path in ensemble_dirs:
                 path = Path(dir_path)
-                if ".llm-orc" in str(path) and "library" not in str(path):
+                # Check it's a .llm-orc dir but not under the library
+                is_local = ".llm-orc" in str(path)
+                is_library = str(path).startswith(str(library_dir))
+                if is_local and not is_library:
                     local_dir = path.parent  # Go up from ensembles to .llm-orc
                     break
 
@@ -2846,6 +2851,10 @@ if __name__ == "__main__":
         Returns:
             Ollama status with available models.
         """
+        # Check for test override
+        if self._test_ollama_status is not None:
+            return self._test_ollama_status
+
         import httpx
 
         try:
