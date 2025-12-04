@@ -1,0 +1,25 @@
+# Local model profiles for offline research and development
+model_profiles:
+  # Ultra-fast local models for rapid iteration
+  micro-local:
+    model: qwen2:0.5b
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: "You are a quick analyst for rapid local analysis."
+    timeout_seconds: 15
+    
+  # Balanced local models for general use  
+  default-local:
+    model: llama3.1:8b
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: "You are a capable analyst for thorough local analysis."
+    timeout_seconds: 60
+    
+  # High-context local models for complex tasks
+  high-context-local:
+    model: llama3.1:8b
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: "You are a thorough analyst for complex local document processing."
+    timeout_seconds: 180
