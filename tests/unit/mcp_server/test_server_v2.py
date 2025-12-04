@@ -1207,3 +1207,183 @@ class TestMCPServerV2HelperMethods:
 
         with pytest.raises(ValueError, match="No ensemble directory"):
             server._get_local_ensembles_dir()
+
+
+class TestMCPServerV2ExecutorInjection:
+    """Tests for EnsembleExecutor dependency injection."""
+
+    def test_init_accepts_executor(self, mock_config_manager: Any) -> None:
+        """Server accepts injected executor."""
+        mock_executor = MagicMock()
+        server = MCPServerV2(
+            config_manager=mock_config_manager,
+            executor=mock_executor,
+        )
+
+        assert server._executor is mock_executor
+
+    def test_get_executor_returns_injected(self, mock_config_manager: Any) -> None:
+        """Get executor returns injected executor."""
+        mock_executor = MagicMock()
+        server = MCPServerV2(
+            config_manager=mock_config_manager,
+            executor=mock_executor,
+        )
+
+        result = server._get_executor()
+
+        assert result is mock_executor
+
+    def test_get_executor_lazy_creates(self, mock_config_manager: Any) -> None:
+        """Get executor lazy-creates if none injected."""
+        server = MCPServerV2(config_manager=mock_config_manager)
+
+        result = server._get_executor()
+
+        assert result is not None
+        assert server._executor is result
+
+
+class TestMCPServerV2StreamingExecution:
+    """Tests for streaming execution methods."""
+
+    @pytest.fixture
+    def mock_reporter(self) -> MagicMock:
+        """Create mock progress reporter."""
+        reporter = MagicMock()
+        reporter.info = MagicMock(return_value=_async_noop())
+        reporter.warning = MagicMock(return_value=_async_noop())
+        reporter.error = MagicMock(return_value=_async_noop())
+        reporter.report_progress = MagicMock(return_value=_async_noop())
+        return reporter
+
+    @pytest.fixture
+    def mock_executor(self) -> MagicMock:
+        """Create mock ensemble executor."""
+        return MagicMock()
+
+    @pytest.fixture
+    def server_with_executor(
+        self, mock_config_manager: Any, mock_executor: MagicMock
+    ) -> MCPServerV2:
+        """Create server with injected executor."""
+        return MCPServerV2(
+            config_manager=mock_config_manager,
+            executor=mock_executor,
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_streaming_event_execution_started(
+        self, server: MCPServerV2, mock_reporter: MagicMock
+    ) -> None:
+        """Handle execution_started event."""
+        event = {"type": "execution_started", "data": {}}
+        state: dict[str, Any] = {"completed": 0, "result": {}}
+
+        await server._handle_streaming_event(event, mock_reporter, 3, state)
+
+        mock_reporter.report_progress.assert_called_once_with(progress=0, total=3)
+
+    @pytest.mark.asyncio
+    async def test_handle_streaming_event_agent_started(
+        self, server: MCPServerV2, mock_reporter: MagicMock
+    ) -> None:
+        """Handle agent_started event."""
+        event = {"type": "agent_started", "data": {"agent_name": "test-agent"}}
+        state: dict[str, Any] = {"completed": 0, "result": {}}
+
+        await server._handle_streaming_event(event, mock_reporter, 3, state)
+
+        mock_reporter.info.assert_called_once_with("Agent 'test-agent' started")
+
+    @pytest.mark.asyncio
+    async def test_handle_streaming_event_agent_completed(
+        self, server: MCPServerV2, mock_reporter: MagicMock
+    ) -> None:
+        """Handle agent_completed event increments counter."""
+        event = {"type": "agent_completed", "data": {"agent_name": "test-agent"}}
+        state: dict[str, Any] = {"completed": 0, "result": {}}
+
+        await server._handle_streaming_event(event, mock_reporter, 3, state)
+
+        assert state["completed"] == 1
+        mock_reporter.report_progress.assert_called_once_with(1, 3)
+        mock_reporter.info.assert_called_once_with("Agent 'test-agent' completed")
+
+    @pytest.mark.asyncio
+    async def test_handle_streaming_event_execution_completed(
+        self, server: MCPServerV2, mock_reporter: MagicMock
+    ) -> None:
+        """Handle execution_completed event sets result."""
+        event = {
+            "type": "execution_completed",
+            "data": {
+                "results": {"agent1": "output1"},
+                "synthesis": "combined",
+                "status": "completed",
+            },
+        }
+        state: dict[str, Any] = {
+            "completed": 2,
+            "result": {},
+            "ensemble_name": "test",
+            "input_data": "test input",
+        }
+
+        await server._handle_streaming_event(event, mock_reporter, 2, state)
+
+        assert state["result"]["status"] == "completed"
+        assert state["result"]["synthesis"] == "combined"
+        mock_reporter.report_progress.assert_called_once_with(progress=2, total=2)
+
+    @pytest.mark.asyncio
+    async def test_handle_streaming_event_execution_failed(
+        self, server: MCPServerV2, mock_reporter: MagicMock
+    ) -> None:
+        """Handle execution_failed event sets error."""
+        event = {"type": "execution_failed", "data": {"error": "Test error"}}
+        state: dict[str, Any] = {"completed": 0, "result": {}}
+
+        await server._handle_streaming_event(event, mock_reporter, 2, state)
+
+        assert state["result"]["status"] == "failed"
+        assert state["result"]["error"] == "Test error"
+        mock_reporter.error.assert_called_once_with("Execution failed: Test error")
+
+    @pytest.mark.asyncio
+    async def test_handle_streaming_event_agent_fallback_started(
+        self, server: MCPServerV2, mock_reporter: MagicMock
+    ) -> None:
+        """Handle agent_fallback_started event."""
+        event = {"type": "agent_fallback_started", "data": {"agent_name": "test-agent"}}
+        state: dict[str, Any] = {"completed": 0, "result": {}}
+
+        await server._handle_streaming_event(event, mock_reporter, 2, state)
+
+        msg = "Agent 'test-agent' falling back to alternate model"
+        mock_reporter.warning.assert_called_once_with(msg)
+
+    @pytest.mark.asyncio
+    async def test_execute_ensemble_streaming_raises_if_no_name(
+        self, server: MCPServerV2, mock_reporter: MagicMock
+    ) -> None:
+        """Execute streaming raises if no ensemble name."""
+        with pytest.raises(ValueError, match="ensemble_name is required"):
+            await server._execute_ensemble_streaming("", "input", mock_reporter)
+
+    @pytest.mark.asyncio
+    async def test_execute_ensemble_streaming_raises_if_not_found(
+        self, server: MCPServerV2, mock_reporter: MagicMock
+    ) -> None:
+        """Execute streaming raises if ensemble not found."""
+        _mock_config(server).get_ensembles_dirs.return_value = []
+
+        with pytest.raises(ValueError, match="Ensemble does not exist"):
+            await server._execute_ensemble_streaming(
+                "nonexistent", "input", mock_reporter
+            )
+
+
+async def _async_noop() -> None:
+    """Async no-op for mock returns."""
+    pass

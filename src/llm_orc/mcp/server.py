@@ -6,16 +6,68 @@ This module implements the MCP server following ADR-009, providing:
 - Streaming support for long-running executions
 """
 
+from __future__ import annotations
+
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from mcp.server.fastmcp import Context, FastMCP
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
+
+if TYPE_CHECKING:
+    from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+
+
+class ProgressReporter(Protocol):
+    """Protocol for reporting execution progress.
+
+    Abstracts progress reporting to allow testing without FastMCP Context.
+    """
+
+    async def info(self, message: str) -> None:
+        """Report an informational message."""
+        ...
+
+    async def warning(self, message: str) -> None:
+        """Report a warning message."""
+        ...
+
+    async def error(self, message: str) -> None:
+        """Report an error message."""
+        ...
+
+    async def report_progress(self, progress: int, total: int) -> None:
+        """Report progress (progress out of total)."""
+        ...
+
+
+class FastMCPProgressReporter:
+    """Progress reporter that wraps FastMCP Context."""
+
+    def __init__(self, ctx: Context[Any, Any, Any]) -> None:
+        """Initialize with FastMCP context."""
+        self._ctx = ctx
+
+    async def info(self, message: str) -> None:
+        """Report an informational message."""
+        await self._ctx.info(message)
+
+    async def warning(self, message: str) -> None:
+        """Report a warning message."""
+        await self._ctx.warning(message)
+
+    async def error(self, message: str) -> None:
+        """Report an error message."""
+        await self._ctx.error(message)
+
+    async def report_progress(self, progress: int, total: int) -> None:
+        """Report progress."""
+        await self._ctx.report_progress(progress=progress, total=total)
 
 
 def _get_agent_attr(agent: Any, attr: str, default: Any = None) -> Any:
@@ -46,18 +98,36 @@ class MCPServerV2:
     _test_scripts_dir: Path | None = None
     _test_artifacts_base: Path | None = None
 
-    def __init__(self, config_manager: ConfigurationManager | None = None) -> None:
+    def __init__(
+        self,
+        config_manager: ConfigurationManager | None = None,
+        executor: EnsembleExecutor | None = None,
+    ) -> None:
         """Initialize MCP server.
 
         Args:
             config_manager: Configuration manager instance. Creates default if None.
+            executor: Ensemble executor instance. Creates default if None.
         """
         self.config_manager = config_manager or ConfigurationManager()
         self.ensemble_loader = EnsembleLoader()
         self.artifact_manager = ArtifactManager()
+        self._executor = executor  # Lazily created if None
         self._mcp = FastMCP("llm-orc")
         self._setup_resources()
         self._setup_tools()
+
+    def _get_executor(self) -> EnsembleExecutor:
+        """Get or create the ensemble executor.
+
+        Returns:
+            EnsembleExecutor instance.
+        """
+        if self._executor is None:
+            from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+
+            self._executor = EnsembleExecutor()
+        return self._executor
 
     def _setup_resources(self) -> None:
         """Register MCP resources with FastMCP."""
@@ -995,6 +1065,30 @@ class MCPServerV2:
         Returns:
             Execution result.
         """
+        reporter = FastMCPProgressReporter(ctx)
+        return await self._execute_ensemble_streaming(
+            ensemble_name, input_data, reporter
+        )
+
+    async def _execute_ensemble_streaming(
+        self,
+        ensemble_name: str,
+        input_data: str,
+        reporter: ProgressReporter,
+    ) -> dict[str, Any]:
+        """Execute ensemble with streaming progress updates.
+
+        This method is separated from _invoke_tool_with_streaming to allow
+        testing with a mock ProgressReporter.
+
+        Args:
+            ensemble_name: Name of the ensemble to execute.
+            input_data: Input data for the ensemble.
+            reporter: Progress reporter for status updates.
+
+        Returns:
+            Execution result.
+        """
         if not ensemble_name:
             raise ValueError("ensemble_name is required")
 
@@ -1002,10 +1096,7 @@ class MCPServerV2:
         if not config:
             raise ValueError(f"Ensemble does not exist: {ensemble_name}")
 
-        # Execute with streaming
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
-
-        executor = EnsembleExecutor()
+        executor = self._get_executor()
         total_agents = len(config.agents)
         state: dict[str, Any] = {
             "completed": 0,
@@ -1015,10 +1106,10 @@ class MCPServerV2:
         }
 
         msg = f"Starting ensemble '{ensemble_name}' with {total_agents} agents"
-        await ctx.info(msg)
+        await reporter.info(msg)
 
         async for event in executor.execute_streaming(config, input_data):
-            await self._handle_streaming_event(event, ctx, total_agents, state)
+            await self._handle_streaming_event(event, reporter, total_agents, state)
 
         result = state.get("result", {})
         if not isinstance(result, dict):
@@ -1028,7 +1119,7 @@ class MCPServerV2:
     async def _handle_streaming_event(
         self,
         event: dict[str, Any],
-        ctx: Context[Any, Any, Any],
+        reporter: ProgressReporter,
         total_agents: int,
         state: dict[str, Any],
     ) -> None:
@@ -1036,7 +1127,7 @@ class MCPServerV2:
 
         Args:
             event: The streaming event.
-            ctx: FastMCP context for progress reporting.
+            reporter: Progress reporter for status updates.
             total_agents: Total number of agents in ensemble.
             state: Mutable state dict with 'completed' count and 'result'.
         """
@@ -1044,17 +1135,17 @@ class MCPServerV2:
         event_data = event.get("data", {})
 
         if event_type == "execution_started":
-            await ctx.report_progress(progress=0, total=total_agents)
+            await reporter.report_progress(progress=0, total=total_agents)
 
         elif event_type == "agent_started":
             agent_name = event_data.get("agent_name", "unknown")
-            await ctx.info(f"Agent '{agent_name}' started")
+            await reporter.info(f"Agent '{agent_name}' started")
 
         elif event_type == "agent_completed":
             state["completed"] += 1
             agent_name = event_data.get("agent_name", "unknown")
-            await ctx.report_progress(progress=state["completed"], total=total_agents)
-            await ctx.info(f"Agent '{agent_name}' completed")
+            await reporter.report_progress(state["completed"], total_agents)
+            await reporter.info(f"Agent '{agent_name}' completed")
 
         elif event_type == "execution_completed":
             results = event_data.get("results", {})
@@ -1071,11 +1162,11 @@ class MCPServerV2:
             self._save_execution_artifact(
                 ensemble_name, input_data, results, synthesis, status
             )
-            await ctx.report_progress(progress=total_agents, total=total_agents)
+            await reporter.report_progress(progress=total_agents, total=total_agents)
 
         elif event_type == "execution_failed":
             error_msg = event_data.get("error", "Unknown error")
-            await ctx.error(f"Execution failed: {error_msg}")
+            await reporter.error(f"Execution failed: {error_msg}")
             state["result"] = {
                 "results": {},
                 "synthesis": None,
@@ -1086,7 +1177,7 @@ class MCPServerV2:
         elif event_type == "agent_fallback_started":
             agent_name = event_data.get("agent_name", "unknown")
             msg = f"Agent '{agent_name}' falling back to alternate model"
-            await ctx.warning(msg)
+            await reporter.warning(msg)
 
     def _save_execution_artifact(
         self,
