@@ -7,7 +7,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from pytest_bdd import given, scenarios, then, when
+from pytest_bdd import given, parsers, scenarios, then, when
 
 # Load all scenarios from the feature file
 scenarios("features/adr-009-mcp-server-architecture.feature")
@@ -1419,15 +1419,17 @@ def library_has_ensemble(bdd_context: dict[str, Any], tmp_path: Path) -> None:
 
 
 @given('an ensemble named "library-ensemble" exists locally')
-def ensemble_exists_locally(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+def ensemble_exists_locally(bdd_context: dict[str, Any]) -> None:
     """Create a local ensemble with same name as library."""
-    ensembles_dir = tmp_path / ".llm-orc" / "ensembles"
+    # Use the same ensembles dir that was set up by the library step
+    ensembles_dir = bdd_context.get("local_ensembles_dir")
+    if not ensembles_dir:
+        raise ValueError("local_ensembles_dir not set - must run library step first")
     ensembles_dir.mkdir(parents=True, exist_ok=True)
     (ensembles_dir / "library-ensemble.yaml").write_text(
         "name: library-ensemble\ndescription: Local version\n"
         "agents:\n  - name: local-agent\n    model_profile: fast"
     )
-    bdd_context["local_ensembles_dir"] = ensembles_dir
 
 
 # ============================================================================
@@ -1786,3 +1788,572 @@ def error_indicates_file_exists(bdd_context: dict[str, Any]) -> None:
     assert "exists" in error.lower() or "already" in error.lower(), (
         f"Error should indicate file exists: {error}"
     )
+
+
+# =============================================================================
+# Phase 2 Medium Priority: Profile CRUD Step Definitions
+# =============================================================================
+
+
+@given("model profiles exist in the configuration")
+def profiles_exist_in_config(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Set up profiles in configuration."""
+    profiles_dir = tmp_path / ".llm-orc" / "profiles"
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create sample profiles
+    (profiles_dir / "fast-ollama.yaml").write_text(
+        "name: fast-ollama\nprovider: ollama\nmodel: llama3.2:1b\n"
+    )
+    (profiles_dir / "claude-sonnet.yaml").write_text(
+        "name: claude-sonnet\nprovider: anthropic\nmodel: claude-3-5-sonnet-latest\n"
+    )
+    bdd_context["profiles_dir"] = profiles_dir
+    _reconfigure_server_with_profiles(bdd_context, [profiles_dir])
+
+
+@given(parsers.parse('model profiles exist for providers "{providers}"'))
+def profiles_exist_for_providers(
+    bdd_context: dict[str, Any], tmp_path: Path, providers: str
+) -> None:
+    """Set up profiles for specific providers."""
+    profiles_dir = tmp_path / ".llm-orc" / "profiles"
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+
+    provider_list = [p.strip() for p in providers.split(" and ")]
+    for provider in provider_list:
+        (profiles_dir / f"{provider}-profile.yaml").write_text(
+            f"name: {provider}-profile\nprovider: {provider}\nmodel: test-model\n"
+        )
+    bdd_context["profiles_dir"] = profiles_dir
+    _reconfigure_server_with_profiles(bdd_context, [profiles_dir])
+
+
+@given("a local profiles directory exists")
+def local_profiles_dir_exists(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Create local profiles directory."""
+    profiles_dir = tmp_path / ".llm-orc" / "profiles"
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+    bdd_context["profiles_dir"] = profiles_dir
+    _reconfigure_server_with_profiles(bdd_context, [profiles_dir])
+
+
+@given(parsers.parse('a profile named "{name}" exists'))
+def profile_named_exists(
+    bdd_context: dict[str, Any], tmp_path: Path, name: str
+) -> None:
+    """Create a specific profile."""
+    profiles_dir = tmp_path / ".llm-orc" / "profiles"
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+    (profiles_dir / f"{name}.yaml").write_text(
+        f"name: {name}\nprovider: ollama\nmodel: llama3.2:1b\n"
+    )
+    bdd_context["profiles_dir"] = profiles_dir
+    bdd_context["profile_name"] = name
+    _reconfigure_server_with_profiles(bdd_context, [profiles_dir])
+
+
+@given(parsers.parse('no profile named "{name}" exists'))
+def no_profile_named_exists(
+    bdd_context: dict[str, Any], tmp_path: Path, name: str
+) -> None:
+    """Ensure profile does not exist."""
+    profiles_dir = tmp_path / ".llm-orc" / "profiles"
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+    profile_file = profiles_dir / f"{name}.yaml"
+    if profile_file.exists():
+        profile_file.unlink()
+    bdd_context["profiles_dir"] = profiles_dir
+    _reconfigure_server_with_profiles(bdd_context, [profiles_dir])
+
+
+def _reconfigure_server_with_profiles(
+    bdd_context: dict[str, Any], profiles_dirs: list[Path]
+) -> None:
+    """Reconfigure server with profiles directories."""
+    from unittest.mock import MagicMock
+
+    from llm_orc.mcp.server import MCPServerV2
+
+    mock_config = MagicMock()
+    mock_config.get_ensembles_dirs.return_value = bdd_context.get("ensembles_dirs", [])
+    mock_config.get_profiles_dirs.return_value = [str(d) for d in profiles_dirs]
+    server = MCPServerV2(config_manager=mock_config)
+    bdd_context["mcp_server"] = server
+    bdd_context["mcp_available"] = True
+
+
+@then("I should receive a list of profiles")
+def receive_profiles_list_from_tool(bdd_context: dict[str, Any]) -> None:
+    """Verify profiles list received from tool call."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    assert "profiles" in result, "Result should have profiles"
+    assert isinstance(result["profiles"], list), "Profiles should be a list"
+
+
+@then("each profile should have name, provider, and model")
+def each_profile_has_required_fields(bdd_context: dict[str, Any]) -> None:
+    """Verify profile fields."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    profiles = result.get("profiles", [])
+    for profile in profiles:
+        assert "name" in profile, "Profile should have name"
+        assert "provider" in profile, "Profile should have provider"
+        assert "model" in profile, "Profile should have model"
+
+
+@then("I should receive only ollama profiles")
+def receive_only_ollama_profiles(bdd_context: dict[str, Any]) -> None:
+    """Verify only ollama profiles returned."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    profiles = result.get("profiles", [])
+    for profile in profiles:
+        assert profile.get("provider") == "ollama", (
+            f"All profiles should be ollama, got {profile.get('provider')}"
+        )
+
+
+@then("the profile should be created successfully")
+def profile_created_successfully(bdd_context: dict[str, Any]) -> None:
+    """Verify profile was created."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    assert result.get("created", False) is True, "Profile should be created"
+
+
+@then("the profile file should exist")
+def profile_file_exists(bdd_context: dict[str, Any]) -> None:
+    """Verify profile file exists."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    path = result.get("path")
+    if path:
+        assert Path(path).exists(), f"Profile file should exist at {path}"
+
+
+@then("the error should indicate profile already exists")
+def error_indicates_profile_exists(bdd_context: dict[str, Any]) -> None:
+    """Verify error indicates profile exists."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    error = bdd_context.get("tool_error", "")
+    assert "exists" in error.lower() or "already" in error.lower(), (
+        f"Error should indicate profile exists: {error}"
+    )
+
+
+@then("the profile should be updated successfully")
+def profile_updated_successfully(bdd_context: dict[str, Any]) -> None:
+    """Verify profile was updated."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    assert result.get("updated", False) is True, "Profile should be updated"
+
+
+@then("the error should indicate profile not found")
+def error_indicates_profile_not_found(bdd_context: dict[str, Any]) -> None:
+    """Verify error indicates profile not found."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    error = bdd_context.get("tool_error", "")
+    assert "not found" in error.lower(), f"Error should indicate not found: {error}"
+
+
+@then("the profile should be deleted successfully")
+def profile_deleted_successfully(bdd_context: dict[str, Any]) -> None:
+    """Verify profile was deleted."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    assert result.get("deleted", False) is True, "Profile should be deleted"
+
+
+@then("the profile file should not exist")
+def profile_file_not_exists(bdd_context: dict[str, Any]) -> None:
+    """Verify profile file does not exist."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    profiles_dir = bdd_context.get("profiles_dir")
+    profile_name = bdd_context.get("profile_name")
+    if profiles_dir and profile_name:
+        profile_file = profiles_dir / f"{profile_name}.yaml"
+        assert not profile_file.exists(), (
+            f"Profile file should not exist: {profile_file}"
+        )
+
+
+# =============================================================================
+# Phase 2 Medium Priority: Artifact Management Step Definitions
+# =============================================================================
+
+
+@given(parsers.parse('an execution artifact exists for ensemble "{ensemble}"'))
+def artifact_exists_for_ensemble(
+    bdd_context: dict[str, Any], tmp_path: Path, ensemble: str
+) -> None:
+    """Create execution artifact for ensemble."""
+    artifacts_dir = tmp_path / ".llm-orc" / "artifacts" / ensemble / "20250101-120000"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    (artifacts_dir / "execution.json").write_text('{"status": "completed"}')
+    (artifacts_dir / "execution.md").write_text("# Execution Report\n")
+    bdd_context["artifacts_base"] = tmp_path / ".llm-orc" / "artifacts"
+    bdd_context["artifact_ensemble"] = ensemble
+    _reconfigure_server_with_artifacts(bdd_context, tmp_path)
+
+
+@given(parsers.parse('multiple execution artifacts exist for ensemble "{ensemble}"'))
+def multiple_artifacts_exist(
+    bdd_context: dict[str, Any], tmp_path: Path, ensemble: str
+) -> None:
+    """Create multiple execution artifacts."""
+    import time
+
+    artifacts_base = tmp_path / ".llm-orc" / "artifacts" / ensemble
+    artifacts_base.mkdir(parents=True, exist_ok=True)
+
+    # Create old artifact (mtime set to 10 days ago)
+    old_artifact = artifacts_base / "20250101-100000"
+    old_artifact.mkdir(parents=True)
+    (old_artifact / "execution.json").write_text('{"status": "completed"}')
+    old_time = time.time() - (10 * 24 * 60 * 60)  # 10 days ago
+    import os
+
+    os.utime(old_artifact, (old_time, old_time))
+
+    # Create recent artifact (current time)
+    recent_artifact = artifacts_base / "20250101-200000"
+    recent_artifact.mkdir(parents=True)
+    (recent_artifact / "execution.json").write_text('{"status": "completed"}')
+
+    bdd_context["artifacts_base"] = tmp_path / ".llm-orc" / "artifacts"
+    bdd_context["artifact_ensemble"] = ensemble
+    bdd_context["old_artifact"] = old_artifact
+    bdd_context["recent_artifact"] = recent_artifact
+    _reconfigure_server_with_artifacts(bdd_context, tmp_path)
+
+
+@given("some artifacts are older than 7 days")
+def some_artifacts_older_than_7_days(bdd_context: dict[str, Any]) -> None:
+    """Marker step - artifacts already configured in previous step."""
+    pass  # Handled by multiple_artifacts_exist
+
+
+def _reconfigure_server_with_artifacts(
+    bdd_context: dict[str, Any], tmp_path: Path
+) -> None:
+    """Reconfigure server with artifact base directory."""
+    from unittest.mock import MagicMock
+
+    from llm_orc.mcp.server import MCPServerV2
+
+    mock_config = MagicMock()
+    mock_config.get_ensembles_dirs.return_value = bdd_context.get("ensembles_dirs", [])
+    mock_config.get_profiles_dirs.return_value = []
+    server = MCPServerV2(config_manager=mock_config)
+    # Set artifact base for testing
+    server._test_artifacts_base = bdd_context.get("artifacts_base")
+    bdd_context["mcp_server"] = server
+    bdd_context["mcp_available"] = True
+
+
+@then("the artifact should be deleted successfully")
+def artifact_deleted_successfully(bdd_context: dict[str, Any]) -> None:
+    """Verify artifact was deleted."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    assert result.get("deleted", False) is True, "Artifact should be deleted"
+
+
+@then("the artifact directory should not exist")
+def artifact_directory_not_exists(bdd_context: dict[str, Any]) -> None:
+    """Verify artifact directory does not exist."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    artifacts_base = bdd_context.get("artifacts_base")
+    ensemble = bdd_context.get("artifact_ensemble")
+    if artifacts_base and ensemble:
+        artifact_dir = artifacts_base / ensemble / "20250101-120000"
+        assert not artifact_dir.exists(), (
+            f"Artifact dir should not exist: {artifact_dir}"
+        )
+
+
+@then("the error should indicate artifact not found")
+def error_indicates_artifact_not_found(bdd_context: dict[str, Any]) -> None:
+    """Verify error indicates artifact not found."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    error = bdd_context.get("tool_error", "")
+    assert "not found" in error.lower(), f"Error should indicate not found: {error}"
+
+
+@then("I should receive a preview of artifacts to delete")
+def receive_preview_of_artifacts(bdd_context: dict[str, Any]) -> None:
+    """Verify preview of artifacts received."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    assert "would_delete" in result, "Result should have would_delete preview"
+    assert result.get("dry_run", False) is True, "Should be dry run"
+
+
+@then("no artifacts should actually be deleted")
+def no_artifacts_actually_deleted(bdd_context: dict[str, Any]) -> None:
+    """Verify no artifacts were deleted."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    old_artifact = bdd_context.get("old_artifact")
+    if old_artifact:
+        assert old_artifact.exists(), "Old artifact should still exist (dry run)"
+
+
+@then("old artifacts should be deleted")
+def old_artifacts_deleted(bdd_context: dict[str, Any]) -> None:
+    """Verify old artifacts were deleted."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    old_artifact = bdd_context.get("old_artifact")
+    if old_artifact:
+        assert not old_artifact.exists(), "Old artifact should be deleted"
+
+
+@then("recent artifacts should remain")
+def recent_artifacts_remain(bdd_context: dict[str, Any]) -> None:
+    """Verify recent artifacts remain."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    recent_artifact = bdd_context.get("recent_artifact")
+    if recent_artifact:
+        assert recent_artifact.exists(), "Recent artifact should still exist"
+
+
+@then(parsers.parse('only "{ensemble}" artifacts should be deleted'))
+def only_specific_ensemble_deleted(bdd_context: dict[str, Any], ensemble: str) -> None:
+    """Verify only specific ensemble artifacts deleted."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    artifacts_base = bdd_context.get("artifacts_base")
+    if artifacts_base:
+        ensemble_dir = artifacts_base / ensemble
+        # Check that artifacts for this ensemble are deleted (empty or no dir)
+        if ensemble_dir.exists():
+            artifacts = list(ensemble_dir.iterdir())
+            assert len(artifacts) == 0, f"{ensemble} should have no artifacts"
+
+
+@then(parsers.parse('"{ensemble}" artifacts should remain'))
+def ensemble_artifacts_remain(bdd_context: dict[str, Any], ensemble: str) -> None:
+    """Verify ensemble artifacts remain."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    artifacts_base = bdd_context.get("artifacts_base")
+    if artifacts_base:
+        ensemble_dir = artifacts_base / ensemble
+        assert ensemble_dir.exists(), f"{ensemble} directory should exist"
+        artifacts = list(ensemble_dir.iterdir())
+        assert len(artifacts) > 0, f"{ensemble} should have artifacts"
+
+
+# =============================================================================
+# Phase 2 Medium Priority: When Step Definitions for Profile Tools
+# =============================================================================
+
+
+@when('I call the "list_profiles" tool')
+def call_list_profiles_tool(bdd_context: dict[str, Any]) -> None:
+    """Call list_profiles tool without arguments."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("list_profiles", {})
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "list_profiles" tool with:', target_fixture="profiles_datatable")
+def call_list_profiles_with_args(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call list_profiles with arguments from datatable."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("list_profiles", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "create_profile" tool with:', target_fixture="create_profile_dt")
+def call_create_profile_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call create_profile tool with arguments."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("create_profile", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "update_profile" tool with:', target_fixture="update_profile_dt")
+def call_update_profile_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call update_profile tool with arguments."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("update_profile", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "delete_profile" tool with:', target_fixture="delete_profile_dt")
+def call_delete_profile_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call delete_profile tool with arguments."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("delete_profile", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+# =============================================================================
+# Phase 2 Medium Priority: When Step Definitions for Artifact Tools
+# =============================================================================
+
+
+@when('I call the "delete_artifact" tool with:', target_fixture="delete_artifact_dt")
+def call_delete_artifact_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call delete_artifact tool with arguments."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("delete_artifact", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "cleanup_artifacts" tool with:', target_fixture="cleanup_art_dt")
+def call_cleanup_artifacts_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call cleanup_artifacts tool with arguments."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+    # Ensure older_than_days is an int
+    if "older_than_days" in params:
+        params["older_than_days"] = int(params["older_than_days"])
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("cleanup_artifacts", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())

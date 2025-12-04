@@ -7,7 +7,7 @@ This module implements the MCP server following ADR-009, providing:
 """
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -181,6 +181,12 @@ class MCPServerV2:
 
     def _setup_crud_tools(self) -> None:
         """Register Phase 2 CRUD tools."""
+        self._setup_ensemble_crud_tools()
+        self._setup_profile_tools()
+        self._setup_artifact_tools()
+
+    def _setup_ensemble_crud_tools(self) -> None:
+        """Register ensemble CRUD tools."""
 
         @self._mcp.tool()
         async def create_ensemble(
@@ -266,6 +272,107 @@ class MCPServerV2:
                     "source": source,
                     "destination": destination,
                     "overwrite": overwrite,
+                }
+            )
+            return json.dumps(result, indent=2)
+
+    def _setup_profile_tools(self) -> None:
+        """Register profile CRUD tools."""
+
+        @self._mcp.tool()
+        async def list_profiles(provider: str | None = None) -> str:
+            """List all model profiles.
+
+            Args:
+                provider: Optional provider to filter by
+            """
+            result = await self._list_profiles_tool({"provider": provider})
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def create_profile(
+            name: str,
+            provider: str,
+            model: str,
+            system_prompt: str | None = None,
+            timeout_seconds: int | None = None,
+        ) -> str:
+            """Create a new model profile.
+
+            Args:
+                name: Profile name
+                provider: Provider name (ollama, anthropic, etc.)
+                model: Model identifier
+                system_prompt: Optional system prompt
+                timeout_seconds: Optional timeout
+            """
+            result = await self._create_profile_tool(
+                {
+                    "name": name,
+                    "provider": provider,
+                    "model": model,
+                    "system_prompt": system_prompt,
+                    "timeout_seconds": timeout_seconds,
+                }
+            )
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def update_profile(name: str, changes: dict[str, Any]) -> str:
+            """Update an existing profile.
+
+            Args:
+                name: Profile name to update
+                changes: Changes to apply
+            """
+            result = await self._update_profile_tool({"name": name, "changes": changes})
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def delete_profile(name: str, confirm: bool = False) -> str:
+            """Delete a model profile.
+
+            Args:
+                name: Profile name to delete
+                confirm: Must be True to actually delete
+            """
+            result = await self._delete_profile_tool({"name": name, "confirm": confirm})
+            return json.dumps(result, indent=2)
+
+    def _setup_artifact_tools(self) -> None:
+        """Register artifact management tools."""
+
+        @self._mcp.tool()
+        async def delete_artifact(artifact_id: str, confirm: bool = False) -> str:
+            """Delete an execution artifact.
+
+            Args:
+                artifact_id: Artifact ID (format: ensemble/timestamp)
+                confirm: Must be True to actually delete
+            """
+            result = await self._delete_artifact_tool(
+                {"artifact_id": artifact_id, "confirm": confirm}
+            )
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def cleanup_artifacts(
+            ensemble_name: str | None = None,
+            older_than_days: int = 30,
+            dry_run: bool = True,
+        ) -> str:
+            """Cleanup old artifacts.
+
+            Args:
+                ensemble_name: Optional ensemble to cleanup (all if not specified)
+                older_than_days: Delete artifacts older than this
+                dry_run: If True, preview without deleting
+            """
+            result = await self._cleanup_artifacts_tool(
+                {
+                    "ensemble_name": ensemble_name,
+                    "older_than_days": older_than_days,
+                    "dry_run": dry_run,
                 }
             )
             return json.dumps(result, indent=2)
@@ -699,27 +806,46 @@ class MCPServerV2:
         Raises:
             ValueError: If tool not found or execution fails.
         """
-        if name == "invoke":
-            return await self._invoke_tool(arguments)
-        elif name == "validate_ensemble":
-            return await self._validate_ensemble_tool(arguments)
-        elif name == "update_ensemble":
-            return await self._update_ensemble_tool(arguments)
-        elif name == "analyze_execution":
-            return await self._analyze_execution_tool(arguments)
-        # Phase 2 CRUD tools
-        elif name == "create_ensemble":
-            return await self._create_ensemble_tool(arguments)
-        elif name == "delete_ensemble":
-            return await self._delete_ensemble_tool(arguments)
-        elif name == "list_scripts":
-            return await self._list_scripts_tool(arguments)
-        elif name == "library_browse":
-            return await self._library_browse_tool(arguments)
-        elif name == "library_copy":
-            return await self._library_copy_tool(arguments)
-        else:
+        handler = self._get_tool_handler(name)
+        if handler is None:
             raise ValueError(f"Tool not found: {name}")
+        return await handler(arguments)
+
+    def _get_tool_handler(
+        self, name: str
+    ) -> Callable[[dict[str, Any]], Awaitable[dict[str, Any]]] | None:
+        """Get tool handler by name.
+
+        Args:
+            name: Tool name.
+
+        Returns:
+            Handler function or None if not found.
+        """
+        # Build dispatch table mapping tool names to handlers
+        handlers: dict[str, Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]] = {
+            # Core tools
+            "invoke": self._invoke_tool,
+            "validate_ensemble": self._validate_ensemble_tool,
+            "update_ensemble": self._update_ensemble_tool,
+            "analyze_execution": self._analyze_execution_tool,
+            # Ensemble CRUD
+            "create_ensemble": self._create_ensemble_tool,
+            "delete_ensemble": self._delete_ensemble_tool,
+            # Scripts and library
+            "list_scripts": self._list_scripts_tool,
+            "library_browse": self._library_browse_tool,
+            "library_copy": self._library_copy_tool,
+            # Profile CRUD
+            "list_profiles": self._list_profiles_tool,
+            "create_profile": self._create_profile_tool,
+            "update_profile": self._update_profile_tool,
+            "delete_profile": self._delete_profile_tool,
+            # Artifact management
+            "delete_artifact": self._delete_artifact_tool,
+            "cleanup_artifacts": self._cleanup_artifacts_tool,
+        }
+        return handlers.get(name)
 
     async def _invoke_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute invoke tool.
@@ -1581,3 +1707,306 @@ class MCPServerV2:
 
         # Default library location
         return Path.cwd() / "llm-orchestra-library"
+
+    # =========================================================================
+    # Profile CRUD Tool Implementations
+    # =========================================================================
+
+    async def _list_profiles_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """List model profiles.
+
+        Args:
+            arguments: Tool arguments including optional provider filter.
+
+        Returns:
+            List of profiles.
+        """
+        import yaml
+
+        provider_filter = arguments.get("provider")
+        profiles: list[dict[str, Any]] = []
+
+        # Get profiles from configured directories
+        profiles_dirs = self.config_manager.get_profiles_dirs()
+
+        for dir_path in profiles_dirs:
+            profiles_dir = Path(dir_path)
+            if not profiles_dir.exists():
+                continue
+
+            for yaml_file in profiles_dir.glob("*.yaml"):
+                try:
+                    content = yaml_file.read_text()
+                    data = yaml.safe_load(content) or {}
+                    profile_provider = data.get("provider", "")
+
+                    # Apply filter if specified
+                    if provider_filter and profile_provider != provider_filter:
+                        continue
+
+                    profiles.append(
+                        {
+                            "name": data.get("name", yaml_file.stem),
+                            "provider": profile_provider,
+                            "model": data.get("model", ""),
+                            "path": str(yaml_file),
+                        }
+                    )
+                except Exception:
+                    continue
+
+        return {"profiles": profiles}
+
+    def _get_local_profiles_dir(self) -> Path:
+        """Get the local profiles directory for writing.
+
+        Returns:
+            Path to local profiles directory.
+
+        Raises:
+            ValueError: If no profiles directory is configured.
+        """
+        profiles_dirs = self.config_manager.get_profiles_dirs()
+        for dir_path in profiles_dirs:
+            path = Path(dir_path)
+            if ".llm-orc" in str(path) and "library" not in str(path):
+                return path
+        if profiles_dirs:
+            return Path(profiles_dirs[0])
+        raise ValueError("No profiles directory configured")
+
+    async def _create_profile_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Create a new profile.
+
+        Args:
+            arguments: Tool arguments.
+
+        Returns:
+            Creation result.
+        """
+        import yaml
+
+        name = arguments.get("name")
+        provider = arguments.get("provider")
+        model = arguments.get("model")
+
+        if not name:
+            raise ValueError("name is required")
+        if not provider:
+            raise ValueError("provider is required")
+        if not model:
+            raise ValueError("model is required")
+
+        local_dir = self._get_local_profiles_dir()
+        target_file = local_dir / f"{name}.yaml"
+        if target_file.exists():
+            raise ValueError(f"Profile '{name}' already exists")
+
+        # Build profile data
+        profile_data: dict[str, Any] = {
+            "name": name,
+            "provider": provider,
+            "model": model,
+        }
+        if arguments.get("system_prompt"):
+            profile_data["system_prompt"] = arguments["system_prompt"]
+        if arguments.get("timeout_seconds"):
+            profile_data["timeout_seconds"] = arguments["timeout_seconds"]
+
+        # Write file
+        local_dir.mkdir(parents=True, exist_ok=True)
+        yaml_content = yaml.safe_dump(profile_data, default_flow_style=False)
+        target_file.write_text(yaml_content)
+
+        return {"created": True, "path": str(target_file)}
+
+    async def _update_profile_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Update an existing profile.
+
+        Args:
+            arguments: Tool arguments.
+
+        Returns:
+            Update result.
+        """
+        import yaml
+
+        name = arguments.get("name")
+        changes = arguments.get("changes", {})
+
+        if not name:
+            raise ValueError("name is required")
+
+        # Find profile file
+        profiles_dirs = self.config_manager.get_profiles_dirs()
+        profile_file = None
+
+        for dir_path in profiles_dirs:
+            path = Path(dir_path) / f"{name}.yaml"
+            if path.exists():
+                profile_file = path
+                break
+
+        if not profile_file:
+            raise ValueError(f"Profile '{name}' not found")
+
+        # Load and update
+        content = profile_file.read_text()
+        data = yaml.safe_load(content) or {}
+        data.update(changes)
+
+        # Write back
+        yaml_content = yaml.safe_dump(data, default_flow_style=False)
+        profile_file.write_text(yaml_content)
+
+        return {"updated": True, "path": str(profile_file)}
+
+    async def _delete_profile_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Delete a profile.
+
+        Args:
+            arguments: Tool arguments.
+
+        Returns:
+            Deletion result.
+        """
+        name = arguments.get("name")
+        confirm = arguments.get("confirm", False)
+
+        if not name:
+            raise ValueError("name is required")
+        if not confirm:
+            raise ValueError("Confirmation required to delete profile")
+
+        # Find profile file
+        profiles_dirs = self.config_manager.get_profiles_dirs()
+        profile_file = None
+
+        for dir_path in profiles_dirs:
+            path = Path(dir_path) / f"{name}.yaml"
+            if path.exists():
+                profile_file = path
+                break
+
+        if not profile_file:
+            raise ValueError(f"Profile '{name}' not found")
+
+        # Delete
+        profile_file.unlink()
+
+        return {"deleted": True, "name": name}
+
+    # =========================================================================
+    # Artifact Management Tool Implementations
+    # =========================================================================
+
+    # Optional test override for artifacts directory
+    _test_artifacts_base: Path | None = None
+
+    def _get_artifacts_base(self) -> Path:
+        """Get artifacts base directory."""
+        if self._test_artifacts_base is not None:
+            return self._test_artifacts_base
+        return Path.cwd() / ".llm-orc" / "artifacts"
+
+    async def _delete_artifact_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Delete an artifact.
+
+        Args:
+            arguments: Tool arguments.
+
+        Returns:
+            Deletion result.
+        """
+        import shutil
+
+        artifact_id = arguments.get("artifact_id")
+        confirm = arguments.get("confirm", False)
+
+        if not artifact_id:
+            raise ValueError("artifact_id is required")
+        if not confirm:
+            raise ValueError("Confirmation required to delete artifact")
+
+        # Parse artifact_id (format: ensemble/timestamp)
+        parts = artifact_id.split("/")
+        if len(parts) != 2:
+            raise ValueError("Invalid artifact_id format (expected ensemble/timestamp)")
+
+        ensemble_name, timestamp = parts
+
+        # Find artifact directory
+        artifacts_base = self._get_artifacts_base()
+        artifact_dir = artifacts_base / ensemble_name / timestamp
+
+        if not artifact_dir.exists():
+            raise ValueError(f"Artifact '{artifact_id}' not found")
+
+        # Delete
+        shutil.rmtree(artifact_dir)
+
+        return {"deleted": True, "artifact_id": artifact_id}
+
+    async def _cleanup_artifacts_tool(
+        self, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Cleanup old artifacts.
+
+        Args:
+            arguments: Tool arguments.
+
+        Returns:
+            Cleanup result.
+        """
+        import shutil
+        import time
+
+        ensemble_name = arguments.get("ensemble_name")
+        older_than_days = arguments.get("older_than_days", 30)
+        dry_run = arguments.get("dry_run", True)
+
+        artifacts_base = self._get_artifacts_base()
+        cutoff_time = time.time() - (older_than_days * 24 * 60 * 60)
+
+        would_delete: list[str] = []
+        deleted: list[str] = []
+
+        # Determine which ensemble directories to check
+        if ensemble_name:
+            ensemble_dirs = [artifacts_base / ensemble_name]
+        else:
+            if artifacts_base.exists():
+                ensemble_dirs = [d for d in artifacts_base.iterdir() if d.is_dir()]
+            else:
+                ensemble_dirs = []
+
+        for ensemble_dir in ensemble_dirs:
+            if not ensemble_dir.exists():
+                continue
+
+            for artifact_dir in ensemble_dir.iterdir():
+                if not artifact_dir.is_dir():
+                    continue
+
+                # Check modification time
+                mtime = artifact_dir.stat().st_mtime
+                if mtime < cutoff_time:
+                    artifact_id = f"{ensemble_dir.name}/{artifact_dir.name}"
+                    would_delete.append(artifact_id)
+
+                    if not dry_run:
+                        shutil.rmtree(artifact_dir)
+                        deleted.append(artifact_id)
+
+        if dry_run:
+            return {
+                "dry_run": True,
+                "would_delete": would_delete,
+                "count": len(would_delete),
+            }
+        else:
+            return {
+                "dry_run": False,
+                "deleted": deleted,
+                "count": len(deleted),
+            }

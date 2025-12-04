@@ -226,7 +226,7 @@ llm-orc m serve
 
 ## Implementation Status
 
-### Complete (2025-12-03)
+### Phase 1: Complete (2025-12-03)
 
 **MCPServerV2 class** (`src/llm_orc/mcp/server.py`):
 - Uses FastMCP SDK with decorator-based registration
@@ -242,26 +242,56 @@ llm-orc m serve
 - `llm-orc://artifact/{ensemble}/{id}` - Returns full artifact
 - `llm-orc://metrics/{ensemble}` - Returns aggregated stats
 
-**Tools**:
+**Phase 1 Tools**:
 - `invoke` - Executes with streaming, saves artifacts
 - `list_ensembles` - Returns all ensembles with metadata
 - `validate_ensemble` - Validates config, profiles, and providers
 - `update_ensemble` - Modifies config with dry-run and backup
 - `analyze_execution` - Analyzes artifact data
 
+**Phase 2 High Priority Tools** (Complete):
+- `create_ensemble` - Create new ensembles from scratch or template
+- `delete_ensemble` - Delete ensembles with confirmation
+- `list_scripts` - List primitive scripts with category filtering
+- `library_browse` - Browse library ensembles and scripts
+- `library_copy` - Copy from library to local project
+
 **CLI**:
 - `llm-orc mcp serve` - stdio transport
 - `llm-orc mcp serve --transport http --port 8080` - HTTP/SSE transport
 
 **Tests**:
-- 35 BDD scenarios in `tests/bdd/test_adr_009_mcp_server_architecture.py`
+- 47 BDD scenarios in `tests/bdd/test_adr_009_mcp_server_architecture.py`
+- 31 unit tests in `tests/unit/mcp_server/test_server_v2.py`
+
+### Phase 2 Medium Priority: In Progress
+
+**Profile CRUD** (implementation complete, needs `get_profiles_dirs` in ConfigurationManager):
+- `list_profiles` - List profiles with optional provider filter
+- `create_profile` - Create new model profiles
+- `update_profile` - Update existing profiles
+- `delete_profile` - Delete profiles with confirmation
+
+**Artifact Management** (implementation complete, needs lint fixes):
+- `delete_artifact` - Delete individual artifacts
+- `cleanup_artifacts` - Cleanup old artifacts with dry_run support
+
+**Remaining Work**:
+1. Add `get_profiles_dirs()` method to `ConfigurationManager`
+2. Fix duplicate step definition in test file
+3. Reduce complexity in `_setup_crud_tools`, `call_tool`, `_create_profile_tool`
+4. Fix line length issues in test assertions
 
 ### Files
 
 ```
 src/llm_orc/mcp/
 ├── __init__.py          # Exports MCPServerV2
-└── server.py            # MCPServerV2 implementation (~1050 lines)
+└── server.py            # MCPServerV2 implementation (~2000 lines)
+
+tests/unit/mcp_server/
+├── __init__.py
+└── test_server_v2.py    # 31 unit tests
 
 .mcp.json                # Claude Code MCP configuration
 ```

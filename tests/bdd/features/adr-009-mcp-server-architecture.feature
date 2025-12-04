@@ -299,3 +299,143 @@ Feature: MCP Server Architecture
       | overwrite | false                              |
     Then I should receive a tool error
     And the error should indicate file already exists
+
+  # =========================================================================
+  # Phase 2 Medium Priority: Profile CRUD
+  # =========================================================================
+
+  # Tool: List profiles
+  @tool @profile @phase2
+  Scenario: List all model profiles
+    Given model profiles exist in the configuration
+    When I call the "list_profiles" tool
+    Then I should receive a list of profiles
+    And each profile should have name, provider, and model
+
+  @tool @profile @phase2
+  Scenario: List profiles filtered by provider
+    Given model profiles exist for providers "ollama" and "anthropic"
+    When I call the "list_profiles" tool with:
+      | provider | ollama                               |
+    Then I should receive only ollama profiles
+
+  # Tool: Create profile
+  @tool @profile @phase2
+  Scenario: Create a new model profile
+    Given a local profiles directory exists
+    When I call the "create_profile" tool with:
+      | name     | my-new-profile                       |
+      | provider | ollama                               |
+      | model    | llama3.2:1b                          |
+    Then the profile should be created successfully
+    And the profile file should exist
+
+  @tool @profile @phase2 @error
+  Scenario: Create profile fails if name already exists
+    Given a profile named "existing-profile" exists
+    When I call the "create_profile" tool with:
+      | name     | existing-profile                     |
+      | provider | ollama                               |
+      | model    | llama3.2:1b                          |
+    Then I should receive a tool error
+    And the error should indicate profile already exists
+
+  # Tool: Update profile
+  @tool @profile @phase2
+  Scenario: Update an existing profile
+    Given a profile named "test-profile" exists
+    When I call the "update_profile" tool with:
+      | name    | test-profile                         |
+      | changes | {"timeout_seconds": 120}             |
+    Then the profile should be updated successfully
+
+  @tool @profile @phase2 @error
+  Scenario: Update non-existent profile fails
+    Given no profile named "missing-profile" exists
+    When I call the "update_profile" tool with:
+      | name    | missing-profile                      |
+      | changes | {"timeout_seconds": 120}             |
+    Then I should receive a tool error
+    And the error should indicate profile not found
+
+  # Tool: Delete profile
+  @tool @profile @phase2
+  Scenario: Delete an existing profile
+    Given a profile named "to-delete" exists
+    When I call the "delete_profile" tool with:
+      | name    | to-delete                            |
+      | confirm | true                                 |
+    Then the profile should be deleted successfully
+    And the profile file should not exist
+
+  @tool @profile @phase2 @error
+  Scenario: Delete profile requires confirmation
+    Given a profile named "test-profile" exists
+    When I call the "delete_profile" tool with:
+      | name    | test-profile                         |
+      | confirm | false                                |
+    Then I should receive a tool error
+    And the error should indicate confirmation required
+
+  # =========================================================================
+  # Phase 2 Medium Priority: Artifact Management
+  # =========================================================================
+
+  # Tool: Delete artifact
+  @tool @artifact @phase2
+  Scenario: Delete a specific execution artifact
+    Given an execution artifact exists for ensemble "test-ensemble"
+    When I call the "delete_artifact" tool with:
+      | artifact_id | test-ensemble/20250101-120000        |
+      | confirm     | true                                 |
+    Then the artifact should be deleted successfully
+    And the artifact directory should not exist
+
+  @tool @artifact @phase2 @error
+  Scenario: Delete artifact requires confirmation
+    Given an execution artifact exists for ensemble "test-ensemble"
+    When I call the "delete_artifact" tool with:
+      | artifact_id | test-ensemble/20250101-120000        |
+      | confirm     | false                                |
+    Then I should receive a tool error
+    And the error should indicate confirmation required
+
+  @tool @artifact @phase2 @error
+  Scenario: Delete non-existent artifact fails
+    When I call the "delete_artifact" tool with:
+      | artifact_id | missing/20250101-000000              |
+      | confirm     | true                                 |
+    Then I should receive a tool error
+    And the error should indicate artifact not found
+
+  # Tool: Cleanup artifacts
+  @tool @artifact @phase2
+  Scenario: Cleanup old artifacts with dry run
+    Given multiple execution artifacts exist for ensemble "test-ensemble"
+    And some artifacts are older than 7 days
+    When I call the "cleanup_artifacts" tool with:
+      | older_than_days | 7                                    |
+      | dry_run         | true                                 |
+    Then I should receive a preview of artifacts to delete
+    And no artifacts should actually be deleted
+
+  @tool @artifact @phase2
+  Scenario: Cleanup old artifacts for real
+    Given multiple execution artifacts exist for ensemble "test-ensemble"
+    And some artifacts are older than 7 days
+    When I call the "cleanup_artifacts" tool with:
+      | older_than_days | 7                                    |
+      | dry_run         | false                                |
+    Then old artifacts should be deleted
+    And recent artifacts should remain
+
+  @tool @artifact @phase2
+  Scenario: Cleanup artifacts for specific ensemble
+    Given multiple execution artifacts exist for ensemble "ensemble-a"
+    And multiple execution artifacts exist for ensemble "ensemble-b"
+    When I call the "cleanup_artifacts" tool with:
+      | ensemble_name   | ensemble-a                           |
+      | older_than_days | 0                                    |
+      | dry_run         | false                                |
+    Then only "ensemble-a" artifacts should be deleted
+    And "ensemble-b" artifacts should remain
