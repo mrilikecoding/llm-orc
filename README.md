@@ -278,9 +278,9 @@ LLM Orchestra includes a Model Context Protocol (MCP) server that exposes ensemb
 
 3. Try it:
 ```
-mcp__llm-orc__list_ensembles        # See available ensembles
+mcp__llm-orc__get_help              # Get full documentation
 mcp__llm-orc__get_provider_status   # Check which models are available
-mcp__llm-orc__invoke                # Run an ensemble
+mcp__llm-orc__list_ensembles        # See available ensembles
 ```
 
 #### Resources (Read-Only Data)
@@ -294,7 +294,7 @@ mcp__llm-orc__invoke                # Run an ensemble
 | `llm-orc://artifact/{ensemble}/{id}` | Get individual artifact details |
 | `llm-orc://metrics/{ensemble}` | Get aggregated metrics (success rate, cost, duration) |
 
-#### Tools (24 Total)
+#### Tools (25 Total)
 
 **Core Execution**
 | Tool | Description |
@@ -347,6 +347,11 @@ mcp__llm-orc__invoke                # Run an ensemble
 |------|-------------|
 | `delete_artifact` | Delete individual execution artifact |
 | `cleanup_artifacts` | Delete old artifacts (supports dry-run) |
+
+**Help**
+| Tool | Description |
+|------|-------------|
+| `get_help` | Get comprehensive docs: directory structure, schemas, workflows |
 
 #### Example Workflow
 

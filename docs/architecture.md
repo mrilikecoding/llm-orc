@@ -123,7 +123,7 @@ LLM Orchestra implements a Model Context Protocol (MCP) server using the FastMCP
 - `llm-orc://artifact/{ensemble}/{id}` - Get individual artifact details
 - `llm-orc://metrics/{ensemble}` - Get aggregated metrics (success rate, avg cost, duration)
 
-**Tools** (24 total, organized by category):
+**Tools** (25 total, organized by category):
 
 *Core Execution:*
 - `invoke` - Execute ensemble with streaming progress, saves artifacts automatically
@@ -162,6 +162,9 @@ LLM Orchestra implements a Model Context Protocol (MCP) server using the FastMCP
 *Artifact Management:*
 - `delete_artifact` - Delete individual execution artifact
 - `cleanup_artifacts` - Delete old artifacts (supports dry-run)
+
+*Help:*
+- `get_help` - Get comprehensive documentation (directory structure, schemas, workflows)
 
 **Streaming Support**:
 The `invoke` tool streams progress via FastMCP Context:

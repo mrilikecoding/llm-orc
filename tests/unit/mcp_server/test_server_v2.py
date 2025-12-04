@@ -1552,3 +1552,53 @@ class TestSuggestAvailableModels:
         result = server._suggest_available_models(models)
         assert isinstance(result, list)
         assert len(result) <= 5  # Should limit to 5
+
+
+class TestHelpTool:
+    """Tests for the get_help tool."""
+
+    @pytest.mark.asyncio
+    async def test_get_help_returns_documentation(self, server: MCPServerV2) -> None:
+        """get_help tool returns comprehensive documentation."""
+        result = await server.call_tool("get_help", {})
+
+        assert "directory_structure" in result
+        assert "schemas" in result
+        assert "tools" in result
+
+    @pytest.mark.asyncio
+    async def test_get_help_includes_ensemble_schema(self, server: MCPServerV2) -> None:
+        """get_help includes ensemble YAML schema."""
+        result = await server.call_tool("get_help", {})
+
+        schemas = result["schemas"]
+        assert "ensemble" in schemas
+        assert "example" in schemas["ensemble"]
+
+    @pytest.mark.asyncio
+    async def test_get_help_includes_profile_schema(self, server: MCPServerV2) -> None:
+        """get_help includes profile schema."""
+        result = await server.call_tool("get_help", {})
+
+        schemas = result["schemas"]
+        assert "profile" in schemas
+
+    @pytest.mark.asyncio
+    async def test_get_help_includes_directory_structure(
+        self, server: MCPServerV2
+    ) -> None:
+        """get_help includes directory structure info."""
+        result = await server.call_tool("get_help", {})
+
+        dirs = result["directory_structure"]
+        assert "local" in dirs
+        assert "global" in dirs
+
+    @pytest.mark.asyncio
+    async def test_get_help_includes_tool_categories(self, server: MCPServerV2) -> None:
+        """get_help includes tool categories."""
+        result = await server.call_tool("get_help", {})
+
+        tools = result["tools"]
+        assert "core_execution" in tools
+        assert "provider_discovery" in tools
