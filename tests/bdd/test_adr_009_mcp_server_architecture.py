@@ -1256,3 +1256,533 @@ def server_accessible_at_port(bdd_context: dict[str, Any]) -> None:
         pytest.skip("MCP server not available - Red phase")
 
     assert bdd_context.get("cli_port") == 8080
+
+
+# ============================================================================
+# Phase 2: CRUD Operations - Given Steps
+# ============================================================================
+
+
+@given("a local ensembles directory exists")
+def local_ensembles_dir_exists(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Create a local ensembles directory."""
+    ensembles_dir = tmp_path / ".llm-orc" / "ensembles"
+    ensembles_dir.mkdir(parents=True, exist_ok=True)
+    bdd_context["local_ensembles_dir"] = ensembles_dir
+    bdd_context["tmp_path"] = tmp_path
+    _reconfigure_server(bdd_context, [ensembles_dir])
+
+
+@given('an ensemble named "existing-ensemble" exists')
+def ensemble_existing_exists(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Create an existing ensemble."""
+    ensembles_dir = tmp_path / ".llm-orc" / "ensembles"
+    ensembles_dir.mkdir(parents=True, exist_ok=True)
+    (ensembles_dir / "existing-ensemble.yaml").write_text(
+        "name: existing-ensemble\ndescription: Existing\n"
+        "agents:\n  - name: agent1\n    model_profile: fast"
+    )
+    bdd_context["local_ensembles_dir"] = ensembles_dir
+    bdd_context["tmp_path"] = tmp_path
+    _reconfigure_server(bdd_context, [ensembles_dir])
+
+
+@given('an ensemble named "to-delete" exists')
+def ensemble_to_delete_exists(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Create an ensemble to be deleted."""
+    ensembles_dir = tmp_path / ".llm-orc" / "ensembles"
+    ensembles_dir.mkdir(parents=True, exist_ok=True)
+    (ensembles_dir / "to-delete.yaml").write_text(
+        "name: to-delete\ndescription: To be deleted\n"
+        "agents:\n  - name: agent1\n    model_profile: fast"
+    )
+    bdd_context["local_ensembles_dir"] = ensembles_dir
+    bdd_context["tmp_path"] = tmp_path
+    _reconfigure_server(bdd_context, [ensembles_dir])
+
+
+@given('an ensemble named "protected" exists')
+def ensemble_protected_exists(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Create a protected ensemble."""
+    ensembles_dir = tmp_path / ".llm-orc" / "ensembles"
+    ensembles_dir.mkdir(parents=True, exist_ok=True)
+    (ensembles_dir / "protected.yaml").write_text(
+        "name: protected\ndescription: Protected ensemble\n"
+        "agents:\n  - name: agent1\n    model_profile: fast"
+    )
+    bdd_context["local_ensembles_dir"] = ensembles_dir
+    bdd_context["tmp_path"] = tmp_path
+    _reconfigure_server(bdd_context, [ensembles_dir])
+
+
+@given("scripts exist in the scripts directory")
+def scripts_exist(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Create scripts in the scripts directory."""
+    scripts_dir = tmp_path / ".llm-orc" / "scripts"
+    transform_dir = scripts_dir / "transform"
+    transform_dir.mkdir(parents=True, exist_ok=True)
+
+    (transform_dir / "uppercase.py").write_text(
+        '"""Uppercase transform script."""\n'
+        "def transform(data):\n    return data.upper()\n"
+    )
+    bdd_context["scripts_dir"] = scripts_dir
+    bdd_context["tmp_path"] = tmp_path
+
+
+@given("scripts exist in multiple categories")
+def scripts_multiple_categories(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Create scripts in multiple categories."""
+    scripts_dir = tmp_path / ".llm-orc" / "scripts"
+
+    # Transform category
+    transform_dir = scripts_dir / "transform"
+    transform_dir.mkdir(parents=True, exist_ok=True)
+    (transform_dir / "uppercase.py").write_text(
+        '"""Uppercase transform."""\ndef transform(data): return data.upper()\n'
+    )
+
+    # Validate category
+    validate_dir = scripts_dir / "validate"
+    validate_dir.mkdir(parents=True, exist_ok=True)
+    (validate_dir / "json_check.py").write_text(
+        '"""JSON validator."""\nimport json\ndef validate(data): json.loads(data)\n'
+    )
+
+    bdd_context["scripts_dir"] = scripts_dir
+    bdd_context["tmp_path"] = tmp_path
+
+
+@given("the library contains ensembles")
+def library_contains_ensembles(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Set up library with ensembles."""
+    library_dir = tmp_path / "library"
+    ensembles_dir = library_dir / "ensembles"
+    ensembles_dir.mkdir(parents=True, exist_ok=True)
+
+    (ensembles_dir / "lib-ensemble.yaml").write_text(
+        "name: lib-ensemble\ndescription: Library ensemble\n"
+        "agents:\n  - name: agent1\n    model_profile: fast"
+    )
+    bdd_context["library_dir"] = library_dir
+    bdd_context["tmp_path"] = tmp_path
+
+
+@given("the library contains ensembles and scripts")
+def library_contains_both(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Set up library with ensembles and scripts."""
+    library_dir = tmp_path / "library"
+
+    # Ensembles
+    ensembles_dir = library_dir / "ensembles"
+    ensembles_dir.mkdir(parents=True, exist_ok=True)
+    (ensembles_dir / "lib-ensemble.yaml").write_text(
+        "name: lib-ensemble\ndescription: Library ensemble\n"
+        "agents:\n  - name: agent1\n    model_profile: fast"
+    )
+
+    # Scripts
+    scripts_dir = library_dir / "scripts" / "transform"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    (scripts_dir / "lib-script.py").write_text(
+        '"""Library script."""\ndef run(data): return data\n'
+    )
+
+    bdd_context["library_dir"] = library_dir
+    bdd_context["tmp_path"] = tmp_path
+
+
+@given('the library contains an ensemble named "library-ensemble"')
+def library_has_ensemble(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Create a specific library ensemble."""
+    library_dir = tmp_path / "library"
+    ensembles_dir = library_dir / "ensembles"
+    ensembles_dir.mkdir(parents=True, exist_ok=True)
+
+    (ensembles_dir / "library-ensemble.yaml").write_text(
+        "name: library-ensemble\ndescription: Library ensemble to copy\n"
+        "agents:\n  - name: lib-agent\n    model_profile: standard"
+    )
+    bdd_context["library_dir"] = library_dir
+    bdd_context["tmp_path"] = tmp_path
+
+    # Configure local ensembles directory first
+    local_ensembles = tmp_path / ".llm-orc" / "ensembles"
+    local_ensembles.mkdir(parents=True, exist_ok=True)
+    bdd_context["local_ensembles_dir"] = local_ensembles
+    _reconfigure_server(bdd_context, [local_ensembles])
+
+    # Now set library dir on the NEW server (after reconfigure)
+    server = bdd_context.get("mcp_server")
+    if server:
+        server._test_library_dir = library_dir
+
+
+@given('an ensemble named "library-ensemble" exists locally')
+def ensemble_exists_locally(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Create a local ensemble with same name as library."""
+    ensembles_dir = tmp_path / ".llm-orc" / "ensembles"
+    ensembles_dir.mkdir(parents=True, exist_ok=True)
+    (ensembles_dir / "library-ensemble.yaml").write_text(
+        "name: library-ensemble\ndescription: Local version\n"
+        "agents:\n  - name: local-agent\n    model_profile: fast"
+    )
+    bdd_context["local_ensembles_dir"] = ensembles_dir
+
+
+# ============================================================================
+# Phase 2: CRUD Operations - When Steps
+# ============================================================================
+
+
+@when('I call the "create_ensemble" tool with:', target_fixture="create_datatable")
+def call_create_ensemble_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call create_ensemble tool with parameters."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+    bdd_context["create_params"] = params
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("create_ensemble", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "delete_ensemble" tool with:', target_fixture="delete_datatable")
+def call_delete_ensemble_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call delete_ensemble tool with parameters."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+    bdd_context["delete_params"] = params
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("delete_ensemble", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "list_scripts" tool')
+def call_list_scripts_tool_no_params(bdd_context: dict[str, Any]) -> None:
+    """Call list_scripts tool without parameters."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("list_scripts", {})
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "list_scripts" tool with:', target_fixture="scripts_datatable")
+def call_list_scripts_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call list_scripts tool with parameters."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+    bdd_context["scripts_params"] = params
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("list_scripts", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "library_browse" tool with:', target_fixture="browse_datatable")
+def call_library_browse_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call library_browse tool with parameters."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+    bdd_context["browse_params"] = params
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("library_browse", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "library_browse" tool')
+def call_library_browse_tool_no_params(bdd_context: dict[str, Any]) -> None:
+    """Call library_browse tool without parameters."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            return await server.call_tool("library_browse", {})
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+@when('I call the "library_copy" tool with:', target_fixture="copy_datatable")
+def call_library_copy_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
+    """Call library_copy tool with parameters."""
+    if not bdd_context.get("mcp_available"):
+        bdd_context["tool_result"] = None
+        bdd_context["tool_error"] = "MCP server not available"
+        return
+
+    params = _parse_datatable(datatable)
+    bdd_context["copy_params"] = params
+
+    async def _call() -> Any:
+        try:
+            server = bdd_context["mcp_server"]
+            # Ensure library dir is set (may have been reset by reconfigure)
+            if "library_dir" in bdd_context:
+                server._test_library_dir = bdd_context["library_dir"]
+            return await server.call_tool("library_copy", params)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+
+
+# ============================================================================
+# Phase 2: CRUD Operations - Then Steps
+# ============================================================================
+
+
+@then("the ensemble should be created successfully")
+def ensemble_created_successfully(bdd_context: dict[str, Any]) -> None:
+    """Verify ensemble was created."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    assert result.get("created", False) is True, "Ensemble should be created"
+
+
+@then('the ensemble file should exist at ".llm-orc/ensembles/my-new-ensemble.yaml"')
+def ensemble_file_exists(bdd_context: dict[str, Any]) -> None:
+    """Verify ensemble file exists."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    tmp_path = bdd_context.get("tmp_path")
+    if tmp_path:
+        ensemble_file = tmp_path / ".llm-orc" / "ensembles" / "my-new-ensemble.yaml"
+        assert ensemble_file.exists(), f"Ensemble file should exist at {ensemble_file}"
+
+
+@then("the new ensemble should have the same agents as the template")
+def ensemble_has_template_agents(bdd_context: dict[str, Any]) -> None:
+    """Verify new ensemble has same agents as template."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    # The result should indicate agents were copied
+    assert result.get("agents_copied", 0) > 0, "Should have copied agents"
+
+
+@then("the error should indicate ensemble already exists")
+def error_indicates_exists(bdd_context: dict[str, Any]) -> None:
+    """Verify error indicates ensemble exists."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    error = bdd_context.get("tool_error", "")
+    assert "exists" in error.lower() or "already" in error.lower(), (
+        f"Error should indicate exists: {error}"
+    )
+
+
+@then("the ensemble should be deleted successfully")
+def ensemble_deleted_successfully(bdd_context: dict[str, Any]) -> None:
+    """Verify ensemble was deleted."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    assert result.get("deleted", False) is True, "Ensemble should be deleted"
+
+
+@then("the ensemble file should no longer exist")
+def ensemble_file_deleted(bdd_context: dict[str, Any]) -> None:
+    """Verify ensemble file is deleted."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    ensembles_dir = bdd_context.get("local_ensembles_dir")
+    if ensembles_dir:
+        ensemble_file = ensembles_dir / "to-delete.yaml"
+        assert not ensemble_file.exists(), "Ensemble file should be deleted"
+
+
+@then("the error should indicate confirmation required")
+def error_indicates_confirmation(bdd_context: dict[str, Any]) -> None:
+    """Verify error indicates confirmation required."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    error = bdd_context.get("tool_error", "")
+    assert "confirm" in error.lower(), f"Error should mention confirmation: {error}"
+
+
+@then("I should receive a list of scripts")
+def receive_scripts_list(bdd_context: dict[str, Any]) -> None:
+    """Verify scripts list is received."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    assert result is not None, "Should have result"
+    assert "scripts" in result, "Result should have scripts"
+    assert isinstance(result["scripts"], list), "Scripts should be a list"
+
+
+@then("each script should have name, category, and path")
+def scripts_have_metadata(bdd_context: dict[str, Any]) -> None:
+    """Verify script metadata."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    scripts = result.get("scripts", [])
+    for script in scripts:
+        assert "name" in script, "Script should have name"
+        assert "category" in script, "Script should have category"
+        assert "path" in script, "Script should have path"
+
+
+@then('I should receive only scripts in the "transform" category')
+def receive_transform_scripts(bdd_context: dict[str, Any]) -> None:
+    """Verify only transform scripts are returned."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    scripts = result.get("scripts", [])
+    for script in scripts:
+        assert script.get("category") == "transform", (
+            f"Script should be in transform category: {script}"
+        )
+
+
+@then("I should receive a list of library ensembles")
+def receive_library_ensembles(bdd_context: dict[str, Any]) -> None:
+    """Verify library ensembles list is received."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    assert result is not None, "Should have result"
+    assert "ensembles" in result, "Result should have ensembles"
+
+
+@then("each ensemble should have name, description, and path")
+def library_ensembles_have_metadata(bdd_context: dict[str, Any]) -> None:
+    """Verify library ensemble metadata."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    ensembles = result.get("ensembles", [])
+    for ensemble in ensembles:
+        assert "name" in ensemble, "Ensemble should have name"
+        assert "description" in ensemble, "Ensemble should have description"
+        assert "path" in ensemble, "Ensemble should have path"
+
+
+@then("I should receive both ensembles and scripts")
+def receive_ensembles_and_scripts(bdd_context: dict[str, Any]) -> None:
+    """Verify both ensembles and scripts are returned."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    assert result is not None, "Should have result"
+    assert "ensembles" in result, "Result should have ensembles"
+    assert "scripts" in result, "Result should have scripts"
+
+
+@then("the ensemble should be copied to local directory")
+def ensemble_copied_to_local(bdd_context: dict[str, Any]) -> None:
+    """Verify ensemble was copied."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    assert result.get("copied", False) is True, "Ensemble should be copied"
+
+
+@then("the local ensemble file should exist")
+def local_ensemble_file_exists(bdd_context: dict[str, Any]) -> None:
+    """Verify local ensemble file exists."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    destination = result.get("destination")
+    if destination:
+        assert Path(destination).exists(), f"File should exist at {destination}"
+
+
+@then("the error should indicate file already exists")
+def error_indicates_file_exists(bdd_context: dict[str, Any]) -> None:
+    """Verify error indicates file exists."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    error = bdd_context.get("tool_error", "")
+    assert "exists" in error.lower() or "already" in error.lower(), (
+        f"Error should indicate file exists: {error}"
+    )

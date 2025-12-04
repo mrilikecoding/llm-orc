@@ -254,7 +254,7 @@ llm-orc m serve
 - `llm-orc mcp serve --transport http --port 8080` - HTTP/SSE transport
 
 **Tests**:
-- 23 BDD scenarios in `tests/bdd/test_adr_009_mcp_server_plexus_integration.py`
+- 35 BDD scenarios in `tests/bdd/test_adr_009_mcp_server_architecture.py`
 
 ### Files
 

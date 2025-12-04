@@ -41,6 +41,9 @@ class MCPServerV2:
     tools for ensemble management and execution.
     """
 
+    # Optional test override for library directory
+    _test_library_dir: Path | None = None
+
     def __init__(self, config_manager: ConfigurationManager | None = None) -> None:
         """Initialize MCP server.
 
@@ -96,6 +99,11 @@ class MCPServerV2:
 
     def _setup_tools(self) -> None:
         """Register MCP tools with FastMCP."""
+        self._setup_core_tools()
+        self._setup_crud_tools()
+
+    def _setup_core_tools(self) -> None:
+        """Register core MCP tools."""
 
         @self._mcp.tool()
         async def invoke(
@@ -167,6 +175,97 @@ class MCPServerV2:
             result = await self._analyze_execution_tool(
                 {
                     "artifact_id": artifact_id,
+                }
+            )
+            return json.dumps(result, indent=2)
+
+    def _setup_crud_tools(self) -> None:
+        """Register Phase 2 CRUD tools."""
+
+        @self._mcp.tool()
+        async def create_ensemble(
+            name: str,
+            description: str = "",
+            agents: list[dict[str, Any]] | None = None,
+            from_template: str | None = None,
+        ) -> str:
+            """Create a new ensemble from scratch or template.
+
+            Args:
+                name: Name of the new ensemble
+                description: Optional description
+                agents: List of agent configurations
+                from_template: Optional template ensemble to copy from
+            """
+            result = await self._create_ensemble_tool(
+                {
+                    "name": name,
+                    "description": description,
+                    "agents": agents or [],
+                    "from_template": from_template,
+                }
+            )
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def delete_ensemble(ensemble_name: str, confirm: bool = False) -> str:
+            """Delete an ensemble.
+
+            Args:
+                ensemble_name: Name of the ensemble to delete
+                confirm: Must be True to actually delete
+            """
+            result = await self._delete_ensemble_tool(
+                {
+                    "ensemble_name": ensemble_name,
+                    "confirm": confirm,
+                }
+            )
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def list_scripts(category: str | None = None) -> str:
+            """List available primitive scripts.
+
+            Args:
+                category: Optional category to filter by
+            """
+            result = await self._list_scripts_tool({"category": category})
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def library_browse(
+            browse_type: str = "all", category: str | None = None
+        ) -> str:
+            """Browse library ensembles and scripts.
+
+            Args:
+                browse_type: Type to browse (ensembles, scripts, all)
+                category: Optional category filter
+            """
+            result = await self._library_browse_tool(
+                {"type": browse_type, "category": category}
+            )
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def library_copy(
+            source: str,
+            destination: str | None = None,
+            overwrite: bool = False,
+        ) -> str:
+            """Copy from library to local project.
+
+            Args:
+                source: Library path to copy from
+                destination: Optional destination path
+                overwrite: Whether to overwrite existing files
+            """
+            result = await self._library_copy_tool(
+                {
+                    "source": source,
+                    "destination": destination,
+                    "overwrite": overwrite,
                 }
             )
             return json.dumps(result, indent=2)
@@ -608,6 +707,17 @@ class MCPServerV2:
             return await self._update_ensemble_tool(arguments)
         elif name == "analyze_execution":
             return await self._analyze_execution_tool(arguments)
+        # Phase 2 CRUD tools
+        elif name == "create_ensemble":
+            return await self._create_ensemble_tool(arguments)
+        elif name == "delete_ensemble":
+            return await self._delete_ensemble_tool(arguments)
+        elif name == "list_scripts":
+            return await self._list_scripts_tool(arguments)
+        elif name == "library_browse":
+            return await self._library_browse_tool(arguments)
+        elif name == "library_copy":
+            return await self._library_copy_tool(arguments)
         else:
             raise ValueError(f"Tool not found: {name}")
 
@@ -1171,3 +1281,303 @@ class MCPServerV2:
             uvicorn.run(app, host=host, port=port)
         else:
             self._mcp.run()
+
+    # =========================================================================
+    # Phase 2 CRUD Tool Implementations
+    # =========================================================================
+
+    async def _create_ensemble_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Create a new ensemble.
+
+        Args:
+            arguments: Tool arguments including name, description, agents.
+
+        Returns:
+            Creation result.
+        """
+        name = arguments.get("name")
+        description = arguments.get("description", "")
+        agents = arguments.get("agents", [])
+        from_template = arguments.get("from_template")
+
+        if not name:
+            raise ValueError("name is required")
+
+        # Get the local ensembles directory
+        ensemble_dirs = self.config_manager.get_ensembles_dirs()
+        local_dir: Path | None = None
+
+        for dir_path in ensemble_dirs:
+            path = Path(dir_path)
+            if ".llm-orc" in str(path) and "library" not in str(path):
+                local_dir = path
+                break
+
+        if not local_dir:
+            # Use first directory as fallback
+            local_dir = Path(ensemble_dirs[0]) if ensemble_dirs else None
+
+        if not local_dir:
+            raise ValueError("No ensemble directory available")
+
+        # Check if ensemble already exists
+        target_file = local_dir / f"{name}.yaml"
+        if target_file.exists():
+            raise ValueError(f"Ensemble already exists: {name}")
+
+        # If from_template, copy from existing ensemble
+        agents_copied = 0
+        if from_template:
+            template_config = self._find_ensemble_by_name(from_template)
+            if not template_config:
+                raise ValueError(f"Template ensemble not found: {from_template}")
+            # Copy agents from template
+            agents = []
+            for agent in template_config.agents:
+                agents.append(
+                    {
+                        "name": _get_agent_attr(agent, "name"),
+                        "model_profile": _get_agent_attr(agent, "model_profile"),
+                        "depends_on": _get_agent_attr(agent, "depends_on") or [],
+                    }
+                )
+            agents_copied = len(agents)
+            description = description or template_config.description
+
+        # Build YAML content
+        import yaml
+
+        ensemble_data = {
+            "name": name,
+            "description": description,
+            "agents": agents,
+        }
+        yaml_content = yaml.dump(ensemble_data, default_flow_style=False)
+
+        # Write the file
+        local_dir.mkdir(parents=True, exist_ok=True)
+        target_file.write_text(yaml_content)
+
+        return {
+            "created": True,
+            "path": str(target_file),
+            "agents_copied": agents_copied,
+        }
+
+    async def _delete_ensemble_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Delete an ensemble.
+
+        Args:
+            arguments: Tool arguments including ensemble_name, confirm.
+
+        Returns:
+            Deletion result.
+        """
+        ensemble_name = arguments.get("ensemble_name")
+        confirm = arguments.get("confirm", False)
+
+        if not ensemble_name:
+            raise ValueError("ensemble_name is required")
+
+        if not confirm:
+            raise ValueError("Confirmation required to delete ensemble")
+
+        # Find the ensemble file
+        ensemble_dirs = self.config_manager.get_ensembles_dirs()
+        ensemble_file: Path | None = None
+
+        for dir_path in ensemble_dirs:
+            potential_file = Path(dir_path) / f"{ensemble_name}.yaml"
+            if potential_file.exists():
+                ensemble_file = potential_file
+                break
+
+        if not ensemble_file:
+            raise ValueError(f"Ensemble not found: {ensemble_name}")
+
+        # Delete the file
+        ensemble_file.unlink()
+
+        return {
+            "deleted": True,
+            "path": str(ensemble_file),
+        }
+
+    async def _list_scripts_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """List available scripts.
+
+        Args:
+            arguments: Tool arguments including optional category.
+
+        Returns:
+            Scripts list.
+        """
+        category = arguments.get("category")
+        scripts: list[dict[str, Any]] = []
+
+        # Look in local scripts directory
+        scripts_dir = Path.cwd() / ".llm-orc" / "scripts"
+
+        if scripts_dir.exists():
+            for category_dir in scripts_dir.iterdir():
+                if not category_dir.is_dir():
+                    continue
+
+                cat_name = category_dir.name
+                if category and cat_name != category:
+                    continue
+
+                for script_file in category_dir.glob("*.py"):
+                    scripts.append(
+                        {
+                            "name": script_file.stem,
+                            "category": cat_name,
+                            "path": str(script_file),
+                        }
+                    )
+
+        return {"scripts": scripts}
+
+    async def _library_browse_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Browse library items.
+
+        Args:
+            arguments: Tool arguments including type and category.
+
+        Returns:
+            Library items.
+        """
+        browse_type = arguments.get("type", "all")
+        library_dir = self._get_library_dir()
+        result: dict[str, list[dict[str, Any]]] = {}
+
+        if browse_type in ("all", "ensembles"):
+            result["ensembles"] = self._browse_library_ensembles(library_dir)
+
+        if browse_type in ("all", "scripts"):
+            result["scripts"] = self._browse_library_scripts(library_dir)
+
+        return result
+
+    def _browse_library_ensembles(self, library_dir: Path) -> list[dict[str, Any]]:
+        """Browse ensembles in library directory."""
+        ensembles: list[dict[str, Any]] = []
+        ensembles_dir = library_dir / "ensembles"
+        if not ensembles_dir.exists():
+            return ensembles
+
+        for yaml_file in ensembles_dir.glob("**/*.yaml"):
+            try:
+                config = self.ensemble_loader.load_from_file(str(yaml_file))
+                if config:
+                    ensembles.append(
+                        {
+                            "name": config.name,
+                            "description": config.description,
+                            "path": str(yaml_file),
+                        }
+                    )
+            except Exception:
+                continue
+        return ensembles
+
+    def _browse_library_scripts(self, library_dir: Path) -> list[dict[str, Any]]:
+        """Browse scripts in library directory."""
+        scripts: list[dict[str, Any]] = []
+        scripts_dir = library_dir / "scripts"
+        if not scripts_dir.exists():
+            return scripts
+
+        for category_dir in scripts_dir.iterdir():
+            if not category_dir.is_dir():
+                continue
+            for script_file in category_dir.glob("*.py"):
+                scripts.append(
+                    {
+                        "name": script_file.stem,
+                        "category": category_dir.name,
+                        "path": str(script_file),
+                    }
+                )
+        return scripts
+
+    async def _library_copy_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Copy from library to local.
+
+        Args:
+            arguments: Tool arguments including source, destination, overwrite.
+
+        Returns:
+            Copy result.
+        """
+        source = arguments.get("source")
+        destination = arguments.get("destination")
+        overwrite = arguments.get("overwrite", False)
+
+        if not source:
+            raise ValueError("source is required")
+
+        library_dir = self._get_library_dir()
+        source_path = library_dir / source
+
+        # Add .yaml extension if not present
+        if not source_path.exists() and not source.endswith(".yaml"):
+            source_path = library_dir / f"{source}.yaml"
+
+        if not source_path.exists():
+            raise ValueError(f"Source not found in library: {source}")
+
+        # Determine destination
+        if destination:
+            dest_path = Path(destination)
+        else:
+            # Default to local .llm-orc directory
+            ensemble_dirs = self.config_manager.get_ensembles_dirs()
+            local_dir = Path.cwd() / ".llm-orc"
+
+            # Try to find a local (non-library) ensembles dir
+            for dir_path in ensemble_dirs:
+                path = Path(dir_path)
+                if ".llm-orc" in str(path) and "library" not in str(path):
+                    local_dir = path.parent  # Go up from ensembles to .llm-orc
+                    break
+
+            if "ensembles" in str(source_path):
+                dest_path = local_dir / "ensembles" / source_path.name
+            else:
+                dest_path = local_dir / "scripts" / source_path.name
+
+        # Check if exists
+        if dest_path.exists() and not overwrite:
+            raise ValueError(f"File already exists: {dest_path}")
+
+        # Copy the file
+        import shutil
+
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, dest_path)
+
+        return {
+            "copied": True,
+            "source": str(source_path),
+            "destination": str(dest_path),
+        }
+
+    def _get_library_dir(self) -> Path:
+        """Get library directory path.
+
+        Returns:
+            Path to library directory.
+        """
+        # Check for test override
+        if self._test_library_dir is not None:
+            return self._test_library_dir
+
+        # Check for library in ensemble dirs
+        for dir_path in self.config_manager.get_ensembles_dirs():
+            if "library" in str(dir_path):
+                # Return parent of ensembles dir
+                return Path(dir_path).parent
+
+        # Default library location
+        return Path.cwd() / "llm-orchestra-library"

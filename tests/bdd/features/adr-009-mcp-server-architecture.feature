@@ -187,3 +187,115 @@ Feature: MCP Server Architecture
     When I run "llm-orc mcp serve --http --port 8080"
     Then the server should start on HTTP transport
     And it should be accessible at "http://localhost:8080"
+
+  # ==========================================================================
+  # Phase 2: CRUD Operations (ADR-009 Phase 2)
+  # ==========================================================================
+
+  # Tool: Create ensemble
+  @tool @create @phase2
+  Scenario: Create ensemble from scratch
+    Given a local ensembles directory exists
+    When I call the "create_ensemble" tool with:
+      | name        | my-new-ensemble                    |
+      | description | A test ensemble                    |
+      | agents      | [{"name": "agent1", "model_profile": "fast"}] |
+    Then the ensemble should be created successfully
+    And the ensemble file should exist at ".llm-orc/ensembles/my-new-ensemble.yaml"
+
+  @tool @create @phase2
+  Scenario: Create ensemble from template
+    Given an ensemble named "code-review" exists
+    And a local ensembles directory exists
+    When I call the "create_ensemble" tool with:
+      | name          | my-code-review                     |
+      | from_template | code-review                        |
+    Then the ensemble should be created successfully
+    And the new ensemble should have the same agents as the template
+
+  @tool @create @phase2 @error
+  Scenario: Create ensemble with duplicate name fails
+    Given an ensemble named "existing-ensemble" exists
+    When I call the "create_ensemble" tool with:
+      | name        | existing-ensemble                  |
+      | description | Duplicate                          |
+      | agents      | [{"name": "agent1", "model_profile": "fast"}] |
+    Then I should receive a tool error
+    And the error should indicate ensemble already exists
+
+  # Tool: Delete ensemble
+  @tool @delete @phase2
+  Scenario: Delete ensemble with confirmation
+    Given an ensemble named "to-delete" exists
+    When I call the "delete_ensemble" tool with:
+      | ensemble_name | to-delete                          |
+      | confirm       | true                               |
+    Then the ensemble should be deleted successfully
+    And the ensemble file should no longer exist
+
+  @tool @delete @phase2 @error
+  Scenario: Delete ensemble without confirmation fails
+    Given an ensemble named "protected" exists
+    When I call the "delete_ensemble" tool with:
+      | ensemble_name | protected                          |
+      | confirm       | false                              |
+    Then I should receive a tool error
+    And the error should indicate confirmation required
+
+  @tool @delete @phase2 @error
+  Scenario: Delete non-existent ensemble fails
+    When I call the "delete_ensemble" tool with:
+      | ensemble_name | non-existent                       |
+      | confirm       | true                               |
+    Then I should receive a tool error
+    And the error should indicate ensemble not found
+
+  # Tool: List scripts
+  @tool @scripts @phase2
+  Scenario: List all available scripts
+    Given scripts exist in the scripts directory
+    When I call the "list_scripts" tool
+    Then I should receive a list of scripts
+    And each script should have name, category, and path
+
+  @tool @scripts @phase2
+  Scenario: List scripts by category
+    Given scripts exist in multiple categories
+    When I call the "list_scripts" tool with:
+      | category | transform                          |
+    Then I should receive only scripts in the "transform" category
+
+  # Tool: Library browse
+  @tool @library @phase2
+  Scenario: Browse library ensembles
+    Given the library contains ensembles
+    When I call the "library_browse" tool with:
+      | type | ensembles                          |
+    Then I should receive a list of library ensembles
+    And each ensemble should have name, description, and path
+
+  @tool @library @phase2
+  Scenario: Browse all library items
+    Given the library contains ensembles and scripts
+    When I call the "library_browse" tool
+    Then I should receive both ensembles and scripts
+
+  # Tool: Library copy
+  @tool @library @phase2
+  Scenario: Copy ensemble from library to local
+    Given the library contains an ensemble named "library-ensemble"
+    And a local ensembles directory exists
+    When I call the "library_copy" tool with:
+      | source | ensembles/library-ensemble         |
+    Then the ensemble should be copied to local directory
+    And the local ensemble file should exist
+
+  @tool @library @phase2 @error
+  Scenario: Copy from library fails if already exists
+    Given the library contains an ensemble named "library-ensemble"
+    And an ensemble named "library-ensemble" exists locally
+    When I call the "library_copy" tool with:
+      | source    | ensembles/library-ensemble         |
+      | overwrite | false                              |
+    Then I should receive a tool error
+    And the error should indicate file already exists
