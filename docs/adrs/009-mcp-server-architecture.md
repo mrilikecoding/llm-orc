@@ -261,26 +261,36 @@ llm-orc m serve
 - `llm-orc mcp serve --transport http --port 8080` - HTTP/SSE transport
 
 **Tests**:
-- 47 BDD scenarios in `tests/bdd/test_adr_009_mcp_server_architecture.py`
+- 49 BDD scenarios in `tests/bdd/test_adr_009_mcp_server_architecture.py`
 - 31 unit tests in `tests/unit/mcp_server/test_server_v2.py`
 
-### Phase 2 Medium Priority: In Progress
+### Phase 2 Medium Priority: Complete (2025-12-04)
 
-**Profile CRUD** (implementation complete, needs `get_profiles_dirs` in ConfigurationManager):
+**Profile CRUD**:
 - `list_profiles` - List profiles with optional provider filter
 - `create_profile` - Create new model profiles
 - `update_profile` - Update existing profiles
 - `delete_profile` - Delete profiles with confirmation
 
-**Artifact Management** (implementation complete, needs lint fixes):
+**Artifact Management**:
 - `delete_artifact` - Delete individual artifacts
 - `cleanup_artifacts` - Cleanup old artifacts with dry_run support
 
-**Remaining Work**:
-1. Add `get_profiles_dirs()` method to `ConfigurationManager`
-2. Fix duplicate step definition in test file
-3. Reduce complexity in `_setup_crud_tools`, `call_tool`, `_create_profile_tool`
-4. Fix line length issues in test assertions
+**Infrastructure Improvements**:
+- Added `get_profiles_dirs()` method to `ConfigurationManager`
+- Refactored `_setup_crud_tools` into separate methods to reduce complexity
+- Used dispatch dict pattern in `call_tool` to reduce complexity
+
+### Phase 2 Low Priority: Planned
+
+**Script Management** (not yet implemented):
+- `test_script` - Test a script with sample input
+- `create_script` - Create new primitive scripts
+- `delete_script` - Delete scripts
+
+**Library Extras** (not yet implemented):
+- `library_search` - Search library content
+- `library_info` - Get detailed library info
 
 ### Files
 
