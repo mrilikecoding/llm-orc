@@ -1600,5 +1600,84 @@ class TestHelpTool:
         result = await server.call_tool("get_help", {})
 
         tools = result["tools"]
+        assert "context_management" in tools
         assert "core_execution" in tools
         assert "provider_discovery" in tools
+
+
+class TestSetProjectTool:
+    """Tests for set_project tool."""
+
+    @pytest.mark.asyncio
+    async def test_set_project_returns_active_path(
+        self, mock_config_manager: Any, tmp_path: Path
+    ) -> None:
+        """set_project returns the active project path."""
+        server = MCPServerV2(config_manager=mock_config_manager)
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+
+        result = await server.call_tool("set_project", {"path": str(project_dir)})
+
+        assert result["status"] == "ok"
+        assert result["project_path"] == str(project_dir)
+
+    @pytest.mark.asyncio
+    async def test_set_project_updates_project_path(
+        self, mock_config_manager: Any, tmp_path: Path
+    ) -> None:
+        """set_project updates the server's project path."""
+        server = MCPServerV2(config_manager=mock_config_manager)
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+
+        await server.call_tool("set_project", {"path": str(project_dir)})
+
+        assert server.project_path == project_dir
+
+    @pytest.mark.asyncio
+    async def test_set_project_recreates_config_manager(
+        self, mock_config_manager: Any, tmp_path: Path
+    ) -> None:
+        """set_project creates a new config manager for the project."""
+        server = MCPServerV2(config_manager=mock_config_manager)
+        original_config = server.config_manager
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+        (project_dir / ".llm-orc").mkdir()
+
+        await server.call_tool("set_project", {"path": str(project_dir)})
+
+        assert server.config_manager is not original_config
+
+    @pytest.mark.asyncio
+    async def test_set_project_rejects_nonexistent_path(
+        self, mock_config_manager: Any, tmp_path: Path
+    ) -> None:
+        """set_project rejects non-existent paths."""
+        server = MCPServerV2(config_manager=mock_config_manager)
+        nonexistent = tmp_path / "does-not-exist"
+
+        result = await server.call_tool("set_project", {"path": str(nonexistent)})
+
+        assert result["status"] == "error"
+        assert "does not exist" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_set_project_accepts_path_without_llm_orc_dir(
+        self, mock_config_manager: Any, tmp_path: Path
+    ) -> None:
+        """set_project accepts paths without .llm-orc (uses global only)."""
+        server = MCPServerV2(config_manager=mock_config_manager)
+        project_dir = tmp_path / "plain-project"
+        project_dir.mkdir()
+
+        result = await server.call_tool("set_project", {"path": str(project_dir)})
+
+        assert result["status"] == "ok"
+        assert "no .llm-orc directory" in result.get("note", "").lower()
+
+    @pytest.mark.asyncio
+    async def test_project_path_starts_as_none(self, server: MCPServerV2) -> None:
+        """project_path is None by default."""
+        assert server.project_path is None
