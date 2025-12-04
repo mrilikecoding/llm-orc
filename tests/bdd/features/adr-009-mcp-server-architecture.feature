@@ -541,3 +541,67 @@ Feature: MCP Server Architecture
     When I call the "library_info" tool
     Then I should receive library metadata
     And the metadata should include path and counts
+
+  # =============================================================================
+  # Phase 3: Provider & Model Discovery
+  # =============================================================================
+
+  # Tool: Get provider status
+  @tool @provider @phase3
+  Scenario: Get provider status with Ollama available
+    Given Ollama is running locally with models
+    When I call the "get_provider_status" tool
+    Then I should receive provider status
+    And the status should show Ollama as available
+    And the status should include available Ollama models
+
+  @tool @provider @phase3
+  Scenario: Get provider status when Ollama is unavailable
+    Given Ollama is not running
+    When I call the "get_provider_status" tool
+    Then I should receive provider status
+    And the status should show Ollama as unavailable
+
+  @tool @provider @phase3
+  Scenario: Get provider status shows cloud provider configuration
+    Given authentication is configured for some providers
+    When I call the "get_provider_status" tool
+    Then I should receive provider status
+    And the status should indicate which cloud providers are configured
+
+  # Tool: Check ensemble runnable
+  @tool @runnable @phase3
+  Scenario: Check runnable ensemble with all providers available
+    Given an ensemble using only Ollama profiles exists
+    And Ollama is running locally with the required models
+    When I call the "check_ensemble_runnable" tool with:
+      | ensemble_name | validate-ollama |
+    Then I should receive runnable status
+    And the ensemble should be marked as runnable
+    And all agents should have status "available"
+
+  @tool @runnable @phase3
+  Scenario: Check ensemble with missing profile
+    Given an ensemble using a non-existent profile exists
+    When I call the "check_ensemble_runnable" tool with:
+      | ensemble_name | security-review |
+    Then I should receive runnable status
+    And the ensemble should be marked as not runnable
+    And at least one agent should have status "missing_profile"
+
+  @tool @runnable @phase3
+  Scenario: Check ensemble with unavailable provider
+    Given an ensemble using a cloud provider exists
+    And the cloud provider is not configured
+    When I call the "check_ensemble_runnable" tool with:
+      | ensemble_name | startup-advisory-board |
+    Then I should receive runnable status
+    And the ensemble should be marked as not runnable
+    And affected agents should have local alternatives suggested
+
+  @tool @runnable @phase3
+  Scenario: Check non-existent ensemble
+    Given no ensemble named "non-existent" exists
+    When I call the "check_ensemble_runnable" tool with:
+      | ensemble_name | non-existent |
+    Then I should receive an error indicating ensemble not found

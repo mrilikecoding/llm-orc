@@ -483,10 +483,66 @@ tools:
 
 ### Implementation Status
 
-All tools are implemented:
+Phase 2 tools are implemented:
 - **High Priority** ✓: `create_ensemble`, `delete_ensemble`, `list_scripts`, `library_browse`, `library_copy`
 - **Medium Priority** ✓: Profile CRUD (`list_profiles`, `create_profile`, `update_profile`, `delete_profile`), `delete_artifact`, `cleanup_artifacts`
 - **Low Priority** ✓: `get_script`, `test_script`, `create_script`, `delete_script`, `library_search`, `library_info`
+
+## Phase 3: Provider & Model Discovery
+
+Phase 3 focuses on helping users understand what models are available and adapt ensembles to work with local models. This supports the local-first philosophy where users prefer Ollama over cloud providers.
+
+### Use Case
+
+A user sees an ensemble configured to use Anthropic but wants to run it locally:
+1. `get_provider_status` → See available Ollama models (llama3, mistral, etc.)
+2. `validate_ensemble("security-review")` → See it needs "default" profile (not found)
+3. `check_ensemble_runnable("security-review")` → Get suggestions for local alternatives
+4. `update_ensemble("security-review", ...)` → Swap cloud profiles for local ones
+
+### Tools
+
+```yaml
+tools:
+  - name: get_provider_status
+    description: Show which providers are configured and available models
+    inputSchema: {}
+    returns:
+      providers:
+        ollama:
+          available: boolean
+          models: string[]  # From Ollama API /api/tags
+        anthropic-api:
+          available: boolean
+          reason: string  # "configured" or "not configured"
+        anthropic-claude-pro-max:
+          available: boolean
+          reason: string  # "oauth configured" or "no oauth tokens"
+        google-gemini:
+          available: boolean
+          reason: string
+
+  - name: check_ensemble_runnable
+    description: Check if ensemble can run with current providers, suggest alternatives
+    inputSchema:
+      ensemble_name: string (required)
+    returns:
+      ensemble: string
+      runnable: boolean
+      agents:
+        - name: string
+          profile: string
+          provider: string
+          status: "available" | "missing_profile" | "provider_unavailable"
+          alternatives: string[]  # Local profile suggestions
+```
+
+### Implementation Notes
+
+- Query Ollama API (`http://localhost:11434/api/tags`) for available models
+- Check auth configuration for cloud providers (without exposing credentials)
+- Cross-reference ensemble profiles against available providers
+- Suggest local alternatives based on model capability matching
 
 ## Claude Code MCP Validation Runbook
 

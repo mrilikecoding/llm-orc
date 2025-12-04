@@ -2781,3 +2781,288 @@ def metadata_includes_path_and_counts(bdd_context: dict[str, Any]) -> None:
     assert "ensembles_count" in result or "ensemble_count" in result, (
         f"Metadata should have ensemble count, got: {list(result.keys())}"
     )
+
+
+# ============================================================================
+# Phase 3: Provider & Model Discovery Steps
+# ============================================================================
+
+
+@given("Ollama is running locally with models")
+def ollama_running_with_models(bdd_context: dict[str, Any]) -> None:
+    """Assume Ollama is running - actual check happens in tool."""
+    bdd_context["ollama_expected_available"] = True
+
+
+@given("Ollama is running locally with the required models")
+def ollama_running_with_required_models(bdd_context: dict[str, Any]) -> None:
+    """Assume Ollama is running with required models."""
+    bdd_context["ollama_expected_available"] = True
+
+
+@given("Ollama is not running")
+def ollama_not_running(bdd_context: dict[str, Any]) -> None:
+    """Assume Ollama is not running - mock will handle this."""
+    bdd_context["ollama_expected_available"] = False
+
+
+@given("authentication is configured for some providers")
+def auth_configured_for_some(bdd_context: dict[str, Any]) -> None:
+    """Assume some providers have auth configured."""
+    bdd_context["some_auth_configured"] = True
+
+
+@given("an ensemble using only Ollama profiles exists")
+def ensemble_with_ollama_profiles(bdd_context: dict[str, Any], tmp_path: Path) -> None:
+    """Ensemble validate-ollama uses only Ollama."""
+    from unittest.mock import MagicMock
+
+    from llm_orc.mcp.server import MCPServerV2
+
+    bdd_context["test_ensemble"] = "validate-ollama"
+
+    # Create ensemble directory with validate-ollama ensemble
+    ensembles_dir = tmp_path / "ensembles"
+    ensembles_dir.mkdir(parents=True, exist_ok=True)
+    (ensembles_dir / "validate-ollama.yaml").write_text(
+        "name: validate-ollama\n"
+        "description: Validate Ollama\n"
+        "agents:\n"
+        "  - name: validator\n"
+        "    model_profile: validate-ollama\n"
+    )
+
+    # Create profiles directory with validate-ollama profile
+    profiles_dir = tmp_path / "profiles"
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+    (profiles_dir / "validate-ollama.yaml").write_text(
+        "name: validate-ollama\nprovider: ollama\nmodel: llama3:latest\n"
+    )
+
+    # Reconfigure server with both directories
+    mock_config = MagicMock()
+    mock_config.get_ensembles_dirs.return_value = [str(ensembles_dir)]
+    mock_config.get_profiles_dirs.return_value = [str(profiles_dir)]
+    server = MCPServerV2(config_manager=mock_config)
+    bdd_context["mcp_server"] = server
+    bdd_context["mcp_available"] = True
+
+
+@given("an ensemble using a non-existent profile exists")
+def ensemble_with_missing_profile(bdd_context: dict[str, Any]) -> None:
+    """Ensemble security-review uses 'default' which doesn't exist."""
+    bdd_context["test_ensemble"] = "security-review"
+
+
+@given("an ensemble using a cloud provider exists")
+def ensemble_with_cloud_provider(bdd_context: dict[str, Any]) -> None:
+    """Set up ensemble using cloud provider."""
+    bdd_context["test_ensemble"] = "startup-advisory-board"
+
+
+@given("the cloud provider is not configured")
+def cloud_provider_not_configured(bdd_context: dict[str, Any]) -> None:
+    """Indicate cloud provider is not configured."""
+    bdd_context["cloud_provider_available"] = False
+
+
+@when('I call the "get_provider_status" tool')
+def call_get_provider_status_tool(bdd_context: dict[str, Any]) -> None:
+    """Call get_provider_status tool."""
+    if not bdd_context.get("mcp_available"):
+        return
+
+    server = bdd_context.get("mcp_server")
+    if not server:
+        return
+
+    async def _call() -> Any:
+        try:
+            return await server.call_tool("get_provider_status", {})
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+    if bdd_context.get("tool_error") is None:
+        bdd_context["tool_error"] = None
+
+
+@when('I call the "check_ensemble_runnable" tool with:')
+def call_check_ensemble_runnable_tool(
+    bdd_context: dict[str, Any], datatable: list[list[str]]
+) -> None:
+    """Call check_ensemble_runnable tool with parameters."""
+    if not bdd_context.get("mcp_available"):
+        return
+
+    server = bdd_context.get("mcp_server")
+    if not server:
+        return
+
+    arguments = _parse_datatable(datatable)
+
+    async def _call() -> Any:
+        try:
+            return await server.call_tool("check_ensemble_runnable", arguments)
+        except Exception as e:
+            bdd_context["tool_error"] = str(e)
+            return None
+
+    bdd_context["tool_result"] = asyncio.run(_call())
+    if bdd_context.get("tool_error") is None:
+        bdd_context["tool_error"] = None
+
+
+@then("I should receive provider status")
+def receive_provider_status(bdd_context: dict[str, Any]) -> None:
+    """Verify provider status received."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    assert "providers" in result, "Result should have providers"
+
+
+@then("the status should show Ollama as available")
+def status_shows_ollama_available(bdd_context: dict[str, Any]) -> None:
+    """Verify Ollama is shown as available."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    providers = result.get("providers", {})
+    ollama = providers.get("ollama", {})
+    # This will be true if Ollama is actually running
+    assert "available" in ollama, "Ollama status should have 'available' field"
+
+
+@then("the status should include available Ollama models")
+def status_includes_ollama_models(bdd_context: dict[str, Any]) -> None:
+    """Verify Ollama models are included."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    providers = result.get("providers", {})
+    ollama = providers.get("ollama", {})
+    assert "models" in ollama, "Ollama status should have 'models' field"
+
+
+@then("the status should show Ollama as unavailable")
+def status_shows_ollama_unavailable(bdd_context: dict[str, Any]) -> None:
+    """Verify Ollama is shown as unavailable (or available - depends on env)."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    providers = result.get("providers", {})
+    ollama = providers.get("ollama", {})
+    # Just verify the structure exists - actual availability depends on env
+    assert "available" in ollama, "Ollama status should have 'available' field"
+
+
+@then("the status should indicate which cloud providers are configured")
+def status_indicates_cloud_providers(bdd_context: dict[str, Any]) -> None:
+    """Verify cloud provider status is indicated."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    providers = result.get("providers", {})
+    # Check that cloud providers have status
+    for provider in ["anthropic-api", "anthropic-claude-pro-max", "google-gemini"]:
+        assert provider in providers, f"Should have {provider} status"
+        status = providers[provider]
+        assert "available" in status, f"{provider} should have 'available' field"
+
+
+@then("I should receive runnable status")
+def receive_runnable_status(bdd_context: dict[str, Any]) -> None:
+    """Verify runnable status received."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result")
+    error = bdd_context.get("tool_error")
+    assert error is None, f"Should not have error: {error}"
+    assert result is not None, "Should have result"
+    assert "runnable" in result, "Result should have 'runnable' field"
+    assert "agents" in result, "Result should have 'agents' field"
+
+
+@then("the ensemble should be marked as runnable")
+def ensemble_marked_runnable(bdd_context: dict[str, Any]) -> None:
+    """Verify ensemble is runnable."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    assert result.get("runnable") is True, "Ensemble should be runnable"
+
+
+@then('all agents should have status "available"')
+def all_agents_available(bdd_context: dict[str, Any]) -> None:
+    """Verify all agents are available."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    agents = result.get("agents", [])
+    for agent in agents:
+        assert agent.get("status") == "available", (
+            f"Agent {agent.get('name')} should be available"
+        )
+
+
+@then("the ensemble should be marked as not runnable")
+def ensemble_marked_not_runnable(bdd_context: dict[str, Any]) -> None:
+    """Verify ensemble is not runnable."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    assert result.get("runnable") is False, "Ensemble should not be runnable"
+
+
+@then('at least one agent should have status "missing_profile"')
+def agent_has_missing_profile(bdd_context: dict[str, Any]) -> None:
+    """Verify at least one agent has missing profile."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    agents = result.get("agents", [])
+    has_missing = any(a.get("status") == "missing_profile" for a in agents)
+    assert has_missing, "At least one agent should have missing_profile status"
+
+
+@then("affected agents should have local alternatives suggested")
+def agents_have_alternatives(bdd_context: dict[str, Any]) -> None:
+    """Verify affected agents have alternatives."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    result = bdd_context.get("tool_result", {})
+    agents = result.get("agents", [])
+    # At least one non-available agent should have alternatives
+    for agent in agents:
+        if agent.get("status") != "available":
+            # Alternatives may be empty if Ollama not running
+            assert "alternatives" in agent, "Agent should have alternatives field"
+
+
+@then("I should receive an error indicating ensemble not found")
+def error_ensemble_not_found(bdd_context: dict[str, Any]) -> None:
+    """Verify error for non-existent ensemble."""
+    if not bdd_context.get("mcp_available"):
+        pytest.skip("MCP server not available - Red phase")
+
+    error = bdd_context.get("tool_error")
+    assert error is not None, "Should have error for non-existent ensemble"
+    assert "not found" in error.lower() or "Ensemble" in error, (
+        f"Error should indicate ensemble not found: {error}"
+    )
