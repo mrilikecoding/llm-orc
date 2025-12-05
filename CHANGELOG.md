@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3] - 2025-12-04
+
+### Fixed
+- Script agents now receive upstream dependency results via JSON stdin
+  - DependencyResolver builds proper ScriptAgentInput JSON for script agents
+  - Inline scripts receive dependencies via stdin (not just environment variables)
+  - File-based scripts receive dependencies via both stdin and environment variables
+  - Fixes mixed script→LLM→script dependency chains in ensembles
+
 ## [0.12.2] - 2025-12-04
 
 ### Fixed
