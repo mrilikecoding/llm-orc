@@ -51,9 +51,11 @@ async def test_script(
 ) -> dict[str, Any]:
     """Test a script with sample input."""
     mcp = get_mcp_server()
-    result = await mcp._test_script_tool({
-        "name": name,
-        "category": category,
-        "input": request.input,
-    })
+    result = await mcp._test_script_tool(
+        {
+            "name": name,
+            "category": category,
+            "input": request.input,
+        }
+    )
     return result

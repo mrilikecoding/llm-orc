@@ -53,10 +53,12 @@ async def get_artifact(ensemble: str, artifact_id: str) -> dict[str, Any]:
 async def delete_artifact(ensemble: str, artifact_id: str) -> dict[str, Any]:
     """Delete a specific artifact."""
     mcp = get_mcp_server()
-    result = await mcp._delete_artifact_tool({
-        "artifact_id": f"{ensemble}/{artifact_id}",
-        "confirm": True,
-    })
+    result = await mcp._delete_artifact_tool(
+        {
+            "artifact_id": f"{ensemble}/{artifact_id}",
+            "confirm": True,
+        }
+    )
     return result
 
 

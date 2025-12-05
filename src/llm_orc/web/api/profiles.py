@@ -45,13 +45,15 @@ async def list_profiles() -> list[dict[str, Any]]:
 async def create_profile(request: CreateProfileRequest) -> dict[str, Any]:
     """Create a new model profile."""
     mcp = get_mcp_server()
-    result = await mcp._create_profile_tool({
-        "name": request.name,
-        "provider": request.provider,
-        "model": request.model,
-        "system_prompt": request.system_prompt,
-        "timeout_seconds": request.timeout_seconds,
-    })
+    result = await mcp._create_profile_tool(
+        {
+            "name": request.name,
+            "provider": request.provider,
+            "model": request.model,
+            "system_prompt": request.system_prompt,
+            "timeout_seconds": request.timeout_seconds,
+        }
+    )
     return result
 
 
