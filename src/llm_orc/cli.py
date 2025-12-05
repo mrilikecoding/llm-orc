@@ -335,6 +335,56 @@ def mcp() -> None:
     pass
 
 
+@cli.command()
+@click.option("--port", default=8765, help="Port to run the web server on")
+@click.option(
+    "--host",
+    default="127.0.0.1",
+    help="Host to bind to (use 0.0.0.0 for network access)",
+)
+@click.option("--open", "open_browser", is_flag=True, help="Open browser automatically")
+def web(port: int, host: str, open_browser: bool) -> None:
+    """Start the web UI server for ensemble management.
+
+    Provides a browser-based interface for:
+    - Browsing and managing ensembles
+    - Executing ensembles with real-time output
+    - Viewing execution artifacts and metrics
+    - Managing model profiles and scripts
+    """
+    import webbrowser
+
+    import uvicorn
+
+    from llm_orc.web.server import create_app
+
+    url = f"http://{host}:{port}"
+
+    if host == "0.0.0.0":
+        click.echo(
+            "WARNING: Binding to 0.0.0.0 exposes the server to your network",
+            err=True,
+        )
+
+    click.echo(f"Starting llm-orc web UI at {url}", err=True)
+    click.echo("Press Ctrl+C to stop", err=True)
+
+    if open_browser:
+        # Open browser after a short delay to let server start
+        import threading
+
+        def open_browser_delayed() -> None:
+            import time
+
+            time.sleep(1)
+            webbrowser.open(url)
+
+        threading.Thread(target=open_browser_delayed, daemon=True).start()
+
+    app = create_app()
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
 @mcp.command("serve")
 @click.option(
     "--transport",
@@ -643,6 +693,7 @@ cli.add_command(list_ensembles, name="le")
 cli.add_command(list_profiles, name="lp")
 cli.add_command(serve, name="s")
 cli.add_command(mcp, name="m")
+cli.add_command(web, name="w")
 cli.add_command(help_command, name="help")
 cli.add_command(help_command, name="h")
 
