@@ -1,5 +1,6 @@
 """Dependency resolution for agent execution chains."""
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -24,31 +25,56 @@ class DependencyResolver:
 
         Returns a dictionary mapping agent names to their enhanced input.
         Each agent gets only the results from their specific dependencies.
+
+        For script agents (those with 'script' key), returns JSON-formatted
+        input with a 'dependencies' dict containing upstream results.
+
+        For LLM agents, returns text-formatted input with natural language
+        context about previous agent results.
         """
         enhanced_inputs = {}
 
         for agent_config in dependent_agents:
             agent_name = agent_config["name"]
             dependencies = agent_config.get("depends_on", [])
+            is_script_agent = "script" in agent_config
 
             if not dependencies:
-                enhanced_inputs[agent_name] = base_input
+                if is_script_agent:
+                    enhanced_inputs[agent_name] = self._build_script_input(
+                        agent_name, base_input, {}
+                    )
+                else:
+                    enhanced_inputs[agent_name] = base_input
                 continue
 
-            dependency_results = self._extract_successful_dependency_results(
+            # Extract dependency results as dict for script agents
+            dep_results_dict = self._extract_dependency_results_as_dict(
                 dependencies, results_dict
             )
 
-            if dependency_results:
-                enhanced_inputs[agent_name] = (
-                    self._build_enhanced_input_with_dependencies(
-                        agent_name, base_input, dependency_results
-                    )
+            if is_script_agent:
+                # Script agents get JSON with dependencies dict
+                enhanced_inputs[agent_name] = self._build_script_input(
+                    agent_name, base_input, dep_results_dict
                 )
             else:
-                enhanced_inputs[agent_name] = (
-                    self._build_enhanced_input_no_dependencies(agent_name, base_input)
+                # LLM agents get text format
+                dependency_results = self._extract_successful_dependency_results(
+                    dependencies, results_dict
                 )
+                if dependency_results:
+                    enhanced_inputs[agent_name] = (
+                        self._build_enhanced_input_with_dependencies(
+                            agent_name, base_input, dependency_results
+                        )
+                    )
+                else:
+                    enhanced_inputs[agent_name] = (
+                        self._build_enhanced_input_no_dependencies(
+                            agent_name, base_input
+                        )
+                    )
 
         return enhanced_inputs
 
@@ -77,6 +103,48 @@ class DependencyResolver:
                 dependency_results.append(f"Agent {dep_name}{role_text}:\n{response}")
 
         return dependency_results
+
+    def _extract_dependency_results_as_dict(
+        self, dependencies: list[str], results_dict: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Extract successful dependency results as a dict.
+
+        Args:
+            dependencies: List of dependency agent names
+            results_dict: Dictionary of previous agent results
+
+        Returns:
+            Dictionary mapping dependency names to their results
+        """
+        dep_results = {}
+        for dep_name in dependencies:
+            if (
+                dep_name in results_dict
+                and results_dict[dep_name].get("status") == "success"
+            ):
+                dep_results[dep_name] = results_dict[dep_name]
+        return dep_results
+
+    def _build_script_input(
+        self, agent_name: str, base_input: str, dependencies: dict[str, Any]
+    ) -> str:
+        """Build JSON-formatted input for script agents.
+
+        Args:
+            agent_name: Name of the script agent
+            base_input: Original input text
+            dependencies: Dict of dependency results
+
+        Returns:
+            JSON string conforming to ScriptAgentInput schema
+        """
+        script_input = {
+            "agent_name": agent_name,
+            "input_data": base_input,
+            "context": {},
+            "dependencies": dependencies,
+        }
+        return json.dumps(script_input)
 
     def _build_enhanced_input_with_dependencies(
         self, agent_name: str, base_input: str, dependency_results: list[str]

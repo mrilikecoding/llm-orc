@@ -406,3 +406,105 @@ class TestInputEnhancer:
 
         # Then
         assert result == {}
+
+    def test_enhance_input_script_agent_gets_json_dependencies(self) -> None:
+        """Test script agents receive JSON-formatted input with dependencies."""
+        import json
+
+        # Given
+        enhancer = InputEnhancer()
+        base_input = "Process this data"
+        dependent_agents = [
+            {
+                "name": "aggregator",
+                "script": "aggregator.py",
+                "depends_on": ["agent_a"],
+            },
+        ]
+        results_dict = {
+            "agent_a": {"status": "success", "response": "Analysis result from agent A"}
+        }
+
+        # When
+        result = enhancer.enhance_input_with_dependencies(
+            base_input, cast(list[dict[str, Any]], dependent_agents), results_dict
+        )
+
+        # Then - script agent should get JSON with dependencies dict
+        assert "aggregator" in result
+        enhanced_input = result["aggregator"]
+
+        # Parse as JSON
+        parsed = json.loads(enhanced_input)
+        assert parsed["agent_name"] == "aggregator"
+        assert parsed["input_data"] == "Process this data"
+        assert "dependencies" in parsed
+        assert "agent_a" in parsed["dependencies"]
+        dep_response = parsed["dependencies"]["agent_a"]["response"]
+        assert dep_response == "Analysis result from agent A"
+
+    def test_enhance_input_script_agent_with_multiple_dependencies(self) -> None:
+        """Test script agent with multiple dependencies gets all in JSON."""
+        import json
+
+        # Given
+        enhancer = InputEnhancer()
+        base_input = "Combine results"
+        dependent_agents = [
+            {
+                "name": "combiner",
+                "script": "combine.py",
+                "depends_on": ["extractor_1", "extractor_2"],
+            },
+        ]
+        results_dict = {
+            "extractor_1": {"status": "success", "response": "Result 1"},
+            "extractor_2": {"status": "success", "response": "Result 2"},
+        }
+
+        # When
+        result = enhancer.enhance_input_with_dependencies(
+            base_input, cast(list[dict[str, Any]], dependent_agents), results_dict
+        )
+
+        # Then
+        parsed = json.loads(result["combiner"])
+        assert len(parsed["dependencies"]) == 2
+        assert parsed["dependencies"]["extractor_1"]["response"] == "Result 1"
+        assert parsed["dependencies"]["extractor_2"]["response"] == "Result 2"
+
+    def test_enhance_input_mixed_script_and_llm_agents(self) -> None:
+        """Test mixed ensemble with both script and LLM agents."""
+        import json
+
+        # Given
+        enhancer = InputEnhancer()
+        base_input = "Analyze data"
+        dependent_agents = [
+            {
+                "name": "script_agent",
+                "script": "process.py",
+                "depends_on": ["source"],
+            },
+            {
+                "name": "llm_agent",
+                "model_profile": "ollama-llama3",
+                "depends_on": ["source"],
+            },
+        ]
+        results_dict = {"source": {"status": "success", "response": "Source data here"}}
+
+        # When
+        result = enhancer.enhance_input_with_dependencies(
+            base_input, cast(list[dict[str, Any]], dependent_agents), results_dict
+        )
+
+        # Then - script agent gets JSON
+        script_input = result["script_agent"]
+        parsed = json.loads(script_input)
+        assert parsed["dependencies"]["source"]["response"] == "Source data here"
+
+        # LLM agent gets text format
+        llm_input = result["llm_agent"]
+        assert "You are llm_agent" in llm_input
+        assert "Previous Agent Results" in llm_input

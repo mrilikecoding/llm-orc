@@ -222,8 +222,13 @@ class EnhancedScriptAgent(ScriptAgent):
                 result = await self._execute_script_file_with_schema_json(
                     resolved_script, input_json
                 )
+            elif resolved_script:
+                # Inline script - execute with ScriptAgentInput JSON via stdin
+                result = await self._execute_inline_script_with_schema_json(
+                    resolved_script, input_json
+                )
             else:
-                # Fallback to regular execution for inline scripts
+                # No script defined - fallback to regular execution
                 schema_result = await self.execute_with_schema(input_schema)
                 return json.dumps(schema_result.model_dump())
 
@@ -256,13 +261,39 @@ class EnhancedScriptAgent(ScriptAgent):
         # Prepare environment with ScriptAgentInput JSON directly
         env = self._env_manager.prepare_environment(input_json, direct_json=True)
 
-        # Execute script with ScriptAgentInput JSON in environment
+        # Execute script with ScriptAgentInput JSON in environment AND stdin
         result = subprocess.run(  # nosec B603
             interpreter + [script_path],
             capture_output=True,
             text=True,
             timeout=self.timeout,
             env=env,
+            input=input_json,  # Also pass via stdin for scripts that read from stdin
+            check=True,
+        )
+
+        return result.stdout.strip()
+
+    async def _execute_inline_script_with_schema_json(
+        self, script_content: str, input_json: str
+    ) -> str:
+        """Execute inline script with ScriptAgentInput JSON via stdin.
+
+        Args:
+            script_content: Inline script command to execute
+            input_json: ScriptAgentInput JSON string
+
+        Returns:
+            Script output (stdout)
+        """
+        # Execute inline script with JSON input via stdin
+        result = subprocess.run(  # nosec B602
+            script_content,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=self.timeout,
+            input=input_json,
             check=True,
         )
 

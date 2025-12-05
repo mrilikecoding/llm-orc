@@ -468,6 +468,90 @@ class TestDependencyResolver:
 
         assert enhanced_input == "You are test_agent. Please respond to: test input"
 
+    def test_enhance_input_script_agent_gets_json_with_dependencies(self) -> None:
+        """Test script agents receive JSON-formatted input with dependencies."""
+        import json
+
+        resolver, mock_role_resolver = self.setup_resolver()
+        mock_role_resolver.return_value = "Test Role"
+
+        agents = [
+            {
+                "name": "aggregator",
+                "script": "aggregator.py",
+                "depends_on": ["extractor"],
+            },
+        ]
+        results_dict = {
+            "extractor": {"status": "success", "response": "Extracted data here"},
+        }
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Process this data", agents, results_dict
+        )
+
+        # Script agent should get JSON with dependencies dict
+        assert "aggregator" in enhanced
+        parsed = json.loads(enhanced["aggregator"])
+        assert parsed["agent_name"] == "aggregator"
+        assert parsed["input_data"] == "Process this data"
+        assert "dependencies" in parsed
+        assert "extractor" in parsed["dependencies"]
+        assert parsed["dependencies"]["extractor"]["response"] == "Extracted data here"
+
+    def test_enhance_input_script_agent_without_dependencies(self) -> None:
+        """Test script agent without dependencies still gets JSON format."""
+        import json
+
+        resolver, _ = self.setup_resolver()
+
+        agents = [
+            {"name": "processor", "script": "process.py"},
+        ]
+        results_dict: dict[str, Any] = {}
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Input data", agents, results_dict
+        )
+
+        # Script agent with no deps should get JSON with empty dependencies
+        assert "processor" in enhanced
+        parsed = json.loads(enhanced["processor"])
+        assert parsed["agent_name"] == "processor"
+        assert parsed["input_data"] == "Input data"
+        assert parsed["dependencies"] == {}
+
+    def test_enhance_input_mixed_script_and_llm_agents(self) -> None:
+        """Test mixed ensemble with both script and LLM agents."""
+        import json
+
+        resolver, mock_role_resolver = self.setup_resolver()
+        mock_role_resolver.return_value = "Source Role"
+
+        agents = [
+            {"name": "script_agent", "script": "process.py", "depends_on": ["source"]},
+            {
+                "name": "llm_agent",
+                "model_profile": "ollama-llama3",
+                "depends_on": ["source"],
+            },
+        ]
+        results_dict = {"source": {"status": "success", "response": "Source output"}}
+
+        enhanced = resolver.enhance_input_with_dependencies(
+            "Analyze data", agents, results_dict
+        )
+
+        # Script agent gets JSON
+        script_input = enhanced["script_agent"]
+        parsed = json.loads(script_input)
+        assert parsed["dependencies"]["source"]["response"] == "Source output"
+
+        # LLM agent gets text format
+        llm_input = enhanced["llm_agent"]
+        assert "You are llm_agent" in llm_input
+        assert "Previous Agent Results" in llm_input
+
 
 class TestValidateDependencyChainHelperMethods:
     """Test helper methods extracted from validate_dependency_chain for complexity."""
