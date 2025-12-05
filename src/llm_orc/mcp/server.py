@@ -2022,6 +2022,19 @@ class MCPServerV2:
         scripts_dir = Path.cwd() / ".llm-orc" / "scripts"
 
         if scripts_dir.exists():
+            # First, find root-level scripts (no category)
+            if not category:  # Only include root scripts if no category filter
+                for script_file in scripts_dir.glob("*.py"):
+                    if script_file.is_file():
+                        scripts.append(
+                            {
+                                "name": script_file.stem,
+                                "category": "",
+                                "path": str(script_file),
+                            }
+                        )
+
+            # Then, find scripts in category subdirectories
             for category_dir in scripts_dir.iterdir():
                 if not category_dir.is_dir():
                     continue
@@ -3007,11 +3020,23 @@ if __name__ == "__main__":
 
         for agent in config.agents:
             agent_name = _get_agent_attr(agent, "name", "unknown")
-            profile_name = _get_agent_attr(agent, "model_profile", "")
 
-            agent_status = self._check_agent_runnable(
-                agent_name, profile_name, all_profiles, providers
-            )
+            # Script agents don't need profile validation
+            script_path = _get_agent_attr(agent, "script", "")
+            if script_path:
+                agent_status: dict[str, Any] = {
+                    "name": agent_name,
+                    "profile": "",
+                    "provider": "script",
+                    "status": "available",
+                    "alternatives": [],
+                }
+            else:
+                profile_name = _get_agent_attr(agent, "model_profile", "")
+                agent_status = self._check_agent_runnable(
+                    agent_name, profile_name, all_profiles, providers
+                )
+
             agents.append(agent_status)
 
             if agent_status["status"] != "available":

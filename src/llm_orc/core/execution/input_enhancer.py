@@ -1,5 +1,6 @@
 """Input enhancement for agents with dependencies."""
 
+import json
 from typing import Any
 
 
@@ -27,6 +28,12 @@ class InputEnhancer:
         Returns a dictionary mapping agent names to their enhanced input.
         Each agent gets only the results from their specific dependencies.
 
+        For script agents (those with 'script' key), returns JSON-formatted
+        input with a 'dependencies' dict containing upstream results.
+
+        For LLM agents, returns text-formatted input with natural language
+        context about previous agent results.
+
         Args:
             base_input: Original input text
             dependent_agents: List of agent configurations with dependencies
@@ -40,45 +47,112 @@ class InputEnhancer:
         for agent_config in dependent_agents:
             agent_name = agent_config["name"]
             dependencies = agent_config.get("depends_on", [])
+            is_script_agent = "script" in agent_config
 
             if not dependencies:
-                enhanced_inputs[agent_name] = base_input
+                if is_script_agent:
+                    enhanced_inputs[agent_name] = self._build_script_input(
+                        agent_name, base_input, {}
+                    )
+                else:
+                    enhanced_inputs[agent_name] = base_input
                 continue
 
-            # Build structured dependency results for this specific agent
-            dependency_results = []
-            for dep_name in dependencies:
-                if (
-                    dep_name in results_dict
-                    and results_dict[dep_name].get("status") == "success"
-                ):
-                    response = results_dict[dep_name]["response"]
-                    # Get agent role/profile for better attribution
-                    dep_role = self.get_agent_role_description(dep_name)
-                    role_text = f" ({dep_role})" if dep_role else ""
+            # Extract successful dependency results
+            dep_results_dict = self._extract_dependency_results(
+                dependencies, results_dict
+            )
 
-                    dependency_results.append(
-                        f"Agent {dep_name}{role_text}:\n{response}"
-                    )
-
-            if dependency_results:
-                deps_text = "\n\n".join(dependency_results)
-                enhanced_inputs[agent_name] = (
-                    f"You are {agent_name}. Please respond to the following input, "
-                    f"taking into account the results from the previous agents "
-                    f"in the dependency chain.\n\n"
-                    f"Original Input:\n{base_input}\n\n"
-                    f"Previous Agent Results (for your reference):\n"
-                    f"{deps_text}\n\n"
-                    f"Please provide your own analysis as {agent_name}, building upon "
-                    f"(but not simply repeating) the previous results."
+            if is_script_agent:
+                # Script agents get JSON with dependencies dict
+                enhanced_inputs[agent_name] = self._build_script_input(
+                    agent_name, base_input, dep_results_dict
                 )
             else:
-                enhanced_inputs[agent_name] = (
-                    f"You are {agent_name}. Please respond to: {base_input}"
+                # LLM agents get text format
+                enhanced_inputs[agent_name] = self._build_llm_input(
+                    agent_name, base_input, dep_results_dict
                 )
 
         return enhanced_inputs
+
+    def _extract_dependency_results(
+        self, dependencies: list[str], results_dict: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Extract successful dependency results as a dict.
+
+        Args:
+            dependencies: List of dependency agent names
+            results_dict: Dictionary of previous agent results
+
+        Returns:
+            Dictionary mapping dependency names to their results
+        """
+        dep_results = {}
+        for dep_name in dependencies:
+            if (
+                dep_name in results_dict
+                and results_dict[dep_name].get("status") == "success"
+            ):
+                dep_results[dep_name] = results_dict[dep_name]
+        return dep_results
+
+    def _build_script_input(
+        self, agent_name: str, base_input: str, dependencies: dict[str, Any]
+    ) -> str:
+        """Build JSON-formatted input for script agents.
+
+        Args:
+            agent_name: Name of the script agent
+            base_input: Original input text
+            dependencies: Dict of dependency results
+
+        Returns:
+            JSON string conforming to ScriptAgentInput schema
+        """
+        script_input = {
+            "agent_name": agent_name,
+            "input_data": base_input,
+            "context": {},
+            "dependencies": dependencies,
+        }
+        return json.dumps(script_input)
+
+    def _build_llm_input(
+        self, agent_name: str, base_input: str, dep_results: dict[str, Any]
+    ) -> str:
+        """Build text-formatted input for LLM agents.
+
+        Args:
+            agent_name: Name of the LLM agent
+            base_input: Original input text
+            dep_results: Dict of dependency results
+
+        Returns:
+            Text string with natural language context
+        """
+        if not dep_results:
+            return f"You are {agent_name}. Please respond to: {base_input}"
+
+        # Build text from dependency results
+        dependency_texts = []
+        for dep_name, result in dep_results.items():
+            response = result.get("response", "")
+            dep_role = self.get_agent_role_description(dep_name)
+            role_text = f" ({dep_role})" if dep_role else ""
+            dependency_texts.append(f"Agent {dep_name}{role_text}:\n{response}")
+
+        deps_text = "\n\n".join(dependency_texts)
+        return (
+            f"You are {agent_name}. Please respond to the following input, "
+            f"taking into account the results from the previous agents "
+            f"in the dependency chain.\n\n"
+            f"Original Input:\n{base_input}\n\n"
+            f"Previous Agent Results (for your reference):\n"
+            f"{deps_text}\n\n"
+            f"Please provide your own analysis as {agent_name}, building upon "
+            f"(but not simply repeating) the previous results."
+        )
 
     def get_agent_role_description(self, agent_name: str) -> str | None:
         """Get a human-readable role description for an agent.

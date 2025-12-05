@@ -300,6 +300,24 @@ class TestMCPServerV2ListScripts:
         assert len(result["scripts"]) == 1
         assert result["scripts"][0]["category"] == "transform"
 
+    @pytest.mark.asyncio
+    async def test_list_scripts_finds_root_level_scripts(
+        self, server: MCPServerV2, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """List scripts finds scripts at root level (no category subdirectory)."""
+        monkeypatch.chdir(tmp_path)
+        scripts_dir = tmp_path / ".llm-orc" / "scripts"
+        scripts_dir.mkdir(parents=True)
+
+        # Script at root level, not in a category subdirectory
+        (scripts_dir / "aggregator.py").write_text("# root level script")
+
+        result = await server.call_tool("list_scripts", {})
+
+        assert len(result["scripts"]) == 1
+        assert result["scripts"][0]["name"] == "aggregator"
+        assert result["scripts"][0]["category"] == ""  # No category for root scripts
+
 
 class TestMCPServerV2LibraryBrowse:
     """Tests for library_browse tool."""
@@ -1506,6 +1524,34 @@ class TestCheckAgentRunnable:
         result = server._check_agent_runnable("agent1", "nonexistent", {}, {})
         assert result["status"] == "missing_profile"
         assert result["name"] == "agent1"
+
+    @pytest.mark.asyncio
+    async def test_check_ensemble_runnable_recognizes_script_agents(
+        self, server: MCPServerV2
+    ) -> None:
+        """Script agents should be recognized as available without profile check."""
+        from unittest.mock import MagicMock, patch
+
+        # Create a mock agent with 'script' attribute (no model_profile)
+        script_agent = MagicMock()
+        script_agent.name = "aggregator"
+        script_agent.script = "aggregator.py"
+        # model_profile should not exist or be empty
+        del script_agent.model_profile
+
+        mock_config = MagicMock()
+        mock_config.name = "test-ensemble"
+        mock_config.agents = [script_agent]
+
+        with patch.object(server, "_find_ensemble_by_name", return_value=mock_config):
+            result = await server._check_ensemble_runnable_tool(
+                {"ensemble_name": "test-ensemble"}
+            )
+
+        assert result["runnable"] is True
+        assert len(result["agents"]) == 1
+        assert result["agents"][0]["name"] == "aggregator"
+        assert result["agents"][0]["status"] == "available"
 
     def test_check_agent_runnable_available_profile(self, server: MCPServerV2) -> None:
         """Agent with available profile has available status."""

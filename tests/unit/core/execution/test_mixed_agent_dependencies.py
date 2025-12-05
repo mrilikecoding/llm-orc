@@ -58,7 +58,17 @@ class TestMixedAgentDependencies:
                 {
                     "name": "report_generator",
                     "type": "script",
-                    "script": "cat | jq -r '\"Report generated from: \" + .input'",
+                    # Script receives JSON with dependencies dict via stdin
+                    # Uses Python to parse and extract dependency data
+                    "script": (
+                        'python3 -c "'
+                        "import sys,json; "
+                        "d=json.load(sys.stdin); "
+                        "deps=d.get('dependencies',{}); "
+                        "r=deps.get('data_analyzer',{}).get('response','EMPTY'); "
+                        "print(json.dumps({'success':True,'data':'Report: '+r}))"
+                        '"'
+                    ),
                     "depends_on": ["data_analyzer"],
                 },
             ],
@@ -113,9 +123,10 @@ class TestMixedAgentDependencies:
         assert "Analysis: 100 users is above average" == analyzer_response
 
         # The report generator should have received the analyzer's output
-        # This will fail because the dependency chain is broken
+        # Script agents now receive JSON with dependencies dict
         report_response = result["results"]["report_generator"]["response"]
-        assert "Report generated from:" in report_response
+        assert "Report:" in report_response
+        assert "100 users" in report_response
 
     @pytest.mark.asyncio
     async def test_parallel_script_agents_with_llm_dependency(self) -> None:
