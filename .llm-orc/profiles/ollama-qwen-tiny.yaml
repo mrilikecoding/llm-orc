@@ -1,0 +1,4 @@
+model: qwen3:0.6b
+name: ollama-qwen-tiny
+provider: ollama
+timeout_seconds: 30

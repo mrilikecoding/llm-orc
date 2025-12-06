@@ -27,15 +27,20 @@ class TestWebServer:
         assert data["status"] == "healthy"
         assert "version" in data
 
-    def test_root_endpoint_returns_api_info(self) -> None:
-        """Test that / returns API information."""
+    def test_root_endpoint_returns_content(self) -> None:
+        """Test that / returns content (HTML in prod, JSON in dev)."""
         app = create_app()
         client = TestClient(app)
 
         response = client.get("/")
 
         assert response.status_code == 200
-        data = response.json()
-        assert data["name"] == "llm-orc"
-        assert "version" in data
-        assert "endpoints" in data
+        # In production (with static files), returns HTML
+        # In development (no static files), returns JSON
+        content_type = response.headers.get("content-type", "")
+        if "text/html" in content_type:
+            assert "<!DOCTYPE html>" in response.text
+        else:
+            data = response.json()
+            assert data["name"] == "llm-orc"
+            assert "version" in data

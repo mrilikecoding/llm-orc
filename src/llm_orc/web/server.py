@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from llm_orc.web.api import artifacts, ensembles, profiles, scripts
@@ -71,12 +71,9 @@ def create_app() -> FastAPI:
             return FileResponse(STATIC_DIR / "index.html")
 
         # Catch-all for SPA routing
-        @app.get("/{path:path}")
-        async def spa_fallback(path: str) -> FileResponse | HTMLResponse:
+        @app.get("/{path:path}", response_class=FileResponse)
+        async def spa_fallback(path: str) -> FileResponse:
             """Fallback to index.html for SPA routing."""
-            # Don't catch API routes
-            if path.startswith("api/") or path == "health":
-                return HTMLResponse(status_code=404)
             return FileResponse(STATIC_DIR / "index.html")
     else:
         # Development mode - return API info
