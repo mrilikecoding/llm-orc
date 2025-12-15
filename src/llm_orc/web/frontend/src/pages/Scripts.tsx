@@ -1,6 +1,7 @@
 import { signal } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
 import { api, Script, ScriptDetail } from '../api/client'
+import { SlidePanel } from '../components/SlidePanel'
 
 const scripts = signal<Script[]>([])
 const loading = signal(true)
@@ -27,6 +28,7 @@ async function loadScripts() {
 async function selectScript(script: Script) {
   loadingDetail.value = true
   testOutput.value = null
+  testInput.value = ''
   try {
     selectedScript.value = await api.scripts.get(script.category, script.name)
   } catch {
@@ -75,62 +77,62 @@ function ScriptCard({ script }: { script: Script }) {
 
   return (
     <div
-      className={`p-3 border rounded cursor-pointer transition-colors
-        ${isSelected ? 'border-accent bg-accent/10' : 'border-border hover:border-text-secondary'}`}
+      className={`bg-bg-secondary border rounded-lg p-4 cursor-pointer transition-all
+        hover:shadow-lg hover:-translate-y-0.5
+        ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-text-secondary'}`}
       onClick={() => selectScript(script)}
     >
-      <div className="font-medium text-text-primary">{script.name}</div>
-      <div className="text-xs text-text-muted mt-1 font-mono truncate">{script.path}</div>
+      <div className="font-semibold text-accent">{script.name}</div>
+      <div className="text-xs text-text-muted mt-2 font-mono truncate">{script.path}</div>
     </div>
   )
 }
 
 function ScriptDetailPanel() {
   const script = selectedScript.value
-  if (!script) return null
 
   return (
-    <div className="bg-bg-secondary border border-border rounded-lg overflow-hidden">
-      <div className="p-4 border-b border-border flex justify-between items-center">
-        <div>
-          <h3 className="m-0 text-lg font-semibold">{script.name}</h3>
-          <p className="m-0 mt-1 text-text-secondary text-sm">
-            Category: <span className="text-accent">{script.category || 'uncategorized'}</span>
-          </p>
-        </div>
-        <button
-          className="text-text-secondary hover:text-text-primary text-xl"
-          onClick={() => (selectedScript.value = null)}
-        >
-          ×
-        </button>
-      </div>
-
+    <SlidePanel
+      open={script !== null}
+      onClose={() => (selectedScript.value = null)}
+      title={script?.name || ''}
+      subtitle={`Category: ${script?.category || 'uncategorized'}`}
+      width="lg"
+    >
       {loadingDetail.value ? (
-        <div className="p-6 text-text-secondary">Loading...</div>
-      ) : (
-        <div className="p-4">
+        <div className="text-text-secondary py-8 text-center">Loading...</div>
+      ) : script ? (
+        <>
+          {/* Path */}
           <div className="mb-4">
-            <div className="text-sm font-semibold text-text-secondary mb-2">Path</div>
-            <code className="block p-2 bg-bg-primary border border-border rounded text-sm">
+            <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
+              Path
+            </div>
+            <code className="block p-3 bg-bg-primary border border-border rounded text-sm">
               {script.path}
             </code>
           </div>
 
+          {/* Content preview */}
           {script.content && (
             <div className="mb-4">
-              <div className="text-sm font-semibold text-text-secondary mb-2">Content</div>
-              <pre className="p-3 bg-bg-primary border border-border rounded text-sm overflow-auto max-h-[200px]">
+              <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
+                Content
+              </div>
+              <pre className="p-3 bg-bg-primary border border-border rounded text-xs overflow-auto max-h-[200px]">
                 {script.content}
               </pre>
             </div>
           )}
 
+          {/* Test runner */}
           <div className="border-t border-border pt-4 mt-4">
-            <div className="text-sm font-semibold text-text-secondary mb-2">Test Script</div>
+            <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
+              Test Script
+            </div>
             <textarea
               className="w-full p-3 bg-bg-primary border border-border rounded text-text-primary
-                font-mono text-sm resize-y focus:outline-none focus:border-accent"
+                font-mono text-sm resize-y focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50"
               placeholder="Enter test input..."
               value={testInput.value}
               onInput={(e) => (testInput.value = (e.target as HTMLTextAreaElement).value)}
@@ -139,27 +141,31 @@ function ScriptDetailPanel() {
             <button
               onClick={runTest}
               disabled={testing.value || !testInput.value.trim()}
-              className="mt-2 px-4 py-2 bg-accent hover:bg-accent/80 text-white rounded font-medium
-                disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`mt-3 w-full py-2.5 px-4 rounded-lg text-white font-medium transition-colors
+                ${testing.value || !testInput.value.trim()
+                  ? 'bg-border-light cursor-not-allowed'
+                  : 'bg-accent hover:bg-accent/90'}`}
             >
               {testing.value ? 'Running...' : 'Run Test'}
             </button>
 
             {testOutput.value && (
               <div className="mt-4">
-                <div className="text-sm font-semibold text-text-secondary mb-2">Output</div>
+                <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
+                  Output
+                </div>
                 <pre className={`p-3 border rounded text-sm overflow-auto max-h-[200px] whitespace-pre-wrap
                   ${testOutput.value.startsWith('Error:')
-                    ? 'bg-error-bg/20 border-error text-error'
-                    : 'bg-success-bg/20 border-success text-text-primary'}`}>
+                    ? 'bg-error/10 border-error/50 text-error'
+                    : 'bg-success/10 border-success/50 text-text-primary'}`}>
                   {testOutput.value}
                 </pre>
               </div>
             )}
           </div>
-        </div>
-      )}
-    </div>
+        </>
+      ) : null}
+    </SlidePanel>
   )
 }
 
@@ -169,7 +175,7 @@ export function ScriptsPage() {
   }, [])
 
   if (loading.value) {
-    return <div>Loading scripts...</div>
+    return <div className="text-text-secondary">Loading scripts...</div>
   }
 
   if (error.value) {
@@ -181,41 +187,39 @@ export function ScriptsPage() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">Scripts</h2>
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">Scripts</h1>
+          <p className="text-text-secondary text-sm mt-1">
+            {scripts.value.length} script{scripts.value.length !== 1 ? 's' : ''} available
+          </p>
+        </div>
+      </div>
 
       {scripts.value.length === 0 ? (
-        <div className="text-center p-12 text-text-secondary">
+        <div className="text-center py-16 text-text-secondary">
+          <div className="text-4xl mb-4 opacity-50">📜</div>
           <p>No scripts found.</p>
-          <p className="mt-2">Add scripts to .llm-orc/scripts/ to see them here.</p>
+          <p className="text-sm mt-1">Add scripts to .llm-orc/scripts/</p>
         </div>
       ) : (
-        <div className="grid grid-cols-[300px_1fr] gap-6">
-          <div className="space-y-4">
-            {categories.map((category) => (
-              <div key={category}>
-                <div className="text-sm font-semibold text-text-secondary mb-2 uppercase tracking-wider">
-                  {category}
-                </div>
-                <div className="space-y-2">
-                  {grouped[category].map((script) => (
-                    <ScriptCard key={`${script.category}/${script.name}`} script={script} />
-                  ))}
-                </div>
+        <div className="space-y-6">
+          {categories.map((category) => (
+            <div key={category}>
+              <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">
+                {category}
               </div>
-            ))}
-          </div>
-
-          <div>
-            {selectedScript.value ? (
-              <ScriptDetailPanel />
-            ) : (
-              <div className="text-center p-12 text-text-secondary border border-border border-dashed rounded-lg">
-                Select a script to view details and test it
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-4">
+                {grouped[category].map((script) => (
+                  <ScriptCard key={`${script.category}/${script.name}`} script={script} />
+                ))}
               </div>
-            )}
-          </div>
+            </div>
+          ))}
         </div>
       )}
+
+      <ScriptDetailPanel />
     </div>
   )
 }

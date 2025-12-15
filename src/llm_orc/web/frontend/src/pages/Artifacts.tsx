@@ -1,6 +1,7 @@
 import { signal } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
 import { api, Artifact, ArtifactDetail as ArtifactDetailType } from '../api/client'
+import { SlidePanel } from '../components/SlidePanel'
 
 const artifacts = signal<Artifact[]>([])
 const loading = signal(true)
@@ -58,18 +59,19 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
 
   return (
     <div
-      className={`bg-bg-secondary border rounded-lg p-4 cursor-pointer transition-colors
-        ${isSelected ? 'border-accent' : 'border-border hover:border-text-secondary'}`}
+      className={`bg-bg-secondary border rounded-lg p-4 cursor-pointer transition-all
+        hover:shadow-lg hover:-translate-y-0.5
+        ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-text-secondary'}`}
       onClick={() => selectArtifact(artifact)}
     >
-      <div className="text-lg font-semibold text-accent mb-2">{artifact.name}</div>
-      <div className="flex justify-between mb-1 text-text-secondary text-sm">
-        <span>Executions:</span>
-        <span>{artifact.executions_count}</span>
+      <div className="flex items-start justify-between mb-3">
+        <div className="text-base font-semibold text-accent">{artifact.name}</div>
+        <span className="text-xs py-0.5 px-2 bg-accent/10 text-accent rounded-full">
+          {artifact.executions_count} run{artifact.executions_count !== 1 ? 's' : ''}
+        </span>
       </div>
-      <div className="flex justify-between mb-1 text-text-secondary text-sm">
-        <span>Latest:</span>
-        <span>{artifact.latest_execution}</span>
+      <div className="text-xs text-text-muted">
+        Latest: {artifact.latest_execution}
       </div>
     </div>
   )
@@ -80,31 +82,26 @@ function ExecutionMetrics({ execution }: { execution: ArtifactDetailType }) {
   const totalAgents = execution.agents.length
 
   return (
-    <div className="mb-6">
-      <div className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wider">
-        Metrics
+    <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="bg-bg-primary border border-border rounded-lg p-3 text-center">
+        <div className="text-xl font-bold text-text-primary">
+          {formatDuration(execution.total_duration_ms)}
+        </div>
+        <div className="text-xs text-text-muted mt-1">Duration</div>
       </div>
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-bg-primary border border-border rounded-md p-4 text-center">
-          <div className="text-2xl font-bold text-text-primary">
-            {formatDuration(execution.total_duration_ms)}
-          </div>
-          <div className="text-sm text-text-secondary mt-1">Duration</div>
+      <div className="bg-bg-primary border border-border rounded-lg p-3 text-center">
+        <div className="text-xl font-bold text-text-primary">
+          {successCount}/{totalAgents}
         </div>
-        <div className="bg-bg-primary border border-border rounded-md p-4 text-center">
-          <div className="text-2xl font-bold text-text-primary">
-            {successCount}/{totalAgents}
-          </div>
-          <div className="text-sm text-text-secondary mt-1">Agents Succeeded</div>
+        <div className="text-xs text-text-muted mt-1">Succeeded</div>
+      </div>
+      <div className="bg-bg-primary border border-border rounded-lg p-3 text-center">
+        <div className={`text-xl font-bold ${
+          execution.status === 'success' ? 'text-success' : 'text-error'
+        }`}>
+          {execution.status === 'success' ? 'Pass' : 'Fail'}
         </div>
-        <div className="bg-bg-primary border border-border rounded-md p-4 text-center">
-          <div className={`text-2xl font-bold ${
-            execution.status === 'success' ? 'text-success' : 'text-error'
-          }`}>
-            {execution.status === 'success' ? 'Success' : 'Failed'}
-          </div>
-          <div className="text-sm text-text-secondary mt-1">Status</div>
-        </div>
+        <div className="text-xs text-text-muted mt-1">Status</div>
       </div>
     </div>
   )
@@ -112,27 +109,27 @@ function ExecutionMetrics({ execution }: { execution: ArtifactDetailType }) {
 
 function AgentResults({ execution }: { execution: ArtifactDetailType }) {
   return (
-    <div className="mb-6">
-      <div className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wider">
+    <div className="space-y-2">
+      <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
         Agent Results
       </div>
-      <div className="flex flex-col gap-3">
-        {execution.agents.map((agent) => (
-          <div key={agent.name} className="bg-bg-primary border border-border rounded-md overflow-hidden">
-            <div className="py-3 px-4 bg-bg-secondary flex justify-between items-center">
-              <span className="font-semibold text-text-primary">{agent.name}</span>
-              <span className={`py-0.5 px-2 rounded text-xs text-white ${
-                agent.status === 'completed' ? 'bg-success-bg' : 'bg-error-bg'
-              }`}>
-                {agent.status}
-              </span>
-            </div>
-            <div className="p-4 font-mono text-sm whitespace-pre-wrap max-h-[200px] overflow-auto">
+      {execution.agents.map((agent) => (
+        <details key={agent.name} className="bg-bg-primary border border-border rounded-lg">
+          <summary className="px-3 py-2 cursor-pointer flex items-center justify-between">
+            <span className="font-medium text-sm">{agent.name}</span>
+            <span className={`text-xs py-0.5 px-2 rounded text-white ${
+              agent.status === 'completed' ? 'bg-success-bg' : 'bg-error-bg'
+            }`}>
+              {agent.status}
+            </span>
+          </summary>
+          <div className="px-3 pb-3 pt-1 border-t border-border">
+            <pre className="text-xs whitespace-pre-wrap text-text-secondary">
               {agent.result || agent.error || 'No output'}
-            </div>
+            </pre>
           </div>
-        ))}
-      </div>
+        </details>
+      ))}
     </div>
   )
 }
@@ -141,12 +138,12 @@ function SynthesisResult({ execution }: { execution: ArtifactDetailType }) {
   if (!execution.synthesis) return null
 
   return (
-    <div className="mb-6">
-      <div className="text-sm font-semibold text-text-secondary mb-3 uppercase tracking-wider">
+    <div className="mt-4">
+      <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
         Synthesis
       </div>
-      <div className="bg-accent/5 border border-accent/25 rounded-md p-4">
-        <div className="font-mono text-sm whitespace-pre-wrap">{execution.synthesis}</div>
+      <div className="bg-accent/5 border border-accent/25 rounded-lg p-3">
+        <pre className="text-sm whitespace-pre-wrap">{execution.synthesis}</pre>
       </div>
     </div>
   )
@@ -154,64 +151,58 @@ function SynthesisResult({ execution }: { execution: ArtifactDetailType }) {
 
 function ArtifactDetailPanel() {
   const artifact = selectedArtifact.value
-  if (!artifact) return null
 
   return (
-    <div className="bg-bg-secondary border border-border rounded-lg mt-6 overflow-hidden">
-      <div className="p-4 border-b border-border flex justify-between items-center">
-        <div>
-          <h3 className="m-0">{artifact.name}</h3>
-          <p className="m-0 mt-1 text-text-secondary text-sm">
-            {artifact.executions_count} execution{artifact.executions_count !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <button
-          className="bg-transparent border-none text-text-secondary cursor-pointer text-xl p-1
-            hover:text-text-primary"
-          onClick={() => (selectedArtifact.value = null)}
-        >
-          ×
-        </button>
-      </div>
-
+    <SlidePanel
+      open={artifact !== null}
+      onClose={() => (selectedArtifact.value = null)}
+      title={artifact?.name || ''}
+      subtitle={`${artifact?.executions_count || 0} execution${artifact?.executions_count !== 1 ? 's' : ''}`}
+      width="xl"
+    >
       {loadingExecutions.value ? (
-        <div className="p-6 text-text-secondary">Loading executions...</div>
+        <div className="text-text-secondary py-8 text-center">Loading executions...</div>
       ) : artifactExecutions.value.length === 0 ? (
-        <div className="p-6 text-text-secondary">No executions found</div>
+        <div className="text-text-secondary py-8 text-center">No executions found</div>
       ) : (
         <>
-          <div className="max-h-[200px] overflow-auto border-b border-border">
-            {artifactExecutions.value.map((exec) => (
-              <div
-                key={exec.timestamp}
-                className={`py-3 px-6 flex justify-between items-center cursor-pointer
-                  border-b border-border-light last:border-0
-                  ${selectedExecution.value?.timestamp === exec.timestamp ? 'bg-border-light' : 'hover:bg-border-light/50'}`}
-                onClick={() => (selectedExecution.value = exec)}
-              >
-                <span className="text-sm text-text-primary">{formatTimestamp(exec.timestamp)}</span>
-                <div className="flex gap-3 text-sm text-text-secondary">
-                  <span>{formatDuration(exec.total_duration_ms)}</span>
-                  <span className={`py-0.5 px-2 rounded text-xs text-white ${
-                    exec.status === 'success' ? 'bg-success-bg' : 'bg-error-bg'
-                  }`}>
-                    {exec.status}
-                  </span>
-                </div>
-              </div>
-            ))}
+          {/* Execution selector */}
+          <div className="mb-4">
+            <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
+              Select Execution
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              {artifactExecutions.value.map((exec, idx) => (
+                <button
+                  key={exec.timestamp}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition-colors
+                    ${selectedExecution.value?.timestamp === exec.timestamp
+                      ? 'border-accent bg-accent/10 text-accent'
+                      : 'border-border text-text-secondary hover:border-text-secondary'}`}
+                  onClick={() => (selectedExecution.value = exec)}
+                >
+                  #{artifactExecutions.value.length - idx}
+                  <span className={`ml-1.5 w-1.5 h-1.5 rounded-full inline-block ${
+                    exec.status === 'success' ? 'bg-success' : 'bg-error'
+                  }`} />
+                </button>
+              ))}
+            </div>
           </div>
 
           {selectedExecution.value && (
-            <div className="p-6">
+            <>
+              <div className="text-xs text-text-muted mb-4">
+                {formatTimestamp(selectedExecution.value.timestamp)}
+              </div>
               <ExecutionMetrics execution={selectedExecution.value} />
               <AgentResults execution={selectedExecution.value} />
               <SynthesisResult execution={selectedExecution.value} />
-            </div>
+            </>
           )}
         </>
       )}
-    </div>
+    </SlidePanel>
   )
 }
 
@@ -221,33 +212,38 @@ export function ArtifactsPage() {
   }, [])
 
   if (loading.value) {
-    return <div>Loading artifacts...</div>
+    return <div className="text-text-secondary">Loading artifacts...</div>
   }
 
   if (error.value) {
     return <div className="text-error">Error: {error.value}</div>
   }
 
-  if (artifacts.value.length === 0) {
-    return (
-      <div>
-        <h2 className="text-2xl font-bold mb-6">Execution Artifacts</h2>
-        <div className="text-center p-12 text-text-secondary">
-          <p>No execution artifacts yet.</p>
-          <p className="mt-2">Run an ensemble to create artifacts.</p>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-6">Execution Artifacts</h2>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
-        {artifacts.value.map((a) => (
-          <ArtifactCard key={a.name} artifact={a} />
-        ))}
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">Execution Artifacts</h1>
+          <p className="text-text-secondary text-sm mt-1">
+            {artifacts.value.length} ensemble{artifacts.value.length !== 1 ? 's' : ''} with artifacts
+          </p>
+        </div>
       </div>
+
+      {artifacts.value.length === 0 ? (
+        <div className="text-center py-16 text-text-secondary">
+          <div className="text-4xl mb-4 opacity-50">📊</div>
+          <p>No execution artifacts yet.</p>
+          <p className="text-sm mt-1">Run an ensemble to create artifacts.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+          {artifacts.value.map((a) => (
+            <ArtifactCard key={a.name} artifact={a} />
+          ))}
+        </div>
+      )}
+
       <ArtifactDetailPanel />
     </div>
   )
