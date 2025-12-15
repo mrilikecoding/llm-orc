@@ -1,9 +1,10 @@
 import { signal } from '@preact/signals'
 import { EnsemblesPage } from './pages/Ensembles'
 import { ProfilesPage } from './pages/Profiles'
+import { ScriptsPage } from './pages/Scripts'
 import { ArtifactsPage } from './pages/Artifacts'
 
-type Page = 'ensembles' | 'profiles' | 'artifacts'
+type Page = 'ensembles' | 'profiles' | 'scripts' | 'artifacts'
 
 const currentPage = signal<Page>('ensembles')
 
@@ -33,6 +34,7 @@ export function App() {
           <ul className="list-none">
             <NavLink page="ensembles" label="Ensembles" />
             <NavLink page="profiles" label="Profiles" />
+            <NavLink page="scripts" label="Scripts" />
             <NavLink page="artifacts" label="Artifacts" />
           </ul>
         </nav>
@@ -40,6 +42,7 @@ export function App() {
       <main className="flex-1 p-6">
         {currentPage.value === 'ensembles' && <EnsemblesPage />}
         {currentPage.value === 'profiles' && <ProfilesPage />}
+        {currentPage.value === 'scripts' && <ScriptsPage />}
         {currentPage.value === 'artifacts' && <ArtifactsPage />}
       </main>
     </div>

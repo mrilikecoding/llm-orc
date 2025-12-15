@@ -25,6 +25,43 @@ export interface Profile {
   name: string
   provider: string
   model: string
+  system_prompt?: string
+  timeout_seconds?: number
+}
+
+export interface CreateProfileInput {
+  name: string
+  provider: string
+  model: string
+  system_prompt?: string
+  timeout_seconds?: number
+}
+
+export interface UpdateProfileInput {
+  provider?: string
+  model?: string
+  system_prompt?: string
+  timeout_seconds?: number
+}
+
+export interface Script {
+  name: string
+  category: string
+  path: string
+}
+
+export interface ScriptDetail {
+  name: string
+  category: string
+  path: string
+  content?: string
+  description?: string
+}
+
+export interface ScriptTestResult {
+  success: boolean
+  output?: string
+  error?: string
 }
 
 export interface Artifact {
@@ -85,6 +122,30 @@ export const api = {
   },
   profiles: {
     list: () => fetchJson<Profile[]>(`${BASE_URL}/profiles`),
+    create: (input: CreateProfileInput) =>
+      fetchJson<Profile>(`${BASE_URL}/profiles`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    update: (name: string, input: UpdateProfileInput) =>
+      fetchJson<Profile>(`${BASE_URL}/profiles/${name}`, {
+        method: 'PUT',
+        body: JSON.stringify(input),
+      }),
+    delete: (name: string) =>
+      fetchJson<{ deleted: boolean }>(`${BASE_URL}/profiles/${name}`, {
+        method: 'DELETE',
+      }),
+  },
+  scripts: {
+    list: () => fetchJson<{ scripts: Script[] }>(`${BASE_URL}/scripts`),
+    get: (category: string, name: string) =>
+      fetchJson<ScriptDetail>(`${BASE_URL}/scripts/${category}/${name}`),
+    test: (category: string, name: string, input: string) =>
+      fetchJson<ScriptTestResult>(`${BASE_URL}/scripts/${category}/${name}/test`, {
+        method: 'POST',
+        body: JSON.stringify({ input }),
+      }),
   },
   artifacts: {
     list: () => fetchJson<Artifact[]>(`${BASE_URL}/artifacts`),
