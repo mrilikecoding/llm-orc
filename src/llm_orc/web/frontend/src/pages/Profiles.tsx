@@ -121,22 +121,22 @@ function ProfileCard({ profile }: { profile: Profile }) {
 
   return (
     <div
-      className={`bg-bg-secondary border rounded-lg p-4 cursor-pointer transition-all
-        hover:shadow-lg hover:-translate-y-0.5
-        ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-text-secondary'}`}
+      className={`bg-bg-secondary border rounded-xl p-6 cursor-pointer transition-all
+        hover:shadow-xl hover:-translate-y-1
+        ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-accent/50'}`}
       onClick={() => (selectedProfile.value = profile)}
     >
-      <div className="flex items-start justify-between mb-2">
-        <div className="text-base font-semibold text-accent">{profile.name}</div>
-        <span className="text-xs py-0.5 px-2 bg-border-light text-text-secondary rounded">
+      <div className="flex items-start justify-between mb-3">
+        <h3 className="text-lg font-semibold text-text-primary">{profile.name}</h3>
+        <span className="text-xs py-1 px-2.5 bg-accent/15 text-accent rounded-full font-medium">
           {profile.provider}
         </span>
       </div>
-      <div className="text-text-secondary text-sm font-mono">{profile.model}</div>
+      <p className="text-text-secondary text-sm font-mono mb-3">{profile.model}</p>
       {profile.system_prompt && (
-        <div className="mt-2 text-xs text-text-muted line-clamp-2">
+        <p className="text-text-muted text-sm leading-relaxed line-clamp-2">
           {profile.system_prompt}
-        </div>
+        </p>
       )}
     </div>
   )
@@ -191,7 +191,7 @@ function ProfileDetailPanel() {
           <div className="flex gap-3 mt-6 pt-4 border-t border-border">
             <button
               onClick={() => openEditForm(profile)}
-              className="flex-1 py-2.5 px-4 bg-accent hover:bg-accent/90 text-white rounded-lg font-medium transition-colors"
+              className="flex-1 py-2.5 px-4 gradient-button text-white rounded-lg font-medium transition-all hover:-translate-y-0.5"
             >
               Edit Profile
             </button>
@@ -312,10 +312,10 @@ function ProfileFormPanel() {
           <button
             type="submit"
             disabled={saving.value}
-            className={`flex-1 py-2.5 px-4 rounded-lg text-white font-medium transition-colors
+            className={`flex-1 py-2.5 px-4 rounded-lg text-white font-medium transition-all
               ${saving.value
                 ? 'bg-border-light cursor-not-allowed'
-                : 'bg-success-bg hover:bg-success-bg/90'}`}
+                : 'gradient-button hover:-translate-y-0.5'}`}
           >
             {saving.value ? 'Saving...' : isEditing ? 'Update' : 'Create'}
           </button>
@@ -340,7 +340,7 @@ export function ProfilesPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-2xl font-bold">Model Profiles</h1>
           <p className="text-text-secondary text-sm mt-1">
@@ -349,7 +349,7 @@ export function ProfilesPage() {
         </div>
         <button
           onClick={openCreateForm}
-          className="px-4 py-2.5 bg-success-bg hover:bg-success-bg/90 text-white rounded-lg font-medium transition-colors"
+          className="px-4 py-2.5 gradient-button text-white rounded-lg font-medium transition-all hover:-translate-y-0.5"
         >
           + Create Profile
         </button>
@@ -362,7 +362,7 @@ export function ProfilesPage() {
           <p className="text-sm mt-1">Create a profile to get started.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
           {profiles.value.map((profile) => (
             <ProfileCard key={profile.name} profile={profile} />
           ))}

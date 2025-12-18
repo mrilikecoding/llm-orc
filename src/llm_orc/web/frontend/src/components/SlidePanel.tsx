@@ -40,7 +40,7 @@ export function SlidePanel({
           animate-slide-in`}
       >
         {/* Header */}
-        <div className="flex-shrink-0 p-4 border-b border-border flex justify-between items-start">
+        <div className="flex-shrink-0 p-5 border-b border-border flex justify-between items-start">
           <div>
             <h2 className="text-lg font-semibold m-0">{title}</h2>
             {subtitle && (
@@ -57,7 +57,7 @@ export function SlidePanel({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-5">
           {children}
         </div>
       </div>

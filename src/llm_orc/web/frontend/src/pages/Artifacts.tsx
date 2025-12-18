@@ -59,20 +59,20 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
 
   return (
     <div
-      className={`bg-bg-secondary border rounded-lg p-4 cursor-pointer transition-all
-        hover:shadow-lg hover:-translate-y-0.5
-        ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-text-secondary'}`}
+      className={`bg-bg-secondary border rounded-xl p-6 cursor-pointer transition-all
+        hover:shadow-xl hover:-translate-y-1
+        ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-accent/50'}`}
       onClick={() => selectArtifact(artifact)}
     >
       <div className="flex items-start justify-between mb-3">
-        <div className="text-base font-semibold text-accent">{artifact.name}</div>
-        <span className="text-xs py-0.5 px-2 bg-accent/10 text-accent rounded-full">
+        <h3 className="text-lg font-semibold text-text-primary">{artifact.name}</h3>
+        <span className="text-xs py-1 px-2.5 bg-accent/15 text-accent rounded-full font-medium">
           {artifact.executions_count} run{artifact.executions_count !== 1 ? 's' : ''}
         </span>
       </div>
-      <div className="text-xs text-text-muted">
+      <p className="text-sm text-text-muted">
         Latest: {artifact.latest_execution}
-      </div>
+      </p>
     </div>
   )
 }
@@ -221,7 +221,7 @@ export function ArtifactsPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-2xl font-bold">Execution Artifacts</h1>
           <p className="text-text-secondary text-sm mt-1">
@@ -237,7 +237,7 @@ export function ArtifactsPage() {
           <p className="text-sm mt-1">Run an ensemble to create artifacts.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
           {artifacts.value.map((a) => (
             <ArtifactCard key={a.name} artifact={a} />
           ))}

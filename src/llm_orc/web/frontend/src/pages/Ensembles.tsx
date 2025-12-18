@@ -64,23 +64,22 @@ function EnsembleCard({ ensemble }: { ensemble: Ensemble }) {
 
   return (
     <div
-      className={`bg-bg-secondary border rounded-lg p-4 cursor-pointer transition-all
-        hover:shadow-lg hover:-translate-y-0.5
-        ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-text-secondary'}`}
+      className={`bg-bg-secondary border rounded-xl p-6 cursor-pointer transition-all
+        hover:shadow-xl hover:-translate-y-1
+        ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-accent/50'}`}
       onClick={() => selectEnsemble(ensemble)}
     >
-      <div className="flex items-start justify-between mb-2">
-        <div className="text-base font-semibold text-accent">{ensemble.name}</div>
+      <div className="flex items-start justify-between mb-3">
+        <h3 className="text-lg font-semibold text-text-primary">{ensemble.name}</h3>
         {agentCount > 0 && (
-          <span className="text-xs py-0.5 px-2 bg-accent/10 text-accent rounded-full">
+          <span className="text-xs py-1 px-2.5 bg-accent/15 text-accent rounded-full font-medium">
             {agentCount} agent{agentCount !== 1 ? 's' : ''}
           </span>
         )}
       </div>
-      <div className="text-text-secondary text-sm line-clamp-2">{ensemble.description}</div>
-      <div className="mt-3 text-xs text-text-muted">
-        <span className="py-0.5 px-2 bg-border-light rounded">{ensemble.source}</span>
-      </div>
+      <p className="text-text-secondary text-sm leading-relaxed line-clamp-2 mb-4">
+        {ensemble.description || 'No description'}
+      </p>
     </div>
   )
 }
@@ -157,10 +156,10 @@ function ExecuteTab() {
         rows={4}
       />
       <button
-        className={`mt-3 w-full py-2.5 px-4 rounded-lg text-white font-medium transition-colors
+        className={`mt-3 w-full py-2.5 px-4 rounded-lg text-white font-medium transition-all
           ${executing.value
             ? 'bg-border-light cursor-not-allowed'
-            : 'bg-success-bg hover:bg-success-bg/90'}`}
+            : 'gradient-button hover:-translate-y-0.5'}`}
         onClick={executeEnsemble}
         disabled={executing.value}
       >
@@ -258,9 +257,33 @@ export function EnsemblesPage() {
     return <div className="text-error">Error: {error.value}</div>
   }
 
+  // Group ensembles by source
+  const grouped = ensembles.value.reduce((acc, ens) => {
+    const source = ens.source || 'unknown'
+    if (!acc[source]) acc[source] = []
+    acc[source].push(ens)
+    return acc
+  }, {} as Record<string, typeof ensembles.value>)
+
+  // Sort sources: local first, then library, then others
+  const sortedSources = Object.keys(grouped).sort((a, b) => {
+    if (a.includes('local') || a.includes('.llm-orc')) return -1
+    if (b.includes('local') || b.includes('.llm-orc')) return 1
+    if (a.includes('library')) return -1
+    if (b.includes('library')) return 1
+    return a.localeCompare(b)
+  })
+
+  function formatSourceLabel(source: string): string {
+    if (source.includes('.llm-orc/ensembles')) return 'Project Ensembles'
+    if (source.includes('library')) return 'Library'
+    if (source.includes('global')) return 'Global'
+    return source
+  }
+
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-2xl font-bold">Ensembles</h1>
           <p className="text-text-secondary text-sm mt-1">
@@ -276,9 +299,25 @@ export function EnsemblesPage() {
           <p className="text-sm mt-1">Create ensembles in .llm-orc/ensembles/</p>
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
-          {ensembles.value.map((e) => (
-            <EnsembleCard key={e.name} ensemble={e} />
+        <div className="space-y-10">
+          {sortedSources.map((source) => (
+            <section key={source}>
+              <div className="flex items-center gap-3 mb-4">
+                <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">
+                  {formatSourceLabel(source)}
+                </h2>
+                <span className="text-xs text-text-muted bg-white/5 px-2 py-0.5 rounded">
+                  {grouped[source].length}
+                </span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
+              <p className="text-xs text-text-muted mb-4 font-mono">{source}</p>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-6">
+                {grouped[source].map((e) => (
+                  <EnsembleCard key={e.name} ensemble={e} />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}

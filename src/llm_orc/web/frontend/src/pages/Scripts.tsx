@@ -77,13 +77,13 @@ function ScriptCard({ script }: { script: Script }) {
 
   return (
     <div
-      className={`bg-bg-secondary border rounded-lg p-4 cursor-pointer transition-all
-        hover:shadow-lg hover:-translate-y-0.5
-        ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-text-secondary'}`}
+      className={`bg-bg-secondary border rounded-xl p-6 cursor-pointer transition-all
+        hover:shadow-xl hover:-translate-y-1
+        ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-accent/50'}`}
       onClick={() => selectScript(script)}
     >
-      <div className="font-semibold text-accent">{script.name}</div>
-      <div className="text-xs text-text-muted mt-2 font-mono truncate">{script.path}</div>
+      <h3 className="text-lg font-semibold text-text-primary mb-3">{script.name}</h3>
+      <p className="text-xs text-text-muted font-mono truncate">{script.path}</p>
     </div>
   )
 }
@@ -141,10 +141,10 @@ function ScriptDetailPanel() {
             <button
               onClick={runTest}
               disabled={testing.value || !testInput.value.trim()}
-              className={`mt-3 w-full py-2.5 px-4 rounded-lg text-white font-medium transition-colors
+              className={`mt-3 w-full py-2.5 px-4 rounded-lg text-white font-medium transition-all
                 ${testing.value || !testInput.value.trim()
                   ? 'bg-border-light cursor-not-allowed'
-                  : 'bg-accent hover:bg-accent/90'}`}
+                  : 'gradient-button hover:-translate-y-0.5'}`}
             >
               {testing.value ? 'Running...' : 'Run Test'}
             </button>
@@ -187,7 +187,7 @@ export function ScriptsPage() {
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-2xl font-bold">Scripts</h1>
           <p className="text-text-secondary text-sm mt-1">
@@ -203,13 +203,13 @@ export function ScriptsPage() {
           <p className="text-sm mt-1">Add scripts to .llm-orc/scripts/</p>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-8">
           {categories.map((category) => (
             <div key={category}>
               <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">
                 {category}
               </div>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-4">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-5">
                 {grouped[category].map((script) => (
                   <ScriptCard key={`${script.category}/${script.name}`} script={script} />
                 ))}
