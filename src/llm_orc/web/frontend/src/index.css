@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+/* Eddi-lab design palette - vibrant purple gradient theme */
+@theme {
+  /* Background colors */
+  --color-bg-primary: #0f1419;
+  --color-bg-secondary: #1a1d2e;
+
+  /* Border colors */
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-light: rgba(255, 255, 255, 0.05);
+
+  /* Text colors */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: rgba(255, 255, 255, 0.7);
+  --color-text-muted: rgba(255, 255, 255, 0.5);
+
+  /* Accent colors - purple gradient */
+  --color-accent: #667eea;
+  --color-accent-secondary: #764ba2;
+  --color-success: #3fb950;
+  --color-error: #f85149;
+  --color-success-bg: #238636;
+  --color-error-bg: #da3633;
+}
+
+/* Base styles */
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+}
+
+/* Remove default list styles */
+ul {
+  margin: 0;
+  padding: 0;
+}
+
+/* Gradient utilities */
+.gradient-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.gradient-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.gradient-button:hover {
+  background: linear-gradient(135deg, #7b8ff0 0%, #8a5cb5 100%);
+}
+
+/* Animations */
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.2s ease-out;
+}

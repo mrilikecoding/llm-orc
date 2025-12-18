@@ -1,0 +1,5 @@
+name: library-ensemble
+description: Library ensemble to copy
+agents:
+  - name: lib-agent
+    model_profile: standard

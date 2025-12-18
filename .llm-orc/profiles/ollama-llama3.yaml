@@ -1,0 +1,4 @@
+model: llama3:latest
+name: ollama-llama3
+provider: ollama
+timeout_seconds: 90

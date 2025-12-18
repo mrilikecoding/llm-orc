@@ -1,0 +1,200 @@
+agents:
+- model_profile: ollama-qwen-tiny
+  name: extract-endpoints
+  system_prompt: 'Extract every REST API endpoint from the document.
+
+    Format each as: METHOD /path - brief description
+
+    Output ONLY the list, nothing else. If none found, say ''None found''.'
+- model_profile: ollama-qwen-tiny
+  name: extract-technologies
+  system_prompt: 'List every technology, framework, library, or tool mentioned.
+
+    Format: name - what it''s used for
+
+    Output ONLY the list, nothing else. If none found, say ''None found''.'
+- model_profile: ollama-qwen-tiny
+  name: extract-assumptions
+  system_prompt: 'List every assumption this document makes.
+
+    Look for: ''assumes'', ''expects'', ''relies on'', ''requires'', implicit assumptions.
+
+    Format: one assumption per line, starting with dash.
+
+    Output ONLY the list.'
+- model_profile: ollama-qwen-tiny
+  name: extract-risks
+  system_prompt: 'List every risk, concern, negative consequence, or potential problem
+    mentioned.
+
+    Format: one risk per line, starting with dash.
+
+    Output ONLY the list. If none found, say ''None found''.'
+- model_profile: ollama-qwen-tiny
+  name: extract-scope
+  system_prompt: 'Identify what is IN scope and OUT of scope for this proposal.
+
+    Format:
+
+    IN SCOPE:
+
+    - item
+
+    OUT OF SCOPE:
+
+    - item
+
+    Output ONLY the lists.'
+- model_profile: ollama-qwen-tiny
+  name: extract-alternatives
+  system_prompt: 'List every alternative approach that was considered and rejected.
+
+    Format: Alternative - reason rejected
+
+    Output ONLY the list. If none found, say ''None found''.'
+- model_profile: ollama-qwen-tiny
+  name: extract-phases
+  system_prompt: 'List the implementation phases or steps mentioned.
+
+    Format: Phase N: description
+
+    Output ONLY the list. If none found, say ''None found''.'
+- model_profile: ollama-qwen-tiny
+  name: extract-dependencies
+  system_prompt: 'List external dependencies, related ADRs, and prerequisites.
+
+    Format: one dependency per line, starting with dash.
+
+    Output ONLY the list. If none found, say ''None found''.'
+- depends_on:
+  - extract-endpoints
+  - extract-technologies
+  - extract-assumptions
+  - extract-risks
+  - extract-scope
+  - extract-alternatives
+  - extract-phases
+  - extract-dependencies
+  name: aggregate-extractions
+  parameters:
+    format: markdown
+  script: aggregator.py
+- depends_on:
+  - aggregate-extractions
+  model_profile: ollama-gemma-small
+  name: analyze-gaps
+  system_prompt: 'Given the extracted information from an ADR, identify what''s MISSING.
+
+    Look for:
+
+    - Undefined error handling
+
+    - Missing edge cases
+
+    - Unstated assumptions
+
+    - Gaps in the implementation plan
+
+    - Missing success criteria
+
+
+    List 3-5 specific gaps. Be concrete, not generic.'
+- depends_on:
+  - aggregate-extractions
+  model_profile: ollama-gemma-small
+  name: analyze-risks
+  system_prompt: 'Given the extracted information, assess the risks.
+
+    For each risk identified, rate severity (1-5) and likelihood (1-5).
+
+    Format: Risk - Severity: N, Likelihood: N - Brief mitigation
+
+
+    Focus on the top 3-5 most important risks.'
+- depends_on:
+  - aggregate-extractions
+  model_profile: ollama-gemma-small
+  name: analyze-consistency
+  system_prompt: 'Check for internal contradictions or inconsistencies.
+
+    Look for:
+
+    - Conflicting requirements
+
+    - Scope creep vs stated goals
+
+    - Technology choices that conflict
+
+    - Timeline vs complexity mismatch
+
+
+    List any contradictions found. If none, say ''No contradictions found''.'
+- depends_on:
+  - aggregate-extractions
+  model_profile: ollama-gemma-small
+  name: analyze-feasibility
+  system_prompt: 'Assess the feasibility of this proposal.
+
+    Consider:
+
+    - Are the technology choices appropriate?
+
+    - Is the scope realistic?
+
+    - Are dependencies manageable?
+
+    - Are there obvious blockers?
+
+
+    Give a feasibility rating: High/Medium/Low with brief justification.'
+- depends_on:
+  - analyze-gaps
+  - analyze-risks
+  - analyze-consistency
+  - analyze-feasibility
+  model_profile: ollama-gemma3-12b
+  name: synthesize-review
+  system_prompt: 'You are synthesizing an ADR review from multiple focused analyses.
+
+
+    You will receive: gap analysis, risk assessment, consistency check, and feasibility
+    analysis.
+
+
+    Produce a structured review:
+
+
+    ## Verdict
+
+    [ACCEPT / ACCEPT WITH CHANGES / NEEDS WORK / REJECT]
+
+
+    ## Key Findings
+
+    - Finding 1
+
+    - Finding 2
+
+    - Finding 3
+
+
+    ## Critical Issues (if any)
+
+    [List issues that must be addressed before approval]
+
+
+    ## Recommendations
+
+    [Concrete action items]
+
+
+    ## Strengths
+
+    [What the ADR does well]
+
+
+    Be direct and actionable. No fluff.'
+description: Swarm-style ADR review using many small focused extractors feeding into
+  analyzers and a synthesizer. Leverages collective intelligence of tiny models for
+  pattern extraction.
+name: adr-swarm-review
