@@ -1,0 +1,4 @@
+model: gemma3:12b
+name: ollama-gemma3-12b
+provider: ollama
+timeout_seconds: 120

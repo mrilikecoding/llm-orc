@@ -2006,6 +2006,41 @@ class MCPServerV2:
             "path": str(ensemble_file),
         }
 
+    def _collect_root_scripts(self, scripts_dir: Path) -> list[dict[str, Any]]:
+        """Collect scripts at the root level (no category)."""
+        scripts: list[dict[str, Any]] = []
+        for script_file in scripts_dir.glob("*.py"):
+            if script_file.is_file():
+                scripts.append(
+                    {
+                        "name": script_file.stem,
+                        "category": "",
+                        "path": str(script_file),
+                    }
+                )
+        return scripts
+
+    def _collect_category_scripts(
+        self, scripts_dir: Path, category_filter: str | None
+    ) -> list[dict[str, Any]]:
+        """Collect scripts from category subdirectories."""
+        scripts: list[dict[str, Any]] = []
+        for category_dir in scripts_dir.iterdir():
+            if not category_dir.is_dir():
+                continue
+            cat_name = category_dir.name
+            if category_filter and cat_name != category_filter:
+                continue
+            for script_file in category_dir.glob("*.py"):
+                scripts.append(
+                    {
+                        "name": script_file.stem,
+                        "category": cat_name,
+                        "path": str(script_file),
+                    }
+                )
+        return scripts
+
     async def _list_scripts_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """List available scripts.
 
@@ -2016,41 +2051,15 @@ class MCPServerV2:
             Scripts list.
         """
         category = arguments.get("category")
-        scripts: list[dict[str, Any]] = []
-
-        # Look in local scripts directory
         scripts_dir = Path.cwd() / ".llm-orc" / "scripts"
 
-        if scripts_dir.exists():
-            # First, find root-level scripts (no category)
-            if not category:  # Only include root scripts if no category filter
-                for script_file in scripts_dir.glob("*.py"):
-                    if script_file.is_file():
-                        scripts.append(
-                            {
-                                "name": script_file.stem,
-                                "category": "",
-                                "path": str(script_file),
-                            }
-                        )
+        if not scripts_dir.exists():
+            return {"scripts": []}
 
-            # Then, find scripts in category subdirectories
-            for category_dir in scripts_dir.iterdir():
-                if not category_dir.is_dir():
-                    continue
-
-                cat_name = category_dir.name
-                if category and cat_name != category:
-                    continue
-
-                for script_file in category_dir.glob("*.py"):
-                    scripts.append(
-                        {
-                            "name": script_file.stem,
-                            "category": cat_name,
-                            "path": str(script_file),
-                        }
-                    )
+        scripts: list[dict[str, Any]] = []
+        if not category:
+            scripts.extend(self._collect_root_scripts(scripts_dir))
+        scripts.extend(self._collect_category_scripts(scripts_dir, category))
 
         return {"scripts": scripts}
 
