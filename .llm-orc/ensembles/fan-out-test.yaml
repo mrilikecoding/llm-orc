@@ -1,0 +1,15 @@
+name: fan-out-test
+description: Test ensemble demonstrating fan-out agent pattern (issue #73)
+
+agents:
+  - name: chunker
+    type: script
+    script: scripts/fan-out-test/chunker.py
+    system_prompt: Split input text into sentences
+
+  - name: processor
+    type: script
+    script: scripts/fan-out-test/processor.py
+    depends_on: [chunker]
+    fan_out: true
+    system_prompt: Analyze each sentence chunk

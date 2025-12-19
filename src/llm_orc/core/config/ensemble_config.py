@@ -86,6 +86,25 @@ def _check_agents_for_cycles(agents: list[dict[str, Any]]) -> None:
                 )
 
 
+def _validate_fan_out_dependencies(agents: list[dict[str, Any]]) -> None:
+    """Validate that fan_out agents have required dependencies.
+
+    Args:
+        agents: List of agent configurations
+
+    Raises:
+        ValueError: If any agent has fan_out: true without depends_on
+    """
+    for agent in agents:
+        if agent.get("fan_out") is True:
+            depends_on = agent.get("depends_on", [])
+            if not depends_on:
+                raise ValueError(
+                    f"Agent '{agent['name']}' has fan_out: true but requires "
+                    f"depends_on to specify the upstream agent providing the array"
+                )
+
+
 def _check_missing_dependencies(agents: list[dict[str, Any]]) -> None:
     """Check for missing dependencies in agent configurations.
 
@@ -211,6 +230,9 @@ class EnsembleLoader:
         """Validate agent dependencies for cycles and missing dependencies."""
         # Check for missing dependencies first
         _check_missing_dependencies(agents)
+
+        # Validate fan_out agents have dependencies
+        _validate_fan_out_dependencies(agents)
 
         # Then check for circular dependencies
         _detect_circular_dependencies(agents)

@@ -1,5 +1,6 @@
 """Agent dependency analysis for execution planning."""
 
+import re
 from typing import Any
 
 
@@ -178,3 +179,35 @@ class DependencyAnalyzer:
             errors.append(str(e))
 
         return errors
+
+    # ========== Fan-Out Support (Issue #73) ==========
+
+    # Pattern for instance names: agent_name[index]
+    _INSTANCE_PATTERN = re.compile(r"^(.+)\[(\d+)\]$")
+
+    def normalize_agent_name(self, name: str) -> str:
+        """Normalize agent name by removing instance index if present.
+
+        Converts 'extractor[0]' to 'extractor' for dependency checking.
+
+        Args:
+            name: Agent name, possibly with instance index
+
+        Returns:
+            Original agent name without index
+        """
+        match = self._INSTANCE_PATTERN.match(name)
+        if match:
+            return match.group(1)
+        return name
+
+    def is_fan_out_instance_name(self, name: str) -> bool:
+        """Check if name matches the fan-out instance pattern 'agent[N]'.
+
+        Args:
+            name: Agent name to check
+
+        Returns:
+            True if name matches instance pattern, False otherwise
+        """
+        return bool(self._INSTANCE_PATTERN.match(name))

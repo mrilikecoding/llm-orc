@@ -16,6 +16,8 @@ from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
+from llm_orc.core.execution.fan_out_expander import FanOutExpander
+from llm_orc.core.execution.fan_out_gatherer import FanOutGatherer
 from llm_orc.core.execution.input_enhancer import InputEnhancer
 from llm_orc.core.execution.orchestration import Agent
 from llm_orc.core.execution.progress_controller import NoOpProgressController
@@ -62,6 +64,10 @@ class EnsembleExecutor:
         self._artifact_manager = ArtifactManager()
         self._progress_controller = NoOpProgressController()
         self._agent_request_processor = AgentRequestProcessor(self._dependency_resolver)
+
+        # Fan-out support (issue #73)
+        self._fan_out_expander = FanOutExpander()
+        self._fan_out_gatherer = FanOutGatherer(self._fan_out_expander)
 
         # Initialize execution coordinator with agent executor function
         # Use a wrapper to avoid circular dependency with _execute_agent_with_timeout
@@ -416,35 +422,57 @@ class EnsembleExecutor:
         Returns:
             True if any errors occurred in this phase
         """
+        # Detect and expand fan-out agents (issue #73)
+        fan_out_agents = self._detect_fan_out_in_phase(phase_agents, results_dict)
+        expanded_agents = list(phase_agents)  # Copy to avoid modifying original
+        fan_out_original_names: list[str] = []
+
+        for agent_config, upstream_array in fan_out_agents:
+            # Remove original fan-out agent from list
+            expanded_agents = [
+                a for a in expanded_agents if a["name"] != agent_config["name"]
+            ]
+            # Add expanded instances
+            instances = self._expand_fan_out_agent(agent_config, upstream_array)
+            expanded_agents.extend(instances)
+            fan_out_original_names.append(agent_config["name"])
+
         # Emit phase started event
         self._emit_performance_event(
             "phase_started",
             {
                 "phase_index": phase_index,
-                "phase_agents": [agent["name"] for agent in phase_agents],
+                "phase_agents": [agent["name"] for agent in expanded_agents],
                 "total_phases": total_phases,
             },
         )
 
         # Start per-phase monitoring for performance feedback
         phase_start_time = time.time()
-        await self._start_phase_monitoring(phase_index, phase_agents)
+        await self._start_phase_monitoring(phase_index, expanded_agents)
 
         try:
-            # Execute agents in this phase in parallel
+            # Execute agents in this phase in parallel (including fan-out instances)
             phase_results = await self._execute_agents_in_phase_parallel(
-                phase_agents, input_data
+                expanded_agents, input_data
             )
 
             # Process parallel execution results
             phase_has_errors = await self._process_phase_results(
-                phase_results, results_dict, phase_agents
+                phase_results, results_dict, expanded_agents
             )
+
+            # Gather fan-out instance results under original agent names
+            for original_name in fan_out_original_names:
+                gathered = self._gather_fan_out_results(original_name, results_dict)
+                results_dict[original_name] = gathered
 
         finally:
             # Stop per-phase monitoring and collect metrics
             phase_duration = time.time() - phase_start_time
-            await self._stop_phase_monitoring(phase_index, phase_agents, phase_duration)
+            await self._stop_phase_monitoring(
+                phase_index, expanded_agents, phase_duration
+            )
 
         # Emit phase completion event
         self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
@@ -1277,6 +1305,17 @@ class EnsembleExecutor:
         """Execute a single agent in a phase and return (name, result)."""
         agent_name = agent_config["name"]
 
+        # Handle fan-out instance input preparation (issue #73)
+        if self._dependency_resolver.is_fan_out_instance_config(agent_config):
+            base_input = (
+                phase_input
+                if isinstance(phase_input, str)
+                else phase_input.get(agent_name, "")
+            )
+            phase_input = self._dependency_resolver.prepare_fan_out_instance_input(
+                agent_config, base_input
+            )
+
         try:
             return await self._execute_agent_with_monitoring(
                 agent_config, agent_name, phase_input
@@ -1676,3 +1715,97 @@ class EnsembleExecutor:
                 "agent_count": len(phase_agents),
             },
         )
+
+    # ========== Fan-Out Support (Issue #73) ==========
+
+    def _detect_fan_out_in_phase(
+        self,
+        phase_agents: list[dict[str, Any]],
+        results_dict: dict[str, Any],
+    ) -> list[tuple[dict[str, Any], list[Any]]]:
+        """Detect fan-out agents in phase with array upstream results.
+
+        Args:
+            phase_agents: List of agent configurations in the current phase
+            results_dict: Dictionary of previous agent results
+
+        Returns:
+            List of (agent_config, upstream_array) tuples for fan-out agents
+        """
+        fan_out_agents: list[tuple[dict[str, Any], list[Any]]] = []
+
+        for agent_config in phase_agents:
+            if not agent_config.get("fan_out"):
+                continue
+
+            # Get upstream dependency
+            depends_on = agent_config.get("depends_on", [])
+            if not depends_on:
+                continue
+
+            # Check first dependency for array result
+            upstream_name = depends_on[0]
+            upstream_result = results_dict.get(upstream_name, {})
+
+            if upstream_result.get("status") != "success":
+                continue
+
+            response = upstream_result.get("response", "")
+            array_result = self._fan_out_expander.parse_array_from_result(response)
+
+            if array_result is not None and len(array_result) > 0:
+                fan_out_agents.append((agent_config, array_result))
+
+        return fan_out_agents
+
+    def _expand_fan_out_agent(
+        self,
+        agent_config: dict[str, Any],
+        upstream_array: list[Any],
+    ) -> list[dict[str, Any]]:
+        """Expand a fan-out agent into N instances.
+
+        Args:
+            agent_config: Original agent configuration with fan_out: true
+            upstream_array: Array from upstream agent
+
+        Returns:
+            List of instance configurations with indexed names
+        """
+        return self._fan_out_expander.expand_fan_out_agent(agent_config, upstream_array)
+
+    def _gather_fan_out_results(
+        self,
+        original_agent_name: str,
+        instance_results: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Gather results from fan-out instances into ordered array.
+
+        Args:
+            original_agent_name: Original agent name (e.g., 'extractor')
+            instance_results: Dict of instance results keyed by instance name
+
+        Returns:
+            Gathered result with response array and status
+        """
+        # Clear any previous results for this agent
+        self._fan_out_gatherer.clear(original_agent_name)
+
+        # Record each instance result
+        for instance_name, result in instance_results.items():
+            if not self._fan_out_expander.is_fan_out_instance_name(instance_name):
+                continue
+
+            original = self._fan_out_expander.get_original_agent_name(instance_name)
+            if original != original_agent_name:
+                continue
+
+            success = result.get("status") == "success"
+            self._fan_out_gatherer.record_instance_result(
+                instance_name=instance_name,
+                result=result.get("response"),
+                success=success,
+                error=result.get("error"),
+            )
+
+        return self._fan_out_gatherer.gather_results(original_agent_name)

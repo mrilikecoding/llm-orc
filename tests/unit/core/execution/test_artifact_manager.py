@@ -1430,3 +1430,199 @@ class TestArtifactManagerEdgeCases:
 
         assert hash1 == hash2
         assert len(hash1) == 16  # Should be first 16 chars of SHA-256
+
+
+class TestFanOutArtifacts:
+    """Test fan-out execution artifact storage and markdown generation (issue #73)."""
+
+    def test_save_fan_out_execution_results(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test that fan-out execution results are saved correctly."""
+        results_with_fan_out = {
+            "ensemble_name": "fan-out-ensemble",
+            "agents": [
+                {"name": "chunker", "status": "completed", "result": '["a", "b", "c"]'},
+            ],
+            "results": {
+                "extractor": {
+                    "fan_out": True,
+                    "status": "partial",
+                    "response": ["result_0", "result_2"],
+                    "instances": [
+                        {"index": 0, "status": "success"},
+                        {"index": 1, "status": "failed", "error": "timeout"},
+                        {"index": 2, "status": "success"},
+                    ],
+                },
+            },
+            "metadata": {
+                "fan_out": {
+                    "extractor": {
+                        "total_instances": 3,
+                        "successful_instances": 2,
+                        "failed_instances": 1,
+                    },
+                },
+            },
+        }
+
+        artifact_manager.save_execution_results(
+            ensemble_name="fan-out-ensemble",
+            results=results_with_fan_out,
+            timestamp="20240115-103000-123",
+        )
+
+        # Verify execution.json exists and has fan-out data
+        json_file = (
+            temp_dir
+            / ".llm-orc"
+            / "artifacts"
+            / "fan-out-ensemble"
+            / "20240115-103000-123"
+            / "execution.json"
+        )
+
+        assert json_file.exists()
+
+        with json_file.open() as f:
+            saved_data = json.load(f)
+
+        # Verify fan-out results structure is preserved
+        assert "results" in saved_data
+        assert "extractor" in saved_data["results"]
+        assert saved_data["results"]["extractor"]["fan_out"] is True
+        assert saved_data["results"]["extractor"]["status"] == "partial"
+        assert len(saved_data["results"]["extractor"]["instances"]) == 3
+
+        # Verify fan-out metadata is preserved
+        assert "metadata" in saved_data
+        assert "fan_out" in saved_data["metadata"]
+        assert saved_data["metadata"]["fan_out"]["extractor"]["total_instances"] == 3
+
+    def test_markdown_includes_fan_out_summary(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test that markdown report includes fan-out execution summary."""
+        results_with_fan_out = {
+            "ensemble_name": "fan-out-ensemble",
+            "agents": [
+                {"name": "chunker", "status": "completed", "result": "chunks"},
+            ],
+            "metadata": {
+                "fan_out": {
+                    "extractor": {
+                        "total_instances": 5,
+                        "successful_instances": 4,
+                        "failed_instances": 1,
+                    },
+                },
+            },
+        }
+
+        artifact_manager.save_execution_results(
+            ensemble_name="fan-out-ensemble",
+            results=results_with_fan_out,
+            timestamp="20240115-103000-123",
+        )
+
+        md_file = (
+            temp_dir
+            / ".llm-orc"
+            / "artifacts"
+            / "fan-out-ensemble"
+            / "20240115-103000-123"
+            / "execution.md"
+        )
+
+        content = md_file.read_text()
+
+        # Should have fan-out section
+        assert "Fan-Out" in content
+        assert "extractor" in content
+        assert "5" in content  # total instances
+        assert "4" in content  # successful
+        assert "1" in content  # failed
+
+    def test_markdown_shows_fan_out_agent_instances(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test that markdown shows individual fan-out instance statuses."""
+        results_with_fan_out = {
+            "ensemble_name": "fan-out-ensemble",
+            "results": {
+                "extractor": {
+                    "fan_out": True,
+                    "status": "partial",
+                    "response": ["r0", "r2"],
+                    "instances": [
+                        {"index": 0, "status": "success"},
+                        {"index": 1, "status": "failed", "error": "Connection timeout"},
+                        {"index": 2, "status": "success"},
+                    ],
+                },
+            },
+        }
+
+        artifact_manager.save_execution_results(
+            ensemble_name="fan-out-ensemble",
+            results=results_with_fan_out,
+            timestamp="20240115-103000-123",
+        )
+
+        md_file = (
+            temp_dir
+            / ".llm-orc"
+            / "artifacts"
+            / "fan-out-ensemble"
+            / "20240115-103000-123"
+            / "execution.md"
+        )
+
+        content = md_file.read_text()
+
+        # Should show instance info
+        assert "extractor" in content
+        assert "partial" in content.lower() or "Partial" in content
+        assert "Connection timeout" in content
+
+    def test_markdown_handles_all_instances_success(
+        self, artifact_manager: ArtifactManager, temp_dir: Path
+    ) -> None:
+        """Test markdown when all fan-out instances succeed."""
+        results_with_fan_out = {
+            "ensemble_name": "fan-out-ensemble",
+            "results": {
+                "processor": {
+                    "fan_out": True,
+                    "status": "success",
+                    "response": ["r0", "r1", "r2"],
+                    "instances": [
+                        {"index": 0, "status": "success"},
+                        {"index": 1, "status": "success"},
+                        {"index": 2, "status": "success"},
+                    ],
+                },
+            },
+        }
+
+        artifact_manager.save_execution_results(
+            ensemble_name="fan-out-ensemble",
+            results=results_with_fan_out,
+            timestamp="20240115-103000-123",
+        )
+
+        md_file = (
+            temp_dir
+            / ".llm-orc"
+            / "artifacts"
+            / "fan-out-ensemble"
+            / "20240115-103000-123"
+            / "execution.md"
+        )
+
+        content = md_file.read_text()
+
+        # Should indicate success
+        assert "processor" in content
+        assert "3/3" in content or "3 of 3" in content or "success" in content.lower()

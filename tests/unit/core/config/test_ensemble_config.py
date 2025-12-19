@@ -595,3 +595,101 @@ class TestDetectCircularDependenciesHelperMethods:
             ValueError, match="Circular dependency detected involving agent: 'agent1'"
         ):
             _check_agents_for_cycles(agents)
+
+
+class TestFanOutValidation:
+    """Test fan_out field validation for issue #73."""
+
+    def test_validate_fan_out_requires_depends_on(self) -> None:
+        """fan_out: true without depends_on should raise ValueError."""
+        from llm_orc.core.config.ensemble_config import _validate_fan_out_dependencies
+
+        agents: list[dict[str, Any]] = [
+            {"name": "chunker", "script": "split.py"},
+            {
+                "name": "extractor",
+                "model_profile": "ollama-llama3",
+                "fan_out": True,
+                # Missing depends_on - should fail
+            },
+        ]
+
+        with pytest.raises(ValueError, match="fan_out.*requires.*depends_on"):
+            _validate_fan_out_dependencies(agents)
+
+    def test_validate_fan_out_with_depends_on_valid(self) -> None:
+        """fan_out: true with depends_on should pass validation."""
+        from llm_orc.core.config.ensemble_config import _validate_fan_out_dependencies
+
+        agents: list[dict[str, Any]] = [
+            {"name": "chunker", "script": "split.py"},
+            {
+                "name": "extractor",
+                "model_profile": "ollama-llama3",
+                "fan_out": True,
+                "depends_on": ["chunker"],
+            },
+            {
+                "name": "synthesizer",
+                "model_profile": "ollama-llama3",
+                "depends_on": ["extractor"],
+            },
+        ]
+
+        # Should not raise any exception
+        _validate_fan_out_dependencies(agents)
+
+    def test_validate_fan_out_false_no_depends_on_valid(self) -> None:
+        """fan_out: false or absent without depends_on should be valid."""
+        from llm_orc.core.config.ensemble_config import _validate_fan_out_dependencies
+
+        agents: list[dict[str, Any]] = [
+            {"name": "agent1", "model_profile": "test"},
+            {"name": "agent2", "model_profile": "test", "fan_out": False},
+        ]
+
+        # Should not raise any exception
+        _validate_fan_out_dependencies(agents)
+
+    def test_validate_fan_out_empty_depends_on_invalid(self) -> None:
+        """fan_out: true with empty depends_on should raise ValueError."""
+        from llm_orc.core.config.ensemble_config import _validate_fan_out_dependencies
+
+        agents = [
+            {
+                "name": "extractor",
+                "model_profile": "ollama-llama3",
+                "fan_out": True,
+                "depends_on": [],  # Empty - should fail
+            },
+        ]
+
+        with pytest.raises(ValueError, match="fan_out.*requires.*depends_on"):
+            _validate_fan_out_dependencies(agents)
+
+    def test_loader_validates_fan_out_on_load(self) -> None:
+        """EnsembleLoader should validate fan_out dependencies on load."""
+        ensemble_yaml = {
+            "name": "invalid_fan_out_ensemble",
+            "description": "Ensemble with invalid fan_out config",
+            "agents": [
+                {"name": "chunker", "script": "split.py"},
+                {
+                    "name": "extractor",
+                    "model_profile": "test-model",
+                    "fan_out": True,
+                    # Missing depends_on
+                },
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            loader = EnsembleLoader()
+            with pytest.raises(ValueError, match="fan_out.*requires.*depends_on"):
+                loader.load_from_file(yaml_path)
+        finally:
+            Path(yaml_path).unlink()

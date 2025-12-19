@@ -783,3 +783,109 @@ class TestValidateDependencyChainHelperMethods:
         assert result is False
         assert "missing_agent" in visited
         assert len(rec_stack) == 0
+
+
+class TestFanOutInputPreparation:
+    """Test fan-out instance input preparation (issue #73)."""
+
+    def setup_resolver(self) -> DependencyResolver:
+        """Set up resolver for testing."""
+        mock_role_resolver = Mock()
+        mock_role_resolver.return_value = "Test Role"
+        return DependencyResolver(role_resolver=mock_role_resolver)
+
+    def test_prepare_fan_out_instance_input_script_agent(self) -> None:
+        """Test preparing input for a fan-out script agent instance."""
+        import json
+
+        resolver = self.setup_resolver()
+
+        instance_config: dict[str, Any] = {
+            "name": "extractor[0]",
+            "script": "extract.py",
+            "_fan_out_chunk": "Scene 1 content",
+            "_fan_out_index": 0,
+            "_fan_out_total": 3,
+            "_fan_out_original": "extractor",
+        }
+
+        result = resolver.prepare_fan_out_instance_input(
+            instance_config=instance_config,
+            base_input="Analyze this play",
+        )
+
+        # Should be JSON for script agent
+        parsed = json.loads(result)
+        assert parsed["agent_name"] == "extractor[0]"
+        assert parsed["input"] == "Scene 1 content"
+        assert parsed["chunk_index"] == 0
+        assert parsed["total_chunks"] == 3
+        assert parsed["base_input"] == "Analyze this play"
+
+    def test_prepare_fan_out_instance_input_llm_agent(self) -> None:
+        """Test preparing input for a fan-out LLM agent instance."""
+        resolver = self.setup_resolver()
+
+        instance_config: dict[str, Any] = {
+            "name": "extractor[1]",
+            "model_profile": "ollama-llama3",
+            "_fan_out_chunk": "Scene 2 dialogue",
+            "_fan_out_index": 1,
+            "_fan_out_total": 3,
+            "_fan_out_original": "extractor",
+        }
+
+        result = resolver.prepare_fan_out_instance_input(
+            instance_config=instance_config,
+            base_input="Extract themes",
+        )
+
+        # Should be text format for LLM agent
+        assert "Scene 2 dialogue" in result
+        assert "chunk 2 of 3" in result
+        assert "Extract themes" in result
+
+    def test_prepare_fan_out_instance_input_with_dict_chunk(self) -> None:
+        """Test preparing input when chunk is a dict."""
+        import json
+
+        resolver = self.setup_resolver()
+
+        chunk_data = {"scene": "Act 1", "text": "Dialogue here"}
+        instance_config: dict[str, Any] = {
+            "name": "extractor[0]",
+            "script": "extract.py",
+            "_fan_out_chunk": chunk_data,
+            "_fan_out_index": 0,
+            "_fan_out_total": 2,
+            "_fan_out_original": "extractor",
+        }
+
+        result = resolver.prepare_fan_out_instance_input(
+            instance_config=instance_config,
+            base_input="Process scenes",
+        )
+
+        parsed = json.loads(result)
+        assert parsed["input"] == chunk_data
+        assert parsed["chunk_index"] == 0
+
+    def test_is_fan_out_instance_config(self) -> None:
+        """Test detecting fan-out instance configurations."""
+        resolver = self.setup_resolver()
+
+        instance_config: dict[str, Any] = {
+            "name": "extractor[0]",
+            "_fan_out_chunk": "data",
+            "_fan_out_index": 0,
+            "_fan_out_total": 1,
+            "_fan_out_original": "extractor",
+        }
+
+        regular_config: dict[str, Any] = {
+            "name": "extractor",
+            "model_profile": "test",
+        }
+
+        assert resolver.is_fan_out_instance_config(instance_config) is True
+        assert resolver.is_fan_out_instance_config(regular_config) is False

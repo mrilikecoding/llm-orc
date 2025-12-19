@@ -104,10 +104,19 @@ class ArtifactManager:
         # Add basic info
         lines.extend(self._add_basic_info(results))
 
+        # Add fan-out summary if present
+        metadata = results.get("metadata", {})
+        if "fan_out" in metadata:
+            lines.extend(self._add_fan_out_summary(metadata["fan_out"]))
+
         # Add agent results
         if "agents" in results and results["agents"]:
             lines.extend(["## Agent Results", ""])
             lines.extend(self._add_agent_results(results["agents"]))
+
+        # Add fan-out agent results if present
+        if "results" in results:
+            lines.extend(self._add_fan_out_results(results["results"]))
 
         return "\n".join(lines)
 
@@ -160,6 +169,62 @@ class ArtifactManager:
         if duration_ms >= 1000:
             return f"{duration_ms / 1000:.1f}s"
         return f"{duration_ms}ms"
+
+    def _add_fan_out_summary(self, fan_out_stats: dict[str, Any]) -> list[str]:
+        """Add fan-out execution summary to markdown lines."""
+        lines: list[str] = ["## Fan-Out Execution Summary", ""]
+
+        for agent_name, stats in fan_out_stats.items():
+            total = stats.get("total_instances", 0)
+            successful = stats.get("successful_instances", 0)
+            failed = stats.get("failed_instances", 0)
+
+            lines.append(f"**{agent_name}**: {successful}/{total} successful")
+            if failed > 0:
+                lines.append(f"  - {failed} failed")
+            lines.append("")
+
+        return lines
+
+    def _add_fan_out_results(self, results: dict[str, Any]) -> list[str]:
+        """Add fan-out agent results to markdown lines."""
+        lines: list[str] = []
+        has_fan_out = False
+
+        for agent_name, result in results.items():
+            if not isinstance(result, dict) or not result.get("fan_out"):
+                continue
+
+            if not has_fan_out:
+                lines.extend(["## Fan-Out Agent Results", ""])
+                has_fan_out = True
+
+            status = result.get("status", "unknown")
+            instances = result.get("instances", [])
+
+            lines.append(f"### {agent_name}")
+            lines.append(f"**Status:** {status}")
+
+            # Count successes
+            success_count = sum(
+                1 for inst in instances if inst.get("status") == "success"
+            )
+            lines.append(f"**Instances:** {success_count}/{len(instances)} successful")
+
+            # Show failed instances with errors
+            failed_instances = [
+                inst for inst in instances if inst.get("status") == "failed"
+            ]
+            if failed_instances:
+                lines.extend(["", "**Failed Instances:**"])
+                for inst in failed_instances:
+                    idx = inst.get("index", "?")
+                    error = inst.get("error", "Unknown error")
+                    lines.append(f"- [{idx}]: {error}")
+
+            lines.append("")
+
+        return lines
 
     def _update_latest_symlink(self, ensemble_dir: Path, target_dir: Path) -> None:
         """Update the latest symlink to point to the newest execution.
