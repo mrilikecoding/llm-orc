@@ -460,3 +460,45 @@ class TestDependencyAnalyzer:
 
         # Then
         assert result == []
+
+
+class TestFanOutDependencyHandling:
+    """Test fan-out instance name handling in dependency analysis (issue #73)."""
+
+    def test_normalize_agent_name_instance_to_original(self) -> None:
+        """Test normalizing instance name to original agent name."""
+        analyzer = DependencyAnalyzer()
+
+        assert analyzer.normalize_agent_name("extractor[0]") == "extractor"
+        assert analyzer.normalize_agent_name("extractor[42]") == "extractor"
+        assert analyzer.normalize_agent_name("my-agent[123]") == "my-agent"
+
+    def test_normalize_agent_name_regular_unchanged(self) -> None:
+        """Test that regular agent names are unchanged."""
+        analyzer = DependencyAnalyzer()
+
+        assert analyzer.normalize_agent_name("extractor") == "extractor"
+        assert analyzer.normalize_agent_name("my-agent") == "my-agent"
+
+    def test_dependencies_satisfied_with_fan_out_instances(self) -> None:
+        """Test dependency satisfaction with fan-out instance names."""
+        analyzer = DependencyAnalyzer()
+
+        # Downstream depends on "extractor" (original name)
+        dependencies = ["extractor"]
+
+        # Processed agents include instances extractor[0], extractor[1], etc.
+        # plus the gathered result under original name
+        processed_agents = {"chunker", "extractor"}
+
+        result = analyzer.agent_dependencies_satisfied(dependencies, processed_agents)
+        assert result is True
+
+    def test_is_fan_out_instance_name(self) -> None:
+        """Test detecting fan-out instance names."""
+        analyzer = DependencyAnalyzer()
+
+        assert analyzer.is_fan_out_instance_name("extractor[0]") is True
+        assert analyzer.is_fan_out_instance_name("extractor[42]") is True
+        assert analyzer.is_fan_out_instance_name("extractor") is False
+        assert analyzer.is_fan_out_instance_name("extractor[]") is False

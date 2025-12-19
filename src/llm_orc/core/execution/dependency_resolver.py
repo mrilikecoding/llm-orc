@@ -202,6 +202,83 @@ class DependencyResolver:
         dependencies = self.get_dependencies(agent_config)
         return all(dep in completed_agents for dep in dependencies)
 
+    def is_fan_out_instance_config(self, agent_config: dict[str, Any]) -> bool:
+        """Check if an agent config is a fan-out instance.
+
+        Args:
+            agent_config: Agent configuration to check
+
+        Returns:
+            True if this is a fan-out instance configuration
+        """
+        return "_fan_out_original" in agent_config
+
+    def prepare_fan_out_instance_input(
+        self,
+        instance_config: dict[str, Any],
+        base_input: str,
+    ) -> str:
+        """Prepare input for a fan-out instance.
+
+        Args:
+            instance_config: Instance configuration with _fan_out_* metadata
+            base_input: Original ensemble input
+
+        Returns:
+            Prepared input string (JSON for scripts, text for LLMs)
+        """
+        chunk = instance_config.get("_fan_out_chunk")
+        index = instance_config.get("_fan_out_index", 0)
+        total = instance_config.get("_fan_out_total", 1)
+        name = instance_config.get("name", "")
+        is_script = "script" in instance_config
+
+        if is_script:
+            return self._build_fan_out_script_input(
+                name, chunk, index, total, base_input
+            )
+        else:
+            return self._build_fan_out_llm_input(chunk, index, total, base_input)
+
+    def _build_fan_out_script_input(
+        self,
+        agent_name: str,
+        chunk: Any,
+        chunk_index: int,
+        total_chunks: int,
+        base_input: str,
+    ) -> str:
+        """Build JSON input for a fan-out script agent instance."""
+        script_input = {
+            "agent_name": agent_name,
+            "input": chunk,
+            "chunk_index": chunk_index,
+            "total_chunks": total_chunks,
+            "base_input": base_input,
+            "context": {},
+        }
+        return json.dumps(script_input)
+
+    def _build_fan_out_llm_input(
+        self,
+        chunk: Any,
+        chunk_index: int,
+        total_chunks: int,
+        base_input: str,
+    ) -> str:
+        """Build text input for a fan-out LLM agent instance."""
+        # Convert chunk to string if needed
+        if isinstance(chunk, dict):
+            chunk_text = json.dumps(chunk)
+        else:
+            chunk_text = str(chunk)
+
+        return (
+            f"Processing chunk {chunk_index + 1} of {total_chunks}.\n\n"
+            f"Original task: {base_input}\n\n"
+            f"Chunk content:\n{chunk_text}"
+        )
+
     def filter_by_dependency_status(
         self,
         agents: list[dict[str, Any]],

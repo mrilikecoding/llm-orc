@@ -2378,3 +2378,126 @@ class TestEnsembleExecutor:
         assert (
             "validation_result" not in result or result.get("validation_result") is None
         )
+
+
+class TestFanOutExecution:
+    """Test fan-out agent execution (issue #73)."""
+
+    @pytest.mark.asyncio
+    async def test_detect_fan_out_in_phase(self, mock_ensemble_executor: Any) -> None:
+        """Test detection of fan-out agents with array upstream results."""
+        executor = mock_ensemble_executor
+
+        phase_agents = [
+            {
+                "name": "extractor",
+                "model_profile": "test",
+                "fan_out": True,
+                "depends_on": ["chunker"],
+            },
+            {"name": "normal_agent", "model_profile": "test"},
+        ]
+
+        results_dict = {
+            "chunker": {
+                "status": "success",
+                "response": '["chunk1", "chunk2", "chunk3"]',
+            },
+        }
+
+        fan_out_agents = executor._detect_fan_out_in_phase(phase_agents, results_dict)
+
+        assert len(fan_out_agents) == 1
+        agent_config, upstream_array = fan_out_agents[0]
+        assert agent_config["name"] == "extractor"
+        assert upstream_array == ["chunk1", "chunk2", "chunk3"]
+
+    @pytest.mark.asyncio
+    async def test_detect_fan_out_no_array_upstream(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Test that fan-out is skipped when upstream is not an array."""
+        executor = mock_ensemble_executor
+
+        phase_agents = [
+            {
+                "name": "extractor",
+                "model_profile": "test",
+                "fan_out": True,
+                "depends_on": ["processor"],
+            },
+        ]
+
+        results_dict = {
+            "processor": {
+                "status": "success",
+                "response": "Just a plain string result",
+            },
+        }
+
+        fan_out_agents = executor._detect_fan_out_in_phase(phase_agents, results_dict)
+
+        # Should return empty - upstream is not an array
+        assert len(fan_out_agents) == 0
+
+    @pytest.mark.asyncio
+    async def test_expand_fan_out_instances(self, mock_ensemble_executor: Any) -> None:
+        """Test expanding a fan-out agent into instances."""
+        executor = mock_ensemble_executor
+
+        agent_config = {
+            "name": "extractor",
+            "model_profile": "test",
+            "fan_out": True,
+            "depends_on": ["chunker"],
+            "system_prompt": "Extract data",
+        }
+
+        upstream_array = ["chunk_a", "chunk_b"]
+
+        instances = executor._expand_fan_out_agent(agent_config, upstream_array)
+
+        assert len(instances) == 2
+        assert instances[0]["name"] == "extractor[0]"
+        assert instances[1]["name"] == "extractor[1]"
+        assert instances[0]["_fan_out_chunk"] == "chunk_a"
+        assert instances[1]["_fan_out_chunk"] == "chunk_b"
+        assert instances[0]["system_prompt"] == "Extract data"
+
+    @pytest.mark.asyncio
+    async def test_gather_fan_out_results(self, mock_ensemble_executor: Any) -> None:
+        """Test gathering results from fan-out instances."""
+        executor = mock_ensemble_executor
+
+        # Simulate instance results
+        instance_results = {
+            "extractor[0]": {"status": "success", "response": "result_0"},
+            "extractor[1]": {"status": "success", "response": "result_1"},
+            "extractor[2]": {"status": "success", "response": "result_2"},
+        }
+
+        gathered = executor._gather_fan_out_results("extractor", instance_results)
+
+        assert gathered["fan_out"] is True
+        assert gathered["status"] == "success"
+        assert gathered["response"] == ["result_0", "result_1", "result_2"]
+
+    @pytest.mark.asyncio
+    async def test_gather_fan_out_results_partial_failure(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Test gathering results with partial failures."""
+        executor = mock_ensemble_executor
+
+        instance_results = {
+            "extractor[0]": {"status": "success", "response": "result_0"},
+            "extractor[1]": {"status": "failed", "error": "timeout"},
+            "extractor[2]": {"status": "success", "response": "result_2"},
+        }
+
+        gathered = executor._gather_fan_out_results("extractor", instance_results)
+
+        assert gathered["fan_out"] is True
+        assert gathered["status"] == "partial"
+        assert len(gathered["instances"]) == 3
+        assert gathered["instances"][1]["status"] == "failed"

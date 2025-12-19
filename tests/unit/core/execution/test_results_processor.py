@@ -430,3 +430,73 @@ class TestResultsProcessor:
         assert "analyzer" in responses
         assert "validator" in responses
         assert "reporter" in responses
+
+
+class TestFanOutResultsProcessing:
+    """Test fan-out result processing (issue #73)."""
+
+    def test_add_fan_out_metadata(self) -> None:
+        """Test adding fan-out execution statistics to result."""
+        processor = ResultsProcessor()
+
+        result: dict[str, Any] = {
+            "ensemble": "test",
+            "metadata": {"agents_used": 3},
+        }
+
+        fan_out_stats = {
+            "extractor": {
+                "total_instances": 5,
+                "successful_instances": 4,
+                "failed_instances": 1,
+            },
+        }
+
+        processor.add_fan_out_metadata(result, fan_out_stats)
+
+        assert "fan_out" in result["metadata"]
+        assert result["metadata"]["fan_out"] == fan_out_stats
+
+    def test_add_fan_out_metadata_empty_stats(self) -> None:
+        """Test adding empty fan-out stats does not add key."""
+        processor = ResultsProcessor()
+
+        result: dict[str, Any] = {
+            "ensemble": "test",
+            "metadata": {"agents_used": 2},
+        }
+
+        processor.add_fan_out_metadata(result, {})
+
+        assert "fan_out" not in result["metadata"]
+
+    def test_count_fan_out_instances(self) -> None:
+        """Test counting fan-out instances in results."""
+        processor = ResultsProcessor()
+
+        results = {
+            "chunker": {"status": "success", "response": "..."},
+            "extractor[0]": {"status": "success", "response": "r0"},
+            "extractor[1]": {"status": "failed", "error": "timeout"},
+            "extractor[2]": {"status": "success", "response": "r2"},
+            "synthesizer": {"status": "success", "response": "..."},
+        }
+
+        stats = processor.count_fan_out_instances(results)
+
+        assert stats["extractor"]["total_instances"] == 3
+        assert stats["extractor"]["successful_instances"] == 2
+        assert stats["extractor"]["failed_instances"] == 1
+
+    def test_count_fan_out_instances_no_fan_out(self) -> None:
+        """Test counting when no fan-out instances present."""
+        processor = ResultsProcessor()
+
+        results = {
+            "agent1": {"status": "success", "response": "r1"},
+            "agent2": {"status": "success", "response": "r2"},
+        }
+
+        stats = processor.count_fan_out_instances(results)
+
+        assert stats == {}
