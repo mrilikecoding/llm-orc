@@ -239,6 +239,11 @@ def _process_agent_results(
             # Format the response as a code block if it looks like code,
             # otherwise as regular text (let Rich handle wrapping)
             response = result["response"]
+            # Convert response to string if it's a list (e.g., fan-out gathered results)
+            if isinstance(response, list):
+                import json
+
+                response = json.dumps(response, indent=2)
             code_keywords = ["def ", "class ", "```", "import ", "function"]
             if any(keyword in response.lower() for keyword in code_keywords):
                 markdown_content.append(f"```\n{response}\n```\n")
@@ -449,6 +454,21 @@ def display_plain_text_results(
         _display_simplified_plain_text(results, metadata)
 
 
+def _format_response_markdown(response: Any) -> str:
+    """Format a response for markdown display, handling lists and code detection."""
+    import json
+
+    # Convert list responses (e.g., fan-out gathered results) to string
+    if isinstance(response, list):
+        response = json.dumps(response, indent=2)
+
+    # Format as code block if it looks like code
+    code_keywords = ["def ", "class ", "```", "import ", "function"]
+    if any(keyword in response.lower() for keyword in code_keywords):
+        return f"```\n{response}\n```\n"
+    return f"{response}\n"
+
+
 def display_simplified_results(
     results: dict[str, Any], metadata: dict[str, Any]
 ) -> None:
@@ -458,22 +478,12 @@ def display_simplified_results(
     # Find the final agent (the one with no dependents)
     final_agent = find_final_agent(results)
 
-    # Debug: print to see what's happening
-    # print(f"DEBUG: final_agent={final_agent}, results keys={list(results.keys())}")
-    # Uncomment for debugging
-
     markdown_content = []
 
     if final_agent and results[final_agent].get("status") == "success":
         response = results[final_agent]["response"]
-        # Add a clear header to indicate this is the final result
         markdown_content.append("## Result\n\n")
-        # Format as code block if it looks like code, otherwise as regular text
-        code_keywords = ["def ", "class ", "```", "import ", "function"]
-        if any(keyword in response.lower() for keyword in code_keywords):
-            markdown_content.append(f"```\n{response}\n```\n")
-        else:
-            markdown_content.append(f"{response}\n")
+        markdown_content.append(_format_response_markdown(response))
     else:
         # Fallback: show last successful agent
         successful_agents = [
@@ -485,11 +495,7 @@ def display_simplified_results(
             last_agent = successful_agents[-1]
             response = results[last_agent]["response"]
             markdown_content.append(f"## Result from {last_agent}\n")
-            code_keywords = ["def ", "class ", "```", "import ", "function"]
-            if any(keyword in response.lower() for keyword in code_keywords):
-                markdown_content.append(f"```\n{response}\n```\n")
-            else:
-                markdown_content.append(f"{response}\n")
+            markdown_content.append(_format_response_markdown(response))
         else:
             markdown_content.append("**❌ No successful results found**\n")
 

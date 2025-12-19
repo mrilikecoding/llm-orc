@@ -1,5 +1,6 @@
 """Results processing and output formatting for ensemble execution."""
 
+import re
 import time
 from typing import Any
 
@@ -180,3 +181,59 @@ class ResultsProcessor:
             ):
                 errors[agent_name] = result["error"]
         return errors
+
+    # ========== Fan-Out Support (Issue #73) ==========
+
+    # Pattern for instance names: agent_name[index]
+    _INSTANCE_PATTERN = re.compile(r"^(.+)\[(\d+)\]$")
+
+    def add_fan_out_metadata(
+        self,
+        result: dict[str, Any],
+        fan_out_stats: dict[str, Any],
+    ) -> None:
+        """Add fan-out execution statistics to result metadata.
+
+        Args:
+            result: Result dict to modify
+            fan_out_stats: Dict of agent_name -> instance stats
+        """
+        if fan_out_stats:
+            result["metadata"]["fan_out"] = fan_out_stats
+
+    def count_fan_out_instances(
+        self, results: dict[str, Any]
+    ) -> dict[str, dict[str, int]]:
+        """Count fan-out instances in results.
+
+        Args:
+            results: Dict of agent results keyed by agent name
+
+        Returns:
+            Dict mapping original agent names to instance counts
+        """
+        instance_counts: dict[str, dict[str, int]] = {}
+
+        for agent_name, result in results.items():
+            match = self._INSTANCE_PATTERN.match(agent_name)
+            if not match:
+                continue
+
+            original_name = match.group(1)
+
+            if original_name not in instance_counts:
+                instance_counts[original_name] = {
+                    "total_instances": 0,
+                    "successful_instances": 0,
+                    "failed_instances": 0,
+                }
+
+            instance_counts[original_name]["total_instances"] += 1
+
+            if isinstance(result, dict):
+                if result.get("status") == "success":
+                    instance_counts[original_name]["successful_instances"] += 1
+                elif result.get("status") == "failed":
+                    instance_counts[original_name]["failed_instances"] += 1
+
+        return instance_counts

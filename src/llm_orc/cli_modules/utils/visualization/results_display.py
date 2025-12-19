@@ -60,6 +60,11 @@ def display_results(
             )
 
             response = results[final_agent]["response"]
+            # Handle list responses (e.g., fan-out gathered results)
+            if isinstance(response, list):
+                import json
+
+                response = json.dumps(response, indent=2)
             # Use direct stdout to prevent truncation
             import sys
 
@@ -156,10 +161,16 @@ def _display_agent_result(
             f"{model_display}{timing_display}[/dim]"
         )
         if response:
+            # Handle list responses (e.g., fan-out gathered results)
+            display_response = response
+            if isinstance(display_response, list):
+                import json
+
+                display_response = json.dumps(display_response, indent=2)
             # Use direct stdout approach to bypass all Rich limitations
             import sys
 
-            sys.stdout.write(response)
+            sys.stdout.write(display_response)
             sys.stdout.write("\n\n")
             sys.stdout.flush()
         else:
@@ -571,10 +582,16 @@ def _get_agent_model_info(
     return ""
 
 
-def _has_code_content(text: str) -> bool:
+def _has_code_content(text: str | list[Any]) -> bool:
     """Check if text contains code-like content."""
     if not text:
         return False
+
+    # Handle list responses (e.g., fan-out gathered results)
+    if isinstance(text, list):
+        import json
+
+        text = json.dumps(text)
 
     code_indicators = ["def ", "class ", "```", "import ", "function", "{", "}", ";"]
     return any(indicator in text.lower() for indicator in code_indicators)
