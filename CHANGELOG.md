@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2025-12-19
+
+### Added
+- **Web UI for Ensemble Management (ADR-010, Issue #74)**
+  - Local web interface at `llm-orc web [--port 8765] [--host 127.0.0.1] [--open]`
+  - FastAPI server with REST API endpoints for ensembles, profiles, scripts, and artifacts
+  - Vite + Preact frontend with Tailwind CSS dark theme
+  - Slide-out panel design for detail views and forms
+  - Profile CRUD with modal forms
+  - Script browser with category grouping and test runner
+  - Artifact viewer with execution metrics and results
+  - Eddi-lab purple gradient theme with tab navigation
+
+- **Fan-Out Agent Pattern (Issue #73)** - Map-reduce style parallel chunk processing
+  - Agents with `fan_out: true` automatically expand into N parallel instances
+  - Detects JSON arrays and `{"data": [...]}` script outputs from upstream agents
+  - Instance naming: `processor[0]`, `processor[1]`, `processor[2]`, etc.
+  - Results gathered under original agent name with per-instance status tracking
+  - Partial success support: continues with available results on instance failures
+  - Config validation: `fan_out: true` requires `depends_on` field
+
+- **Fan-Out Modules**
+  - `FanOutExpander` - Detects arrays and expands agents into indexed instances
+  - `FanOutGatherer` - Collects and orders instance results with status tracking
+
+- **Fan-Out Integration Points**
+  - Phase execution with automatic fan-out detection and expansion
+  - Chunk-indexed input preparation in DependencyResolver
+  - Instance name normalization in DependencyAnalyzer
+  - Fan-out stats aggregation in ResultsProcessor
+  - Artifact markdown reports with fan-out execution summaries
+
+- **Test Ensemble**
+  - `fan-out-test` ensemble with chunker + processor scripts for validation
+
+### Security
+- Upgraded filelock 3.18.0 → 3.20.1 (GHSA-w853-jp5j-5j7f TOCTOU race condition)
+- Upgraded urllib3 2.5.0 → 2.6.2 (GHSA-gm62-xv2j-4w53, GHSA-2xpw-w6gg-jr37)
+
 ## [0.12.3] - 2025-12-04
 
 ### Fixed
