@@ -120,25 +120,21 @@ function ProfileCard({ profile }: { profile: Profile }) {
   const isSelected = selectedProfile.value?.name === profile.name
 
   return (
-    <div
-      className={`bg-bg-secondary border rounded-xl p-6 cursor-pointer transition-all
-        hover:shadow-xl hover:-translate-y-1
-        ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-accent/50'}`}
+    <article
+      className={`card${isSelected ? ' selected' : ''}`}
       onClick={() => (selectedProfile.value = profile)}
     >
-      <div className="flex items-start justify-between mb-3">
-        <h3 className="text-lg font-semibold text-text-primary">{profile.name}</h3>
-        <span className="text-xs py-1 px-2.5 bg-accent/15 text-accent rounded-full font-medium">
-          {profile.provider}
-        </span>
-      </div>
-      <p className="text-text-secondary text-sm font-mono mb-3">{profile.model}</p>
+      <header>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <strong>{profile.name}</strong>
+          <span className="badge badge-primary">{profile.provider}</span>
+        </div>
+      </header>
+      <p><code>{profile.model}</code></p>
       {profile.system_prompt && (
-        <p className="text-text-muted text-sm leading-relaxed line-clamp-2">
-          {profile.system_prompt}
-        </p>
+        <p><small>{profile.system_prompt}</small></p>
       )}
-    </div>
+    </article>
   )
 }
 
@@ -155,50 +151,29 @@ function ProfileDetailPanel() {
     >
       {profile && (
         <>
-          {/* Model */}
-          <div className="mb-4">
-            <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
-              Model
-            </div>
-            <code className="block p-3 bg-bg-primary border border-border rounded text-sm">
-              {profile.model}
-            </code>
+          <div style={{ marginBottom: '1rem' }}>
+            <p className="muted-label">Model</p>
+            <code>{profile.model}</code>
           </div>
 
-          {/* System Prompt */}
           {profile.system_prompt && (
-            <div className="mb-4">
-              <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
-                System Prompt
-              </div>
-              <pre className="p-3 bg-bg-primary border border-border rounded text-sm whitespace-pre-wrap">
-                {profile.system_prompt}
-              </pre>
+            <div style={{ marginBottom: '1rem' }}>
+              <p className="muted-label">System Prompt</p>
+              <pre><code>{profile.system_prompt}</code></pre>
             </div>
           )}
 
-          {/* Timeout */}
           {profile.timeout_seconds && (
-            <div className="mb-4">
-              <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
-                Timeout
-              </div>
-              <div className="text-text-primary">{profile.timeout_seconds} seconds</div>
+            <div style={{ marginBottom: '1rem' }}>
+              <p className="muted-label">Timeout</p>
+              <p>{profile.timeout_seconds} seconds</p>
             </div>
           )}
 
-          {/* Actions */}
-          <div className="flex gap-3 mt-6 pt-4 border-t border-border">
-            <button
-              onClick={() => openEditForm(profile)}
-              className="flex-1 py-2.5 px-4 gradient-button text-white rounded-lg font-medium transition-all hover:-translate-y-0.5"
-            >
-              Edit Profile
-            </button>
-            <button
-              onClick={() => handleDelete(profile)}
-              className="py-2.5 px-4 border border-error text-error hover:bg-error/10 rounded-lg font-medium transition-colors"
-            >
+          <hr />
+          <div role="group">
+            <button onClick={() => openEditForm(profile)}>Edit Profile</button>
+            <button className="outline secondary" onClick={() => handleDelete(profile)}>
               Delete
             </button>
           </div>
@@ -221,102 +196,67 @@ function ProfileFormPanel() {
     >
       <form onSubmit={handleSubmit}>
         {formError.value && (
-          <div className="mb-4 p-3 bg-error/10 border border-error/50 rounded-lg text-error text-sm">
-            {formError.value}
-          </div>
+          <p style={{ color: '#f85149' }}>{formError.value}</p>
         )}
 
-        <div className="mb-4">
-          <label className="block text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
-            Name
-          </label>
+        <label>
+          Name
           <input
             type="text"
             value={formName.value}
             onInput={(e) => (formName.value = (e.target as HTMLInputElement).value)}
             disabled={isEditing}
-            className="w-full p-3 bg-bg-primary border border-border rounded-lg text-text-primary
-              focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50
-              disabled:opacity-50"
             placeholder="my-profile"
           />
-        </div>
+        </label>
 
-        <div className="mb-4">
-          <label className="block text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
-            Provider
-          </label>
+        <label>
+          Provider
           <select
             value={formProvider.value}
             onChange={(e) => (formProvider.value = (e.target as HTMLSelectElement).value)}
-            className="w-full p-3 bg-bg-primary border border-border rounded-lg text-text-primary
-              focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50"
           >
             {PROVIDERS.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
           </select>
-        </div>
+        </label>
 
-        <div className="mb-4">
-          <label className="block text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
-            Model
-          </label>
+        <label>
+          Model
           <input
             type="text"
             value={formModel.value}
             onInput={(e) => (formModel.value = (e.target as HTMLInputElement).value)}
-            className="w-full p-3 bg-bg-primary border border-border rounded-lg text-text-primary
-              focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50"
             placeholder="llama3.2:3b"
           />
-        </div>
+        </label>
 
-        <div className="mb-4">
-          <label className="block text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
-            System Prompt <span className="text-text-muted normal-case">(optional)</span>
-          </label>
+        <label>
+          System Prompt <small>(optional)</small>
           <textarea
             value={formSystemPrompt.value}
             onInput={(e) => (formSystemPrompt.value = (e.target as HTMLTextAreaElement).value)}
-            className="w-full p-3 bg-bg-primary border border-border rounded-lg text-text-primary
-              focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50 resize-y"
             rows={3}
             placeholder="You are a helpful assistant..."
           />
-        </div>
+        </label>
 
-        <div className="mb-6">
-          <label className="block text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
-            Timeout (seconds) <span className="text-text-muted normal-case">(optional)</span>
-          </label>
+        <label>
+          Timeout (seconds) <small>(optional)</small>
           <input
             type="number"
             value={formTimeout.value}
             onInput={(e) => (formTimeout.value = (e.target as HTMLInputElement).value)}
-            className="w-full p-3 bg-bg-primary border border-border rounded-lg text-text-primary
-              focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50"
             placeholder="60"
           />
-        </div>
+        </label>
 
-        <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={closeForm}
-            className="flex-1 py-2.5 px-4 border border-border text-text-secondary hover:text-text-primary
-              hover:border-text-secondary rounded-lg font-medium transition-colors"
-          >
+        <div role="group">
+          <button type="button" className="outline secondary" onClick={closeForm}>
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={saving.value}
-            className={`flex-1 py-2.5 px-4 rounded-lg text-white font-medium transition-all
-              ${saving.value
-                ? 'bg-border-light cursor-not-allowed'
-                : 'gradient-button hover:-translate-y-0.5'}`}
-          >
+          <button type="submit" disabled={saving.value} aria-busy={saving.value}>
             {saving.value ? 'Saving...' : isEditing ? 'Update' : 'Create'}
           </button>
         </div>
@@ -331,38 +271,30 @@ export function ProfilesPage() {
   }, [])
 
   if (loading.value) {
-    return <div className="text-text-secondary">Loading profiles...</div>
+    return <p aria-busy="true">Loading profiles...</p>
   }
 
   if (error.value) {
-    return <div className="text-error">Error: {error.value}</div>
+    return <p style={{ color: '#f85149' }}>Error: {error.value}</p>
   }
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-8">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-bold">Model Profiles</h1>
-          <p className="text-text-secondary text-sm mt-1">
-            {profiles.value.length} profile{profiles.value.length !== 1 ? 's' : ''} configured
-          </p>
+          <h1>Model Profiles</h1>
+          <p>{profiles.value.length} profile{profiles.value.length !== 1 ? 's' : ''} configured</p>
         </div>
-        <button
-          onClick={openCreateForm}
-          className="px-4 py-2.5 gradient-button text-white rounded-lg font-medium transition-all hover:-translate-y-0.5"
-        >
-          + Create Profile
-        </button>
+        <button onClick={openCreateForm}>+ Create Profile</button>
       </div>
 
       {profiles.value.length === 0 ? (
-        <div className="text-center py-16 text-text-secondary">
-          <div className="text-4xl mb-4 opacity-50">🤖</div>
+        <div className="empty-state">
           <p>No profiles configured yet.</p>
-          <p className="text-sm mt-1">Create a profile to get started.</p>
+          <p><small>Create a profile to get started.</small></p>
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
+        <div className="card-grid">
           {profiles.value.map((profile) => (
             <ProfileCard key={profile.name} profile={profile} />
           ))}

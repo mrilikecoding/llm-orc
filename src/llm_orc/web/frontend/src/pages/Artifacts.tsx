@@ -58,22 +58,20 @@ function ArtifactCard({ artifact }: { artifact: Artifact }) {
   const isSelected = selectedArtifact.value?.name === artifact.name
 
   return (
-    <div
-      className={`bg-bg-secondary border rounded-xl p-6 cursor-pointer transition-all
-        hover:shadow-xl hover:-translate-y-1
-        ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-accent/50'}`}
+    <article
+      className={`card${isSelected ? ' selected' : ''}`}
       onClick={() => selectArtifact(artifact)}
     >
-      <div className="flex items-start justify-between mb-3">
-        <h3 className="text-lg font-semibold text-text-primary">{artifact.name}</h3>
-        <span className="text-xs py-1 px-2.5 bg-accent/15 text-accent rounded-full font-medium">
-          {artifact.executions_count} run{artifact.executions_count !== 1 ? 's' : ''}
-        </span>
-      </div>
-      <p className="text-sm text-text-muted">
-        Latest: {artifact.latest_execution}
-      </p>
-    </div>
+      <header>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <strong>{artifact.name}</strong>
+          <span className="badge badge-primary">
+            {artifact.executions_count} run{artifact.executions_count !== 1 ? 's' : ''}
+          </span>
+        </div>
+      </header>
+      <p><small>Latest: {artifact.latest_execution}</small></p>
+    </article>
   )
 }
 
@@ -82,26 +80,20 @@ function ExecutionMetrics({ execution }: { execution: ArtifactDetailType }) {
   const totalAgents = execution.agents.length
 
   return (
-    <div className="grid grid-cols-3 gap-3 mb-4">
-      <div className="bg-bg-primary border border-border rounded-lg p-3 text-center">
-        <div className="text-xl font-bold text-text-primary">
-          {formatDuration(execution.total_duration_ms)}
-        </div>
-        <div className="text-xs text-text-muted mt-1">Duration</div>
+    <div className="metrics-grid">
+      <div className="metric">
+        <div className="value">{formatDuration(execution.total_duration_ms)}</div>
+        <div className="label">Duration</div>
       </div>
-      <div className="bg-bg-primary border border-border rounded-lg p-3 text-center">
-        <div className="text-xl font-bold text-text-primary">
-          {successCount}/{totalAgents}
-        </div>
-        <div className="text-xs text-text-muted mt-1">Succeeded</div>
+      <div className="metric">
+        <div className="value">{successCount}/{totalAgents}</div>
+        <div className="label">Succeeded</div>
       </div>
-      <div className="bg-bg-primary border border-border rounded-lg p-3 text-center">
-        <div className={`text-xl font-bold ${
-          execution.status === 'success' ? 'text-success' : 'text-error'
-        }`}>
+      <div className="metric">
+        <div className="value" style={{ color: execution.status === 'success' ? '#3fb950' : '#f85149' }}>
           {execution.status === 'success' ? 'Pass' : 'Fail'}
         </div>
-        <div className="text-xs text-text-muted mt-1">Status</div>
+        <div className="label">Status</div>
       </div>
     </div>
   )
@@ -109,27 +101,23 @@ function ExecutionMetrics({ execution }: { execution: ArtifactDetailType }) {
 
 function AgentResults({ execution }: { execution: ArtifactDetailType }) {
   return (
-    <div className="space-y-2">
-      <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
-        Agent Results
+    <div>
+      <p className="muted-label">Agent Results</p>
+      <div className="spaced-sm">
+        {execution.agents.map((agent) => (
+          <details key={agent.name}>
+            <summary>
+              <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <strong>{agent.name}</strong>
+                <span className={`badge ${agent.status === 'completed' ? 'badge-success' : 'badge-error'}`}>
+                  {agent.status}
+                </span>
+              </span>
+            </summary>
+            <pre><code>{agent.result || agent.error || 'No output'}</code></pre>
+          </details>
+        ))}
       </div>
-      {execution.agents.map((agent) => (
-        <details key={agent.name} className="bg-bg-primary border border-border rounded-lg">
-          <summary className="px-3 py-2 cursor-pointer flex items-center justify-between">
-            <span className="font-medium text-sm">{agent.name}</span>
-            <span className={`text-xs py-0.5 px-2 rounded text-white ${
-              agent.status === 'completed' ? 'bg-success-bg' : 'bg-error-bg'
-            }`}>
-              {agent.status}
-            </span>
-          </summary>
-          <div className="px-3 pb-3 pt-1 border-t border-border">
-            <pre className="text-xs whitespace-pre-wrap text-text-secondary">
-              {agent.result || agent.error || 'No output'}
-            </pre>
-          </div>
-        </details>
-      ))}
     </div>
   )
 }
@@ -138,13 +126,11 @@ function SynthesisResult({ execution }: { execution: ArtifactDetailType }) {
   if (!execution.synthesis) return null
 
   return (
-    <div className="mt-4">
-      <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
-        Synthesis
-      </div>
-      <div className="bg-accent/5 border border-accent/25 rounded-lg p-3">
-        <pre className="text-sm whitespace-pre-wrap">{execution.synthesis}</pre>
-      </div>
+    <div style={{ marginTop: '1rem' }}>
+      <p className="muted-label">Synthesis</p>
+      <article style={{ borderColor: 'var(--pico-primary)' }}>
+        <pre style={{ whiteSpace: 'pre-wrap' }}><code>{execution.synthesis}</code></pre>
+      </article>
     </div>
   )
 }
@@ -161,30 +147,23 @@ function ArtifactDetailPanel() {
       width="xl"
     >
       {loadingExecutions.value ? (
-        <div className="text-text-secondary py-8 text-center">Loading executions...</div>
+        <p aria-busy="true">Loading executions...</p>
       ) : artifactExecutions.value.length === 0 ? (
-        <div className="text-text-secondary py-8 text-center">No executions found</div>
+        <p>No executions found</p>
       ) : (
         <>
-          {/* Execution selector */}
-          <div className="mb-4">
-            <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">
-              Select Execution
-            </div>
-            <div className="flex gap-2 flex-wrap">
+          <div style={{ marginBottom: '1rem' }}>
+            <p className="muted-label">Select Execution</p>
+            <div role="group">
               {artifactExecutions.value.map((exec, idx) => (
                 <button
                   key={exec.timestamp}
-                  className={`text-xs px-3 py-1.5 rounded-full border transition-colors
-                    ${selectedExecution.value?.timestamp === exec.timestamp
-                      ? 'border-accent bg-accent/10 text-accent'
-                      : 'border-border text-text-secondary hover:border-text-secondary'}`}
+                  className={selectedExecution.value?.timestamp === exec.timestamp ? '' : 'outline secondary'}
                   onClick={() => (selectedExecution.value = exec)}
+                  style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem' }}
                 >
-                  #{artifactExecutions.value.length - idx}
-                  <span className={`ml-1.5 w-1.5 h-1.5 rounded-full inline-block ${
-                    exec.status === 'success' ? 'bg-success' : 'bg-error'
-                  }`} />
+                  #{artifactExecutions.value.length - idx}{' '}
+                  <span className={`status-dot ${exec.status === 'success' ? 'success' : 'error'}`} />
                 </button>
               ))}
             </div>
@@ -192,9 +171,7 @@ function ArtifactDetailPanel() {
 
           {selectedExecution.value && (
             <>
-              <div className="text-xs text-text-muted mb-4">
-                {formatTimestamp(selectedExecution.value.timestamp)}
-              </div>
+              <p><small>{formatTimestamp(selectedExecution.value.timestamp)}</small></p>
               <ExecutionMetrics execution={selectedExecution.value} />
               <AgentResults execution={selectedExecution.value} />
               <SynthesisResult execution={selectedExecution.value} />
@@ -212,32 +189,29 @@ export function ArtifactsPage() {
   }, [])
 
   if (loading.value) {
-    return <div className="text-text-secondary">Loading artifacts...</div>
+    return <p aria-busy="true">Loading artifacts...</p>
   }
 
   if (error.value) {
-    return <div className="text-error">Error: {error.value}</div>
+    return <p style={{ color: '#f85149' }}>Error: {error.value}</p>
   }
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-8">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-bold">Execution Artifacts</h1>
-          <p className="text-text-secondary text-sm mt-1">
-            {artifacts.value.length} ensemble{artifacts.value.length !== 1 ? 's' : ''} with artifacts
-          </p>
+          <h1>Execution Artifacts</h1>
+          <p>{artifacts.value.length} ensemble{artifacts.value.length !== 1 ? 's' : ''} with artifacts</p>
         </div>
       </div>
 
       {artifacts.value.length === 0 ? (
-        <div className="text-center py-16 text-text-secondary">
-          <div className="text-4xl mb-4 opacity-50">📊</div>
+        <div className="empty-state">
           <p>No execution artifacts yet.</p>
-          <p className="text-sm mt-1">Run an ensemble to create artifacts.</p>
+          <p><small>Run an ensemble to create artifacts.</small></p>
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">
+        <div className="card-grid">
           {artifacts.value.map((a) => (
             <ArtifactCard key={a.name} artifact={a} />
           ))}
