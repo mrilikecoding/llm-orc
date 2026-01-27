@@ -70,3 +70,17 @@ async def validate_ensemble(name: str) -> dict[str, Any]:
     mcp = get_mcp_server()
     result = await mcp._validate_ensemble_tool({"ensemble_name": name})
     return result
+
+
+@router.get("/{name}/runnable")
+async def check_ensemble_runnable(name: str) -> dict[str, Any]:
+    """Check if ensemble can run with current providers.
+
+    Returns runnable status including:
+    - Whether the ensemble can run
+    - Status of each agent's profile/provider
+    - Suggested local alternatives for unavailable profiles
+    """
+    mcp = get_mcp_server()
+    result = await mcp._check_ensemble_runnable_tool({"ensemble_name": name})
+    return result

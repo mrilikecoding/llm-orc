@@ -1727,3 +1727,63 @@ class TestSetProjectTool:
     async def test_project_path_starts_as_none(self, server: MCPServerV2) -> None:
         """project_path is None by default."""
         assert server.project_path is None
+
+
+class TestReadEnsemblesResource:
+    """Tests for _read_ensembles_resource method."""
+
+    @pytest.mark.asyncio
+    async def test_read_ensembles_includes_relative_path(
+        self, server: MCPServerV2, tmp_path: Path
+    ) -> None:
+        """Ensemble list includes relative_path for directory hierarchy."""
+        ensembles_dir = tmp_path / ".llm-orc" / "ensembles"
+        subdir = ensembles_dir / "testing"
+        subdir.mkdir(parents=True)
+        (subdir / "my-ensemble.yaml").write_text(
+            "name: my-ensemble\ndescription: Test\nagents: []"
+        )
+        _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
+
+        result = await server._read_ensembles_resource()
+
+        assert len(result) == 1
+        assert result[0]["name"] == "my-ensemble"
+        assert "relative_path" in result[0]
+        assert result[0]["relative_path"] == "testing/my-ensemble.yaml"
+
+    @pytest.mark.asyncio
+    async def test_read_ensembles_relative_path_for_root_level(
+        self, server: MCPServerV2, tmp_path: Path
+    ) -> None:
+        """Ensemble at root level has just filename as relative_path."""
+        ensembles_dir = tmp_path / ".llm-orc" / "ensembles"
+        ensembles_dir.mkdir(parents=True)
+        (ensembles_dir / "root-ensemble.yaml").write_text(
+            "name: root-ensemble\ndescription: Root\nagents: []"
+        )
+        _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
+
+        result = await server._read_ensembles_resource()
+
+        assert len(result) == 1
+        assert result[0]["relative_path"] == "root-ensemble.yaml"
+
+    @pytest.mark.asyncio
+    async def test_read_ensembles_relative_path_nested_subdirs(
+        self, server: MCPServerV2, tmp_path: Path
+    ) -> None:
+        """Ensemble in nested subdirs has full relative path."""
+        ensembles_dir = tmp_path / ".llm-orc" / "ensembles"
+        nested = ensembles_dir / "research" / "interdisciplinary"
+        nested.mkdir(parents=True)
+        (nested / "deep-ensemble.yaml").write_text(
+            "name: deep-ensemble\ndescription: Deep\nagents: []"
+        )
+        _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
+
+        result = await server._read_ensembles_resource()
+
+        assert len(result) == 1
+        expected = "research/interdisciplinary/deep-ensemble.yaml"
+        assert result[0]["relative_path"] == expected

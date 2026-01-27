@@ -928,14 +928,17 @@ class MCPServerV2:
 
             source = self._determine_source(ensemble_dir)
 
-            for yaml_file in Path(ensemble_dir).glob("**/*.yaml"):
+            ensemble_dir_path = Path(ensemble_dir)
+            for yaml_file in ensemble_dir_path.glob("**/*.yaml"):
                 try:
                     config = self.ensemble_loader.load_from_file(str(yaml_file))
                     if config:
+                        relative_path = str(yaml_file.relative_to(ensemble_dir_path))
                         ensembles.append(
                             {
                                 "name": config.name,
                                 "source": source,
+                                "relative_path": relative_path,
                                 "agent_count": len(config.agents),
                                 "description": config.description,
                             }
