@@ -9,12 +9,6 @@ interface SlidePanelProps {
   width?: 'md' | 'lg' | 'xl'
 }
 
-const widthClasses = {
-  md: 'w-[400px]',
-  lg: 'w-[500px]',
-  xl: 'w-[600px]',
-}
-
 export function SlidePanel({
   open,
   onClose,
@@ -27,37 +21,22 @@ export function SlidePanel({
 
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/40 z-40 transition-opacity"
-        onClick={onClose}
-      />
-
-      {/* Panel */}
-      <div
-        className={`fixed top-0 right-0 h-full ${widthClasses[width]} bg-bg-secondary
-          border-l border-border shadow-2xl z-50 flex flex-col
-          animate-slide-in`}
-      >
-        {/* Header */}
-        <div className="flex-shrink-0 p-5 border-b border-border flex justify-between items-start">
+      <div className="slide-backdrop" onClick={onClose} />
+      <div className={`slide-panel width-${width}`}>
+        <div className="slide-panel-header">
           <div>
-            <h2 className="text-lg font-semibold m-0">{title}</h2>
-            {subtitle && (
-              <p className="text-sm text-text-secondary m-0 mt-1">{subtitle}</p>
-            )}
+            <h2>{title}</h2>
+            {subtitle && <p>{subtitle}</p>}
           </div>
           <button
             onClick={onClose}
-            className="text-text-secondary hover:text-text-primary text-2xl leading-none
-              w-8 h-8 flex items-center justify-center rounded hover:bg-border-light"
+            className="outline secondary"
+            style={{ padding: '0.25rem 0.5rem', margin: 0 }}
           >
-            ×
+            &times;
           </button>
         </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="slide-panel-body">
           {children}
         </div>
       </div>

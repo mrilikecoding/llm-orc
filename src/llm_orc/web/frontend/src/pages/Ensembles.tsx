@@ -1,6 +1,13 @@
 import { signal } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
-import { api, Ensemble, EnsembleDetail as EnsembleDetailType, ExecutionResult } from '../api/client'
+import {
+  api,
+  Ensemble,
+  EnsembleDetail as EnsembleDetailType,
+  ExecutionResult,
+  RunnableStatus,
+  AgentRunnableStatus,
+} from '../api/client'
 import { SlidePanel } from '../components/SlidePanel'
 
 const ensembles = signal<Ensemble[]>([])
@@ -12,6 +19,8 @@ const executeInput = signal('')
 const executeResult = signal<ExecutionResult | null>(null)
 const executing = signal(false)
 const activeTab = signal<'agents' | 'execute' | 'config'>('agents')
+const runnableStatus = signal<RunnableStatus | null>(null)
+const loadingRunnable = signal(false)
 
 async function loadEnsembles() {
   loading.value = true
@@ -27,14 +36,23 @@ async function loadEnsembles() {
 
 async function selectEnsemble(ensemble: Ensemble) {
   loadingDetail.value = true
+  loadingRunnable.value = true
   executeResult.value = null
+  runnableStatus.value = null
   activeTab.value = 'agents'
+
   try {
-    selectedEnsemble.value = await api.ensembles.get(ensemble.name)
+    const [detail, runnable] = await Promise.all([
+      api.ensembles.get(ensemble.name),
+      api.ensembles.checkRunnable(ensemble.name),
+    ])
+    selectedEnsemble.value = detail
+    runnableStatus.value = runnable
   } catch {
     selectedEnsemble.value = { ...ensemble, agents: ensemble.agents || [] }
   } finally {
     loadingDetail.value = false
+    loadingRunnable.value = false
   }
 }
 
@@ -63,82 +81,136 @@ function EnsembleCard({ ensemble }: { ensemble: Ensemble }) {
   const agentCount = ensemble.agents?.length || 0
 
   return (
-    <div
-      className={`bg-bg-secondary border rounded-xl p-6 cursor-pointer transition-all
-        hover:shadow-xl hover:-translate-y-1
-        ${isSelected ? 'border-accent ring-2 ring-accent/20' : 'border-border hover:border-accent/50'}`}
+    <article
+      className={`card${isSelected ? ' selected' : ''}`}
       onClick={() => selectEnsemble(ensemble)}
     >
-      <div className="flex items-start justify-between mb-3">
-        <h3 className="text-lg font-semibold text-text-primary">{ensemble.name}</h3>
-        {agentCount > 0 && (
-          <span className="text-xs py-1 px-2.5 bg-accent/15 text-accent rounded-full font-medium">
-            {agentCount} agent{agentCount !== 1 ? 's' : ''}
-          </span>
-        )}
+      <header>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <strong>{ensemble.name}</strong>
+          {agentCount > 0 && (
+            <span className="badge badge-primary">
+              {agentCount} agent{agentCount !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+      </header>
+      <p><small>{ensemble.description || 'No description'}</small></p>
+    </article>
+  )
+}
+
+function RunnableStatusBanner() {
+  if (loadingRunnable.value) {
+    return <p><small>Checking availability...</small></p>
+  }
+
+  const status = runnableStatus.value
+  if (!status) return null
+
+  const unavailableAgents = status.agents.filter((a) => a.status !== 'available')
+
+  if (status.runnable) {
+    return (
+      <div role="group" style={{ marginBottom: '1.5rem' }}>
+        <ins style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span className="status-dot success" />
+          <small><strong>Ready to run</strong> &mdash; All {status.agents.length} agents available</small>
+        </ins>
       </div>
-      <p className="text-text-secondary text-sm leading-relaxed line-clamp-2 mb-4">
-        {ensemble.description || 'No description'}
-      </p>
+    )
+  }
+
+  return (
+    <div style={{ marginBottom: '1.5rem', padding: '1rem', border: '1px solid #d29922', borderRadius: 'var(--pico-border-radius)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+        <span className="status-dot warning" />
+        <small><strong style={{ color: '#d29922' }}>
+          {unavailableAgents.length} agent{unavailableAgents.length !== 1 ? 's' : ''} unavailable
+        </strong></small>
+      </div>
+      <div className="spaced-sm" style={{ paddingLeft: '1.25rem' }}>
+        {unavailableAgents.map((agent) => (
+          <div key={agent.name}>
+            <small>
+              <strong>{agent.name}</strong>
+              {': '}
+              {agent.status === 'provider_unavailable' && `${agent.provider} not available`}
+              {agent.status === 'missing_profile' && 'profile not found'}
+              {agent.status === 'model_not_found' && 'model not found'}
+              {agent.alternatives.length > 0 && (
+                <span style={{ opacity: 0.6, marginLeft: '0.5rem' }}>
+                  (alternatives: {agent.alternatives.slice(0, 3).join(', ')})
+                </span>
+              )}
+            </small>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
 
-function TabButton({ tab, label }: { tab: 'agents' | 'execute' | 'config'; label: string }) {
-  const isActive = activeTab.value === tab
-  return (
-    <button
-      className={`px-4 py-2 text-sm font-medium rounded-t border-b-2 -mb-px transition-colors
-        ${isActive
-          ? 'text-accent border-accent bg-bg-primary'
-          : 'text-text-secondary border-transparent hover:text-text-primary hover:bg-border-light/50'}`}
-      onClick={() => (activeTab.value = tab)}
-    >
-      {label}
-    </button>
-  )
+function getAgentStatus(agentName: string): AgentRunnableStatus | undefined {
+  return runnableStatus.value?.agents.find((a) => a.name === agentName)
 }
 
 function AgentsTab() {
   const ens = selectedEnsemble.value
   if (!ens?.agents?.length) {
-    return <div className="text-text-secondary py-4">No agents configured</div>
+    return <p>No agents configured</p>
   }
 
   return (
-    <div className="space-y-3">
-      {ens.agents.map((agent, idx) => (
-        <div key={agent.name} className="bg-bg-primary border border-border rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-6 h-6 rounded-full bg-accent/20 text-accent text-xs
-              flex items-center justify-center font-medium">
-              {idx + 1}
-            </span>
-            <span className="font-medium text-text-primary">{agent.name}</span>
-            <span className="ml-auto text-xs text-text-muted bg-border-light py-0.5 px-2 rounded">
-              {agent.model_profile}
-            </span>
-          </div>
-          {agent.role && (
-            <p className="text-sm text-text-secondary mb-2 pl-8">{agent.role}</p>
-          )}
-          {agent.script && (
-            <div className="text-xs text-text-muted pl-8">
-              Script: <code className="text-success">{agent.script}</code>
+    <div className="spaced">
+      {ens.agents.map((agent, idx) => {
+        const status = getAgentStatus(agent.name)
+        const isAvailable = !status || status.status === 'available'
+
+        return (
+          <article
+            key={agent.name}
+            style={!isAvailable ? { borderColor: '#d29922' } : undefined}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+              <span className="agent-number">{idx + 1}</span>
+              <strong>{agent.name}</strong>
+              {status && <span className={`status-dot ${isAvailable ? 'success' : 'warning'}`} title={isAvailable ? 'Available' : status.status} />}
+              <small style={{ marginLeft: 'auto' }}>
+                <kbd>{agent.model_profile || agent.script || 'no profile'}</kbd>
+              </small>
             </div>
-          )}
-          {agent.depends_on && agent.depends_on.length > 0 && (
-            <div className="text-xs text-text-muted pl-8 mt-1 flex items-center gap-1 flex-wrap">
-              <span>Depends on:</span>
-              {agent.depends_on.map((dep) => (
-                <span key={dep} className="bg-accent/10 text-accent py-0.5 px-1.5 rounded">
-                  {dep}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
+            {agent.role && <p><small>{agent.role}</small></p>}
+            {agent.script && (
+              <p><small>Script: <code>{agent.script}</code></small></p>
+            )}
+            {agent.depends_on && agent.depends_on.length > 0 && (
+              <p>
+                <small>
+                  Depends on:{' '}
+                  {agent.depends_on.map((dep) => (
+                    <kbd key={dep} style={{ marginRight: '0.25rem' }}>{dep}</kbd>
+                  ))}
+                </small>
+              </p>
+            )}
+            {status && !isAvailable && (
+              <p>
+                <small style={{ color: '#d29922' }}>
+                  {status.status === 'provider_unavailable' && `${status.provider} not available`}
+                  {status.status === 'missing_profile' && 'Profile not found'}
+                  {status.status === 'model_not_found' && 'Model not found'}
+                  {status.alternatives.length > 0 && (
+                    <span style={{ opacity: 0.6, marginLeft: '0.5rem' }}>
+                      Alternatives: {status.alternatives.slice(0, 3).join(', ')}
+                    </span>
+                  )}
+                </small>
+              </p>
+            )}
+          </article>
+        )
+      })}
     </div>
   )
 }
@@ -146,56 +218,46 @@ function AgentsTab() {
 function ExecuteTab() {
   return (
     <div>
-      <label className="block text-sm font-medium text-text-secondary mb-2">Input</label>
-      <textarea
-        className="w-full p-3 bg-bg-primary border border-border rounded-lg text-text-primary
-          font-sans text-sm resize-y focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/50"
-        placeholder="Enter input for the ensemble..."
-        value={executeInput.value}
-        onInput={(e) => (executeInput.value = (e.target as HTMLTextAreaElement).value)}
-        rows={4}
-      />
+      <label>
+        Input
+        <textarea
+          placeholder="Enter input for the ensemble..."
+          value={executeInput.value}
+          onInput={(e) => (executeInput.value = (e.target as HTMLTextAreaElement).value)}
+          rows={4}
+        />
+      </label>
       <button
-        className={`mt-3 w-full py-2.5 px-4 rounded-lg text-white font-medium transition-all
-          ${executing.value
-            ? 'bg-border-light cursor-not-allowed'
-            : 'gradient-button hover:-translate-y-0.5'}`}
         onClick={executeEnsemble}
         disabled={executing.value}
+        aria-busy={executing.value}
       >
         {executing.value ? 'Executing...' : 'Execute Ensemble'}
       </button>
 
       {executeResult.value && (
-        <div className="mt-4">
-          <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium mb-3
-            ${executeResult.value.status === 'success'
-              ? 'bg-success/20 text-success'
-              : 'bg-error/20 text-error'}`}>
-            <span className={`w-2 h-2 rounded-full ${
-              executeResult.value.status === 'success' ? 'bg-success' : 'bg-error'
-            }`} />
-            {executeResult.value.status === 'success' ? 'Completed' : 'Failed'}
-          </div>
+        <div style={{ marginTop: '1rem' }}>
+          <p>
+            <span className={`badge ${executeResult.value.status === 'success' ? 'badge-success' : 'badge-error'}`}>
+              <span className={`status-dot ${executeResult.value.status === 'success' ? 'success' : 'error'}`} />{' '}
+              {executeResult.value.status === 'success' ? 'Completed' : 'Failed'}
+            </span>
+          </p>
 
-          <div className="space-y-3">
+          <div className="spaced-sm">
             {Object.entries(executeResult.value.results).map(([name, result]) => (
-              <div key={name} className="bg-bg-primary border border-border rounded-lg p-3">
-                <div className="text-sm font-medium text-accent mb-2">{name}</div>
-                <pre className="text-sm text-text-primary whitespace-pre-wrap">
-                  {result.response || result.error || 'No output'}
-                </pre>
-              </div>
+              <article key={name}>
+                <header><strong style={{ color: 'var(--pico-primary)' }}>{name}</strong></header>
+                <pre><code>{result.response || result.error || 'No output'}</code></pre>
+              </article>
             ))}
           </div>
 
           {executeResult.value.synthesis && (
-            <div className="mt-3 bg-accent/5 border border-accent/25 rounded-lg p-3">
-              <div className="text-xs font-medium text-accent mb-2 uppercase tracking-wider">
-                Synthesis
-              </div>
-              <div className="text-sm">{executeResult.value.synthesis}</div>
-            </div>
+            <article style={{ borderColor: 'var(--pico-primary)', marginTop: '0.75rem' }}>
+              <header><small className="muted-label">Synthesis</small></header>
+              <p>{executeResult.value.synthesis}</p>
+            </article>
           )}
         </div>
       )}
@@ -208,9 +270,7 @@ function ConfigTab() {
   if (!ens) return null
 
   return (
-    <pre className="text-sm bg-bg-primary border border-border rounded-lg p-4 overflow-auto">
-      {JSON.stringify(ens, null, 2)}
-    </pre>
+    <pre><code>{JSON.stringify(ens, null, 2)}</code></pre>
   )
 }
 
@@ -220,19 +280,30 @@ function EnsembleDetailPanel() {
   return (
     <SlidePanel
       open={ens !== null}
-      onClose={() => (selectedEnsemble.value = null)}
+      onClose={() => {
+        selectedEnsemble.value = null
+        runnableStatus.value = null
+      }}
       title={ens?.name || ''}
       subtitle={ens?.description}
       width="xl"
     >
       {loadingDetail.value ? (
-        <div className="text-text-secondary py-8 text-center">Loading...</div>
+        <p aria-busy="true">Loading...</p>
       ) : ens ? (
         <>
-          <div className="flex gap-1 border-b border-border mb-4">
-            <TabButton tab="agents" label={`Agents (${ens.agents?.length || 0})`} />
-            <TabButton tab="execute" label="Execute" />
-            <TabButton tab="config" label="Config" />
+          <RunnableStatusBanner />
+
+          <div className="inner-tabs">
+            <button className={activeTab.value === 'agents' ? 'active' : ''} onClick={() => (activeTab.value = 'agents')}>
+              Agents ({ens.agents?.length || 0})
+            </button>
+            <button className={activeTab.value === 'execute' ? 'active' : ''} onClick={() => (activeTab.value = 'execute')}>
+              Execute
+            </button>
+            <button className={activeTab.value === 'config' ? 'active' : ''} onClick={() => (activeTab.value = 'config')}>
+              Config
+            </button>
           </div>
 
           {activeTab.value === 'agents' && <AgentsTab />}
@@ -244,81 +315,99 @@ function EnsembleDetailPanel() {
   )
 }
 
+function getDirectory(relativePath: string | undefined): string {
+  if (!relativePath) return '(root)'
+  const lastSlash = relativePath.lastIndexOf('/')
+  if (lastSlash === -1) return '(root)'
+  return relativePath.substring(0, lastSlash)
+}
+
+function formatSourceLabel(source: string): string {
+  if (source === 'local') return 'Project Ensembles'
+  if (source === 'library') return 'Library'
+  if (source === 'global') return 'Global'
+  return source
+}
+
 export function EnsemblesPage() {
   useEffect(() => {
     loadEnsembles()
   }, [])
 
   if (loading.value) {
-    return <div className="text-text-secondary">Loading ensembles...</div>
+    return <p aria-busy="true">Loading ensembles...</p>
   }
 
   if (error.value) {
-    return <div className="text-error">Error: {error.value}</div>
+    return <p style={{ color: '#f85149' }}>Error: {error.value}</p>
   }
 
-  // Group ensembles by source
-  const grouped = ensembles.value.reduce((acc, ens) => {
-    const source = ens.source || 'unknown'
-    if (!acc[source]) acc[source] = []
-    acc[source].push(ens)
-    return acc
-  }, {} as Record<string, typeof ensembles.value>)
+  // Group ensembles by source then by directory
+  const bySource = ensembles.value.reduce(
+    (acc, ens) => {
+      const source = ens.source || 'unknown'
+      if (!acc[source]) acc[source] = {}
+      const dir = getDirectory(ens.relative_path)
+      if (!acc[source][dir]) acc[source][dir] = []
+      acc[source][dir].push(ens)
+      return acc
+    },
+    {} as Record<string, Record<string, Ensemble[]>>
+  )
 
-  // Sort sources: local first, then library, then others
-  const sortedSources = Object.keys(grouped).sort((a, b) => {
-    if (a.includes('local') || a.includes('.llm-orc')) return -1
-    if (b.includes('local') || b.includes('.llm-orc')) return 1
-    if (a.includes('library')) return -1
-    if (b.includes('library')) return 1
-    return a.localeCompare(b)
+  const sortedSources = Object.keys(bySource).sort((a, b) => {
+    const order: Record<string, number> = { local: 0, library: 1, global: 2 }
+    return (order[a] ?? 3) - (order[b] ?? 3)
   })
-
-  function formatSourceLabel(source: string): string {
-    if (source.includes('.llm-orc/ensembles')) return 'Project Ensembles'
-    if (source.includes('library')) return 'Library'
-    if (source.includes('global')) return 'Global'
-    return source
-  }
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-8">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-bold">Ensembles</h1>
-          <p className="text-text-secondary text-sm mt-1">
-            {ensembles.value.length} ensemble{ensembles.value.length !== 1 ? 's' : ''} available
-          </p>
+          <h1>Ensembles</h1>
+          <p>{ensembles.value.length} ensemble{ensembles.value.length !== 1 ? 's' : ''} available</p>
         </div>
       </div>
 
       {ensembles.value.length === 0 ? (
-        <div className="text-center py-16 text-text-secondary">
-          <div className="text-4xl mb-4 opacity-50">📦</div>
+        <div className="empty-state">
           <p>No ensembles found.</p>
-          <p className="text-sm mt-1">Create ensembles in .llm-orc/ensembles/</p>
+          <p><small>Create ensembles in .llm-orc/ensembles/</small></p>
         </div>
       ) : (
-        <div className="space-y-10">
-          {sortedSources.map((source) => (
-            <section key={source}>
-              <div className="flex items-center gap-3 mb-4">
-                <h2 className="text-sm font-semibold text-text-secondary uppercase tracking-wider">
-                  {formatSourceLabel(source)}
-                </h2>
-                <span className="text-xs text-text-muted bg-white/5 px-2 py-0.5 rounded">
-                  {grouped[source].length}
-                </span>
-                <div className="flex-1 h-px bg-border" />
-              </div>
-              <p className="text-xs text-text-muted mb-4 font-mono">{source}</p>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-6">
-                {grouped[source].map((e) => (
-                  <EnsembleCard key={e.name} ensemble={e} />
-                ))}
-              </div>
-            </section>
-          ))}
+        <div className="spaced" style={{ gap: '3rem' }}>
+          {sortedSources.map((source) => {
+            const directories = bySource[source]
+            const sortedDirs = Object.keys(directories).sort((a, b) => {
+              if (a === '(root)') return 1
+              if (b === '(root)') return -1
+              return a.localeCompare(b)
+            })
+            const totalInSource = Object.values(directories).flat().length
+
+            return (
+              <section key={source}>
+                <div className="section-divider">
+                  <h2>{formatSourceLabel(source)}</h2>
+                  <span className="badge badge-primary">{totalInSource}</span>
+                  <div className="line" />
+                </div>
+
+                <div className="spaced" style={{ paddingLeft: '1rem' }}>
+                  {sortedDirs.map((dir) => (
+                    <div key={dir}>
+                      <p><small><code>{dir === '(root)' ? '/' : `${dir}/`}</code> ({directories[dir].length})</small></p>
+                      <div className="card-grid">
+                        {directories[dir].map((e) => (
+                          <EnsembleCard key={e.name} ensemble={e} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )
+          })}
         </div>
       )}
 
