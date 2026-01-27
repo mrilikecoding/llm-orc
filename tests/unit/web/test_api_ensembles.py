@@ -110,3 +110,68 @@ class TestEnsemblesAPI:
             assert response.status_code == 200
             data = response.json()
             assert data["valid"] is True
+
+    def test_check_runnable_returns_status(self) -> None:
+        """Test that GET /api/ensembles/{name}/runnable returns runnable status."""
+        app = create_app()
+        client = TestClient(app)
+
+        with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
+            mock_server = MagicMock()
+            mock_server._check_ensemble_runnable_tool = AsyncMock(
+                return_value={
+                    "ensemble": "test-ensemble",
+                    "runnable": True,
+                    "agents": [
+                        {
+                            "name": "agent1",
+                            "profile": "fast",
+                            "provider": "ollama",
+                            "status": "available",
+                            "alternatives": [],
+                        }
+                    ],
+                }
+            )
+            mock_get_mcp.return_value = mock_server
+
+            response = client.get("/api/ensembles/test-ensemble/runnable")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["ensemble"] == "test-ensemble"
+            assert data["runnable"] is True
+            assert len(data["agents"]) == 1
+            assert data["agents"][0]["status"] == "available"
+
+    def test_check_runnable_with_unavailable_agents(self) -> None:
+        """Test that runnable endpoint shows unavailable agents correctly."""
+        app = create_app()
+        client = TestClient(app)
+
+        with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
+            mock_server = MagicMock()
+            mock_server._check_ensemble_runnable_tool = AsyncMock(
+                return_value={
+                    "ensemble": "test-ensemble",
+                    "runnable": False,
+                    "agents": [
+                        {
+                            "name": "agent1",
+                            "profile": "cloud-profile",
+                            "provider": "anthropic-api",
+                            "status": "provider_unavailable",
+                            "alternatives": ["llama3:latest", "gemma2:9b"],
+                        }
+                    ],
+                }
+            )
+            mock_get_mcp.return_value = mock_server
+
+            response = client.get("/api/ensembles/test-ensemble/runnable")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["runnable"] is False
+            assert data["agents"][0]["status"] == "provider_unavailable"
+            assert len(data["agents"][0]["alternatives"]) == 2

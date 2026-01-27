@@ -12,6 +12,7 @@ export interface Ensemble {
   name: string
   description: string
   source: string
+  relative_path?: string
   agents?: Agent[]
   synthesis_prompt?: string
 }
@@ -91,6 +92,20 @@ export interface ExecutionResult {
   synthesis?: string
 }
 
+export interface AgentRunnableStatus {
+  name: string
+  profile: string
+  provider: string
+  status: 'available' | 'provider_unavailable' | 'missing_profile' | 'model_not_found'
+  alternatives: string[]
+}
+
+export interface RunnableStatus {
+  ensemble: string
+  runnable: boolean
+  agents: AgentRunnableStatus[]
+}
+
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     headers: {
@@ -119,6 +134,8 @@ export const api = {
         `${BASE_URL}/ensembles/${name}/validate`,
         { method: 'POST' }
       ),
+    checkRunnable: (name: string) =>
+      fetchJson<RunnableStatus>(`${BASE_URL}/ensembles/${name}/runnable`),
   },
   profiles: {
     list: () => fetchJson<Profile[]>(`${BASE_URL}/profiles`),
