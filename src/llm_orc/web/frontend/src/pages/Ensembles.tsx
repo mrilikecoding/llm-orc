@@ -386,26 +386,27 @@ export function EnsemblesPage() {
             const totalInSource = Object.values(directories).flat().length
 
             return (
-              <section key={source}>
-                <div className="section-divider">
-                  <h2>{formatSourceLabel(source)}</h2>
+              <details key={source}>
+                <summary>
+                  <strong>{formatSourceLabel(source)}</strong>{' '}
                   <span className="badge badge-primary">{totalInSource}</span>
-                  <div className="line" />
-                </div>
-
+                </summary>
                 <div className="spaced" style={{ paddingLeft: '1rem' }}>
                   {sortedDirs.map((dir) => (
-                    <div key={dir}>
-                      <p><small><code>{dir === '(root)' ? '/' : `${dir}/`}</code> ({directories[dir].length})</small></p>
-                      <div className="card-grid">
+                    <details key={dir}>
+                      <summary>
+                        <code>{dir === '(root)' ? '/' : `${dir}/`}</code>{' '}
+                        <small>({directories[dir].length})</small>
+                      </summary>
+                      <div className="card-grid" style={{ marginTop: '0.75rem' }}>
                         {directories[dir].map((e) => (
                           <EnsembleCard key={e.name} ensemble={e} />
                         ))}
                       </div>
-                    </div>
+                    </details>
                   ))}
                 </div>
-              </section>
+              </details>
             )
           })}
         </div>
