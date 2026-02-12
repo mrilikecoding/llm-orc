@@ -7,7 +7,7 @@ name = "llm-orchestra"
 version = "0.13.0"
 description = "Multi-agent LLM communication system with ensemble orchestration"
 readme = "README.md"
-license = {file = "LICENSE"}
+license = "AGPL-3.0-or-later"
 authors = [
     {name = "Nathan Green", email = "contact@nate.green"},
 ]
@@ -18,7 +18,7 @@ classifiers = [
     "Intended Audience :: Science/Research", 
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
