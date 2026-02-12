@@ -1010,7 +1010,7 @@ class TestSpecialProviderHandling:
         # When/Then
         with pytest.raises(
             click.ClickException,
-            match="Failed to set up Claude CLI authentication: Claude CLI error",
+            match="Failed to set up claude-cli authentication: Claude CLI error",
         ):
             AuthCommands.add_auth_provider(
                 provider="claude-cli",
@@ -1082,7 +1082,8 @@ class TestSpecialProviderHandling:
         # When/Then
         with pytest.raises(
             click.ClickException,
-            match="Failed to set up Claude Pro/Max OAuth authentication: OAuth error",
+            match="Failed to set up anthropic-claude-pro-max"
+            " authentication: OAuth error",
         ):
             AuthCommands.add_auth_provider(
                 provider="anthropic-claude-pro-max",
@@ -1158,7 +1159,7 @@ class TestSpecialProviderHandling:
         # When/Then
         with pytest.raises(
             click.ClickException,
-            match="Failed to set up Anthropic authentication: Interactive auth error",
+            match="Failed to set up anthropic authentication: Interactive auth error",
         ):
             AuthCommands.add_auth_provider(
                 provider="anthropic",

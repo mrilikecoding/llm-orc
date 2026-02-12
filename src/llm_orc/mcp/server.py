@@ -2129,6 +2129,35 @@ class MCPServerV2:
                 )
         return scripts
 
+    def _resolve_copy_destination(self, source_path: Path) -> Path:
+        """Resolve the default local destination for a library copy."""
+        ensemble_dirs = self.config_manager.get_ensembles_dirs()
+        local_dir = Path.cwd() / ".llm-orc"
+        lib_dir = self._get_library_dir()
+
+        for dir_path in ensemble_dirs:
+            path = Path(dir_path)
+            is_local = ".llm-orc" in str(path)
+            is_library = str(path).startswith(str(lib_dir))
+            if is_local and not is_library:
+                local_dir = path.parent
+                break
+
+        subdir = "ensembles" if "ensembles" in str(source_path) else "scripts"
+        return local_dir / subdir / source_path.name
+
+    def _resolve_library_source(self, source: str) -> Path:
+        """Resolve a library source string to a path, adding .yaml if needed."""
+        library_dir = self._get_library_dir()
+        source_path = library_dir / source
+
+        if not source_path.exists() and not source.endswith(".yaml"):
+            source_path = library_dir / f"{source}.yaml"
+
+        if not source_path.exists():
+            raise ValueError(f"Source not found in library: {source}")
+        return source_path
+
     async def _library_copy_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Copy from library to local.
 
@@ -2138,6 +2167,8 @@ class MCPServerV2:
         Returns:
             Copy result.
         """
+        import shutil
+
         source = arguments.get("source")
         destination = arguments.get("destination")
         overwrite = arguments.get("overwrite", False)
@@ -2145,46 +2176,15 @@ class MCPServerV2:
         if not source:
             raise ValueError("source is required")
 
-        library_dir = self._get_library_dir()
-        source_path = library_dir / source
+        source_path = self._resolve_library_source(source)
+        dest_path = (
+            Path(destination)
+            if destination
+            else self._resolve_copy_destination(source_path)
+        )
 
-        # Add .yaml extension if not present
-        if not source_path.exists() and not source.endswith(".yaml"):
-            source_path = library_dir / f"{source}.yaml"
-
-        if not source_path.exists():
-            raise ValueError(f"Source not found in library: {source}")
-
-        # Determine destination
-        if destination:
-            dest_path = Path(destination)
-        else:
-            # Default to local .llm-orc directory
-            ensemble_dirs = self.config_manager.get_ensembles_dirs()
-            local_dir = Path.cwd() / ".llm-orc"
-            library_dir = self._get_library_dir()
-
-            # Try to find a local (non-library) ensembles dir
-            for dir_path in ensemble_dirs:
-                path = Path(dir_path)
-                # Check it's a .llm-orc dir but not under the library
-                is_local = ".llm-orc" in str(path)
-                is_library = str(path).startswith(str(library_dir))
-                if is_local and not is_library:
-                    local_dir = path.parent  # Go up from ensembles to .llm-orc
-                    break
-
-            if "ensembles" in str(source_path):
-                dest_path = local_dir / "ensembles" / source_path.name
-            else:
-                dest_path = local_dir / "scripts" / source_path.name
-
-        # Check if exists
         if dest_path.exists() and not overwrite:
             raise ValueError(f"File already exists: {dest_path}")
-
-        # Copy the file
-        import shutil
 
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_path, dest_path)

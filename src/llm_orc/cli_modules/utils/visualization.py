@@ -1,5 +1,6 @@
 """CLI visualization utilities for dependency graphs and execution display."""
 
+from collections.abc import Callable
 from typing import Any
 
 import click
@@ -84,104 +85,67 @@ def _group_agents_by_dependency_level(
     return agents_by_level
 
 
+_PLAIN_STATUS_SYMBOLS: dict[str, str] = {
+    "running": "◐",
+    "completed": "✓",
+    "failed": "✗",
+    "waiting_input": "⏸",
+}
+
+_RICH_STATUS_FORMATS: dict[str, str] = {
+    "running": "[yellow]◐[/yellow] [yellow]{name}[/yellow]",
+    "completed": "[green]✓[/green] [green]{name}[/green]",
+    "failed": "[red]✗[/red] [red]{name}[/red]",
+    "waiting_input": "[blue]⏸[/blue] [blue]{name}[/blue]",
+}
+
+
+def _build_dependency_graph(
+    agents: list[dict[str, Any]],
+    agent_statuses: dict[str, str],
+    format_agent: Callable[[str, str], str],
+) -> str:
+    """Build a horizontal dependency graph string using a formatting function."""
+    agents_by_level = _group_agents_by_dependency_level(agents)
+    if not agents_by_level:
+        return ""
+
+    graph_parts = []
+    for level in range(max(agents_by_level) + 1):
+        level_agents = agents_by_level.get(level, [])
+        if not level_agents:
+            continue
+        displays = [
+            format_agent(agent["name"], agent_statuses.get(agent["name"], "pending"))
+            for agent in level_agents
+        ]
+        graph_parts.append(", ".join(displays))
+
+    return " → ".join(graph_parts)
+
+
 def _create_plain_text_dependency_graph(
     agents: list[dict[str, Any]], agent_statuses: dict[str, str]
 ) -> str:
     """Create plain text dependency graph without Rich formatting."""
-    # Group agents by dependency level
-    agents_by_level: dict[int, list[dict[str, Any]]] = {}
 
-    for agent in agents:
-        dependencies = agent.get("depends_on", [])
-        level = _calculate_agent_level(agent["name"], dependencies, agents)
+    def fmt(name: str, status: str) -> str:
+        symbol = _PLAIN_STATUS_SYMBOLS.get(status, "○")
+        return f"{symbol} {name}"
 
-        if level not in agents_by_level:
-            agents_by_level[level] = []
-        agents_by_level[level].append(agent)
-
-    # Build horizontal graph: A,B,C → D → E,F → G
-    graph_parts = []
-    max_level = max(agents_by_level.keys()) if agents_by_level else 0
-
-    for level in range(max_level + 1):
-        if level not in agents_by_level:
-            continue
-
-        level_agents = agents_by_level[level]
-        agent_displays = []
-
-        for agent in level_agents:
-            name = agent["name"]
-            status = agent_statuses.get(name, "pending")
-
-            # Status indicators with plain text symbols
-            if status == "running":
-                agent_displays.append(f"◐ {name}")
-            elif status == "completed":
-                agent_displays.append(f"✓ {name}")
-            elif status == "failed":
-                agent_displays.append(f"✗ {name}")
-            elif status == "waiting_input":
-                agent_displays.append(f"⏸ {name}")
-            else:
-                agent_displays.append(f"○ {name}")
-
-        # Join agents at same level with commas
-        level_text = ", ".join(agent_displays)
-        graph_parts.append(level_text)
-
-    # Join levels with arrows
-    return " → ".join(graph_parts)
+    return _build_dependency_graph(agents, agent_statuses, fmt)
 
 
 def create_dependency_graph_with_status(
     agents: list[dict[str, Any]], agent_statuses: dict[str, str]
 ) -> str:
     """Create horizontal dependency graph with status indicators."""
-    # Group agents by dependency level
-    agents_by_level: dict[int, list[dict[str, Any]]] = {}
 
-    for agent in agents:
-        dependencies = agent.get("depends_on", [])
-        level = _calculate_agent_level(agent["name"], dependencies, agents)
+    def fmt(name: str, status: str) -> str:
+        template = _RICH_STATUS_FORMATS.get(status, "[dim]○[/dim] [dim]{name}[/dim]")
+        return template.format(name=name)
 
-        if level not in agents_by_level:
-            agents_by_level[level] = []
-        agents_by_level[level].append(agent)
-
-    # Build horizontal graph: A,B,C → D → E,F → G
-    graph_parts = []
-    max_level = max(agents_by_level.keys()) if agents_by_level else 0
-
-    for level in range(max_level + 1):
-        if level not in agents_by_level:
-            continue
-
-        level_agents = agents_by_level[level]
-        agent_displays = []
-
-        for agent in level_agents:
-            name = agent["name"]
-            status = agent_statuses.get(name, "pending")
-
-            # Status indicators with symbols
-            if status == "running":
-                agent_displays.append(f"[yellow]◐[/yellow] [yellow]{name}[/yellow]")
-            elif status == "completed":
-                agent_displays.append(f"[green]✓[/green] [green]{name}[/green]")
-            elif status == "failed":
-                agent_displays.append(f"[red]✗[/red] [red]{name}[/red]")
-            elif status == "waiting_input":
-                agent_displays.append(f"[blue]⏸[/blue] [blue]{name}[/blue]")
-            else:
-                agent_displays.append(f"[dim]○[/dim] [dim]{name}[/dim]")
-
-        # Join agents at same level with commas
-        level_text = ", ".join(agent_displays)
-        graph_parts.append(level_text)
-
-    # Join levels with arrows
-    return " → ".join(graph_parts)
+    return _build_dependency_graph(agents, agent_statuses, fmt)
 
 
 def _calculate_agent_level(

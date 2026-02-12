@@ -16,14 +16,14 @@ Usage:
 import argparse
 import sys
 import time
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class ValidationLevel(str, Enum):
+class ValidationLevel(StrEnum):
     """Validation levels as specified in ADR-003."""
 
     CORE = "core"
