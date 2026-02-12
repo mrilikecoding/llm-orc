@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-02-12
+
+### Changed
+- **License changed from MIT to AGPL-3.0-or-later**
+- Replaced Tailwind CSS with Pico CSS for web UI
+- Collapsible sections for ensemble source and directory groups in web UI
+
+### Added
+- Runnable check endpoint and relative_path field for ensembles
+
+### Security
+- Upgraded all dependencies to fix 14 known vulnerabilities
+  - aiohttp 3.12.14 → 3.13.3 (GHSA-6mq8-rvhq-8wgg)
+  - cryptography 45.0.5 → 46.0.5
+  - urllib3 2.6.2 → 2.6.3 (GHSA-38jv-5279-wg99)
+  - python-multipart 0.0.20 → 0.0.22 (GHSA-wp53-j4wj-2cfg)
+  - filelock 3.20.1 → 3.20.3, pip 25.3 → 26.0, pyasn1 0.6.1 → 0.6.2
+
+### Fixed
+- Reduced cognitive complexity in 9 functions to pass stricter linter thresholds
+- Migrated `str, Enum` to `StrEnum` for ruff 0.15 compatibility
+- Fixed mypy 1.19 type annotation issue in contract validator
+
 ## [0.13.0] - 2025-12-19
 
 ### Added
