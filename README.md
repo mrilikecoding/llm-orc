@@ -4,7 +4,7 @@
 [![CI](https://github.com/mrilikecoding/llm-orc/workflows/CI/badge.svg)](https://github.com/mrilikecoding/llm-orc/actions)
 [![codecov](https://codecov.io/gh/mrilikecoding/llm-orc/graph/badge.svg?token=FWHP257H9E)](https://codecov.io/gh/mrilikecoding/llm-orc)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Downloads](https://static.pepy.tech/badge/llm-orchestra)](https://pepy.tech/project/llm-orchestra)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/mrilikecoding/llm-orc)](https://github.com/mrilikecoding/llm-orc/releases)
 
