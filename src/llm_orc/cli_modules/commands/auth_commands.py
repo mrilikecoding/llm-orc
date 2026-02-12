@@ -22,6 +22,63 @@ class AuthCommands:
     """Authentication management commands."""
 
     @staticmethod
+    def _handle_special_provider(
+        provider: str,
+        api_key: str | None,
+        client_id: str | None,
+        client_secret: str | None,
+        storage: CredentialStorage,
+        auth_manager: AuthenticationManager,
+    ) -> bool:
+        """Handle special provider auth flows. Returns True if handled."""
+        provider_lower = provider.lower()
+
+        if provider_lower == "claude-cli":
+            handle_claude_cli_auth(storage)
+            return True
+
+        if provider_lower == "anthropic-claude-pro-max":
+            AuthCommands._remove_existing_provider(storage, provider)
+            handle_claude_pro_max_oauth(auth_manager, storage)
+            return True
+
+        is_anthropic_interactive = (
+            provider_lower == "anthropic"
+            and not api_key
+            and not (client_id and client_secret)
+        )
+        if is_anthropic_interactive:
+            AuthCommands._remove_existing_provider(storage, provider)
+            handle_anthropic_interactive_auth(auth_manager, storage)
+            return True
+
+        return False
+
+    @staticmethod
+    def _store_credentials(
+        provider: str,
+        api_key: str | None,
+        client_id: str | None,
+        client_secret: str | None,
+        storage: CredentialStorage,
+        auth_manager: AuthenticationManager,
+    ) -> None:
+        """Store API key or OAuth credentials for a provider."""
+        AuthCommands._remove_existing_provider(storage, provider)
+
+        if api_key:
+            storage.store_api_key(provider, api_key)
+            click.echo(f"API key for {provider} added successfully")
+            return
+
+        assert client_id is not None
+        assert client_secret is not None
+        if auth_manager.authenticate_oauth(provider, client_id, client_secret):
+            click.echo(f"OAuth authentication for {provider} completed successfully")
+        else:
+            raise click.ClickException(f"OAuth authentication for {provider} failed")
+
+    @staticmethod
     def add_auth_provider(
         provider: str,
         api_key: str | None,
@@ -33,69 +90,22 @@ class AuthCommands:
         storage = CredentialStorage(config_manager)
         auth_manager = AuthenticationManager(storage)
 
-        # Special handling for claude-cli provider
-        if provider.lower() == "claude-cli":
-            try:
-                handle_claude_cli_auth(storage)
+        try:
+            if AuthCommands._handle_special_provider(
+                provider, api_key, client_id, client_secret, storage, auth_manager
+            ):
                 return
-            except Exception as e:
-                raise click.ClickException(
-                    f"Failed to set up Claude CLI authentication: {str(e)}"
-                ) from e
+        except Exception as e:
+            raise click.ClickException(
+                f"Failed to set up {provider} authentication: {str(e)}"
+            ) from e
 
-        # Special handling for anthropic-claude-pro-max OAuth
-        if provider.lower() == "anthropic-claude-pro-max":
-            try:
-                # Remove existing provider if it exists
-                AuthCommands._remove_existing_provider(storage, provider)
-                handle_claude_pro_max_oauth(auth_manager, storage)
-                return
-            except Exception as e:
-                raise click.ClickException(
-                    f"Failed to set up Claude Pro/Max OAuth authentication: {str(e)}"
-                ) from e
-
-        # Special interactive flow for Anthropic
-        is_anthropic_interactive = (
-            provider.lower() == "anthropic"
-            and not api_key
-            and not (client_id and client_secret)
-        )
-        if is_anthropic_interactive:
-            try:
-                # Remove existing provider if it exists
-                AuthCommands._remove_existing_provider(storage, provider)
-                handle_anthropic_interactive_auth(auth_manager, storage)
-                return
-            except Exception as e:
-                raise click.ClickException(
-                    f"Failed to set up Anthropic authentication: {str(e)}"
-                ) from e
-
-        # Validate input for non-interactive flow
         AuthCommands._validate_auth_credentials(api_key, client_id, client_secret)
 
         try:
-            # Remove existing provider if it exists
-            AuthCommands._remove_existing_provider(storage, provider)
-
-            if api_key:
-                # API key authentication
-                storage.store_api_key(provider, api_key)
-                click.echo(f"API key for {provider} added successfully")
-            else:
-                # OAuth authentication - we know these are not None due to validation
-                # above
-                assert client_id is not None
-                assert client_secret is not None
-                if auth_manager.authenticate_oauth(provider, client_id, client_secret):
-                    click.echo(
-                        f"OAuth authentication for {provider} completed successfully"
-                    )
-                else:
-                    raise click.ClickException(
-                        f"OAuth authentication for {provider} failed"
-                    )
+            AuthCommands._store_credentials(
+                provider, api_key, client_id, client_secret, storage, auth_manager
+            )
         except Exception as e:
             raise click.ClickException(f"Failed to add authentication: {str(e)}") from e
 

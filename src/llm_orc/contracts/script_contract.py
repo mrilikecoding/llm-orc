@@ -1,13 +1,13 @@
 """Core script contract interface and models for ADR-003 implementation."""
 
 from abc import ABC, abstractmethod
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class ScriptCapability(str, Enum):
+class ScriptCapability(StrEnum):
     """Enumeration of script capabilities."""
 
     USER_INTERACTION = "user_interaction"

@@ -1,5 +1,7 @@
 """Results display utilities for CLI visualization."""
 
+import json
+import sys
 from typing import Any
 
 import click
@@ -8,17 +10,11 @@ from rich.console import Console
 from .dependency import _create_plain_text_dependency_graph, find_final_agent
 
 
-def display_results(
-    results: dict[str, Any],
-    metadata: dict[str, Any],
-    agents: list[dict[str, Any]],
-    detailed: bool = False,
-) -> None:
-    """Display execution results with Rich formatting."""
-    # Enhanced console config to prevent any truncation
-    console = Console(
+def _create_console() -> Console:
+    """Create a Rich console with full-width, no-truncation settings."""
+    return Console(
         soft_wrap=True,
-        width=None,  # Use full terminal width
+        width=None,
         force_terminal=True,
         no_color=False,
         legacy_windows=False,
@@ -29,50 +25,70 @@ def display_results(
         file=None,
     )
 
+
+def _display_detailed_results(
+    console: Console,
+    results: dict[str, Any],
+    metadata: dict[str, Any],
+    agents: list[dict[str, Any]],
+) -> None:
+    """Display detailed results for all agents."""
+    console.print("\n[bold blue]📋 Results[/bold blue]")
+    console.print("=" * 50)
+
+    processed_results = _process_agent_results(results)
+    for agent_name, result in processed_results.items():
+        _display_agent_result(console, agent_name, result, agents, metadata)
+
+    performance_lines = _format_performance_metrics(metadata)
+    if performance_lines:
+        console.print("\n" + "\n".join(performance_lines))
+
+
+def _display_simple_results(
+    console: Console,
+    results: dict[str, Any],
+    metadata: dict[str, Any],
+    agents: list[dict[str, Any]],
+) -> None:
+    """Display simplified results showing only the final agent."""
+    final_agent = find_final_agent(results)
+    if not final_agent or not results[final_agent].get("response"):
+        console.print("No results to display")
+        return
+
+    model_info = _get_agent_model_info(
+        final_agent, agents, results[final_agent], metadata
+    )
+    model_display = f" ({model_info})" if model_info else ""
+
+    console.print("\n[bold blue]📋 Final Result[/bold blue]")
+    console.print("=" * 30)
+    console.print(
+        f"\n[bold green]✓ {final_agent}[/bold green][dim]{model_display}[/dim]"
+    )
+
+    response = results[final_agent]["response"]
+    if isinstance(response, list):
+        response = json.dumps(response, indent=2)
+    sys.stdout.write(response)
+    sys.stdout.write("\n\n")
+    sys.stdout.flush()
+
+
+def display_results(
+    results: dict[str, Any],
+    metadata: dict[str, Any],
+    agents: list[dict[str, Any]],
+    detailed: bool = False,
+) -> None:
+    """Display execution results with Rich formatting."""
+    console = _create_console()
+
     if detailed:
-        # Add Results header
-        console.print("\n[bold blue]📋 Results[/bold blue]")
-        console.print("=" * 50)
-
-        # Process and display agent results
-        processed_results = _process_agent_results(results)
-        for agent_name, result in processed_results.items():
-            _display_agent_result(console, agent_name, result, agents, metadata)
-
-        # Display performance metrics
-        performance_lines = _format_performance_metrics(metadata)
-        if performance_lines:
-            console.print("\n" + "\n".join(performance_lines))
+        _display_detailed_results(console, results, metadata, agents)
     else:
-        # Simplified display - show final agent result
-        final_agent = find_final_agent(results)
-        if final_agent and results[final_agent].get("response"):
-            # Get model info for the final agent
-            model_info = _get_agent_model_info(
-                final_agent, agents, results[final_agent], metadata
-            )
-            model_display = f" ({model_info})" if model_info else ""
-
-            console.print("\n[bold blue]📋 Final Result[/bold blue]")
-            console.print("=" * 30)
-            console.print(
-                f"\n[bold green]✓ {final_agent}[/bold green][dim]{model_display}[/dim]"
-            )
-
-            response = results[final_agent]["response"]
-            # Handle list responses (e.g., fan-out gathered results)
-            if isinstance(response, list):
-                import json
-
-                response = json.dumps(response, indent=2)
-            # Use direct stdout to prevent truncation
-            import sys
-
-            sys.stdout.write(response)
-            sys.stdout.write("\n\n")
-            sys.stdout.flush()
-        else:
-            console.print("No results to display")
+        _display_simple_results(console, results, metadata, agents)
 
 
 def display_plain_text_results(

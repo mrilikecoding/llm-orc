@@ -3,7 +3,7 @@
 import asyncio
 import time
 from abc import ABC, abstractmethod
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
 from unittest.mock import MagicMock
@@ -17,7 +17,7 @@ scenarios("features/adr-003-testable-contracts.feature")
 
 
 # Core contract system models (from ADR-003 specification)
-class ScriptCapability(str, Enum):
+class ScriptCapability(StrEnum):
     """Enumeration of script capabilities."""
 
     USER_INTERACTION = "user_interaction"

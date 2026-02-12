@@ -188,8 +188,8 @@ class TestAgentExecutor:
 
         # Mock dependencies
         self.mock_resolve_model_profile.return_value = {"timeout_seconds": 30}
-        self.mock_get_agent_input.side_effect = (
-            lambda input_data, agent_name: f"input for {agent_name}"
+        self.mock_get_agent_input.side_effect = lambda input_data, agent_name: (
+            f"input for {agent_name}"
         )
 
         # Mock successful agent execution
@@ -236,8 +236,8 @@ class TestAgentExecutor:
 
         # Mock dependencies
         self.mock_resolve_model_profile.return_value = {"timeout_seconds": 30}
-        self.mock_get_agent_input.side_effect = (
-            lambda input_data, agent_name: f"input for {agent_name}"
+        self.mock_get_agent_input.side_effect = lambda input_data, agent_name: (
+            f"input for {agent_name}"
         )
 
         # Mock one success, one failure
@@ -310,8 +310,8 @@ class TestAgentExecutor:
 
         # Mock dependencies
         self.mock_resolve_model_profile.return_value = {"timeout_seconds": 30}
-        self.mock_get_agent_input.side_effect = (
-            lambda input_data, agent_name: f"input for {agent_name}"
+        self.mock_get_agent_input.side_effect = lambda input_data, agent_name: (
+            f"input for {agent_name}"
         )
 
         # Mock successful agent execution
@@ -355,8 +355,8 @@ class TestAgentExecutor:
 
         # Mock dependencies
         self.mock_resolve_model_profile.return_value = {"timeout_seconds": 30}
-        self.mock_get_agent_input.side_effect = (
-            lambda input_data, agent_name: f"input for {agent_name}"
+        self.mock_get_agent_input.side_effect = lambda input_data, agent_name: (
+            f"input for {agent_name}"
         )
 
         # Mock one success, one failure

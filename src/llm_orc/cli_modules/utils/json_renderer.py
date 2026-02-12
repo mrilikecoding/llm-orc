@@ -458,34 +458,38 @@ def render_comprehensive_text(structured_json: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _looks_like_code(content: str) -> bool:
+    """Check if content appears to be source code."""
+    code_keywords = ["def ", "class ", "```", "import ", "function"]
+    return any(keyword in content.lower() for keyword in code_keywords)
+
+
+def _render_markdown_single_agent(agent: dict[str, Any]) -> list[str]:
+    """Render a single agent result as markdown sections."""
+    agent_name = agent.get("name", "unknown")
+    model_display = agent.get("model_display", "")
+
+    if agent.get("status", "unknown") == "success":
+        header = f"## {agent_name}{model_display}\n\n"
+        content = agent.get("content", "")
+        if not content:
+            return [header, "*No content provided*\n\n"]
+        if _looks_like_code(content):
+            body = f"```\n{content}\n```\n\n"
+        else:
+            body = f"{content}\n\n"
+        return [header, body]
+
+    header = f"## ❌ {agent_name}{model_display}\n\n"
+    error = agent.get("error", "") or "Unknown error"
+    return [header, f"**Error:** {error}\n\n"]
+
+
 def _render_markdown_agent_results(agent_results: list[dict[str, Any]]) -> list[str]:
     """Render agent results section as markdown."""
-    sections = []
+    sections: list[str] = []
     for agent in agent_results:
-        agent_name = agent.get("name", "unknown")
-        status = agent.get("status", "unknown")
-        content = agent.get("content", "")
-        model_display = agent.get("model_display", "")
-        error = agent.get("error", "")
-
-        if status == "success":
-            sections.append(f"## {agent_name}{model_display}\n\n")
-            if content:
-                # Format as code block if it looks like code
-                # otherwise as regular text
-                code_keywords = ["def ", "class ", "```", "import ", "function"]
-                if any(keyword in content.lower() for keyword in code_keywords):
-                    sections.append(f"```\n{content}\n```\n\n")
-                else:
-                    sections.append(f"{content}\n\n")
-            else:
-                sections.append("*No content provided*\n\n")
-        else:
-            sections.append(f"## ❌ {agent_name}{model_display}\n\n")
-            if error:
-                sections.append(f"**Error:** {error}\n\n")
-            else:
-                sections.append("**Error:** Unknown error\n\n")
+        sections.extend(_render_markdown_single_agent(agent))
     return sections
 
 

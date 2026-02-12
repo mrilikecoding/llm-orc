@@ -449,8 +449,8 @@ class TestModelFactory:
             },
         }
 
-        mock_config_manager.get_model_profile.side_effect = (
-            lambda profile: profile_configs.get(profile)
+        mock_config_manager.get_model_profile.side_effect = lambda profile: (
+            profile_configs.get(profile)
         )
 
         # Mock the legacy fallback path to avoid StopIteration
@@ -518,8 +518,8 @@ class TestModelFactory:
             },
         }
 
-        mock_config_manager.get_model_profile.side_effect = (
-            lambda profile: profile_configs.get(profile)
+        mock_config_manager.get_model_profile.side_effect = lambda profile: (
+            profile_configs.get(profile)
         )
 
         # Mock resolve_model_profile to return valid tuples

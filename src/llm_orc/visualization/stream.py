@@ -50,6 +50,26 @@ class EventStream:
                 # Queue is full, skip this subscriber
                 pass
 
+    async def _event_generator(
+        self,
+        queue: asyncio.Queue[ExecutionEvent],
+        subscription_keys: list[str],
+    ) -> AsyncIterator[ExecutionEvent]:
+        """Yield events from the queue until the stream closes."""
+        try:
+            while not self._is_closed:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    yield event
+                except TimeoutError:
+                    continue
+                except asyncio.CancelledError:
+                    break
+        finally:
+            for key in subscription_keys:
+                if queue in self._subscribers[key]:
+                    self._subscribers[key].remove(queue)
+
     def subscribe(
         self,
         event_types: list[ExecutionEventType] | None = None,
@@ -59,40 +79,17 @@ class EventStream:
         if self._is_closed:
             raise RuntimeError("EventStream is closed")
 
-        # Default to all event types
         if event_types is None:
-            event_types = [ExecutionEventType.ENSEMBLE_STARTED]  # Subscribe to all
             subscription_keys = ["*"]
         else:
             subscription_keys = [event_type.value for event_type in event_types]
 
-        # Create queue for this subscription
         queue: asyncio.Queue[ExecutionEvent] = asyncio.Queue(maxsize=queue_size)
 
-        # Register queue for each event type
         for key in subscription_keys:
             self._subscribers[key].append(queue)
 
-        async def event_generator() -> AsyncIterator[ExecutionEvent]:
-            try:
-                while not self._is_closed:
-                    try:
-                        # Wait for next event with timeout
-                        event = await asyncio.wait_for(queue.get(), timeout=1.0)
-                        yield event
-                    except TimeoutError:
-                        # Continue waiting
-                        continue
-                    except asyncio.CancelledError:
-                        # Subscription cancelled
-                        break
-            finally:
-                # Clean up subscription
-                for key in subscription_keys:
-                    if queue in self._subscribers[key]:
-                        self._subscribers[key].remove(queue)
-
-        return event_generator()
+        return self._event_generator(queue, subscription_keys)
 
     def get_event_history(
         self,

@@ -103,8 +103,8 @@ class TestConfigCommands:
                 # Mock Path(__file__) chain
                 mock_file_path = Mock()
                 mock_file_path.parent.parent.parent = template_dir.parent
-                mock_path_class.side_effect = (
-                    lambda p: Path(p) if p != "__file__" else mock_file_path
+                mock_path_class.side_effect = lambda p: (
+                    Path(p) if p != "__file__" else mock_file_path
                 )
 
                 with patch("shutil.rmtree") as mock_rmtree:

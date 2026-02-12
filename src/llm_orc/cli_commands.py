@@ -377,48 +377,50 @@ def invoke_ensemble(
         raise click.ClickException(f"Ensemble execution failed: {str(e)}") from e
 
 
+def _list_ensembles_from_dir(config_dir: str) -> None:
+    """List ensembles from a specific directory."""
+    loader = EnsembleLoader()
+    ensembles = loader.list_ensembles(config_dir)
+
+    if not ensembles:
+        click.echo(f"No ensembles found in {config_dir}")
+        click.echo("  (Create .yaml files with ensemble configurations)")
+    else:
+        click.echo(f"Available ensembles in {config_dir}:")
+        for ensemble in ensembles:
+            click.echo(f"  {ensemble.name}: {ensemble.description}")
+
+
+def _list_ensembles_auto(config_manager: ConfigurationManager) -> None:
+    """List ensembles from all configured directories."""
+    ensemble_dirs = config_manager.get_ensembles_dirs()
+    if not ensemble_dirs:
+        click.echo("No ensemble directories found.")
+        click.echo("Run 'llm-orc config init' to set up local configuration.")
+        return
+
+    local_ensembles, library_ensembles, global_ensembles = _get_grouped_ensembles(
+        config_manager, ensemble_dirs
+    )
+
+    if not local_ensembles and not library_ensembles and not global_ensembles:
+        click.echo("No ensembles found in any configured directories:")
+        for dir_path in ensemble_dirs:
+            click.echo(f"  {dir_path}")
+        click.echo("  (Create .yaml files with ensemble configurations)")
+        return
+
+    _display_grouped_ensembles(
+        config_manager, local_ensembles, library_ensembles, global_ensembles
+    )
+
+
 def list_ensembles_command(config_dir: str | None) -> None:
     """List available ensembles."""
-    # Initialize configuration manager
-    config_manager = ConfigurationManager()
-
-    if config_dir is None:
-        # Use configuration manager to get ensemble directories
-        ensemble_dirs = config_manager.get_ensembles_dirs()
-        if not ensemble_dirs:
-            click.echo("No ensemble directories found.")
-            click.echo("Run 'llm-orc config init' to set up local configuration.")
-            return
-
-        # Get grouped ensembles using helper method
-        local_ensembles, library_ensembles, global_ensembles = _get_grouped_ensembles(
-            config_manager, ensemble_dirs
-        )
-
-        # Check if we have any ensembles at all
-        if not local_ensembles and not library_ensembles and not global_ensembles:
-            click.echo("No ensembles found in any configured directories:")
-            for dir_path in ensemble_dirs:
-                click.echo(f"  {dir_path}")
-            click.echo("  (Create .yaml files with ensemble configurations)")
-            return
-
-        # Display grouped ensembles using helper method
-        _display_grouped_ensembles(
-            config_manager, local_ensembles, library_ensembles, global_ensembles
-        )
-    else:
-        # Use specified config directory
-        loader = EnsembleLoader()
-        ensembles = loader.list_ensembles(config_dir)
-
-        if not ensembles:
-            click.echo(f"No ensembles found in {config_dir}")
-            click.echo("  (Create .yaml files with ensemble configurations)")
-        else:
-            click.echo(f"Available ensembles in {config_dir}:")
-            for ensemble in ensembles:
-                click.echo(f"  {ensemble.name}: {ensemble.description}")
+    if config_dir is not None:
+        _list_ensembles_from_dir(config_dir)
+        return
+    _list_ensembles_auto(ConfigurationManager())
 
 
 def _load_profiles_from_config(config_file: Path) -> dict[str, Any]:
@@ -830,6 +832,20 @@ def _display_validation_result(validation_result: Any, verbose: bool) -> None:
             _display_layer_result(layer, result)
 
 
+def _display_agent_artifact(agent: dict[str, Any]) -> None:
+    """Display a single agent's artifact result."""
+    agent_name = agent.get("name", "Unknown")
+    status = agent.get("status", "unknown")
+    click.echo(f"  {agent_name}: {status}")
+
+    if status == "completed" and "result" in agent:
+        result_text = agent["result"]
+        preview = result_text[:100] + ("..." if len(result_text) > 100 else "")
+        click.echo(f"    → {preview}")
+    elif status == "failed" and "error" in agent:
+        click.echo(f"    → Error: {agent['error']}")
+
+
 def _display_artifact_text_format(ensemble_name: str, results: dict[str, Any]) -> None:
     """Display artifact results in text format."""
     click.echo(f"Ensemble: {results.get('ensemble_name', ensemble_name)}")
@@ -844,17 +860,7 @@ def _display_artifact_text_format(ensemble_name: str, results: dict[str, Any]) -
     if "agents" in results and results["agents"]:
         click.echo("\nAgent Results:")
         for agent in results["agents"]:
-            agent_name = agent.get("name", "Unknown")
-            status = agent.get("status", "unknown")
-            click.echo(f"  {agent_name}: {status}")
-
-            if status == "completed" and "result" in agent:
-                result_preview = agent["result"][:100]
-                if len(agent["result"]) > 100:
-                    result_preview += "..."
-                click.echo(f"    → {result_preview}")
-            elif status == "failed" and "error" in agent:
-                click.echo(f"    → Error: {agent['error']}")
+            _display_agent_artifact(agent)
 
 
 def artifacts_show_command(

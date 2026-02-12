@@ -83,6 +83,16 @@ class EnhancedScriptAgent(ScriptAgent):
         self.parameters = config.get("parameters", {})
         self._env_manager = ScriptEnvironmentManager(self.environment, self.parameters)
 
+    async def _run_script(
+        self, resolved_script: str | None, json_input_str: str
+    ) -> str:
+        """Run the resolved script and return its output."""
+        if resolved_script and os.path.exists(resolved_script):
+            return await self._execute_script_file(resolved_script, json_input_str)
+        if resolved_script:
+            return await self._execute_inline_script(resolved_script, json_input_str)
+        return await self._execute_command_with_json(self.command, json_input_str)
+
     async def execute(
         self, input_data: str, context: dict[str, Any] | None = None
     ) -> str:
@@ -99,39 +109,22 @@ class EnhancedScriptAgent(ScriptAgent):
             context = {}
 
         try:
-            # Resolve script path using ScriptResolver
-            if self.script:
-                resolved_script = self._script_resolver.resolve_script_path(self.script)
-            else:
-                resolved_script = None
+            resolved_script = (
+                self._script_resolver.resolve_script_path(self.script)
+                if self.script
+                else None
+            )
 
-            # Prepare JSON input for the script
-            json_input = {
-                "input": input_data,
-                "parameters": self.parameters,
-                "context": context,
-            }
-            json_input_str = json.dumps(json_input)
+            json_input_str = json.dumps(
+                {
+                    "input": input_data,
+                    "parameters": self.parameters,
+                    "context": context,
+                }
+            )
 
-            # Execute the script with JSON input
-            if resolved_script:
-                # Check if resolved script is a file path or inline content
-                if os.path.exists(resolved_script):
-                    result = await self._execute_script_file(
-                        resolved_script, json_input_str
-                    )
-                else:
-                    # Inline script content
-                    result = await self._execute_inline_script(
-                        resolved_script, json_input_str
-                    )
-            else:
-                # Execute command directly
-                result = await self._execute_command_with_json(
-                    self.command, json_input_str
-                )
+            result = await self._run_script(resolved_script, json_input_str)
 
-            # Try to parse output as JSON, but always return string
             parsed_result = self._parse_output(result)
             if isinstance(parsed_result, dict):
                 return json.dumps(parsed_result)

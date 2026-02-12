@@ -120,8 +120,8 @@ class TestAuthCommandsNew:
                     # Mock CredentialStorage to return configured providers
                     mock_storage = Mock()
                     mock_storage.list_providers.return_value = ["anthropic", "google"]
-                    mock_storage.get_auth_method.side_effect = (
-                        lambda provider: "api_key"
+                    mock_storage.get_auth_method.side_effect = lambda provider: (
+                        "api_key"
                     )
                     mock_storage_class.return_value = mock_storage
 

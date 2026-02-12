@@ -167,7 +167,7 @@ class ContractValidator:
         Returns:
             Script info dictionary
         """
-        script_info = {
+        script_info: dict[str, object] = {
             "name": py_file.name,
             "path": str(py_file),
             "category": category,

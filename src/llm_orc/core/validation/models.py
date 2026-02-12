@@ -1,13 +1,13 @@
 """Validation framework data models."""
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class ValidationLayer(str, Enum):
+class ValidationLayer(StrEnum):
     """Validation layer types."""
 
     STRUCTURAL = "structural"
