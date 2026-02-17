@@ -86,6 +86,21 @@ def _get_agent_attr(agent: Any, attr: str, default: Any = None) -> Any:
     return getattr(agent, attr, default)
 
 
+def _is_script_agent(agent: Any) -> bool:
+    """Check if agent is a script agent (explicit type or script field).
+
+    Args:
+        agent: Agent config (dict or object).
+
+    Returns:
+        True if agent is a script agent.
+    """
+    return (
+        _get_agent_attr(agent, "type") == "script"
+        or _get_agent_attr(agent, "script") is not None
+    )
+
+
 class MCPServerV2:
     """MCP Server v2 using FastMCP SDK.
 
@@ -133,7 +148,7 @@ class MCPServerV2:
         if self._executor is None:
             from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
-            self._executor = EnsembleExecutor()
+            self._executor = EnsembleExecutor(project_dir=self._project_path)
         return self._executor
 
     def _setup_resources(self) -> None:
@@ -1263,8 +1278,9 @@ class MCPServerV2:
                 "error": f"Path does not exist: {path}",
             }
 
-        # Update project path
+        # Update project path and invalidate cached executor
         self._project_path = project_dir
+        self._executor = None
 
         # Recreate config manager with new project path
         self.config_manager = ConfigurationManager(project_dir=project_dir)
@@ -1314,7 +1330,7 @@ class MCPServerV2:
         # Execute ensemble
         from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
-        executor = EnsembleExecutor()
+        executor = EnsembleExecutor(project_dir=self._project_path)
         result = await executor.execute(config, input_data)
 
         return {
@@ -1615,10 +1631,9 @@ class MCPServerV2:
 
         for agent in config.agents:
             agent_name = _get_agent_attr(agent, "name")
-            agent_type = _get_agent_attr(agent, "type")
 
             # Script agents don't need model profiles
-            if agent_type == "script":
+            if _is_script_agent(agent):
                 continue
 
             model_profile = _get_agent_attr(agent, "model_profile")
@@ -1958,14 +1973,27 @@ class MCPServerV2:
             raise ValueError(f"Template ensemble not found: {template_name}")
 
         agents: list[dict[str, Any]] = []
+        preserved_fields = (
+            "name",
+            "type",
+            "model_profile",
+            "script",
+            "parameters",
+            "depends_on",
+            "system_prompt",
+            "cache",
+            "fan_out",
+        )
         for agent in template_config.agents:
-            agents.append(
-                {
-                    "name": _get_agent_attr(agent, "name"),
-                    "model_profile": _get_agent_attr(agent, "model_profile"),
-                    "depends_on": _get_agent_attr(agent, "depends_on") or [],
-                }
-            )
+            if isinstance(agent, dict):
+                agents.append(dict(agent))
+            else:
+                agent_dict: dict[str, Any] = {}
+                for attr in preserved_fields:
+                    val = _get_agent_attr(agent, attr)
+                    if val is not None:
+                        agent_dict[attr] = val
+                agents.append(agent_dict)
 
         final_description = description or template_config.description
         return agents, final_description, len(agents)
