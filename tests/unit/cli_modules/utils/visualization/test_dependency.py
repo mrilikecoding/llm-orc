@@ -205,6 +205,54 @@ class TestFindFinalAgent:
 
         assert result is None
 
+    def test_find_final_agent_uses_dependency_level(self) -> None:
+        """Test that find_final_agent picks highest-dependency-level agent."""
+        # agent_b depends on agent_a, so agent_b is at level 1 (higher).
+        # Even though agent_a appears last in dict order, agent_b should
+        # be returned because it sits at the highest dependency level.
+        results = {
+            "agent_b": {"status": "success"},
+            "agent_a": {"status": "success"},
+        }
+        agents = [
+            {"name": "agent_a", "depends_on": []},
+            {"name": "agent_b", "depends_on": ["agent_a"]},
+        ]
+
+        result = find_final_agent(results, agents)
+
+        assert result == "agent_b"
+
+    def test_find_final_agent_with_agents_prefers_named(self) -> None:
+        """Coordinator still wins even when agents config is provided."""
+        results = {
+            "agent_a": {"status": "success"},
+            "coordinator": {"status": "success"},
+        }
+        agents = [
+            {"name": "agent_a", "depends_on": []},
+            {"name": "coordinator", "depends_on": ["agent_a"]},
+        ]
+
+        result = find_final_agent(results, agents)
+
+        assert result == "coordinator"
+
+    def test_find_final_agent_highest_level_failed_falls_back(self) -> None:
+        """If the only highest-level agent failed, fall back to next level."""
+        results = {
+            "agent_a": {"status": "success"},
+            "agent_b": {"status": "failed"},
+        }
+        agents = [
+            {"name": "agent_a", "depends_on": []},
+            {"name": "agent_b", "depends_on": ["agent_a"]},
+        ]
+
+        result = find_final_agent(results, agents)
+
+        assert result == "agent_a"
+
 
 class TestGroupAgentsByDependencyLevel:
     """Test grouping agents by dependency level."""

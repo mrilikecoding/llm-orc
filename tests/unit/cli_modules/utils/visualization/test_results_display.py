@@ -131,13 +131,14 @@ class TestDisplayPlainTextResults:
         "llm_orc.cli_modules.utils.visualization.results_display._display_simplified_plain_text"
     )
     def test_display_plain_text_results_simple(self, mock_simplified: Mock) -> None:
-        """Test plain text display in simple mode."""
+        """Test plain text display in simple mode passes agents through."""
         results = {"agent_a": {"status": "success"}}
         metadata: dict[str, Any] = {}
+        agents = [{"name": "agent_a", "depends_on": []}]
 
-        display_plain_text_results(results, metadata, detailed=False)
+        display_plain_text_results(results, metadata, detailed=False, agents=agents)
 
-        mock_simplified.assert_called_once_with(results, metadata)
+        mock_simplified.assert_called_once_with(results, metadata, agents)
 
     @patch(
         "llm_orc.cli_modules.utils.visualization.results_display._display_detailed_plain_text"
@@ -418,6 +419,29 @@ class TestHelperDisplayFunctions:
         _display_simplified_plain_text(results, metadata)
 
         mock_echo.assert_called_with("❌ No successful results found")
+
+    @patch("llm_orc.cli_modules.utils.visualization.results_display.click.echo")
+    def test_display_simplified_plain_text_uses_dependency_order(
+        self, mock_echo: Mock
+    ) -> None:
+        """Simplified text picks highest-dependency-level agent, not dict order."""
+        # agent_a is at level 0, agent_b at level 1 (depends on agent_a).
+        # Dict order puts agent_a first, but agent_b should be selected.
+        results = {
+            "agent_a": {"status": "success", "response": "first answer"},
+            "agent_b": {"status": "success", "response": "final answer"},
+        }
+        metadata: dict[str, Any] = {}
+        agents = [
+            {"name": "agent_a", "depends_on": []},
+            {"name": "agent_b", "depends_on": ["agent_a"]},
+        ]
+
+        _display_simplified_plain_text(results, metadata, agents)
+
+        calls = [call[0][0] for call in mock_echo.call_args_list]
+        assert any("Result from agent_b:" in c for c in calls)
+        assert any("final answer" in c for c in calls)
 
     @patch("llm_orc.cli_modules.utils.visualization.results_display.click.echo")
     @patch(

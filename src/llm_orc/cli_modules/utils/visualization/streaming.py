@@ -9,7 +9,11 @@ from rich.console import Console
 from rich.live import Live
 
 from .dependency import create_dependency_tree
-from .results_display import display_plain_text_results, display_results
+from .results_display import (
+    _display_simple_results,
+    display_plain_text_results,
+    display_results,
+)
 
 
 async def run_streaming_execution(
@@ -435,6 +439,10 @@ def _handle_execution_completed_event(
     if detailed:
         _display_detailed_execution_results(
             results, metadata, ensemble_config, results_console
+        )
+    else:
+        _display_simple_results(
+            results_console, results, metadata, ensemble_config.agents
         )
 
     return False

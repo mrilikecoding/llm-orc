@@ -107,9 +107,16 @@ def create_dependency_graph_with_status(
     )
 
 
-def find_final_agent(results: dict[str, Any]) -> str | None:
-    """Find the final agent that should be displayed."""
-    # Priority order: coordinator > synthesizer > last successful agent
+def find_final_agent(
+    results: dict[str, Any],
+    agents: list[dict[str, Any]] | None = None,
+) -> str | None:
+    """Find the final agent that should be displayed.
+
+    When ``agents`` config is provided, picks the successful agent at the
+    highest dependency level.  Falls back to name-based heuristics when
+    no config is available.
+    """
     successful_agents = [
         name for name, result in results.items() if result.get("status") == "success"
     ]
@@ -117,14 +124,37 @@ def find_final_agent(results: dict[str, Any]) -> str | None:
     if not successful_agents:
         return None
 
-    # Check for special agent names first
+    # Check for well-known coordinator/synthesizer names first
     if "coordinator" in successful_agents:
         return "coordinator"
     if "synthesizer" in successful_agents:
         return "synthesizer"
 
-    # Return the last successful agent
+    # Use dependency graph when agents config is available
+    if agents:
+        found = _find_highest_level_successful_agent(agents, successful_agents)
+        if found:
+            return found
+
+    # Fallback: last successful agent by dict order
     return successful_agents[-1]
+
+
+def _find_highest_level_successful_agent(
+    agents: list[dict[str, Any]],
+    successful_agents: list[str],
+) -> str | None:
+    """Return the successful agent at the highest dependency level."""
+    agents_by_level = _group_agents_by_dependency_level(agents)
+    if not agents_by_level:
+        return None
+
+    max_level = max(agents_by_level.keys())
+    for level in range(max_level, -1, -1):
+        for agent in agents_by_level.get(level, []):
+            if agent["name"] in successful_agents:
+                return str(agent["name"])
+    return None
 
 
 def _group_agents_by_dependency_level(
