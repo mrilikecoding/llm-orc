@@ -8,13 +8,15 @@
 [![Downloads](https://static.pepy.tech/badge/llm-orchestra)](https://pepy.tech/project/llm-orchestra)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/mrilikecoding/llm-orc)](https://github.com/mrilikecoding/llm-orc/releases)
 
-A multi-agent LLM communication system for ensemble orchestration and intelligent analysis.
+Orchestrate ensembles of specialized models — local and cloud — to do real analytical work. Coordination over scale.
 
 ## Overview
 
-LLM Orchestra lets you coordinate multiple AI agents for complex analysis tasks. Run code reviews with security and performance specialists, analyze architecture decisions from multiple angles, or get systematic coverage of any multi-faceted problem.
+A decent laptop can run multiple small language models simultaneously. What's missing is the coordination layer — the system that decomposes problems, routes them to specialized agents, manages dependencies between them, and synthesizes results. LLM Orchestra provides that layer.
 
-Mix expensive cloud models with free local models - use Claude for strategic insights while Llama3 handles systematic analysis tasks.
+The approach is architectural intelligence over brute-force scaling: instead of sending everything to one large model, decompose the problem and let specialized agents own their piece. Independent agents run in parallel. Dependent agents wait for what they need. Script agents handle data processing and analysis alongside LLM agents, enabling hybrid workflows that go beyond pure language model orchestration.
+
+Mix expensive cloud models with free local models. Use Claude for strategic synthesis while local models handle systematic analysis at zero marginal cost.
 
 ## Key Features
 
@@ -764,9 +766,17 @@ uv run mypy src/llm_orc
 
 This project includes comparative analysis of multi-agent vs single-agent approaches. See [docs/ensemble_vs_single_agent_analysis.md](docs/ensemble_vs_single_agent_analysis.md) for detailed findings.
 
+The short version: orchestrated multi-agent systems maintain accuracy at scale where single-agent approaches collapse. Mixture-of-Agents ensembles of open-source models have matched or exceeded frontier model performance on established benchmarks. Cascade routing strategies have replicated frontier quality at a fraction of the cost. The evidence supports the architectural bet this project is built on.
+
 ## Philosophy
 
-**Reduce toil, don't replace creativity.** Use AI to handle systematic, repetitive analysis while preserving human creativity and strategic thinking.
+**Coordination over scale. Process over generation.**
+
+The concentrated AI buildout optimizes for one thing: making the generative phase faster. But generation was never the bottleneck. Evaluation — the human judgment that determines whether output is correct, appropriate, and worth shipping — is the binding constraint. Faster generation without proportionally better evaluation just produces more to review.
+
+LLM Orchestra takes the opposite position. An ensemble of smaller, specialized models — each focused on a bounded analytical task — produces structured output designed for human evaluation. The system decomposes problems so that each agent owns its contribution. A security reviewer finds vulnerabilities. A performance analyst identifies bottlenecks. A synthesis agent integrates their findings. The human evaluates a structured analysis, not raw generation.
+
+Running models locally is a practical choice, not an ideological one. No per-query billing means you can run systematic analysis across an entire codebase without watching a meter. Data stays on your hardware. And the local/cloud mix lets you put cost where it matters — expensive models for strategic insight, free local models for systematic coverage.
 
 ## License
 
