@@ -45,13 +45,20 @@ class ModelFactory:
         Raises:
             ValueError: If configuration is invalid
         """
+        # Extract generation parameters from agent config
+        temperature: float | None = agent_config.get("temperature")
+        max_tokens: int | None = agent_config.get("max_tokens")
+
         # Check if model_profile is specified (takes precedence)
         if "model_profile" in agent_config:
             profile_name = agent_config["model_profile"]
             resolved_model, resolved_provider = (
                 self._config_manager.resolve_model_profile(profile_name)
             )
-            return await self.load_model(resolved_model, resolved_provider)
+            return await self.load_model(
+                resolved_model, resolved_provider,
+                temperature=temperature, max_tokens=max_tokens,
+            )
 
         # Fall back to explicit model+provider
         model: str | None = agent_config.get("model")
@@ -62,16 +69,26 @@ class ModelFactory:
                 "Agent configuration must specify either 'model_profile' or 'model'"
             )
 
-        return await self.load_model(model, provider)
+        return await self.load_model(
+            model, provider,
+            temperature=temperature, max_tokens=max_tokens,
+        )
 
     async def load_model(
-        self, model_name: str, provider: str | None = None
+        self,
+        model_name: str,
+        provider: str | None = None,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> ModelInterface:
         """Load a model interface based on authentication configuration.
 
         Args:
             model_name: Name of the model to load
             provider: Optional provider name
+            temperature: Optional temperature for generation
+            max_tokens: Optional max tokens for generation
 
         Returns:
             Configured model interface
@@ -90,16 +107,23 @@ class ModelFactory:
             auth_method = _resolve_authentication_method(model_name, provider, storage)
 
             if not auth_method:
-                result = _handle_no_authentication(model_name, provider, storage)
+                result = _handle_no_authentication(
+                    model_name, provider, storage,
+                    temperature=temperature, max_tokens=max_tokens,
+                )
                 if isinstance(result, str) and result == "retry":
                     # Retry model loading after auth setup
-                    return await self.load_model(model_name, provider)
+                    return await self.load_model(
+                        model_name, provider,
+                        temperature=temperature, max_tokens=max_tokens,
+                    )
                 # result is guaranteed to be ModelInterface at this point
                 return cast(ModelInterface, result)
 
             # Create authenticated model using helper method
             return _create_authenticated_model(
-                model_name, provider, auth_method, storage
+                model_name, provider, auth_method, storage,
+                temperature=temperature, max_tokens=max_tokens,
             )
 
         except Exception as e:
@@ -346,6 +370,9 @@ def _create_authenticated_model(
     provider: str | None,
     auth_method: str,
     storage: CredentialStorage,
+    *,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> ModelInterface:
     """Create authenticated model based on authentication method.
 
@@ -354,6 +381,8 @@ def _create_authenticated_model(
         provider: Optional provider name
         auth_method: Authentication method (api_key or oauth)
         storage: Credential storage instance
+        temperature: Optional temperature for generation
+        max_tokens: Optional max tokens for generation
 
     Returns:
         Configured model interface
@@ -367,20 +396,31 @@ def _create_authenticated_model(
         api_key = storage.get_api_key(lookup_key)
         if not api_key:
             raise ValueError(f"No API key found for {lookup_key}")
-        return _create_api_key_model(model_name, api_key, provider)
+        return _create_api_key_model(
+            model_name, api_key, provider,
+            temperature=temperature, max_tokens=max_tokens,
+        )
 
     elif auth_method == "oauth":
         oauth_token = storage.get_oauth_token(lookup_key)
         if not oauth_token:
             raise ValueError(f"No OAuth token found for {lookup_key}")
-        return _create_oauth_model(oauth_token, storage, lookup_key)
+        return _create_oauth_model(
+            oauth_token, storage, lookup_key,
+            temperature=temperature, max_tokens=max_tokens,
+        )
 
     else:
         raise ValueError(f"Unknown authentication method: {auth_method}")
 
 
 def _handle_no_authentication(
-    model_name: str, provider: str | None, storage: CredentialStorage
+    model_name: str,
+    provider: str | None,
+    storage: CredentialStorage,
+    *,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> ModelInterface | str:
     """Handle cases when no authentication is configured.
 
@@ -388,6 +428,8 @@ def _handle_no_authentication(
         model_name: Name of the model
         provider: Optional provider name
         storage: Credential storage instance
+        temperature: Optional temperature for generation
+        max_tokens: Optional max tokens for generation
 
     Returns:
         Model interface or "retry" string to indicate retry after auth setup
@@ -402,7 +444,10 @@ def _handle_no_authentication(
     # Handle based on provider
     if provider == "ollama":
         # Expected behavior for Ollama - no auth needed
-        return OllamaModel(model_name=model_name)
+        return OllamaModel(
+            model_name=model_name,
+            temperature=temperature, max_tokens=max_tokens,
+        )
     elif provider:
         # Other providers require authentication
         raise ValueError(
@@ -416,11 +461,19 @@ def _handle_no_authentication(
             f"ℹ️  No provider specified for '{model_name}', "
             f"treating as local Ollama model"
         )
-        return OllamaModel(model_name=model_name)
+        return OllamaModel(
+            model_name=model_name,
+            temperature=temperature, max_tokens=max_tokens,
+        )
 
 
 def _create_api_key_model(
-    model_name: str, api_key: str, provider: str | None
+    model_name: str,
+    api_key: str,
+    provider: str | None,
+    *,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> ModelInterface:
     """Create model using API key authentication.
 
@@ -428,6 +481,8 @@ def _create_api_key_model(
         model_name: Name of the model
         api_key: API key for authentication
         provider: Optional provider name
+        temperature: Optional temperature for generation
+        max_tokens: Optional max tokens for generation
 
     Returns:
         Configured model interface
@@ -435,18 +490,32 @@ def _create_api_key_model(
     # Check if this is a claude-cli configuration
     # (stored as api_key but path-like)
     if model_name == "claude-cli" or api_key.startswith("/"):
-        return ClaudeCLIModel(claude_path=api_key)
+        return ClaudeCLIModel(
+            claude_path=api_key,
+            temperature=temperature, max_tokens=max_tokens,
+        )
     elif provider == "google-gemini":
         from llm_orc.models.google import GeminiModel
 
-        return GeminiModel(api_key=api_key, model=model_name)
+        return GeminiModel(
+            api_key=api_key, model=model_name,
+            temperature=temperature, max_tokens=max_tokens,
+        )
     else:
         # Assume it's an Anthropic API key for Claude
-        return ClaudeModel(api_key=api_key)
+        return ClaudeModel(
+            api_key=api_key,
+            temperature=temperature, max_tokens=max_tokens,
+        )
 
 
 def _create_oauth_model(
-    oauth_token: dict[str, Any], storage: CredentialStorage, model_name: str
+    oauth_token: dict[str, Any],
+    storage: CredentialStorage,
+    model_name: str,
+    *,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> ModelInterface:
     """Create model using OAuth authentication.
 
@@ -454,6 +523,8 @@ def _create_oauth_model(
         oauth_token: OAuth token dictionary
         storage: Credential storage instance
         model_name: Name of the model
+        temperature: Optional temperature for generation
+        max_tokens: Optional max tokens for generation
 
     Returns:
         Configured OAuth model interface
@@ -470,6 +541,8 @@ def _create_oauth_model(
         credential_storage=storage,
         provider_key=model_name,
         expires_at=oauth_token.get("expires_at"),
+        temperature=temperature,
+        max_tokens=max_tokens,
     )
 
 

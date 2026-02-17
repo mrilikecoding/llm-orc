@@ -69,12 +69,17 @@ def _prepare_oauth_message_request(
     # Prepare messages with conversation history (role injection handled earlier)
     messages = model.get_conversation_history()
 
-    return {
+    request: dict[str, Any] = {
         "model": model.model,
-        "max_tokens": 1000,
+        "max_tokens": (
+            model.max_tokens if model.max_tokens is not None else 1000
+        ),
         "system": oauth_system_prompt,
         "messages": messages,
     }
+    if model.temperature is not None:
+        request["temperature"] = model.temperature
+    return request
 
 
 async def _execute_oauth_api_call(
@@ -197,8 +202,15 @@ def _handle_oauth_token_refresh_error(
 class ClaudeModel(ModelInterface):
     """Claude model implementation."""
 
-    def __init__(self, api_key: str, model: str = "claude-3-5-sonnet-20241022") -> None:
-        super().__init__()
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-3-5-sonnet-20241022",
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> None:
+        super().__init__(temperature=temperature, max_tokens=max_tokens)
         self.api_key = api_key
         self.model = model
 
@@ -214,12 +226,20 @@ class ClaudeModel(ModelInterface):
         """Generate response using Claude API."""
         start_time = time.time()
 
-        response = await self.client.messages.create(
-            model=self.model,
-            max_tokens=1000,
-            system=role_prompt,
-            messages=[{"role": "user", "content": message}],
+        # Build API call with generation parameters
+        effective_max_tokens = (
+            self.max_tokens if self.max_tokens is not None else 1000
         )
+        create_kwargs: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": effective_max_tokens,
+            "system": role_prompt,
+            "messages": [{"role": "user", "content": message}],
+        }
+        if self.temperature is not None:
+            create_kwargs["temperature"] = self.temperature
+
+        response = await self.client.messages.create(**create_kwargs)
 
         duration_ms = int((time.time() - start_time) * 1000)
 
@@ -245,7 +265,7 @@ class ClaudeModel(ModelInterface):
         # Handle different content block types
         content_block = response.content[0]
         if hasattr(content_block, "text"):
-            return content_block.text
+            return str(content_block.text)
         else:
             return str(content_block)
 
@@ -262,8 +282,11 @@ class OAuthClaudeModel(ModelInterface):
         credential_storage: Any = None,
         provider_key: str | None = None,
         expires_at: int | None = None,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(temperature=temperature, max_tokens=max_tokens)
         self.access_token = access_token
         self.refresh_token = refresh_token
         self.client_id = client_id
@@ -355,8 +378,11 @@ class ClaudeCLIModel(ModelInterface):
         self,
         claude_path: str,
         model: str = "claude-3-5-sonnet-20241022",
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(temperature=temperature, max_tokens=max_tokens)
         self.claude_path = claude_path
         self.model = model
 

@@ -11,8 +11,15 @@ from llm_orc.models.base import ModelInterface
 class GeminiModel(ModelInterface):
     """Gemini model implementation."""
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash") -> None:
-        super().__init__()
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gemini-2.5-flash",
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> None:
+        super().__init__(temperature=temperature, max_tokens=max_tokens)
         self.api_key = api_key
         self.model_name = model
         self.client = genai.Client(api_key=api_key)
@@ -26,12 +33,22 @@ class GeminiModel(ModelInterface):
         start_time = time.time()
         prompt = f"{role_prompt}\n\nUser: {message}\nAssistant:"
 
+        # Build generation config if parameters are set
+        gen_config: genai.types.GenerateContentConfig | None = None
+        if self.temperature is not None or self.max_tokens is not None:
+            gen_config = genai.types.GenerateContentConfig(
+                temperature=self.temperature,
+                max_output_tokens=self.max_tokens,
+            )
+
         # Run in thread pool since Gemini doesn't have async support
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
             lambda: self.client.models.generate_content(
-                model=self.model_name, contents=prompt
+                model=self.model_name,
+                contents=prompt,
+                config=gen_config,
             ),
         )
 
