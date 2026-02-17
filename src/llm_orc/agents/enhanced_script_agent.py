@@ -71,15 +71,21 @@ class ScriptEnvironmentManager:
 class EnhancedScriptAgent(ScriptAgent):
     """Enhanced script agent that supports JSON I/O and script resolution."""
 
-    def __init__(self, name: str, config: dict[str, Any]):
+    def __init__(
+        self,
+        name: str,
+        config: dict[str, Any],
+        project_dir: Path | None = None,
+    ):
         """Initialize enhanced script agent with configuration.
 
         Args:
             name: Agent name
             config: Agent configuration including script and parameters
+            project_dir: Optional project directory for script resolution
         """
         super().__init__(name, config)
-        self._script_resolver = ScriptResolver()
+        self._script_resolver = ScriptResolver(project_dir=project_dir)
         self.parameters = config.get("parameters", {})
         self._env_manager = ScriptEnvironmentManager(self.environment, self.parameters)
 

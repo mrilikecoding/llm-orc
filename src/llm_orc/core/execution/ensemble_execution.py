@@ -3,6 +3,7 @@
 import asyncio
 import time
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import Any
 
 from llm_orc.agents.enhanced_script_agent import EnhancedScriptAgent
@@ -38,8 +39,10 @@ from llm_orc.models.base import ModelInterface
 class EnsembleExecutor:
     """Executes ensembles of agents and coordinates their responses."""
 
-    def __init__(self) -> None:
+    def __init__(self, project_dir: Path | None = None) -> None:
         """Initialize the ensemble executor with shared infrastructure."""
+        self._project_dir = project_dir
+
         # Share configuration and credential infrastructure across model loads
         # but keep model instances separate for independent contexts
         self._config_manager = ConfigurationManager()
@@ -837,7 +840,9 @@ class EnsembleExecutor:
 
         try:
             # Use EnhancedScriptAgent for JSON I/O support
-            script_agent = EnhancedScriptAgent(agent_name, agent_config)
+            script_agent = EnhancedScriptAgent(
+                agent_name, agent_config, project_dir=self._project_dir
+            )
 
             # Sample resources during execution
             self._usage_collector.sample_agent_resources(agent_name)

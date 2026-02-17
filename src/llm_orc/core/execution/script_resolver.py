@@ -46,10 +46,15 @@ class ScriptResolver:
     LIBRARY_DIR = "llm-orchestra-library"
     PRIMITIVES_DIR = "primitives"
 
-    def __init__(self, search_paths: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        search_paths: list[str] | None = None,
+        project_dir: Path | None = None,
+    ) -> None:
         """Initialize the script resolver with optional custom search paths."""
         self._cache: dict[str, str] = {}
         self._custom_search_paths = search_paths
+        self._project_dir = project_dir
 
     def _get_search_paths(self) -> list[str]:
         """Get search paths in priority order: local → library → system.
@@ -60,7 +65,7 @@ class ScriptResolver:
         if self._custom_search_paths:
             return self._custom_search_paths
 
-        cwd = Path(os.getcwd())
+        base = self._project_dir or Path(os.getcwd())
         search_paths = []
 
         # Priority 0: Test primitives directory (for BDD tests)
@@ -71,14 +76,14 @@ class ScriptResolver:
         # Priority 1: Local project paths
         search_paths.extend(
             [
-                str(cwd / self.LLM_ORC_DIR / self.SCRIPTS_DIR),
-                str(cwd / self.LLM_ORC_DIR),
-                str(cwd),
+                str(base / self.LLM_ORC_DIR / self.SCRIPTS_DIR),
+                str(base / self.LLM_ORC_DIR),
+                str(base),
             ]
         )
 
         # Priority 2: Library submodule paths
-        library_base = cwd / self.LIBRARY_DIR
+        library_base = base / self.LIBRARY_DIR
         if library_base.exists():
             search_paths.extend(
                 [
