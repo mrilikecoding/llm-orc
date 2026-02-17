@@ -16,7 +16,10 @@ Usage in ensemble:
     damping: 0.85
 """
 import json
+import os
 import sys
+
+from llm_orc.script_utils import unwrap_input
 
 
 def pagerank(nodes, edges, damping=0.85, max_iterations=100, tolerance=1e-6):
@@ -62,45 +65,9 @@ def pagerank(nodes, edges, damping=0.85, max_iterations=100, tolerance=1e-6):
     return scores
 
 
-def unwrap_input(raw_json):
-    """Unwrap llm-orc envelope to get the actual graph data and parameters.
-
-    Handles three input formats:
-    1. ScriptAgentInput: {"agent_name": "...", "input_data": "<json>", ...}
-    2. Legacy wrapper:   {"input": "<json or dict>", "parameters": {...}, ...}
-    3. Direct:           {"nodes": [...], "edges": [...], ...}
-
-    Returns (data_dict, parameters_dict).
-    """
-    envelope = json.loads(raw_json) if raw_json.strip() else {}
-
-    # Format 1: ScriptAgentInput envelope
-    input_data = envelope.get("input_data", "")
-    if isinstance(input_data, str) and input_data.strip():
-        try:
-            return json.loads(input_data), envelope.get("parameters", {}) or {}
-        except json.JSONDecodeError:
-            pass
-
-    # Format 2: Legacy wrapper {"input": ..., "parameters": ...}
-    if "input" in envelope and "parameters" in envelope:
-        inner = envelope["input"]
-        params = envelope.get("parameters", {}) or {}
-        if isinstance(inner, str) and inner.strip():
-            try:
-                return json.loads(inner), params
-            except json.JSONDecodeError:
-                return envelope, params
-        if isinstance(inner, dict):
-            return inner, params
-
-    # Format 3: Direct invocation — envelope IS the data
-    return envelope, {}
-
-
 def main():
     raw = sys.stdin.read()
-    data, params = unwrap_input(raw)
+    data, params = unwrap_input(raw, debug=os.environ.get("LLM_ORC_DEBUG"))
 
     # Parameters: prefer ensemble config (params), fall back to input data
     damping = params.get("damping", data.get("damping", 0.85))
