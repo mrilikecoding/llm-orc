@@ -6,7 +6,7 @@ description: >
 agents:
   - name: pagerank
     type: script
-    script: /Users/nathangreen/Development/eddi-lab/llm-orc/.llm-orc/scripts/specialized/plexus/run_pagerank.py
+    script: scripts/specialized/plexus/run_pagerank.py
     parameters:
       damping: 0.85
       max_iterations: 100
@@ -14,6 +14,6 @@ agents:
 
   - name: community
     type: script
-    script: /Users/nathangreen/Development/eddi-lab/llm-orc/.llm-orc/scripts/specialized/plexus/run_communities.py
+    script: scripts/specialized/plexus/run_communities.py
     parameters:
       resolution: 1
