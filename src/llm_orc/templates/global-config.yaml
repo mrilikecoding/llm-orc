@@ -2,7 +2,8 @@
 # This file provides default model profiles available across all projects
 
 # Model profiles define complete agent configurations
-# Each profile includes: model, provider, system_prompt, timeout_seconds, and cost_per_token
+# Each profile includes: model, provider, system_prompt, timeout_seconds, cost_per_token,
+# and optional generation parameters (temperature, max_tokens)
 # Enhanced model profiles support override behavior: explicit agent config takes precedence
 model_profiles:
   # Functional model profiles based on capability levels
@@ -12,6 +13,8 @@ model_profiles:
     cost_per_token: 0.0
     system_prompt: You are a quick analyst for rapid local analysis.
     timeout_seconds: 15
+    # temperature: 0.7    # Optional: controls randomness (0.0-1.0)
+    # max_tokens: 500     # Optional: limits response length
     
   micro:
     model: gemini-1.5-flash

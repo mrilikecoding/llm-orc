@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Model profiles and agent configs now support `temperature` and `max_tokens` generation parameters
+  - Profile YAML sets defaults; agent config in ensemble YAML can override per-agent
+  - Supported across all providers: Ollama, Anthropic, Google Gemini
+  - MCP `create_profile` tool accepts the new parameters
+
 ## [0.14.2] - 2026-02-16
 
 ### Added

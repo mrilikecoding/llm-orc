@@ -7,6 +7,7 @@ agents:
   - name: reviewer
     model_profile: micro-local
     system_prompt: You are a code reviewer that provides detailed feedback and suggestions for improvement.
+    temperature: 0.2       # Override profile default for more deterministic reviews
   - name: synthesizer
     model_profile: default
     depends_on: [researcher, reviewer]

@@ -118,6 +118,7 @@ Fan-out is woven into the existing phase-based execution pipeline in `EnsembleEx
 
 #### ModelProfiles (`llm_orc/core/config/config_manager.py`)
 - **Named configurations**: Simplified model + provider + settings combinations
+- **Generation parameters**: `temperature` and `max_tokens` per profile, overridable per agent
 - **Cost tracking**: Built-in cost information for budget management
 - **Override support**: Allow agent-specific overrides of profile defaults
 - **Provider availability**: Automatic detection of available providers
@@ -132,6 +133,7 @@ Fan-out is woven into the existing phase-based execution pipeline in `EnsembleEx
 
 #### ModelFactory (`llm_orc/core/models/model_factory.py`)
 - **Dynamic instantiation**: Creates model instances based on configurations
+- **Parameter forwarding**: Passes `temperature` and `max_tokens` from merged config to model constructors
 - **Provider routing**: Determines appropriate provider for model requests
 - **Connection management**: Handles HTTP clients and connection pooling
 - **Error recovery**: Fallback strategies for provider failures
