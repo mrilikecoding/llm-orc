@@ -152,7 +152,9 @@ class TestImplicitAgentDetection:
             await executor._execute_agent(agent_config, "test input")
 
             # Should use EnhancedScriptAgent for script agents
-            mock_agent_class.assert_called_once_with("enhanced_script", agent_config)
+            mock_agent_class.assert_called_once_with(
+                "enhanced_script", agent_config, project_dir=None
+            )
             mock_agent_instance.execute.assert_called_once()
 
     def test_agent_type_detection_in_config_validation(self) -> None:

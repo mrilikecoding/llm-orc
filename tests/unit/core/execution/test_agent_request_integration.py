@@ -56,7 +56,11 @@ def test_primitives_with_script_resolver(
     # Use custom search paths to include test primitives
     original_init = ScriptResolver.__init__
 
-    def mock_init(self: ScriptResolver, search_paths: list[str] | None = None) -> None:
+    def mock_init(
+        self: ScriptResolver,
+        search_paths: list[str] | None = None,
+        project_dir: Path | None = None,
+    ) -> None:
         """Initialize with test search paths."""
         test_search_paths = [
             str(primitives_dir),
