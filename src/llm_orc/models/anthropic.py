@@ -71,9 +71,7 @@ def _prepare_oauth_message_request(
 
     request: dict[str, Any] = {
         "model": model.model,
-        "max_tokens": (
-            model.max_tokens if model.max_tokens is not None else 1000
-        ),
+        "max_tokens": (model.max_tokens if model.max_tokens is not None else 1000),
         "system": oauth_system_prompt,
         "messages": messages,
     }
@@ -227,9 +225,7 @@ class ClaudeModel(ModelInterface):
         start_time = time.time()
 
         # Build API call with generation parameters
-        effective_max_tokens = (
-            self.max_tokens if self.max_tokens is not None else 1000
-        )
+        effective_max_tokens = self.max_tokens if self.max_tokens is not None else 1000
         create_kwargs: dict[str, Any] = {
             "model": self.model,
             "max_tokens": effective_max_tokens,

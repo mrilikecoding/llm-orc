@@ -56,8 +56,10 @@ class ModelFactory:
                 self._config_manager.resolve_model_profile(profile_name)
             )
             return await self.load_model(
-                resolved_model, resolved_provider,
-                temperature=temperature, max_tokens=max_tokens,
+                resolved_model,
+                resolved_provider,
+                temperature=temperature,
+                max_tokens=max_tokens,
             )
 
         # Fall back to explicit model+provider
@@ -70,8 +72,10 @@ class ModelFactory:
             )
 
         return await self.load_model(
-            model, provider,
-            temperature=temperature, max_tokens=max_tokens,
+            model,
+            provider,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
 
     async def load_model(
@@ -108,22 +112,31 @@ class ModelFactory:
 
             if not auth_method:
                 result = _handle_no_authentication(
-                    model_name, provider, storage,
-                    temperature=temperature, max_tokens=max_tokens,
+                    model_name,
+                    provider,
+                    storage,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
                 )
                 if isinstance(result, str) and result == "retry":
                     # Retry model loading after auth setup
                     return await self.load_model(
-                        model_name, provider,
-                        temperature=temperature, max_tokens=max_tokens,
+                        model_name,
+                        provider,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
                     )
                 # result is guaranteed to be ModelInterface at this point
                 return cast(ModelInterface, result)
 
             # Create authenticated model using helper method
             return _create_authenticated_model(
-                model_name, provider, auth_method, storage,
-                temperature=temperature, max_tokens=max_tokens,
+                model_name,
+                provider,
+                auth_method,
+                storage,
+                temperature=temperature,
+                max_tokens=max_tokens,
             )
 
         except Exception as e:
@@ -397,8 +410,11 @@ def _create_authenticated_model(
         if not api_key:
             raise ValueError(f"No API key found for {lookup_key}")
         return _create_api_key_model(
-            model_name, api_key, provider,
-            temperature=temperature, max_tokens=max_tokens,
+            model_name,
+            api_key,
+            provider,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
 
     elif auth_method == "oauth":
@@ -406,8 +422,11 @@ def _create_authenticated_model(
         if not oauth_token:
             raise ValueError(f"No OAuth token found for {lookup_key}")
         return _create_oauth_model(
-            oauth_token, storage, lookup_key,
-            temperature=temperature, max_tokens=max_tokens,
+            oauth_token,
+            storage,
+            lookup_key,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
 
     else:
@@ -446,7 +465,8 @@ def _handle_no_authentication(
         # Expected behavior for Ollama - no auth needed
         return OllamaModel(
             model_name=model_name,
-            temperature=temperature, max_tokens=max_tokens,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
     elif provider:
         # Other providers require authentication
@@ -463,7 +483,8 @@ def _handle_no_authentication(
         )
         return OllamaModel(
             model_name=model_name,
-            temperature=temperature, max_tokens=max_tokens,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
 
 
@@ -492,20 +513,24 @@ def _create_api_key_model(
     if model_name == "claude-cli" or api_key.startswith("/"):
         return ClaudeCLIModel(
             claude_path=api_key,
-            temperature=temperature, max_tokens=max_tokens,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
     elif provider == "google-gemini":
         from llm_orc.models.google import GeminiModel
 
         return GeminiModel(
-            api_key=api_key, model=model_name,
-            temperature=temperature, max_tokens=max_tokens,
+            api_key=api_key,
+            model=model_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
     else:
         # Assume it's an Anthropic API key for Claude
         return ClaudeModel(
             api_key=api_key,
-            temperature=temperature, max_tokens=max_tokens,
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
 
 
