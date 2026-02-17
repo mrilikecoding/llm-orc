@@ -789,7 +789,12 @@ class TestNewHelperFunctions:
 
         event = {
             "data": {
-                "results": {"agent_a": {"status": "success"}},
+                "results": {
+                    "agent_a": {
+                        "status": "success",
+                        "response": "Hello",
+                    }
+                },
                 "metadata": {"duration": "5s"},
             }
         }
@@ -798,13 +803,18 @@ class TestNewHelperFunctions:
         status = Mock()
         console = Mock()
 
-        result = _handle_execution_completed_event(
-            event, ensemble_config, status, console, detailed=False
-        )
+        with patch(
+            "llm_orc.cli_modules.utils.visualization.streaming._display_simple_results"
+        ) as mock_simple:
+            result = _handle_execution_completed_event(
+                event, ensemble_config, status, console, detailed=False
+            )
 
         assert result is False  # Should break event loop
         status.stop.assert_called_once()
         console.print.assert_called_with("")
+        # When detailed=False, simple results should be displayed
+        mock_simple.assert_called_once()
 
     def test_handle_execution_completed_event_detailed(self) -> None:
         """Test _handle_execution_completed_event with detailed=True."""

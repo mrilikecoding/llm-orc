@@ -101,7 +101,7 @@ def display_plain_text_results(
     if detailed:
         _display_detailed_plain_text(results, metadata, agents or [])
     else:
-        _display_simplified_plain_text(results, metadata)
+        _display_simplified_plain_text(results, metadata, agents)
 
 
 def display_simplified_results(
@@ -242,17 +242,16 @@ def _display_detailed_plain_text(
 
 
 def _display_simplified_plain_text(
-    results: dict[str, Any], metadata: dict[str, Any]
+    results: dict[str, Any],
+    metadata: dict[str, Any],
+    agents: list[dict[str, Any]] | None = None,
 ) -> None:
     """Display simplified plain text results."""
-    successful_agents = [
-        name for name, result in results.items() if result.get("status") == "success"
-    ]
+    final_agent = find_final_agent(results, agents)
 
-    if successful_agents:
-        last_agent = successful_agents[-1]
-        response = results[last_agent]["response"]
-        click.echo(f"Result from {last_agent}:")
+    if final_agent:
+        response = results[final_agent]["response"]
+        click.echo(f"Result from {final_agent}:")
         click.echo(response)
     else:
         click.echo("❌ No successful results found")
