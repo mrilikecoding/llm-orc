@@ -31,6 +31,7 @@ LLM Orchestra is a multi-agent LLM communication system designed for ensemble or
 #### EnsembleExecutor (`llm_orc/core/execution/ensemble_execution.py`)
 - **Phase-based execution**: Resolves dependencies and executes agents in phases
 - **Parallel agent coordination**: Multiple agents per phase execute concurrently
+- **Fan-out expansion**: Agents with `fan_out: true` are automatically expanded into parallel instances over array results
 - **Result synthesis**: Combines agent outputs according to ensemble configuration
 - **Error handling**: Graceful degradation with per-agent error isolation
 
@@ -45,6 +46,31 @@ LLM Orchestra is a multi-agent LLM communication system designed for ensemble or
 - **Circular dependency detection**: Prevents invalid ensemble configurations
 - **Phase optimization**: Groups independent agents for parallel execution
 - **Validation**: Ensures all dependencies are satisfied
+
+### Fan-Out Execution (Issue #73)
+
+Map-reduce style parallel processing for agents that need to operate on each element of an array independently.
+
+#### FanOutExpander (`llm_orc/core/execution/fan_out_expander.py`)
+- **Array detection**: Identifies when upstream agents produce array results (direct lists, JSON arrays, or `{"data": [...]}` script output)
+- **Agent expansion**: Creates N indexed copies of the fan-out agent config (`processor[0]`, `processor[1]`, etc.)
+- **Chunk metadata**: Each instance receives `_fan_out_chunk`, `_fan_out_index`, `_fan_out_total`, and `_fan_out_original` fields
+- **Instance naming**: Pattern `agent_name[index]` with regex-based parsing for normalization
+
+#### FanOutGatherer (`llm_orc/core/execution/fan_out_gatherer.py`)
+- **Result collection**: Records per-instance results with success/failure tracking
+- **Ordered assembly**: Gathers results into an ordered array under the original agent name
+- **Status tracking**: Determines overall status (`success`, `partial`, `failed`)
+- **Error reporting**: Per-instance error details for debugging
+
+#### Integration with Phase Execution
+Fan-out is woven into the existing phase-based execution pipeline in `EnsembleExecutor`:
+1. **Detection**: During phase setup, `FanOutExpander.detect_fan_out_agents()` identifies fan-out agents
+2. **Expansion**: Before execution, fan-out agents are replaced with indexed instances in the phase agent list
+3. **Input preparation**: `DependencyResolver` builds per-instance input with chunk content and metadata (different formats for script vs LLM agents)
+4. **Execution**: Instances execute in parallel alongside other phase agents
+5. **Gathering**: After phase completion, `FanOutGatherer` assembles instance results under the original name
+6. **Downstream**: Subsequent agents see the gathered result as a normal dependency
 
 ### Script Agent Infrastructure
 
