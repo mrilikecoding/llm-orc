@@ -562,9 +562,65 @@ agents:
 
 **Benefits:**
 - **Flexible orchestration**: Create complex dependency graphs beyond simple coordinator patterns
-- **Parallel execution**: Independent agents run concurrently for better performance  
+- **Parallel execution**: Independent agents run concurrently for better performance
 - **Automatic validation**: Circular dependencies and missing dependencies are detected at load time
 - **Better maintainability**: Clear, explicit dependencies instead of implicit coordinator relationships
+
+#### Fan-Out (Parallel Map-Reduce)
+
+Agents with `fan_out: true` automatically expand into N parallel instances when their upstream dependency produces an array result. This enables map-reduce style parallel processing:
+
+```yaml
+agents:
+  # "Map" step: split input into chunks
+  - name: chunker
+    script: scripts/chunker.py
+    # Returns: {"success": true, "data": ["chunk1", "chunk2", "chunk3"]}
+
+  # "Reduce" step: process each chunk in parallel
+  - name: processor
+    model_profile: default-local
+    depends_on: [chunker]
+    fan_out: true
+    system_prompt: "Analyze this text chunk..."
+
+  # Synthesis: combine all results
+  - name: synthesizer
+    model_profile: default-local
+    depends_on: [processor]
+    system_prompt: "Synthesize the analysis results..."
+```
+
+**How it works:**
+
+1. `chunker` runs and returns a JSON array (direct array or `{"data": [...]}` format)
+2. `processor` is expanded into `processor[0]`, `processor[1]`, `processor[2]` — one per array element
+3. All instances execute in parallel, each receiving their chunk plus metadata (`chunk_index`, `total_chunks`, `base_input`)
+4. Results are gathered back under the original `processor` name as an ordered array
+5. `synthesizer` receives the combined results and can reference them normally
+
+**Configuration requirements:**
+
+- `fan_out: true` requires a `depends_on` field (validated at load time)
+- The upstream agent must produce a non-empty array result
+- Downstream agents reference the original name — fan-out is transparent to them
+
+**Result format for gathered fan-out agents:**
+
+```json
+{
+  "response": ["result_0", "result_1", null],
+  "status": "partial",
+  "fan_out": true,
+  "instances": [
+    {"index": 0, "status": "success"},
+    {"index": 1, "status": "success"},
+    {"index": 2, "status": "failed", "error": "timeout"}
+  ]
+}
+```
+
+Status is `"success"` (all instances passed), `"partial"` (some failed), or `"failed"` (all failed). Partial results are preserved — the ensemble continues with whatever succeeded.
 
 ### Configuration Status Checking
 
