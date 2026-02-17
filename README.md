@@ -466,7 +466,7 @@ Systematic literature review, methodology evaluation, or multi-dimensional analy
 
 ### Model Profiles
 
-Model profiles simplify ensemble configuration by providing named shortcuts for complete agent configurations including model, provider, system prompts, and timeouts:
+Model profiles simplify ensemble configuration by providing named shortcuts for complete agent configurations including model, provider, system prompts, timeouts, and generation parameters:
 
 ```yaml
 # In ~/.config/llm-orc/config.yaml or .llm-orc/config.yaml
@@ -477,12 +477,16 @@ model_profiles:
     cost_per_token: 0.0
     system_prompt: "You are a helpful assistant that provides concise, accurate responses for local development and testing."
     timeout_seconds: 30
+    temperature: 0.7
+    max_tokens: 500
 
   default-claude:
     model: claude-sonnet-4-20250514
     provider: anthropic-claude-pro-max
     system_prompt: "You are an expert assistant that provides high-quality, detailed analysis and solutions."
     timeout_seconds: 60
+    temperature: 0.5
+    max_tokens: 2000
 
   high-context:
     model: claude-3-5-sonnet-20241022
@@ -500,10 +504,11 @@ model_profiles:
 ```
 
 **Profile Benefits:**
-- **Complete Agent Configuration**: Includes model, provider, system prompts, and timeout settings
+- **Complete Agent Configuration**: Includes model, provider, system prompts, timeout settings, and generation parameters
 - **Simplified Configuration**: Use `model_profile: default-claude` instead of explicit model + provider + system_prompt + timeout
 - **Consistency**: Same profile names work across all ensembles with consistent behavior
 - **Cost Tracking**: Built-in cost information for budgeting
+- **Generation Control**: Set `temperature` and `max_tokens` per profile for reproducible behavior
 - **Flexibility**: Local profiles override global ones, explicit agent configs override profile defaults
 
 **Usage in Ensembles:**
@@ -526,6 +531,8 @@ agents:
     model_profile: free-local
     system_prompt: "Custom prompt"  # Overrides profile system_prompt
     timeout_seconds: 60            # Overrides profile timeout_seconds
+    temperature: 0.1               # Overrides profile temperature
+    max_tokens: 200                # Overrides profile max_tokens
 ```
 
 ### Ensemble Configuration
@@ -533,6 +540,7 @@ Ensemble configurations support:
 
 - **Model profiles** for simplified, consistent model selection
 - **Agent specialization** with role-specific prompts
+- **Generation parameters** (`temperature`, `max_tokens`) per profile or per agent
 - **Agent dependencies** using `depends_on` for sophisticated orchestration
 - **Dependency validation** with automatic cycle detection and missing dependency checks
 - **Timeout management** per agent with performance configuration
