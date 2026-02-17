@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-02-16
+
+### Added
+- Python 3.13 support (tested in CI on Ubuntu and macOS)
+- Pinned pydantic>=2.12 for forward compatibility
+
+### Changed
+- README license text updated to AGPL-3.0
+
 ## [0.14.1] - 2026-02-16
 
 ### Fixed

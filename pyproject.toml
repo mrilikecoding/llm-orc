@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llm-orchestra"
-version = "0.14.1"
+version = "0.14.2"
 description = "Multi-agent LLM communication system with ensemble orchestration"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
@@ -22,11 +22,12 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
     "websockets",
     "aiohttp>=3.13.3",
-    "pydantic",
+    "pydantic>=2.12",
     "anthropic",
     "google-genai",
     "ollama",
