@@ -407,6 +407,8 @@ class MCPServerV2:
             model: str,
             system_prompt: str | None = None,
             timeout_seconds: int | None = None,
+            temperature: float | None = None,
+            max_tokens: int | None = None,
         ) -> str:
             """Create a new model profile.
 
@@ -416,6 +418,8 @@ class MCPServerV2:
                 model: Model identifier
                 system_prompt: Optional system prompt
                 timeout_seconds: Optional timeout
+                temperature: Optional temperature (0.0-1.0)
+                max_tokens: Optional max tokens for generation
             """
             result = await self._create_profile_tool(
                 {
@@ -424,6 +428,8 @@ class MCPServerV2:
                     "model": model,
                     "system_prompt": system_prompt,
                     "timeout_seconds": timeout_seconds,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
                 }
             )
             return json.dumps(result, indent=2)
@@ -2346,6 +2352,10 @@ class MCPServerV2:
             profile_data["system_prompt"] = arguments["system_prompt"]
         if arguments.get("timeout_seconds"):
             profile_data["timeout_seconds"] = arguments["timeout_seconds"]
+        if arguments.get("temperature") is not None:
+            profile_data["temperature"] = arguments["temperature"]
+        if arguments.get("max_tokens") is not None:
+            profile_data["max_tokens"] = arguments["max_tokens"]
 
         # Write file
         local_dir.mkdir(parents=True, exist_ok=True)

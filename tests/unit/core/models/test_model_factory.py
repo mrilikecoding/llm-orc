@@ -81,7 +81,10 @@ class TestModelFactory:
             mock_config_manager.resolve_model_profile.assert_called_once_with(
                 "claude-sonnet"
             )
-            mock_load.assert_called_once_with("claude-3-sonnet", "anthropic")
+            mock_load.assert_called_once_with(
+                "claude-3-sonnet", "anthropic",
+                temperature=None, max_tokens=None,
+            )
             assert result is not None
 
     async def test_load_model_from_agent_config_with_model_and_provider(
@@ -95,7 +98,10 @@ class TestModelFactory:
         ) as mock_load:
             result = await model_factory.load_model_from_agent_config(agent_config)
 
-            mock_load.assert_called_once_with("claude-3-opus", "anthropic")
+            mock_load.assert_called_once_with(
+                "claude-3-opus", "anthropic",
+                temperature=None, max_tokens=None,
+            )
             assert result is not None
 
     async def test_load_model_from_agent_config_with_model_only(
@@ -109,8 +115,32 @@ class TestModelFactory:
         ) as mock_load:
             result = await model_factory.load_model_from_agent_config(agent_config)
 
-            mock_load.assert_called_once_with("claude-3-haiku", None)
+            mock_load.assert_called_once_with(
+                "claude-3-haiku", None,
+                temperature=None, max_tokens=None,
+            )
             assert result is not None
+
+    async def test_load_model_from_agent_config_forwards_params(
+        self, model_factory: ModelFactory
+    ) -> None:
+        """Test that temperature and max_tokens are forwarded from config."""
+        agent_config = {
+            "model": "llama2",
+            "provider": "ollama",
+            "temperature": 0.7,
+            "max_tokens": 500,
+        }
+
+        with patch.object(
+            model_factory, "load_model", return_value=AsyncMock()
+        ) as mock_load:
+            await model_factory.load_model_from_agent_config(agent_config)
+
+            mock_load.assert_called_once_with(
+                "llama2", "ollama",
+                temperature=0.7, max_tokens=500,
+            )
 
     async def test_load_model_from_agent_config_missing_model(
         self, model_factory: ModelFactory
@@ -143,6 +173,36 @@ class TestModelFactory:
 
         assert isinstance(model, OllamaModel)
         assert model.model_name == "llama3"
+
+    async def test_load_model_ollama_with_params(
+        self, model_factory: ModelFactory, mock_credential_storage: Mock
+    ) -> None:
+        """Test that temperature/max_tokens are forwarded to OllamaModel."""
+        mock_credential_storage.get_auth_method.return_value = None
+
+        model = await model_factory.load_model(
+            "llama3", "ollama", temperature=0.5, max_tokens=200
+        )
+
+        assert isinstance(model, OllamaModel)
+        assert model.temperature == 0.5
+        assert model.max_tokens == 200
+
+    async def test_load_model_api_key_claude_with_params(
+        self, model_factory: ModelFactory, mock_credential_storage: Mock
+    ) -> None:
+        """Test that temperature/max_tokens are forwarded to ClaudeModel."""
+        mock_credential_storage.get_auth_method.return_value = "api_key"
+        mock_credential_storage.get_api_key.return_value = "test-key"
+
+        model = await model_factory.load_model(
+            "claude-3-sonnet", "anthropic",
+            temperature=0.8, max_tokens=1500,
+        )
+
+        assert isinstance(model, ClaudeModel)
+        assert model.temperature == 0.8
+        assert model.max_tokens == 1500
 
     async def test_load_model_no_auth_other_provider_exception(
         self,
@@ -214,7 +274,8 @@ class TestModelFactory:
 
             assert model == mock_instance
             mock_gemini.assert_called_once_with(
-                api_key="google-api-key", model="gemini-pro"
+                api_key="google-api-key", model="gemini-pro",
+                temperature=None, max_tokens=None,
             )
 
     async def test_load_model_api_key_auth_anthropic_default(
@@ -962,7 +1023,10 @@ class TestLoadModelHelperMethods:
 
         # Then
         assert result == mock_model
-        mock_create.assert_called_once_with(model_name, "test-api-key", provider)
+        mock_create.assert_called_once_with(
+            model_name, "test-api-key", provider,
+            temperature=None, max_tokens=None,
+        )
 
     def test_create_authenticated_model_oauth(self) -> None:
         """Test authenticated model creation with OAuth method."""
@@ -987,7 +1051,10 @@ class TestLoadModelHelperMethods:
 
         # Then
         assert result == mock_model
-        mock_create.assert_called_once_with(oauth_token, storage, "anthropic")
+        mock_create.assert_called_once_with(
+            oauth_token, storage, "anthropic",
+            temperature=None, max_tokens=None,
+        )
 
     def test_create_authenticated_model_no_api_key(self) -> None:
         """Test authenticated model creation when API key is missing."""

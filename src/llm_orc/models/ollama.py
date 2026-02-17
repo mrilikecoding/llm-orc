@@ -11,9 +11,14 @@ class OllamaModel(ModelInterface):
     """Ollama model implementation."""
 
     def __init__(
-        self, model_name: str = "llama2", host: str = "http://localhost:11434"
+        self,
+        model_name: str = "llama2",
+        host: str = "http://localhost:11434",
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(temperature=temperature, max_tokens=max_tokens)
         self.model_name = model_name
         self.host = host
         self.client = ollama.AsyncClient(host=host)
@@ -26,12 +31,20 @@ class OllamaModel(ModelInterface):
         """Generate response using Ollama API."""
         start_time = time.time()
 
+        # Build options dict for temperature and max_tokens
+        options: dict[str, float | int] = {}
+        if self.temperature is not None:
+            options["temperature"] = self.temperature
+        if self.max_tokens is not None:
+            options["num_predict"] = self.max_tokens
+
         response = await self.client.chat(
             model=self.model_name,
             messages=[
                 {"role": "system", "content": role_prompt},
                 {"role": "user", "content": message},
             ],
+            options=options if options else None,
         )
 
         duration_ms = int((time.time() - start_time) * 1000)

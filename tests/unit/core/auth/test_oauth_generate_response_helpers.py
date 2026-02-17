@@ -103,6 +103,34 @@ class TestOAuthGenerateResponseHelperMethods:
         assert messages[0]["content"] == "Test message"
         assert messages[0]["role"] == "user"
 
+    def test_prepare_oauth_message_request_with_params(self) -> None:
+        """Test OAuth request includes temperature and max_tokens."""
+        from llm_orc.models.anthropic import _prepare_oauth_message_request
+
+        model = OAuthClaudeModel(
+            access_token="token",
+            temperature=0.9,
+            max_tokens=2000,
+        )
+        model.add_to_conversation("user", "Hello")
+
+        request_params = _prepare_oauth_message_request(model, "Role")
+
+        assert request_params["max_tokens"] == 2000
+        assert request_params["temperature"] == 0.9
+
+    def test_prepare_oauth_message_request_defaults(self) -> None:
+        """Test OAuth request uses default max_tokens when not set."""
+        from llm_orc.models.anthropic import _prepare_oauth_message_request
+
+        model = OAuthClaudeModel(access_token="token")
+        model.add_to_conversation("user", "Hello")
+
+        request_params = _prepare_oauth_message_request(model, "Role")
+
+        assert request_params["max_tokens"] == 1000
+        assert "temperature" not in request_params
+
     @pytest.mark.asyncio
     async def test_execute_oauth_api_call_success(self) -> None:
         """Test successful OAuth API call execution."""

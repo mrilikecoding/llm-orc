@@ -85,9 +85,16 @@ class HTTPConnectionPool:
 class ModelInterface(ABC):
     """Abstract interface for LLM models."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> None:
         self._last_usage: dict[str, Any] | None = None
         self._conversation_history: list[dict[str, str]] = []
+        self.temperature = temperature
+        self.max_tokens = max_tokens
 
     @property
     @abstractmethod
