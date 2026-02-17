@@ -82,8 +82,10 @@ class TestModelFactory:
                 "claude-sonnet"
             )
             mock_load.assert_called_once_with(
-                "claude-3-sonnet", "anthropic",
-                temperature=None, max_tokens=None,
+                "claude-3-sonnet",
+                "anthropic",
+                temperature=None,
+                max_tokens=None,
             )
             assert result is not None
 
@@ -99,8 +101,10 @@ class TestModelFactory:
             result = await model_factory.load_model_from_agent_config(agent_config)
 
             mock_load.assert_called_once_with(
-                "claude-3-opus", "anthropic",
-                temperature=None, max_tokens=None,
+                "claude-3-opus",
+                "anthropic",
+                temperature=None,
+                max_tokens=None,
             )
             assert result is not None
 
@@ -116,8 +120,10 @@ class TestModelFactory:
             result = await model_factory.load_model_from_agent_config(agent_config)
 
             mock_load.assert_called_once_with(
-                "claude-3-haiku", None,
-                temperature=None, max_tokens=None,
+                "claude-3-haiku",
+                None,
+                temperature=None,
+                max_tokens=None,
             )
             assert result is not None
 
@@ -138,8 +144,10 @@ class TestModelFactory:
             await model_factory.load_model_from_agent_config(agent_config)
 
             mock_load.assert_called_once_with(
-                "llama2", "ollama",
-                temperature=0.7, max_tokens=500,
+                "llama2",
+                "ollama",
+                temperature=0.7,
+                max_tokens=500,
             )
 
     async def test_load_model_from_agent_config_missing_model(
@@ -196,8 +204,10 @@ class TestModelFactory:
         mock_credential_storage.get_api_key.return_value = "test-key"
 
         model = await model_factory.load_model(
-            "claude-3-sonnet", "anthropic",
-            temperature=0.8, max_tokens=1500,
+            "claude-3-sonnet",
+            "anthropic",
+            temperature=0.8,
+            max_tokens=1500,
         )
 
         assert isinstance(model, ClaudeModel)
@@ -274,8 +284,10 @@ class TestModelFactory:
 
             assert model == mock_instance
             mock_gemini.assert_called_once_with(
-                api_key="google-api-key", model="gemini-pro",
-                temperature=None, max_tokens=None,
+                api_key="google-api-key",
+                model="gemini-pro",
+                temperature=None,
+                max_tokens=None,
             )
 
     async def test_load_model_api_key_auth_anthropic_default(
@@ -1024,8 +1036,11 @@ class TestLoadModelHelperMethods:
         # Then
         assert result == mock_model
         mock_create.assert_called_once_with(
-            model_name, "test-api-key", provider,
-            temperature=None, max_tokens=None,
+            model_name,
+            "test-api-key",
+            provider,
+            temperature=None,
+            max_tokens=None,
         )
 
     def test_create_authenticated_model_oauth(self) -> None:
@@ -1052,8 +1067,11 @@ class TestLoadModelHelperMethods:
         # Then
         assert result == mock_model
         mock_create.assert_called_once_with(
-            oauth_token, storage, "anthropic",
-            temperature=None, max_tokens=None,
+            oauth_token,
+            storage,
+            "anthropic",
+            temperature=None,
+            max_tokens=None,
         )
 
     def test_create_authenticated_model_no_api_key(self) -> None:

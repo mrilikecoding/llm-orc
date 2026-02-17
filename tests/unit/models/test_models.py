@@ -48,9 +48,7 @@ class TestModelParameterDefaults:
 
     def test_claude_model_accepts_params(self) -> None:
         """ClaudeModel should accept temperature and max_tokens kwargs."""
-        model = ClaudeModel(
-            api_key="test-key", temperature=0.5, max_tokens=2000
-        )
+        model = ClaudeModel(api_key="test-key", temperature=0.5, max_tokens=2000)
         assert model.temperature == 0.5
         assert model.max_tokens == 2000
 
@@ -62,9 +60,7 @@ class TestModelParameterDefaults:
 
     def test_gemini_model_accepts_params(self) -> None:
         """GeminiModel should accept temperature and max_tokens kwargs."""
-        model = GeminiModel(
-            api_key="test-key", temperature=0.3, max_tokens=1000
-        )
+        model = GeminiModel(api_key="test-key", temperature=0.3, max_tokens=1000)
         assert model.temperature == 0.3
         assert model.max_tokens == 1000
 
@@ -116,9 +112,7 @@ class TestClaudeModel:
     @pytest.mark.asyncio
     async def test_claude_model_passes_temperature(self) -> None:
         """Should pass temperature to Anthropic API when set."""
-        model = ClaudeModel(
-            api_key="test-key", temperature=0.7, max_tokens=2000
-        )
+        model = ClaudeModel(api_key="test-key", temperature=0.7, max_tokens=2000)
         model.client = AsyncMock()
         model.client.messages.create.return_value = Mock(
             content=[Mock(text="response")],
@@ -173,15 +167,11 @@ class TestGeminiModel:
     @pytest.mark.asyncio
     async def test_gemini_passes_config_with_params(self) -> None:
         """Should pass GenerateContentConfig when params are set."""
-        model = GeminiModel(
-            api_key="test-key", temperature=0.3, max_tokens=500
-        )
+        model = GeminiModel(api_key="test-key", temperature=0.3, max_tokens=500)
         mock_response = Mock()
         mock_response.text = "response"
         model.client = Mock()
-        model.client.models.generate_content = Mock(
-            return_value=mock_response
-        )
+        model.client.models.generate_content = Mock(return_value=mock_response)
 
         await model.generate_response("Hi", role_prompt="Be helpful.")
 
@@ -198,9 +188,7 @@ class TestGeminiModel:
         mock_response = Mock()
         mock_response.text = "response"
         model.client = Mock()
-        model.client.models.generate_content = Mock(
-            return_value=mock_response
-        )
+        model.client.models.generate_content = Mock(return_value=mock_response)
 
         await model.generate_response("Hi", role_prompt="Be helpful.")
 
@@ -230,13 +218,9 @@ class TestOllamaModel:
     @pytest.mark.asyncio
     async def test_ollama_passes_temperature_and_max_tokens(self) -> None:
         """Should pass temperature and max_tokens as options to Ollama API."""
-        model = OllamaModel(
-            model_name="llama2", temperature=0.5, max_tokens=200
-        )
+        model = OllamaModel(model_name="llama2", temperature=0.5, max_tokens=200)
         model.client = AsyncMock()
-        model.client.chat.return_value = {
-            "message": {"content": "response"}
-        }
+        model.client.chat.return_value = {"message": {"content": "response"}}
 
         await model.generate_response("Hi", role_prompt="Be helpful.")
 
@@ -251,9 +235,7 @@ class TestOllamaModel:
         """Should not pass options when temperature and max_tokens are None."""
         model = OllamaModel(model_name="llama2")
         model.client = AsyncMock()
-        model.client.chat.return_value = {
-            "message": {"content": "response"}
-        }
+        model.client.chat.return_value = {"message": {"content": "response"}}
 
         await model.generate_response("Hi", role_prompt="Be helpful.")
 
