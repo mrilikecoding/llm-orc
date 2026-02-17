@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-02-16
+
+### Fixed
+- `create_ensemble` from template now preserves all agent fields (`type`, `script`, `parameters`, `cache`, `fan_out`) instead of only `name`, `model_profile`, and `depends_on`
+- `validate_ensemble` now detects script agents by the `script` field, not just explicit `type: script`
+- Script paths resolve relative to project directory (from `set_project`) instead of working directory, fixing MCP server usage from consuming projects
+- Plexus ensemble uses relative script paths instead of absolute paths
+
+### Added
+- `llm_orc.script_utils` module with shared `unwrap_input()` for script envelope handling
+  - Handles ScriptAgentInput, legacy wrapper, and direct input formats
+  - Reads `AGENT_PARAMETERS` env var as fallback for parameters
+  - Optional `debug=True` mode logs envelope diagnostics to stderr
+- Fan-out feature documented in README and architecture docs
+
 ## [0.14.0] - 2026-02-12
 
 ### Changed

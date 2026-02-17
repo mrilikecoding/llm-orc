@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llm-orchestra"
-version = "0.14.0"
+version = "0.14.1"
 description = "Multi-agent LLM communication system with ensemble orchestration"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
