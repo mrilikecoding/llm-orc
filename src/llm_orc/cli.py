@@ -374,13 +374,13 @@ def web(port: int, host: str, open_browser: bool) -> None:
 def mcp_serve(transport: str, port: int) -> None:
     """Start the MCP server exposing all ensembles.
 
-    Uses the new MCPServerV2 with full resource and tool support.
+    Uses the MCPServer with full resource and tool support.
     Default transport is stdio for MCP client compatibility.
     """
     import signal
     import sys
 
-    from llm_orc.mcp import MCPServerV2
+    from llm_orc.mcp import MCPServer
 
     def handle_shutdown(_signum: int, _frame: object) -> None:
         """Handle shutdown signals gracefully."""
@@ -391,7 +391,7 @@ def mcp_serve(transport: str, port: int) -> None:
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
-    server = MCPServerV2()
+    server = MCPServer()
 
     if transport == "stdio":
         # Minimal output for stdio - it's typically auto-spawned by MCP clients

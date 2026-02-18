@@ -50,11 +50,11 @@ def mcp_server_available(bdd_context: dict[str, Any]) -> None:
     """Set up MCP server instance for testing."""
     # Import will fail in Red phase until implementation exists
     try:
-        from llm_orc.mcp.server import MCPServerV2
+        from llm_orc.mcp.server import MCPServer
 
         # Create a default server - will be reconfigured by subsequent steps
-        bdd_context["mcp_server_class"] = MCPServerV2
-        bdd_context["mcp_server"] = MCPServerV2()
+        bdd_context["mcp_server_class"] = MCPServer
+        bdd_context["mcp_server"] = MCPServer()
         bdd_context["mcp_available"] = True
     except ImportError:
         # Red phase: module doesn't exist yet

@@ -1,6 +1,6 @@
 """Scripts API endpoints.
 
-Provides REST API for script management, delegating to MCPServerV2.
+Provides REST API for script management, delegating to MCPServer.
 """
 
 from typing import Any
@@ -8,18 +8,18 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from llm_orc.mcp import MCPServerV2
+from llm_orc.mcp import MCPServer
 
 router = APIRouter(prefix="/api/scripts", tags=["scripts"])
 
-_mcp_server: MCPServerV2 | None = None
+_mcp_server: MCPServer | None = None
 
 
-def get_mcp_server() -> MCPServerV2:
+def get_mcp_server() -> MCPServer:
     """Get or create the MCP server instance."""
     global _mcp_server
     if _mcp_server is None:
-        _mcp_server = MCPServerV2()
+        _mcp_server = MCPServer()
     return _mcp_server
 
 

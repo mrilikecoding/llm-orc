@@ -1,4 +1,4 @@
-"""MCP Server v2 implementation using FastMCP SDK.
+"""MCP Server implementation using FastMCP SDK.
 
 This module implements the MCP server following ADR-009, providing:
 - Resource exposure for ensembles, artifacts, metrics, and profiles
@@ -93,8 +93,8 @@ def _get_agent_attr(agent: Any, attr: str, default: Any = None) -> Any:
     return getattr(agent, attr, default)
 
 
-class MCPServerV2:
-    """MCP Server v2 using FastMCP SDK.
+class MCPServer:
+    """MCP Server using FastMCP SDK.
 
     Exposes all llm-orc ensembles as MCP resources and provides
     tools for ensemble management and execution.
