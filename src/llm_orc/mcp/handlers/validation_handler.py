@@ -11,9 +11,7 @@ from llm_orc.core.config.ensemble_config import (
 )
 
 
-def _get_agent_attr(
-    agent: Any, attr: str, default: Any = None
-) -> Any:
+def _get_agent_attr(agent: Any, attr: str, default: Any = None) -> Any:
     """Get attribute from agent config."""
     if isinstance(agent, dict):
         return agent.get(attr, default)
@@ -39,9 +37,7 @@ class ValidationHandler:
         self._config_manager = config_manager
         self._find_ensemble = find_ensemble
 
-    async def validate_ensemble(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def validate_ensemble(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Validate an ensemble configuration."""
         ensemble_name = arguments.get("ensemble_name")
 
@@ -50,13 +46,9 @@ class ValidationHandler:
 
         config = self._find_ensemble(ensemble_name)
         if not config:
-            raise ValueError(
-                f"Ensemble not found: {ensemble_name}"
-            )
+            raise ValueError(f"Ensemble not found: {ensemble_name}")
 
-        validation_errors = self._collect_validation_errors(
-            config
-        )
+        validation_errors = self._collect_validation_errors(config)
 
         return {
             "valid": len(validation_errors) == 0,
@@ -66,9 +58,7 @@ class ValidationHandler:
             },
         }
 
-    def _collect_validation_errors(
-        self, config: Any
-    ) -> list[str]:
+    def _collect_validation_errors(self, config: Any) -> list[str]:
         """Collect validation errors for an ensemble."""
         validation_errors: list[str] = []
 
@@ -77,49 +67,31 @@ class ValidationHandler:
         except ValueError as e:
             validation_errors.append(str(e))
 
-        validation_errors.extend(
-            self._validate_agent_references(config)
-        )
-        validation_errors.extend(
-            self._validate_model_profiles(config)
-        )
+        validation_errors.extend(self._validate_agent_references(config))
+        validation_errors.extend(self._validate_model_profiles(config))
 
         return validation_errors
 
-    def _validate_agent_references(
-        self, config: Any
-    ) -> list[str]:
+    def _validate_agent_references(self, config: Any) -> list[str]:
         """Validate agent dependency references."""
         errors: list[str] = []
-        agent_names = {
-            _get_agent_attr(agent, "name")
-            for agent in config.agents
-        }
+        agent_names = {_get_agent_attr(agent, "name") for agent in config.agents}
 
         for agent in config.agents:
-            depends_on = (
-                _get_agent_attr(agent, "depends_on") or []
-            )
+            depends_on = _get_agent_attr(agent, "depends_on") or []
             for dep in depends_on:
                 if dep not in agent_names:
-                    agent_name = _get_agent_attr(
-                        agent, "name"
-                    )
+                    agent_name = _get_agent_attr(agent, "name")
                     errors.append(
-                        f"Agent '{agent_name}' depends on"
-                        f" unknown agent '{dep}'"
+                        f"Agent '{agent_name}' depends on unknown agent '{dep}'"
                     )
 
         return errors
 
-    def _validate_model_profiles(
-        self, config: Any
-    ) -> list[str]:
+    def _validate_model_profiles(self, config: Any) -> list[str]:
         """Validate model profiles exist and are configured."""
         errors: list[str] = []
-        available_profiles = (
-            self._config_manager.get_model_profiles()
-        )
+        available_profiles = self._config_manager.get_model_profiles()
 
         for agent in config.agents:
             agent_name = _get_agent_attr(agent, "name")
@@ -127,49 +99,36 @@ class ValidationHandler:
             if _is_script_agent(agent):
                 continue
 
-            model_profile = _get_agent_attr(
-                agent, "model_profile"
-            )
+            model_profile = _get_agent_attr(agent, "model_profile")
             if not model_profile:
-                errors.append(
-                    f"Agent '{agent_name}' has no"
-                    " model_profile configured"
-                )
+                errors.append(f"Agent '{agent_name}' has no model_profile configured")
                 continue
 
             if model_profile not in available_profiles:
                 errors.append(
-                    f"Agent '{agent_name}' uses unknown"
-                    f" profile '{model_profile}'"
+                    f"Agent '{agent_name}' uses unknown profile '{model_profile}'"
                 )
                 continue
 
-            profile_config = available_profiles[
-                model_profile
-            ]
+            profile_config = available_profiles[model_profile]
             provider = profile_config.get("provider")
             if not provider:
                 errors.append(
-                    f"Profile '{model_profile}' missing"
-                    " 'provider' configuration"
+                    f"Profile '{model_profile}' missing 'provider' configuration"
                 )
             else:
                 from llm_orc.providers.registry import (
                     provider_registry,
                 )
 
-                if not provider_registry.provider_exists(
-                    provider
-                ):
+                if not provider_registry.provider_exists(provider):
                     errors.append(
-                        f"Profile '{model_profile}' uses"
-                        f" unknown provider '{provider}'"
+                        f"Profile '{model_profile}' uses unknown provider '{provider}'"
                     )
 
             if not profile_config.get("model"):
                 errors.append(
-                    f"Profile '{model_profile}' missing"
-                    " 'model' configuration"
+                    f"Profile '{model_profile}' missing 'model' configuration"
                 )
 
         return errors

@@ -7,9 +7,7 @@ from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.mcp.handlers.profile_handler import ProfileHandler
 
 
-def _get_agent_attr(
-    agent: Any, attr: str, default: Any = None
-) -> Any:
+def _get_agent_attr(agent: Any, attr: str, default: Any = None) -> Any:
     """Get agent attribute handling both dict and object forms."""
     if isinstance(agent, dict):
         return agent.get(attr, default)
@@ -30,25 +28,17 @@ class ProviderHandler:
         self._profile_handler = profile_handler
         self._find_ensemble = find_ensemble
 
-    async def get_provider_status(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def get_provider_status(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Get status of all providers and available models."""
         providers: dict[str, Any] = {}
 
         providers["ollama"] = await self._get_ollama_status()
 
-        providers["anthropic-api"] = (
-            self._get_cloud_provider_status("anthropic-api")
+        providers["anthropic-api"] = self._get_cloud_provider_status("anthropic-api")
+        providers["anthropic-claude-pro-max"] = self._get_cloud_provider_status(
+            "anthropic-claude-pro-max"
         )
-        providers["anthropic-claude-pro-max"] = (
-            self._get_cloud_provider_status(
-                "anthropic-claude-pro-max"
-            )
-        )
-        providers["google-gemini"] = (
-            self._get_cloud_provider_status("google-gemini")
-        )
+        providers["google-gemini"] = self._get_cloud_provider_status("google-gemini")
 
         return {"providers": providers}
 
@@ -60,18 +50,11 @@ class ProviderHandler:
         import httpx
 
         try:
-            async with httpx.AsyncClient(
-                timeout=5.0
-            ) as client:
-                response = await client.get(
-                    "http://localhost:11434/api/tags"
-                )
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get("http://localhost:11434/api/tags")
                 if response.status_code == 200:
                     data = response.json()
-                    models = [
-                        m.get("name", "")
-                        for m in data.get("models", [])
-                    ]
+                    models = [m.get("name", "") for m in data.get("models", [])]
                     return {
                         "available": True,
                         "models": sorted(models),
@@ -86,9 +69,7 @@ class ProviderHandler:
             "reason": "Ollama not running",
         }
 
-    def _get_cloud_provider_status(
-        self, provider: str
-    ) -> dict[str, Any]:
+    def _get_cloud_provider_status(self, provider: str) -> dict[str, Any]:
         """Check if a cloud provider is configured."""
         from llm_orc.core.auth.authentication import (
             CredentialStorage,
@@ -115,9 +96,7 @@ class ProviderHandler:
 
         config = self._find_ensemble(ensemble_name)
         if not config:
-            raise ValueError(
-                f"Ensemble not found: {ensemble_name}"
-            )
+            raise ValueError(f"Ensemble not found: {ensemble_name}")
 
         provider_status = await self.get_provider_status({})
         providers = provider_status.get("providers", {})
@@ -128,13 +107,9 @@ class ProviderHandler:
         all_runnable = True
 
         for agent in config.agents:
-            agent_name = _get_agent_attr(
-                agent, "name", "unknown"
-            )
+            agent_name = _get_agent_attr(agent, "name", "unknown")
 
-            script_path = _get_agent_attr(
-                agent, "script", ""
-            )
+            script_path = _get_agent_attr(agent, "script", "")
             if script_path:
                 agent_status: dict[str, Any] = {
                     "name": agent_name,
@@ -144,9 +119,7 @@ class ProviderHandler:
                     "alternatives": [],
                 }
             else:
-                profile_name = _get_agent_attr(
-                    agent, "model_profile", ""
-                )
+                profile_name = _get_agent_attr(agent, "model_profile", "")
                 agent_status = self._check_agent_runnable(
                     agent_name,
                     profile_name,
@@ -183,9 +156,7 @@ class ProviderHandler:
 
         if profile_name not in all_profiles:
             result["status"] = "missing_profile"
-            result["alternatives"] = (
-                self._suggest_local_alternatives(providers)
-            )
+            result["alternatives"] = self._suggest_local_alternatives(providers)
             return result
 
         profile = all_profiles[profile_name]
@@ -195,34 +166,25 @@ class ProviderHandler:
         provider_info = providers.get(provider, {})
         if not provider_info.get("available", False):
             result["status"] = "provider_unavailable"
-            result["alternatives"] = (
-                self._suggest_local_alternatives(providers)
-            )
+            result["alternatives"] = self._suggest_local_alternatives(providers)
             return result
 
         if provider == "ollama":
             model = profile.get("model", "")
             available_models = provider_info.get("models", [])
-            model_base = (
-                model.split(":")[0] if ":" in model else model
-            )
+            model_base = model.split(":")[0] if ":" in model else model
             model_found = any(
-                m == model or m.startswith(f"{model_base}:")
-                for m in available_models
+                m == model or m.startswith(f"{model_base}:") for m in available_models
             )
             if not model_found:
                 result["status"] = "model_unavailable"
-                result["alternatives"] = (
-                    self._suggest_available_models(
-                        available_models
-                    )
+                result["alternatives"] = self._suggest_available_models(
+                    available_models
                 )
 
         return result
 
-    def _suggest_local_alternatives(
-        self, providers: dict[str, Any]
-    ) -> list[str]:
+    def _suggest_local_alternatives(self, providers: dict[str, Any]) -> list[str]:
         """Suggest local profile alternatives."""
         ollama = providers.get("ollama", {})
         if not ollama.get("available", False):
@@ -237,8 +199,6 @@ class ProviderHandler:
 
         return sorted(local_profiles)[:5]
 
-    def _suggest_available_models(
-        self, available_models: list[str]
-    ) -> list[str]:
+    def _suggest_available_models(self, available_models: list[str]) -> list[str]:
         """Suggest available Ollama models."""
         return sorted(available_models)[:5]

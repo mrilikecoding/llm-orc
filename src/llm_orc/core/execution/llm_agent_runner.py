@@ -42,48 +42,32 @@ class LlmAgentRunner:
         """Execute LLM agent with fallback handling."""
         agent_name = agent_config["name"]
 
-        self._usage_collector.start_agent_resource_monitoring(
-            agent_name
-        )
+        self._usage_collector.start_agent_resource_monitoring(agent_name)
 
         try:
-            role = await self._load_role_from_config(
-                agent_config
-            )
-            model = await self._load_model_with_fallback(
-                agent_config
-            )
+            role = await self._load_role_from_config(agent_config)
+            model = await self._load_model_with_fallback(agent_config)
             agent = Agent(agent_name, role, model)
 
-            self._usage_collector.sample_agent_resources(
-                agent_name
-            )
+            self._usage_collector.sample_agent_resources(agent_name)
 
             try:
-                response = await agent.respond_to_message(
-                    input_data
-                )
-                self._usage_collector.sample_agent_resources(
-                    agent_name
-                )
+                response = await agent.respond_to_message(input_data)
+                self._usage_collector.sample_agent_resources(agent_name)
                 return response, model
             except Exception as e:
                 return await self._handle_runtime_fallback(
                     agent_config, role, input_data, e
                 )
         finally:
-            self._usage_collector.finalize_agent_resource_monitoring(
-                agent_name
-            )
+            self._usage_collector.finalize_agent_resource_monitoring(agent_name)
 
     async def _load_model_with_fallback(
         self, agent_config: dict[str, Any]
     ) -> ModelInterface:
         """Load model with fallback handling."""
         try:
-            return await self._model_factory.load_model_from_agent_config(
-                agent_config
-            )
+            return await self._model_factory.load_model_from_agent_config(agent_config)
         except Exception as model_loading_error:
             return await self._handle_model_loading_fallback(
                 agent_config, model_loading_error
@@ -95,30 +79,20 @@ class LlmAgentRunner:
         model_loading_error: Exception,
     ) -> ModelInterface:
         """Handle model loading failure with fallback."""
-        fallback_model = (
-            await self._model_factory.get_fallback_model(
-                context=f"agent_{agent_config['name']}",
-                original_profile=agent_config.get(
-                    "model_profile"
-                ),
-            )
+        fallback_model = await self._model_factory.get_fallback_model(
+            context=f"agent_{agent_config['name']}",
+            original_profile=agent_config.get("model_profile"),
         )
-        fallback_model_name = getattr(
-            fallback_model, "model_name", "unknown"
-        )
+        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
 
-        failure_type = self._classify_failure(
-            str(model_loading_error)
-        )
+        failure_type = self._classify_failure(str(model_loading_error))
         self._emit_event(
             "agent_fallback_started",
             {
                 "agent_name": agent_config["name"],
                 "failure_type": failure_type,
                 "original_error": str(model_loading_error),
-                "original_model_profile": agent_config.get(
-                    "model_profile", "unknown"
-                ),
+                "original_model_profile": agent_config.get("model_profile", "unknown"),
                 "fallback_model_profile": None,
                 "fallback_model_name": fallback_model_name,
             },
@@ -133,14 +107,10 @@ class LlmAgentRunner:
         error: Exception,
     ) -> tuple[str, ModelInterface]:
         """Handle runtime failure with fallback model."""
-        fallback_model = (
-            await self._model_factory.get_fallback_model(
-                context=f"agent_{agent_config['name']}"
-            )
+        fallback_model = await self._model_factory.get_fallback_model(
+            context=f"agent_{agent_config['name']}"
         )
-        fallback_model_name = getattr(
-            fallback_model, "model_name", "unknown"
-        )
+        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
 
         failure_type = self._classify_failure(str(error))
         self._emit_event(
@@ -149,24 +119,16 @@ class LlmAgentRunner:
                 "agent_name": agent_config["name"],
                 "failure_type": failure_type,
                 "original_error": str(error),
-                "original_model_profile": agent_config.get(
-                    "model_profile", "unknown"
-                ),
+                "original_model_profile": agent_config.get("model_profile", "unknown"),
                 "fallback_model_profile": None,
                 "fallback_model_name": fallback_model_name,
             },
         )
 
-        fallback_agent = Agent(
-            agent_config["name"], role, fallback_model
-        )
+        fallback_agent = Agent(agent_config["name"], role, fallback_model)
 
         try:
-            response = (
-                await fallback_agent.respond_to_message(
-                    input_data
-                )
-            )
+            response = await fallback_agent.respond_to_message(input_data)
             self._emit_fallback_success_event(
                 agent_config["name"],
                 fallback_model,
@@ -188,14 +150,8 @@ class LlmAgentRunner:
         response: str,
     ) -> None:
         """Emit fallback success event."""
-        fallback_model_name = getattr(
-            fallback_model, "model_name", "unknown"
-        )
-        response_preview = (
-            response[:100] + "..."
-            if len(response) > 100
-            else response
-        )
+        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
+        response_preview = response[:100] + "..." if len(response) > 100 else response
         self._emit_event(
             "agent_fallback_completed",
             {
@@ -212,9 +168,7 @@ class LlmAgentRunner:
         fallback_error: Exception,
     ) -> None:
         """Emit fallback failure event."""
-        fallback_failure_type = self._classify_failure(
-            str(fallback_error)
-        )
+        fallback_failure_type = self._classify_failure(str(fallback_error))
         self._emit_event(
             "agent_fallback_failed",
             {
@@ -231,19 +185,12 @@ class LlmAgentRunner:
         """Load a role definition from agent configuration."""
         agent_name = agent_config["name"]
 
-        enhanced_config = (
-            await self._resolve_model_profile_to_config(
-                agent_config
-            )
-        )
+        enhanced_config = await self._resolve_model_profile_to_config(agent_config)
 
         if "system_prompt" in enhanced_config:
             prompt = enhanced_config["system_prompt"]
         else:
-            prompt = (
-                f"You are a {agent_name}."
-                " Provide helpful analysis."
-            )
+            prompt = f"You are a {agent_name}. Provide helpful analysis."
 
         return RoleDefinition(name=agent_name, prompt=prompt)
 
@@ -254,9 +201,7 @@ class LlmAgentRunner:
         enhanced_config = agent_config.copy()
 
         if "model_profile" in agent_config:
-            profiles = (
-                self._config_manager.get_model_profiles()
-            )
+            profiles = self._config_manager.get_model_profiles()
             profile_name = agent_config["model_profile"]
             if profile_name in profiles:
                 profile_config = profiles[profile_name]

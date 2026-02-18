@@ -14,7 +14,6 @@ class ProfileHandler:
     def __init__(
         self,
         config_manager: ConfigurationManager,
-        project_path_getter: Any = None,
     ) -> None:
         """Initialize with configuration manager."""
         self._config_manager = config_manager

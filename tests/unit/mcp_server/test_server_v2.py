@@ -1526,9 +1526,7 @@ class TestCheckAgentRunnable:
     def test_check_agent_runnable_missing_profile(self, server: MCPServerV2) -> None:
         """Agent with missing profile has missing_profile status."""
         handler = server._provider_handler
-        result = handler._check_agent_runnable(
-            "agent1", "nonexistent", {}, {}
-        )
+        result = handler._check_agent_runnable("agent1", "nonexistent", {}, {})
         assert result["status"] == "missing_profile"
         assert result["name"] == "agent1"
 

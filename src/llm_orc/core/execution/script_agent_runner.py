@@ -54,30 +54,22 @@ class ScriptAgentRunner:
             "parameters": parameters,
         }
 
-        cached_result = self._script_cache.get(
-            script_content, cache_key_params
-        )
+        cached_result = self._script_cache.get(script_content, cache_key_params)
         if cached_result is not None:
             return cached_result.get("output", ""), None
 
         start_time = time.time()
-        response, model_instance = (
-            await self._execute_without_cache(
-                agent_config, input_data
-            )
+        response, model_instance = await self._execute_without_cache(
+            agent_config, input_data
         )
         duration_ms = int((time.time() - start_time) * 1000)
 
         cache_result = {
             "output": response,
-            "execution_metadata": {
-                "duration_ms": duration_ms
-            },
+            "execution_metadata": {"duration_ms": duration_ms},
             "success": True,
         }
-        self._script_cache.set(
-            script_content, cache_key_params, cache_result
-        )
+        self._script_cache.set(script_content, cache_key_params, cache_result)
 
         return response, model_instance
 
@@ -89,9 +81,7 @@ class ScriptAgentRunner:
         """Execute script agent with resource monitoring."""
         agent_name = agent_config["name"]
 
-        self._usage_collector.start_agent_resource_monitoring(
-            agent_name
-        )
+        self._usage_collector.start_agent_resource_monitoring(agent_name)
 
         try:
             script_agent = EnhancedScriptAgent(
@@ -100,28 +90,20 @@ class ScriptAgentRunner:
                 project_dir=self._project_dir,
             )
 
-            self._usage_collector.sample_agent_resources(
-                agent_name
+            self._usage_collector.sample_agent_resources(agent_name)
+
+            response = await self._execute_with_input_handling(
+                script_agent, agent_config, input_data
             )
 
-            response = (
-                await self._execute_with_input_handling(
-                    script_agent, agent_config, input_data
-                )
-            )
-
-            self._usage_collector.sample_agent_resources(
-                agent_name
-            )
+            self._usage_collector.sample_agent_resources(agent_name)
 
             if isinstance(response, dict):
                 response = json.dumps(response)
 
             return response, None
         finally:
-            self._usage_collector.finalize_agent_resource_monitoring(
-                agent_name
-            )
+            self._usage_collector.finalize_agent_resource_monitoring(agent_name)
 
     async def _execute_with_input_handling(
         self,
@@ -152,20 +134,12 @@ class ScriptAgentRunner:
     ) -> str | dict[str, Any]:
         """Execute script with parsed JSON input."""
         if self._is_script_agent_input(parsed_input):
-            return (
-                await script_agent.execute_with_schema_json(
-                    input_data
-                )
-            )
+            return await script_agent.execute_with_schema_json(input_data)
 
         if self._requires_user_input(agent_config):
-            return await self._execute_interactive(
-                script_agent, parsed_input
-            )
+            return await self._execute_interactive(script_agent, parsed_input)
 
-        return await script_agent.execute(
-            json.dumps(parsed_input)
-        )
+        return await script_agent.execute(json.dumps(parsed_input))
 
     async def _execute_with_raw_input(
         self,
@@ -175,15 +149,11 @@ class ScriptAgentRunner:
     ) -> str | dict[str, Any]:
         """Execute script with raw string input."""
         if self._requires_user_input(agent_config):
-            return await self._execute_interactive(
-                script_agent, input_data
-            )
+            return await self._execute_interactive(script_agent, input_data)
 
         return await script_agent.execute(input_data)
 
-    def _is_script_agent_input(
-        self, parsed_input: dict[str, Any]
-    ) -> bool:
+    def _is_script_agent_input(self, parsed_input: dict[str, Any]) -> bool:
         """Check if parsed input is ScriptAgentInput."""
         return (
             isinstance(parsed_input, dict)
@@ -191,9 +161,7 @@ class ScriptAgentRunner:
             and "input_data" in parsed_input
         )
 
-    def _requires_user_input(
-        self, agent_config: dict[str, Any]
-    ) -> bool:
+    def _requires_user_input(self, agent_config: dict[str, Any]) -> bool:
         """Check if script requires user input."""
         handler = ScriptUserInputHandler()
         script_ref = agent_config.get("script", "")
@@ -207,9 +175,7 @@ class ScriptAgentRunner:
         """Execute script interactively with terminal access."""
         if self._progress_controller:
             try:
-                prompt = script_agent.parameters.get(
-                    "prompt", ""
-                )
+                prompt = script_agent.parameters.get("prompt", "")
                 self._progress_controller.pause_for_user_input(
                     script_agent.name, prompt
                 )
@@ -225,16 +191,12 @@ class ScriptAgentRunner:
             },
         )
 
-        resolved_script = (
-            script_agent._script_resolver.resolve_script_path(
-                script_agent.script
-            )
+        resolved_script = script_agent._script_resolver.resolve_script_path(
+            script_agent.script
         )
 
         if not os.path.exists(resolved_script):
-            raise RuntimeError(
-                f"Script file not found: {resolved_script}"
-            )
+            raise RuntimeError(f"Script file not found: {resolved_script}")
 
         env = os.environ.copy()
         env.update(script_agent.environment)
@@ -243,13 +205,9 @@ class ScriptAgentRunner:
             env["INPUT_DATA"] = json.dumps(input_data)
         else:
             env["INPUT_DATA"] = input_data
-        env["AGENT_PARAMETERS"] = json.dumps(
-            script_agent.parameters
-        )
+        env["AGENT_PARAMETERS"] = json.dumps(script_agent.parameters)
 
-        interpreter = script_agent._get_interpreter(
-            resolved_script
-        )
+        interpreter = script_agent._get_interpreter(resolved_script)
 
         result = subprocess.run(
             interpreter + [resolved_script],
@@ -266,20 +224,13 @@ class ScriptAgentRunner:
             return json.dumps(
                 {
                     "success": False,
-                    "error": (
-                        "Script exited with code"
-                        f" {result.returncode}"
-                    ),
+                    "error": (f"Script exited with code {result.returncode}"),
                 }
             )
 
-        if (
-            self._progress_controller
-        ):
+        if self._progress_controller:
             try:
-                self._progress_controller.resume_from_user_input(
-                    script_agent.name
-                )
+                self._progress_controller.resume_from_user_input(script_agent.name)
             except Exception:
                 pass  # nosec B110
 
@@ -287,9 +238,7 @@ class ScriptAgentRunner:
             "user_input_completed",
             {
                 "agent_name": script_agent.name,
-                "message": (
-                    "User input completed, continuing..."
-                ),
+                "message": ("User input completed, continuing..."),
             },
         )
 
@@ -299,9 +248,6 @@ class ScriptAgentRunner:
             return json.dumps(
                 {
                     "success": True,
-                    "message": (
-                        "Interactive script completed"
-                        " (no output)"
-                    ),
+                    "message": ("Interactive script completed (no output)"),
                 }
             )
