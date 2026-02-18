@@ -343,11 +343,11 @@ class TestScriptResolver:
         script.chmod(0o755)
 
         resolver = ScriptResolver()
-        result = resolver.test_script(str(script), {})
+        result = resolver.test_script(str(script), {}, timeout=1)
 
         assert result["success"] is False
         assert "timed out" in result["error"]
-        assert result["duration_ms"] == 30000
+        assert result["duration_ms"] == 1000
 
     def test_test_script_parameters_passed(self, tmp_path: Path) -> None:
         """Test test_script passes parameters via environment."""

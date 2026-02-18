@@ -438,7 +438,7 @@ class AgentExecutor:
         try:
             import psutil
 
-            cpu_percent = psutil.cpu_percent(interval=0.1)
+            cpu_percent = psutil.cpu_percent(interval=None)
             memory_percent = psutil.virtual_memory().percent
 
             self.adaptive_stats["resource_metrics"].append(
@@ -507,7 +507,7 @@ class AgentExecutor:
             try:
                 import psutil
 
-                current_cpu = psutil.cpu_percent(interval=0.1)
+                current_cpu = psutil.cpu_percent(interval=None)
                 current_memory = psutil.virtual_memory().percent
                 self.adaptive_stats["execution_metrics"] = {
                     "peak_cpu": current_cpu,

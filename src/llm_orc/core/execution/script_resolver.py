@@ -257,13 +257,17 @@ class ScriptResolver:
             return None
 
     def test_script(
-        self, script_name: str, parameters: dict[str, str]
+        self,
+        script_name: str,
+        parameters: dict[str, str],
+        timeout: int = 30,
     ) -> dict[str, Any]:
         """Test script execution with given parameters.
 
         Args:
             script_name: Name of the script to test
             parameters: Dictionary of parameters for the script
+            timeout: Maximum execution time in seconds
 
         Returns:
             Dictionary with execution results
@@ -283,7 +287,7 @@ class ScriptResolver:
                 capture_output=True,
                 text=True,
                 env=env,
-                timeout=30,
+                timeout=timeout,
             )
 
             end_time = time.time()
@@ -311,11 +315,12 @@ class ScriptResolver:
                 "duration_ms": 0,
             }
         except subprocess.TimeoutExpired:
+            timeout_ms = timeout * 1000
             return {
                 "success": False,
                 "output": "",
                 "error": "Script execution timed out",
-                "duration_ms": 30000,
+                "duration_ms": timeout_ms,
             }
         except Exception as e:
             return {

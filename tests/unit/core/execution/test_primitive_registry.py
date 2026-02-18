@@ -358,12 +358,12 @@ print(json.dumps({"success": True, "data": "test", "agent_requests": []}))
             primitive_file = primitives_dir / "timeout.py"
             primitive_file.write_text("""#!/usr/bin/env python3
 import time
-time.sleep(20)  # Sleep longer than the 10s timeout
+time.sleep(20)  # Sleep longer than the timeout
 """)
             primitive_file.chmod(0o755)
 
             with patch("pathlib.Path.cwd", return_value=Path(temp_dir)):
-                result = registry.validate_primitive("timeout.py")
+                result = registry.validate_primitive("timeout.py", timeout=1)
 
             assert result["valid"] is False
             assert "timed out" in result["error"]
