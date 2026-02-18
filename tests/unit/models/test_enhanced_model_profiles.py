@@ -95,7 +95,7 @@ class TestEnhancedModelProfiles:
 
                 # Mock model loading and execution
                 with patch.object(
-                    executor, "_load_model_from_agent_config"
+                    executor, "_load_model_with_fallback"
                 ) as mock_load_model:
                     mock_model = AsyncMock()
                     mock_model.generate_response.return_value = (

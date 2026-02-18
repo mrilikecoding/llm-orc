@@ -99,12 +99,6 @@ class EnsembleExecutor:
             artifact_base_dir=self._artifact_manager.base_dir,
         )
 
-    async def _load_model_from_agent_config(
-        self, agent_config: dict[str, Any]
-    ) -> ModelInterface:
-        """Delegate to model factory."""
-        return await self._model_factory.load_model_from_agent_config(agent_config)
-
     # Phase 5: Performance hooks system removed - events go directly to streaming queue
 
     def _emit_performance_event(self, event_type: str, data: dict[str, Any]) -> None:
@@ -1258,14 +1252,6 @@ class EnsembleExecutor:
 
         return enhanced_config
 
-    async def _load_role(self, role_name: str) -> RoleDefinition:
-        """Load a role definition."""
-        # For now, create a simple role
-        # TODO: Load from role configuration files
-        return RoleDefinition(
-            name=role_name, prompt=f"You are a {role_name}. Provide helpful analysis."
-        )
-
     async def _execute_agents_in_phase_parallel(
         self, phase_agents: list[dict[str, Any]], phase_input: str | dict[str, str]
     ) -> dict[str, Any]:
@@ -1566,22 +1552,6 @@ class EnsembleExecutor:
         return await self._execution_coordinator.execute_agent_with_timeout(
             agent_config, input_data, timeout_seconds
         )
-
-    def _analyze_dependencies(
-        self, llm_agents: list[dict[str, Any]]
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """Analyze agent dependencies and return independent and dependent agents."""
-        independent_agents = []
-        dependent_agents = []
-
-        for agent_config in llm_agents:
-            dependencies = agent_config.get("depends_on", [])
-            if dependencies and len(dependencies) > 0:
-                dependent_agents.append(agent_config)
-            else:
-                independent_agents.append(agent_config)
-
-        return independent_agents, dependent_agents
 
     def _get_agent_role_description(self, agent_name: str) -> str | None:
         """Get a human-readable role description for an agent."""

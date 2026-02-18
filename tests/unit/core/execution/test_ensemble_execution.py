@@ -578,7 +578,7 @@ class TestEnsembleExecutor:
 
             executor = mock_ensemble_executor
 
-            # Test the _load_model_from_agent_config method directly
+            # Test model_factory.load_model_from_agent_config directly
             with patch.object(
                 executor._config_manager, "resolve_model_profile"
             ) as mock_resolve_model_profile:
@@ -721,28 +721,6 @@ class TestEnsembleExecutor:
         assert result["synthesis"] is None
 
     @pytest.mark.asyncio
-    async def test_load_model_from_agent_config_delegation(
-        self, mock_ensemble_executor: Any
-    ) -> None:
-        """Test _load_model_from_agent_config delegates to model factory."""
-        executor = mock_ensemble_executor
-
-        mock_model = AsyncMock(spec=ModelInterface)
-        agent_config = {"name": "test_agent", "model": "test-model"}
-
-        with patch.object(
-            executor._model_factory,
-            "load_model_from_agent_config",
-            new_callable=AsyncMock,
-        ) as mock_load:
-            mock_load.return_value = mock_model
-
-            result = await executor._load_model_from_agent_config(agent_config)
-
-            assert result == mock_model
-            mock_load.assert_called_once_with(agent_config)
-
-    @pytest.mark.asyncio
     async def test_execute_streaming_with_progress_updates(
         self, mock_ensemble_executor: Any
     ) -> None:
@@ -870,25 +848,6 @@ class TestEnsembleExecutor:
             assert enhanced == agent_config
 
     @pytest.mark.asyncio
-    async def test_load_role_creates_default_role(
-        self, mock_ensemble_executor: Any
-    ) -> None:
-        """Test _load_role creates default role definition."""
-        # Mock dependencies to avoid YAML loading affected by test contamination
-        with (
-            patch("llm_orc.core.execution.ensemble_execution.ConfigurationManager"),
-            patch("llm_orc.core.execution.ensemble_execution.CredentialStorage"),
-        ):
-            executor = mock_ensemble_executor
-
-            role = await executor._load_role("test_analyst")
-
-            assert isinstance(role, RoleDefinition)
-            assert role.name == "test_analyst"
-            assert "test_analyst" in role.prompt
-            assert "helpful analysis" in role.prompt
-
-    @pytest.mark.asyncio
     async def test_execute_agent_with_timeout_no_timeout(
         self, mock_ensemble_executor: Any
     ) -> None:
@@ -939,63 +898,6 @@ class TestEnsembleExecutor:
                     input_data,
                     1,  # 1 second timeout
                 )
-
-    @pytest.mark.asyncio
-    async def test_analyze_dependencies(self, mock_ensemble_executor: Any) -> None:
-        """Test _analyze_dependencies separates agents correctly."""
-        executor = mock_ensemble_executor
-
-        llm_agents: list[dict[str, Any]] = [
-            {"name": "independent1", "model_profile": "test-analyst"},
-            {"name": "independent2", "model_profile": "test-reviewer"},
-            {
-                "name": "dependent1",
-                "model_profile": "test-synthesizer",
-                "depends_on": ["independent1", "independent2"],
-            },
-            {
-                "name": "dependent2",
-                "model_profile": "test-summarizer",
-                "depends_on": ["dependent1"],
-            },
-        ]
-
-        independent, dependent = executor._analyze_dependencies(llm_agents)
-
-        assert len(independent) == 2
-        assert len(dependent) == 2
-
-        # Check independent agents
-        independent_names = [agent["name"] for agent in independent]
-        assert "independent1" in independent_names
-        assert "independent2" in independent_names
-
-        # Check dependent agents
-        dependent_names = [agent["name"] for agent in dependent]
-        assert "dependent1" in dependent_names
-        assert "dependent2" in dependent_names
-
-    @pytest.mark.asyncio
-    async def test_analyze_dependencies_empty_depends_on(
-        self, mock_ensemble_executor: Any
-    ) -> None:
-        """Test _analyze_dependencies with empty depends_on list."""
-        executor = mock_ensemble_executor
-
-        llm_agents: list[dict[str, Any]] = [
-            {"name": "agent1", "model_profile": "test-analyst"},
-            {
-                "name": "agent2",
-                "model_profile": "test-reviewer",
-                "depends_on": [],  # Empty dependencies
-            },
-        ]
-
-        independent, dependent = executor._analyze_dependencies(llm_agents)
-
-        # Both should be independent since empty depends_on means no dependencies
-        assert len(independent) == 2
-        assert len(dependent) == 0
 
     @pytest.mark.asyncio
     async def test_resolve_model_profile_to_config_without_profile(
