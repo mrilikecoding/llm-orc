@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from mcp.server.fastmcp import Context, FastMCP
 
 from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.core.config.ensemble_config import EnsembleLoader, assert_no_cycles
+from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.mcp.handlers.artifact_handler import ArtifactHandler
 from llm_orc.mcp.handlers.help_handler import HelpHandler
@@ -24,6 +24,7 @@ from llm_orc.mcp.handlers.library_handler import LibraryHandler
 from llm_orc.mcp.handlers.profile_handler import ProfileHandler
 from llm_orc.mcp.handlers.provider_handler import ProviderHandler
 from llm_orc.mcp.handlers.script_handler import ScriptHandler
+from llm_orc.mcp.handlers.validation_handler import ValidationHandler
 
 if TYPE_CHECKING:
     from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
@@ -114,7 +115,6 @@ class MCPServerV2:
     tools for ensemble management and execution.
     """
 
-
     def __init__(
         self,
         config_manager: ConfigurationManager | None = None,
@@ -140,6 +140,9 @@ class MCPServerV2:
         )
         self._provider_handler = ProviderHandler(
             self._profile_handler, self._find_ensemble_by_name
+        )
+        self._validation_handler = ValidationHandler(
+            self.config_manager, self._find_ensemble_by_name
         )
         self._mcp = FastMCP("llm-orc")
         self._setup_resources()
@@ -1398,34 +1401,8 @@ class MCPServerV2:
     async def _validate_ensemble_tool(
         self, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        """Execute validate_ensemble tool.
-
-        Args:
-            arguments: Tool arguments including ensemble_name.
-
-        Returns:
-            Validation result.
-        """
-        ensemble_name = arguments.get("ensemble_name")
-
-        if not ensemble_name:
-            raise ValueError("ensemble_name is required")
-
-        # Find ensemble
-        config = self._find_ensemble_by_name(ensemble_name)
-        if not config:
-            raise ValueError(f"Ensemble not found: {ensemble_name}")
-
-        # Validate configuration
-        validation_errors = self._collect_validation_errors(config)
-
-        return {
-            "valid": len(validation_errors) == 0,
-            "details": {
-                "errors": validation_errors,
-                "agent_count": len(config.agents),
-            },
-        }
+        """Execute validate_ensemble tool."""
+        return await self._validation_handler.validate_ensemble(arguments)
 
     def _find_ensemble_by_name(self, ensemble_name: str) -> Any:
         """Find ensemble configuration by name.
@@ -1444,107 +1421,6 @@ class MCPServerV2:
             if config:
                 return config
         return None
-
-    def _collect_validation_errors(self, config: Any) -> list[str]:
-        """Collect validation errors for an ensemble configuration.
-
-        Args:
-            config: Ensemble configuration.
-
-        Returns:
-            List of validation error messages.
-        """
-        validation_errors: list[str] = []
-
-        # Check for circular dependencies
-        try:
-            assert_no_cycles(config.agents)
-        except ValueError as e:
-            validation_errors.append(str(e))
-
-        # Check agent references
-        validation_errors.extend(self._validate_agent_references(config))
-
-        # Check model profiles
-        validation_errors.extend(self._validate_model_profiles(config))
-
-        return validation_errors
-
-    def _validate_agent_references(self, config: Any) -> list[str]:
-        """Validate agent dependency references.
-
-        Args:
-            config: Ensemble configuration.
-
-        Returns:
-            List of validation error messages.
-        """
-        errors: list[str] = []
-        agent_names = {_get_agent_attr(agent, "name") for agent in config.agents}
-
-        for agent in config.agents:
-            depends_on = _get_agent_attr(agent, "depends_on") or []
-            for dep in depends_on:
-                if dep not in agent_names:
-                    agent_name = _get_agent_attr(agent, "name")
-                    errors.append(
-                        f"Agent '{agent_name}' depends on unknown agent '{dep}'"
-                    )
-
-        return errors
-
-    def _validate_model_profiles(self, config: Any) -> list[str]:
-        """Validate that model profiles exist and are properly configured.
-
-        Args:
-            config: Ensemble configuration.
-
-        Returns:
-            List of validation error messages.
-        """
-        errors: list[str] = []
-        available_profiles = self.config_manager.get_model_profiles()
-
-        for agent in config.agents:
-            agent_name = _get_agent_attr(agent, "name")
-
-            # Script agents don't need model profiles
-            if _is_script_agent(agent):
-                continue
-
-            model_profile = _get_agent_attr(agent, "model_profile")
-            if not model_profile:
-                errors.append(f"Agent '{agent_name}' has no model_profile configured")
-                continue
-
-            if model_profile not in available_profiles:
-                errors.append(
-                    f"Agent '{agent_name}' uses unknown profile '{model_profile}'"
-                )
-                continue
-
-            # Check profile has required fields
-            profile_config = available_profiles[model_profile]
-            provider = profile_config.get("provider")
-            if not provider:
-                errors.append(
-                    f"Profile '{model_profile}' missing 'provider' configuration"
-                )
-            else:
-                # Check if provider is valid
-                from llm_orc.providers.registry import provider_registry
-
-                if not provider_registry.provider_exists(provider):
-                    errors.append(
-                        f"Profile '{model_profile}' uses unknown provider '{provider}'"
-                    )
-
-            if not profile_config.get("model"):
-                errors.append(
-                    f"Profile '{model_profile}' missing 'model' configuration"
-                )
-
-        return errors
 
     async def _update_ensemble_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute update_ensemble tool.
