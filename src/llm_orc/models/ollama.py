@@ -49,13 +49,12 @@ class OllamaModel(ModelInterface):
 
         duration_ms = int((time.time() - start_time) * 1000)
 
-        # For local models, estimate token usage (Ollama doesn't provide exact counts)
-        # This is a rough approximation: ~4 characters per token
         content = response["message"]["content"]
-        prompt_length = len(role_prompt) + len(message)
 
-        estimated_input_tokens = prompt_length // 4
-        estimated_output_tokens = len(content) // 4
+        estimated_input_tokens = self._estimate_tokens(
+            role_prompt + message
+        )
+        estimated_output_tokens = self._estimate_tokens(content)
 
         self._record_usage(
             input_tokens=estimated_input_tokens,

@@ -123,6 +123,14 @@ class ModelInterface(ABC):
         """Get usage metrics from the last API call."""
         return self._last_usage
 
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        """Estimate token count from text length.
+
+        Rough approximation: ~4 characters per token.
+        """
+        return len(text) // 4
+
     def _record_usage(
         self,
         input_tokens: int,
