@@ -1692,11 +1692,11 @@ class TestEnsembleExecutor:
         # Mock the script detection and agent creation
         with (
             patch(
-                "llm_orc.core.execution.ensemble_execution.EnhancedScriptAgent",
+                "llm_orc.core.execution.script_agent_runner.EnhancedScriptAgent",
                 return_value=mock_script_agent,
             ),
             patch(
-                "llm_orc.core.execution.ensemble_execution.ScriptUserInputHandler",
+                "llm_orc.core.execution.script_agent_runner.ScriptUserInputHandler",
                 return_value=mock_user_input_detection,
             ) as mock_handler_class,
             patch("os.path.exists", return_value=True),

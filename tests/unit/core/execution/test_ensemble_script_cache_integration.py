@@ -62,12 +62,13 @@ class TestEnsembleScriptCacheIntegration:
         }
         script_cache.set(script_content, cache_key_params, cached_result)
 
-        # Mock the ensemble executor to use our cache
-        with patch.object(ensemble_executor, "_script_cache", script_cache):
+        # Mock the executor's runner to use our cache
+        runner = ensemble_executor._script_agent_runner
+        with patch.object(runner, "_script_cache", script_cache):
             # Mock script execution to ensure it's not called
             with patch.object(
-                ensemble_executor,
-                "_execute_script_agent_without_cache",
+                runner,
+                "_execute_without_cache",
                 new_callable=AsyncMock,
             ) as mock_execute:
                 mock_execute.return_value = ("should not be called", None)
@@ -77,7 +78,7 @@ class TestEnsembleScriptCacheIntegration:
                 assert result == cached_result
 
                 # This ensures we have the _script_cache attribute available
-                assert hasattr(ensemble_executor, "_script_cache")
+                assert hasattr(runner, "_script_cache")
 
     async def test_ensemble_execution_with_cache_miss_executes_and_caches(
         self, ensemble_executor: EnsembleExecutor, cache_config: ScriptCacheConfig
@@ -91,22 +92,21 @@ class TestEnsembleScriptCacheIntegration:
         # Create empty cache
         script_cache = ScriptCache(cache_config)
 
-        # Mock the ensemble executor to use our cache
-        with patch.object(ensemble_executor, "_script_cache", script_cache):
+        # Mock the executor's runner to use our cache
+        runner = ensemble_executor._script_agent_runner
+        with patch.object(runner, "_script_cache", script_cache):
             # Verify cache is initially empty
             assert script_cache.get(script_content, {}) is None
 
             # Mock actual script execution
             with patch.object(
-                ensemble_executor,
-                "_execute_script_agent_without_cache",
+                runner,
+                "_execute_without_cache",
                 new_callable=AsyncMock,
             ) as mock_execute:
                 mock_execute.return_value = (execution_result, None)
 
-                # Simulate the caching flow that should happen in EnsembleExecutor
-                # This represents what the integration should do:
-
+                # Simulate the caching flow that should happen
                 # 1. Check cache (miss)
                 cached_result = script_cache.get(script_content, {})
                 assert cached_result is None
@@ -115,7 +115,7 @@ class TestEnsembleScriptCacheIntegration:
                 (
                     result,
                     model,
-                ) = await ensemble_executor._execute_script_agent_without_cache(
+                ) = await runner._execute_without_cache(
                     {"name": "test", "script": script_content}, "{}"
                 )
 

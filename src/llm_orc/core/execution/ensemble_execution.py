@@ -6,7 +6,6 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
-from llm_orc.agents.enhanced_script_agent import EnhancedScriptAgent
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
@@ -22,6 +21,7 @@ from llm_orc.core.execution.fan_out_gatherer import FanOutGatherer
 from llm_orc.core.execution.orchestration import Agent
 from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.results_processor import ResultsProcessor
+from llm_orc.core.execution.script_agent_runner import ScriptAgentRunner
 from llm_orc.core.execution.script_cache import ScriptCache, ScriptCacheConfig
 from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
 from llm_orc.core.execution.streaming_progress_tracker import StreamingProgressTracker
@@ -86,6 +86,14 @@ class EnsembleExecutor:
         # Initialize script cache for reproducible research
         self._script_cache_config = self._load_script_cache_config()
         self._script_cache = ScriptCache(self._script_cache_config)
+
+        self._script_agent_runner = ScriptAgentRunner(
+            self._script_cache,
+            self._usage_collector,
+            self._progress_controller,
+            self._emit_performance_event,
+            self._project_dir,
+        )
 
     def _load_script_cache_config(self) -> ScriptCacheConfig:
         """Load script cache configuration from performance config."""
@@ -781,295 +789,7 @@ class EnsembleExecutor:
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
         """Execute script agent with caching and resource monitoring."""
-        script_content = agent_config.get("script", "")
-        parameters = agent_config.get("parameters", {})
-
-        # Check cache first
-        cache_key_params = {
-            "input_data": input_data,
-            "parameters": parameters,
-        }
-
-        cached_result = self._script_cache.get(script_content, cache_key_params)
-        if cached_result is not None:
-            # Cache hit - return cached result
-            return cached_result.get("output", ""), None
-
-        # Cache miss - execute script and cache result
-        start_time = time.time()
-        response, model_instance = await self._execute_script_agent_without_cache(
-            agent_config, input_data
-        )
-        duration_ms = int((time.time() - start_time) * 1000)
-
-        # Cache the result
-        cache_result = {
-            "output": response,
-            "execution_metadata": {"duration_ms": duration_ms},
-            "success": True,
-        }
-        self._script_cache.set(script_content, cache_key_params, cache_result)
-
-        return response, model_instance
-
-    async def _execute_script_agent_without_cache(
-        self, agent_config: dict[str, Any], input_data: str
-    ) -> tuple[str, ModelInterface | None]:
-        """Execute script agent with resource monitoring using EnhancedScriptAgent."""
-        agent_name = agent_config["name"]
-
-        # Start resource monitoring for this agent
-        self._usage_collector.start_agent_resource_monitoring(agent_name)
-
-        try:
-            # Use EnhancedScriptAgent for JSON I/O support
-            script_agent = EnhancedScriptAgent(
-                agent_name, agent_config, project_dir=self._project_dir
-            )
-
-            # Sample resources during execution
-            self._usage_collector.sample_agent_resources(agent_name)
-
-            # Execute script with appropriate input handling
-            response = await self._execute_script_with_input_handling(
-                script_agent, agent_config, input_data
-            )
-
-            # Final sample before completion
-            self._usage_collector.sample_agent_resources(agent_name)
-
-            # Convert response to string if it's a dict (JSON output)
-            if isinstance(response, dict):
-                import json
-
-                response = json.dumps(response)
-
-            return response, None  # Script agents don't have model instances
-        finally:
-            # Always finalize resource monitoring
-            self._usage_collector.finalize_agent_resource_monitoring(agent_name)
-
-    async def _execute_script_with_input_handling(
-        self,
-        script_agent: EnhancedScriptAgent,
-        agent_config: dict[str, Any],
-        input_data: str,
-    ) -> str | dict[str, Any]:
-        """Execute script with appropriate input format and interaction handling.
-
-        Args:
-            script_agent: Script agent to execute
-            agent_config: Agent configuration
-            input_data: Input data as JSON string
-
-        Returns:
-            Script execution response
-        """
-        import json
-
-        try:
-            parsed_input = json.loads(input_data)
-            return await self._execute_with_parsed_input(
-                script_agent, agent_config, input_data, parsed_input
-            )
-        except (json.JSONDecodeError, TypeError):
-            return await self._execute_with_raw_input(
-                script_agent, agent_config, input_data
-            )
-
-    async def _execute_with_parsed_input(
-        self,
-        script_agent: EnhancedScriptAgent,
-        agent_config: dict[str, Any],
-        input_data: str,
-        parsed_input: dict[str, Any],
-    ) -> str | dict[str, Any]:
-        """Execute script with parsed JSON input.
-
-        Args:
-            script_agent: Script agent to execute
-            agent_config: Agent configuration
-            input_data: Original input data string
-            parsed_input: Parsed input dictionary
-
-        Returns:
-            Script execution response
-        """
-        import json
-
-        # Check if input is ScriptAgentInput (ADR-001)
-        if self._is_script_agent_input(parsed_input):
-            # ScriptAgentInput JSON - pass directly to script without wrapping
-            return await script_agent.execute_with_schema_json(input_data)
-
-        # Legacy input format - check if user input is needed
-        if self._requires_user_input(agent_config):
-            return await self._execute_interactive_script_agent(
-                script_agent, parsed_input
-            )
-
-        # Use regular execute for non-interactive scripts (convert dict to string)
-        return await script_agent.execute(json.dumps(parsed_input))
-
-    async def _execute_with_raw_input(
-        self,
-        script_agent: EnhancedScriptAgent,
-        agent_config: dict[str, Any],
-        input_data: str,
-    ) -> str | dict[str, Any]:
-        """Execute script with raw string input.
-
-        Args:
-            script_agent: Script agent to execute
-            agent_config: Agent configuration
-            input_data: Raw input data string
-
-        Returns:
-            Script execution response
-        """
-        if self._requires_user_input(agent_config):
-            return await self._execute_interactive_script_agent(
-                script_agent, input_data
-            )
-
-        return await script_agent.execute(input_data)
-
-    def _is_script_agent_input(self, parsed_input: dict[str, Any]) -> bool:
-        """Check if parsed input is a ScriptAgentInput object.
-
-        Args:
-            parsed_input: Parsed input dictionary
-
-        Returns:
-            True if input is ScriptAgentInput format
-        """
-        return (
-            isinstance(parsed_input, dict)
-            and "agent_name" in parsed_input
-            and "input_data" in parsed_input
-        )
-
-    def _requires_user_input(self, agent_config: dict[str, Any]) -> bool:
-        """Check if script requires user input.
-
-        Args:
-            agent_config: Agent configuration
-
-        Returns:
-            True if script requires user input
-        """
-        user_input_detection = ScriptUserInputHandler()
-        script_ref = agent_config.get("script", "")
-        return user_input_detection.requires_user_input(script_ref)
-
-    async def _execute_interactive_script_agent(
-        self, script_agent: EnhancedScriptAgent, input_data: str | dict[str, Any]
-    ) -> str:
-        """Execute script agent interactively with terminal access for input().
-
-        Args:
-            script_agent: The script agent to execute
-            input_data: Input data for the agent
-
-        Returns:
-            Script output as string
-        """
-        # First try to directly pause the progress display if available
-        if hasattr(self, "_progress_controller"):
-            if self._progress_controller:
-                try:
-                    # Extract prompt from script parameters if available
-                    prompt = script_agent.parameters.get("prompt", "")
-                    self._progress_controller.pause_for_user_input(
-                        script_agent.name, prompt
-                    )
-                except Exception:
-                    pass  # Fall back to event system if direct control fails
-
-        # Also emit event for any other listeners
-        self._emit_performance_event(
-            "user_input_required",
-            {
-                "agent_name": script_agent.name,
-                "script": script_agent.script,
-                "message": "Waiting for user input...",
-            },
-        )
-        import json
-        import os
-        import subprocess
-
-        # Get the resolved script path
-        resolved_script = script_agent._script_resolver.resolve_script_path(
-            script_agent.script
-        )
-
-        if not os.path.exists(resolved_script):
-            raise RuntimeError(f"Script file not found: {resolved_script}")
-
-        # Prepare environment with input data and parameters
-        env = os.environ.copy()
-        env.update(script_agent.environment)
-
-        # Pass data via environment instead of stdin so script can access terminal
-        # Convert input_data to JSON string if it's a dict
-        if isinstance(input_data, dict):
-            env["INPUT_DATA"] = json.dumps(input_data)
-        else:
-            env["INPUT_DATA"] = input_data
-        env["AGENT_PARAMETERS"] = json.dumps(script_agent.parameters)
-
-        # Determine interpreter
-        interpreter = script_agent._get_interpreter(resolved_script)
-
-        # Execute with stdin inherited but stdout captured
-        # We need stdout for the result, but stdin must be connected to terminal
-        result = subprocess.run(
-            interpreter + [resolved_script],
-            env=env,
-            timeout=script_agent.timeout,
-            stdin=None,  # Inherit stdin from parent (terminal access)
-            stdout=subprocess.PIPE,  # Capture stdout for result
-            stderr=None,  # Let stderr show in terminal
-            text=True,
-            check=False,
-        )
-
-        if result.returncode != 0:
-            return json.dumps(
-                {
-                    "success": False,
-                    "error": f"Script exited with code {result.returncode}",
-                }
-            )
-
-        # First try to directly resume the progress display if available
-        if hasattr(self, "_progress_controller") and self._progress_controller:
-            try:
-                self._progress_controller.resume_from_user_input(script_agent.name)
-            except Exception:
-                # Fall back to event system if direct control fails  # nosec B110
-                pass
-
-        # Also emit event for any other listeners
-        self._emit_performance_event(
-            "user_input_completed",
-            {
-                "agent_name": script_agent.name,
-                "message": "User input completed, continuing...",
-            },
-        )
-
-        # Return the actual script output
-        if result.stdout:
-            return result.stdout.strip()
-        else:
-            return json.dumps(
-                {
-                    "success": True,
-                    "message": "Interactive script completed (no output)",
-                }
-            )
+        return await self._script_agent_runner.execute(agent_config, input_data)
 
     async def _execute_llm_agent(
         self, agent_config: dict[str, Any], input_data: str
