@@ -4,7 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pytest_bdd import given, scenarios, then, when
@@ -556,7 +556,19 @@ def call_invoke_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
             bdd_context["tool_error"] = str(e)
             return None
 
-    bdd_context["tool_result"] = asyncio.run(_call())
+    with patch(
+        "llm_orc.core.execution.ensemble_execution.EnsembleExecutor"
+    ) as mock_cls:
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(
+            return_value={
+                "results": {"test-agent": {"response": "Mock output"}},
+                "synthesis": "Mock synthesis",
+                "status": "success",
+            }
+        )
+        mock_cls.return_value = mock_executor
+        bdd_context["tool_result"] = asyncio.run(_call())
 
 
 @when('I call the "validate_ensemble" tool with:', target_fixture="validate_datatable")
