@@ -281,15 +281,22 @@ def file_contains(cli_context: dict[str, Any], file_path: str, text: str) -> Non
 
 
 @then("scripts should be installed from the custom library location")
-def scripts_from_custom_library(cli_context: dict[str, Any]) -> None:
-    """Check that scripts were installed from custom library."""
-    scripts_dir = cli_context["test_dir"] / ".llm-orc" / "scripts" / "primitives"
-    assert scripts_dir.exists(), "Scripts directory does not exist"
+@then("core primitives should be available as package modules")
+def primitives_available_as_package(cli_context: dict[str, Any]) -> None:
+    """Check that core primitives are available as package modules."""
+    from llm_orc.primitives import get_output_schema
 
-    # Check that scripts were actually copied
-    py_files = list(scripts_dir.rglob("*.py"))
-    py_files = [f for f in py_files if f.name != "__init__.py"]
-    assert len(py_files) > 0, "No scripts were installed"
+    # Verify core primitives are registered in the package
+    for key in [
+        "user_interaction/get_user_input",
+        "user_interaction/confirm_action",
+        "file_ops/read_file",
+        "file_ops/write_file",
+        "data_transform/json_extract",
+        "control_flow/replicate_n_times",
+    ]:
+        schema = get_output_schema(f"primitives/{key}.py")
+        assert schema is not None, f"Primitive {key} not found in package"
 
 
 @then(
@@ -298,27 +305,22 @@ def scripts_from_custom_library(cli_context: dict[str, Any]) -> None:
     )
 )
 def scripts_from_config_path(cli_context: dict[str, Any], config_type: str) -> None:
-    """Check that scripts were installed from path in config."""
-    scripts_dir = cli_context["test_dir"] / ".llm-orc" / "scripts" / "primitives"
-    assert scripts_dir.exists(), "Scripts directory does not exist"
+    """Check that core primitives are available as package modules."""
+    from llm_orc.primitives import get_output_schema
 
-    py_files = list(scripts_dir.rglob("*.py"))
-    py_files = [f for f in py_files if f.name != "__init__.py"]
-    assert len(py_files) > 0, f"No scripts were installed from {config_type}"
+    schema = get_output_schema("primitives/file_ops/read_file.py")
+    assert schema is not None, f"Primitives not available (checking {config_type})"
 
 
 @then(parsers.parse('scripts should be installed from "{path}" not "{other_path}"'))
 def scripts_from_correct_path(
     cli_context: dict[str, Any], path: str, other_path: str
 ) -> None:
-    """Check that scripts were installed from correct path."""
-    scripts_dir = cli_context["test_dir"] / ".llm-orc" / "scripts" / "primitives"
-    assert scripts_dir.exists(), "Scripts directory does not exist"
+    """Check that core primitives are available as package modules."""
+    from llm_orc.primitives import get_output_schema
 
-    # Check that scripts exist
-    py_files = list(scripts_dir.rglob("*.py"))
-    py_files = [f for f in py_files if f.name != "__init__.py"]
-    assert len(py_files) > 0, f"No scripts were installed (expected from {path})"
+    schema = get_output_schema("primitives/file_ops/read_file.py")
+    assert schema is not None, f"Primitives not available (expected from {path})"
 
 
 @then(parsers.parse('the output should indicate "{message}"'))

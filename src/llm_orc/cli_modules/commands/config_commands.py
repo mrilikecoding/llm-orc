@@ -233,19 +233,11 @@ class ConfigCommands:
             click.echo("  - config.yaml  (project configuration)")
 
             if with_scripts:
-                # Install primitive scripts from library
-                script_count = ConfigCommands._install_library_primitives()
-                if script_count > 0:
-                    click.echo(f"✓ Installed {script_count} primitive scripts")
-                    click.echo("\nReady! Try:")
-                    click.echo(
-                        "  llm-orc scripts list          # See installed primitives"
-                    )
-                    click.echo(
-                        "  llm-orc list-ensembles        # See example ensembles"
-                    )
-                else:
-                    echo_info("No library primitives found to install")
+                # Core primitives now live in the installed package
+                # (src/llm_orc/primitives/). No longer copy from library.
+                click.echo("\nReady! Try:")
+                click.echo("  llm-orc scripts list          # See installed primitives")
+                click.echo("  llm-orc list-ensembles        # See example ensembles")
             else:
                 echo_info("Skipped primitive script installation (--no-scripts)")
 
