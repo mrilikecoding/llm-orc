@@ -140,11 +140,11 @@ class ScriptAgentRunner:
         parsed_input: dict[str, Any],
     ) -> str | dict[str, Any]:
         """Execute script with parsed JSON input."""
-        if self._is_script_agent_input(parsed_input):
-            return await script_agent.execute_with_schema_json(input_data)
-
         if self._requires_user_input(agent_config):
             return await self._execute_interactive(script_agent, parsed_input)
+
+        if self._is_script_agent_input(parsed_input):
+            return await script_agent.execute_with_schema_json(input_data)
 
         return await script_agent.execute(json.dumps(parsed_input))
 

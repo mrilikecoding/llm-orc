@@ -359,9 +359,9 @@ class ConfigurationManager:
                 if example_template.exists():
                     shutil.copy2(example_template, local_ensemble_file)
 
-        # Copy primitive scripts from llm-orchestra-library GitHub repo (idempotent)
-        if with_scripts:
-            self._copy_primitive_scripts(local_dir / "scripts")
+        # Core primitives now live in the installed package
+        # (src/llm_orc/primitives/) and are resolved via ScriptResolver
+        # priority 1.5. No longer copy from library to avoid shadowing.
 
         # Copy profile templates to local profiles directory (idempotent)
         self._copy_profile_templates(local_dir / "profiles")

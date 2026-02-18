@@ -25,6 +25,17 @@ class TestScriptUserInputHandler:
         assert handler.requires_user_input("scripts/process_data.py") is False
         assert handler.requires_user_input("analyze.sh") is False
 
+    def test_requires_user_input_with_confirm_action_py(self) -> None:
+        """Test detection of confirm_action.py script reference."""
+        handler = ScriptUserInputHandler()
+
+        assert handler.requires_user_input("confirm_action.py") is True
+        assert (
+            handler.requires_user_input("primitives/user-interaction/confirm_action.py")
+            is True
+        )
+        assert handler.requires_user_input("/abs/path/confirm_action.py") is True
+
     def test_requires_user_input_with_input_function(self) -> None:
         """Test detection of input() function in script content."""
         handler = ScriptUserInputHandler()

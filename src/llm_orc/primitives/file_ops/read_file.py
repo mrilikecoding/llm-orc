@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -47,16 +48,25 @@ def execute(params: ReadFileInput) -> ReadFileOutput:
         )
 
 
-def main() -> None:
-    """Entry point for subprocess execution."""
+def _resolve_parameters() -> dict[str, object]:
+    """Resolve parameters from AGENT_PARAMETERS env var or stdin."""
+    agent_params = os.environ.get("AGENT_PARAMETERS", "")
+    if agent_params and agent_params != "{}":
+        return json.loads(agent_params)  # type: ignore[no-any-return]
+
     if not sys.stdin.isatty():
         config: dict[str, object] = json.loads(sys.stdin.read())
     else:
         config = {}
-
     parameters = config.get("parameters", config)
     if not isinstance(parameters, dict):
-        parameters = config
+        return config
+    return parameters
+
+
+def main() -> None:
+    """Entry point for subprocess execution."""
+    parameters = _resolve_parameters()
 
     params = ReadFileInput(
         path=str(parameters.get("path", "input.txt")),
