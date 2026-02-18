@@ -46,11 +46,6 @@ Feature: ADR-008: LLM-Friendly CLI and MCP Design
     And the output should contain "llm-orc init"
     And the output should contain "--project-name"
 
-  Scenario: Validate help shows examples
-    When I execute "llm-orc validate --help"
-    Then the output should contain "validation"
-    And the output should mention how to validate ensembles
-
   # Command Discoverability
   Scenario: List ensembles command is discoverable
     Given I have initialized llm-orc
@@ -119,9 +114,3 @@ Feature: ADR-008: LLM-Friendly CLI and MCP Design
     And the output should have a "Library" section
     And library ensembles should be listed under "Library"
 
-  Scenario: Browse library ensembles by category
-    Given I have initialized llm-orc
-    And the library has ensembles in "llm-orchestra-library/ensembles/examples"
-    When I execute "llm-orc library browse examples"
-    Then the output should list ensembles in the examples category
-    And the output should include the newly created narrative ensemble

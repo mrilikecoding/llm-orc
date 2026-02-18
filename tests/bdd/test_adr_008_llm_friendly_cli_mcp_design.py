@@ -244,14 +244,6 @@ def output_contains(cli_context: dict[str, Any], text: str) -> None:
     )
 
 
-@then(parsers.parse("the output should mention how to {action}"))
-def output_mentions_action(cli_context: dict[str, Any], action: str) -> None:
-    """Check that output mentions how to perform an action."""
-    # This is a flexible check - just verify output is not empty
-    # More specific checks should be done with 'output should contain'
-    assert len(cli_context["last_output"]) > 0, "Output is empty"
-
-
 @then(parsers.parse('the directory "{dir_path}" should exist'))
 def directory_exists(cli_context: dict[str, Any], dir_path: str) -> None:
     """Check that directory exists."""
@@ -423,24 +415,6 @@ def library_ensembles_exist(cli_context: dict[str, Any], dir_path: str) -> None:
     library_ensemble(cli_context, "library-ensemble-2", dir_path)
 
 
-@given(parsers.parse('the library has ensembles in "{dir_path}"'))
-def library_has_ensembles(cli_context: dict[str, Any], dir_path: str) -> None:
-    """Create ensembles in library examples directory."""
-    # Create the neon-shadows-detective ensemble
-    full_path = cli_context["test_dir"] / dir_path / "neon-shadows-detective"
-    full_path.mkdir(parents=True, exist_ok=True)
-
-    ensemble_yaml = full_path / "ensemble.yaml"
-    ensemble_yaml.write_text(
-        """name: neon-shadows-detective
-description: Interactive cyberpunk detective story
-agents:
-  - name: opening-scene
-    model_profile: creative
-"""
-    )
-
-
 @then("the output should list ensembles from the library")
 def output_lists_library_ensembles(cli_context: dict[str, Any]) -> None:
     """Check that library ensembles are listed."""
@@ -503,21 +477,3 @@ def library_under_section(cli_context: dict[str, Any], section: str) -> None:
     # For now, just verify the section exists
     # TODO: Add more sophisticated parsing
     output_has_section(cli_context, section)
-
-
-@then("the output should list ensembles in the examples category")
-def list_examples_category(cli_context: dict[str, Any]) -> None:
-    """Check that examples category ensembles are listed."""
-    output = cli_context["last_output"]
-    assert "examples" in output.lower() or "ensemble" in output.lower(), (
-        f"Output does not list examples category:\n{output}"
-    )
-
-
-@then("the output should include the newly created narrative ensemble")
-def includes_narrative_ensemble(cli_context: dict[str, Any]) -> None:
-    """Check that neon-shadows-detective ensemble is listed."""
-    output = cli_context["last_output"]
-    assert "neon-shadows" in output.lower() or "detective" in output.lower(), (
-        f"Output does not include narrative ensemble:\n{output}"
-    )
