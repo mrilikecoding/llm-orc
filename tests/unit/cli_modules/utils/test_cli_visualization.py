@@ -1,7 +1,5 @@
 """Backward compatibility tests for CLI visualization utilities."""
 
-from typing import Any
-
 from llm_orc.cli_modules.utils.visualization import (
     _calculate_agent_level,
     # Performance metrics functions
@@ -10,8 +8,6 @@ from llm_orc.cli_modules.utils.visualization import (
     _format_execution_summary,
     _group_agents_by_dependency_level,
     _has_code_content,
-    _update_agent_progress_status,
-    _update_agent_status_by_names,
     # Dependency functions
     create_dependency_graph,
     create_dependency_tree,
@@ -110,21 +106,3 @@ class TestBackwardCompatibility:
 
         formatted = _format_adaptive_resource_metrics(stats)
         assert isinstance(formatted, list)
-
-    def test_agent_status_functions(self) -> None:
-        """Test agent status update functions."""
-        agent_progress: dict[str, dict[str, Any]] = {}
-
-        # Test single agent status update
-        _update_agent_progress_status("agent_a", "✅ Completed", agent_progress)
-        assert "agent_a" in agent_progress
-        assert agent_progress["agent_a"]["status"] == "✅ Completed"
-
-        # Test multiple agent status update
-        _update_agent_status_by_names(
-            ["agent_b", "agent_c"], "🔄 Running", agent_progress
-        )
-        assert "agent_b" in agent_progress
-        assert "agent_c" in agent_progress
-        assert agent_progress["agent_b"]["status"] == "🔄 Running"
-        assert agent_progress["agent_c"]["status"] == "🔄 Running"
