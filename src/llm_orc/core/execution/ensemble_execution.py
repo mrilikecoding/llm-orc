@@ -9,7 +9,6 @@ from typing import Any
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
-from llm_orc.core.config.roles import RoleDefinition
 from llm_orc.core.execution.agent_execution_coordinator import AgentExecutionCoordinator
 from llm_orc.core.execution.agent_executor import AgentExecutor
 from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
@@ -18,7 +17,7 @@ from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.fan_out_expander import FanOutExpander
 from llm_orc.core.execution.fan_out_gatherer import FanOutGatherer
-from llm_orc.core.execution.orchestration import Agent
+from llm_orc.core.execution.llm_agent_runner import LlmAgentRunner
 from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.results_processor import ResultsProcessor
 from llm_orc.core.execution.script_agent_runner import ScriptAgentRunner
@@ -93,6 +92,14 @@ class EnsembleExecutor:
             self._progress_controller,
             self._emit_performance_event,
             self._project_dir,
+        )
+
+        self._llm_agent_runner = LlmAgentRunner(
+            self._model_factory,
+            self._config_manager,
+            self._usage_collector,
+            self._emit_performance_event,
+            self._classify_failure_type,
         )
 
     def _load_script_cache_config(self) -> ScriptCacheConfig:
@@ -795,182 +802,15 @@ class EnsembleExecutor:
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
         """Execute LLM agent with fallback handling and resource monitoring."""
-        agent_name = agent_config["name"]
-
-        # Start resource monitoring for this agent
-        self._usage_collector.start_agent_resource_monitoring(agent_name)
-
-        try:
-            role = await self._load_role_from_config(agent_config)
-            model = await self._load_model_with_fallback(agent_config)
-            agent = Agent(agent_name, role, model)
-
-            # Take periodic resource samples during execution
-            self._usage_collector.sample_agent_resources(agent_name)
-
-            # Generate response with fallback handling for runtime failures
-            try:
-                response = await agent.respond_to_message(input_data)
-
-                # Final resource sample before completing
-                self._usage_collector.sample_agent_resources(agent_name)
-
-                return response, model
-            except Exception as e:
-                return await self._handle_runtime_fallback(
-                    agent_config, role, input_data, e
-                )
-        finally:
-            # Always finalize resource monitoring, even if execution failed
-            self._usage_collector.finalize_agent_resource_monitoring(agent_name)
-
-    async def _load_model_with_fallback(
-        self, agent_config: dict[str, Any]
-    ) -> ModelInterface:
-        """Load model with fallback handling for loading failures."""
-        try:
-            return await self._model_factory.load_model_from_agent_config(agent_config)
-        except Exception as model_loading_error:
-            return await self._handle_model_loading_fallback(
-                agent_config, model_loading_error
-            )
-
-    async def _handle_model_loading_fallback(
-        self, agent_config: dict[str, Any], model_loading_error: Exception
-    ) -> ModelInterface:
-        """Handle model loading failure with fallback."""
-        fallback_model = await self._model_factory.get_fallback_model(
-            context=f"agent_{agent_config['name']}",
-            original_profile=agent_config.get("model_profile"),
-        )
-        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
-
-        # Emit enhanced fallback event for model loading failure
-        failure_type = self._classify_failure_type(str(model_loading_error))
-        self._emit_performance_event(
-            "agent_fallback_started",
-            {
-                "agent_name": agent_config["name"],
-                "failure_type": failure_type,
-                "original_error": str(model_loading_error),
-                "original_model_profile": agent_config.get("model_profile", "unknown"),
-                "fallback_model_profile": None,  # No configurable fallback
-                "fallback_model_name": fallback_model_name,
-            },
-        )
-        return fallback_model
-
-    async def _handle_runtime_fallback(
-        self,
-        agent_config: dict[str, Any],
-        role: RoleDefinition,
-        input_data: str,
-        error: Exception,
-    ) -> tuple[str, ModelInterface]:
-        """Handle runtime failure with fallback model."""
-        fallback_model = await self._model_factory.get_fallback_model(
-            context=f"agent_{agent_config['name']}"
-        )
-        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
-
-        # Emit enhanced fallback event for runtime failure
-        failure_type = self._classify_failure_type(str(error))
-        self._emit_performance_event(
-            "agent_fallback_started",
-            {
-                "agent_name": agent_config["name"],
-                "failure_type": failure_type,
-                "original_error": str(error),
-                "original_model_profile": agent_config.get("model_profile", "unknown"),
-                "fallback_model_profile": None,  # No configurable fallback
-                "fallback_model_name": fallback_model_name,
-            },
-        )
-
-        # Create new agent with fallback model
-        fallback_agent = Agent(agent_config["name"], role, fallback_model)
-
-        # Try with fallback model
-        try:
-            response = await fallback_agent.respond_to_message(input_data)
-            self._emit_fallback_success_event(
-                agent_config["name"], fallback_model, response
-            )
-            return response, fallback_model
-        except Exception as fallback_error:
-            self._emit_fallback_failure_event(
-                agent_config["name"], fallback_model_name, fallback_error
-            )
-            raise fallback_error
-
-    def _emit_fallback_success_event(
-        self, agent_name: str, fallback_model: ModelInterface, response: str
-    ) -> None:
-        """Emit fallback success event."""
-        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
-        response_preview = response[:100] + "..." if len(response) > 100 else response
-        self._emit_performance_event(
-            "agent_fallback_completed",
-            {
-                "agent_name": agent_name,
-                "fallback_model_name": fallback_model_name,
-                "response_preview": response_preview,
-            },
-        )
-
-    def _emit_fallback_failure_event(
-        self, agent_name: str, fallback_model_name: str, fallback_error: Exception
-    ) -> None:
-        """Emit fallback failure event."""
-        fallback_failure_type = self._classify_failure_type(str(fallback_error))
-        self._emit_performance_event(
-            "agent_fallback_failed",
-            {
-                "agent_name": agent_name,
-                "failure_type": fallback_failure_type,
-                "fallback_error": str(fallback_error),
-                "fallback_model_name": fallback_model_name,
-            },
-        )
-
-    async def _load_role_from_config(
-        self, agent_config: dict[str, Any]
-    ) -> RoleDefinition:
-        """Load a role definition from agent configuration."""
-        agent_name = agent_config["name"]
-
-        # Resolve model profile to get enhanced configuration
-        enhanced_config = await self._resolve_model_profile_to_config(agent_config)
-
-        # Use system_prompt from enhanced config if available, otherwise use fallback
-        if "system_prompt" in enhanced_config:
-            prompt = enhanced_config["system_prompt"]
-        else:
-            prompt = f"You are a {agent_name}. Provide helpful analysis."
-
-        return RoleDefinition(name=agent_name, prompt=prompt)
+        return await self._llm_agent_runner.execute(agent_config, input_data)
 
     async def _resolve_model_profile_to_config(
         self, agent_config: dict[str, Any]
     ) -> dict[str, Any]:
-        """Resolve model profile and merge with agent config.
-
-        Agent config takes precedence over model profile defaults.
-        """
-        enhanced_config = agent_config.copy()
-
-        # If model_profile is specified, get its configuration
-        if "model_profile" in agent_config:
-            profiles = self._config_manager.get_model_profiles()
-
-            profile_name = agent_config["model_profile"]
-            if profile_name in profiles:
-                profile_config = profiles[profile_name]
-                # Merge profile defaults with agent config
-                # (agent config takes precedence)
-                enhanced_config = {**profile_config, **agent_config}
-
-        return enhanced_config
+        """Resolve model profile and merge with agent config."""
+        return await self._llm_agent_runner._resolve_model_profile_to_config(
+            agent_config
+        )
 
     async def _execute_agents_in_phase_parallel(
         self, phase_agents: list[dict[str, Any]], phase_input: str | dict[str, str]

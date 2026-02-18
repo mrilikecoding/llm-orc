@@ -55,7 +55,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -135,7 +137,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -184,7 +188,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -245,7 +251,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -308,7 +316,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -391,7 +401,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -469,7 +481,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -692,7 +706,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -754,7 +770,9 @@ class TestEnsembleExecutor:
         # Mock dependencies
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -957,7 +975,9 @@ class TestEnsembleExecutor:
         # Mock dependencies
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -1069,7 +1089,7 @@ class TestEnsembleExecutor:
                 return_value=mock_fallback_model,
             ),
             patch.object(
-                executor,
+                executor._llm_agent_runner,
                 "_load_role_from_config",
                 new_callable=AsyncMock,
                 return_value=Mock(name="oauth-agent", prompt="Test prompt"),
@@ -1171,7 +1191,7 @@ class TestEnsembleExecutor:
                 return_value=mock_fallback_model,
             ),
             patch.object(
-                executor,
+                executor._llm_agent_runner,
                 "_load_role_from_config",
                 new_callable=AsyncMock,
                 return_value=Mock(name="failing-agent", prompt="Test prompt"),
@@ -1279,7 +1299,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -1393,7 +1415,9 @@ class TestEnsembleExecutor:
                 executor, "execute_with_user_input", new_callable=AsyncMock
             ) as mock_execute_interactive,
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -1526,7 +1550,9 @@ class TestEnsembleExecutor:
                 executor, "execute_with_user_input", new_callable=AsyncMock
             ) as mock_execute_interactive,
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -1604,7 +1630,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -1967,7 +1995,9 @@ class TestEnsembleExecutor:
 
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -2089,7 +2119,9 @@ class TestEnsembleExecutor:
 
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -2153,7 +2185,9 @@ class TestEnsembleExecutor:
 
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
