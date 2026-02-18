@@ -20,6 +20,7 @@ from llm_orc.core.config.ensemble_config import EnsembleLoader, assert_no_cycles
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.mcp.handlers.artifact_handler import ArtifactHandler
 from llm_orc.mcp.handlers.help_handler import HelpHandler
+from llm_orc.mcp.handlers.library_handler import LibraryHandler
 from llm_orc.mcp.handlers.profile_handler import ProfileHandler
 from llm_orc.mcp.handlers.script_handler import ScriptHandler
 
@@ -112,8 +113,7 @@ class MCPServerV2:
     tools for ensemble management and execution.
     """
 
-    # Optional test overrides for directories
-    _test_library_dir: Path | None = None
+    # Optional test overrides
     _test_ollama_status: dict[str, Any] | None = None
 
     def __init__(
@@ -136,6 +136,9 @@ class MCPServerV2:
         self._profile_handler = ProfileHandler(self.config_manager)
         self._artifact_handler = ArtifactHandler()
         self._script_handler = ScriptHandler()
+        self._library_handler = LibraryHandler(
+            self.config_manager, self.ensemble_loader
+        )
         self._mcp = FastMCP("llm-orc")
         self._setup_resources()
         self._setup_tools()
@@ -1873,152 +1876,12 @@ class MCPServerV2:
         return await self._script_handler.list_scripts(arguments)
 
     async def _library_browse_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Browse library items.
-
-        Args:
-            arguments: Tool arguments including type and category.
-
-        Returns:
-            Library items.
-        """
-        browse_type = arguments.get("type", "all")
-        library_dir = self._get_library_dir()
-        result: dict[str, list[dict[str, Any]]] = {}
-
-        if browse_type in ("all", "ensembles"):
-            result["ensembles"] = self._browse_library_ensembles(library_dir)
-
-        if browse_type in ("all", "scripts"):
-            result["scripts"] = self._browse_library_scripts(library_dir)
-
-        return result
-
-    def _browse_library_ensembles(self, library_dir: Path) -> list[dict[str, Any]]:
-        """Browse ensembles in library directory."""
-        ensembles: list[dict[str, Any]] = []
-        ensembles_dir = library_dir / "ensembles"
-        if not ensembles_dir.exists():
-            return ensembles
-
-        for yaml_file in ensembles_dir.glob("**/*.yaml"):
-            try:
-                config = self.ensemble_loader.load_from_file(str(yaml_file))
-                if config:
-                    ensembles.append(
-                        {
-                            "name": config.name,
-                            "description": config.description,
-                            "path": str(yaml_file),
-                        }
-                    )
-            except Exception:
-                continue
-        return ensembles
-
-    def _browse_library_scripts(self, library_dir: Path) -> list[dict[str, Any]]:
-        """Browse scripts in library directory."""
-        scripts: list[dict[str, Any]] = []
-        scripts_dir = library_dir / "scripts"
-        if not scripts_dir.exists():
-            return scripts
-
-        for category_dir in scripts_dir.iterdir():
-            if not category_dir.is_dir():
-                continue
-            for script_file in category_dir.glob("*.py"):
-                scripts.append(
-                    {
-                        "name": script_file.stem,
-                        "category": category_dir.name,
-                        "path": str(script_file),
-                    }
-                )
-        return scripts
-
-    def _resolve_copy_destination(self, source_path: Path) -> Path:
-        """Resolve the default local destination for a library copy."""
-        ensemble_dirs = self.config_manager.get_ensembles_dirs()
-        local_dir = Path.cwd() / ".llm-orc"
-        lib_dir = self._get_library_dir()
-
-        for dir_path in ensemble_dirs:
-            path = Path(dir_path)
-            is_local = ".llm-orc" in str(path)
-            is_library = str(path).startswith(str(lib_dir))
-            if is_local and not is_library:
-                local_dir = path.parent
-                break
-
-        subdir = "ensembles" if "ensembles" in str(source_path) else "scripts"
-        return local_dir / subdir / source_path.name
-
-    def _resolve_library_source(self, source: str) -> Path:
-        """Resolve a library source string to a path, adding .yaml if needed."""
-        library_dir = self._get_library_dir()
-        source_path = library_dir / source
-
-        if not source_path.exists() and not source.endswith(".yaml"):
-            source_path = library_dir / f"{source}.yaml"
-
-        if not source_path.exists():
-            raise ValueError(f"Source not found in library: {source}")
-        return source_path
+        """Browse library items."""
+        return await self._library_handler.browse(arguments)
 
     async def _library_copy_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Copy from library to local.
-
-        Args:
-            arguments: Tool arguments including source, destination, overwrite.
-
-        Returns:
-            Copy result.
-        """
-        import shutil
-
-        source = arguments.get("source")
-        destination = arguments.get("destination")
-        overwrite = arguments.get("overwrite", False)
-
-        if not source:
-            raise ValueError("source is required")
-
-        source_path = self._resolve_library_source(source)
-        dest_path = (
-            Path(destination)
-            if destination
-            else self._resolve_copy_destination(source_path)
-        )
-
-        if dest_path.exists() and not overwrite:
-            raise ValueError(f"File already exists: {dest_path}")
-
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_path, dest_path)
-
-        return {
-            "copied": True,
-            "source": str(source_path),
-            "destination": str(dest_path),
-        }
-
-    def _get_library_dir(self) -> Path:
-        """Get library directory path.
-
-        Returns:
-            Path to library directory.
-        """
-        # Check for test override
-        if self._test_library_dir is not None:
-            return self._test_library_dir
-
-        # Check for library in ensemble dirs
-        for dir_path in self.config_manager.get_ensembles_dirs():
-            if "library" in str(dir_path):
-                # Return parent of ensembles dir
-                return Path(dir_path).parent
-
-        # Default library location
-        return Path.cwd() / "llm-orchestra-library"
+        """Copy from library to local."""
+        return await self._library_handler.copy(arguments)
 
     # =========================================================================
     # Profile CRUD Tool Implementations
@@ -2079,128 +1942,12 @@ class MCPServerV2:
     # =========================================================================
 
     async def _library_search_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Search library content.
-
-        Args:
-            arguments: Tool arguments including query.
-
-        Returns:
-            Search results.
-        """
-        query = arguments.get("query", "").lower()
-
-        if not query:
-            raise ValueError("query is required")
-
-        library_dir = self._get_library_dir()
-        ensemble_results = self._search_library_ensembles(library_dir, query)
-        script_results = self._search_library_scripts(library_dir, query)
-
-        return {
-            "query": query,
-            "results": {
-                "ensembles": ensemble_results,
-                "scripts": script_results,
-            },
-            "total": len(ensemble_results) + len(script_results),
-        }
-
-    def _search_library_ensembles(
-        self, library_dir: Path, query: str
-    ) -> list[dict[str, Any]]:
-        """Search ensembles in library directory by query."""
-        results: list[dict[str, Any]] = []
-        ensembles_dir = library_dir / "ensembles"
-
-        if not ensembles_dir.exists():
-            return results
-
-        for yaml_file in ensembles_dir.glob("**/*.yaml"):
-            try:
-                config = self.ensemble_loader.load_from_file(str(yaml_file))
-                if config:
-                    name_match = query in config.name.lower()
-                    desc_match = query in (config.description or "").lower()
-                    if name_match or desc_match:
-                        results.append(
-                            {
-                                "name": config.name,
-                                "description": config.description,
-                                "path": str(yaml_file),
-                                "match": "name" if name_match else "description",
-                            }
-                        )
-            except Exception:
-                continue
-
-        return results
-
-    def _search_library_scripts(
-        self, library_dir: Path, query: str
-    ) -> list[dict[str, Any]]:
-        """Search scripts in library directory by query."""
-        results: list[dict[str, Any]] = []
-        scripts_dir = library_dir / "scripts"
-
-        if not scripts_dir.exists():
-            return results
-
-        for category_dir in scripts_dir.iterdir():
-            if not category_dir.is_dir():
-                continue
-            for script_file in category_dir.glob("*.py"):
-                name_match = query in script_file.stem.lower()
-                cat_match = query in category_dir.name.lower()
-                if name_match or cat_match:
-                    results.append(
-                        {
-                            "name": script_file.stem,
-                            "category": category_dir.name,
-                            "path": str(script_file),
-                            "match": "name" if name_match else "category",
-                        }
-                    )
-
-        return results
+        """Search library content."""
+        return await self._library_handler.search(arguments)
 
     async def _library_info_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Get library information.
-
-        Args:
-            arguments: Tool arguments (unused).
-
-        Returns:
-            Library info.
-        """
-        library_dir = self._get_library_dir()
-
-        info: dict[str, Any] = {
-            "path": str(library_dir),
-            "exists": library_dir.exists(),
-            "ensembles_count": 0,
-            "scripts_count": 0,
-            "categories": [],
-        }
-
-        if not library_dir.exists():
-            return info
-
-        # Count ensembles
-        ensembles_dir = library_dir / "ensembles"
-        if ensembles_dir.exists():
-            info["ensembles_count"] = len(list(ensembles_dir.glob("**/*.yaml")))
-
-        # Count scripts and categories
-        scripts_dir = library_dir / "scripts"
-        if scripts_dir.exists():
-            categories: list[str] = []
-            for category_dir in scripts_dir.iterdir():
-                if category_dir.is_dir():
-                    categories.append(category_dir.name)
-                    info["scripts_count"] += len(list(category_dir.glob("*.py")))
-            info["categories"] = sorted(categories)
-
-        return info
+        """Get library information."""
+        return await self._library_handler.info(arguments)
 
     # =========================================================================
     # Phase 3: Provider & Model Discovery

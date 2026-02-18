@@ -1415,7 +1415,7 @@ def library_has_ensemble(bdd_context: dict[str, Any], tmp_path: Path) -> None:
     # Now set library dir on the NEW server (after reconfigure)
     server = bdd_context.get("mcp_server")
     if server:
-        server._test_library_dir = library_dir
+        server._library_handler._test_library_dir = library_dir
 
 
 @given('an ensemble named "library-ensemble" exists locally')
@@ -1579,7 +1579,7 @@ def call_library_copy_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
             server = bdd_context["mcp_server"]
             # Ensure library dir is set (may have been reset by reconfigure)
             if "library_dir" in bdd_context:
-                server._test_library_dir = bdd_context["library_dir"]
+                server._library_handler._test_library_dir = bdd_context["library_dir"]
             return await server.call_tool("library_copy", params)
         except Exception as e:
             bdd_context["tool_error"] = str(e)
@@ -2673,7 +2673,7 @@ def _reconfigure_server_with_library(
     mock_config.get_ensembles_dirs.return_value = [str(ensembles_dir)]
     mock_config.get_profiles_dirs.return_value = []
     server = MCPServerV2(config_manager=mock_config)
-    server._test_library_dir = library_dir
+    server._library_handler._test_library_dir = library_dir
     bdd_context["mcp_server"] = server
     bdd_context["mcp_available"] = True
 

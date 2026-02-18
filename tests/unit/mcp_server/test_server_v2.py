@@ -327,8 +327,8 @@ class TestMCPServerV2LibraryBrowse:
         self, server: MCPServerV2, tmp_path: Path
     ) -> None:
         """Browse empty library returns empty lists."""
-        server._test_library_dir = tmp_path / "empty-library"
-        server._test_library_dir.mkdir()
+        server._library_handler._test_library_dir = tmp_path / "empty-library"
+        server._library_handler._test_library_dir.mkdir()
 
         result = await server.call_tool("library_browse", {})
 
@@ -347,7 +347,7 @@ class TestMCPServerV2LibraryBrowse:
             "name: test\ndescription: Test\nagents: []"
         )
 
-        server._test_library_dir = library_dir
+        server._library_handler._test_library_dir = library_dir
 
         result = await server.call_tool("library_browse", {"type": "ensembles"})
 
@@ -373,7 +373,7 @@ class TestMCPServerV2LibraryCopy:
         local_dir = tmp_path / ".llm-orc" / "ensembles"
         local_dir.mkdir(parents=True)
 
-        server._test_library_dir = library_dir
+        server._library_handler._test_library_dir = library_dir
         _mock_config(server).get_ensembles_dirs.return_value = [str(local_dir)]
 
         result = await server.call_tool(
@@ -392,7 +392,7 @@ class TestMCPServerV2LibraryCopy:
         library_dir = tmp_path / "library"
         library_dir.mkdir()
 
-        server._test_library_dir = library_dir
+        server._library_handler._test_library_dir = library_dir
 
         with pytest.raises(ValueError, match="not found in library"):
             await server.call_tool(
@@ -416,7 +416,7 @@ class TestMCPServerV2LibraryCopy:
         local_dir.mkdir(parents=True)
         (local_dir / "exists.yaml").write_text("name: local")
 
-        server._test_library_dir = library_dir
+        server._library_handler._test_library_dir = library_dir
         _mock_config(server).get_ensembles_dirs.return_value = [str(local_dir)]
 
         with pytest.raises(ValueError, match="already exists"):
@@ -441,7 +441,7 @@ class TestMCPServerV2LibraryCopy:
         local_dir.mkdir(parents=True)
         (local_dir / "exists.yaml").write_text("name: local-version")
 
-        server._test_library_dir = library_dir
+        server._library_handler._test_library_dir = library_dir
         _mock_config(server).get_ensembles_dirs.return_value = [str(local_dir)]
 
         result = await server.call_tool(
@@ -461,9 +461,9 @@ class TestMCPServerV2GetLibraryDir:
         self, server: MCPServerV2, tmp_path: Path
     ) -> None:
         """Test override takes precedence."""
-        server._test_library_dir = tmp_path / "test-lib"
+        server._library_handler._test_library_dir = tmp_path / "test-lib"
 
-        result = server._get_library_dir()
+        result = server._library_handler.get_library_dir()
 
         assert result == tmp_path / "test-lib"
 
@@ -474,7 +474,7 @@ class TestMCPServerV2GetLibraryDir:
         library_dir = tmp_path / "llm-orchestra-library" / "ensembles"
         _mock_config(server).get_ensembles_dirs.return_value = [str(library_dir)]
 
-        result = server._get_library_dir()
+        result = server._library_handler.get_library_dir()
 
         assert result == tmp_path / "llm-orchestra-library"
 
@@ -485,7 +485,7 @@ class TestMCPServerV2GetLibraryDir:
         monkeypatch.chdir(tmp_path)
         _mock_config(server).get_ensembles_dirs.return_value = []
 
-        result = server._get_library_dir()
+        result = server._library_handler.get_library_dir()
 
         assert result == tmp_path / "llm-orchestra-library"
 
@@ -1037,7 +1037,7 @@ class TestMCPServerV2LibraryExtraTools:
         (ensembles_dir / "code-review.yaml").write_text(
             "name: code-review\ndescription: Review code changes\nagents: []"
         )
-        server._test_library_dir = library_dir
+        server._library_handler._test_library_dir = library_dir
 
         result = await server.call_tool("library_search", {"query": "review"})
 
@@ -1054,7 +1054,7 @@ class TestMCPServerV2LibraryExtraTools:
         scripts_dir = library_dir / "scripts" / "extraction"
         scripts_dir.mkdir(parents=True)
         (scripts_dir / "json-parser.py").write_text("# JSON parser")
-        server._test_library_dir = library_dir
+        server._library_handler._test_library_dir = library_dir
 
         result = await server.call_tool("library_search", {"query": "json"})
 
@@ -1069,7 +1069,7 @@ class TestMCPServerV2LibraryExtraTools:
         """Library search returns empty for no matches."""
         library_dir = tmp_path / "library"
         library_dir.mkdir()
-        server._test_library_dir = library_dir
+        server._library_handler._test_library_dir = library_dir
 
         result = await server.call_tool(
             "library_search", {"query": "nonexistent-query"}
@@ -1084,7 +1084,7 @@ class TestMCPServerV2LibraryExtraTools:
         """Library info returns library metadata."""
         library_dir = tmp_path / "library"
         library_dir.mkdir()
-        server._test_library_dir = library_dir
+        server._library_handler._test_library_dir = library_dir
 
         result = await server.call_tool("library_info", {})
 
@@ -1102,7 +1102,7 @@ class TestMCPServerV2LibraryExtraTools:
         ensembles_dir.mkdir(parents=True)
         (ensembles_dir / "test1.yaml").write_text("name: test1\nagents: []")
         (ensembles_dir / "test2.yaml").write_text("name: test2\nagents: []")
-        server._test_library_dir = library_dir
+        server._library_handler._test_library_dir = library_dir
 
         result = await server.call_tool("library_info", {})
 
@@ -1118,7 +1118,7 @@ class TestMCPServerV2LibraryExtraTools:
             scripts_dir = library_dir / "scripts" / cat
             scripts_dir.mkdir(parents=True)
             (scripts_dir / "script.py").write_text("# test")
-        server._test_library_dir = library_dir
+        server._library_handler._test_library_dir = library_dir
 
         result = await server.call_tool("library_info", {})
 
@@ -1131,7 +1131,7 @@ class TestMCPServerV2LibraryExtraTools:
         self, server: MCPServerV2, tmp_path: Path
     ) -> None:
         """Library info handles nonexistent library."""
-        server._test_library_dir = tmp_path / "nonexistent"
+        server._library_handler._test_library_dir = tmp_path / "nonexistent"
 
         result = await server.call_tool("library_info", {})
 
