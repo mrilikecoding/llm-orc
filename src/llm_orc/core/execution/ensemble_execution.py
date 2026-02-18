@@ -19,7 +19,6 @@ from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.fan_out_expander import FanOutExpander
 from llm_orc.core.execution.fan_out_gatherer import FanOutGatherer
-from llm_orc.core.execution.input_enhancer import InputEnhancer
 from llm_orc.core.execution.orchestration import Agent
 from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.results_processor import ResultsProcessor
@@ -60,7 +59,6 @@ class EnsembleExecutor:
         )
         self._dependency_analyzer = DependencyAnalyzer()
         self._dependency_resolver = DependencyResolver(self._get_agent_role_description)
-        self._input_enhancer = InputEnhancer()
         self._usage_collector = UsageCollector()
         self._results_processor = ResultsProcessor()
         self._streaming_progress_tracker = StreamingProgressTracker()
@@ -1339,7 +1337,7 @@ class EnsembleExecutor:
             await self._progress_controller.update_agent_progress(agent_name, "started")
 
         # Get agent input and timeout
-        agent_input = self._input_enhancer.get_agent_input(phase_input, agent_name)
+        agent_input = self._dependency_resolver.get_agent_input(phase_input, agent_name)
         timeout = await self._get_agent_timeout(agent_config)
 
         # Execute agent with timeout coordination

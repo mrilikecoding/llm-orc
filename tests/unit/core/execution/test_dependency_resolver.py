@@ -573,3 +573,21 @@ class TestFanOutInputPreparation:
 
         assert resolver.is_fan_out_instance_config(instance_config) is True
         assert resolver.is_fan_out_instance_config(regular_config) is False
+
+
+class TestGetAgentInput:
+    """Test get_agent_input static method."""
+
+    def test_uniform_string_input(self) -> None:
+        """String input is returned unchanged for any agent."""
+        assert DependencyResolver.get_agent_input("hello", "agent1") == "hello"
+
+    def test_dict_input_returns_matching_agent(self) -> None:
+        """Dict input returns the value for the named agent."""
+        data = {"agent1": "input for 1", "agent2": "input for 2"}
+        assert DependencyResolver.get_agent_input(data, "agent1") == "input for 1"
+
+    def test_dict_input_returns_empty_for_missing_agent(self) -> None:
+        """Dict input returns empty string for an absent agent name."""
+        data = {"agent1": "input for 1"}
+        assert DependencyResolver.get_agent_input(data, "missing") == ""

@@ -28,9 +28,7 @@ class TestAgentExecutor:
         assert not stats["adaptive_used"]
         assert "execution_metrics" in stats
 
-    def test_phase_metrics_initially_empty(
-        self, executor: AgentExecutor
-    ) -> None:
+    def test_phase_metrics_initially_empty(self, executor: AgentExecutor) -> None:
         """Phase metrics list starts empty."""
         assert executor._phase_metrics == []
 

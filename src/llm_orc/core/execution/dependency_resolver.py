@@ -302,3 +302,19 @@ class DependencyResolver:
             ]
         else:
             return [agent for agent in agents if not self.has_dependencies(agent)]
+
+    @staticmethod
+    def get_agent_input(input_data: str | dict[str, str], agent_name: str) -> str:
+        """Get appropriate input for an agent from uniform or per-agent input.
+
+        Args:
+            input_data: A string for uniform input, or a dict mapping
+                       agent names to their specific enhanced input
+            agent_name: Name of the agent to get input for
+
+        Returns:
+            Input string for the specified agent
+        """
+        if isinstance(input_data, dict):
+            return input_data.get(agent_name, "")
+        return input_data
