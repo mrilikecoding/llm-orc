@@ -3,7 +3,7 @@
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 import yaml
@@ -126,20 +126,42 @@ class TestCLI:
                 "coordinator": {
                     "synthesis_prompt": "Combine results",
                     "output_format": "json",
-                },  # noqa: E501
+                },
             }
 
             with open(f"{temp_dir}/working_ensemble.yaml", "w") as f:
                 yaml.dump(ensemble, f)
 
-            runner = CliRunner()
-            result = runner.invoke(
-                cli, ["invoke", "--config-dir", temp_dir, "working_ensemble"]
-            )  # noqa: E501
-            # Should now succeed and show execution results (using JSON output)
-            assert "working_ensemble" in result.output
-            # Should see some execution output or JSON structure
-            assert result.exit_code == 0 or "execution" in result.output.lower()
+            mock_result = {
+                "results": {
+                    "agent1": {"response": "test"},
+                    "agent2": {"response": "test"},
+                },
+                "synthesis": "Combined results",
+                "status": "success",
+            }
+
+            with patch("llm_orc.cli_commands.EnsembleExecutor") as mock_cls:
+                mock_executor = MagicMock()
+                mock_executor.execute = AsyncMock(return_value=mock_result)
+
+                async def mock_streaming(*args: object, **kwargs: object) -> object:
+                    yield {
+                        "type": "complete",
+                        "results": mock_result["results"],
+                        "synthesis": "Combined results",
+                    }
+
+                mock_executor.execute_streaming = mock_streaming
+                mock_cls.return_value = mock_executor
+
+                runner = CliRunner()
+                result = runner.invoke(
+                    cli,
+                    ["invoke", "--config-dir", temp_dir, "working_ensemble"],
+                )
+                assert "working_ensemble" in result.output
+                assert result.exit_code == 0 or "execution" in result.output.lower()
 
     def test_cli_list_ensembles_grouped_output(self) -> None:
         """Test that list-ensembles groups ensembles by location."""
