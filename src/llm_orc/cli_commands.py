@@ -23,9 +23,6 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
-# Import for interactive script support
-from llm_orc.integrations.mcp.runner import MCPServerRunner
-
 
 def _resolve_input_data(positional_input: str | None, option_input: str | None) -> str:
     """Resolve input data using priority: positional > option > stdin > default.
@@ -522,12 +519,6 @@ def reset_local_config(
 ) -> None:
     """Reset local .llm-orc configuration to template defaults."""
     ConfigCommands.reset_local_config(backup, preserve_ensembles, project_name)
-
-
-def serve_ensemble(ensemble_name: str, port: int) -> None:
-    """Serve an ensemble as an MCP server."""
-    runner = MCPServerRunner(ensemble_name, port)
-    runner.run()
 
 
 def add_auth_provider(

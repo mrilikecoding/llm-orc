@@ -6,7 +6,6 @@ from llm_orc.cli_commands import (
     invoke_ensemble,
     list_ensembles_command,
     list_profiles_command,
-    serve_ensemble,
     validate_all_ensembles,
     validate_ensemble,
     validate_ensemble_category,
@@ -613,14 +612,6 @@ def auth_test_refresh(provider: str) -> None:
     test_token_refresh(provider)
 
 
-@cli.command()
-@click.argument("ensemble_name", shell_complete=complete_ensemble_names)
-@click.option("--port", default=3000, help="Port to serve MCP server on")
-def serve(ensemble_name: str, port: int) -> None:
-    """Serve an ensemble as an MCP server."""
-    serve_ensemble(ensemble_name, port)
-
-
 # Help command that shows main help with aliases
 @cli.command()
 def help_command() -> None:
@@ -660,7 +651,6 @@ def help_command() -> None:
             "List available model profiles with their provider/model...",
         ),
         ("scripts", "sc", "Script management commands."),
-        ("serve", "s", "Serve an ensemble as an MCP server."),
     ]
 
     for cmd, alias, desc in commands_with_aliases:
@@ -682,7 +672,6 @@ cli.add_command(scripts, name="sc")
 cli.add_command(artifacts, name="ar")
 cli.add_command(list_ensembles, name="le")
 cli.add_command(list_profiles, name="lp")
-cli.add_command(serve, name="s")
 cli.add_command(mcp, name="m")
 cli.add_command(web, name="w")
 cli.add_command(help_command, name="help")
