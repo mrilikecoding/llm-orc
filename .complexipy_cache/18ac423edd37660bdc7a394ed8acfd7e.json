@@ -537,6 +537,12 @@
     {
       "complexity": 1,
       "file_name": "cli_commands.py",
+      "function_name": "_setup_performance_display",
+      "path": "src/llm_orc/cli_commands.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "cli_commands.py",
       "function_name": "list_ensembles_command",
       "path": "src/llm_orc/cli_commands.py"
     },
@@ -556,12 +562,6 @@
       "complexity": 2,
       "file_name": "cli_commands.py",
       "function_name": "_load_profiles_from_config",
-      "path": "src/llm_orc/cli_commands.py"
-    },
-    {
-      "complexity": 2,
-      "file_name": "cli_commands.py",
-      "function_name": "_setup_performance_display",
       "path": "src/llm_orc/cli_commands.py"
     },
     {
@@ -699,24 +699,6 @@
     {
       "complexity": 0,
       "file_name": "library.py",
-      "function_name": "_copy_remote_primitive_scripts",
-      "path": "src/llm_orc/cli_library/library.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "library.py",
-      "function_name": "_download_script_file",
-      "path": "src/llm_orc/cli_library/library.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "library.py",
-      "function_name": "_fetch_primitive_categories",
-      "path": "src/llm_orc/cli_library/library.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "library.py",
       "function_name": "ensure_global_ensembles_dir",
       "path": "src/llm_orc/cli_library/library.py"
     },
@@ -795,12 +777,6 @@
     {
       "complexity": 3,
       "file_name": "library.py",
-      "function_name": "_copy_local_primitive_scripts",
-      "path": "src/llm_orc/cli_library/library.py"
-    },
-    {
-      "complexity": 3,
-      "file_name": "library.py",
       "function_name": "_copy_remote_profile_templates",
       "path": "src/llm_orc/cli_library/library.py"
     },
@@ -811,21 +787,9 @@
       "path": "src/llm_orc/cli_library/library.py"
     },
     {
-      "complexity": 3,
-      "file_name": "library.py",
-      "function_name": "_process_script_categories",
-      "path": "src/llm_orc/cli_library/library.py"
-    },
-    {
       "complexity": 4,
       "file_name": "library.py",
       "function_name": "_copy_local_profile_templates",
-      "path": "src/llm_orc/cli_library/library.py"
-    },
-    {
-      "complexity": 4,
-      "file_name": "library.py",
-      "function_name": "copy_primitive_scripts",
       "path": "src/llm_orc/cli_library/library.py"
     },
     {
@@ -844,12 +808,6 @@
       "complexity": 4,
       "file_name": "library.py",
       "function_name": "show_ensemble_info",
-      "path": "src/llm_orc/cli_library/library.py"
-    },
-    {
-      "complexity": 6,
-      "file_name": "library.py",
-      "function_name": "_download_category_scripts",
       "path": "src/llm_orc/cli_library/library.py"
     },
     {
@@ -1059,6 +1017,12 @@
     {
       "complexity": 1,
       "file_name": "config_commands.py",
+      "function_name": "ConfigCommands::init_local_config",
+      "path": "src/llm_orc/cli_modules/commands/config_commands.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "config_commands.py",
       "function_name": "ConfigCommands::reset_local_config",
       "path": "src/llm_orc/cli_modules/commands/config_commands.py"
     },
@@ -1111,18 +1075,6 @@
       "path": "src/llm_orc/cli_modules/commands/config_commands.py"
     },
     {
-      "complexity": 8,
-      "file_name": "config_commands.py",
-      "function_name": "ConfigCommands::_get_library_scripts_path",
-      "path": "src/llm_orc/cli_modules/commands/config_commands.py"
-    },
-    {
-      "complexity": 8,
-      "file_name": "config_commands.py",
-      "function_name": "ConfigCommands::init_local_config",
-      "path": "src/llm_orc/cli_modules/commands/config_commands.py"
-    },
-    {
       "complexity": 10,
       "file_name": "config_commands.py",
       "function_name": "_install_template_and_restore_auth",
@@ -1132,12 +1084,6 @@
       "complexity": 11,
       "file_name": "config_commands.py",
       "function_name": "ConfigCommands::check_local_config",
-      "path": "src/llm_orc/cli_modules/commands/config_commands.py"
-    },
-    {
-      "complexity": 12,
-      "file_name": "config_commands.py",
-      "function_name": "ConfigCommands::_install_library_primitives",
       "path": "src/llm_orc/cli_modules/commands/config_commands.py"
     },
     {
@@ -1813,12 +1759,6 @@
       "path": "src/llm_orc/cli_modules/utils/visualization/streaming.py"
     },
     {
-      "complexity": 9,
-      "file_name": "streaming.py",
-      "function_name": "run_streaming_execution",
-      "path": "src/llm_orc/cli_modules/utils/visualization/streaming.py"
-    },
-    {
       "complexity": 10,
       "file_name": "streaming.py",
       "function_name": "_handle_streaming_event_with_status",
@@ -1828,6 +1768,12 @@
       "complexity": 10,
       "file_name": "streaming.py",
       "function_name": "_run_text_json_execution",
+      "path": "src/llm_orc/cli_modules/utils/visualization/streaming.py"
+    },
+    {
+      "complexity": 12,
+      "file_name": "streaming.py",
+      "function_name": "run_streaming_execution",
       "path": "src/llm_orc/cli_modules/utils/visualization/streaming.py"
     },
     {
@@ -2373,12 +2319,6 @@
     {
       "complexity": 1,
       "file_name": "config_manager.py",
-      "function_name": "ConfigurationManager::_copy_primitive_scripts",
-      "path": "src/llm_orc/core/config/config_manager.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "config_manager.py",
       "function_name": "ConfigurationManager::_copy_profile_templates",
       "path": "src/llm_orc/core/config/config_manager.py"
     },
@@ -2467,7 +2407,7 @@
       "path": "src/llm_orc/core/config/config_manager.py"
     },
     {
-      "complexity": 11,
+      "complexity": 10,
       "file_name": "config_manager.py",
       "function_name": "ConfigurationManager::init_local_config",
       "path": "src/llm_orc/core/config/config_manager.py"
@@ -2611,81 +2551,9 @@
       "path": "src/llm_orc/core/execution/agent_execution_coordinator.py"
     },
     {
-      "complexity": 0,
-      "file_name": "agent_execution_coordinator.py",
-      "function_name": "AgentExecutionCoordinator::_execute_unlimited_coordination",
-      "path": "src/llm_orc/core/execution/agent_execution_coordinator.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "agent_execution_coordinator.py",
-      "function_name": "AgentExecutionCoordinator::_execute_with_semaphore_coordination",
-      "path": "src/llm_orc/core/execution/agent_execution_coordinator.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "agent_execution_coordinator.py",
-      "function_name": "AgentExecutionCoordinator::create_semaphore",
-      "path": "src/llm_orc/core/execution/agent_execution_coordinator.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "agent_execution_coordinator.py",
-      "function_name": "AgentExecutionCoordinator::execute_with_semaphore",
-      "path": "src/llm_orc/core/execution/agent_execution_coordinator.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "agent_execution_coordinator.py",
-      "function_name": "AgentExecutionCoordinator::should_use_concurrency_limit",
-      "path": "src/llm_orc/core/execution/agent_execution_coordinator.py"
-    },
-    {
       "complexity": 2,
       "file_name": "agent_execution_coordinator.py",
       "function_name": "AgentExecutionCoordinator::execute_agent_with_timeout",
-      "path": "src/llm_orc/core/execution/agent_execution_coordinator.py"
-    },
-    {
-      "complexity": 2,
-      "file_name": "agent_execution_coordinator.py",
-      "function_name": "AgentExecutionCoordinator::get_concurrency_strategy",
-      "path": "src/llm_orc/core/execution/agent_execution_coordinator.py"
-    },
-    {
-      "complexity": 2,
-      "file_name": "agent_execution_coordinator.py",
-      "function_name": "AgentExecutionCoordinator::get_execution_plan",
-      "path": "src/llm_orc/core/execution/agent_execution_coordinator.py"
-    },
-    {
-      "complexity": 2,
-      "file_name": "agent_execution_coordinator.py",
-      "function_name": "AgentExecutionCoordinator::get_timeout_strategy",
-      "path": "src/llm_orc/core/execution/agent_execution_coordinator.py"
-    },
-    {
-      "complexity": 2,
-      "file_name": "agent_execution_coordinator.py",
-      "function_name": "AgentExecutionCoordinator::validate_timeout_config",
-      "path": "src/llm_orc/core/execution/agent_execution_coordinator.py"
-    },
-    {
-      "complexity": 3,
-      "file_name": "agent_execution_coordinator.py",
-      "function_name": "AgentExecutionCoordinator::get_agent_timeout",
-      "path": "src/llm_orc/core/execution/agent_execution_coordinator.py"
-    },
-    {
-      "complexity": 6,
-      "file_name": "agent_execution_coordinator.py",
-      "function_name": "AgentExecutionCoordinator::execute_multiple_with_coordination",
-      "path": "src/llm_orc/core/execution/agent_execution_coordinator.py"
-    },
-    {
-      "complexity": 6,
-      "file_name": "agent_execution_coordinator.py",
-      "function_name": "AgentExecutionCoordinator::get_effective_concurrency_limit",
       "path": "src/llm_orc/core/execution/agent_execution_coordinator.py"
     },
     {
@@ -2695,82 +2563,10 @@
       "path": "src/llm_orc/core/execution/agent_executor.py"
     },
     {
-      "complexity": 0,
-      "file_name": "agent_executor.py",
-      "function_name": "AgentExecutor::_init_monitoring",
-      "path": "src/llm_orc/core/execution/agent_executor.py"
-    },
-    {
-      "complexity": 2,
-      "file_name": "agent_executor.py",
-      "function_name": "AgentExecutor::get_phase_metrics",
-      "path": "src/llm_orc/core/execution/agent_executor.py"
-    },
-    {
-      "complexity": 3,
-      "file_name": "agent_executor.py",
-      "function_name": "AgentExecutor::_get_concurrency_limit",
-      "path": "src/llm_orc/core/execution/agent_executor.py"
-    },
-    {
-      "complexity": 4,
-      "file_name": "agent_executor.py",
-      "function_name": "AgentExecutor::execute_agents_parallel",
-      "path": "src/llm_orc/core/execution/agent_executor.py"
-    },
-    {
-      "complexity": 5,
-      "file_name": "agent_executor.py",
-      "function_name": "AgentExecutor::_get_concurrency_guidance",
-      "path": "src/llm_orc/core/execution/agent_executor.py"
-    },
-    {
-      "complexity": 5,
-      "file_name": "agent_executor.py",
-      "function_name": "AgentExecutor::execute_agents_unlimited",
-      "path": "src/llm_orc/core/execution/agent_executor.py"
-    },
-    {
-      "complexity": 5,
-      "file_name": "agent_executor.py",
-      "function_name": "AgentExecutor::execute_agents_with_semaphore",
-      "path": "src/llm_orc/core/execution/agent_executor.py"
-    },
-    {
-      "complexity": 6,
-      "file_name": "agent_executor.py",
-      "function_name": "AgentExecutor::get_effective_concurrency_limit",
-      "path": "src/llm_orc/core/execution/agent_executor.py"
-    },
-    {
       "complexity": 7,
       "file_name": "agent_executor.py",
       "function_name": "AgentExecutor::get_adaptive_stats",
       "path": "src/llm_orc/core/execution/agent_executor.py"
-    },
-    {
-      "complexity": 14,
-      "file_name": "agent_executor.py",
-      "function_name": "AgentExecutor::process_agent_results",
-      "path": "src/llm_orc/core/execution/agent_executor.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "agent_orchestrator.py",
-      "function_name": "AgentOrchestrator::__init__",
-      "path": "src/llm_orc/core/execution/agent_orchestrator.py"
-    },
-    {
-      "complexity": 4,
-      "file_name": "agent_orchestrator.py",
-      "function_name": "AgentOrchestrator::execute_agents_parallel",
-      "path": "src/llm_orc/core/execution/agent_orchestrator.py"
-    },
-    {
-      "complexity": 5,
-      "file_name": "agent_orchestrator.py",
-      "function_name": "AgentOrchestrator::_execute_agent_task",
-      "path": "src/llm_orc/core/execution/agent_orchestrator.py"
     },
     {
       "complexity": 0,
@@ -3153,6 +2949,12 @@
     {
       "complexity": 1,
       "file_name": "dependency_resolver.py",
+      "function_name": "DependencyResolver::get_agent_input",
+      "path": "src/llm_orc/core/execution/dependency_resolver.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "dependency_resolver.py",
       "function_name": "DependencyResolver::get_dependencies",
       "path": "src/llm_orc/core/execution/dependency_resolver.py"
     },
@@ -3225,12 +3027,6 @@
     {
       "complexity": 0,
       "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_emit_fallback_failure_event",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "ensemble_execution.py",
       "function_name": "EnsembleExecutor::_emit_phase_completed_event",
       "path": "src/llm_orc/core/execution/ensemble_execution.py"
     },
@@ -3243,7 +3039,13 @@
     {
       "complexity": 0,
       "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_execute_phase_with_monitoring_interactive",
+      "function_name": "EnsembleExecutor::_execute_llm_agent",
+      "path": "src/llm_orc/core/execution/ensemble_execution.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "ensemble_execution.py",
+      "function_name": "EnsembleExecutor::_execute_script_agent",
       "path": "src/llm_orc/core/execution/ensemble_execution.py"
     },
     {
@@ -3261,25 +3063,7 @@
     {
       "complexity": 0,
       "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_handle_model_loading_fallback",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "ensemble_execution.py",
       "function_name": "EnsembleExecutor::_initialize_execution_setup",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_load_model_from_agent_config",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_load_role",
       "path": "src/llm_orc/core/execution/ensemble_execution.py"
     },
     {
@@ -3291,7 +3075,7 @@
     {
       "complexity": 0,
       "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_requires_user_input",
+      "function_name": "EnsembleExecutor::_resolve_model_profile_to_config",
       "path": "src/llm_orc/core/execution/ensemble_execution.py"
     },
     {
@@ -3309,12 +3093,6 @@
     {
       "complexity": 1,
       "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_emit_fallback_success_event",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "ensemble_execution.py",
       "function_name": "EnsembleExecutor::_emit_performance_event",
       "path": "src/llm_orc/core/execution/ensemble_execution.py"
     },
@@ -3327,49 +3105,7 @@
     {
       "complexity": 1,
       "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_execute_llm_agent",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_execute_script_agent",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_execute_script_with_input_handling",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_execute_with_raw_input",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "ensemble_execution.py",
       "function_name": "EnsembleExecutor::_get_agent_timeout",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_handle_runtime_fallback",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_is_script_agent_input",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_load_model_with_fallback",
       "path": "src/llm_orc/core/execution/ensemble_execution.py"
     },
     {
@@ -3381,25 +3117,7 @@
     {
       "complexity": 2,
       "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_execute_script_agent_without_cache",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 2,
-      "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_execute_with_parsed_input",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 2,
-      "file_name": "ensemble_execution.py",
       "function_name": "EnsembleExecutor::_finalize_execution_results",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 2,
-      "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_load_role_from_config",
       "path": "src/llm_orc/core/execution/ensemble_execution.py"
     },
     {
@@ -3447,12 +3165,6 @@
     {
       "complexity": 3,
       "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_resolve_model_profile_to_config",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 3,
-      "file_name": "ensemble_execution.py",
       "function_name": "EnsembleExecutor::_store_agent_requests_metadata",
       "path": "src/llm_orc/core/execution/ensemble_execution.py"
     },
@@ -3466,12 +3178,6 @@
       "complexity": 4,
       "file_name": "ensemble_execution.py",
       "function_name": "EnsembleExecutor::_execute_single_agent_in_phase",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 5,
-      "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_analyze_dependencies",
       "path": "src/llm_orc/core/execution/ensemble_execution.py"
     },
     {
@@ -3532,12 +3238,6 @@
       "complexity": 11,
       "file_name": "ensemble_execution.py",
       "function_name": "EnsembleExecutor::_get_agent_role_description",
-      "path": "src/llm_orc/core/execution/ensemble_execution.py"
-    },
-    {
-      "complexity": 13,
-      "file_name": "ensemble_execution.py",
-      "function_name": "EnsembleExecutor::_execute_interactive_script_agent",
       "path": "src/llm_orc/core/execution/ensemble_execution.py"
     },
     {
@@ -3644,57 +3344,57 @@
     },
     {
       "complexity": 0,
-      "file_name": "input_enhancer.py",
-      "function_name": "InputEnhancer::__init__",
-      "path": "src/llm_orc/core/execution/input_enhancer.py"
+      "file_name": "llm_agent_runner.py",
+      "function_name": "LlmAgentRunner::__init__",
+      "path": "src/llm_orc/core/execution/llm_agent_runner.py"
     },
     {
       "complexity": 0,
-      "file_name": "input_enhancer.py",
-      "function_name": "InputEnhancer::_build_script_input",
-      "path": "src/llm_orc/core/execution/input_enhancer.py"
+      "file_name": "llm_agent_runner.py",
+      "function_name": "LlmAgentRunner::_emit_fallback_failure_event",
+      "path": "src/llm_orc/core/execution/llm_agent_runner.py"
     },
     {
       "complexity": 0,
-      "file_name": "input_enhancer.py",
-      "function_name": "InputEnhancer::update_agent_configs",
-      "path": "src/llm_orc/core/execution/input_enhancer.py"
+      "file_name": "llm_agent_runner.py",
+      "function_name": "LlmAgentRunner::_handle_model_loading_fallback",
+      "path": "src/llm_orc/core/execution/llm_agent_runner.py"
     },
     {
       "complexity": 1,
-      "file_name": "input_enhancer.py",
-      "function_name": "InputEnhancer::get_agent_input",
-      "path": "src/llm_orc/core/execution/input_enhancer.py"
+      "file_name": "llm_agent_runner.py",
+      "function_name": "LlmAgentRunner::_emit_fallback_success_event",
+      "path": "src/llm_orc/core/execution/llm_agent_runner.py"
     },
     {
-      "complexity": 4,
-      "file_name": "input_enhancer.py",
-      "function_name": "InputEnhancer::_build_llm_input",
-      "path": "src/llm_orc/core/execution/input_enhancer.py"
+      "complexity": 1,
+      "file_name": "llm_agent_runner.py",
+      "function_name": "LlmAgentRunner::_handle_runtime_fallback",
+      "path": "src/llm_orc/core/execution/llm_agent_runner.py"
     },
     {
-      "complexity": 4,
-      "file_name": "input_enhancer.py",
-      "function_name": "InputEnhancer::_extract_dependency_results",
-      "path": "src/llm_orc/core/execution/input_enhancer.py"
+      "complexity": 1,
+      "file_name": "llm_agent_runner.py",
+      "function_name": "LlmAgentRunner::_load_model_with_fallback",
+      "path": "src/llm_orc/core/execution/llm_agent_runner.py"
     },
     {
-      "complexity": 10,
-      "file_name": "input_enhancer.py",
-      "function_name": "InputEnhancer::create_enhanced_input_for_agent",
-      "path": "src/llm_orc/core/execution/input_enhancer.py"
+      "complexity": 1,
+      "file_name": "llm_agent_runner.py",
+      "function_name": "LlmAgentRunner::execute",
+      "path": "src/llm_orc/core/execution/llm_agent_runner.py"
     },
     {
-      "complexity": 10,
-      "file_name": "input_enhancer.py",
-      "function_name": "InputEnhancer::enhance_input_with_dependencies",
-      "path": "src/llm_orc/core/execution/input_enhancer.py"
+      "complexity": 2,
+      "file_name": "llm_agent_runner.py",
+      "function_name": "LlmAgentRunner::_load_role_from_config",
+      "path": "src/llm_orc/core/execution/llm_agent_runner.py"
     },
     {
-      "complexity": 11,
-      "file_name": "input_enhancer.py",
-      "function_name": "InputEnhancer::get_agent_role_description",
-      "path": "src/llm_orc/core/execution/input_enhancer.py"
+      "complexity": 3,
+      "file_name": "llm_agent_runner.py",
+      "function_name": "LlmAgentRunner::_resolve_model_profile_to_config",
+      "path": "src/llm_orc/core/execution/llm_agent_runner.py"
     },
     {
       "complexity": 0,
@@ -4028,6 +3728,66 @@
     },
     {
       "complexity": 0,
+      "file_name": "script_agent_runner.py",
+      "function_name": "ScriptAgentRunner::__init__",
+      "path": "src/llm_orc/core/execution/script_agent_runner.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "script_agent_runner.py",
+      "function_name": "ScriptAgentRunner::_requires_user_input",
+      "path": "src/llm_orc/core/execution/script_agent_runner.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "script_agent_runner.py",
+      "function_name": "ScriptAgentRunner::_execute_with_input_handling",
+      "path": "src/llm_orc/core/execution/script_agent_runner.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "script_agent_runner.py",
+      "function_name": "ScriptAgentRunner::_execute_with_raw_input",
+      "path": "src/llm_orc/core/execution/script_agent_runner.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "script_agent_runner.py",
+      "function_name": "ScriptAgentRunner::_is_script_agent_input",
+      "path": "src/llm_orc/core/execution/script_agent_runner.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "script_agent_runner.py",
+      "function_name": "ScriptAgentRunner::execute",
+      "path": "src/llm_orc/core/execution/script_agent_runner.py"
+    },
+    {
+      "complexity": 2,
+      "file_name": "script_agent_runner.py",
+      "function_name": "ScriptAgentRunner::_execute_with_parsed_input",
+      "path": "src/llm_orc/core/execution/script_agent_runner.py"
+    },
+    {
+      "complexity": 2,
+      "file_name": "script_agent_runner.py",
+      "function_name": "ScriptAgentRunner::_execute_without_cache",
+      "path": "src/llm_orc/core/execution/script_agent_runner.py"
+    },
+    {
+      "complexity": 4,
+      "file_name": "script_agent_runner.py",
+      "function_name": "ScriptAgentRunner::_validate_primitive_output",
+      "path": "src/llm_orc/core/execution/script_agent_runner.py"
+    },
+    {
+      "complexity": 12,
+      "file_name": "script_agent_runner.py",
+      "function_name": "ScriptAgentRunner::_execute_interactive",
+      "path": "src/llm_orc/core/execution/script_agent_runner.py"
+    },
+    {
+      "complexity": 0,
       "file_name": "script_cache.py",
       "function_name": "ScriptCache::_generate_cache_key",
       "path": "src/llm_orc/core/execution/script_cache.py"
@@ -4089,12 +3849,6 @@
     {
       "complexity": 0,
       "file_name": "script_resolver.py",
-      "function_name": "ScriptResolver::_try_resolve_relative_path",
-      "path": "src/llm_orc/core/execution/script_resolver.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "script_resolver.py",
       "function_name": "ScriptResolver::clear_cache",
       "path": "src/llm_orc/core/execution/script_resolver.py"
     },
@@ -4102,6 +3856,12 @@
       "complexity": 1,
       "file_name": "script_resolver.py",
       "function_name": "ScriptResolver::resolve_script_path",
+      "path": "src/llm_orc/core/execution/script_resolver.py"
+    },
+    {
+      "complexity": 2,
+      "file_name": "script_resolver.py",
+      "function_name": "ScriptResolver::list_available_scripts",
       "path": "src/llm_orc/core/execution/script_resolver.py"
     },
     {
@@ -4113,11 +3873,17 @@
     {
       "complexity": 3,
       "file_name": "script_resolver.py",
+      "function_name": "ScriptResolver::_collect_package_primitives",
+      "path": "src/llm_orc/core/execution/script_resolver.py"
+    },
+    {
+      "complexity": 3,
+      "file_name": "script_resolver.py",
       "function_name": "ScriptResolver::get_script_info",
       "path": "src/llm_orc/core/execution/script_resolver.py"
     },
     {
-      "complexity": 4,
+      "complexity": 5,
       "file_name": "script_resolver.py",
       "function_name": "ScriptResolver::_get_search_paths",
       "path": "src/llm_orc/core/execution/script_resolver.py"
@@ -4135,15 +3901,15 @@
       "path": "src/llm_orc/core/execution/script_resolver.py"
     },
     {
-      "complexity": 8,
+      "complexity": 9,
       "file_name": "script_resolver.py",
-      "function_name": "ScriptResolver::_try_resolve_with_search_paths",
+      "function_name": "ScriptResolver::_collect_local_scripts",
       "path": "src/llm_orc/core/execution/script_resolver.py"
     },
     {
-      "complexity": 14,
+      "complexity": 13,
       "file_name": "script_resolver.py",
-      "function_name": "ScriptResolver::list_available_scripts",
+      "function_name": "ScriptResolver::_try_resolve_with_search_paths",
       "path": "src/llm_orc/core/execution/script_resolver.py"
     },
     {
@@ -4159,12 +3925,6 @@
       "path": "src/llm_orc/core/execution/script_user_input_handler.py"
     },
     {
-      "complexity": 2,
-      "file_name": "script_user_input_handler.py",
-      "function_name": "ScriptUserInputHandler::requires_user_input",
-      "path": "src/llm_orc/core/execution/script_user_input_handler.py"
-    },
-    {
       "complexity": 3,
       "file_name": "script_user_input_handler.py",
       "function_name": "ScriptUserInputHandler::get_user_input",
@@ -4177,7 +3937,13 @@
       "path": "src/llm_orc/core/execution/script_user_input_handler.py"
     },
     {
-      "complexity": 9,
+      "complexity": 4,
+      "file_name": "script_user_input_handler.py",
+      "function_name": "ScriptUserInputHandler::requires_user_input",
+      "path": "src/llm_orc/core/execution/script_user_input_handler.py"
+    },
+    {
+      "complexity": 10,
       "file_name": "script_user_input_handler.py",
       "function_name": "ScriptUserInputHandler::ensemble_requires_user_input",
       "path": "src/llm_orc/core/execution/script_user_input_handler.py"
@@ -4305,31 +4071,13 @@
     {
       "complexity": 0,
       "file_name": "model_factory.py",
-      "function_name": "_setup_anthropic_api_auth",
-      "path": "src/llm_orc/core/models/model_factory.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "model_factory.py",
-      "function_name": "_should_prompt_for_auth",
-      "path": "src/llm_orc/core/models/model_factory.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "model_factory.py",
-      "function_name": "_prompt_auth_setup",
+      "function_name": "_handle_mock_models",
       "path": "src/llm_orc/core/models/model_factory.py"
     },
     {
       "complexity": 1,
       "file_name": "model_factory.py",
       "function_name": "_resolve_authentication_method",
-      "path": "src/llm_orc/core/models/model_factory.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "model_factory.py",
-      "function_name": "_setup_claude_cli_auth",
       "path": "src/llm_orc/core/models/model_factory.py"
     },
     {
@@ -4345,39 +4093,27 @@
       "path": "src/llm_orc/core/models/model_factory.py"
     },
     {
-      "complexity": 2,
-      "file_name": "model_factory.py",
-      "function_name": "_handle_mock_models",
-      "path": "src/llm_orc/core/models/model_factory.py"
-    },
-    {
       "complexity": 3,
       "file_name": "model_factory.py",
       "function_name": "ModelFactory::get_fallback_model",
       "path": "src/llm_orc/core/models/model_factory.py"
     },
     {
+      "complexity": 3,
+      "file_name": "model_factory.py",
+      "function_name": "_handle_no_authentication",
+      "path": "src/llm_orc/core/models/model_factory.py"
+    },
+    {
+      "complexity": 4,
+      "file_name": "model_factory.py",
+      "function_name": "ModelFactory::load_model",
+      "path": "src/llm_orc/core/models/model_factory.py"
+    },
+    {
       "complexity": 4,
       "file_name": "model_factory.py",
       "function_name": "_create_api_key_model",
-      "path": "src/llm_orc/core/models/model_factory.py"
-    },
-    {
-      "complexity": 4,
-      "file_name": "model_factory.py",
-      "function_name": "_setup_anthropic_oauth_auth",
-      "path": "src/llm_orc/core/models/model_factory.py"
-    },
-    {
-      "complexity": 6,
-      "file_name": "model_factory.py",
-      "function_name": "ModelFactory::setup_authentication",
-      "path": "src/llm_orc/core/models/model_factory.py"
-    },
-    {
-      "complexity": 6,
-      "file_name": "model_factory.py",
-      "function_name": "_handle_no_authentication",
       "path": "src/llm_orc/core/models/model_factory.py"
     },
     {
@@ -4390,12 +4126,6 @@
       "complexity": 8,
       "file_name": "model_factory.py",
       "function_name": "ModelFactory::_try_legacy_fallback",
-      "path": "src/llm_orc/core/models/model_factory.py"
-    },
-    {
-      "complexity": 8,
-      "file_name": "model_factory.py",
-      "function_name": "ModelFactory::load_model",
       "path": "src/llm_orc/core/models/model_factory.py"
     },
     {
@@ -4579,6 +4309,360 @@
       "path": "src/llm_orc/integrations/mcp/server.py"
     },
     {
+      "complexity": 1,
+      "file_name": "artifact_handler.py",
+      "function_name": "ArtifactHandler::_get_artifacts_base",
+      "path": "src/llm_orc/mcp/handlers/artifact_handler.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "artifact_handler.py",
+      "function_name": "ArtifactHandler::cleanup_artifacts",
+      "path": "src/llm_orc/mcp/handlers/artifact_handler.py"
+    },
+    {
+      "complexity": 2,
+      "file_name": "artifact_handler.py",
+      "function_name": "ArtifactHandler::_get_ensemble_artifact_dirs",
+      "path": "src/llm_orc/mcp/handlers/artifact_handler.py"
+    },
+    {
+      "complexity": 4,
+      "file_name": "artifact_handler.py",
+      "function_name": "ArtifactHandler::delete_artifact",
+      "path": "src/llm_orc/mcp/handlers/artifact_handler.py"
+    },
+    {
+      "complexity": 15,
+      "file_name": "artifact_handler.py",
+      "function_name": "ArtifactHandler::_process_old_artifacts",
+      "path": "src/llm_orc/mcp/handlers/artifact_handler.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "help_handler.py",
+      "function_name": "HelpHandler::_get_directory_structure_help",
+      "path": "src/llm_orc/mcp/handlers/help_handler.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "help_handler.py",
+      "function_name": "HelpHandler::_get_schema_help",
+      "path": "src/llm_orc/mcp/handlers/help_handler.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "help_handler.py",
+      "function_name": "HelpHandler::_get_tools_help",
+      "path": "src/llm_orc/mcp/handlers/help_handler.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "help_handler.py",
+      "function_name": "HelpHandler::_get_workflow_help",
+      "path": "src/llm_orc/mcp/handlers/help_handler.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "help_handler.py",
+      "function_name": "HelpHandler::get_help_documentation",
+      "path": "src/llm_orc/mcp/handlers/help_handler.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "library_handler.py",
+      "function_name": "LibraryHandler::__init__",
+      "path": "src/llm_orc/mcp/handlers/library_handler.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "library_handler.py",
+      "function_name": "LibraryHandler::search",
+      "path": "src/llm_orc/mcp/handlers/library_handler.py"
+    },
+    {
+      "complexity": 2,
+      "file_name": "library_handler.py",
+      "function_name": "LibraryHandler::browse",
+      "path": "src/llm_orc/mcp/handlers/library_handler.py"
+    },
+    {
+      "complexity": 3,
+      "file_name": "library_handler.py",
+      "function_name": "LibraryHandler::_resolve_library_source",
+      "path": "src/llm_orc/mcp/handlers/library_handler.py"
+    },
+    {
+      "complexity": 4,
+      "file_name": "library_handler.py",
+      "function_name": "LibraryHandler::copy",
+      "path": "src/llm_orc/mcp/handlers/library_handler.py"
+    },
+    {
+      "complexity": 4,
+      "file_name": "library_handler.py",
+      "function_name": "LibraryHandler::get_library_dir",
+      "path": "src/llm_orc/mcp/handlers/library_handler.py"
+    },
+    {
+      "complexity": 5,
+      "file_name": "library_handler.py",
+      "function_name": "LibraryHandler::_resolve_copy_destination",
+      "path": "src/llm_orc/mcp/handlers/library_handler.py"
+    },
+    {
+      "complexity": 6,
+      "file_name": "library_handler.py",
+      "function_name": "LibraryHandler::_browse_ensembles",
+      "path": "src/llm_orc/mcp/handlers/library_handler.py"
+    },
+    {
+      "complexity": 6,
+      "file_name": "library_handler.py",
+      "function_name": "LibraryHandler::_browse_scripts",
+      "path": "src/llm_orc/mcp/handlers/library_handler.py"
+    },
+    {
+      "complexity": 8,
+      "file_name": "library_handler.py",
+      "function_name": "LibraryHandler::info",
+      "path": "src/llm_orc/mcp/handlers/library_handler.py"
+    },
+    {
+      "complexity": 10,
+      "file_name": "library_handler.py",
+      "function_name": "LibraryHandler::_search_scripts",
+      "path": "src/llm_orc/mcp/handlers/library_handler.py"
+    },
+    {
+      "complexity": 11,
+      "file_name": "library_handler.py",
+      "function_name": "LibraryHandler::_search_ensembles",
+      "path": "src/llm_orc/mcp/handlers/library_handler.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "profile_handler.py",
+      "function_name": "ProfileHandler::__init__",
+      "path": "src/llm_orc/mcp/handlers/profile_handler.py"
+    },
+    {
+      "complexity": 2,
+      "file_name": "profile_handler.py",
+      "function_name": "ProfileHandler::_load_profiles_from_file",
+      "path": "src/llm_orc/mcp/handlers/profile_handler.py"
+    },
+    {
+      "complexity": 3,
+      "file_name": "profile_handler.py",
+      "function_name": "ProfileHandler::_parse_dict_format_profiles",
+      "path": "src/llm_orc/mcp/handlers/profile_handler.py"
+    },
+    {
+      "complexity": 3,
+      "file_name": "profile_handler.py",
+      "function_name": "ProfileHandler::_parse_list_format_profiles",
+      "path": "src/llm_orc/mcp/handlers/profile_handler.py"
+    },
+    {
+      "complexity": 3,
+      "file_name": "profile_handler.py",
+      "function_name": "ProfileHandler::_parse_profile_data",
+      "path": "src/llm_orc/mcp/handlers/profile_handler.py"
+    },
+    {
+      "complexity": 5,
+      "file_name": "profile_handler.py",
+      "function_name": "ProfileHandler::get_all_profiles",
+      "path": "src/llm_orc/mcp/handlers/profile_handler.py"
+    },
+    {
+      "complexity": 5,
+      "file_name": "profile_handler.py",
+      "function_name": "ProfileHandler::get_local_profiles_dir",
+      "path": "src/llm_orc/mcp/handlers/profile_handler.py"
+    },
+    {
+      "complexity": 6,
+      "file_name": "profile_handler.py",
+      "function_name": "ProfileHandler::delete_profile",
+      "path": "src/llm_orc/mcp/handlers/profile_handler.py"
+    },
+    {
+      "complexity": 6,
+      "file_name": "profile_handler.py",
+      "function_name": "ProfileHandler::update_profile",
+      "path": "src/llm_orc/mcp/handlers/profile_handler.py"
+    },
+    {
+      "complexity": 8,
+      "file_name": "profile_handler.py",
+      "function_name": "ProfileHandler::create_profile",
+      "path": "src/llm_orc/mcp/handlers/profile_handler.py"
+    },
+    {
+      "complexity": 12,
+      "file_name": "profile_handler.py",
+      "function_name": "ProfileHandler::list_profiles",
+      "path": "src/llm_orc/mcp/handlers/profile_handler.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "provider_handler.py",
+      "function_name": "ProviderHandler::__init__",
+      "path": "src/llm_orc/mcp/handlers/provider_handler.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "provider_handler.py",
+      "function_name": "ProviderHandler::_suggest_available_models",
+      "path": "src/llm_orc/mcp/handlers/provider_handler.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "provider_handler.py",
+      "function_name": "ProviderHandler::get_provider_status",
+      "path": "src/llm_orc/mcp/handlers/provider_handler.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "provider_handler.py",
+      "function_name": "ProviderHandler::_get_cloud_provider_status",
+      "path": "src/llm_orc/mcp/handlers/provider_handler.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "provider_handler.py",
+      "function_name": "_get_agent_attr",
+      "path": "src/llm_orc/mcp/handlers/provider_handler.py"
+    },
+    {
+      "complexity": 4,
+      "file_name": "provider_handler.py",
+      "function_name": "ProviderHandler::_suggest_local_alternatives",
+      "path": "src/llm_orc/mcp/handlers/provider_handler.py"
+    },
+    {
+      "complexity": 5,
+      "file_name": "provider_handler.py",
+      "function_name": "ProviderHandler::_get_ollama_status",
+      "path": "src/llm_orc/mcp/handlers/provider_handler.py"
+    },
+    {
+      "complexity": 7,
+      "file_name": "provider_handler.py",
+      "function_name": "ProviderHandler::_check_agent_runnable",
+      "path": "src/llm_orc/mcp/handlers/provider_handler.py"
+    },
+    {
+      "complexity": 8,
+      "file_name": "provider_handler.py",
+      "function_name": "ProviderHandler::check_ensemble_runnable",
+      "path": "src/llm_orc/mcp/handlers/provider_handler.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "script_handler.py",
+      "function_name": "ScriptHandler::_get_scripts_dir",
+      "path": "src/llm_orc/mcp/handlers/script_handler.py"
+    },
+    {
+      "complexity": 2,
+      "file_name": "script_handler.py",
+      "function_name": "ScriptHandler::list_scripts",
+      "path": "src/llm_orc/mcp/handlers/script_handler.py"
+    },
+    {
+      "complexity": 3,
+      "file_name": "script_handler.py",
+      "function_name": "ScriptHandler::_collect_root_scripts",
+      "path": "src/llm_orc/mcp/handlers/script_handler.py"
+    },
+    {
+      "complexity": 3,
+      "file_name": "script_handler.py",
+      "function_name": "ScriptHandler::get_script",
+      "path": "src/llm_orc/mcp/handlers/script_handler.py"
+    },
+    {
+      "complexity": 4,
+      "file_name": "script_handler.py",
+      "function_name": "ScriptHandler::delete_script",
+      "path": "src/llm_orc/mcp/handlers/script_handler.py"
+    },
+    {
+      "complexity": 5,
+      "file_name": "script_handler.py",
+      "function_name": "ScriptHandler::_strip_docstring_quotes",
+      "path": "src/llm_orc/mcp/handlers/script_handler.py"
+    },
+    {
+      "complexity": 5,
+      "file_name": "script_handler.py",
+      "function_name": "ScriptHandler::create_script",
+      "path": "src/llm_orc/mcp/handlers/script_handler.py"
+    },
+    {
+      "complexity": 5,
+      "file_name": "script_handler.py",
+      "function_name": "ScriptHandler::test_script",
+      "path": "src/llm_orc/mcp/handlers/script_handler.py"
+    },
+    {
+      "complexity": 8,
+      "file_name": "script_handler.py",
+      "function_name": "ScriptHandler::_collect_category_scripts",
+      "path": "src/llm_orc/mcp/handlers/script_handler.py"
+    },
+    {
+      "complexity": 13,
+      "file_name": "script_handler.py",
+      "function_name": "ScriptHandler::_extract_docstring",
+      "path": "src/llm_orc/mcp/handlers/script_handler.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "validation_handler.py",
+      "function_name": "ValidationHandler::__init__",
+      "path": "src/llm_orc/mcp/handlers/validation_handler.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "validation_handler.py",
+      "function_name": "ValidationHandler::_collect_validation_errors",
+      "path": "src/llm_orc/mcp/handlers/validation_handler.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "validation_handler.py",
+      "function_name": "_get_agent_attr",
+      "path": "src/llm_orc/mcp/handlers/validation_handler.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "validation_handler.py",
+      "function_name": "_is_script_agent",
+      "path": "src/llm_orc/mcp/handlers/validation_handler.py"
+    },
+    {
+      "complexity": 2,
+      "file_name": "validation_handler.py",
+      "function_name": "ValidationHandler::validate_ensemble",
+      "path": "src/llm_orc/mcp/handlers/validation_handler.py"
+    },
+    {
+      "complexity": 7,
+      "file_name": "validation_handler.py",
+      "function_name": "ValidationHandler::_validate_agent_references",
+      "path": "src/llm_orc/mcp/handlers/validation_handler.py"
+    },
+    {
+      "complexity": 15,
+      "file_name": "validation_handler.py",
+      "function_name": "ValidationHandler::_validate_model_profiles",
+      "path": "src/llm_orc/mcp/handlers/validation_handler.py"
+    },
+    {
       "complexity": 0,
       "file_name": "server.py",
       "function_name": "FastMCPProgressReporter::__init__",
@@ -4611,13 +4695,43 @@
     {
       "complexity": 0,
       "file_name": "server.py",
-      "function_name": "MCPServerV2::_get_directory_structure_help",
+      "function_name": "MCPServerV2::_check_ensemble_runnable_tool",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
       "complexity": 0,
       "file_name": "server.py",
-      "function_name": "MCPServerV2::_get_help_documentation",
+      "function_name": "MCPServerV2::_cleanup_artifacts_tool",
+      "path": "src/llm_orc/mcp/server.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "server.py",
+      "function_name": "MCPServerV2::_create_profile_tool",
+      "path": "src/llm_orc/mcp/server.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "server.py",
+      "function_name": "MCPServerV2::_create_script_tool",
+      "path": "src/llm_orc/mcp/server.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "server.py",
+      "function_name": "MCPServerV2::_delete_artifact_tool",
+      "path": "src/llm_orc/mcp/server.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "server.py",
+      "function_name": "MCPServerV2::_delete_profile_tool",
+      "path": "src/llm_orc/mcp/server.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "server.py",
+      "function_name": "MCPServerV2::_delete_script_tool",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
@@ -4629,25 +4743,13 @@
     {
       "complexity": 0,
       "file_name": "server.py",
-      "function_name": "MCPServerV2::_get_schema_help",
+      "function_name": "MCPServerV2::_get_script_tool",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
       "complexity": 0,
       "file_name": "server.py",
       "function_name": "MCPServerV2::_get_tool_handler",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_get_tools_help",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 0,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_get_workflow_help",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
@@ -4660,6 +4762,42 @@
       "complexity": 0,
       "file_name": "server.py",
       "function_name": "MCPServerV2::_invoke_tool_with_streaming",
+      "path": "src/llm_orc/mcp/server.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "server.py",
+      "function_name": "MCPServerV2::_library_browse_tool",
+      "path": "src/llm_orc/mcp/server.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "server.py",
+      "function_name": "MCPServerV2::_library_copy_tool",
+      "path": "src/llm_orc/mcp/server.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "server.py",
+      "function_name": "MCPServerV2::_library_info_tool",
+      "path": "src/llm_orc/mcp/server.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "server.py",
+      "function_name": "MCPServerV2::_library_search_tool",
+      "path": "src/llm_orc/mcp/server.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "server.py",
+      "function_name": "MCPServerV2::_list_profiles_tool",
+      "path": "src/llm_orc/mcp/server.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "server.py",
+      "function_name": "MCPServerV2::_list_scripts_tool",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
@@ -4743,7 +4881,19 @@
     {
       "complexity": 0,
       "file_name": "server.py",
-      "function_name": "MCPServerV2::_suggest_available_models",
+      "function_name": "MCPServerV2::_test_script_tool",
+      "path": "src/llm_orc/mcp/server.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "server.py",
+      "function_name": "MCPServerV2::_update_profile_tool",
+      "path": "src/llm_orc/mcp/server.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "server.py",
+      "function_name": "MCPServerV2::_validate_ensemble_tool",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
@@ -4803,49 +4953,13 @@
     {
       "complexity": 1,
       "file_name": "server.py",
-      "function_name": "MCPServerV2::_cleanup_artifacts_tool",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_collect_validation_errors",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_get_artifacts_base",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_get_cloud_provider_status",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "server.py",
       "function_name": "MCPServerV2::_get_executor",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
       "complexity": 1,
       "file_name": "server.py",
-      "function_name": "MCPServerV2::_get_scripts_dir",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "server.py",
       "function_name": "MCPServerV2::_get_version",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 1,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_library_search_tool",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
@@ -4881,37 +4995,7 @@
     {
       "complexity": 2,
       "file_name": "server.py",
-      "function_name": "MCPServerV2::_get_ensemble_artifact_dirs",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 2,
-      "file_name": "server.py",
       "function_name": "MCPServerV2::_handle_set_project",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 2,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_library_browse_tool",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 2,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_list_scripts_tool",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 2,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_load_profiles_from_file",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 2,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_validate_ensemble_tool",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
@@ -4929,12 +5013,6 @@
     {
       "complexity": 3,
       "file_name": "server.py",
-      "function_name": "MCPServerV2::_collect_root_scripts",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 3,
-      "file_name": "server.py",
       "function_name": "MCPServerV2::_create_ensemble_tool",
       "path": "src/llm_orc/mcp/server.py"
     },
@@ -4942,48 +5020,6 @@
       "complexity": 3,
       "file_name": "server.py",
       "function_name": "MCPServerV2::_find_ensemble_by_name",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 3,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_get_script_tool",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 3,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_parse_dict_format_profiles",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 3,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_parse_list_format_profiles",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 3,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_parse_profile_data",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 3,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_resolve_library_source",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 4,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_delete_artifact_tool",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 4,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_delete_script_tool",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
@@ -5007,37 +5043,7 @@
     {
       "complexity": 4,
       "file_name": "server.py",
-      "function_name": "MCPServerV2::_get_library_dir",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 4,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_library_copy_tool",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 4,
-      "file_name": "server.py",
       "function_name": "MCPServerV2::_save_execution_artifact",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 4,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_suggest_local_alternatives",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 5,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_create_script_tool",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 5,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_get_all_profiles",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
@@ -5049,49 +5055,7 @@
     {
       "complexity": 5,
       "file_name": "server.py",
-      "function_name": "MCPServerV2::_get_local_profiles_dir",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 5,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_get_ollama_status",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 5,
-      "file_name": "server.py",
       "function_name": "MCPServerV2::_invoke_tool",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 5,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_resolve_copy_destination",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 5,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_strip_docstring_quotes",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 5,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_test_script_tool",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 6,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_browse_library_ensembles",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 6,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_browse_library_scripts",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
@@ -5103,19 +5067,7 @@
     {
       "complexity": 6,
       "file_name": "server.py",
-      "function_name": "MCPServerV2::_delete_profile_tool",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 6,
-      "file_name": "server.py",
       "function_name": "MCPServerV2::_handle_streaming_event",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 6,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_update_profile_tool",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
@@ -5127,43 +5079,7 @@
     {
       "complexity": 7,
       "file_name": "server.py",
-      "function_name": "MCPServerV2::_check_agent_runnable",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 7,
-      "file_name": "server.py",
       "function_name": "MCPServerV2::_update_ensemble_tool",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 7,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_validate_agent_references",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 8,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_check_ensemble_runnable_tool",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 8,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_collect_category_scripts",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 8,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_create_profile_tool",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 8,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_library_info_tool",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
@@ -5179,12 +5095,6 @@
       "path": "src/llm_orc/mcp/server.py"
     },
     {
-      "complexity": 10,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_search_library_scripts",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
       "complexity": 11,
       "file_name": "server.py",
       "function_name": "MCPServerV2::_read_ensemble_resource",
@@ -5197,18 +5107,6 @@
       "path": "src/llm_orc/mcp/server.py"
     },
     {
-      "complexity": 11,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_search_library_ensembles",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 12,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_list_profiles_tool",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
       "complexity": 12,
       "file_name": "server.py",
       "function_name": "MCPServerV2::read_resource",
@@ -5218,24 +5116,6 @@
       "complexity": 13,
       "file_name": "server.py",
       "function_name": "MCPServerV2::_copy_from_template",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 13,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_extract_docstring",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 15,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_process_old_artifacts",
-      "path": "src/llm_orc/mcp/server.py"
-    },
-    {
-      "complexity": 15,
-      "file_name": "server.py",
-      "function_name": "MCPServerV2::_validate_model_profiles",
       "path": "src/llm_orc/mcp/server.py"
     },
     {
@@ -5415,6 +5295,12 @@
     {
       "complexity": 0,
       "file_name": "base.py",
+      "function_name": "ModelInterface::_estimate_tokens",
+      "path": "src/llm_orc/models/base.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "base.py",
       "function_name": "ModelInterface::add_to_conversation",
       "path": "src/llm_orc/models/base.py"
     },
@@ -5546,6 +5432,24 @@
     },
     {
       "complexity": 0,
+      "file_name": "mock.py",
+      "function_name": "MockModel::__init__",
+      "path": "src/llm_orc/models/mock.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "mock.py",
+      "function_name": "MockModel::generate_response",
+      "path": "src/llm_orc/models/mock.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "mock.py",
+      "function_name": "MockModel::name",
+      "path": "src/llm_orc/models/mock.py"
+    },
+    {
+      "complexity": 0,
       "file_name": "ollama.py",
       "function_name": "OllamaModel::__init__",
       "path": "src/llm_orc/models/ollama.py"
@@ -5561,6 +5465,120 @@
       "file_name": "ollama.py",
       "function_name": "OllamaModel::generate_response",
       "path": "src/llm_orc/models/ollama.py"
+    },
+    {
+      "complexity": 2,
+      "file_name": "__init__.py",
+      "function_name": "_normalize_script_ref",
+      "path": "src/llm_orc/primitives/__init__.py"
+    },
+    {
+      "complexity": 9,
+      "file_name": "__init__.py",
+      "function_name": "get_output_schema",
+      "path": "src/llm_orc/primitives/__init__.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "replicate_n_times.py",
+      "function_name": "main",
+      "path": "src/llm_orc/primitives/control_flow/replicate_n_times.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "replicate_n_times.py",
+      "function_name": "ReplicateInput::replications_must_be_positive",
+      "path": "src/llm_orc/primitives/control_flow/replicate_n_times.py"
+    },
+    {
+      "complexity": 4,
+      "file_name": "replicate_n_times.py",
+      "function_name": "execute",
+      "path": "src/llm_orc/primitives/control_flow/replicate_n_times.py"
+    },
+    {
+      "complexity": 5,
+      "file_name": "replicate_n_times.py",
+      "function_name": "_resolve_parameters",
+      "path": "src/llm_orc/primitives/control_flow/replicate_n_times.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "json_extract.py",
+      "function_name": "main",
+      "path": "src/llm_orc/primitives/data_transform/json_extract.py"
+    },
+    {
+      "complexity": 5,
+      "file_name": "json_extract.py",
+      "function_name": "_resolve_parameters",
+      "path": "src/llm_orc/primitives/data_transform/json_extract.py"
+    },
+    {
+      "complexity": 10,
+      "file_name": "json_extract.py",
+      "function_name": "execute",
+      "path": "src/llm_orc/primitives/data_transform/json_extract.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "read_file.py",
+      "function_name": "main",
+      "path": "src/llm_orc/primitives/file_ops/read_file.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "read_file.py",
+      "function_name": "execute",
+      "path": "src/llm_orc/primitives/file_ops/read_file.py"
+    },
+    {
+      "complexity": 5,
+      "file_name": "read_file.py",
+      "function_name": "_resolve_parameters",
+      "path": "src/llm_orc/primitives/file_ops/read_file.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "write_file.py",
+      "function_name": "main",
+      "path": "src/llm_orc/primitives/file_ops/write_file.py"
+    },
+    {
+      "complexity": 1,
+      "file_name": "write_file.py",
+      "function_name": "execute",
+      "path": "src/llm_orc/primitives/file_ops/write_file.py"
+    },
+    {
+      "complexity": 5,
+      "file_name": "write_file.py",
+      "function_name": "_resolve_parameters",
+      "path": "src/llm_orc/primitives/file_ops/write_file.py"
+    },
+    {
+      "complexity": 5,
+      "file_name": "confirm_action.py",
+      "function_name": "main",
+      "path": "src/llm_orc/primitives/user_interaction/confirm_action.py"
+    },
+    {
+      "complexity": 9,
+      "file_name": "confirm_action.py",
+      "function_name": "execute",
+      "path": "src/llm_orc/primitives/user_interaction/confirm_action.py"
+    },
+    {
+      "complexity": 5,
+      "file_name": "get_user_input.py",
+      "function_name": "main",
+      "path": "src/llm_orc/primitives/user_interaction/get_user_input.py"
+    },
+    {
+      "complexity": 12,
+      "file_name": "get_user_input.py",
+      "function_name": "execute",
+      "path": "src/llm_orc/primitives/user_interaction/get_user_input.py"
     },
     {
       "complexity": 0,

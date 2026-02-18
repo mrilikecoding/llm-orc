@@ -205,49 +205,61 @@ class ScriptResolver:
         scripts_dir = cwd / self.LLM_ORC_DIR / self.SCRIPTS_DIR
 
         if scripts_dir.exists():
-            for ext in self.SCRIPT_EXTENSIONS:
-                pattern = f"*{ext}"
-                for script_file in scripts_dir.rglob(pattern):
-                    relative_path = script_file.relative_to(scripts_dir)
-                    relative_dir = (
-                        str(relative_path.parent)
-                        if relative_path.parent != Path(".")
-                        else None
-                    )
-                    display_name = (
-                        f"{relative_dir}/{script_file.name}"
-                        if relative_dir
-                        else script_file.name
-                    )
+            self._collect_local_scripts(scripts_dir, scripts)
 
-                    scripts.append(
-                        {
-                            "name": script_file.name,
-                            "display_name": display_name,
-                            "path": str(script_file),
-                            "relative_path": relative_dir,
-                        }
-                    )
-
-        # Include package primitives from src/llm_orc/primitives/
         package_primitives = Path(__file__).resolve().parents[2] / "primitives"
         if package_primitives.exists():
-            for script_file in package_primitives.rglob("*.py"):
-                if script_file.name.startswith("__"):
-                    continue
-                relative_path = script_file.relative_to(package_primitives)
-                category = str(relative_path.parent)
-                display_name = f"primitives/{category}/{script_file.name}"
+            self._collect_package_primitives(package_primitives, scripts)
+
+        return sorted(scripts, key=lambda x: x["display_name"] or "")
+
+    def _collect_local_scripts(
+        self,
+        scripts_dir: Path,
+        scripts: list[dict[str, str | None]],
+    ) -> None:
+        """Collect scripts from .llm-orc/scripts directory."""
+        for ext in self.SCRIPT_EXTENSIONS:
+            for script_file in scripts_dir.rglob(f"*{ext}"):
+                relative_path = script_file.relative_to(scripts_dir)
+                relative_dir = (
+                    str(relative_path.parent)
+                    if relative_path.parent != Path(".")
+                    else None
+                )
+                display_name = (
+                    f"{relative_dir}/{script_file.name}"
+                    if relative_dir
+                    else script_file.name
+                )
                 scripts.append(
                     {
                         "name": script_file.name,
                         "display_name": display_name,
                         "path": str(script_file),
-                        "relative_path": f"primitives/{category}",
+                        "relative_path": relative_dir,
                     }
                 )
 
-        return sorted(scripts, key=lambda x: x["display_name"] or "")
+    @staticmethod
+    def _collect_package_primitives(
+        package_primitives: Path,
+        scripts: list[dict[str, str | None]],
+    ) -> None:
+        """Collect primitives from the installed llm_orc package."""
+        for script_file in package_primitives.rglob("*.py"):
+            if script_file.name.startswith("__"):
+                continue
+            relative_path = script_file.relative_to(package_primitives)
+            category = str(relative_path.parent)
+            scripts.append(
+                {
+                    "name": script_file.name,
+                    "display_name": f"primitives/{category}/{script_file.name}",
+                    "path": str(script_file),
+                    "relative_path": f"primitives/{category}",
+                }
+            )
 
     def get_script_info(self, script_name: str) -> dict[str, str | list[str]] | None:
         """Get information about a specific script.
