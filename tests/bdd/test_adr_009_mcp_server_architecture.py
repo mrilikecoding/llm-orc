@@ -2409,7 +2409,7 @@ def _reconfigure_server_with_scripts(
     mock_config.get_ensembles_dirs.return_value = [str(ensembles_dir)]
     mock_config.get_profiles_dirs.return_value = []
     server = MCPServerV2(config_manager=mock_config)
-    server._test_scripts_dir = tmp_path / ".llm-orc" / "scripts"
+    server._script_handler._test_scripts_dir = tmp_path / ".llm-orc" / "scripts"
     bdd_context["mcp_server"] = server
     bdd_context["mcp_available"] = True
 

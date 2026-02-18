@@ -837,7 +837,7 @@ class TestMCPServerV2ScriptTools:
         self, server: MCPServerV2, tmp_path: Path
     ) -> None:
         """Get script fails if not found."""
-        server._test_scripts_dir = tmp_path
+        server._script_handler._test_scripts_dir = tmp_path
 
         with pytest.raises(ValueError, match="not found"):
             await server.call_tool(
@@ -853,7 +853,7 @@ class TestMCPServerV2ScriptTools:
         scripts_dir.mkdir(parents=True)
         script_content = '"""Test script for extraction."""\nimport sys\nprint("hello")'
         (scripts_dir / "test.py").write_text(script_content)
-        server._test_scripts_dir = tmp_path
+        server._script_handler._test_scripts_dir = tmp_path
 
         result = await server.call_tool(
             "get_script", {"name": "test", "category": "extraction"}
@@ -881,7 +881,7 @@ class TestMCPServerV2ScriptTools:
         self, server: MCPServerV2, tmp_path: Path
     ) -> None:
         """Create script with basic template."""
-        server._test_scripts_dir = tmp_path
+        server._script_handler._test_scripts_dir = tmp_path
 
         result = await server.call_tool(
             "create_script",
@@ -899,7 +899,7 @@ class TestMCPServerV2ScriptTools:
         self, server: MCPServerV2, tmp_path: Path
     ) -> None:
         """Create script with extraction template."""
-        server._test_scripts_dir = tmp_path
+        server._script_handler._test_scripts_dir = tmp_path
 
         result = await server.call_tool(
             "create_script",
@@ -919,7 +919,7 @@ class TestMCPServerV2ScriptTools:
         scripts_dir = tmp_path / "extraction"
         scripts_dir.mkdir(parents=True)
         (scripts_dir / "existing.py").write_text("# existing")
-        server._test_scripts_dir = tmp_path
+        server._script_handler._test_scripts_dir = tmp_path
 
         with pytest.raises(ValueError, match="already exists"):
             await server.call_tool(
@@ -956,7 +956,7 @@ class TestMCPServerV2ScriptTools:
         self, server: MCPServerV2, tmp_path: Path
     ) -> None:
         """Delete script fails if not found."""
-        server._test_scripts_dir = tmp_path
+        server._script_handler._test_scripts_dir = tmp_path
 
         with pytest.raises(ValueError, match="not found"):
             await server.call_tool(
@@ -973,7 +973,7 @@ class TestMCPServerV2ScriptTools:
         scripts_dir.mkdir(parents=True)
         script_file = scripts_dir / "test.py"
         script_file.write_text("# test")
-        server._test_scripts_dir = tmp_path
+        server._script_handler._test_scripts_dir = tmp_path
 
         result = await server.call_tool(
             "delete_script",
@@ -1007,7 +1007,7 @@ class TestMCPServerV2ScriptTools:
         (scripts_dir / "echo.py").write_text(
             "import sys\nprint(sys.stdin.read().upper())"
         )
-        server._test_scripts_dir = tmp_path
+        server._script_handler._test_scripts_dir = tmp_path
 
         result = await server.call_tool(
             "test_script", {"name": "echo", "category": "utils", "input": "hello"}
@@ -1147,7 +1147,7 @@ class TestMCPServerV2HelperMethods:
         """Extract docstring from single-line docstring."""
         content = '"""Simple docstring."""\nimport sys'
 
-        result = server._extract_docstring(content)
+        result = server._script_handler._extract_docstring(content)
 
         assert result == "Simple docstring."
 
@@ -1155,7 +1155,7 @@ class TestMCPServerV2HelperMethods:
         """Extract docstring from multiline docstring."""
         content = '"""\nMultiline\ndocstring\n"""\nimport sys'
 
-        result = server._extract_docstring(content)
+        result = server._script_handler._extract_docstring(content)
 
         assert "Multiline" in result
         assert "docstring" in result
@@ -1164,7 +1164,7 @@ class TestMCPServerV2HelperMethods:
         """Return empty string when no docstring."""
         content = "import sys\nprint('hello')"
 
-        result = server._extract_docstring(content)
+        result = server._script_handler._extract_docstring(content)
 
         assert result == ""
 
@@ -1172,7 +1172,7 @@ class TestMCPServerV2HelperMethods:
         """Strip triple quotes from docstring."""
         text = '"""Test docstring"""'
 
-        result = server._strip_docstring_quotes(text)
+        result = server._script_handler._strip_docstring_quotes(text)
 
         assert result == "Test docstring"
 
@@ -1180,9 +1180,9 @@ class TestMCPServerV2HelperMethods:
         self, server: MCPServerV2, tmp_path: Path
     ) -> None:
         """Get scripts dir uses test override."""
-        server._test_scripts_dir = tmp_path / "test-scripts"
+        server._script_handler._test_scripts_dir = tmp_path / "test-scripts"
 
-        result = server._get_scripts_dir()
+        result = server._script_handler._get_scripts_dir()
 
         assert result == tmp_path / "test-scripts"
 
@@ -1191,9 +1191,9 @@ class TestMCPServerV2HelperMethods:
     ) -> None:
         """Get scripts dir defaults to .llm-orc/scripts."""
         monkeypatch.chdir(tmp_path)
-        server._test_scripts_dir = None
+        server._script_handler._test_scripts_dir = None
 
-        result = server._get_scripts_dir()
+        result = server._script_handler._get_scripts_dir()
 
         assert result == tmp_path / ".llm-orc" / "scripts"
 
