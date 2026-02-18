@@ -83,8 +83,6 @@ class EnsembleExecutor:
             self._performance_config, agent_executor_wrapper
         )
 
-        # Note: AgentOrchestrator not used in current simplified implementation
-
         # Keep existing agent executor for backward compatibility
         self._agent_executor = AgentExecutor(
             self._performance_config,

@@ -1,0 +1,73 @@
+{
+  "functions": [
+    {
+      "complexity": 0,
+      "file_name": "dependency.py",
+      "function_name": "_build_dependency_levels",
+      "path": "dependency.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "dependency.py",
+      "function_name": "_create_agent_statuses",
+      "path": "dependency.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "dependency.py",
+      "function_name": "_create_structured_dependency_info",
+      "path": "dependency.py"
+    },
+    {
+      "complexity": 0,
+      "file_name": "dependency.py",
+      "function_name": "create_dependency_graph",
+      "path": "dependency.py"
+    },
+    {
+      "complexity": 3,
+      "file_name": "dependency.py",
+      "function_name": "_group_agents_by_dependency_level",
+      "path": "dependency.py"
+    },
+    {
+      "complexity": 6,
+      "file_name": "dependency.py",
+      "function_name": "find_final_agent",
+      "path": "dependency.py"
+    },
+    {
+      "complexity": 7,
+      "file_name": "dependency.py",
+      "function_name": "_calculate_agent_level",
+      "path": "dependency.py"
+    },
+    {
+      "complexity": 7,
+      "file_name": "dependency.py",
+      "function_name": "_create_plain_text_dependency_graph",
+      "path": "dependency.py"
+    },
+    {
+      "complexity": 7,
+      "file_name": "dependency.py",
+      "function_name": "_find_highest_level_successful_agent",
+      "path": "dependency.py"
+    },
+    {
+      "complexity": 13,
+      "file_name": "dependency.py",
+      "function_name": "create_dependency_graph_with_status",
+      "path": "dependency.py"
+    },
+    {
+      "complexity": 13,
+      "file_name": "dependency.py",
+      "function_name": "create_dependency_tree",
+      "path": "dependency.py"
+    }
+  ],
+  "targets": [
+    "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/cli_modules/utils/visualization/dependency.py"
+  ]
+}

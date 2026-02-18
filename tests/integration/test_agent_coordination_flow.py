@@ -107,21 +107,6 @@ class TestAgentCoordinationFlow:
             "EnhancedScriptAgent and InputEnhancer coordination not implemented"
         )
 
-    @pytest.mark.skip(reason="Orchestrator coordination not yet implemented")
-    @pytest.mark.asyncio
-    async def test_agent_orchestrator_dependency_resolver_coordination(self) -> None:
-        """Test coordination between AgentOrchestrator and DependencyResolver.
-
-        This test verifies:
-        1. DependencyResolver correctly analyzes agent dependencies
-        2. AgentOrchestrator executes agents in proper order
-        3. Dependency results are passed between agents
-        """
-        # This test will initially fail - implementing RED phase
-        pytest.fail(
-            "AgentOrchestrator and DependencyResolver coordination not implemented"
-        )
-
     @pytest.mark.skip(reason="Shared state coordination not yet implemented")
     @pytest.mark.asyncio
     async def test_multi_agent_coordination_with_shared_state(self) -> None:
