@@ -453,17 +453,6 @@ class ConfigurationManager:
         profiles = self.get_model_profiles()
         return profiles.get(profile_name)
 
-    def _copy_primitive_scripts(self, target_scripts_dir: Path) -> None:
-        """Copy primitive scripts from llm-orchestra-library GitHub repository."""
-        from llm_orc.cli_library.library import copy_primitive_scripts
-
-        try:
-            copy_primitive_scripts(target_scripts_dir)
-        except Exception:
-            # If script copying fails, continue with init
-            # This allows offline usage
-            pass
-
     def _copy_profile_templates(self, target_profiles_dir: Path) -> None:
         """Copy profile templates from llm-orchestra-library GitHub repository."""
         from llm_orc.cli_library.library import copy_profile_templates

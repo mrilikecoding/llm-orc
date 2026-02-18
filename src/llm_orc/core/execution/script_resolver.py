@@ -192,18 +192,6 @@ class ScriptResolver:
 
         return None
 
-    def _try_resolve_relative_path(self, script_ref: str) -> str | None:
-        """Legacy method for backward compatibility.
-
-        Args:
-            script_ref: Relative script reference
-
-        Returns:
-            Resolved path or None if not found
-        """
-        # Delegate to new library-aware resolution
-        return self._try_resolve_with_search_paths(script_ref)
-
     def clear_cache(self) -> None:
         """Clear the resolution cache."""
         self._cache.clear()

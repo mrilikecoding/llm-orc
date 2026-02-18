@@ -1,6 +1,5 @@
 """Configuration management CLI commands."""
 
-import os
 import shutil
 from pathlib import Path
 
@@ -246,82 +245,6 @@ class ConfigCommands:
             )
         except ValueError as e:
             raise click.ClickException(str(e)) from e
-
-    @staticmethod
-    def _get_library_scripts_path() -> Path | None:
-        """Get path to library scripts directory.
-
-        Supports:
-        1. LLM_ORC_LIBRARY_PATH env var (custom location)
-        2. .llm-orc/.env file (project-specific config)
-        3. LLM_ORC_LIBRARY_SOURCE=local (submodule)
-        4. Current working directory (llm-orchestra-library/)
-
-        Returns:
-            Path to library scripts/primitives directory, or None if not found
-        """
-        # Load .llm-orc/.env if it exists (but don't override existing env vars)
-        dotenv_path = Path.cwd() / ".llm-orc" / ".env"
-        if dotenv_path.exists():
-            from dotenv import load_dotenv
-
-            load_dotenv(dotenv_path, override=False)
-
-        # Check for custom library path
-        custom_path = os.environ.get("LLM_ORC_LIBRARY_PATH")
-        if custom_path:
-            library_scripts = Path(custom_path) / "scripts" / "primitives"
-            if library_scripts.exists():
-                return library_scripts
-            return None
-
-        # Check for library source mode
-        library_source = os.environ.get("LLM_ORC_LIBRARY_SOURCE", "local")
-
-        if library_source == "local":
-            # Try submodule relative to package installation
-            package_root = Path(__file__).parent.parent.parent.parent
-            submodule_path = package_root / "llm-orchestra-library"
-            if submodule_path.exists():
-                return submodule_path / "scripts" / "primitives"
-
-        # Try current working directory
-        cwd_path = Path.cwd() / "llm-orchestra-library"
-        if cwd_path.exists():
-            return cwd_path / "scripts" / "primitives"
-
-        return None
-
-    @staticmethod
-    def _install_library_primitives() -> int:
-        """Copy primitive scripts from library to .llm-orc/scripts/.
-
-        Returns:
-            Number of scripts installed
-        """
-        library_scripts = ConfigCommands._get_library_scripts_path()
-        local_scripts = Path(".llm-orc") / "scripts" / "primitives"
-
-        if not library_scripts:
-            return 0
-
-        script_count = 0
-        # Copy each category directory
-        for category_dir in library_scripts.iterdir():
-            if category_dir.is_dir() and category_dir.name != "__pycache__":
-                dest = local_scripts / category_dir.name
-                dest.mkdir(parents=True, exist_ok=True)
-
-                # Copy all Python scripts in the category
-                for script in category_dir.glob("*.py"):
-                    if script.name != "__init__.py":
-                        dest_script = dest / script.name
-                        shutil.copy2(script, dest_script)
-                        # Make executable
-                        dest_script.chmod(dest_script.stat().st_mode | 0o111)
-                        script_count += 1
-
-        return script_count
 
     @staticmethod
     def reset_global_config(backup: bool, preserve_auth: bool) -> None:
