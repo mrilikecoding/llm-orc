@@ -162,9 +162,10 @@ def _group_agents_by_dependency_level(
 ) -> dict[int, list[dict[str, Any]]]:
     """Group agents by their dependency level."""
     agents_by_level: dict[int, list[dict[str, Any]]] = {}
+    cache: dict[str, int] = {}
 
     for agent in agents:
-        level = _calculate_agent_level(agent, agents)
+        level = _calculate_agent_level(agent, agents, cache)
         if level not in agents_by_level:
             agents_by_level[level] = []
         agents_by_level[level].append(agent)
@@ -173,11 +174,21 @@ def _group_agents_by_dependency_level(
 
 
 def _calculate_agent_level(
-    agent: dict[str, Any], all_agents: list[dict[str, Any]]
+    agent: dict[str, Any],
+    all_agents: list[dict[str, Any]],
+    _cache: dict[str, int] | None = None,
 ) -> int:
     """Calculate the dependency level of an agent."""
+    if _cache is None:
+        _cache = {}
+
+    name = agent.get("name", "")
+    if name in _cache:
+        return _cache[name]
+
     dependencies = agent.get("depends_on", [])
     if not dependencies:
+        _cache[name] = 0
         return 0
 
     # Find the maximum level of dependencies
@@ -185,10 +196,12 @@ def _calculate_agent_level(
     for dep_name in dependencies:
         for dep_agent in all_agents:
             if dep_agent["name"] == dep_name:
-                dep_level = _calculate_agent_level(dep_agent, all_agents)
+                dep_level = _calculate_agent_level(dep_agent, all_agents, _cache)
                 max_dep_level = max(max_dep_level, dep_level)
 
-    return max_dep_level + 1
+    level = max_dep_level + 1
+    _cache[name] = level
+    return level
 
 
 def _create_plain_text_dependency_graph(agents: list[dict[str, Any]]) -> list[str]:

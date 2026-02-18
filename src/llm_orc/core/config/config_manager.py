@@ -28,6 +28,10 @@ class ConfigurationManager:
             # Discover from cwd
             self._local_config_dir = self._discover_local_config()
 
+        # Profile cache
+        self._profiles_cache: dict[str, dict[str, str]] | None = None
+        self._profiles_cache_mtimes: dict[str, float] = {}
+
         # Create global config directory and setup defaults
         self._global_config_dir.mkdir(parents=True, exist_ok=True)
         (self._global_config_dir / "profiles").mkdir(exist_ok=True)
@@ -371,7 +375,18 @@ class ConfigurationManager:
                 )
 
     def get_model_profiles(self) -> dict[str, dict[str, str]]:
-        """Get merged model profiles from global and local configs."""
+        """Get merged model profiles from global and local configs.
+
+        Results are cached and invalidated when config files change.
+        """
+        # Check if cache is still valid
+        current_mtimes = self._get_profile_file_mtimes()
+        if (
+            self._profiles_cache is not None
+            and current_mtimes == self._profiles_cache_mtimes
+        ):
+            return self._profiles_cache
+
         # Start with global profiles
         global_profiles = {}
         global_config_file = self._global_config_dir / "config.yaml"
@@ -391,7 +406,21 @@ class ConfigurationManager:
 
         # Merge profiles with local taking precedence
         merged_profiles = {**global_profiles, **local_profiles}
+        self._profiles_cache = merged_profiles
+        self._profiles_cache_mtimes = current_mtimes
         return merged_profiles
+
+    def _get_profile_file_mtimes(self) -> dict[str, float]:
+        """Get modification times for profile config files."""
+        mtimes: dict[str, float] = {}
+        global_config_file = self._global_config_dir / "config.yaml"
+        if global_config_file.exists():
+            mtimes["global"] = global_config_file.stat().st_mtime
+        if self._local_config_dir:
+            local_config_file = self._local_config_dir / "config.yaml"
+            if local_config_file.exists():
+                mtimes["local"] = local_config_file.stat().st_mtime
+        return mtimes
 
     def resolve_model_profile(self, profile_name: str) -> tuple[str, str]:
         """Resolve a model profile to (model, provider) tuple."""

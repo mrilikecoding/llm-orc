@@ -105,29 +105,44 @@ class DependencyAnalyzer:
         return levels
 
     def calculate_agent_level(
-        self, agent_name: str, dependency_map: dict[str, list[str]]
+        self,
+        agent_name: str,
+        dependency_map: dict[str, list[str]],
+        _cache: dict[str, int] | None = None,
     ) -> int:
         """Calculate the dependency level of an agent.
 
         Args:
             agent_name: Name of the agent
             dependency_map: Mapping of agent names to their dependencies
+            _cache: Internal memoization cache (created automatically)
 
         Returns:
             Dependency level (0 for no dependencies, higher for more levels)
         """
+        if _cache is None:
+            _cache = {}
+
+        if agent_name in _cache:
+            return _cache[agent_name]
+
         if agent_name not in dependency_map:
+            _cache[agent_name] = 0
             return 0
 
         dependencies = dependency_map[agent_name]
         if not dependencies:
+            _cache[agent_name] = 0
             return 0
 
         # Level is 1 + max level of dependencies
         max_dep_level = max(
-            self.calculate_agent_level(dep, dependency_map) for dep in dependencies
+            self.calculate_agent_level(dep, dependency_map, _cache)
+            for dep in dependencies
         )
-        return max_dep_level + 1
+        level = max_dep_level + 1
+        _cache[agent_name] = level
+        return level
 
     def get_execution_phases(
         self, agent_configs: list[dict[str, Any]]
