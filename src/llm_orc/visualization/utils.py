@@ -27,9 +27,7 @@ def calculate_agent_level(
         if dep_name in agents_state:
             dep_info = agents_state[dep_name]
             dep_dependencies = dep_info.get("dependencies", [])
-            dep_level = calculate_agent_level(
-                dep_name, dep_dependencies, agents_state
-            )
+            dep_level = calculate_agent_level(dep_name, dep_dependencies, agents_state)
             max_dep_level = max(max_dep_level, dep_level)
 
     return max_dep_level + 1

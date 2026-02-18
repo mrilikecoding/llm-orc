@@ -261,9 +261,7 @@ class PrimitiveComposer:
         Raises:
             ValueError: If circular dependency is detected
         """
-        queue = deque(
-            name for name, degree in in_degree.items() if degree == 0
-        )
+        queue = deque(name for name, degree in in_degree.items() if degree == 0)
         execution_order = []
 
         while queue:

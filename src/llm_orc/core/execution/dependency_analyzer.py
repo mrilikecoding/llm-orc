@@ -47,18 +47,14 @@ class DependencyAnalyzer:
                 agent_name = agent_config["name"]
                 dependencies = dependency_map[agent_name]
 
-                if self.agent_dependencies_satisfied(
-                    dependencies, processed_agents
-                ):
+                if self.agent_dependencies_satisfied(dependencies, processed_agents):
                     current_phase.append(agent_config)
 
             # Update processed agents and filter remaining
             for agent_config in current_phase:
                 processed_agents.add(agent_config["name"])
             remaining_agents = [
-                a
-                for a in remaining_agents
-                if a["name"] not in processed_agents
+                a for a in remaining_agents if a["name"] not in processed_agents
             ]
 
             # Detect circular dependencies

@@ -348,7 +348,6 @@ def _validate_basic_dependencies(agents: list[dict[str, Any]]) -> list[str]:
     return errors
 
 
-
 def _check_cycle_from_node(
     agent_name: str,
     agents: list[dict[str, Any]],
