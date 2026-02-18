@@ -5,7 +5,6 @@ from typing import Any
 from rich.tree import Tree
 
 from llm_orc.cli_modules.utils.visualization.dependency import (
-    _build_dependency_levels,
     _calculate_agent_level,
     _create_agent_statuses,
     _create_plain_text_dependency_graph,
@@ -410,14 +409,14 @@ class TestHelperFunctions:
 
         assert result == {"agent_a": "pending", "agent_b": "pending"}
 
-    def test_build_dependency_levels(self) -> None:
-        """Test building dependency levels."""
+    def test_group_agents_by_dependency_level(self) -> None:
+        """Test grouping agents by dependency level."""
         agents = [
             {"name": "agent_a", "depends_on": []},
             {"name": "agent_b", "depends_on": ["agent_a"]},
         ]
 
-        result = _build_dependency_levels(agents)
+        result = _group_agents_by_dependency_level(agents)
 
         assert isinstance(result, dict)
         assert 0 in result

@@ -10,7 +10,6 @@ submodules:
 
 # Import all public functions to maintain backward compatibility
 from .dependency import (
-    _build_dependency_levels,
     _calculate_agent_level,
     _create_agent_statuses,
     _create_plain_text_dependency_graph,
@@ -68,7 +67,6 @@ __all__ = [
     "_create_plain_text_dependency_graph",
     "_create_structured_dependency_info",
     "_create_agent_statuses",
-    "_build_dependency_levels",
     # Results display
     "display_results",
     "display_plain_text_results",

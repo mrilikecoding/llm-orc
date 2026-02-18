@@ -245,10 +245,3 @@ def _create_structured_dependency_info(
 def _create_agent_statuses(agents: list[dict[str, Any]]) -> dict[str, str]:
     """Create initial agent status mapping."""
     return {agent["name"]: "pending" for agent in agents}
-
-
-def _build_dependency_levels(
-    agents: list[dict[str, Any]],
-) -> dict[int, list[dict[str, Any]]]:
-    """Build dependency levels for agents."""
-    return _group_agents_by_dependency_level(agents)

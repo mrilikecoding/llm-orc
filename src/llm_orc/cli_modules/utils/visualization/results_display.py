@@ -247,7 +247,7 @@ def _format_performance_metrics(metadata: dict[str, Any]) -> list[str]:
 
     # Format each section separately
     lines.extend(_format_usage_summary(metadata))
-    lines.extend(_format_adaptive_resource_metrics(metadata))
+    lines.extend(_format_arm_section(metadata))
 
     return lines
 
@@ -339,8 +339,8 @@ def _format_single_agent_usage(
     return lines
 
 
-def _format_adaptive_resource_metrics(metadata: dict[str, Any]) -> list[str]:
-    """Format adaptive resource management metrics."""
+def _format_arm_section(metadata: dict[str, Any]) -> list[str]:
+    """Format adaptive resource management metrics from metadata."""
     lines: list[str] = []
 
     if "adaptive_resource_management" not in metadata:
@@ -352,7 +352,7 @@ def _format_adaptive_resource_metrics(metadata: dict[str, Any]) -> list[str]:
     lines.extend(_format_concurrency_info(arm))
 
     # Execution metrics
-    lines.extend(_format_execution_metrics(arm))
+    lines.extend(_format_arm_execution_section(arm))
 
     # Phase metrics
     lines.extend(_format_phase_metrics(arm))
@@ -374,8 +374,8 @@ def _format_concurrency_info(arm: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _format_execution_metrics(arm: dict[str, Any]) -> list[str]:
-    """Format execution metrics from ARM."""
+def _format_arm_execution_section(arm: dict[str, Any]) -> list[str]:
+    """Format execution metrics from ARM data."""
     lines: list[str] = []
 
     if "execution_metrics" not in arm:

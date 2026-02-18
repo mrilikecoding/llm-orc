@@ -4,6 +4,8 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from llm_orc.core.config.ensemble_config import _find_agent_by_name
+
 
 class DependencyResolver:
     """Resolves agent dependencies and enhances input with dependency results."""
@@ -345,20 +347,6 @@ def _validate_basic_dependencies(agents: list[dict[str, Any]]) -> list[str]:
 
     return errors
 
-
-def _find_agent_by_name(
-    agents: list[dict[str, Any]], agent_name: str
-) -> dict[str, Any] | None:
-    """Find agent configuration by name.
-
-    Args:
-        agents: List of agent configurations
-        agent_name: Name of agent to find
-
-    Returns:
-        Agent configuration or None if not found
-    """
-    return next((a for a in agents if a["name"] == agent_name), None)
 
 
 def _check_cycle_from_node(

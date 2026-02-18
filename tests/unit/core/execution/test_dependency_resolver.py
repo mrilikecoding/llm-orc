@@ -667,7 +667,7 @@ class TestValidateDependencyChainHelperMethods:
 
     def test_find_agent_by_name_found(self) -> None:
         """Test finding agent by name when agent exists."""
-        from llm_orc.core.execution.dependency_resolver import _find_agent_by_name
+        from llm_orc.core.config.ensemble_config import _find_agent_by_name
 
         agents: list[dict[str, Any]] = [
             {"name": "agent1", "role": "test"},
@@ -681,7 +681,7 @@ class TestValidateDependencyChainHelperMethods:
 
     def test_find_agent_by_name_not_found(self) -> None:
         """Test finding agent by name when agent doesn't exist."""
-        from llm_orc.core.execution.dependency_resolver import _find_agent_by_name
+        from llm_orc.core.config.ensemble_config import _find_agent_by_name
 
         agents: list[dict[str, Any]] = [
             {"name": "agent1", "role": "test"},
@@ -692,7 +692,7 @@ class TestValidateDependencyChainHelperMethods:
 
     def test_find_agent_by_name_empty_list(self) -> None:
         """Test finding agent by name in empty agent list."""
-        from llm_orc.core.execution.dependency_resolver import _find_agent_by_name
+        from llm_orc.core.config.ensemble_config import _find_agent_by_name
 
         result = _find_agent_by_name([], "any_agent")
         assert result is None

@@ -1,15 +1,13 @@
 """Fan-out agent expansion for parallel execution over arrays (issue #73)."""
 
 import json
-import re
 from typing import Any
+
+from llm_orc.core.execution.patterns import INSTANCE_PATTERN
 
 
 class FanOutExpander:
     """Expands fan_out agents into N parallel instances at runtime."""
-
-    # Pattern for instance names: agent_name[index]
-    _INSTANCE_PATTERN = re.compile(r"^(.+)\[(\d+)\]$")
 
     def detect_fan_out_agents(self, agent_configs: list[dict[str, Any]]) -> list[str]:
         """Return names of agents with fan_out: true.
@@ -117,7 +115,7 @@ class FanOutExpander:
         Returns:
             True if name matches instance pattern, False otherwise
         """
-        return bool(self._INSTANCE_PATTERN.match(name))
+        return bool(INSTANCE_PATTERN.match(name))
 
     def get_original_agent_name(self, instance_name: str) -> str:
         """Extract original agent name from instance name.
@@ -128,7 +126,7 @@ class FanOutExpander:
         Returns:
             Original name like 'extractor', or input unchanged if not instance
         """
-        match = self._INSTANCE_PATTERN.match(instance_name)
+        match = INSTANCE_PATTERN.match(instance_name)
         if match:
             return match.group(1)
         return instance_name
@@ -142,7 +140,7 @@ class FanOutExpander:
         Returns:
             Index as int, or None if not an instance name
         """
-        match = self._INSTANCE_PATTERN.match(instance_name)
+        match = INSTANCE_PATTERN.match(instance_name)
         if match:
             return int(match.group(2))
         return None

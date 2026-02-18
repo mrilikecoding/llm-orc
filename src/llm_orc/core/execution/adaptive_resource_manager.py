@@ -31,9 +31,7 @@ class SystemResourceMonitor:
         Returns:
             Dictionary containing cpu_percent and memory_percent
         """
-        # For more accurate CPU measurement, use a small blocking interval
-        # This is more reliable than the baseline approach for short-lived processes
-        cpu_percent = psutil.cpu_percent(interval=0.1)  # 100ms blocking measurement
+        cpu_percent = psutil.cpu_percent(interval=None)
         memory_info = psutil.virtual_memory()
 
         return {"cpu_percent": cpu_percent, "memory_percent": memory_info.percent}
@@ -83,9 +81,8 @@ class SystemResourceMonitor:
             await asyncio.sleep(0.1)  # Let baseline settle
 
             while not self._stop_monitoring.is_set():
-                # Sample current resources with blocking interval for measurement
-                # Use a short blocking interval to get meaningful CPU readings
-                cpu_percent = psutil.cpu_percent(interval=0.1)
+                # Non-blocking: returns CPU % since last call
+                cpu_percent = psutil.cpu_percent(interval=None)
                 memory_info = psutil.virtual_memory()
 
                 sample = {
@@ -95,7 +92,7 @@ class SystemResourceMonitor:
                 }
                 self._execution_samples.append(sample)
 
-                # Wait for next sampling interval - 100ms to match CPU sampling
+                # Wait for next sampling interval
                 try:
                     await asyncio.wait_for(self._stop_monitoring.wait(), timeout=0.1)
                     break  # Stop signal received
@@ -160,28 +157,3 @@ class SystemResourceMonitor:
             "agent_count": agent_count,
             "phase_start_time": time.time(),
         }
-
-
-class AdaptiveResourceManager:
-    """Simple monitoring collector for performance feedback (no longer adaptive)."""
-
-    def __init__(
-        self,
-        base_limit: int,
-        monitor: SystemResourceMonitor,
-        min_limit: int = 1,
-        max_limit: int = 10,
-    ) -> None:
-        """Initialize the monitoring collector.
-
-        Args:
-            base_limit: Kept for backward compatibility (unused)
-            monitor: System resource monitor instance
-            min_limit: Kept for backward compatibility (unused)
-            max_limit: Kept for backward compatibility (unused)
-        """
-        self.monitor = monitor
-        # Keep these for backward compatibility but don't use them
-        self.base_limit = base_limit
-        self.min_limit = min_limit
-        self.max_limit = max_limit

@@ -3,14 +3,13 @@
 import asyncio
 import time
 import uuid
-from datetime import datetime
 from typing import Any
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
 from .config import VisualizationConfig, load_visualization_config
-from .events import EventFactory, ExecutionEventType
+from .events import EventFactory
 from .stream import EventStream, get_stream_manager
 from .terminal import TerminalVisualizer
 
@@ -283,53 +282,3 @@ class VisualizationIntegratedExecutor(EnsembleExecutor):
             )
 
         return None
-
-
-# Add missing EventFactory methods
-def _add_missing_event_factory_methods() -> None:
-    """Add missing methods to EventFactory."""
-    from .events import ExecutionEvent
-
-    def ensemble_completed(
-        ensemble_name: str,
-        execution_id: str,
-        result: dict[str, Any],
-        duration_ms: int,
-    ) -> ExecutionEvent:
-        """Create ensemble completed event."""
-        return ExecutionEvent(
-            event_type=ExecutionEventType.ENSEMBLE_COMPLETED,
-            timestamp=datetime.now(),
-            ensemble_name=ensemble_name,
-            execution_id=execution_id,
-            data={
-                "result": result,
-                "duration_ms": duration_ms,
-                "status": "completed",
-            },
-        )
-
-    def ensemble_failed(
-        ensemble_name: str,
-        execution_id: str,
-        error: str,
-    ) -> ExecutionEvent:
-        """Create ensemble failed event."""
-        return ExecutionEvent(
-            event_type=ExecutionEventType.ENSEMBLE_FAILED,
-            timestamp=datetime.now(),
-            ensemble_name=ensemble_name,
-            execution_id=execution_id,
-            data={
-                "error": error,
-                "status": "failed",
-            },
-        )
-
-    # Add methods to EventFactory
-    EventFactory.ensemble_completed = staticmethod(ensemble_completed)  # type: ignore[method-assign]
-    EventFactory.ensemble_failed = staticmethod(ensemble_failed)  # type: ignore[method-assign]
-
-
-# Apply the missing methods
-_add_missing_event_factory_methods()

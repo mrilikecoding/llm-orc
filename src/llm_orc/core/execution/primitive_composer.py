@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+from collections import deque
 from typing import Any
 
 from llm_orc.core.execution.primitive_registry import PrimitiveRegistry
@@ -260,11 +261,13 @@ class PrimitiveComposer:
         Raises:
             ValueError: If circular dependency is detected
         """
-        queue = [name for name, degree in in_degree.items() if degree == 0]
+        queue = deque(
+            name for name, degree in in_degree.items() if degree == 0
+        )
         execution_order = []
 
         while queue:
-            current = queue.pop(0)
+            current = queue.popleft()
             execution_order.append(current)
 
             for neighbor in graph[current]:
