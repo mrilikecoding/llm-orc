@@ -57,6 +57,8 @@ async def run_streaming_execution(
 
             # Provide the executor with direct progress control for user input
             executor._progress_controller = progress_controller
+            if hasattr(executor, "_script_agent_runner"):
+                executor._script_agent_runner._progress_controller = progress_controller
             async for event in executor.execute_streaming(ensemble_config, input_data):
                 event_type = event["type"]
 

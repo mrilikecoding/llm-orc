@@ -82,6 +82,13 @@ class ScriptResolver:
             ]
         )
 
+        # Priority 1.5: Installed package primitives
+        # The parent of the primitives/ dir so that refs like
+        # "primitives/user_interaction/get_user_input.py" resolve correctly
+        package_primitives = Path(__file__).resolve().parents[2] / "primitives"
+        if package_primitives.exists():
+            search_paths.append(str(package_primitives.parent))
+
         # Priority 2: Library submodule paths
         library_base = base / self.LIBRARY_DIR
         if library_base.exists():
@@ -166,6 +173,13 @@ class ScriptResolver:
             candidate = search_dir / script_ref
             if candidate.exists():
                 return str(candidate)
+
+            # Try hyphen-to-underscore normalization
+            normalized_ref = script_ref.replace("-", "_")
+            if normalized_ref != script_ref:
+                candidate_norm = search_dir / normalized_ref
+                if candidate_norm.exists():
+                    return str(candidate_norm)
 
             # Try without "scripts/" prefix for backward compatibility
             scripts_prefix = f"{self.SCRIPTS_DIR}/"

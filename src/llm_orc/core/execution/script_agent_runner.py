@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import subprocess
 import time
@@ -22,6 +24,8 @@ from llm_orc.core.execution.usage_collector import (
 )
 from llm_orc.models.base import ModelInterface
 
+logger = logging.getLogger(__name__)
+
 
 class ScriptAgentRunner:
     """Runs script agents with caching and resource monitoring."""
@@ -39,6 +43,7 @@ class ScriptAgentRunner:
         self._progress_controller = progress_controller
         self._emit_event = emit_event
         self._project_dir = project_dir
+        self._input_lock = asyncio.Lock()
 
     async def execute(
         self,
@@ -100,6 +105,8 @@ class ScriptAgentRunner:
 
             if isinstance(response, dict):
                 response = json.dumps(response)
+
+            self._validate_primitive_output(agent_config.get("script", ""), response)
 
             return response, None
         finally:
@@ -167,30 +174,79 @@ class ScriptAgentRunner:
         script_ref = agent_config.get("script", "")
         return handler.requires_user_input(script_ref)
 
+    def _validate_primitive_output(self, script_ref: str, response: str) -> None:
+        """Validate output against Pydantic schema for known primitives.
+
+        Opt-in: only fires for registered primitives. On failure, logs a
+        warning but does not block output (preserves existing workflows).
+        """
+        if not isinstance(response, str):
+            return
+
+        try:
+            from llm_orc.primitives import get_output_schema
+        except ImportError:
+            return
+
+        output_schema = get_output_schema(script_ref)
+        if output_schema is None:
+            return
+
+        try:
+            output_schema.model_validate_json(response)
+        except Exception:
+            logger.warning(
+                "Primitive output validation failed for %s",
+                script_ref,
+            )
+
     async def _execute_interactive(
         self,
         script_agent: EnhancedScriptAgent,
         input_data: str | dict[str, Any],
     ) -> str:
-        """Execute script interactively with terminal access."""
-        if self._progress_controller:
+        """Execute script interactively, collecting input at Python layer.
+
+        Uses an asyncio.Lock to serialize terminal access so multiple
+        interactive agents in the same phase queue their prompts.
+        """
+        prompt = script_agent.parameters.get("prompt", "Enter input:")
+        parameters = script_agent.parameters
+
+        # Serialize terminal access across concurrent interactive agents
+        async with self._input_lock:
+            if self._progress_controller:
+                try:
+                    self._progress_controller.pause_for_user_input(
+                        script_agent.name, prompt
+                    )
+                except Exception:
+                    pass
+
+            self._emit_event(
+                "user_input_required",
+                {
+                    "agent_name": script_agent.name,
+                    "script": script_agent.script,
+                    "message": "Waiting for user input...",
+                },
+            )
+
+            loop = asyncio.get_running_loop()
             try:
-                prompt = script_agent.parameters.get("prompt", "")
-                self._progress_controller.pause_for_user_input(
-                    script_agent.name, prompt
+                user_response = await loop.run_in_executor(
+                    None, lambda: input(f"{prompt} ")
                 )
-            except Exception:
-                pass
+            except (EOFError, KeyboardInterrupt):
+                user_response = ""
 
-        self._emit_event(
-            "user_input_required",
-            {
-                "agent_name": script_agent.name,
-                "script": script_agent.script,
-                "message": "Waiting for user input...",
-            },
-        )
+            if self._progress_controller:
+                try:
+                    self._progress_controller.resume_from_user_input(script_agent.name)
+                except Exception:
+                    pass  # nosec B110
 
+        # Run subprocess outside the lock
         resolved_script = script_agent._script_resolver.resolve_script_path(
             script_agent.script
         )
@@ -204,50 +260,53 @@ class ScriptAgentRunner:
         if isinstance(input_data, dict):
             env["INPUT_DATA"] = json.dumps(input_data)
         else:
-            env["INPUT_DATA"] = input_data
-        env["AGENT_PARAMETERS"] = json.dumps(script_agent.parameters)
+            env["INPUT_DATA"] = str(input_data)
+        env["AGENT_PARAMETERS"] = json.dumps(parameters)
 
         interpreter = script_agent._get_interpreter(resolved_script)
 
-        result = subprocess.run(
-            interpreter + [resolved_script],
-            env=env,
-            timeout=script_agent.timeout,
-            stdin=None,
-            stdout=subprocess.PIPE,
-            stderr=None,
-            text=True,
-            check=False,
+        stdin_payload = json.dumps(
+            {
+                "input": user_response,
+                "parameters": parameters,
+            }
+        )
+
+        result = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
+                interpreter + [resolved_script],
+                input=stdin_payload,
+                stdout=subprocess.PIPE,
+                stderr=None,
+                env=env,
+                timeout=script_agent.timeout,
+                text=True,
+                check=False,
+            ),
+        )
+
+        self._emit_event(
+            "user_input_completed",
+            {
+                "agent_name": script_agent.name,
+                "message": "User input completed, continuing...",
+            },
         )
 
         if result.returncode != 0:
             return json.dumps(
                 {
                     "success": False,
-                    "error": (f"Script exited with code {result.returncode}"),
+                    "error": f"Script exited with code {result.returncode}",
                 }
             )
-
-        if self._progress_controller:
-            try:
-                self._progress_controller.resume_from_user_input(script_agent.name)
-            except Exception:
-                pass  # nosec B110
-
-        self._emit_event(
-            "user_input_completed",
-            {
-                "agent_name": script_agent.name,
-                "message": ("User input completed, continuing..."),
-            },
-        )
 
         if result.stdout:
             return result.stdout.strip()
-        else:
-            return json.dumps(
-                {
-                    "success": True,
-                    "message": ("Interactive script completed (no output)"),
-                }
-            )
+        return json.dumps(
+            {
+                "success": True,
+                "message": "Interactive script completed (no output)",
+            }
+        )

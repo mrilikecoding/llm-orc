@@ -484,3 +484,80 @@ class TestScriptResolver:
                 os.environ["LLM_ORC_TEST_PRIMITIVES_DIR"] = old_env
             else:
                 os.environ.pop("LLM_ORC_TEST_PRIMITIVES_DIR", None)
+
+    def test_package_primitives_search_path(self, tmp_path: Path) -> None:
+        """Test that installed package primitives parent is in search paths."""
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            paths = resolver._get_search_paths()
+
+            # Should contain the parent of the primitives/ package dir
+            # so that refs like "primitives/..." resolve correctly
+            package_parent = [p for p in paths if (Path(p) / "primitives").is_dir()]
+            assert len(package_parent) >= 1
+
+    def test_package_primitives_resolves_script(self, tmp_path: Path) -> None:
+        """Test that primitives from installed package resolve correctly."""
+        # Create a fake package primitives directory structure
+        pkg_primitives = tmp_path / "pkg_primitives"
+        user_interaction = pkg_primitives / "user_interaction"
+        user_interaction.mkdir(parents=True)
+        script = user_interaction / "get_user_input.py"
+        script.write_text("#!/usr/bin/env python3\nprint('package')")
+
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            # Patch the package primitives path
+            with patch.object(
+                resolver,
+                "_get_search_paths",
+                wraps=resolver._get_search_paths,
+            ):
+                # Add our fake primitives to custom search paths
+                resolver._custom_search_paths = [str(pkg_primitives)]
+                result = resolver.resolve_script_path(
+                    "user_interaction/get_user_input.py"
+                )
+                assert result == str(script)
+
+    def test_local_overrides_package_primitives(self, tmp_path: Path) -> None:
+        """Test that local .llm-orc/scripts/ overrides package primitives."""
+        # Create local script
+        local_dir = tmp_path / ".llm-orc" / "scripts" / "primitives"
+        local_dir.mkdir(parents=True)
+        user_dir = local_dir / "user_interaction"
+        user_dir.mkdir()
+        local_script = user_dir / "get_user_input.py"
+        local_script.write_text("# local version")
+
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            result = resolver.resolve_script_path(
+                "primitives/user_interaction/get_user_input.py"
+            )
+            assert result == str(local_script)
+            assert "local version" in Path(result).read_text()
+
+    def test_hyphen_to_underscore_normalization(self, tmp_path: Path) -> None:
+        """Test hyphen-to-underscore normalization in script resolution."""
+        # Create script with underscore path
+        scripts_dir = tmp_path / ".llm-orc" / "scripts" / "primitives"
+        underscore_dir = scripts_dir / "user_interaction"
+        underscore_dir.mkdir(parents=True)
+        script = underscore_dir / "get_user_input.py"
+        script.write_text("#!/usr/bin/env python3")
+
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            # Reference uses hyphens, file uses underscores
+            result = resolver.resolve_script_path(
+                "primitives/user-interaction/get_user_input.py"
+            )
+            assert result == str(script)
+
+    def test_hyphen_normalization_no_false_positive(self, tmp_path: Path) -> None:
+        """Test that normalization doesn't create false matches."""
+        with patch("os.getcwd", return_value=str(tmp_path)):
+            resolver = ScriptResolver()
+            with pytest.raises(ScriptNotFoundError):
+                resolver.resolve_script_path("primitives/nonexistent-dir/missing.py")

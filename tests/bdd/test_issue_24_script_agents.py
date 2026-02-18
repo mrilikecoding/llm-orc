@@ -1593,61 +1593,36 @@ def validate_dependent_agent_error_info(bdd_context: dict[str, Any]) -> None:
 @given("a fresh llm-orc initialization")
 def fresh_llm_orc_initialization(bdd_context: dict[str, Any]) -> None:
     """Setup fresh llm-orc environment."""
-    import os
-    import tempfile
+    from pathlib import Path
 
-    # Create temporary directory for testing
-    temp_dir = tempfile.mkdtemp()
-    llm_orc_dir = os.path.join(temp_dir, ".llm-orc")
-    scripts_dir = os.path.join(llm_orc_dir, "scripts", "primitives")
-
-    # Create directory structure
-    os.makedirs(scripts_dir, exist_ok=True)
-
-    bdd_context["temp_llm_orc_dir"] = llm_orc_dir
-    bdd_context["primitives_dir"] = scripts_dir
+    # Core primitives now live in src/llm_orc/primitives/
+    package_primitives = (
+        Path(__file__).resolve().parents[2] / "src" / "llm_orc" / "primitives"
+    )
+    bdd_context["package_primitives"] = package_primitives
 
 
-@when("primitive scripts are copied from llm-orchestra-library")
-def copy_primitive_scripts(bdd_context: dict[str, Any]) -> None:
-    """Copy primitive scripts from existing library."""
-    import os
-    import shutil
-
-    primitives_dir = bdd_context.get("primitives_dir", "")
-    source_primitives = ".llm-orc/scripts/primitives"
-
-    # Check if source primitives exist
-    if os.path.exists(source_primitives):
-        # Copy each category directory
-        for category in os.listdir(source_primitives):
-            source_path = os.path.join(source_primitives, category)
-            if os.path.isdir(source_path):
-                dest_path = os.path.join(primitives_dir, category)
-                shutil.copytree(source_path, dest_path, dirs_exist_ok=True)
-
-    bdd_context["copy_completed"] = True
+@when("the llm-orc package is installed")
+def verify_package_installed(bdd_context: dict[str, Any]) -> None:
+    """Verify the llm-orc package primitives are available."""
+    package_primitives = bdd_context["package_primitives"]
+    assert package_primitives.exists(), (
+        f"Package primitives dir should exist: {package_primitives}"
+    )
+    bdd_context["install_verified"] = True
 
 
-@then("core primitives should be available in .llm-orc/scripts/primitives/")
+@then("core primitives should be available as package modules")
 def validate_core_primitives_available(bdd_context: dict[str, Any]) -> None:
-    """Validate core primitive directories exist."""
-    import os
+    """Validate core primitive category directories exist."""
+    package_primitives = bdd_context["package_primitives"]
 
-    primitives_dir = bdd_context.get("primitives_dir", "")
-    assert os.path.exists(primitives_dir), "Primitives directory should exist"
+    found_categories = [
+        d.name
+        for d in package_primitives.iterdir()
+        if d.is_dir() and not d.name.startswith("__")
+    ]
 
-    # Check for primitive categories
-    found_categories = []
-
-    if os.path.exists(primitives_dir):
-        found_categories = [
-            d
-            for d in os.listdir(primitives_dir)
-            if os.path.isdir(os.path.join(primitives_dir, d))
-        ]
-
-    # At least some primitive categories should be present
     assert len(found_categories) > 0, (
         f"Should have primitive categories, found: {found_categories}"
     )
@@ -1657,148 +1632,67 @@ def validate_core_primitives_available(bdd_context: dict[str, Any]) -> None:
 @then("file-ops primitives should include read_file, write_file operations")
 def validate_file_ops_primitives(bdd_context: dict[str, Any]) -> None:
     """Validate file operations primitives."""
-    import os
+    package_primitives = bdd_context["package_primitives"]
+    file_ops_dir = package_primitives / "file_ops"
 
-    primitives_dir = bdd_context.get("primitives_dir", "")
-    file_ops_dir = os.path.join(primitives_dir, "file-ops")
-
-    if os.path.exists(file_ops_dir):
-        scripts = os.listdir(file_ops_dir)
-        script_names = [os.path.splitext(s)[0] for s in scripts if s.endswith(".py")]
-
-        # Look for file operation related scripts
-        file_ops_found = any(
-            name in script_names
-            for name in ["read_file", "write_file", "read_protected_file"]
-        )
-        assert file_ops_found, f"Should have file ops scripts, found: {script_names}"
-    else:
-        # For now, just check that we have the structure
-        assert True  # Will be improved when we copy more primitives
+    assert file_ops_dir.exists(), "file_ops category should exist"
+    modules = [f.stem for f in file_ops_dir.glob("*.py") if f.stem != "__init__"]
+    assert "read_file" in modules, f"Missing read_file, found: {modules}"
+    assert "write_file" in modules, f"Missing write_file, found: {modules}"
 
 
 @then("user-interaction primitives should include get_user_input")
 def validate_user_interaction_primitives(bdd_context: dict[str, Any]) -> None:
     """Validate user interaction primitives."""
+    package_primitives = bdd_context["package_primitives"]
+    ui_dir = package_primitives / "user_interaction"
 
-    # Check if we have any user interaction capabilities
-
-    # For now, validate the structure exists or will exist
-    primitive_categories = bdd_context.get("primitive_categories", [])
-
-    # Accept if user-interaction exists OR if we have a foundation to build on
-    has_interaction_potential = (
-        "user-interaction" in primitive_categories
-        or len(primitive_categories) > 0  # Foundation exists
-    )
-
-    assert has_interaction_potential, "Should have user interaction potential"
+    assert ui_dir.exists(), "user_interaction category should exist"
+    modules = [f.stem for f in ui_dir.glob("*.py") if f.stem != "__init__"]
+    assert "get_user_input" in modules, f"Missing get_user_input, found: {modules}"
 
 
 @then("data-transform primitives should include json_extract, json_merge")
 def validate_data_transform_primitives(bdd_context: dict[str, Any]) -> None:
     """Validate data transformation primitives."""
-    primitive_categories = bdd_context.get("primitive_categories", [])
+    package_primitives = bdd_context["package_primitives"]
+    dt_dir = package_primitives / "data_transform"
 
-    # Accept if data-transform exists OR if we have foundation for it
-    has_transform_potential = (
-        "data-transform" in primitive_categories
-        or "network" in primitive_categories  # Our network scripts do data transform
-        or len(primitive_categories) > 0
+    assert dt_dir.exists(), "data_transform category should exist"
+    modules = [f.stem for f in dt_dir.glob("*.py") if f.stem != "__init__"]
+    assert "json_extract" in modules, f"Missing json_extract, found: {modules}"
+
+
+@then("control-flow primitives should include replicate_n_times")
+def validate_control_flow_primitives(bdd_context: dict[str, Any]) -> None:
+    """Validate control flow primitives."""
+    package_primitives = bdd_context["package_primitives"]
+    cf_dir = package_primitives / "control_flow"
+
+    assert cf_dir.exists(), "control_flow category should exist"
+    modules = [f.stem for f in cf_dir.glob("*.py") if f.stem != "__init__"]
+    assert "replicate_n_times" in modules, (
+        f"Missing replicate_n_times, found: {modules}"
     )
-
-    assert has_transform_potential, "Should have data transformation potential"
-
-
-@then("network-science primitives should include topology generation")
-def validate_network_science_primitives(bdd_context: dict[str, Any]) -> None:
-    """Validate network science primitives."""
-    import os
-
-    primitives_dir = bdd_context.get("primitives_dir", "")
-    network_dir = os.path.join(primitives_dir, "network")
-
-    if os.path.exists(network_dir):
-        scripts = os.listdir(network_dir)
-        script_names = [os.path.splitext(s)[0] for s in scripts if s.endswith(".py")]
-
-        # Look for network analysis scripts
-        network_ops_found = any(
-            "topology" in name or "analyze" in name or "network" in name
-            for name in script_names
-        )
-        assert network_ops_found, f"Should have network scripts, found: {script_names}"
-    else:
-        # Accept that network foundation exists
-        primitive_categories = bdd_context.get("primitive_categories", [])
-        assert len(primitive_categories) > 0, "Should have primitive foundation"
-
-
-@then("research primitives should include statistical analysis tools")
-def validate_research_primitives(bdd_context: dict[str, Any]) -> None:
-    """Validate research primitives."""
-    # For now, accept that research capability exists or can be built
-    primitive_categories = bdd_context.get("primitive_categories", [])
-
-    has_research_potential = (
-        "research" in primitive_categories
-        or "network" in primitive_categories  # Network analysis is research
-        or len(primitive_categories) > 0
-    )
-
-    assert has_research_potential, "Should have research analysis potential"
 
 
 @then("all primitives should follow consistent JSON I/O patterns")
 def validate_consistent_json_io_patterns(bdd_context: dict[str, Any]) -> None:
-    """Validate JSON I/O consistency across primitives."""
-    import json
-    import os
-    import subprocess
+    """Validate JSON I/O consistency: every primitive has Pydantic models."""
+    from llm_orc.primitives import get_output_schema
 
-    primitives_dir = bdd_context.get("primitives_dir", "")
-
-    # Test a few scripts to ensure they follow JSON I/O patterns
-    json_compliant_scripts = []
-
-    # Check our network analyzer script
-    network_dir = os.path.join(primitives_dir, "network")
-    if os.path.exists(network_dir):
-        for script in os.listdir(network_dir):
-            if script.endswith(".py") and os.access(
-                os.path.join(network_dir, script), os.X_OK
-            ):
-                script_path = os.path.join(network_dir, script)
-
-                # Test with sample JSON input
-                test_input = {"input": {"test": "data"}}
-                try:
-                    result = subprocess.run(
-                        ["python3", script_path],
-                        input=json.dumps(test_input),
-                        capture_output=True,
-                        text=True,
-                        timeout=5,
-                    )
-
-                    # Check if output looks like JSON
-                    try:
-                        json.loads(result.stdout)
-                        json_compliant_scripts.append(script)
-                    except json.JSONDecodeError:
-                        pass  # Not JSON compliant
-                except Exception:
-                    pass  # Script execution failed
-
-    # At least one script should be JSON compliant, or we should have foundation
-    primitive_categories = bdd_context.get("primitive_categories", [])
-    has_json_foundation = (
-        len(json_compliant_scripts) > 0 or len(primitive_categories) > 0
-    )
-
-    assert has_json_foundation, (
-        f"Should have JSON I/O foundation. Compliant scripts: {json_compliant_scripts}"
-    )
+    # All core primitives should have registered output schemas
+    core_refs = [
+        "primitives/user_interaction/get_user_input",
+        "primitives/data_transform/json_extract",
+        "primitives/file_ops/read_file",
+        "primitives/file_ops/write_file",
+        "primitives/control_flow/replicate_n_times",
+        "primitives/user_interaction/confirm_action",
+    ]
+    for ref in core_refs:
+        schema = get_output_schema(ref)
+        assert schema is not None, f"Missing output schema for {ref}"
 
 
 # Async Performance Scenario Step Definitions

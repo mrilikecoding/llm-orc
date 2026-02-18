@@ -1729,6 +1729,7 @@ class TestEnsembleExecutor:
             ) as mock_handler_class,
             patch("os.path.exists", return_value=True),
             patch("subprocess.run") as mock_subprocess_run,
+            patch("builtins.input", return_value="Test User"),
         ):
             # Mock subprocess to simulate user input collection
             mock_subprocess_run.return_value.stdout = (

@@ -366,6 +366,46 @@ class TestComplexStreamingScenarios:
             mock_console.status.assert_called_once()
 
 
+class TestProgressControllerPropagation:
+    """Test that RichProgressController propagates to sub-runners."""
+
+    @pytest.mark.asyncio
+    @patch("llm_orc.cli_modules.utils.visualization.streaming.Console")
+    async def test_progress_controller_propagates_to_script_agent_runner(
+        self, mock_console_class: Mock
+    ) -> None:
+        """After streaming setup, script_agent_runner gets the real controller."""
+        executor = AsyncMock()
+
+        # Give executor a mock _script_agent_runner with its own controller
+        mock_runner = Mock()
+        mock_runner._progress_controller = Mock()  # starts as something else
+        executor._script_agent_runner = mock_runner
+
+        async def mock_execute_streaming(config: Any, data: str) -> Any:
+            yield {
+                "type": "execution_completed",
+                "data": {"results": {}, "metadata": {}},
+            }
+
+        executor.execute_streaming = mock_execute_streaming
+
+        ensemble_config = Mock()
+        ensemble_config.agents = [{"name": "agent_a"}]
+
+        mock_console = Mock()
+        mock_console_class.return_value = mock_console
+        mock_status = Mock()
+        mock_console.status.return_value = mock_status
+        mock_status.__enter__ = Mock(return_value=mock_status)
+        mock_status.__exit__ = Mock(return_value=None)
+
+        await run_streaming_execution(executor, ensemble_config, "test", "rich")
+
+        # The runner's controller should be the same object set on executor
+        assert mock_runner._progress_controller is executor._progress_controller
+
+
 class TestNewHelperFunctions:
     """Test the new helper functions created during refactoring."""
 
