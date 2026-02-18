@@ -2013,8 +2013,7 @@ class TestEnsembleExecutor:
             results_dict: dict[str, Any] = {}
             phase_index = 0
 
-            # This should fail initially since the method doesn't exist yet
-            has_errors = await executor._execute_phase_with_monitoring(
+            has_errors, user_inputs = await executor._execute_phase_with_monitoring(
                 phase_index, phase_agents, input_data, results_dict
             )
 
@@ -2022,8 +2021,9 @@ class TestEnsembleExecutor:
             assert len(results_dict) == 1
             assert "agent1" in results_dict
 
-            # Verify return value
+            # Verify return values
             assert isinstance(has_errors, bool)
+            assert isinstance(user_inputs, int)
 
     @pytest.mark.asyncio
     async def test_finalize_execution_results(

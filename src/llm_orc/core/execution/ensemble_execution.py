@@ -305,7 +305,7 @@ class EnsembleExecutor:
                 )
 
             # Execute phase with full monitoring
-            phase_has_errors = await self._execute_phase_with_monitoring(
+            phase_has_errors, _ = await self._execute_phase_with_monitoring(
                 phase_index, phase_agents, phase_input, results_dict, len(phases)
             )
             has_errors = has_errors or phase_has_errors
@@ -410,30 +410,21 @@ class EnsembleExecutor:
         input_data: str | dict[str, str],
         results_dict: dict[str, Any],
         total_phases: int = 1,
-    ) -> bool:
-        """Execute a phase with full monitoring and event handling.
-
-        Args:
-            phase_index: Index of the current phase
-            phase_agents: List of agent configs for this phase
-            input_data: Input data for this phase (base or enhanced with dependencies)
-            results_dict: Results dictionary to populate
-            total_phases: Total number of phases for event reporting
+    ) -> tuple[bool, int]:
+        """Execute a phase with full monitoring, fan-out, and user input counting.
 
         Returns:
-            True if any errors occurred in this phase
+            Tuple of (has_errors, user_inputs_collected)
         """
         # Detect and expand fan-out agents (issue #73)
         fan_out_agents = self._detect_fan_out_in_phase(phase_agents, results_dict)
-        expanded_agents = list(phase_agents)  # Copy to avoid modifying original
+        expanded_agents = list(phase_agents)
         fan_out_original_names: list[str] = []
 
         for agent_config, upstream_array in fan_out_agents:
-            # Remove original fan-out agent from list
             expanded_agents = [
                 a for a in expanded_agents if a["name"] != agent_config["name"]
             ]
-            # Add expanded instances
             instances = self._expand_fan_out_agent(agent_config, upstream_array)
             expanded_agents.extend(instances)
             fan_out_original_names.append(agent_config["name"])
@@ -453,9 +444,14 @@ class EnsembleExecutor:
         await self._start_phase_monitoring(phase_index, expanded_agents)
 
         try:
-            # Execute agents in this phase in parallel (including fan-out instances)
+            # Execute agents in this phase in parallel
             phase_results = await self._execute_agents_in_phase_parallel(
                 expanded_agents, input_data
+            )
+
+            # Count user inputs from phase results
+            user_inputs_from_phase = self._count_user_inputs_from_phase_results(
+                phase_results
             )
 
             # Process parallel execution results
@@ -478,7 +474,7 @@ class EnsembleExecutor:
         # Emit phase completion event
         self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
 
-        return phase_has_errors
+        return phase_has_errors, user_inputs_from_phase
 
     async def execute_with_user_input(
         self,
@@ -528,7 +524,7 @@ class EnsembleExecutor:
             (
                 phase_has_errors,
                 user_inputs_from_phase,
-            ) = await self._execute_phase_with_monitoring_interactive(
+            ) = await self._execute_phase_with_monitoring(
                 phase_index, phase_agents, phase_input, results_dict, len(phases)
             )
 
@@ -585,67 +581,6 @@ class EnsembleExecutor:
         """
         final_result["metadata"]["interactive_mode"] = True
         final_result["metadata"]["user_inputs_collected"] = user_inputs_collected
-
-    async def _execute_phase_with_monitoring_interactive(
-        self,
-        phase_index: int,
-        phase_agents: list[dict[str, Any]],
-        input_data: str | dict[str, str],
-        results_dict: dict[str, Any],
-        total_phases: int = 1,
-    ) -> tuple[bool, int]:
-        """Execute a phase with monitoring and user input counting.
-
-        Args:
-            phase_index: Index of the current phase
-            phase_agents: List of agent configs for this phase
-            input_data: Input data for this phase (base or enhanced with dependencies)
-            results_dict: Results dictionary to populate
-            total_phases: Total number of phases for event reporting
-
-        Returns:
-            Tuple of (has_errors, user_inputs_collected)
-        """
-        # Emit phase started event
-        self._emit_performance_event(
-            "phase_started",
-            {
-                "phase_index": phase_index,
-                "phase_agents": [agent["name"] for agent in phase_agents],
-                "total_phases": total_phases,
-            },
-        )
-
-        # Start per-phase monitoring for performance feedback
-        phase_start_time = time.time()
-        await self._start_phase_monitoring(phase_index, phase_agents)
-
-        try:
-            # Execute agents in this phase in parallel
-            # For interactive mode, we handle user input collection here
-            phase_results = await self._execute_agents_in_phase_parallel(
-                phase_agents, input_data
-            )
-
-            # Count user inputs from phase results
-            user_inputs_from_phase = self._count_user_inputs_from_phase_results(
-                phase_results
-            )
-
-            # Process parallel execution results
-            phase_has_errors = await self._process_phase_results(
-                phase_results, results_dict, phase_agents
-            )
-
-        finally:
-            # Stop per-phase monitoring and collect metrics
-            phase_duration = time.time() - phase_start_time
-            await self._stop_phase_monitoring(phase_index, phase_agents, phase_duration)
-
-        # Emit phase completion event
-        self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
-
-        return phase_has_errors, user_inputs_from_phase
 
     async def _finalize_execution_results(
         self,
