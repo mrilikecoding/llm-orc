@@ -2,13 +2,15 @@
 
 import os
 import shutil
-import subprocess
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
 import pytest
+from click.testing import CliRunner
 from pytest_bdd import given, parsers, scenarios, then, when
+
+from llm_orc.cli import cli
 
 # Load all scenarios from the feature file
 scenarios("features/adr-008-llm-friendly-cli-mcp-design.feature")
@@ -81,13 +83,9 @@ def directory_without_config(cli_context: dict[str, Any]) -> None:
 @given("I have initialized llm-orc")
 def initialized_llm_orc(cli_context: dict[str, Any]) -> None:
     """Initialize llm-orc in test directory."""
-    result = subprocess.run(
-        ["llm-orc", "init"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, f"Init failed: {result.stderr}"
+    runner = CliRunner()
+    result = runner.invoke(cli, ["init"])
+    assert result.exit_code == 0, f"Init failed: {result.output}"
 
 
 @given(
@@ -209,19 +207,16 @@ def library_directory_with_scripts(cli_context: dict[str, Any], dir_path: str) -
 
 @when(parsers.parse('I execute "{command}"'))
 def execute_command(cli_context: dict[str, Any], command: str) -> None:
-    """Execute a CLI command."""
+    """Execute a CLI command via CliRunner."""
     args = command.split()
-    result = subprocess.run(
-        args,
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=cli_context["test_dir"],
-    )
+    if args and args[0] == "llm-orc":
+        args = args[1:]
+    runner = CliRunner()
+    result = runner.invoke(cli, args)
 
     cli_context["last_command"] = command
-    cli_context["last_output"] = result.stdout + result.stderr
-    cli_context["last_returncode"] = result.returncode
+    cli_context["last_output"] = result.output
+    cli_context["last_returncode"] = result.exit_code
 
 
 # Then steps
