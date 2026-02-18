@@ -61,7 +61,7 @@ Feature: ADR-006 Library-Based Primitives Architecture with Multi-Language Bridg
     And the library submodule is not initialized
     When I attempt to resolve the script path using ScriptResolver.resolve_script_path()
     Then FileNotFoundError should be raised with helpful guidance
-    And the error message should suggest "git submodule update --init --recursive"
+    And the error message should suggest "pip install"
     And the error message should suggest creating local implementation
     And the error message should mention test fixture usage for tests
     And the error should follow ADR-003 exception chaining patterns

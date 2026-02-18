@@ -17,12 +17,10 @@ class ScriptNotFoundError(FileNotFoundError):
         self.is_primitive = is_primitive
 
         if is_primitive and script_ref.startswith("primitives/"):
-            # Helpful guidance for missing library primitives
             message = (
                 f"Primitive script '{script_ref}' not found. "
-                f"To use library primitives:\n"
-                f"  1. Initialize the library submodule: "
-                f"git submodule update --init --recursive\n"
+                f"Primitives are included in the llm-orc package.\n"
+                f"  1. Ensure llm-orc is installed: pip install -e .\n"
                 f"  2. Or create a local implementation at "
                 f".llm-orc/scripts/{script_ref}\n"
                 f"  3. For tests, use TestPrimitiveFactory fixtures"
@@ -197,21 +195,19 @@ class ScriptResolver:
         self._cache.clear()
 
     def list_available_scripts(self) -> list[dict[str, str | None]]:
-        """List all available scripts in .llm-orc/scripts directory and subdirectories.
+        """List available scripts from .llm-orc/scripts and package primitives.
 
         Returns:
             List of script dictionaries with name, path, and relative_path
         """
-        scripts = []
+        scripts: list[dict[str, str | None]] = []
         cwd = Path(os.getcwd())
         scripts_dir = cwd / self.LLM_ORC_DIR / self.SCRIPTS_DIR
 
         if scripts_dir.exists():
-            # Find all script files recursively
             for ext in self.SCRIPT_EXTENSIONS:
                 pattern = f"*{ext}"
                 for script_file in scripts_dir.rglob(pattern):
-                    # Calculate relative path for hierarchical display
                     relative_path = script_file.relative_to(scripts_dir)
                     relative_dir = (
                         str(relative_path.parent)
@@ -232,6 +228,24 @@ class ScriptResolver:
                             "relative_path": relative_dir,
                         }
                     )
+
+        # Include package primitives from src/llm_orc/primitives/
+        package_primitives = Path(__file__).resolve().parents[2] / "primitives"
+        if package_primitives.exists():
+            for script_file in package_primitives.rglob("*.py"):
+                if script_file.name.startswith("__"):
+                    continue
+                relative_path = script_file.relative_to(package_primitives)
+                category = str(relative_path.parent)
+                display_name = f"primitives/{category}/{script_file.name}"
+                scripts.append(
+                    {
+                        "name": script_file.name,
+                        "display_name": display_name,
+                        "path": str(script_file),
+                        "relative_path": f"primitives/{category}",
+                    }
+                )
 
         return sorted(scripts, key=lambda x: x["display_name"] or "")
 

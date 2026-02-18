@@ -27,19 +27,15 @@ _PRIMITIVE_REGISTRY: dict[str, str] = {
 }
 
 # Map script_ref patterns to registry keys
+# Hyphen variants are not needed: the resolver normalizes hyphens to
+# underscores before reaching this lookup.
 _SCRIPT_REF_PATTERNS: dict[str, str] = {
-    "primitives/user-interaction/get_user_input": ("user_interaction/get_user_input"),
-    "primitives/user_interaction/get_user_input": ("user_interaction/get_user_input"),
-    "primitives/user-interaction/confirm_action": ("user_interaction/confirm_action"),
-    "primitives/user_interaction/confirm_action": ("user_interaction/confirm_action"),
-    "primitives/data-transform/json_extract": ("data_transform/json_extract"),
-    "primitives/data_transform/json_extract": ("data_transform/json_extract"),
-    "primitives/file-ops/read_file": "file_ops/read_file",
+    "primitives/user_interaction/get_user_input": "user_interaction/get_user_input",
+    "primitives/user_interaction/confirm_action": "user_interaction/confirm_action",
+    "primitives/data_transform/json_extract": "data_transform/json_extract",
     "primitives/file_ops/read_file": "file_ops/read_file",
-    "primitives/file-ops/write_file": "file_ops/write_file",
     "primitives/file_ops/write_file": "file_ops/write_file",
-    "primitives/control-flow/replicate_n_times": ("control_flow/replicate_n_times"),
-    "primitives/control_flow/replicate_n_times": ("control_flow/replicate_n_times"),
+    "primitives/control_flow/replicate_n_times": "control_flow/replicate_n_times",
 }
 
 

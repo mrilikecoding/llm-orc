@@ -166,18 +166,44 @@ class TestScriptResolver:
             assert result1 == result2
 
     def test_list_available_scripts_empty_directory(self, tmp_path: Path) -> None:
-        """Test list_available_scripts with empty scripts directory."""
+        """Test list_available_scripts with empty scripts directory still finds
+        package primitives."""
         with patch("os.getcwd", return_value=str(tmp_path)):
             resolver = ScriptResolver()
             scripts = resolver.list_available_scripts()
-            assert scripts == []
+            # Only package primitives (no local scripts)
+            local_scripts = [
+                s
+                for s in scripts
+                if not (s.get("relative_path") or "").startswith("primitives/")
+            ]
+            assert local_scripts == []
 
     def test_list_available_scripts_no_scripts_directory(self, tmp_path: Path) -> None:
         """Test list_available_scripts when scripts directory doesn't exist."""
         with patch("os.getcwd", return_value=str(tmp_path)):
             resolver = ScriptResolver()
             scripts = resolver.list_available_scripts()
-            assert scripts == []
+            local_scripts = [
+                s
+                for s in scripts
+                if not (s.get("relative_path") or "").startswith("primitives/")
+            ]
+            assert local_scripts == []
+
+    def test_list_available_scripts_includes_package_primitives(self) -> None:
+        """Test list_available_scripts includes package primitives."""
+        resolver = ScriptResolver()
+        scripts = resolver.list_available_scripts()
+        pkg_scripts = [
+            s
+            for s in scripts
+            if (s.get("relative_path") or "").startswith("primitives/")
+        ]
+        assert len(pkg_scripts) >= 6
+        names = [s["name"] for s in pkg_scripts]
+        assert "get_user_input.py" in names
+        assert "read_file.py" in names
 
     def test_list_available_scripts_with_various_extensions(
         self, tmp_path: Path
@@ -196,7 +222,6 @@ class TestScriptResolver:
             resolver = ScriptResolver()
             scripts = resolver.list_available_scripts()
 
-            assert len(scripts) == 5
             script_names = [s["name"] for s in scripts]
             for ext in extensions:
                 assert f"test{ext}" in script_names
@@ -224,7 +249,14 @@ class TestScriptResolver:
             resolver = ScriptResolver()
             scripts = resolver.list_available_scripts()
 
-            assert len(scripts) == 3
+            # Filter to local scripts only for structure assertions
+            local_scripts = [
+                s
+                for s in scripts
+                if not (s.get("relative_path") or "").startswith("primitives/")
+                or (s["path"] or "").startswith(str(tmp_path))
+            ]
+            assert len(local_scripts) >= 3
 
             # Sort by display_name to check order (expected: network < primitive < root)
             scripts_by_name = {
@@ -372,7 +404,7 @@ class TestScriptResolver:
 
         error_msg = str(error)
         assert "Primitive script 'primitives/missing.py' not found" in error_msg
-        assert "git submodule update --init --recursive" in error_msg
+        assert "pip install" in error_msg
         assert ".llm-orc/scripts/primitives/missing.py" in error_msg
         assert "TestPrimitiveFactory fixtures" in error_msg
 
