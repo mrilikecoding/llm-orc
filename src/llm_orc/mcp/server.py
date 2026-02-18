@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from mcp.server.fastmcp import Context, FastMCP
 
 from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.core.config.ensemble_config import EnsembleLoader
+from llm_orc.core.config.ensemble_config import EnsembleLoader, assert_no_cycles
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 
 if TYPE_CHECKING:
@@ -1588,7 +1588,7 @@ class MCPServerV2:
 
         # Check for circular dependencies
         try:
-            self._check_circular_dependencies(config)
+            assert_no_cycles(config.agents)
         except ValueError as e:
             validation_errors.append(str(e))
 
@@ -1675,46 +1675,6 @@ class MCPServerV2:
                 )
 
         return errors
-
-    def _check_circular_dependencies(self, config: Any) -> None:
-        """Check for circular dependencies in ensemble config.
-
-        Args:
-            config: Ensemble configuration.
-
-        Raises:
-            ValueError: If circular dependency detected.
-        """
-        # Build dependency graph
-        graph: dict[str, list[str]] = {}
-        for agent in config.agents:
-            name = _get_agent_attr(agent, "name")
-            depends_on = _get_agent_attr(agent, "depends_on") or []
-            graph[name] = depends_on
-
-        # DFS to detect cycles
-        visited: set[str] = set()
-        path: set[str] = set()
-
-        def visit(node: str) -> bool:
-            if node in path:
-                return True  # Cycle detected
-            if node in visited:
-                return False
-
-            visited.add(node)
-            path.add(node)
-
-            for neighbor in graph.get(node, []):
-                if visit(neighbor):
-                    return True
-
-            path.remove(node)
-            return False
-
-        for agent_name in graph:
-            if visit(agent_name):
-                raise ValueError(f"Circular dependency detected involving {agent_name}")
 
     async def _update_ensemble_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute update_ensemble tool.

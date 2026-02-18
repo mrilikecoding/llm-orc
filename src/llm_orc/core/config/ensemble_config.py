@@ -22,68 +22,86 @@ def _find_agent_by_name(
     return next((a for a in agents if a["name"] == agent_name), None)
 
 
-def _perform_cycle_detection(
+def _find_cycle_from(
     agent_name: str,
     agents: list[dict[str, Any]],
     visited: set[str],
-    recursion_stack: set[str],
-) -> bool:
-    """Perform cycle detection using depth-first search for a specific agent.
+    in_stack: set[str],
+    path: list[str],
+) -> list[str] | None:
+    """DFS from agent_name, returning cycle path if found.
+
+    Handles both simple string and conditional dict dependencies.
 
     Args:
-        agent_name: Name of agent to check for cycles
+        agent_name: Starting agent name
         agents: List of agent configurations
-        visited: Set of visited agent names
-        recursion_stack: Set of agents currently in recursion stack
+        visited: Set of already-visited agent names
+        in_stack: Set of agents in the current recursion stack
+        path: Ordered list of agents in the current DFS path
 
     Returns:
-        True if cycle detected, False otherwise
+        List of agent names forming the cycle, or None
     """
-    if agent_name in recursion_stack:
-        return True
+    if agent_name in in_stack:
+        cycle_start = path.index(agent_name)
+        return path[cycle_start:]
     if agent_name in visited:
-        return False
+        return None
 
     visited.add(agent_name)
-    recursion_stack.add(agent_name)
+    in_stack.add(agent_name)
+    path.append(agent_name)
 
-    # Find agent config
     agent_config = _find_agent_by_name(agents, agent_name)
     if agent_config:
         dependencies = agent_config.get("depends_on", [])
         for dep in dependencies:
-            # Handle both simple string and conditional dict dependencies
             dep_name = dep if isinstance(dep, str) else dep.get("agent_name")
-            if dep_name and _perform_cycle_detection(
-                dep_name, agents, visited, recursion_stack
-            ):
-                return True
+            if dep_name:
+                cycle = _find_cycle_from(dep_name, agents, visited, in_stack, path)
+                if cycle is not None:
+                    return cycle
 
-    recursion_stack.remove(agent_name)
-    return False
+    path.pop()
+    in_stack.remove(agent_name)
+    return None
 
 
-def _check_agents_for_cycles(agents: list[dict[str, Any]]) -> None:
-    """Check all agents for cycles and raise error if found.
+def detect_cycle(agents: list[dict[str, Any]]) -> list[str] | None:
+    """Detect cycles in agent dependencies using DFS.
+
+    Handles both string and dict-form dependencies.
+
+    Args:
+        agents: List of agent configurations
+
+    Returns:
+        List of agent names forming the cycle, or None if acyclic
+    """
+    visited: set[str] = set()
+
+    for agent in agents:
+        if agent["name"] not in visited:
+            cycle = _find_cycle_from(agent["name"], agents, visited, set(), [])
+            if cycle is not None:
+                return cycle
+    return None
+
+
+def assert_no_cycles(agents: list[dict[str, Any]]) -> None:
+    """Raise ValueError if any cycle exists in agent dependencies.
 
     Args:
         agents: List of agent configurations
 
     Raises:
-        ValueError: If circular dependencies are detected
+        ValueError: With the cycle path (e.g. "a -> b -> a")
     """
-    visited: set[str] = set()
-
-    # Check each agent for cycles
-    for agent in agents:
-        if agent["name"] not in visited:
-            recursion_stack: set[str] = set()
-            if _perform_cycle_detection(
-                agent["name"], agents, visited, recursion_stack
-            ):
-                raise ValueError(
-                    f"Circular dependency detected involving agent: '{agent['name']}'"
-                )
+    cycle = detect_cycle(agents)
+    if cycle is not None:
+        cycle_str = " -> ".join([*cycle, cycle[0]])
+        raise ValueError(f"Circular dependency detected: {cycle_str}")
 
 
 def _validate_fan_out_dependencies(agents: list[dict[str, Any]]) -> None:
@@ -127,18 +145,6 @@ def _check_missing_dependencies(agents: list[dict[str, Any]]) -> None:
                 raise ValueError(
                     f"Agent '{agent['name']}' has missing dependency: '{dep_name}'"
                 )
-
-
-def _detect_circular_dependencies(agents: list[dict[str, Any]]) -> None:
-    """Detect circular dependencies using depth-first search.
-
-    Args:
-        agents: List of agent configurations
-
-    Raises:
-        ValueError: If circular dependencies are detected
-    """
-    _check_agents_for_cycles(agents)
 
 
 @dataclass
@@ -235,7 +241,7 @@ class EnsembleLoader:
         _validate_fan_out_dependencies(agents)
 
         # Then check for circular dependencies
-        _detect_circular_dependencies(agents)
+        assert_no_cycles(agents)
 
     def find_ensemble(self, directory: str, name: str) -> EnsembleConfig | None:
         """Find an ensemble by name in a directory, supporting hierarchical names.
