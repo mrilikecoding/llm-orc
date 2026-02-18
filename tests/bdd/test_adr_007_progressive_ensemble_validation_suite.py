@@ -2,6 +2,7 @@
 
 import asyncio
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pytest_bdd import given, scenarios, then, when
@@ -164,7 +165,11 @@ def evaluate_ensemble_results(
         except NotImplementedError as e:
             validation_framework["validation_error"] = e
 
-    asyncio.run(run_evaluation())
+    with patch("llm_orc.core.validation.evaluator.LLMResponseGenerator") as mock_cls:
+        mock_generator = AsyncMock()
+        mock_generator.generate_response.return_value = "PASS: Outputs meet criterion"
+        mock_cls.return_value = mock_generator
+        asyncio.run(run_evaluation())
 
 
 @then("structural validation should check execution properties")
