@@ -587,8 +587,8 @@ class TestEventStreamManager:
         stream = manager.create_stream(execution_id)
         assert manager.get_stream(execution_id) == stream
 
-        # Test cleanup with very short delay
-        await manager._cleanup_stream_after_delay(execution_id, delay=1)
+        # Test cleanup with zero delay
+        await manager._cleanup_stream_after_delay(execution_id, delay=0)
 
         # Stream should be removed
         assert manager.get_stream(execution_id) is None

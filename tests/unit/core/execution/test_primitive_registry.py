@@ -1,5 +1,6 @@
 """Tests for primitive registry system (ADR-001)."""
 
+import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -354,15 +355,18 @@ print(json.dumps({"success": True, "data": "test", "agent_requests": []}))
             primitives_dir = Path(temp_dir) / ".llm-orc" / "scripts" / "primitives"
             primitives_dir.mkdir(parents=True)
 
-            # Create primitive that sleeps longer than timeout
+            # Create primitive file (content irrelevant — subprocess is mocked)
             primitive_file = primitives_dir / "timeout.py"
-            primitive_file.write_text("""#!/usr/bin/env python3
-import time
-time.sleep(20)  # Sleep longer than the timeout
-""")
+            primitive_file.write_text("#!/usr/bin/env python3\n")
             primitive_file.chmod(0o755)
 
-            with patch("pathlib.Path.cwd", return_value=Path(temp_dir)):
+            with (
+                patch("pathlib.Path.cwd", return_value=Path(temp_dir)),
+                patch(
+                    "llm_orc.core.execution.primitive_registry.subprocess.run",
+                    side_effect=subprocess.TimeoutExpired(cmd="timeout.py", timeout=1),
+                ),
+            ):
                 result = registry.validate_primitive("timeout.py", timeout=1)
 
             assert result["valid"] is False

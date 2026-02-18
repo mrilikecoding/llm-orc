@@ -2,7 +2,7 @@
 
 import asyncio
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -72,15 +72,17 @@ class TestAgentExecutionCoordinator:
         """Test agent execution that times out."""
         coordinator, mocks = self.setup_coordinator()
 
-        async def slow_execution(
-            config: dict[str, Any], input_data: str
-        ) -> tuple[str, Any]:
-            await asyncio.sleep(2.0)
-            return ("Slow response", None)
-
-        mocks["agent_executor"].side_effect = slow_execution
+        async def mock_wait_for(coro: Any, *, timeout: float | None = None) -> Any:
+            coro.close()
+            raise TimeoutError
 
         agent_config = {"name": "test_agent", "model": "mock"}
 
-        with pytest.raises(Exception, match="timed out after 1 seconds"):
+        with (
+            patch(
+                "llm_orc.core.execution.agent_execution_coordinator.asyncio.wait_for",
+                side_effect=mock_wait_for,
+            ),
+            pytest.raises(Exception, match="timed out after 1 seconds"),
+        ):
             await coordinator.execute_agent_with_timeout(agent_config, "test input", 1)

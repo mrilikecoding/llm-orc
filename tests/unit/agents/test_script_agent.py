@@ -1,5 +1,6 @@
 """Tests for script-based agent execution."""
 
+import subprocess
 from unittest.mock import patch
 
 import pytest
@@ -136,7 +137,13 @@ class TestScriptAgent:
         config = {"script": "sleep 10", "timeout_seconds": 1}
         agent = ScriptAgent("test_agent", config)
 
-        with pytest.raises(RuntimeError, match="timed out after 1s"):
+        with (
+            patch(
+                "llm_orc.agents.script_agent.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(cmd="", timeout=1),
+            ),
+            pytest.raises(RuntimeError, match="timed out after 1s"),
+        ):
             await agent.execute("test input")
 
     @pytest.mark.asyncio

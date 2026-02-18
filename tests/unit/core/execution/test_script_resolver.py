@@ -1,6 +1,7 @@
 """Tests for script resolution and discovery."""
 
 import os
+import subprocess
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
@@ -371,11 +372,15 @@ class TestScriptResolver:
     def test_test_script_timeout(self, tmp_path: Path) -> None:
         """Test test_script with script timeout."""
         script = tmp_path / "timeout.py"
-        script.write_text("#!/usr/bin/env python3\nimport time; time.sleep(60)")
+        script.write_text("#!/usr/bin/env python3\n")
         script.chmod(0o755)
 
-        resolver = ScriptResolver()
-        result = resolver.test_script(str(script), {}, timeout=1)
+        with patch(
+            "llm_orc.core.execution.script_resolver.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd=str(script), timeout=1),
+        ):
+            resolver = ScriptResolver()
+            result = resolver.test_script(str(script), {}, timeout=1)
 
         assert result["success"] is False
         assert "timed out" in result["error"]
