@@ -173,16 +173,10 @@ def list_profiles() -> None:
     default=None,
     help="Name for the project (defaults to directory name)",
 )
-@click.option(
-    "--no-scripts",
-    is_flag=True,
-    help="Skip installing primitive scripts from library",
-)
-def init(project_name: str | None, no_scripts: bool) -> None:
-    """Initialize llm-orc project with scripts and examples.
+def init(project_name: str | None) -> None:
+    """Initialize llm-orc project with examples and configuration.
 
     Creates .llm-orc/ directory with:
-      - Primitive scripts from library (file-ops, data-transform, etc.)
       - Example ensembles demonstrating patterns
       - Configuration templates
 
@@ -191,9 +185,6 @@ def init(project_name: str | None, no_scripts: bool) -> None:
       # Initialize with all defaults
       llm-orc init
 
-      # Initialize without primitive scripts
-      llm-orc init --no-scripts
-
       # Specify project name
       llm-orc init --project-name my-ensemble-project
 
@@ -201,7 +192,7 @@ def init(project_name: str | None, no_scripts: bool) -> None:
       llm-orc scripts list          # See installed primitives
       llm-orc list-ensembles        # See example ensembles
     """
-    init_local_config(project_name, with_scripts=not no_scripts)
+    init_local_config(project_name)
 
 
 @cli.group()
@@ -219,7 +210,7 @@ def config() -> None:
 def config_init_deprecated(project_name: str | None) -> None:
     """(Deprecated) Initialize local config. Use 'llm-orc init' instead."""
     click.echo("Note: 'llm-orc config init' is deprecated. Use 'llm-orc init' instead.")
-    init_local_config(project_name, with_scripts=True)
+    init_local_config(project_name)
 
 
 @config.command("reset-global")

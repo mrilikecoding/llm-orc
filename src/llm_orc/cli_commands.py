@@ -497,9 +497,9 @@ def list_profiles_command() -> None:
             _display_global_profile(profile_name, profile)
 
 
-def init_local_config(project_name: str | None, with_scripts: bool = True) -> None:
+def init_local_config(project_name: str | None) -> None:
     """Initialize local .llm-orc configuration for current project."""
-    ConfigCommands.init_local_config(project_name, with_scripts=with_scripts)
+    ConfigCommands.init_local_config(project_name)
 
 
 def reset_global_config(backup: bool, preserve_auth: bool) -> None:

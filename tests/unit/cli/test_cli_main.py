@@ -174,7 +174,7 @@ class TestMainCLI:
         with patch("llm_orc.cli.init_local_config") as mock_init:
             result = runner.invoke(cli, ["config", "init"])
 
-            mock_init.assert_called_once_with(None, with_scripts=True)
+            mock_init.assert_called_once_with(None)
             assert result.exit_code == 0
 
     def test_config_init_with_project_name(self) -> None:
@@ -186,7 +186,7 @@ class TestMainCLI:
                 cli, ["config", "init", "--project-name", "MyProject"]
             )
 
-            mock_init.assert_called_once_with("MyProject", with_scripts=True)
+            mock_init.assert_called_once_with("MyProject")
             assert result.exit_code == 0
 
     def test_config_reset_global_command(self) -> None:

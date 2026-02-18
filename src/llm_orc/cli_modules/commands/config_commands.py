@@ -173,9 +173,9 @@ def _reset_and_initialize_local_config(
     # Remove existing local config
     shutil.rmtree(local_config_dir)
 
-    # Initialize fresh local config (with scripts by default for reset)
+    # Initialize fresh local config
     try:
-        config_manager.init_local_config(project_name, with_scripts=True)
+        config_manager.init_local_config(project_name)
         click.echo("📋 Created fresh local config from template")
     except ValueError as e:
         raise click.ClickException(str(e)) from e
@@ -213,17 +213,16 @@ class ConfigCommands:
     """Configuration management commands."""
 
     @staticmethod
-    def init_local_config(project_name: str | None, with_scripts: bool = True) -> None:
+    def init_local_config(project_name: str | None) -> None:
         """Initialize local .llm-orc configuration for current project.
 
         Args:
             project_name: Optional project name (defaults to directory name)
-            with_scripts: Install primitive scripts from library (default: True)
         """
         config_manager = ConfigurationManager()
 
         try:
-            config_manager.init_local_config(project_name, with_scripts=with_scripts)
+            config_manager.init_local_config(project_name)
             echo_success("Local configuration initialized successfully!")
             click.echo("Created .llm-orc directory with:")
             click.echo("  - ensembles/   (project-specific ensembles)")
@@ -231,14 +230,9 @@ class ConfigCommands:
             click.echo("  - scripts/     (project-specific scripts)")
             click.echo("  - config.yaml  (project configuration)")
 
-            if with_scripts:
-                # Core primitives now live in the installed package
-                # (src/llm_orc/primitives/). No longer copy from library.
-                click.echo("\nReady! Try:")
-                click.echo("  llm-orc scripts list          # See installed primitives")
-                click.echo("  llm-orc list-ensembles        # See example ensembles")
-            else:
-                echo_info("Skipped primitive script installation (--no-scripts)")
+            click.echo("\nReady! Try:")
+            click.echo("  llm-orc scripts list          # See installed primitives")
+            click.echo("  llm-orc list-ensembles        # See example ensembles")
 
             echo_info(
                 "You can now create project-specific ensembles in .llm-orc/ensembles/"

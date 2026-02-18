@@ -19,13 +19,6 @@ Feature: ADR-008: LLM-Friendly CLI and MCP Design
     And the directory ".llm-orc" should exist
     And core primitives should be available as package modules
 
-  Scenario: Initialize project without scripts
-    When I execute "llm-orc init --no-scripts"
-    Then the command should succeed
-    And the directory ".llm-orc" should exist
-    And the output should contain "Skipped primitive script installation"
-    And the directory ".llm-orc/scripts/primitives" should not contain any scripts
-
   Scenario: Initialize with custom project name
     When I execute "llm-orc init --project-name my-test-project"
     Then the command should succeed
@@ -51,7 +44,6 @@ Feature: ADR-008: LLM-Friendly CLI and MCP Design
     When I execute "llm-orc init --help"
     Then the output should contain "Examples:"
     And the output should contain "llm-orc init"
-    And the output should contain "--no-scripts"
     And the output should contain "--project-name"
 
   Scenario: Validate help shows examples

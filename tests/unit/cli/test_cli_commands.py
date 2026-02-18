@@ -1099,9 +1099,7 @@ class TestConfigCommands:
         """Test init local config command delegation."""
         with patch("llm_orc.cli_commands.ConfigCommands") as mock_config_class:
             init_local_config("test_project")
-            mock_config_class.init_local_config.assert_called_once_with(
-                "test_project", with_scripts=True
-            )
+            mock_config_class.init_local_config.assert_called_once_with("test_project")
 
     def test_reset_global_config(self) -> None:
         """Test reset global config command delegation."""

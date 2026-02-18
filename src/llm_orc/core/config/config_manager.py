@@ -297,14 +297,11 @@ class ConfigurationManager:
             else:
                 base[key] = value
 
-    def init_local_config(
-        self, project_name: str | None = None, with_scripts: bool = True
-    ) -> None:
+    def init_local_config(self, project_name: str | None = None) -> None:
         """Initialize local configuration in current directory (idempotent).
 
         Args:
             project_name: Optional project name (defaults to directory name)
-            with_scripts: Install primitive scripts from library (default: True)
         """
         local_dir = Path.cwd() / ".llm-orc"
 
