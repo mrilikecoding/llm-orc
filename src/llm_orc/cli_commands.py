@@ -213,25 +213,11 @@ def _setup_performance_display(
     if output_format is not None:  # Skip for text/json output
         return
 
-    try:
-        config_manager.load_performance_config()  # Ensure config is valid
-        coordinator = executor._execution_coordinator
-        effective_concurrency = coordinator.get_effective_concurrency_limit(
-            len(ensemble_config.agents)
-        )
-        click.echo(
-            f"🚀 Executing ensemble '{ensemble_name}' with "
-            f"{len(ensemble_config.agents)} agents"
-        )
-        click.echo(f"⚡ Performance: max_concurrent={effective_concurrency}")
-        click.echo("─" * 50)
-    except Exception:
-        # Fallback to original output if performance config fails
-        click.echo(f"Invoking ensemble: {ensemble_name}")
-        click.echo(f"Description: {ensemble_config.description}")
-        click.echo(f"Agents: {len(ensemble_config.agents)}")
-        click.echo(f"Input: {input_data}")
-        click.echo("---")
+    click.echo(
+        f"Executing ensemble '{ensemble_name}' with "
+        f"{len(ensemble_config.agents)} agents"
+    )
+    click.echo("─" * 50)
 
 
 def _determine_effective_streaming(
