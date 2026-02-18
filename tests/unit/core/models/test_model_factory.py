@@ -36,9 +36,7 @@ class TestModelFactory:
             "anthropic",
         )
         manager.load_project_config.return_value = {
-            "project": {
-                "default_models": {"test": "test-local"}
-            }
+            "project": {"default_models": {"test": "test-local"}}
         }
         return manager
 
@@ -58,9 +56,7 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> ModelFactory:
         """Create a ModelFactory with mocked dependencies."""
-        return ModelFactory(
-            mock_config_manager, mock_credential_storage
-        )
+        return ModelFactory(mock_config_manager, mock_credential_storage)
 
     def test_init(
         self,
@@ -68,15 +64,10 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test ModelFactory initialization."""
-        factory = ModelFactory(
-            mock_config_manager, mock_credential_storage
-        )
+        factory = ModelFactory(mock_config_manager, mock_credential_storage)
 
         assert factory._config_manager == mock_config_manager
-        assert (
-            factory._credential_storage
-            == mock_credential_storage
-        )
+        assert factory._credential_storage == mock_credential_storage
 
     async def test_load_model_from_agent_config_with_model_profile(
         self,
@@ -95,11 +86,7 @@ class TestModelFactory:
             "load_model",
             return_value=AsyncMock(),
         ) as mock_load:
-            result = (
-                await model_factory.load_model_from_agent_config(
-                    agent_config
-                )
-            )
+            result = await model_factory.load_model_from_agent_config(agent_config)
 
             mock_config_manager.resolve_model_profile.assert_called_once_with(
                 "claude-sonnet"
@@ -126,11 +113,7 @@ class TestModelFactory:
             "load_model",
             return_value=AsyncMock(),
         ) as mock_load:
-            result = (
-                await model_factory.load_model_from_agent_config(
-                    agent_config
-                )
-            )
+            result = await model_factory.load_model_from_agent_config(agent_config)
 
             mock_load.assert_called_once_with(
                 "claude-3-opus",
@@ -151,11 +134,7 @@ class TestModelFactory:
             "load_model",
             return_value=AsyncMock(),
         ) as mock_load:
-            result = (
-                await model_factory.load_model_from_agent_config(
-                    agent_config
-                )
-            )
+            result = await model_factory.load_model_from_agent_config(agent_config)
 
             mock_load.assert_called_once_with(
                 "claude-3-haiku",
@@ -181,9 +160,7 @@ class TestModelFactory:
             "load_model",
             return_value=AsyncMock(),
         ) as mock_load:
-            await model_factory.load_model_from_agent_config(
-                agent_config
-            )
+            await model_factory.load_model_from_agent_config(agent_config)
 
             mock_load.assert_called_once_with(
                 "llama2",
@@ -202,21 +179,15 @@ class TestModelFactory:
             ValueError,
             match="must specify either 'model_profile' or 'model'",
         ):
-            await model_factory.load_model_from_agent_config(
-                agent_config
-            )
+            await model_factory.load_model_from_agent_config(agent_config)
 
-    async def test_load_model_mock_model(
-        self, model_factory: ModelFactory
-    ) -> None:
+    async def test_load_model_mock_model(self, model_factory: ModelFactory) -> None:
         """Test loading mock models for testing."""
         model = await model_factory.load_model("mock-test-model")
 
         assert isinstance(model, MockModel)
         assert hasattr(model, "generate_response")
-        response = await model.generate_response(
-            "test", "system prompt"
-        )
+        response = await model.generate_response("test", "system prompt")
         assert "test" in response.lower()
 
     async def test_load_model_no_auth_ollama_provider(
@@ -225,13 +196,9 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test loading model with ollama provider and no auth."""
-        mock_credential_storage.get_auth_method.return_value = (
-            None
-        )
+        mock_credential_storage.get_auth_method.return_value = None
 
-        model = await model_factory.load_model(
-            "llama3", "ollama"
-        )
+        model = await model_factory.load_model("llama3", "ollama")
 
         assert isinstance(model, OllamaModel)
         assert model.model_name == "llama3"
@@ -242,9 +209,7 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test temperature/max_tokens forwarded to OllamaModel."""
-        mock_credential_storage.get_auth_method.return_value = (
-            None
-        )
+        mock_credential_storage.get_auth_method.return_value = None
 
         model = await model_factory.load_model(
             "llama3",
@@ -263,12 +228,8 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test temperature/max_tokens forwarded to ClaudeModel."""
-        mock_credential_storage.get_auth_method.return_value = (
-            "api_key"
-        )
-        mock_credential_storage.get_api_key.return_value = (
-            "test-key"
-        )
+        mock_credential_storage.get_auth_method.return_value = "api_key"
+        mock_credential_storage.get_api_key.return_value = "test-key"
 
         model = await model_factory.load_model(
             "claude-3-sonnet",
@@ -287,16 +248,10 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test exception when no auth for non-ollama provider."""
-        mock_credential_storage.get_auth_method.return_value = (
-            None
-        )
+        mock_credential_storage.get_auth_method.return_value = None
 
-        with pytest.raises(
-            ValueError, match=r"No authentication configured"
-        ):
-            await model_factory.load_model(
-                "claude-3-sonnet", "anthropic"
-            )
+        with pytest.raises(ValueError, match=r"No authentication configured"):
+            await model_factory.load_model("claude-3-sonnet", "anthropic")
 
     async def test_load_model_no_auth_no_provider_fallback_ollama(
         self,
@@ -304,9 +259,7 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test fallback to ollama when no provider and no auth."""
-        mock_credential_storage.get_auth_method.return_value = (
-            None
-        )
+        mock_credential_storage.get_auth_method.return_value = None
 
         model = await model_factory.load_model("some-model")
 
@@ -319,19 +272,13 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test loading claude-cli model with API key auth."""
-        mock_credential_storage.get_auth_method.return_value = (
-            "api_key"
-        )
-        mock_credential_storage.get_api_key.return_value = (
-            "/usr/local/bin/claude"
-        )
+        mock_credential_storage.get_auth_method.return_value = "api_key"
+        mock_credential_storage.get_api_key.return_value = "/usr/local/bin/claude"
 
         model = await model_factory.load_model("claude-cli")
 
         assert isinstance(model, ClaudeCLIModel)
-        mock_credential_storage.get_api_key.assert_called_with(
-            "claude-cli"
-        )
+        mock_credential_storage.get_api_key.assert_called_with("claude-cli")
 
     async def test_load_model_api_key_auth_path_like(
         self,
@@ -339,12 +286,8 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test path-like API key treated as claude-cli."""
-        mock_credential_storage.get_auth_method.return_value = (
-            "api_key"
-        )
-        mock_credential_storage.get_api_key.return_value = (
-            "/some/path/claude"
-        )
+        mock_credential_storage.get_auth_method.return_value = "api_key"
+        mock_credential_storage.get_api_key.return_value = "/some/path/claude"
 
         model = await model_factory.load_model("some-model")
 
@@ -356,22 +299,14 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test loading Google Gemini model with API key auth."""
-        mock_credential_storage.get_auth_method.return_value = (
-            "api_key"
-        )
-        mock_credential_storage.get_api_key.return_value = (
-            "google-api-key"
-        )
+        mock_credential_storage.get_auth_method.return_value = "api_key"
+        mock_credential_storage.get_api_key.return_value = "google-api-key"
 
-        with patch(
-            "llm_orc.models.google.GeminiModel"
-        ) as mock_gemini:
+        with patch("llm_orc.models.google.GeminiModel") as mock_gemini:
             mock_instance = Mock()
             mock_gemini.return_value = mock_instance
 
-            model = await model_factory.load_model(
-                "gemini-pro", "google-gemini"
-            )
+            model = await model_factory.load_model("gemini-pro", "google-gemini")
 
             assert model == mock_instance
             mock_gemini.assert_called_once_with(
@@ -387,21 +322,13 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test loading Anthropic model with API key auth."""
-        mock_credential_storage.get_auth_method.return_value = (
-            "api_key"
-        )
-        mock_credential_storage.get_api_key.return_value = (
-            "anthropic-api-key"
-        )
+        mock_credential_storage.get_auth_method.return_value = "api_key"
+        mock_credential_storage.get_api_key.return_value = "anthropic-api-key"
 
-        model = await model_factory.load_model(
-            "claude-3-sonnet", "anthropic"
-        )
+        model = await model_factory.load_model("claude-3-sonnet", "anthropic")
 
         assert isinstance(model, ClaudeModel)
-        mock_credential_storage.get_api_key.assert_called_with(
-            "anthropic"
-        )
+        mock_credential_storage.get_api_key.assert_called_with("anthropic")
 
     async def test_load_model_api_key_auth_missing_key(
         self,
@@ -409,17 +336,11 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test exception when API key configured but not found."""
-        mock_credential_storage.get_auth_method.return_value = (
-            "api_key"
-        )
+        mock_credential_storage.get_auth_method.return_value = "api_key"
         mock_credential_storage.get_api_key.return_value = None
 
-        with pytest.raises(
-            ValueError, match=r"No API key found"
-        ):
-            await model_factory.load_model(
-                "claude-3-sonnet", "anthropic"
-            )
+        with pytest.raises(ValueError, match=r"No API key found"):
+            await model_factory.load_model("claude-3-sonnet", "anthropic")
 
     async def test_load_model_oauth_auth_with_client_id(
         self,
@@ -427,9 +348,7 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test loading model with OAuth and client_id."""
-        mock_credential_storage.get_auth_method.return_value = (
-            "oauth"
-        )
+        mock_credential_storage.get_auth_method.return_value = "oauth"
         mock_credential_storage.get_oauth_token.return_value = {
             "access_token": "access-token",
             "refresh_token": "refresh-token",
@@ -437,9 +356,7 @@ class TestModelFactory:
             "expires_at": 1234567890,
         }
 
-        model = await model_factory.load_model(
-            "claude-pro", "anthropic"
-        )
+        model = await model_factory.load_model("claude-pro", "anthropic")
 
         assert isinstance(model, OAuthClaudeModel)
         assert model.access_token == "access-token"
@@ -451,23 +368,16 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test OAuth for anthropic-claude-pro-max fallback."""
-        mock_credential_storage.get_auth_method.return_value = (
-            "oauth"
-        )
+        mock_credential_storage.get_auth_method.return_value = "oauth"
         mock_credential_storage.get_oauth_token.return_value = {
             "access_token": "access-token",
             "refresh_token": "refresh-token",
         }
 
-        model = await model_factory.load_model(
-            "anthropic-claude-pro-max"
-        )
+        model = await model_factory.load_model("anthropic-claude-pro-max")
 
         assert isinstance(model, OAuthClaudeModel)
-        assert (
-            model.client_id
-            == "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-        )
+        assert model.client_id == "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
     async def test_load_model_oauth_auth_missing_token(
         self,
@@ -475,19 +385,11 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test exception when OAuth configured but no token."""
-        mock_credential_storage.get_auth_method.return_value = (
-            "oauth"
-        )
-        mock_credential_storage.get_oauth_token.return_value = (
-            None
-        )
+        mock_credential_storage.get_auth_method.return_value = "oauth"
+        mock_credential_storage.get_oauth_token.return_value = None
 
-        with pytest.raises(
-            ValueError, match=r"No OAuth token found"
-        ):
-            await model_factory.load_model(
-                "claude-pro", "anthropic"
-            )
+        with pytest.raises(ValueError, match=r"No OAuth token found"):
+            await model_factory.load_model("claude-pro", "anthropic")
 
     async def test_load_model_unknown_auth_method(
         self,
@@ -495,9 +397,7 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test exception with unknown authentication method."""
-        mock_credential_storage.get_auth_method.return_value = (
-            "unknown-auth"
-        )
+        mock_credential_storage.get_auth_method.return_value = "unknown-auth"
 
         with pytest.raises(
             ValueError,
@@ -511,9 +411,7 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test exceptions propagated for known local models."""
-        mock_credential_storage.get_auth_method.side_effect = (
-            Exception("Auth error")
-        )
+        mock_credential_storage.get_auth_method.side_effect = Exception("Auth error")
 
         with pytest.raises(Exception, match=r"Auth error"):
             await model_factory.load_model("llama3")
@@ -524,9 +422,7 @@ class TestModelFactory:
         mock_credential_storage: Mock,
     ) -> None:
         """Test exceptions propagated for unknown models."""
-        mock_credential_storage.get_auth_method.side_effect = (
-            Exception("Auth error")
-        )
+        mock_credential_storage.get_auth_method.side_effect = Exception("Auth error")
 
         with pytest.raises(Exception, match=r"Auth error"):
             await model_factory.load_model("unknown-model")
@@ -538,9 +434,7 @@ class TestModelFactory:
     ) -> None:
         """Test fallback with configured test profile (ollama)."""
         mock_config_manager.load_project_config.return_value = {
-            "project": {
-                "default_models": {"test": "test-local"}
-            }
+            "project": {"default_models": {"test": "test-local"}}
         }
         mock_config_manager.resolve_model_profile.return_value = (
             "llama3",
@@ -552,16 +446,12 @@ class TestModelFactory:
             "load_model",
             return_value=AsyncMock(),
         ) as mock_load:
-            await model_factory.get_fallback_model(
-                "test-context"
-            )
+            await model_factory.get_fallback_model("test-context")
 
             mock_config_manager.resolve_model_profile.assert_called_once_with(
                 "test-local"
             )
-            mock_load.assert_called_once_with(
-                "llama3", "ollama"
-            )
+            mock_load.assert_called_once_with("llama3", "ollama")
 
     async def test_get_fallback_model_with_configured_test_profile_non_ollama(
         self,
@@ -570,9 +460,7 @@ class TestModelFactory:
     ) -> None:
         """Test fallback with non-ollama configured profile."""
         mock_config_manager.load_project_config.return_value = {
-            "project": {
-                "default_models": {"test": "expensive-model"}
-            }
+            "project": {"default_models": {"test": "expensive-model"}}
         }
         mock_config_manager.resolve_model_profile.return_value = (
             "claude-3-opus",
@@ -586,9 +474,7 @@ class TestModelFactory:
         ) as mock_load:
             await model_factory.get_fallback_model()
 
-            assert mock_load.call_args_list[-1] == (
-                ("llama3", "ollama"),
-            )
+            assert mock_load.call_args_list[-1] == (("llama3", "ollama"),)
 
     async def test_get_fallback_model_no_configured_profile(
         self,
@@ -596,9 +482,7 @@ class TestModelFactory:
         mock_config_manager: Mock,
     ) -> None:
         """Test fallback when no test profile configured."""
-        mock_config_manager.load_project_config.return_value = {
-            "project": {}
-        }
+        mock_config_manager.load_project_config.return_value = {"project": {}}
 
         with patch.object(
             model_factory,
@@ -615,9 +499,7 @@ class TestModelFactory:
         mock_config_manager: Mock,
     ) -> None:
         """Test last resort when hardcoded fallback fails."""
-        mock_config_manager.load_project_config.return_value = {
-            "project": {}
-        }
+        mock_config_manager.load_project_config.return_value = {"project": {}}
 
         with patch.object(
             model_factory,
@@ -656,15 +538,9 @@ class TestModelFactory:
                 original_profile="claude-pro-max",
             )
 
-            mock_config_manager.get_model_profile.assert_called_with(
-                "claude-pro-max"
-            )
-            mock_config_manager.resolve_model_profile.assert_called_with(
-                "micro-local"
-            )
-            mock_load.assert_called_with(
-                "qwen3:0.6b", "ollama"
-            )
+            mock_config_manager.get_model_profile.assert_called_with("claude-pro-max")
+            mock_config_manager.resolve_model_profile.assert_called_with("micro-local")
+            mock_load.assert_called_with("qwen3:0.6b", "ollama")
             assert isinstance(model, OllamaModel)
 
     async def test_get_fallback_model_with_cascading_fallbacks(
@@ -690,19 +566,15 @@ class TestModelFactory:
             },
         }
 
-        mock_config_manager.get_model_profile.side_effect = (
-            lambda profile: profile_configs.get(profile)
+        mock_config_manager.get_model_profile.side_effect = lambda profile: (
+            profile_configs.get(profile)
         )
 
-        mock_config_manager.load_project_config.return_value = {
-            "project": {}
-        }
+        mock_config_manager.load_project_config.return_value = {"project": {}}
 
         model_load_calls: list[tuple[str, str]] = []
 
-        def mock_load_side_effect(
-            model: str, provider: str
-        ) -> OllamaModel:
+        def mock_load_side_effect(model: str, provider: str) -> OllamaModel:
             model_load_calls.append((model, provider))
             if len(model_load_calls) <= 2:
                 raise Exception("Model failed")
@@ -719,13 +591,9 @@ class TestModelFactory:
             elif profile == "tiny-local":
                 return ("llama3", "ollama")
             else:
-                raise ValueError(
-                    f"Unknown profile: {profile}"
-                )
+                raise ValueError(f"Unknown profile: {profile}")
 
-        mock_config_manager.resolve_model_profile.side_effect = (
-            mock_resolve_side_effect
-        )
+        mock_config_manager.resolve_model_profile.side_effect = mock_resolve_side_effect
 
         with patch.object(
             model_factory,
@@ -776,8 +644,8 @@ class TestModelFactory:
             },
         }
 
-        mock_config_manager.get_model_profile.side_effect = (
-            lambda profile: profile_configs.get(profile)
+        mock_config_manager.get_model_profile.side_effect = lambda profile: (
+            profile_configs.get(profile)
         )
 
         def mock_resolve_side_effect(
@@ -788,9 +656,7 @@ class TestModelFactory:
                 return (config["model"], config["provider"])
             raise ValueError(f"Profile {profile} not found")
 
-        mock_config_manager.resolve_model_profile.side_effect = (
-            mock_resolve_side_effect
-        )
+        mock_config_manager.resolve_model_profile.side_effect = mock_resolve_side_effect
 
         with patch.object(
             model_factory,
@@ -846,18 +712,12 @@ class TestLoadModelHelperMethods:
         self,
     ) -> None:
         """Test no auth handler raises for non-ollama providers."""
-        with pytest.raises(
-            ValueError, match="No authentication configured"
-        ):
-            _handle_no_authentication(
-                "claude-3-sonnet", "anthropic"
-            )
+        with pytest.raises(ValueError, match="No authentication configured"):
+            _handle_no_authentication("claude-3-sonnet", "anthropic")
 
     def test_create_api_key_model_claude_cli(self) -> None:
         """Test API key model creation for Claude CLI."""
-        result = _create_api_key_model(
-            "claude-cli", "/path/to/claude", None
-        )
+        result = _create_api_key_model("claude-cli", "/path/to/claude", None)
 
         assert isinstance(result, ClaudeCLIModel)
         assert result.claude_path == "/path/to/claude"
@@ -871,9 +731,7 @@ class TestLoadModelHelperMethods:
         }
         storage = Mock()
 
-        result = _create_oauth_model(
-            oauth_token, storage, "claude-pro"
-        )
+        result = _create_oauth_model(oauth_token, storage, "claude-pro")
 
         assert isinstance(result, OAuthClaudeModel)
         assert result.access_token == "test-token"
@@ -885,14 +743,10 @@ class TestLoadModelHelperMethods:
         storage = Mock()
         storage.get_auth_method.return_value = "oauth"
 
-        result = _resolve_authentication_method(
-            "claude-3-sonnet", "anthropic", storage
-        )
+        result = _resolve_authentication_method("claude-3-sonnet", "anthropic", storage)
 
         assert result == "oauth"
-        storage.get_auth_method.assert_called_once_with(
-            "anthropic"
-        )
+        storage.get_auth_method.assert_called_once_with("anthropic")
 
     def test_resolve_authentication_method_without_provider(
         self,
@@ -901,14 +755,10 @@ class TestLoadModelHelperMethods:
         storage = Mock()
         storage.get_auth_method.return_value = "api_key"
 
-        result = _resolve_authentication_method(
-            "claude-3-sonnet", None, storage
-        )
+        result = _resolve_authentication_method("claude-3-sonnet", None, storage)
 
         assert result == "api_key"
-        storage.get_auth_method.assert_called_once_with(
-            "claude-3-sonnet"
-        )
+        storage.get_auth_method.assert_called_once_with("claude-3-sonnet")
 
     def test_resolve_authentication_method_no_auth(
         self,
@@ -917,14 +767,10 @@ class TestLoadModelHelperMethods:
         storage = Mock()
         storage.get_auth_method.return_value = None
 
-        result = _resolve_authentication_method(
-            "claude-3-sonnet", "anthropic", storage
-        )
+        result = _resolve_authentication_method("claude-3-sonnet", "anthropic", storage)
 
         assert result is None
-        storage.get_auth_method.assert_called_once_with(
-            "anthropic"
-        )
+        storage.get_auth_method.assert_called_once_with("anthropic")
 
     def test_create_authenticated_model_api_key(self) -> None:
         """Test authenticated model creation with API key."""
@@ -932,8 +778,7 @@ class TestLoadModelHelperMethods:
         storage.get_api_key.return_value = "test-api-key"
 
         with patch(
-            "llm_orc.core.models.model_factory"
-            "._create_api_key_model"
+            "llm_orc.core.models.model_factory._create_api_key_model"
         ) as mock_create:
             mock_model = Mock()
             mock_create.return_value = mock_model
@@ -961,8 +806,7 @@ class TestLoadModelHelperMethods:
         storage.get_oauth_token.return_value = oauth_token
 
         with patch(
-            "llm_orc.core.models.model_factory"
-            "._create_oauth_model"
+            "llm_orc.core.models.model_factory._create_oauth_model"
         ) as mock_create:
             mock_model = Mock()
             mock_create.return_value = mock_model

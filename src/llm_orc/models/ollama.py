@@ -51,9 +51,7 @@ class OllamaModel(ModelInterface):
 
         content = response["message"]["content"]
 
-        estimated_input_tokens = self._estimate_tokens(
-            role_prompt + message
-        )
+        estimated_input_tokens = self._estimate_tokens(role_prompt + message)
         estimated_output_tokens = self._estimate_tokens(content)
 
         self._record_usage(

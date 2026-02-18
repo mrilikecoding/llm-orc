@@ -24,16 +24,12 @@ class HelpHandler:
         return {
             "local": {
                 "path": ".llm-orc/",
-                "description": (
-                    "Project-specific configuration (highest priority)"
-                ),
+                "description": ("Project-specific configuration (highest priority)"),
                 "subdirs": {
                     "ensembles/": "Project ensembles (YAML files)",
                     "profiles/": "Model profiles",
                     "scripts/": "Primitive scripts by category",
-                    "artifacts/": (
-                        "Execution results (auto-generated)"
-                    ),
+                    "artifacts/": ("Execution results (auto-generated)"),
                 },
             },
             "global": {
@@ -61,17 +57,13 @@ class HelpHandler:
                         {
                             "name": "security-reviewer",
                             "model_profile": "ollama-llama3",
-                            "system_prompt": (
-                                "Focus on security issues..."
-                            ),
+                            "system_prompt": ("Focus on security issues..."),
                         },
                         {
                             "name": "synthesizer",
                             "model_profile": "ollama-llama3",
                             "depends_on": ["security-reviewer"],
-                            "system_prompt": (
-                                "Synthesize the analysis..."
-                            ),
+                            "system_prompt": ("Synthesize the analysis..."),
                         },
                     ],
                 },
@@ -83,9 +75,7 @@ class HelpHandler:
                     "name": "ollama-llama3",
                     "provider": "ollama",
                     "model": "llama3:latest",
-                    "system_prompt": (
-                        "You are a helpful assistant."
-                    ),
+                    "system_prompt": ("You are a helpful assistant."),
                     "timeout_seconds": 60,
                 },
                 "providers": [
@@ -110,8 +100,7 @@ class HelpHandler:
         """Get tool category documentation."""
         return {
             "context_management": (
-                "set_project - Set active project directory"
-                " for all operations"
+                "set_project - Set active project directory for all operations"
             ),
             "core_execution": (
                 "invoke, list_ensembles, validate_ensemble, "
@@ -123,17 +112,12 @@ class HelpHandler:
             ),
             "ensemble_crud": "create_ensemble, delete_ensemble",
             "profile_crud": (
-                "list_profiles, create_profile, "
-                "update_profile, delete_profile"
+                "list_profiles, create_profile, update_profile, delete_profile"
             ),
             "script_management": (
-                "list_scripts, get_script, test_script, "
-                "create_script, delete_script"
+                "list_scripts, get_script, test_script, create_script, delete_script"
             ),
-            "library": (
-                "library_browse, library_copy, "
-                "library_search, library_info"
-            ),
+            "library": ("library_browse, library_copy, library_search, library_info"),
             "artifacts": "delete_artifact, cleanup_artifacts",
         }
 
@@ -141,14 +125,12 @@ class HelpHandler:
         """Get common workflow documentation."""
         return {
             "start_session": [
-                "1. set_project - Point to project directory"
-                " (optional)",
+                "1. set_project - Point to project directory (optional)",
                 "2. get_provider_status - See available models",
                 "3. list_ensembles - Find available ensembles",
             ],
             "discover_and_run": [
-                "1. set_project - Set project context"
-                " (if not done)",
+                "1. set_project - Set project context (if not done)",
                 "2. list_ensembles - Find available ensembles",
                 "3. check_ensemble_runnable - Verify it can run",
                 "4. invoke - Execute the ensemble",

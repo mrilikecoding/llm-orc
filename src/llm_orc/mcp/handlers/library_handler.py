@@ -33,27 +33,21 @@ class LibraryHandler:
 
         return Path.cwd() / "llm-orchestra-library"
 
-    async def browse(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def browse(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Browse library items."""
         browse_type = arguments.get("type", "all")
         library_dir = self.get_library_dir()
         result: dict[str, list[dict[str, Any]]] = {}
 
         if browse_type in ("all", "ensembles"):
-            result["ensembles"] = self._browse_ensembles(
-                library_dir
-            )
+            result["ensembles"] = self._browse_ensembles(library_dir)
 
         if browse_type in ("all", "scripts"):
             result["scripts"] = self._browse_scripts(library_dir)
 
         return result
 
-    def _browse_ensembles(
-        self, library_dir: Path
-    ) -> list[dict[str, Any]]:
+    def _browse_ensembles(self, library_dir: Path) -> list[dict[str, Any]]:
         """Browse ensembles in library directory."""
         ensembles: list[dict[str, Any]] = []
         ensembles_dir = library_dir / "ensembles"
@@ -62,9 +56,7 @@ class LibraryHandler:
 
         for yaml_file in ensembles_dir.glob("**/*.yaml"):
             try:
-                config = self._ensemble_loader.load_from_file(
-                    str(yaml_file)
-                )
+                config = self._ensemble_loader.load_from_file(str(yaml_file))
                 if config:
                     ensembles.append(
                         {
@@ -77,9 +69,7 @@ class LibraryHandler:
                 continue
         return ensembles
 
-    def _browse_scripts(
-        self, library_dir: Path
-    ) -> list[dict[str, Any]]:
+    def _browse_scripts(self, library_dir: Path) -> list[dict[str, Any]]:
         """Browse scripts in library directory."""
         scripts: list[dict[str, Any]] = []
         scripts_dir = library_dir / "scripts"
@@ -99,13 +89,9 @@ class LibraryHandler:
                 )
         return scripts
 
-    def _resolve_copy_destination(
-        self, source_path: Path
-    ) -> Path:
+    def _resolve_copy_destination(self, source_path: Path) -> Path:
         """Resolve the default local destination for a library copy."""
-        ensemble_dirs = (
-            self._config_manager.get_ensembles_dirs()
-        )
+        ensemble_dirs = self._config_manager.get_ensembles_dirs()
         local_dir = Path.cwd() / ".llm-orc"
         lib_dir = self.get_library_dir()
 
@@ -117,11 +103,7 @@ class LibraryHandler:
                 local_dir = path.parent
                 break
 
-        subdir = (
-            "ensembles"
-            if "ensembles" in str(source_path)
-            else "scripts"
-        )
+        subdir = "ensembles" if "ensembles" in str(source_path) else "scripts"
         return local_dir / subdir / source_path.name
 
     def _resolve_library_source(self, source: str) -> Path:
@@ -129,21 +111,14 @@ class LibraryHandler:
         library_dir = self.get_library_dir()
         source_path = library_dir / source
 
-        if (
-            not source_path.exists()
-            and not source.endswith(".yaml")
-        ):
+        if not source_path.exists() and not source.endswith(".yaml"):
             source_path = library_dir / f"{source}.yaml"
 
         if not source_path.exists():
-            raise ValueError(
-                f"Source not found in library: {source}"
-            )
+            raise ValueError(f"Source not found in library: {source}")
         return source_path
 
-    async def copy(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def copy(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Copy from library to local."""
         source = arguments.get("source")
         destination = arguments.get("destination")
@@ -160,9 +135,7 @@ class LibraryHandler:
         )
 
         if dest_path.exists() and not overwrite:
-            raise ValueError(
-                f"File already exists: {dest_path}"
-            )
+            raise ValueError(f"File already exists: {dest_path}")
 
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_path, dest_path)
@@ -173,9 +146,7 @@ class LibraryHandler:
             "destination": str(dest_path),
         }
 
-    async def search(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def search(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Search library content."""
         query = arguments.get("query", "").lower()
 
@@ -183,12 +154,8 @@ class LibraryHandler:
             raise ValueError("query is required")
 
         library_dir = self.get_library_dir()
-        ensemble_results = self._search_ensembles(
-            library_dir, query
-        )
-        script_results = self._search_scripts(
-            library_dir, query
-        )
+        ensemble_results = self._search_ensembles(library_dir, query)
+        script_results = self._search_scripts(library_dir, query)
 
         return {
             "query": query,
@@ -196,13 +163,10 @@ class LibraryHandler:
                 "ensembles": ensemble_results,
                 "scripts": script_results,
             },
-            "total": len(ensemble_results)
-            + len(script_results),
+            "total": len(ensemble_results) + len(script_results),
         }
 
-    def _search_ensembles(
-        self, library_dir: Path, query: str
-    ) -> list[dict[str, Any]]:
+    def _search_ensembles(self, library_dir: Path, query: str) -> list[dict[str, Any]]:
         """Search ensembles in library directory by query."""
         results: list[dict[str, Any]] = []
         ensembles_dir = library_dir / "ensembles"
@@ -212,25 +176,17 @@ class LibraryHandler:
 
         for yaml_file in ensembles_dir.glob("**/*.yaml"):
             try:
-                config = self._ensemble_loader.load_from_file(
-                    str(yaml_file)
-                )
+                config = self._ensemble_loader.load_from_file(str(yaml_file))
                 if config:
                     name_match = query in config.name.lower()
-                    desc_match = query in (
-                        config.description or ""
-                    ).lower()
+                    desc_match = query in (config.description or "").lower()
                     if name_match or desc_match:
                         results.append(
                             {
                                 "name": config.name,
                                 "description": config.description,
                                 "path": str(yaml_file),
-                                "match": (
-                                    "name"
-                                    if name_match
-                                    else "description"
-                                ),
+                                "match": ("name" if name_match else "description"),
                             }
                         )
             except Exception:
@@ -238,9 +194,7 @@ class LibraryHandler:
 
         return results
 
-    def _search_scripts(
-        self, library_dir: Path, query: str
-    ) -> list[dict[str, Any]]:
+    def _search_scripts(self, library_dir: Path, query: str) -> list[dict[str, Any]]:
         """Search scripts in library directory by query."""
         results: list[dict[str, Any]] = []
         scripts_dir = library_dir / "scripts"
@@ -252,31 +206,21 @@ class LibraryHandler:
             if not category_dir.is_dir():
                 continue
             for script_file in category_dir.glob("*.py"):
-                name_match = (
-                    query in script_file.stem.lower()
-                )
-                cat_match = (
-                    query in category_dir.name.lower()
-                )
+                name_match = query in script_file.stem.lower()
+                cat_match = query in category_dir.name.lower()
                 if name_match or cat_match:
                     results.append(
                         {
                             "name": script_file.stem,
                             "category": category_dir.name,
                             "path": str(script_file),
-                            "match": (
-                                "name"
-                                if name_match
-                                else "category"
-                            ),
+                            "match": ("name" if name_match else "category"),
                         }
                     )
 
         return results
 
-    async def info(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def info(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Get library information."""
         library_dir = self.get_library_dir()
 
@@ -293,9 +237,7 @@ class LibraryHandler:
 
         ensembles_dir = library_dir / "ensembles"
         if ensembles_dir.exists():
-            result["ensembles_count"] = len(
-                list(ensembles_dir.glob("**/*.yaml"))
-            )
+            result["ensembles_count"] = len(list(ensembles_dir.glob("**/*.yaml")))
 
         scripts_dir = library_dir / "scripts"
         if scripts_dir.exists():
@@ -303,9 +245,7 @@ class LibraryHandler:
             for category_dir in scripts_dir.iterdir():
                 if category_dir.is_dir():
                     categories.append(category_dir.name)
-                    result["scripts_count"] += len(
-                        list(category_dir.glob("*.py"))
-                    )
+                    result["scripts_count"] += len(list(category_dir.glob("*.py")))
             result["categories"] = sorted(categories)
 
         return result

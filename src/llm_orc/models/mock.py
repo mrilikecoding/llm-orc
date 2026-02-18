@@ -20,9 +20,7 @@ class MockModel(ModelInterface):
         """Model name identifier."""
         return self._model_name
 
-    async def generate_response(
-        self, message: str, role_prompt: str
-    ) -> str:
+    async def generate_response(self, message: str, role_prompt: str) -> str:
         """Generate a mock response echoing input with keywords."""
         return (
             f"Analysis of the data shows interesting patterns "

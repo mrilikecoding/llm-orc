@@ -415,12 +415,8 @@ class ClaudeCLIModel(ModelInterface):
 
             duration_ms = int((time.time() - start_time) * 1000)
 
-            estimated_input_tokens = self._estimate_tokens(
-                cli_input
-            )
-            estimated_output_tokens = self._estimate_tokens(
-                result.stdout
-            )
+            estimated_input_tokens = self._estimate_tokens(cli_input)
+            estimated_output_tokens = self._estimate_tokens(result.stdout)
 
             self._record_usage(
                 input_tokens=estimated_input_tokens,

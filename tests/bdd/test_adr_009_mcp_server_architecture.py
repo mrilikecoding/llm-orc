@@ -2801,7 +2801,7 @@ def ollama_running_with_required_models(bdd_context: dict[str, Any]) -> None:
     # Set test override on server to mock Ollama availability
     server = bdd_context.get("mcp_server")
     if server:
-        server._test_ollama_status = {
+        server._provider_handler._test_ollama_status = {
             "available": True,
             "models": ["llama3:latest", "mistral:latest"],
             "model_count": 2,

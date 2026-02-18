@@ -58,9 +58,7 @@ class ModelFactory:
         if "model_profile" in agent_config:
             profile_name = agent_config["model_profile"]
             resolved_model, resolved_provider = (
-                self._config_manager.resolve_model_profile(
-                    profile_name
-                )
+                self._config_manager.resolve_model_profile(profile_name)
             )
             return await self.load_model(
                 resolved_model,
@@ -75,8 +73,7 @@ class ModelFactory:
 
         if not model:
             raise ValueError(
-                "Agent configuration must specify either "
-                "'model_profile' or 'model'"
+                "Agent configuration must specify either 'model_profile' or 'model'"
             )
 
         return await self.load_model(
@@ -116,9 +113,7 @@ class ModelFactory:
 
         try:
             # Get authentication method
-            auth_method = _resolve_authentication_method(
-                model_name, provider, storage
-            )
+            auth_method = _resolve_authentication_method(model_name, provider, storage)
 
             if not auth_method:
                 return _handle_no_authentication(
@@ -156,9 +151,7 @@ class ModelFactory:
             Fallback model interface
         """
         if original_profile:
-            model = await self._try_configurable_fallback(
-                original_profile
-            )
+            model = await self._try_configurable_fallback(original_profile)
             if model:
                 return model
 
@@ -181,34 +174,23 @@ class ModelFactory:
         while current_profile:
             if current_profile in fallback_chain_visited:
                 raise ValueError(
-                    "Cycle detected in fallback chain: "
-                    f"{fallback_chain_visited}"
+                    f"Cycle detected in fallback chain: {fallback_chain_visited}"
                 )
             fallback_chain_visited.add(current_profile)
 
-            profile_config = (
-                self._config_manager.get_model_profile(
-                    current_profile
-                )
-            )
+            profile_config = self._config_manager.get_model_profile(current_profile)
             if not profile_config:
                 break
 
-            fallback_profile_name = profile_config.get(
-                "fallback_model_profile"
-            )
+            fallback_profile_name = profile_config.get("fallback_model_profile")
             if not fallback_profile_name:
                 break
 
             try:
                 resolved_model, resolved_provider = (
-                    self._config_manager.resolve_model_profile(
-                        fallback_profile_name
-                    )
+                    self._config_manager.resolve_model_profile(fallback_profile_name)
                 )
-                return await self.load_model(
-                    resolved_model, resolved_provider
-                )
+                return await self.load_model(resolved_model, resolved_provider)
             except Exception:
                 current_profile = fallback_profile_name
                 continue
@@ -221,29 +203,19 @@ class ModelFactory:
         Returns:
             Model interface (guaranteed to return something)
         """
-        project_config = (
-            self._config_manager.load_project_config()
-        )
-        default_models = project_config.get(
-            "project", {}
-        ).get("default_models", {})
+        project_config = self._config_manager.load_project_config()
+        default_models = project_config.get("project", {}).get("default_models", {})
 
         fallback_profile = default_models.get("test")
 
-        if fallback_profile and isinstance(
-            fallback_profile, str
-        ):
+        if fallback_profile and isinstance(fallback_profile, str):
             try:
                 resolved_model, resolved_provider = (
-                    self._config_manager.resolve_model_profile(
-                        fallback_profile
-                    )
+                    self._config_manager.resolve_model_profile(fallback_profile)
                 )
                 if resolved_provider == "ollama":
                     try:
-                        return await self.load_model(
-                            resolved_model, resolved_provider
-                        )
+                        return await self.load_model(resolved_model, resolved_provider)
                     except Exception:
                         pass
             except (ValueError, KeyError):
@@ -316,9 +288,7 @@ def _create_authenticated_model(
     if auth_method == "api_key":
         api_key = storage.get_api_key(lookup_key)
         if not api_key:
-            raise ValueError(
-                f"No API key found for {lookup_key}"
-            )
+            raise ValueError(f"No API key found for {lookup_key}")
         return _create_api_key_model(
             model_name,
             api_key,
@@ -330,9 +300,7 @@ def _create_authenticated_model(
     elif auth_method == "oauth":
         oauth_token = storage.get_oauth_token(lookup_key)
         if not oauth_token:
-            raise ValueError(
-                f"No OAuth token found for {lookup_key}"
-            )
+            raise ValueError(f"No OAuth token found for {lookup_key}")
         return _create_oauth_model(
             oauth_token,
             storage,
@@ -342,9 +310,7 @@ def _create_authenticated_model(
         )
 
     else:
-        raise ValueError(
-            f"Unknown authentication method: {auth_method}"
-        )
+        raise ValueError(f"Unknown authentication method: {auth_method}")
 
 
 def _handle_no_authentication(
@@ -383,8 +349,7 @@ def _handle_no_authentication(
         )
     else:
         logger.info(
-            "No provider specified for '%s', "
-            "treating as local Ollama model",
+            "No provider specified for '%s', treating as local Ollama model",
             model_name,
         )
         return OllamaModel(
@@ -458,10 +423,7 @@ def _create_oauth_model(
         Configured OAuth model interface
     """
     client_id = oauth_token.get("client_id")
-    if (
-        not client_id
-        and model_name == "anthropic-claude-pro-max"
-    ):
+    if not client_id and model_name == "anthropic-claude-pro-max":
         client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
     return OAuthClaudeModel(

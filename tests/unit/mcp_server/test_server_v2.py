@@ -1442,7 +1442,7 @@ class TestGetOllamaStatus:
     @pytest.mark.asyncio
     async def test_get_ollama_status_returns_dict(self, server: MCPServerV2) -> None:
         """Get ollama status returns a dict."""
-        result = await server._get_ollama_status()
+        result = await server._provider_handler._get_ollama_status()
         assert isinstance(result, dict)
         assert "available" in result
 
@@ -1451,7 +1451,7 @@ class TestGetOllamaStatus:
         self, server: MCPServerV2
     ) -> None:
         """Ollama status has models field when available."""
-        result = await server._get_ollama_status()
+        result = await server._provider_handler._get_ollama_status()
         assert "models" in result
 
 
@@ -1460,7 +1460,7 @@ class TestGetCloudProviderStatus:
 
     def test_get_cloud_provider_status_returns_dict(self, server: MCPServerV2) -> None:
         """Get cloud provider status returns a dict."""
-        result = server._get_cloud_provider_status("anthropic-api")
+        result = server._provider_handler._get_cloud_provider_status("anthropic-api")
         assert isinstance(result, dict)
         assert "available" in result
 
@@ -1468,7 +1468,7 @@ class TestGetCloudProviderStatus:
         self, server: MCPServerV2
     ) -> None:
         """Unknown provider returns not available."""
-        result = server._get_cloud_provider_status("unknown-provider")
+        result = server._provider_handler._get_cloud_provider_status("unknown-provider")
         assert result["available"] is False
 
 
@@ -1505,8 +1505,12 @@ class TestCheckEnsembleRunnableTool:
         mock_config.name = "test-ensemble"
         mock_config.agents = [MagicMock(name="agent1", model_profile="fast")]
 
-        # Mock _find_ensemble_by_name to return our mock config
-        with patch.object(server, "_find_ensemble_by_name", return_value=mock_config):
+        # Mock _find_ensemble on the provider handler
+        with patch.object(
+            server._provider_handler,
+            "_find_ensemble",
+            return_value=mock_config,
+        ):
             result = await server._check_ensemble_runnable_tool(
                 {"ensemble_name": "test-ensemble"}
             )
@@ -1521,7 +1525,10 @@ class TestCheckAgentRunnable:
 
     def test_check_agent_runnable_missing_profile(self, server: MCPServerV2) -> None:
         """Agent with missing profile has missing_profile status."""
-        result = server._check_agent_runnable("agent1", "nonexistent", {}, {})
+        handler = server._provider_handler
+        result = handler._check_agent_runnable(
+            "agent1", "nonexistent", {}, {}
+        )
         assert result["status"] == "missing_profile"
         assert result["name"] == "agent1"
 
@@ -1543,7 +1550,11 @@ class TestCheckAgentRunnable:
         mock_config.name = "test-ensemble"
         mock_config.agents = [script_agent]
 
-        with patch.object(server, "_find_ensemble_by_name", return_value=mock_config):
+        with patch.object(
+            server._provider_handler,
+            "_find_ensemble",
+            return_value=mock_config,
+        ):
             result = await server._check_ensemble_runnable_tool(
                 {"ensemble_name": "test-ensemble"}
             )
@@ -1558,7 +1569,7 @@ class TestCheckAgentRunnable:
         profiles = {"ollama-profile": {"provider": "ollama", "model": "llama3"}}
         providers = {"ollama": {"available": True, "models": ["llama3"]}}
 
-        result = server._check_agent_runnable(
+        result = server._provider_handler._check_agent_runnable(
             "agent1", "ollama-profile", profiles, providers
         )
         assert result["status"] == "available"
@@ -1571,7 +1582,7 @@ class TestCheckAgentRunnable:
         profiles = {"cloud-profile": {"provider": "anthropic-api", "model": "claude"}}
         providers = {"anthropic-api": {"available": False}}
 
-        result = server._check_agent_runnable(
+        result = server._provider_handler._check_agent_runnable(
             "agent1", "cloud-profile", profiles, providers
         )
         assert result["status"] == "provider_unavailable"
@@ -1585,7 +1596,7 @@ class TestSuggestLocalAlternatives:
     ) -> None:
         """Returns empty list when Ollama is unavailable."""
         providers = {"ollama": {"available": False}}
-        result = server._suggest_local_alternatives(providers)
+        result = server._provider_handler._suggest_local_alternatives(providers)
         assert result == []
 
 
@@ -1595,7 +1606,7 @@ class TestSuggestAvailableModels:
     def test_suggest_available_models_returns_list(self, server: MCPServerV2) -> None:
         """Returns available models as list."""
         models = ["llama3:latest", "mistral:latest"]
-        result = server._suggest_available_models(models)
+        result = server._provider_handler._suggest_available_models(models)
         assert isinstance(result, list)
         assert len(result) <= 5  # Should limit to 5
 

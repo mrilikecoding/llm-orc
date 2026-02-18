@@ -22,6 +22,7 @@ from llm_orc.mcp.handlers.artifact_handler import ArtifactHandler
 from llm_orc.mcp.handlers.help_handler import HelpHandler
 from llm_orc.mcp.handlers.library_handler import LibraryHandler
 from llm_orc.mcp.handlers.profile_handler import ProfileHandler
+from llm_orc.mcp.handlers.provider_handler import ProviderHandler
 from llm_orc.mcp.handlers.script_handler import ScriptHandler
 
 if TYPE_CHECKING:
@@ -113,8 +114,6 @@ class MCPServerV2:
     tools for ensemble management and execution.
     """
 
-    # Optional test overrides
-    _test_ollama_status: dict[str, Any] | None = None
 
     def __init__(
         self,
@@ -138,6 +137,9 @@ class MCPServerV2:
         self._script_handler = ScriptHandler()
         self._library_handler = LibraryHandler(
             self.config_manager, self.ensemble_loader
+        )
+        self._provider_handler = ProviderHandler(
+            self._profile_handler, self._find_ensemble_by_name
         )
         self._mcp = FastMCP("llm-orc")
         self._setup_resources()
@@ -1956,234 +1958,14 @@ class MCPServerV2:
     async def _get_provider_status_tool(
         self, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        """Get status of all providers and available models.
-
-        Args:
-            arguments: Tool arguments (unused).
-
-        Returns:
-            Provider status with available models.
-        """
-        providers: dict[str, Any] = {}
-
-        # Check Ollama
-        providers["ollama"] = await self._get_ollama_status()
-
-        # Check cloud providers via credential storage
-        providers["anthropic-api"] = self._get_cloud_provider_status("anthropic-api")
-        providers["anthropic-claude-pro-max"] = self._get_cloud_provider_status(
-            "anthropic-claude-pro-max"
-        )
-        providers["google-gemini"] = self._get_cloud_provider_status("google-gemini")
-
-        return {"providers": providers}
-
-    async def _get_ollama_status(self) -> dict[str, Any]:
-        """Check Ollama availability and list models.
-
-        Returns:
-            Ollama status with available models.
-        """
-        # Check for test override
-        if self._test_ollama_status is not None:
-            return self._test_ollama_status
-
-        import httpx
-
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get("http://localhost:11434/api/tags")
-                if response.status_code == 200:
-                    data = response.json()
-                    models = [m.get("name", "") for m in data.get("models", [])]
-                    return {
-                        "available": True,
-                        "models": sorted(models),
-                        "model_count": len(models),
-                    }
-        except Exception:
-            pass
-
-        return {"available": False, "models": [], "reason": "Ollama not running"}
-
-    def _get_cloud_provider_status(self, provider: str) -> dict[str, Any]:
-        """Check if a cloud provider is configured.
-
-        Args:
-            provider: Provider name.
-
-        Returns:
-            Provider status.
-        """
-        from llm_orc.core.auth.authentication import CredentialStorage
-
-        storage = CredentialStorage()
-        configured_providers = storage.list_providers()
-
-        if provider in configured_providers:
-            return {"available": True, "reason": "configured"}
-
-        return {"available": False, "reason": "not configured"}
+        """Get status of all providers and available models."""
+        return await self._provider_handler.get_provider_status(arguments)
 
     async def _check_ensemble_runnable_tool(
         self, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        """Check if an ensemble can run with current providers.
-
-        Args:
-            arguments: Tool arguments with ensemble_name.
-
-        Returns:
-            Runnable status with agent details.
-        """
-        ensemble_name = arguments.get("ensemble_name")
-        if not ensemble_name:
-            raise ValueError("ensemble_name is required")
-
-        # Find ensemble
-        config = self._find_ensemble_by_name(ensemble_name)
-        if not config:
-            raise ValueError(f"Ensemble not found: {ensemble_name}")
-
-        # Get provider status
-        provider_status = await self._get_provider_status_tool({})
-        providers = provider_status.get("providers", {})
-
-        # Get all profiles
-        all_profiles = self._get_all_profiles()
-
-        # Check each agent
-        agents: list[dict[str, Any]] = []
-        all_runnable = True
-
-        for agent in config.agents:
-            agent_name = _get_agent_attr(agent, "name", "unknown")
-
-            # Script agents don't need profile validation
-            script_path = _get_agent_attr(agent, "script", "")
-            if script_path:
-                agent_status: dict[str, Any] = {
-                    "name": agent_name,
-                    "profile": "",
-                    "provider": "script",
-                    "status": "available",
-                    "alternatives": [],
-                }
-            else:
-                profile_name = _get_agent_attr(agent, "model_profile", "")
-                agent_status = self._check_agent_runnable(
-                    agent_name, profile_name, all_profiles, providers
-                )
-
-            agents.append(agent_status)
-
-            if agent_status["status"] != "available":
-                all_runnable = False
-
-        return {
-            "ensemble": ensemble_name,
-            "runnable": all_runnable,
-            "agents": agents,
-        }
-
-    def _check_agent_runnable(
-        self,
-        agent_name: str,
-        profile_name: str,
-        all_profiles: dict[str, dict[str, Any]],
-        providers: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Check if an agent can run with current providers.
-
-        Args:
-            agent_name: Name of the agent.
-            profile_name: Name of the profile the agent uses.
-            all_profiles: All available profiles.
-            providers: Provider status from _get_provider_status_tool.
-
-        Returns:
-            Agent runnable status with alternatives.
-        """
-        result: dict[str, Any] = {
-            "name": agent_name,
-            "profile": profile_name,
-            "provider": "",
-            "status": "available",
-            "alternatives": [],
-        }
-
-        # Check if profile exists
-        if profile_name not in all_profiles:
-            result["status"] = "missing_profile"
-            result["alternatives"] = self._suggest_local_alternatives(providers)
-            return result
-
-        # Get profile's provider
-        profile = all_profiles[profile_name]
-        provider = profile.get("provider", "")
-        result["provider"] = provider
-
-        # Check if provider is available
-        provider_info = providers.get(provider, {})
-        if not provider_info.get("available", False):
-            result["status"] = "provider_unavailable"
-            result["alternatives"] = self._suggest_local_alternatives(providers)
-            return result
-
-        # For Ollama, check if model is available
-        if provider == "ollama":
-            model = profile.get("model", "")
-            available_models = provider_info.get("models", [])
-            # Normalize model name (handle tags like :latest)
-            model_base = model.split(":")[0] if ":" in model else model
-            model_found = any(
-                m == model or m.startswith(f"{model_base}:") for m in available_models
-            )
-            if not model_found:
-                result["status"] = "model_unavailable"
-                result["alternatives"] = self._suggest_available_models(
-                    available_models
-                )
-
-        return result
-
-    def _suggest_local_alternatives(self, providers: dict[str, Any]) -> list[str]:
-        """Suggest local profile alternatives.
-
-        Args:
-            providers: Provider status.
-
-        Returns:
-            List of suggested local profile names.
-        """
-        ollama = providers.get("ollama", {})
-        if not ollama.get("available", False):
-            return []
-
-        # Get profiles using ollama
-        all_profiles = self._get_all_profiles()
-        local_profiles: list[str] = []
-
-        for name, profile in all_profiles.items():
-            if profile.get("provider") == "ollama":
-                local_profiles.append(name)
-
-        return sorted(local_profiles)[:5]  # Return top 5
-
-    def _suggest_available_models(self, available_models: list[str]) -> list[str]:
-        """Suggest available Ollama models.
-
-        Args:
-            available_models: List of available Ollama model names.
-
-        Returns:
-            List of suggested models.
-        """
-        return sorted(available_models)[:5]  # Return top 5
-
-    def _get_all_profiles(self) -> dict[str, dict[str, Any]]:
-        """Get all profiles as a dict keyed by name."""
-        return self._profile_handler.get_all_profiles()
+        """Check if an ensemble can run with current providers."""
+        return await self._provider_handler.check_ensemble_runnable(arguments)
 
     async def _help_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Get help documentation.

@@ -17,9 +17,7 @@ class ScriptHandler:
             return self._test_scripts_dir
         return Path.cwd() / ".llm-orc" / "scripts"
 
-    async def list_scripts(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def list_scripts(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """List available scripts."""
         category = arguments.get("category")
         scripts_dir = Path.cwd() / ".llm-orc" / "scripts"
@@ -29,20 +27,12 @@ class ScriptHandler:
 
         scripts: list[dict[str, Any]] = []
         if not category:
-            scripts.extend(
-                self._collect_root_scripts(scripts_dir)
-            )
-        scripts.extend(
-            self._collect_category_scripts(
-                scripts_dir, category
-            )
-        )
+            scripts.extend(self._collect_root_scripts(scripts_dir))
+        scripts.extend(self._collect_category_scripts(scripts_dir, category))
 
         return {"scripts": scripts}
 
-    def _collect_root_scripts(
-        self, scripts_dir: Path
-    ) -> list[dict[str, Any]]:
+    def _collect_root_scripts(self, scripts_dir: Path) -> list[dict[str, Any]]:
         """Collect scripts at the root level (no category)."""
         scripts: list[dict[str, Any]] = []
         for script_file in scripts_dir.glob("*.py"):
@@ -79,9 +69,7 @@ class ScriptHandler:
                 )
         return scripts
 
-    async def get_script(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def get_script(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Get script details."""
         name = arguments.get("name")
         category = arguments.get("category")
@@ -95,9 +83,7 @@ class ScriptHandler:
         script_file = scripts_dir / category / f"{name}.py"
 
         if not script_file.exists():
-            raise ValueError(
-                f"Script '{category}/{name}' not found"
-            )
+            raise ValueError(f"Script '{category}/{name}' not found")
 
         content = script_file.read_text()
         description = self._extract_docstring(content)
@@ -121,13 +107,8 @@ class ScriptHandler:
                 if in_docstring:
                     break
                 in_docstring = True
-                if (
-                    line.count('"""') == 2
-                    or line.count("'''") == 2
-                ):
-                    return self._strip_docstring_quotes(
-                        line.strip()
-                    )
+                if line.count('"""') == 2 or line.count("'''") == 2:
+                    return self._strip_docstring_quotes(line.strip())
             elif in_docstring:
                 docstring_lines.append(line)
 
@@ -144,9 +125,7 @@ class ScriptHandler:
                 text = text[:-3]
         return text.strip()
 
-    async def test_script(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def test_script(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Test a script with sample input."""
         name = arguments.get("name")
         category = arguments.get("category")
@@ -161,9 +140,7 @@ class ScriptHandler:
         script_file = scripts_dir / category / f"{name}.py"
 
         if not script_file.exists():
-            raise ValueError(
-                f"Script '{category}/{name}' not found"
-            )
+            raise ValueError(f"Script '{category}/{name}' not found")
 
         try:
             result = subprocess.run(
@@ -190,9 +167,7 @@ class ScriptHandler:
                 "error": str(e),
             }
 
-    async def create_script(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def create_script(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Create a new script."""
         name = arguments.get("name")
         category = arguments.get("category")
@@ -208,9 +183,7 @@ class ScriptHandler:
         script_file = category_dir / f"{name}.py"
 
         if script_file.exists():
-            raise ValueError(
-                f"Script '{category}/{name}' already exists"
-            )
+            raise ValueError(f"Script '{category}/{name}' already exists")
 
         if template == "extraction":
             content = f'''"""Extraction script: {name}
@@ -263,9 +236,7 @@ if __name__ == "__main__":
             "template": template,
         }
 
-    async def delete_script(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def delete_script(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Delete a script."""
         name = arguments.get("name")
         category = arguments.get("category")
@@ -276,17 +247,13 @@ if __name__ == "__main__":
         if not category:
             raise ValueError("category is required")
         if not confirm:
-            raise ValueError(
-                "Confirmation required to delete script"
-            )
+            raise ValueError("Confirmation required to delete script")
 
         scripts_dir = self._get_scripts_dir()
         script_file = scripts_dir / category / f"{name}.py"
 
         if not script_file.exists():
-            raise ValueError(
-                f"Script '{category}/{name}' not found"
-            )
+            raise ValueError(f"Script '{category}/{name}' not found")
 
         script_file.unlink()
 

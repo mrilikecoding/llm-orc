@@ -56,9 +56,7 @@ class GeminiModel(ModelInterface):
 
         response_text = response.text or ""
         estimated_input_tokens = self._estimate_tokens(prompt)
-        estimated_output_tokens = self._estimate_tokens(
-            response_text
-        )
+        estimated_output_tokens = self._estimate_tokens(response_text)
 
         # Estimate cost (simplified Gemini pricing)
         cost_per_input_token = 0.0000005  # $0.50 per million input tokens

@@ -19,9 +19,7 @@ class ProfileHandler:
         """Initialize with configuration manager."""
         self._config_manager = config_manager
 
-    async def list_profiles(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def list_profiles(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """List model profiles."""
         provider_filter = arguments.get("provider")
         profiles: list[dict[str, Any]] = []
@@ -39,17 +37,12 @@ class ProfileHandler:
                     data = yaml.safe_load(content) or {}
                     profile_provider = data.get("provider", "")
 
-                    if (
-                        provider_filter
-                        and profile_provider != provider_filter
-                    ):
+                    if provider_filter and profile_provider != provider_filter:
                         continue
 
                     profiles.append(
                         {
-                            "name": data.get(
-                                "name", yaml_file.stem
-                            ),
+                            "name": data.get("name", yaml_file.stem),
                             "provider": profile_provider,
                             "model": data.get("model", ""),
                             "path": str(yaml_file),
@@ -69,18 +62,13 @@ class ProfileHandler:
         profiles_dirs = self._config_manager.get_profiles_dirs()
         for dir_path in profiles_dirs:
             path = Path(dir_path)
-            if (
-                ".llm-orc" in str(path)
-                and "library" not in str(path)
-            ):
+            if ".llm-orc" in str(path) and "library" not in str(path):
                 return path
         if profiles_dirs:
             return Path(profiles_dirs[0])
         raise ValueError("No profiles directory configured")
 
-    async def create_profile(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def create_profile(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Create a new profile."""
         name = arguments.get("name")
         provider = arguments.get("provider")
@@ -104,29 +92,21 @@ class ProfileHandler:
             "model": model,
         }
         if arguments.get("system_prompt"):
-            profile_data["system_prompt"] = arguments[
-                "system_prompt"
-            ]
+            profile_data["system_prompt"] = arguments["system_prompt"]
         if arguments.get("timeout_seconds"):
-            profile_data["timeout_seconds"] = arguments[
-                "timeout_seconds"
-            ]
+            profile_data["timeout_seconds"] = arguments["timeout_seconds"]
         if arguments.get("temperature") is not None:
             profile_data["temperature"] = arguments["temperature"]
         if arguments.get("max_tokens") is not None:
             profile_data["max_tokens"] = arguments["max_tokens"]
 
         local_dir.mkdir(parents=True, exist_ok=True)
-        yaml_content = yaml.safe_dump(
-            profile_data, default_flow_style=False
-        )
+        yaml_content = yaml.safe_dump(profile_data, default_flow_style=False)
         target_file.write_text(yaml_content)
 
         return {"created": True, "path": str(target_file)}
 
-    async def update_profile(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def update_profile(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Update an existing profile."""
         name = arguments.get("name")
         changes = arguments.get("changes", {})
@@ -150,16 +130,12 @@ class ProfileHandler:
         data = yaml.safe_load(content) or {}
         data.update(changes)
 
-        yaml_content = yaml.safe_dump(
-            data, default_flow_style=False
-        )
+        yaml_content = yaml.safe_dump(data, default_flow_style=False)
         profile_file.write_text(yaml_content)
 
         return {"updated": True, "path": str(profile_file)}
 
-    async def delete_profile(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def delete_profile(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Delete a profile."""
         name = arguments.get("name")
         confirm = arguments.get("confirm", False)
@@ -167,9 +143,7 @@ class ProfileHandler:
         if not name:
             raise ValueError("name is required")
         if not confirm:
-            raise ValueError(
-                "Confirmation required to delete profile"
-            )
+            raise ValueError("Confirmation required to delete profile")
 
         profiles_dirs = self._config_manager.get_profiles_dirs()
         profile_file = None
@@ -197,9 +171,7 @@ class ProfileHandler:
                 continue
 
             for yaml_file in profile_dir.glob("*.yaml"):
-                self._load_profiles_from_file(
-                    yaml_file, profiles
-                )
+                self._load_profiles_from_file(yaml_file, profiles)
 
         return profiles
 
@@ -224,13 +196,9 @@ class ProfileHandler:
     ) -> None:
         """Parse profile data from various YAML formats."""
         if "model_profiles" in data:
-            self._parse_dict_format_profiles(
-                data["model_profiles"], profiles
-            )
+            self._parse_dict_format_profiles(data["model_profiles"], profiles)
         elif "profiles" in data:
-            self._parse_list_format_profiles(
-                data["profiles"], profiles
-            )
+            self._parse_list_format_profiles(data["profiles"], profiles)
         elif "name" in data:
             profiles[data["name"]] = data
 
