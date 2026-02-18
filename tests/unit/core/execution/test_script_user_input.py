@@ -2,8 +2,6 @@
 
 from unittest.mock import AsyncMock, Mock
 
-import pytest
-
 from llm_orc.core.communication.protocol import ConversationManager, MessageProtocol
 from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
 
@@ -154,25 +152,3 @@ class TestBidirectionalCommunication:
 
         assert result == "John Doe"
         cli_input_collector.collect_input.assert_called_once_with("Enter your name: ")
-
-
-class TestEnhancedScriptAgentIntegration:
-    """Test full integration of user input handling with EnhancedScriptAgent."""
-
-    @pytest.mark.skip(
-        reason="Complex interface not yet implemented - using simpler TDD approach"
-    )
-    async def test_enhanced_script_agent_handles_user_input_during_execution(
-        self,
-    ) -> None:
-        """Test EnhancedScriptAgent detects user input need and requests via handler."""
-        pass  # Complex interface test - will implement later
-
-    @pytest.mark.skip(
-        reason="Complex interface not yet implemented - using simpler TDD approach"
-    )
-    async def test_enhanced_script_agent_fallback_for_non_interactive_scripts(
-        self,
-    ) -> None:
-        """Test non-interactive scripts execute normally without user input handling."""
-        pass  # Complex interface test - will implement later
