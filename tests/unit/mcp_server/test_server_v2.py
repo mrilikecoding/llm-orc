@@ -707,7 +707,7 @@ class TestMCPServerV2ArtifactTools:
         self, server: MCPServerV2, tmp_path: Path
     ) -> None:
         """Delete artifact validates artifact_id format."""
-        server._test_artifacts_base = tmp_path
+        server._artifact_handler._test_artifacts_base = tmp_path
 
         with pytest.raises(ValueError, match="Invalid artifact_id format"):
             await server.call_tool(
@@ -719,7 +719,7 @@ class TestMCPServerV2ArtifactTools:
         self, server: MCPServerV2, tmp_path: Path
     ) -> None:
         """Delete artifact fails if not found."""
-        server._test_artifacts_base = tmp_path
+        server._artifact_handler._test_artifacts_base = tmp_path
 
         with pytest.raises(ValueError, match="not found"):
             await server.call_tool(
@@ -735,7 +735,7 @@ class TestMCPServerV2ArtifactTools:
         artifacts_dir = tmp_path / "test-ensemble" / "20231201_120000"
         artifacts_dir.mkdir(parents=True)
         (artifacts_dir / "execution.json").write_text("{}")
-        server._test_artifacts_base = tmp_path
+        server._artifact_handler._test_artifacts_base = tmp_path
 
         result = await server.call_tool(
             "delete_artifact",
@@ -758,7 +758,7 @@ class TestMCPServerV2ArtifactTools:
         # Set old modification time
         old_time = time.time() - (60 * 24 * 60 * 60)  # 60 days ago
         os.utime(artifacts_dir, (old_time, old_time))
-        server._test_artifacts_base = tmp_path
+        server._artifact_handler._test_artifacts_base = tmp_path
 
         result = await server.call_tool(
             "cleanup_artifacts", {"older_than_days": 30, "dry_run": True}
@@ -780,7 +780,7 @@ class TestMCPServerV2ArtifactTools:
         artifacts_dir.mkdir(parents=True)
         old_time = time.time() - (60 * 24 * 60 * 60)
         os.utime(artifacts_dir, (old_time, old_time))
-        server._test_artifacts_base = tmp_path
+        server._artifact_handler._test_artifacts_base = tmp_path
 
         result = await server.call_tool(
             "cleanup_artifacts", {"older_than_days": 30, "dry_run": False}
@@ -806,7 +806,7 @@ class TestMCPServerV2ArtifactTools:
             artifact_dir.mkdir(parents=True)
             os.utime(artifact_dir, (old_time, old_time))
 
-        server._test_artifacts_base = tmp_path
+        server._artifact_handler._test_artifacts_base = tmp_path
 
         result = await server.call_tool(
             "cleanup_artifacts",

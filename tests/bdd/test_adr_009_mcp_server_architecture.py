@@ -2082,7 +2082,7 @@ def _reconfigure_server_with_artifacts(
     mock_config.get_profiles_dirs.return_value = []
     server = MCPServerV2(config_manager=mock_config)
     # Set artifact base for testing
-    server._test_artifacts_base = bdd_context.get("artifacts_base")
+    server._artifact_handler._test_artifacts_base = bdd_context.get("artifacts_base")
     bdd_context["mcp_server"] = server
     bdd_context["mcp_available"] = True
 
