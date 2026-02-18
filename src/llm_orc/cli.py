@@ -200,18 +200,6 @@ def config() -> None:
     pass
 
 
-@config.command("init")
-@click.option(
-    "--project-name",
-    default=None,
-    help="Name for the project (defaults to directory name)",
-)
-def config_init_deprecated(project_name: str | None) -> None:
-    """(Deprecated) Initialize local config. Use 'llm-orc init' instead."""
-    click.echo("Note: 'llm-orc config init' is deprecated. Use 'llm-orc init' instead.")
-    init_local_config(project_name)
-
-
 @config.command("reset-global")
 @click.option(
     "--backup/--no-backup",

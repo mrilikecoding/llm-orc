@@ -57,13 +57,6 @@ Feature: ADR-008: LLM-Friendly CLI and MCP Design
     When I execute "llm-orc --help"
     Then the output should contain "scripts"
 
-  # Backward Compatibility
-  Scenario: Config init still works with deprecation notice
-    When I execute "llm-orc config init"
-    Then the command should succeed
-    And the directory ".llm-orc" should exist
-    And the output should contain "Use 'llm-orc init' instead"
-
   # Library Path Priority Order
   Scenario: Library path resolution follows priority order
     Given no environment variables are set

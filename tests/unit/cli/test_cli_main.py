@@ -167,28 +167,6 @@ class TestMainCLI:
         assert result.exit_code == 0
         assert "Configuration management commands" in result.output
 
-    def test_config_init_command(self) -> None:
-        """Test config init command."""
-        runner = CliRunner()
-
-        with patch("llm_orc.cli.init_local_config") as mock_init:
-            result = runner.invoke(cli, ["config", "init"])
-
-            mock_init.assert_called_once_with(None)
-            assert result.exit_code == 0
-
-    def test_config_init_with_project_name(self) -> None:
-        """Test config init command with project name."""
-        runner = CliRunner()
-
-        with patch("llm_orc.cli.init_local_config") as mock_init:
-            result = runner.invoke(
-                cli, ["config", "init", "--project-name", "MyProject"]
-            )
-
-            mock_init.assert_called_once_with("MyProject")
-            assert result.exit_code == 0
-
     def test_config_reset_global_command(self) -> None:
         """Test config reset-global command."""
         runner = CliRunner()
@@ -602,7 +580,6 @@ if "__main__" == "__main__":
 
         # Test config subcommands
         config_commands = [
-            ["config", "init", "--help"],
             ["config", "reset-global", "--help"],
             ["config", "reset-local", "--help"],
             ["config", "check", "--help"],

@@ -1133,26 +1133,6 @@ class TestConfigCommandsCLI:
         """Click test runner."""
         return CliRunner()
 
-    def test_config_init_cli_success(self, runner: CliRunner) -> None:
-        """Test config init through CLI."""
-        with patch("llm_orc.cli.init_local_config") as mock_init:
-            result = runner.invoke(
-                cli, ["config", "init", "--project-name", "test-project"]
-            )
-
-            assert result.exit_code == 0
-            mock_init.assert_called_once_with("test-project")
-
-    def test_config_init_cli_error(self, runner: CliRunner) -> None:
-        """Test config init CLI error handling."""
-        with patch("llm_orc.cli.init_local_config") as mock_init:
-            mock_init.side_effect = click.ClickException("Init error")
-
-            result = runner.invoke(cli, ["config", "init"])
-
-            assert result.exit_code != 0
-            assert "Init error" in result.output
-
     def test_config_check_global_cli(self, runner: CliRunner) -> None:
         """Test config check global through CLI."""
         with patch("llm_orc.cli.check_global_config") as mock_check:
