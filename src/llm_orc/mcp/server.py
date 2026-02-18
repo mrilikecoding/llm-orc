@@ -93,21 +93,6 @@ def _get_agent_attr(agent: Any, attr: str, default: Any = None) -> Any:
     return getattr(agent, attr, default)
 
 
-def _is_script_agent(agent: Any) -> bool:
-    """Check if agent is a script agent (explicit type or script field).
-
-    Args:
-        agent: Agent config (dict or object).
-
-    Returns:
-        True if agent is a script agent.
-    """
-    return (
-        _get_agent_attr(agent, "type") == "script"
-        or _get_agent_attr(agent, "script") is not None
-    )
-
-
 class MCPServerV2:
     """MCP Server v2 using FastMCP SDK.
 
