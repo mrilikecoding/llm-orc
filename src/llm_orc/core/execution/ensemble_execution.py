@@ -83,14 +83,7 @@ class EnsembleExecutor:
             self._performance_config, agent_executor_wrapper
         )
 
-        # Keep existing agent executor for backward compatibility
-        self._agent_executor = AgentExecutor(
-            self._performance_config,
-            self._emit_performance_event,
-            self._resolve_model_profile_to_config,
-            self._execute_agent_with_timeout,
-            self._input_enhancer.get_agent_input,
-        )
+        self._agent_executor = AgentExecutor(self._performance_config)
 
         # Initialize script cache for reproducible research
         self._script_cache_config = self._load_script_cache_config()

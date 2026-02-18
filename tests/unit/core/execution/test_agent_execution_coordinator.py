@@ -83,6 +83,4 @@ class TestAgentExecutionCoordinator:
         agent_config = {"name": "test_agent", "model": "mock"}
 
         with pytest.raises(Exception, match="timed out after 1 seconds"):
-            await coordinator.execute_agent_with_timeout(
-                agent_config, "test input", 1
-            )
+            await coordinator.execute_agent_with_timeout(agent_config, "test input", 1)
