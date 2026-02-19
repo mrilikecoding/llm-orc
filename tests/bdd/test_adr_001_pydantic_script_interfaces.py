@@ -69,7 +69,7 @@ def pydantic_schema_initialized(bdd_context: dict[str, Any]) -> None:
 def script_agent_infrastructure_available(bdd_context: dict[str, Any]) -> None:
     """Set up script agent infrastructure."""
     bdd_context["infrastructure"] = {
-        "enhanced_script_agent": True,
+        "script_agent": True,
         "agent_request_processor": True,
         "dependency_resolver": True,
     }
@@ -142,7 +142,7 @@ def file_operation_agent_producing_results(bdd_context: dict[str, Any]) -> None:
 
 
 @given("a ScriptAgent configured for schema validation")
-def enhanced_script_agent_configured(bdd_context: dict[str, Any]) -> None:
+def script_agent_configured(bdd_context: dict[str, Any]) -> None:
     """Set up ScriptAgent for testing."""
     config = {
         "script": 'echo \'{"success": true, "data": "test result"}\'',
