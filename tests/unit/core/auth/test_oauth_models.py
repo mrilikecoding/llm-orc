@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from llm_orc import __version__
-from llm_orc.models import OAuthClaudeModel
+from llm_orc.models.anthropic import OAuthClaudeModel
 
 
 class TestOAuthClaudeModel:
