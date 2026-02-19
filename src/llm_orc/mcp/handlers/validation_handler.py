@@ -9,13 +9,7 @@ from llm_orc.core.config.ensemble_config import (
     EnsembleConfig,
     assert_no_cycles,
 )
-
-
-def _get_agent_attr(agent: Any, attr: str, default: Any = None) -> Any:
-    """Get attribute from agent config."""
-    if isinstance(agent, dict):
-        return agent.get(attr, default)
-    return getattr(agent, attr, default)
+from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
 
 
 def _is_script_agent(agent: Any) -> bool:

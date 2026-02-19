@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from mcp.server.fastmcp import Context, FastMCP
 
 from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.mcp.handlers.artifact_handler import ArtifactHandler
@@ -77,20 +78,6 @@ class FastMCPProgressReporter:
         await self._ctx.report_progress(progress=progress, total=total)
 
 
-def _get_agent_attr(agent: Any, attr: str, default: Any = None) -> Any:
-    """Get agent attribute handling both dict and object forms.
-
-    Args:
-        agent: Agent config (dict or object).
-        attr: Attribute name.
-        default: Default value if not found.
-
-    Returns:
-        Attribute value or default.
-    """
-    if isinstance(agent, dict):
-        return agent.get(attr, default)
-    return getattr(agent, attr, default)
 
 
 class MCPServer:
