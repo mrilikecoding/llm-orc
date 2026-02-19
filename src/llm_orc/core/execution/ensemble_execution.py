@@ -228,7 +228,7 @@ class EnsembleExecutor:
             self._dependency_resolver,
             self._progress_controller,
             self._emit_performance_event,
-            lambda cfg: self._resolve_model_profile_to_config(cfg),
+            lambda cfg: self._llm_agent_runner._resolve_model_profile_to_config(cfg),
             self._performance_config,
         )
 
@@ -490,7 +490,7 @@ class EnsembleExecutor:
 
         try:
             # Execute agents in this phase in parallel
-            phase_results = await self._execute_agents_in_phase_parallel(
+            phase_results = await self._agent_dispatcher.execute_agents_in_phase(
                 expanded_agents, input_data
             )
 
@@ -657,9 +657,7 @@ class EnsembleExecutor:
 
         # Run validation if config is present
         if config.validation is not None:
-            validation_result = await self._run_validation(
-                config, final_result, start_time
-            )
+            validation_result = await _run_validation(config, final_result, start_time)
             final_result["validation_result"] = validation_result
 
         # Save artifacts (don't fail execution if saving fails)
@@ -673,64 +671,20 @@ class EnsembleExecutor:
 
         return final_result
 
-    async def _run_validation(
-        self, config: EnsembleConfig, result: dict[str, Any], start_time: float
-    ) -> Any:
-        """Delegate to module-level _run_validation."""
-        return await _run_validation(config, result, start_time)
-
-    # ========== Agent dispatch — kept for test compatibility ==========
-
     async def _execute_agent(
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
         """Execute a single agent, routing by type."""
         agent_type = self._agent_dispatcher._determine_agent_type(agent_config)
         if agent_type == "script":
-            return await self._execute_script_agent(agent_config, input_data)
+            return await self._script_agent_runner.execute(agent_config, input_data)
         elif agent_type == "llm":
-            return await self._execute_llm_agent(agent_config, input_data)
+            return await self._llm_agent_runner.execute(agent_config, input_data)
         else:
             agent_name = agent_config.get("name", "unknown")
             raise ValueError(
                 f"Agent '{agent_name}' must have either 'script' or 'model_profile'"
             )
-
-    async def _execute_script_agent(
-        self, agent_config: dict[str, Any], input_data: str
-    ) -> tuple[str, ModelInterface | None]:
-        """Delegate to ScriptAgentRunner."""
-        return await self._script_agent_runner.execute(agent_config, input_data)
-
-    async def _execute_llm_agent(
-        self, agent_config: dict[str, Any], input_data: str
-    ) -> tuple[str, ModelInterface | None]:
-        """Delegate to LlmAgentRunner."""
-        return await self._llm_agent_runner.execute(agent_config, input_data)
-
-    async def _resolve_model_profile_to_config(
-        self, agent_config: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Resolve model profile and merge with agent config."""
-        return await self._llm_agent_runner._resolve_model_profile_to_config(
-            agent_config
-        )
-
-    async def _execute_agents_in_phase_parallel(
-        self, phase_agents: list[dict[str, Any]], phase_input: str | dict[str, str]
-    ) -> dict[str, Any]:
-        """Delegate to AgentDispatcher."""
-        return await self._agent_dispatcher.execute_agents_in_phase(
-            phase_agents, phase_input
-        )
-
-    async def _execute_agent_with_timeout(
-        self, agent_config: dict[str, Any], input_data: str, timeout_seconds: int | None
-    ) -> tuple[str, ModelInterface | None]:
-        """Execute agent with timeout using the extracted coordinator."""
-        return await self._execution_coordinator.execute_agent_with_timeout(
-            agent_config, input_data, timeout_seconds
-        )
 
     @property
     def execution_coordinator(self) -> AgentExecutionCoordinator:
@@ -754,31 +708,3 @@ class EnsembleExecutor:
 
         # Fallback: convert name to readable format
         return agent_name.replace("-", " ").title()
-
-    # ========== Fan-Out Support (Issue #73) — stubs for test compatibility ==========
-
-    def _detect_fan_out_in_phase(
-        self,
-        phase_agents: list[dict[str, Any]],
-        results_dict: dict[str, Any],
-    ) -> list[tuple[dict[str, Any], list[Any]]]:
-        """Delegate to FanOutCoordinator."""
-        return self._fan_out_coordinator.detect_in_phase(phase_agents, results_dict)
-
-    def _expand_fan_out_agent(
-        self,
-        agent_config: dict[str, Any],
-        upstream_array: list[Any],
-    ) -> list[dict[str, Any]]:
-        """Delegate to FanOutCoordinator."""
-        return self._fan_out_coordinator.expand_agent(agent_config, upstream_array)
-
-    def _gather_fan_out_results(
-        self,
-        original_agent_name: str,
-        instance_results: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Delegate to FanOutCoordinator."""
-        return self._fan_out_coordinator.gather_results(
-            original_agent_name, instance_results
-        )

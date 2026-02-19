@@ -71,7 +71,7 @@ class TestNoArtifactCreation:
                 new_callable=AsyncMock,
             ),
             patch.object(
-                executor, "_execute_script_agent", new_callable=AsyncMock
+                executor._script_agent_runner, "execute", new_callable=AsyncMock
             ) as mock_script,
         ):
             mock_script.return_value = ("Test output", None)

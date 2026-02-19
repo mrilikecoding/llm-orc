@@ -229,9 +229,9 @@ class ConversationalEnsembleExecutor(EnsembleExecutor):
         """Execute single agent using existing infrastructure."""
         # Use existing agent execution logic from parent class
         try:
-            # _execute_agent_with_timeout requires timeout_seconds parameter
+            # execute_agent_with_timeout requires timeout_seconds parameter
             timeout_seconds = agent_config.get("timeout_seconds", 30)
-            return await self._execute_agent_with_timeout(
+            return await self._execution_coordinator.execute_agent_with_timeout(
                 agent_config, input_data, timeout_seconds
             )
         except Exception:

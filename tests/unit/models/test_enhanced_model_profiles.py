@@ -83,7 +83,9 @@ class TestEnhancedModelProfiles:
         executor = mock_ensemble_executor
 
         # Mock the model profile resolution to return enhanced profile
-        with patch.object(executor, "_resolve_model_profile_to_config") as mock_resolve:
+        with patch.object(
+            executor._llm_agent_runner, "_resolve_model_profile_to_config"
+        ) as mock_resolve:
             mock_resolve.return_value = enhanced_profile
 
             # Mock the role loading to capture what system_prompt gets used
@@ -154,7 +156,9 @@ class TestEnhancedModelProfiles:
         executor = mock_ensemble_executor
 
         # Mock the model profile resolution to return enhanced profile
-        with patch.object(executor, "_resolve_model_profile_to_config") as mock_resolve:
+        with patch.object(
+            executor._llm_agent_runner, "_resolve_model_profile_to_config"
+        ) as mock_resolve:
             mock_resolve.return_value = enhanced_profile
 
             # Mock model and role loading for LLM agents
