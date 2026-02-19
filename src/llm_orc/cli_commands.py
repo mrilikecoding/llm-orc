@@ -10,7 +10,6 @@ from typing import Any
 import click
 import yaml
 
-from llm_orc.cli_modules.commands import ConfigCommands
 from llm_orc.cli_modules.utils.config_utils import (
     display_local_profiles,
     get_available_providers,
@@ -492,33 +491,6 @@ def list_profiles_command() -> None:
 
             profile = global_profiles[profile_name]
             _display_global_profile(profile_name, profile)
-
-
-def init_local_config(project_name: str | None) -> None:
-    """Initialize local .llm-orc configuration for current project."""
-    ConfigCommands.init_local_config(project_name)
-
-
-def reset_global_config(backup: bool, preserve_auth: bool) -> None:
-    """Reset global configuration to template defaults."""
-    ConfigCommands.reset_global_config(backup, preserve_auth)
-
-
-def check_global_config() -> None:
-    """Check global configuration status."""
-    ConfigCommands.check_global_config()
-
-
-def check_local_config() -> None:
-    """Check local .llm-orc configuration status."""
-    ConfigCommands.check_local_config()
-
-
-def reset_local_config(
-    backup: bool, preserve_ensembles: bool, project_name: str | None
-) -> None:
-    """Reset local .llm-orc configuration to template defaults."""
-    ConfigCommands.reset_local_config(backup, preserve_ensembles, project_name)
 
 
 # Script and Artifact Commands
