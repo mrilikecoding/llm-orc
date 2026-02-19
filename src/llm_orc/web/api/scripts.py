@@ -8,19 +8,9 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from llm_orc.mcp import MCPServer
+from llm_orc.web.api import get_mcp_server
 
 router = APIRouter(prefix="/api/scripts", tags=["scripts"])
-
-_mcp_server: MCPServer | None = None
-
-
-def get_mcp_server() -> MCPServer:
-    """Get or create the MCP server instance."""
-    global _mcp_server
-    if _mcp_server is None:
-        _mcp_server = MCPServer()
-    return _mcp_server
 
 
 class TestScriptRequest(BaseModel):
