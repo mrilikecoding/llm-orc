@@ -6,8 +6,6 @@ import sys
 import uuid
 from collections import defaultdict
 from collections.abc import AsyncIterator
-from typing import Any
-
 from .events import ExecutionEvent, ExecutionEventType
 
 
@@ -203,74 +201,6 @@ class EventStreamManager:
         self._stream_cleanup_tasks.clear()
 
 
-class PerformanceEventCollector:
-    """Collects and aggregates performance events."""
-
-    def __init__(self, stream: EventStream):
-        self.stream = stream
-        self._metrics: dict[str, list[float]] = defaultdict(list)
-        self._costs: dict[str, float] = defaultdict(float)
-        self._durations: dict[str, int] = {}
-        self._start_times: dict[str, float] = {}
-
-    async def collect_performance_events(self) -> None:
-        """Collect performance events from the stream."""
-        async for event in self.stream.subscribe(
-            [
-                ExecutionEventType.AGENT_STARTED,
-                ExecutionEventType.AGENT_COMPLETED,
-                ExecutionEventType.AGENT_FAILED,
-                ExecutionEventType.PERFORMANCE_METRIC,
-                ExecutionEventType.COST_UPDATE,
-            ]
-        ):
-            await self._process_performance_event(event)
-
-    async def _process_performance_event(self, event: ExecutionEvent) -> None:
-        """Process a single performance event."""
-        if event.event_type == ExecutionEventType.AGENT_STARTED:
-            self._start_times[event.agent_name or "unknown"] = (
-                event.timestamp.timestamp()
-            )
-
-        elif event.event_type in [
-            ExecutionEventType.AGENT_COMPLETED,
-            ExecutionEventType.AGENT_FAILED,
-        ]:
-            if event.agent_name and event.agent_name in self._start_times:
-                duration = event.data.get("duration_ms", 0)
-                self._durations[event.agent_name] = duration
-
-                cost = event.data.get("cost_usd")
-                if cost is not None and cost > 0:
-                    self._costs[event.agent_name or "unknown"] = cost
-
-        elif event.event_type == ExecutionEventType.PERFORMANCE_METRIC:
-            metric_name = event.data.get("metric_name")
-            metric_value = event.data.get("metric_value")
-            if metric_name and metric_value is not None:
-                self._metrics[metric_name].append(metric_value)
-
-    def get_summary(self) -> dict[str, Any]:
-        """Get performance summary."""
-        return {
-            "total_duration_ms": sum(self._durations.values()),
-            "total_cost_usd": sum(self._costs.values()),
-            "agent_durations": dict(self._durations),
-            "agent_costs": dict(self._costs),
-            "metrics": {
-                name: {
-                    "count": len(values),
-                    "sum": sum(values),
-                    "avg": sum(values) / len(values) if values else 0,
-                    "min": min(values) if values else 0,
-                    "max": max(values) if values else 0,
-                }
-                for name, values in self._metrics.items()
-            },
-        }
-
-
 # Global event stream manager
 # Disable cleanup tasks during testing
 _is_testing = "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST") is not None
@@ -280,13 +210,3 @@ _global_stream_manager = EventStreamManager(enable_cleanup_tasks=not _is_testing
 def get_stream_manager() -> EventStreamManager:
     """Get the global event stream manager."""
     return _global_stream_manager
-
-
-def reset_global_stream_manager() -> None:
-    """Reset the global stream manager (useful for testing)."""
-    global _global_stream_manager
-    _global_stream_manager.close_all()
-    _is_testing = (
-        "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST") is not None
-    )
-    _global_stream_manager = EventStreamManager(enable_cleanup_tasks=not _is_testing)
