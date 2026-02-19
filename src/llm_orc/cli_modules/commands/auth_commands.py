@@ -14,7 +14,6 @@ from llm_orc.core.auth.authentication import AuthenticationManager, CredentialSt
 from llm_orc.core.config.config_manager import ConfigurationManager
 
 if TYPE_CHECKING:
-    from llm_orc.core.auth.authentication import AuthenticationManager
     from llm_orc.providers.registry import ProviderInfo
 
 
