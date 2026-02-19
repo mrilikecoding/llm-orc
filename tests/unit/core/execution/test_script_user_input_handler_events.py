@@ -43,7 +43,6 @@ class TestScriptUserInputHandlerEvents:
         # When
         await handler.handle_input_request(
             input_request=input_request,
-            _protocol=Mock(),
             conversation_id="conv_123",
             cli_input_collector=cli_input_collector,
             ensemble_name="test_ensemble",
@@ -87,7 +86,6 @@ class TestScriptUserInputHandlerEvents:
         # When
         await handler.handle_input_request(
             input_request=input_request,
-            _protocol=Mock(),
             conversation_id="conv_123",
             cli_input_collector=cli_input_collector,
             ensemble_name="test_ensemble",
@@ -127,7 +125,6 @@ class TestScriptUserInputHandlerEvents:
         # When
         await handler.handle_input_request(
             input_request=input_request,
-            _protocol=Mock(),
             conversation_id="conv_123",
             cli_input_collector=cli_input_collector,
             ensemble_name="test_ensemble",
@@ -174,7 +171,6 @@ class TestScriptUserInputHandlerEvents:
         # When
         await handler.handle_input_request(
             input_request=input_request,
-            _protocol=Mock(),
             conversation_id="conv_123",
             cli_input_collector=cli_input_collector,
         )

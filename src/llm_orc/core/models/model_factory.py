@@ -107,34 +107,30 @@ class ModelFactory:
         """
         # Handle mock models for testing
         if model_name.startswith("mock"):
-            return _handle_mock_models(model_name)
+            return MockModel(model_name)
 
         storage = self._credential_storage
 
-        try:
-            # Get authentication method
-            auth_method = _resolve_authentication_method(model_name, provider, storage)
+        # Get authentication method
+        auth_method = _resolve_authentication_method(model_name, provider, storage)
 
-            if not auth_method:
-                return _handle_no_authentication(
-                    model_name,
-                    provider,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
-
-            # Create authenticated model
-            return _create_authenticated_model(
+        if not auth_method:
+            return _handle_no_authentication(
                 model_name,
                 provider,
-                auth_method,
-                storage,
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
 
-        except Exception as e:
-            raise e
+        # Create authenticated model
+        return _create_authenticated_model(
+            model_name,
+            provider,
+            auth_method,
+            storage,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
 
     async def get_fallback_model(
         self,
@@ -225,18 +221,6 @@ class ModelFactory:
             return await self.load_model("llama3", "ollama")
         except Exception:
             return OllamaModel(model_name="llama3")
-
-
-def _handle_mock_models(model_name: str) -> ModelInterface:
-    """Create a mock model for testing.
-
-    Args:
-        model_name: Name of the mock model
-
-    Returns:
-        Mock model interface
-    """
-    return MockModel(model_name)
 
 
 def _resolve_authentication_method(

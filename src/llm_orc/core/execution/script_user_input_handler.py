@@ -3,7 +3,6 @@
 from collections.abc import Callable, Coroutine
 from typing import Any
 
-from llm_orc.core.communication.protocol import MessageProtocol
 from llm_orc.core.validation import LLMResponseGenerator
 from llm_orc.visualization.events import EventFactory
 
@@ -137,7 +136,6 @@ class ScriptUserInputHandler:
     async def handle_input_request(
         self,
         input_request: dict[str, Any],
-        _protocol: MessageProtocol,
         conversation_id: str,
         cli_input_collector: Any,
         ensemble_name: str | None = None,
@@ -147,7 +145,6 @@ class ScriptUserInputHandler:
 
         Args:
             input_request: Dictionary containing input request details
-            _protocol: Communication protocol for message passing (unused)
             conversation_id: ID of the conversation
             cli_input_collector: CLI component that collects user input
             ensemble_name: Name of the ensemble being executed
