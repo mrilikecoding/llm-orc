@@ -8,10 +8,25 @@ import click
 import pytest
 
 from llm_orc.cli_modules.commands.auth_commands import (
-    AuthCommands,
+    _determine_auth_method,
     _display_logout_results,
+    _display_simple_provider_list,
     _handle_all_providers_logout,
+    _handle_authentication_setup,
+    _handle_existing_provider,
+    _handle_interactive_action,
+    _handle_provider_test,
     _handle_single_provider_logout,
+    _handle_token_refresh,
+    _remove_existing_provider,
+    _validate_auth_credentials,
+    add_auth_provider,
+    list_auth_providers,
+    logout_oauth_providers,
+    remove_auth_provider,
+)
+from llm_orc.cli_modules.commands.auth_commands import (
+    test_token_refresh as run_token_refresh,
 )
 
 
@@ -40,7 +55,7 @@ class TestAddAuthProvider:
         mock_storage.list_providers.return_value = []
 
         # When
-        AuthCommands.add_auth_provider(
+        add_auth_provider(
             provider="test-provider",
             api_key="test_api_key",
             client_id=None,
@@ -75,7 +90,7 @@ class TestAddAuthProvider:
         mock_auth_manager.authenticate_oauth.return_value = True
 
         # When
-        AuthCommands.add_auth_provider(
+        add_auth_provider(
             provider="test-provider",
             api_key=None,
             client_id="test_client_id",
@@ -105,7 +120,7 @@ class TestAddAuthProvider:
         mock_storage_class.return_value = mock_storage
 
         # When
-        AuthCommands.add_auth_provider(
+        add_auth_provider(
             provider="claude-cli",
             api_key=None,
             client_id=None,
@@ -121,7 +136,7 @@ class TestAddAuthProvider:
         with pytest.raises(
             click.ClickException, match="Cannot use both API key and OAuth credentials"
         ):
-            AuthCommands.add_auth_provider(
+            add_auth_provider(
                 provider="test-provider",
                 api_key="test_key",
                 client_id="test_id",
@@ -137,7 +152,7 @@ class TestAddAuthProvider:
                 "Must provide either --api-key or both --client-id and --client-secret"
             ),
         ):
-            AuthCommands.add_auth_provider(
+            add_auth_provider(
                 provider="test-provider",
                 api_key=None,
                 client_id=None,
@@ -153,7 +168,7 @@ class TestAddAuthProvider:
                 "Must provide either --api-key or both --client-id and --client-secret"
             ),
         ):
-            AuthCommands.add_auth_provider(
+            add_auth_provider(
                 provider="test-provider",
                 api_key=None,
                 client_id="test_id",
@@ -182,7 +197,7 @@ class TestAddAuthProvider:
         mock_storage.list_providers.return_value = ["test-provider"]
 
         # When
-        AuthCommands.add_auth_provider(
+        add_auth_provider(
             provider="test-provider",
             api_key="test_api_key",
             client_id=None,
@@ -221,7 +236,7 @@ class TestAddAuthProvider:
         with pytest.raises(
             click.ClickException, match="OAuth authentication for test-provider failed"
         ):
-            AuthCommands.add_auth_provider(
+            add_auth_provider(
                 provider="test-provider",
                 api_key=None,
                 client_id="test_client_id",
@@ -255,7 +270,7 @@ class TestListAuthProviders:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands.list_auth_providers(interactive=False)
+            list_auth_providers(interactive=False)
 
         # Then
         mock_echo.assert_called_once_with("No authentication providers configured")
@@ -284,7 +299,7 @@ class TestListAuthProviders:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands.list_auth_providers(interactive=False)
+            list_auth_providers(interactive=False)
 
         # Then
         assert mock_echo.call_count == 3
@@ -328,7 +343,7 @@ class TestListAuthProviders:
         mock_auth_menus.auth_list_actions.return_value = ("quit", None)
 
         # When
-        AuthCommands.list_auth_providers(interactive=True)
+        list_auth_providers(interactive=True)
 
         # Then
         mock_auth_menus.auth_list_actions.assert_called_once_with(providers)
@@ -375,7 +390,7 @@ class TestListAuthProviders:
         mock_validate.return_value = True
 
         # When
-        AuthCommands.list_auth_providers(interactive=True)
+        list_auth_providers(interactive=True)
 
         # Then
         mock_show_working.assert_called_with("Testing provider1...")
@@ -426,7 +441,7 @@ class TestListAuthProviders:
         mock_validate.return_value = False
 
         # When
-        AuthCommands.list_auth_providers(interactive=True)
+        list_auth_providers(interactive=True)
 
         # Then
         mock_show_working.assert_called_with("Testing provider1...")
@@ -477,7 +492,7 @@ class TestListAuthProviders:
         mock_validate.side_effect = Exception("Test error")
 
         # When
-        AuthCommands.list_auth_providers(interactive=True)
+        list_auth_providers(interactive=True)
 
         # Then
         mock_show_working.assert_called_with("Testing provider1...")
@@ -521,7 +536,7 @@ class TestListAuthProviders:
         mock_confirm.return_value = True
 
         # When
-        AuthCommands.list_auth_providers(interactive=True)
+        list_auth_providers(interactive=True)
 
         # Then
         mock_confirm.assert_called_with("Remove authentication for provider1?")
@@ -532,7 +547,7 @@ class TestListAuthProviders:
     @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
     @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
     @patch("llm_orc.menu_system.AuthMenus")
-    @patch("llm_orc.cli_modules.commands.auth_commands.AuthCommands.auth_setup")
+    @patch("llm_orc.cli_modules.commands.auth_commands.auth_setup")
     def test_list_providers_interactive_setup_action(
         self,
         mock_auth_setup: Mock,
@@ -561,7 +576,7 @@ class TestListAuthProviders:
         ]
 
         # When
-        AuthCommands.list_auth_providers(interactive=True)
+        list_auth_providers(interactive=True)
 
         # Then
         mock_auth_setup.assert_called_once()
@@ -599,7 +614,7 @@ class TestListAuthProviders:
         ]
 
         # When
-        AuthCommands.list_auth_providers(interactive=True)
+        list_auth_providers(interactive=True)
 
         # Then
         mock_show_details.assert_called_once_with(mock_storage, "provider1")
@@ -644,7 +659,7 @@ class TestListAuthProviders:
         ]
 
         # When
-        AuthCommands.list_auth_providers(interactive=True)
+        list_auth_providers(interactive=True)
 
         # Then
         mock_show_working.assert_called_with("Refreshing tokens for provider1...")
@@ -690,7 +705,7 @@ class TestListAuthProviders:
         ]
 
         # When
-        AuthCommands.list_auth_providers(interactive=True)
+        list_auth_providers(interactive=True)
 
         # Then
         mock_show_working.assert_called_with("Refreshing tokens for provider1...")
@@ -735,7 +750,7 @@ class TestListAuthProviders:
         ]
 
         # When
-        AuthCommands.list_auth_providers(interactive=True)
+        list_auth_providers(interactive=True)
 
         # Then
         mock_show_working.assert_called_with("Refreshing tokens for provider1...")
@@ -765,7 +780,7 @@ class TestListAuthProviders:
         with pytest.raises(
             click.ClickException, match="Failed to list providers: Storage error"
         ):
-            AuthCommands.list_auth_providers(interactive=True)
+            list_auth_providers(interactive=True)
 
 
 class TestRemoveAuthProvider:
@@ -790,7 +805,7 @@ class TestRemoveAuthProvider:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands.remove_auth_provider("test-provider")
+            remove_auth_provider("test-provider")
 
         # Then
         mock_storage.remove_provider.assert_called_once_with("test-provider")
@@ -817,7 +832,7 @@ class TestRemoveAuthProvider:
         with pytest.raises(
             click.ClickException, match="No authentication found for test-provider"
         ):
-            AuthCommands.remove_auth_provider("test-provider")
+            remove_auth_provider("test-provider")
 
     @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
     @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
@@ -843,7 +858,7 @@ class TestRemoveAuthProvider:
         with pytest.raises(
             click.ClickException, match="Failed to remove provider: Storage error"
         ):
-            AuthCommands.remove_auth_provider("test-provider")
+            remove_auth_provider("test-provider")
 
 
 class TestTokenRefresh:
@@ -870,7 +885,7 @@ class TestTokenRefresh:
         with pytest.raises(
             click.ClickException, match="No authentication found for test-provider"
         ):
-            AuthCommands.test_token_refresh("test-provider")
+            run_token_refresh("test-provider")
 
     @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
     @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
@@ -894,7 +909,7 @@ class TestTokenRefresh:
         with pytest.raises(
             click.ClickException, match="No OAuth token found for test-provider"
         ):
-            AuthCommands.test_token_refresh("test-provider")
+            run_token_refresh("test-provider")
 
     @patch("llm_orc.core.auth.oauth_client.OAuthClaudeClient")
     @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
@@ -929,7 +944,7 @@ class TestTokenRefresh:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands.test_token_refresh("test-provider")
+            run_token_refresh("test-provider")
 
         # Then
         echo_calls = [call[0][0] for call in mock_echo.call_args_list]
@@ -978,7 +993,7 @@ class TestTokenRefresh:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands.test_token_refresh("test-provider")
+            run_token_refresh("test-provider")
 
         # Then
         echo_calls = [call[0][0] for call in mock_echo.call_args_list]
@@ -1012,7 +1027,7 @@ class TestSpecialProviderHandling:
             click.ClickException,
             match="Failed to set up claude-cli authentication: Claude CLI error",
         ):
-            AuthCommands.add_auth_provider(
+            add_auth_provider(
                 provider="claude-cli",
                 api_key=None,
                 client_id=None,
@@ -1044,7 +1059,7 @@ class TestSpecialProviderHandling:
 
         # When
         with patch("click.echo"):
-            AuthCommands.add_auth_provider(
+            add_auth_provider(
                 provider="anthropic-claude-pro-max",
                 api_key=None,
                 client_id=None,
@@ -1085,7 +1100,7 @@ class TestSpecialProviderHandling:
             match="Failed to set up anthropic-claude-pro-max"
             " authentication: OAuth error",
         ):
-            AuthCommands.add_auth_provider(
+            add_auth_provider(
                 provider="anthropic-claude-pro-max",
                 api_key=None,
                 client_id=None,
@@ -1119,7 +1134,7 @@ class TestSpecialProviderHandling:
 
         # When
         with patch("click.echo"):
-            AuthCommands.add_auth_provider(
+            add_auth_provider(
                 provider="anthropic",
                 api_key=None,
                 client_id=None,
@@ -1161,7 +1176,7 @@ class TestSpecialProviderHandling:
             click.ClickException,
             match="Failed to set up anthropic authentication: Interactive auth error",
         ):
-            AuthCommands.add_auth_provider(
+            add_auth_provider(
                 provider="anthropic",
                 api_key=None,
                 client_id=None,
@@ -1197,7 +1212,7 @@ class TestTokenRefreshAdvanced:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands.test_token_refresh("test-provider")
+            run_token_refresh("test-provider")
 
         # Then
         echo_calls = [call[0][0] for call in mock_echo.call_args_list]
@@ -1232,7 +1247,7 @@ class TestTokenRefreshAdvanced:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands.test_token_refresh("test-provider")
+            run_token_refresh("test-provider")
 
         # Then
         echo_calls = [call[0][0] for call in mock_echo.call_args_list]
@@ -1283,7 +1298,7 @@ class TestTokenRefreshAdvanced:
                 patch("time.time", return_value=1000),
             ):
                 # When
-                AuthCommands.test_token_refresh("anthropic-claude-pro-max")
+                run_token_refresh("anthropic-claude-pro-max")
 
                 # Then
                 echo_calls = [call[0][0] for call in mock_echo.call_args_list]
@@ -1344,7 +1359,7 @@ class TestTokenRefreshAdvanced:
                 patch("time.time", return_value=1000),
             ):
                 # When
-                AuthCommands.test_token_refresh("test-provider")
+                run_token_refresh("test-provider")
 
                 # Then
                 echo_calls = [call[0][0] for call in mock_echo.call_args_list]
@@ -1399,9 +1414,7 @@ class TestLogoutOAuthProviders:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands.logout_oauth_providers(
-                provider="test-provider", logout_all=False
-            )
+            logout_oauth_providers(provider="test-provider", logout_all=False)
 
         # Then
         mock_auth_manager.logout_oauth_provider.assert_called_once_with("test-provider")
@@ -1432,9 +1445,7 @@ class TestLogoutOAuthProviders:
         with pytest.raises(
             click.ClickException, match="Failed to logout from test-provider"
         ):
-            AuthCommands.logout_oauth_providers(
-                provider="test-provider", logout_all=False
-            )
+            logout_oauth_providers(provider="test-provider", logout_all=False)
 
     @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
     @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
@@ -1462,7 +1473,7 @@ class TestLogoutOAuthProviders:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands.logout_oauth_providers(provider=None, logout_all=True)
+            logout_oauth_providers(provider=None, logout_all=True)
 
         # Then
         mock_auth_manager.logout_all_oauth_providers.assert_called_once()
@@ -1492,7 +1503,7 @@ class TestLogoutOAuthProviders:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands.logout_oauth_providers(provider=None, logout_all=True)
+            logout_oauth_providers(provider=None, logout_all=True)
 
         # Then
         mock_echo.assert_called_once_with("No OAuth providers found to logout")
@@ -1503,7 +1514,7 @@ class TestLogoutOAuthProviders:
         with pytest.raises(
             click.ClickException, match="Must specify a provider name or use --all flag"
         ):
-            AuthCommands.logout_oauth_providers(provider=None, logout_all=False)
+            logout_oauth_providers(provider=None, logout_all=False)
 
 
 class TestAuthSetupHelperMethods:
@@ -1524,7 +1535,7 @@ class TestAuthSetupHelperMethods:
             patch("llm_orc.menu_system.show_success") as mock_success,
             patch("click.echo"),
         ):
-            result = AuthCommands._handle_existing_provider(
+            result = _handle_existing_provider(
                 storage=mock_storage,
                 provider_key=provider_key,
                 provider_display_name=provider_display_name,
@@ -1551,7 +1562,7 @@ class TestAuthSetupHelperMethods:
             patch("llm_orc.menu_system.confirm_action", side_effect=[False, True]),
             patch("click.echo"),
         ):
-            result = AuthCommands._handle_existing_provider(
+            result = _handle_existing_provider(
                 storage=mock_storage,
                 provider_key=provider_key,
                 provider_display_name=provider_display_name,
@@ -1575,7 +1586,7 @@ class TestAuthSetupHelperMethods:
             patch("llm_orc.menu_system.confirm_action", side_effect=[False, False]),
             patch("click.echo"),
         ):
-            result = AuthCommands._handle_existing_provider(
+            result = _handle_existing_provider(
                 storage=mock_storage,
                 provider_key=provider_key,
                 provider_display_name=provider_display_name,
@@ -1588,18 +1599,18 @@ class TestAuthSetupHelperMethods:
     def test_determine_auth_method_anthropic_claude_pro_max(self) -> None:
         """Test auth method determination for Claude Pro/Max."""
         # When/Then
-        result = AuthCommands._determine_auth_method("anthropic-claude-pro-max")
+        result = _determine_auth_method("anthropic-claude-pro-max")
         assert result == "oauth"
 
     def test_determine_auth_method_anthropic_api(self) -> None:
         """Test auth method determination for Anthropic API."""
         # When/Then
-        assert AuthCommands._determine_auth_method("anthropic-api") == "api_key"
+        assert _determine_auth_method("anthropic-api") == "api_key"
 
     def test_determine_auth_method_google_gemini(self) -> None:
         """Test auth method determination for Google Gemini."""
         # When/Then
-        assert AuthCommands._determine_auth_method("google-gemini") == "api_key"
+        assert _determine_auth_method("google-gemini") == "api_key"
 
     def test_determine_auth_method_generic_provider(self) -> None:
         """Test auth method determination for generic provider using menu."""
@@ -1611,7 +1622,7 @@ class TestAuthSetupHelperMethods:
             "llm_orc.menu_system.AuthMenus.get_auth_method_for_provider",
             return_value="oauth",
         ) as mock_menu:
-            result = AuthCommands._determine_auth_method(provider_key)
+            result = _determine_auth_method(provider_key)
 
         # Then
         assert result == "oauth"
@@ -1629,7 +1640,7 @@ class TestAuthSetupHelperMethods:
         with patch(
             "llm_orc.cli_modules.utils.auth_utils.show_auth_method_help"
         ) as mock_help:
-            result = AuthCommands._handle_authentication_setup(
+            result = _handle_authentication_setup(
                 auth_method="help",
                 provider_key="test-provider",
                 provider=mock_provider,
@@ -1654,7 +1665,7 @@ class TestAuthSetupHelperMethods:
             patch("click.prompt", return_value="test-api-key"),
             patch("llm_orc.menu_system.show_success") as mock_success,
         ):
-            result = AuthCommands._handle_authentication_setup(
+            result = _handle_authentication_setup(
                 auth_method="api_key",
                 provider_key="anthropic-api",
                 provider=mock_provider,
@@ -1683,7 +1694,7 @@ class TestAuthSetupHelperMethods:
             patch("click.prompt", side_effect=["client-id", "client-secret"]),
             patch("llm_orc.menu_system.show_success") as mock_success,
         ):
-            result = AuthCommands._handle_authentication_setup(
+            result = _handle_authentication_setup(
                 auth_method="oauth",
                 provider_key="test-provider",
                 provider=mock_provider,
@@ -1712,7 +1723,7 @@ class TestAuthSetupHelperMethods:
             patch("click.prompt", side_effect=["client-id", "client-secret"]),
             patch("llm_orc.menu_system.show_error") as mock_error,
         ):
-            result = AuthCommands._handle_authentication_setup(
+            result = _handle_authentication_setup(
                 auth_method="oauth",
                 provider_key="test-provider",
                 provider=mock_provider,
@@ -1798,15 +1809,15 @@ class TestAuthSetupHelperMethods:
         # When
         with (
             patch(
-                "llm_orc.cli_modules.commands.auth_commands.AuthCommands._handle_existing_provider",
+                "llm_orc.cli_modules.commands.auth_commands._handle_existing_provider",
                 return_value=True,
             ),
             patch(
-                "llm_orc.cli_modules.commands.auth_commands.AuthCommands._determine_auth_method",
+                "llm_orc.cli_modules.commands.auth_commands._determine_auth_method",
                 return_value="api_key",
             ),
             patch(
-                "llm_orc.cli_modules.commands.auth_commands.AuthCommands._handle_authentication_setup",
+                "llm_orc.cli_modules.commands.auth_commands._handle_authentication_setup",
                 return_value=False,
             ),
             patch("llm_orc.menu_system.confirm_action", return_value=False),
@@ -1833,7 +1844,7 @@ class TestAuthSetupHelperMethods:
 
         # When
         with patch(
-            "llm_orc.cli_modules.commands.auth_commands.AuthCommands._handle_existing_provider",
+            "llm_orc.cli_modules.commands.auth_commands._handle_existing_provider",
             return_value=None,
         ):
             result = _process_single_provider(
@@ -1876,7 +1887,7 @@ class TestListAuthProvidersHelperMethods:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands._display_simple_provider_list(providers)
+            _display_simple_provider_list(providers)
 
         # Then
         mock_echo.assert_called_once_with("No authentication providers configured")
@@ -1890,7 +1901,7 @@ class TestListAuthProvidersHelperMethods:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands._display_simple_provider_list(providers, mock_storage)
+            _display_simple_provider_list(providers, mock_storage)
 
         # Then
         expected_calls = [
@@ -1909,7 +1920,7 @@ class TestListAuthProvidersHelperMethods:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands._display_simple_provider_list(providers, mock_storage)
+            _display_simple_provider_list(providers, mock_storage)
 
         # Then
         expected_calls = [
@@ -1925,7 +1936,7 @@ class TestListAuthProvidersHelperMethods:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands._display_simple_provider_list(providers)
+            _display_simple_provider_list(providers)
 
         # Then
         expected_calls = [
@@ -1944,7 +1955,7 @@ class TestListAuthProvidersHelperMethods:
         auth_manager = Mock()
 
         # When
-        result = AuthCommands._handle_interactive_action(
+        result = _handle_interactive_action(
             action, selected_provider, storage, auth_manager
         )
 
@@ -1960,8 +1971,9 @@ class TestListAuthProvidersHelperMethods:
         auth_manager = Mock()
 
         # When
-        with patch.object(AuthCommands, "auth_setup") as mock_auth_setup:
-            result = AuthCommands._handle_interactive_action(
+        auth_setup_path = "llm_orc.cli_modules.commands.auth_commands.auth_setup"
+        with patch(auth_setup_path) as mock_auth_setup:
+            result = _handle_interactive_action(
                 action, selected_provider, storage, auth_manager
             )
 
@@ -1986,7 +1998,7 @@ class TestListAuthProvidersHelperMethods:
             patch("llm_orc.menu_system.show_working") as mock_working,
             patch("llm_orc.menu_system.show_success") as mock_success,
         ):
-            result = AuthCommands._handle_interactive_action(
+            result = _handle_interactive_action(
                 action, selected_provider, storage, auth_manager
             )
 
@@ -2014,7 +2026,7 @@ class TestListAuthProvidersHelperMethods:
             patch("llm_orc.menu_system.show_working"),
             patch("llm_orc.menu_system.show_error") as mock_error,
         ):
-            result = AuthCommands._handle_interactive_action(
+            result = _handle_interactive_action(
                 action, selected_provider, storage, auth_manager
             )
 
@@ -2039,7 +2051,7 @@ class TestListAuthProvidersHelperMethods:
             patch("llm_orc.menu_system.show_working"),
             patch("llm_orc.menu_system.show_error") as mock_error,
         ):
-            result = AuthCommands._handle_interactive_action(
+            result = _handle_interactive_action(
                 action, selected_provider, storage, auth_manager
             )
 
@@ -2060,7 +2072,7 @@ class TestListAuthProvidersHelperMethods:
             patch("llm_orc.menu_system.confirm_action", return_value=True),
             patch("llm_orc.menu_system.show_success") as mock_success,
         ):
-            result = AuthCommands._handle_interactive_action(
+            result = _handle_interactive_action(
                 action, selected_provider, storage, auth_manager
             )
 
@@ -2079,7 +2091,7 @@ class TestListAuthProvidersHelperMethods:
 
         # When
         with patch("llm_orc.menu_system.confirm_action", return_value=False):
-            result = AuthCommands._handle_interactive_action(
+            result = _handle_interactive_action(
                 action, selected_provider, storage, auth_manager
             )
 
@@ -2099,7 +2111,7 @@ class TestListAuthProvidersHelperMethods:
         with patch(
             "llm_orc.cli_modules.utils.config_utils.show_provider_details"
         ) as mock_details:
-            result = AuthCommands._handle_interactive_action(
+            result = _handle_interactive_action(
                 action, selected_provider, storage, auth_manager
             )
 
@@ -2120,7 +2132,7 @@ class TestAddAuthProviderHelperMethods:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands._remove_existing_provider(storage, provider)
+            _remove_existing_provider(storage, provider)
 
         # Then
         storage.remove_provider.assert_not_called()
@@ -2135,7 +2147,7 @@ class TestAddAuthProviderHelperMethods:
 
         # When
         with patch("click.echo") as mock_echo:
-            AuthCommands._remove_existing_provider(storage, provider)
+            _remove_existing_provider(storage, provider)
 
         # Then
         storage.remove_provider.assert_called_once_with("test-provider")
@@ -2157,7 +2169,7 @@ class TestAddAuthProviderHelperMethods:
         with pytest.raises(
             click.ClickException, match="Cannot use both API key and OAuth credentials"
         ):
-            AuthCommands._validate_auth_credentials(api_key, client_id, client_secret)
+            _validate_auth_credentials(api_key, client_id, client_secret)
 
     def test_validate_auth_credentials_none_provided(self) -> None:
         """Test validation when no credentials are provided."""
@@ -2173,7 +2185,7 @@ class TestAddAuthProviderHelperMethods:
                 "Must provide either --api-key or both --client-id and --client-secret"
             ),
         ):
-            AuthCommands._validate_auth_credentials(api_key, client_id, client_secret)
+            _validate_auth_credentials(api_key, client_id, client_secret)
 
     def test_validate_auth_credentials_incomplete_oauth(self) -> None:
         """Test validation with incomplete OAuth credentials."""
@@ -2189,7 +2201,7 @@ class TestAddAuthProviderHelperMethods:
                 "Must provide either --api-key or both --client-id and --client-secret"
             ),
         ):
-            AuthCommands._validate_auth_credentials(api_key, client_id, client_secret)
+            _validate_auth_credentials(api_key, client_id, client_secret)
 
     def test_validate_auth_credentials_valid_api_key(self) -> None:
         """Test validation with valid API key."""
@@ -2199,7 +2211,7 @@ class TestAddAuthProviderHelperMethods:
         client_secret = None
 
         # When (should not raise exception)
-        AuthCommands._validate_auth_credentials(api_key, client_id, client_secret)
+        _validate_auth_credentials(api_key, client_id, client_secret)
 
         # Then - no exception raised means success
 
@@ -2211,7 +2223,7 @@ class TestAddAuthProviderHelperMethods:
         client_secret = "client-secret"
 
         # When (should not raise exception)
-        AuthCommands._validate_auth_credentials(api_key, client_id, client_secret)
+        _validate_auth_credentials(api_key, client_id, client_secret)
 
         # Then - no exception raised means success
 
@@ -2231,9 +2243,7 @@ class TestAddAuthProviderHelperMethods:
             patch("llm_orc.menu_system.show_working") as mock_working,
             patch("llm_orc.menu_system.show_success") as mock_success,
         ):
-            result = AuthCommands._handle_provider_test(
-                selected_provider, storage, auth_manager
-            )
+            result = _handle_provider_test(selected_provider, storage, auth_manager)
 
         # Then
         assert result is False  # Test action returns False (no provider refresh)
@@ -2258,9 +2268,7 @@ class TestAddAuthProviderHelperMethods:
             patch("llm_orc.menu_system.show_working"),
             patch("llm_orc.menu_system.show_error") as mock_error,
         ):
-            result = AuthCommands._handle_provider_test(
-                selected_provider, storage, auth_manager
-            )
+            result = _handle_provider_test(selected_provider, storage, auth_manager)
 
         # Then
         assert result is False
@@ -2282,9 +2290,7 @@ class TestAddAuthProviderHelperMethods:
             patch("llm_orc.menu_system.show_working"),
             patch("llm_orc.menu_system.show_error") as mock_error,
         ):
-            result = AuthCommands._handle_provider_test(
-                selected_provider, storage, auth_manager
-            )
+            result = _handle_provider_test(selected_provider, storage, auth_manager)
 
         # Then
         assert result is False
@@ -2303,7 +2309,7 @@ class TestAddAuthProviderHelperMethods:
             patch("llm_orc.menu_system.show_info") as mock_info,
             patch("llm_orc.menu_system.show_success") as mock_success,
         ):
-            result = AuthCommands._handle_token_refresh(selected_provider, storage)
+            result = _handle_token_refresh(selected_provider, storage)
 
         # Then
         assert result is False  # Refresh action returns False
@@ -2327,7 +2333,7 @@ class TestAddAuthProviderHelperMethods:
             patch("llm_orc.menu_system.show_working"),
             patch("llm_orc.menu_system.show_error") as mock_error,
         ):
-            result = AuthCommands._handle_token_refresh(selected_provider, storage)
+            result = _handle_token_refresh(selected_provider, storage)
 
         # Then
         assert result is False
@@ -2347,7 +2353,7 @@ class TestAddAuthProviderHelperMethods:
             patch("llm_orc.menu_system.show_working"),
             patch("llm_orc.menu_system.show_error") as mock_error,
         ):
-            result = AuthCommands._handle_token_refresh(selected_provider, storage)
+            result = _handle_token_refresh(selected_provider, storage)
 
         # Then
         assert result is False

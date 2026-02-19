@@ -17,7 +17,6 @@ from llm_orc.cli_commands import (
     list_profiles_command,
 )
 from llm_orc.cli_modules.commands.auth_commands import (
-    AuthCommands,
     add_auth_provider,
     auth_setup,
     list_auth_providers,
@@ -1337,31 +1336,31 @@ class TestListEnsemblesHelperMethods:
 
 
 class TestAuthCommands:
-    """Test auth module-level aliases point to AuthCommands static methods."""
+    """Test auth module-level functions are callable."""
 
     def test_add_auth_provider(self) -> None:
-        """Test add_auth_provider is AuthCommands.add_auth_provider."""
-        assert add_auth_provider is AuthCommands.add_auth_provider
+        """Test add_auth_provider is a callable function."""
+        assert callable(add_auth_provider)
 
     def test_list_auth_providers(self) -> None:
-        """Test list_auth_providers is AuthCommands.list_auth_providers."""
-        assert list_auth_providers is AuthCommands.list_auth_providers
+        """Test list_auth_providers is a callable function."""
+        assert callable(list_auth_providers)
 
     def test_remove_auth_provider(self) -> None:
-        """Test remove_auth_provider is AuthCommands.remove_auth_provider."""
-        assert remove_auth_provider is AuthCommands.remove_auth_provider
+        """Test remove_auth_provider is a callable function."""
+        assert callable(remove_auth_provider)
 
     def test_test_token_refresh(self) -> None:
-        """Test refresh_token_test is AuthCommands.test_token_refresh."""
-        assert refresh_token_test is AuthCommands.test_token_refresh
+        """Test refresh_token_test is a callable function."""
+        assert callable(refresh_token_test)
 
     def test_auth_setup(self) -> None:
-        """Test auth_setup is AuthCommands.auth_setup."""
-        assert auth_setup is AuthCommands.auth_setup
+        """Test auth_setup is a callable function."""
+        assert callable(auth_setup)
 
     def test_logout_oauth_providers(self) -> None:
-        """Test logout_oauth_providers is AuthCommands.logout_oauth_providers."""
-        assert logout_oauth_providers is AuthCommands.logout_oauth_providers
+        """Test logout_oauth_providers is a callable function."""
+        assert callable(logout_oauth_providers)
 
 
 class TestInteractiveScriptIntegration:
