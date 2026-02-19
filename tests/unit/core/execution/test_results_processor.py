@@ -4,7 +4,20 @@ import time
 from typing import Any
 from unittest.mock import Mock
 
-from llm_orc.core.execution.results_processor import ResultsProcessor
+from llm_orc.core.execution.results_processor import (
+    add_fan_out_metadata,
+    calculate_usage_summary,
+    count_failed_agents,
+    count_fan_out_instances,
+    count_successful_agents,
+    create_initial_result,
+    extract_agent_errors,
+    extract_agent_responses,
+    finalize_result,
+    format_execution_summary,
+    get_agent_statuses,
+    process_agent_results,
+)
 
 
 class TestResultsProcessor:
@@ -12,10 +25,8 @@ class TestResultsProcessor:
 
     def test_create_initial_result(self) -> None:
         """Test creating initial result structure."""
-        processor = ResultsProcessor()
-
         start_time = time.time()
-        result = processor.create_initial_result("test_ensemble", "test input", 3)
+        result = create_initial_result("test_ensemble", "test input", 3)
 
         assert result["ensemble"] == "test_ensemble"
         assert result["status"] == "running"
@@ -27,8 +38,6 @@ class TestResultsProcessor:
 
     def test_finalize_result_success(self) -> None:
         """Test finalizing result without errors."""
-        processor = ResultsProcessor()
-
         start_time = time.time() - 1.5  # Simulate 1.5 second execution
         result = {
             "ensemble": "test",
@@ -40,7 +49,7 @@ class TestResultsProcessor:
             "agent2": {"total_tokens": 150, "cost_usd": 0.08},
         }
 
-        finalized = processor.finalize_result(result, agent_usage, False, start_time)
+        finalized = finalize_result(result, agent_usage, False, start_time)
 
         assert finalized["status"] == "completed"
         assert "duration" in finalized["metadata"]
@@ -54,19 +63,15 @@ class TestResultsProcessor:
 
     def test_finalize_result_with_errors(self) -> None:
         """Test finalizing result with errors."""
-        processor = ResultsProcessor()
-
         start_time = time.time()
         result = {"ensemble": "test", "status": "running", "metadata": {}}
 
-        finalized = processor.finalize_result(result, {}, True, start_time)
+        finalized = finalize_result(result, {}, True, start_time)
 
         assert finalized["status"] == "completed_with_errors"
 
     def test_calculate_usage_summary_basic(self) -> None:
         """Test calculating basic usage summary."""
-        processor = ResultsProcessor()
-
         agent_usage = {
             "agent1": {
                 "total_tokens": 100,
@@ -84,7 +89,7 @@ class TestResultsProcessor:
             },
         }
 
-        summary = processor.calculate_usage_summary(agent_usage, None)
+        summary = calculate_usage_summary(agent_usage, None)
 
         # Check structure
         assert "agents" in summary
@@ -105,8 +110,6 @@ class TestResultsProcessor:
 
     def test_calculate_usage_summary_with_synthesis(self) -> None:
         """Test calculating usage summary with synthesis."""
-        processor = ResultsProcessor()
-
         agent_usage = {
             "agent1": {
                 "total_tokens": 100,
@@ -124,7 +127,7 @@ class TestResultsProcessor:
             "duration_ms": 500,
         }
 
-        summary = processor.calculate_usage_summary(agent_usage, synthesis_usage)
+        summary = calculate_usage_summary(agent_usage, synthesis_usage)
 
         # Check synthesis is included
         assert "synthesis" in summary
@@ -140,9 +143,7 @@ class TestResultsProcessor:
 
     def test_calculate_usage_summary_empty(self) -> None:
         """Test calculating usage summary with no data."""
-        processor = ResultsProcessor()
-
-        summary = processor.calculate_usage_summary({}, None)
+        summary = calculate_usage_summary({}, None)
 
         assert summary["agents"] == {}
         totals = summary["totals"]
@@ -155,14 +156,12 @@ class TestResultsProcessor:
 
     def test_calculate_usage_summary_missing_fields(self) -> None:
         """Test calculating summary with missing fields in usage data."""
-        processor = ResultsProcessor()
-
         agent_usage = {
             "agent1": {"total_tokens": 100},  # Missing other fields
             "agent2": {"cost_usd": 0.05, "duration_ms": 1000},  # Missing tokens
         }
 
-        summary = processor.calculate_usage_summary(agent_usage, None)
+        summary = calculate_usage_summary(agent_usage, None)
 
         totals = summary["totals"]
         assert totals["total_tokens"] == 100  # Only agent1 has tokens
@@ -173,8 +172,6 @@ class TestResultsProcessor:
 
     def test_process_agent_results_success(self) -> None:
         """Test processing successful agent results."""
-        processor = ResultsProcessor()
-
         # Mock model with usage
         mock_model = Mock()
         mock_model.get_last_usage.return_value = {
@@ -190,7 +187,7 @@ class TestResultsProcessor:
         results_dict: dict[str, Any] = {}
         agent_usage: dict[str, Any] = {}
 
-        processor.process_agent_results(agent_results, results_dict, agent_usage)
+        process_agent_results(agent_results, results_dict, agent_usage)
 
         # Check results
         assert "agent1" in results_dict
@@ -208,8 +205,6 @@ class TestResultsProcessor:
 
     def test_process_agent_results_with_errors(self) -> None:
         """Test processing agent results with errors."""
-        processor = ResultsProcessor()
-
         agent_results = [
             ("agent1", ("Response 1", None)),
             ("agent2", None),  # Error case
@@ -219,7 +214,7 @@ class TestResultsProcessor:
         results_dict: dict[str, Any] = {}
         agent_usage: dict[str, Any] = {}
 
-        processor.process_agent_results(agent_results, results_dict, agent_usage)
+        process_agent_results(agent_results, results_dict, agent_usage)
 
         # Only agent1 should be processed
         assert len(results_dict) == 1
@@ -228,8 +223,6 @@ class TestResultsProcessor:
 
     def test_process_agent_results_model_without_usage(self) -> None:
         """Test processing results with model that has no usage."""
-        processor = ResultsProcessor()
-
         mock_model = Mock()
         mock_model.get_last_usage.return_value = None  # No usage
 
@@ -237,15 +230,13 @@ class TestResultsProcessor:
         results_dict: dict[str, Any] = {}
         agent_usage: dict[str, Any] = {}
 
-        processor.process_agent_results(agent_results, results_dict, agent_usage)
+        process_agent_results(agent_results, results_dict, agent_usage)
 
         assert "agent1" in results_dict
         assert "agent1" not in agent_usage  # No usage recorded
 
     def test_format_execution_summary(self) -> None:
         """Test formatting execution summary."""
-        processor = ResultsProcessor()
-
         result = {
             "ensemble": "test_ensemble",
             "status": "completed",
@@ -261,7 +252,7 @@ class TestResultsProcessor:
             },
         }
 
-        summary = processor.format_execution_summary(result)
+        summary = format_execution_summary(result)
 
         assert summary["ensemble_name"] == "test_ensemble"
         assert summary["status"] == "completed"
@@ -273,25 +264,21 @@ class TestResultsProcessor:
 
     def test_format_execution_summary_with_errors(self) -> None:
         """Test formatting execution summary with errors."""
-        processor = ResultsProcessor()
-
         result = {
             "ensemble": "test_ensemble",
             "status": "completed_with_errors",
             "metadata": {},
         }
 
-        summary = processor.format_execution_summary(result)
+        summary = format_execution_summary(result)
 
         assert summary["has_errors"] is True
 
     def test_format_execution_summary_missing_data(self) -> None:
         """Test formatting summary with missing data."""
-        processor = ResultsProcessor()
-
         result: dict[str, Any] = {}  # Empty result
 
-        summary = processor.format_execution_summary(result)
+        summary = format_execution_summary(result)
 
         assert summary["ensemble_name"] == "unknown"
         assert summary["status"] == "unknown"
@@ -303,8 +290,6 @@ class TestResultsProcessor:
 
     def test_get_agent_statuses(self) -> None:
         """Test extracting agent statuses."""
-        processor = ResultsProcessor()
-
         results = {
             "agent1": {"status": "success", "response": "OK"},
             "agent2": {"status": "failed", "error": "Error"},
@@ -312,7 +297,7 @@ class TestResultsProcessor:
             "agent4": "not a dict",  # Invalid format
         }
 
-        statuses = processor.get_agent_statuses(results)
+        statuses = get_agent_statuses(results)
 
         assert statuses["agent1"] == "success"
         assert statuses["agent2"] == "failed"
@@ -321,8 +306,6 @@ class TestResultsProcessor:
 
     def test_count_successful_agents(self) -> None:
         """Test counting successful agents."""
-        processor = ResultsProcessor()
-
         results = {
             "agent1": {"status": "success"},
             "agent2": {"status": "failed"},
@@ -331,13 +314,11 @@ class TestResultsProcessor:
             "agent5": "not a dict",
         }
 
-        count = processor.count_successful_agents(results)
+        count = count_successful_agents(results)
         assert count == 2
 
     def test_count_failed_agents(self) -> None:
         """Test counting failed agents."""
-        processor = ResultsProcessor()
-
         results = {
             "agent1": {"status": "success"},
             "agent2": {"status": "failed"},
@@ -345,13 +326,11 @@ class TestResultsProcessor:
             "agent4": {"no_status": True},
         }
 
-        count = processor.count_failed_agents(results)
+        count = count_failed_agents(results)
         assert count == 2
 
     def test_extract_agent_responses(self) -> None:
         """Test extracting agent responses."""
-        processor = ResultsProcessor()
-
         results = {
             "agent1": {"status": "success", "response": "Response 1"},
             "agent2": {"status": "failed", "error": "Error"},
@@ -359,7 +338,7 @@ class TestResultsProcessor:
             "agent4": "not a dict",
         }
 
-        responses = processor.extract_agent_responses(results)
+        responses = extract_agent_responses(results)
 
         assert len(responses) == 2
         assert responses["agent1"] == "Response 1"
@@ -369,8 +348,6 @@ class TestResultsProcessor:
 
     def test_extract_agent_errors(self) -> None:
         """Test extracting agent errors."""
-        processor = ResultsProcessor()
-
         results = {
             "agent1": {"status": "success", "response": "OK"},
             "agent2": {"status": "failed", "error": "Network error"},
@@ -379,7 +356,7 @@ class TestResultsProcessor:
             "agent5": "not a dict",
         }
 
-        errors = processor.extract_agent_errors(results)
+        errors = extract_agent_errors(results)
 
         assert len(errors) == 2
         assert errors["agent2"] == "Network error"
@@ -390,10 +367,8 @@ class TestResultsProcessor:
 
     def test_complex_workflow(self) -> None:
         """Test complex workflow with multiple operations."""
-        processor = ResultsProcessor()
-
         # Create initial result
-        result = processor.create_initial_result("complex_ensemble", "analyze data", 3)
+        result = create_initial_result("complex_ensemble", "analyze data", 3)
         assert result["status"] == "running"
 
         # Process agent results
@@ -409,23 +384,23 @@ class TestResultsProcessor:
         results_dict = result["results"]
         agent_usage: dict[str, Any] = {}
 
-        processor.process_agent_results(agent_results, results_dict, agent_usage)
+        process_agent_results(agent_results, results_dict, agent_usage)
 
         # Finalize result
         start_time = time.time() - 2.0  # 2 second execution
-        finalized = processor.finalize_result(result, agent_usage, False, start_time)
+        finalized = finalize_result(result, agent_usage, False, start_time)
 
         # Check final state
         assert finalized["status"] == "completed"
         assert len(finalized["results"]) == 3
 
         # Format summary
-        summary = processor.format_execution_summary(finalized)
+        summary = format_execution_summary(finalized)
         assert summary["agents_count"] == 1  # Only analyzer has usage data
         assert summary["has_errors"] is False
 
         # Extract responses
-        responses = processor.extract_agent_responses(finalized["results"])
+        responses = extract_agent_responses(finalized["results"])
         assert len(responses) == 3
         assert "analyzer" in responses
         assert "validator" in responses
@@ -437,8 +412,6 @@ class TestFanOutResultsProcessing:
 
     def test_add_fan_out_metadata(self) -> None:
         """Test adding fan-out execution statistics to result."""
-        processor = ResultsProcessor()
-
         result: dict[str, Any] = {
             "ensemble": "test",
             "metadata": {"agents_used": 3},
@@ -452,28 +425,24 @@ class TestFanOutResultsProcessing:
             },
         }
 
-        processor.add_fan_out_metadata(result, fan_out_stats)
+        add_fan_out_metadata(result, fan_out_stats)
 
         assert "fan_out" in result["metadata"]
         assert result["metadata"]["fan_out"] == fan_out_stats
 
     def test_add_fan_out_metadata_empty_stats(self) -> None:
         """Test adding empty fan-out stats does not add key."""
-        processor = ResultsProcessor()
-
         result: dict[str, Any] = {
             "ensemble": "test",
             "metadata": {"agents_used": 2},
         }
 
-        processor.add_fan_out_metadata(result, {})
+        add_fan_out_metadata(result, {})
 
         assert "fan_out" not in result["metadata"]
 
     def test_count_fan_out_instances(self) -> None:
         """Test counting fan-out instances in results."""
-        processor = ResultsProcessor()
-
         results = {
             "chunker": {"status": "success", "response": "..."},
             "extractor[0]": {"status": "success", "response": "r0"},
@@ -482,7 +451,7 @@ class TestFanOutResultsProcessing:
             "synthesizer": {"status": "success", "response": "..."},
         }
 
-        stats = processor.count_fan_out_instances(results)
+        stats = count_fan_out_instances(results)
 
         assert stats["extractor"]["total_instances"] == 3
         assert stats["extractor"]["successful_instances"] == 2
@@ -490,13 +459,11 @@ class TestFanOutResultsProcessing:
 
     def test_count_fan_out_instances_no_fan_out(self) -> None:
         """Test counting when no fan-out instances present."""
-        processor = ResultsProcessor()
-
         results = {
             "agent1": {"status": "success", "response": "r1"},
             "agent2": {"status": "success", "response": "r2"},
         }
 
-        stats = processor.count_fan_out_instances(results)
+        stats = count_fan_out_instances(results)
 
         assert stats == {}

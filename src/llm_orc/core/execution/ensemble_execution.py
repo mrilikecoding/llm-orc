@@ -23,7 +23,10 @@ from llm_orc.core.execution.llm_agent_runner import LlmAgentRunner
 from llm_orc.core.execution.phase_monitor import PhaseMonitor
 from llm_orc.core.execution.phase_result_processor import PhaseResultProcessor
 from llm_orc.core.execution.progress_controller import NoOpProgressController
-from llm_orc.core.execution.results_processor import ResultsProcessor
+from llm_orc.core.execution.results_processor import (
+    create_initial_result,
+    finalize_result,
+)
 from llm_orc.core.execution.script_agent_runner import ScriptAgentRunner
 from llm_orc.core.execution.script_cache import ScriptCache, ScriptCacheConfig
 from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
@@ -115,9 +118,7 @@ async def _run_validation(
 
     # Convert execution results to EnsembleExecutionResult format
     execution_order = [
-        agent["name"]
-        for agent in config.agents
-        if agent["name"] in result["results"]
+        agent["name"] for agent in config.agents if agent["name"] in result["results"]
     ]
 
     # Convert agent outputs, handling both dict and string responses
@@ -148,9 +149,7 @@ async def _run_validation(
 
     # Run validation
     evaluator = ValidationEvaluator()
-    return await evaluator.evaluate(
-        config.name, ensemble_result, validation_config
-    )
+    return await evaluator.evaluate(config.name, ensemble_result, validation_config)
 
 
 class EnsembleExecutor:
@@ -178,7 +177,7 @@ class EnsembleExecutor:
         self._dependency_analyzer = DependencyAnalyzer()
         self._dependency_resolver = DependencyResolver(self._get_agent_role_description)
         self._usage_collector = UsageCollector()
-        self._results_processor = ResultsProcessor()
+
         self._streaming_progress_tracker = StreamingProgressTracker()
         self._artifact_manager = ArtifactManager()
         self._progress_controller = NoOpProgressController()
@@ -418,10 +417,8 @@ class EnsembleExecutor:
         # Store agent configs for role descriptions
         self._current_agent_configs = config.agents
 
-        # Initialize result structure using ResultsProcessor
-        result = self._results_processor.create_initial_result(
-            config.name, input_data, len(config.agents)
-        )
+        # Initialize result structure
+        result = create_initial_result(config.name, input_data, len(config.agents))
         results_dict: dict[str, Any] = result["results"]
 
         # Reset usage collector for this execution
@@ -654,7 +651,7 @@ class EnsembleExecutor:
         # Get collected usage and adaptive stats, then finalize result using processor
         agent_usage = self._usage_collector.get_agent_usage()
         adaptive_stats = self._agent_executor.get_adaptive_stats()
-        final_result = self._results_processor.finalize_result(
+        final_result = finalize_result(
             result, agent_usage, has_errors, start_time, adaptive_stats
         )
 
