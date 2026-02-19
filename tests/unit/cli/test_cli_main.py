@@ -367,7 +367,8 @@ class TestMainCLI:
         """Test auth setup command."""
         runner = CliRunner()
 
-        with patch("llm_orc.cli_commands.auth_setup") as mock_setup:
+        patch_target = "llm_orc.cli_modules.commands.auth_commands.auth_setup"
+        with patch(patch_target) as mock_setup:
             result = runner.invoke(cli, ["auth", "setup"])
 
             mock_setup.assert_called_once()

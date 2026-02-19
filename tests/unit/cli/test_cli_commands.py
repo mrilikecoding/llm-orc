@@ -12,20 +12,25 @@ from click.exceptions import ClickException
 
 import llm_orc.cli_commands
 from llm_orc.cli_commands import (
-    add_auth_provider,
-    auth_setup,
     check_global_config,
     check_local_config,
     init_local_config,
     invoke_ensemble,
-    list_auth_providers,
     list_ensembles_command,
     list_profiles_command,
-    logout_oauth_providers,
-    refresh_token_test,
-    remove_auth_provider,
     reset_global_config,
     reset_local_config,
+)
+from llm_orc.cli_modules.commands.auth_commands import (
+    AuthCommands,
+    add_auth_provider,
+    auth_setup,
+    list_auth_providers,
+    logout_oauth_providers,
+    remove_auth_provider,
+)
+from llm_orc.cli_modules.commands.auth_commands import (
+    test_token_refresh as refresh_token_test,
 )
 
 
@@ -1373,47 +1378,31 @@ class TestListEnsemblesHelperMethods:
 
 
 class TestAuthCommands:
-    """Test authentication-related command functions."""
+    """Test auth module-level aliases point to AuthCommands static methods."""
 
     def test_add_auth_provider(self) -> None:
-        """Test add auth provider command delegation."""
-        with patch("llm_orc.cli_commands.AuthCommands") as mock_auth_class:
-            add_auth_provider("provider", "key", "client_id", "secret")
-            mock_auth_class.add_auth_provider.assert_called_once_with(
-                "provider", "key", "client_id", "secret"
-            )
+        """Test add_auth_provider is AuthCommands.add_auth_provider."""
+        assert add_auth_provider is AuthCommands.add_auth_provider
 
     def test_list_auth_providers(self) -> None:
-        """Test list auth providers command delegation."""
-        with patch("llm_orc.cli_commands.AuthCommands") as mock_auth_class:
-            list_auth_providers(True)
-            mock_auth_class.list_auth_providers.assert_called_once_with(True)
+        """Test list_auth_providers is AuthCommands.list_auth_providers."""
+        assert list_auth_providers is AuthCommands.list_auth_providers
 
     def test_remove_auth_provider(self) -> None:
-        """Test remove auth provider command delegation."""
-        with patch("llm_orc.cli_commands.AuthCommands") as mock_auth_class:
-            remove_auth_provider("provider")
-            mock_auth_class.remove_auth_provider.assert_called_once_with("provider")
+        """Test remove_auth_provider is AuthCommands.remove_auth_provider."""
+        assert remove_auth_provider is AuthCommands.remove_auth_provider
 
     def test_test_token_refresh(self) -> None:
-        """Test token refresh command delegation."""
-        with patch("llm_orc.cli_commands.AuthCommands") as mock_auth_class:
-            refresh_token_test("provider")
-            mock_auth_class.test_token_refresh.assert_called_once_with("provider")
+        """Test refresh_token_test is AuthCommands.test_token_refresh."""
+        assert refresh_token_test is AuthCommands.test_token_refresh
 
     def test_auth_setup(self) -> None:
-        """Test auth setup command delegation."""
-        with patch("llm_orc.cli_commands.AuthCommands") as mock_auth_class:
-            auth_setup()
-            mock_auth_class.auth_setup.assert_called_once()
+        """Test auth_setup is AuthCommands.auth_setup."""
+        assert auth_setup is AuthCommands.auth_setup
 
     def test_logout_oauth_providers(self) -> None:
-        """Test logout OAuth providers command delegation."""
-        with patch("llm_orc.cli_commands.AuthCommands") as mock_auth_class:
-            logout_oauth_providers("provider", False)
-            mock_auth_class.logout_oauth_providers.assert_called_once_with(
-                "provider", False
-            )
+        """Test logout_oauth_providers is AuthCommands.logout_oauth_providers."""
+        assert logout_oauth_providers is AuthCommands.logout_oauth_providers
 
 
 class TestInteractiveScriptIntegration:
