@@ -9,6 +9,7 @@ from typing import Any
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.execution.agent_dispatcher import AgentDispatcher
 from llm_orc.core.execution.agent_execution_coordinator import AgentExecutionCoordinator
 from llm_orc.core.execution.agent_executor import AgentExecutor
 from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
@@ -71,17 +72,6 @@ class EnsembleExecutor:
         self._fan_out_expander = FanOutExpander()
         self._fan_out_gatherer = FanOutGatherer(self._fan_out_expander)
 
-        # Initialize execution coordinator with agent executor function
-        # Use a wrapper to avoid circular dependency with _execute_agent_with_timeout
-        async def agent_executor_wrapper(
-            agent_config: dict[str, Any], input_data: str
-        ) -> tuple[str, ModelInterface | None]:
-            return await self._execute_agent(agent_config, input_data)
-
-        self._execution_coordinator = AgentExecutionCoordinator(
-            self._performance_config, agent_executor_wrapper
-        )
-
         self._agent_executor = AgentExecutor(self._performance_config)
 
         # Initialize script cache for reproducible research
@@ -102,6 +92,26 @@ class EnsembleExecutor:
             self._usage_collector,
             self._emit_performance_event,
             self._classify_failure_type,
+        )
+
+        # Initialize execution coordinator with agent executor function
+        # Use a wrapper that goes through _execute_agent for test patchability
+        async def agent_executor_wrapper(
+            agent_config: dict[str, Any], input_data: str
+        ) -> tuple[str, ModelInterface | None]:
+            return await self._execute_agent(agent_config, input_data)
+
+        self._execution_coordinator = AgentExecutionCoordinator(
+            self._performance_config, agent_executor_wrapper
+        )
+
+        self._agent_dispatcher = AgentDispatcher(
+            self._execution_coordinator,
+            self._dependency_resolver,
+            self._progress_controller,
+            self._emit_performance_event,
+            lambda cfg: self._resolve_model_profile_to_config(cfg),
+            self._performance_config,
         )
 
         self._phase_monitor = PhaseMonitor(
@@ -691,18 +701,13 @@ class EnsembleExecutor:
         evaluator = ValidationEvaluator()
         return await evaluator.evaluate(config.name, ensemble_result, validation_config)
 
+    # ========== Agent dispatch — kept for test compatibility ==========
+
     async def _execute_agent(
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
-        """Execute a single agent and return its response and model instance.
-
-        Agent type is determined implicitly based on configuration fields:
-        - Has 'script' field -> Script agent
-        - Has 'model_profile' field -> LLM agent
-        - Has explicit 'type' field -> Use that (backward compatibility)
-        """
-        agent_type = self._determine_agent_type(agent_config)
-
+        """Execute a single agent, routing by type."""
+        agent_type = self._agent_dispatcher._determine_agent_type(agent_config)
         if agent_type == "script":
             return await self._execute_script_agent(agent_config, input_data)
         elif agent_type == "llm":
@@ -713,40 +718,16 @@ class EnsembleExecutor:
                 f"Agent '{agent_name}' must have either 'script' or 'model_profile'"
             )
 
-    def _determine_agent_type(self, agent_config: dict[str, Any]) -> str | None:
-        """Determine agent type from configuration.
-
-        Args:
-            agent_config: Agent configuration
-
-        Returns:
-            Agent type: 'script', 'llm', or None if cannot be determined
-        """
-        # Check for explicit type first (backward compatibility)
-        explicit_type = agent_config.get("type")
-        if explicit_type == "script":
-            return "script"
-        elif explicit_type == "llm":
-            return "llm"
-
-        # Implicit type detection based on fields present
-        if "script" in agent_config:
-            return "script"
-        elif "model_profile" in agent_config or "model" in agent_config:
-            return "llm"
-
-        return None
-
     async def _execute_script_agent(
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
-        """Execute script agent with caching and resource monitoring."""
+        """Delegate to ScriptAgentRunner."""
         return await self._script_agent_runner.execute(agent_config, input_data)
 
     async def _execute_llm_agent(
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
-        """Execute LLM agent with fallback handling and resource monitoring."""
+        """Delegate to LlmAgentRunner."""
         return await self._llm_agent_runner.execute(agent_config, input_data)
 
     async def _resolve_model_profile_to_config(
@@ -760,148 +741,10 @@ class EnsembleExecutor:
     async def _execute_agents_in_phase_parallel(
         self, phase_agents: list[dict[str, Any]], phase_input: str | dict[str, str]
     ) -> dict[str, Any]:
-        """Execute agents in parallel within a phase.
-
-        Based on Issue #43 analysis, this provides 3-15x performance improvement
-        for I/O bound LLM API calls using asyncio.gather().
-        """
-        # Execute all agents in parallel using asyncio.gather
-        tasks = [
-            self._execute_single_agent_in_phase(agent_config, phase_input)
-            for agent_config in phase_agents
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Process results
-        phase_results: dict[str, Any] = {}
-        for result in results:
-            if isinstance(result, BaseException):
-                # Handle unexpected errors during gather
-                continue
-            # At this point, result should be a tuple[str, dict[str, Any]]
-            agent_name, agent_result = result
-            phase_results[agent_name] = agent_result
-
-        return phase_results
-
-    async def _execute_single_agent_in_phase(
-        self, agent_config: dict[str, Any], phase_input: str | dict[str, str]
-    ) -> tuple[str, dict[str, Any]]:
-        """Execute a single agent in a phase and return (name, result)."""
-        agent_name = agent_config["name"]
-
-        # Handle fan-out instance input preparation (issue #73)
-        if self._dependency_resolver.is_fan_out_instance_config(agent_config):
-            base_input = (
-                phase_input
-                if isinstance(phase_input, str)
-                else phase_input.get(agent_name, "")
-            )
-            phase_input = self._dependency_resolver.prepare_fan_out_instance_input(
-                agent_config, base_input
-            )
-
-        try:
-            return await self._execute_agent_with_monitoring(
-                agent_config, agent_name, phase_input
-            )
-        except Exception as e:
-            return await self._handle_agent_execution_failure(agent_config, e)
-
-    async def _execute_agent_with_monitoring(
-        self,
-        agent_config: dict[str, Any],
-        agent_name: str,
-        phase_input: str | dict[str, str],
-    ) -> tuple[str, dict[str, Any]]:
-        """Execute agent with full monitoring and progress tracking."""
-        agent_start_time = time.time()
-
-        # Emit agent started event
-        self._emit_performance_event(
-            "agent_started",
-            {"agent_name": agent_name, "timestamp": agent_start_time},
+        """Delegate to AgentDispatcher."""
+        return await self._agent_dispatcher.execute_agents_in_phase(
+            phase_agents, phase_input
         )
-
-        # Update progress controller with agent progress
-        if self._progress_controller:
-            await self._progress_controller.update_agent_progress(agent_name, "started")
-
-        # Get agent input and timeout
-        agent_input = self._dependency_resolver.get_agent_input(phase_input, agent_name)
-        timeout = await self._get_agent_timeout(agent_config)
-
-        # Execute agent with timeout coordination
-        (
-            response,
-            model_instance,
-        ) = await self._execution_coordinator.execute_agent_with_timeout(
-            agent_config, agent_input, timeout
-        )
-
-        # Emit completion events
-        await self._emit_agent_completion_events(agent_name, agent_start_time)
-
-        return agent_name, {
-            "response": response,
-            "status": "success",
-            "model_instance": model_instance,
-        }
-
-    async def _get_agent_timeout(self, agent_config: dict[str, Any]) -> int:
-        """Get timeout for agent execution."""
-        enhanced_config = await self._resolve_model_profile_to_config(agent_config)
-        timeout = enhanced_config.get("timeout_seconds")
-        if timeout is not None:
-            return int(timeout)
-        return int(
-            self._performance_config.get("execution", {}).get("default_timeout", 60)
-        )
-
-    async def _emit_agent_completion_events(
-        self, agent_name: str, start_time: float
-    ) -> None:
-        """Emit agent completion events and update progress."""
-        agent_end_time = time.time()
-        duration_ms = int((agent_end_time - start_time) * 1000)
-
-        self._emit_performance_event(
-            "agent_completed",
-            {
-                "agent_name": agent_name,
-                "timestamp": agent_end_time,
-                "duration_ms": duration_ms,
-            },
-        )
-
-        # Update progress controller with agent completion
-        if self._progress_controller:
-            await self._progress_controller.update_agent_progress(
-                agent_name, "completed"
-            )
-
-    async def _handle_agent_execution_failure(
-        self, agent_config: dict[str, Any], error: Exception
-    ) -> tuple[str, dict[str, Any]]:
-        """Handle agent execution failure and return error result."""
-        agent_name = agent_config["name"]
-        agent_end_time = time.time()
-
-        self._emit_performance_event(
-            "agent_completed",
-            {
-                "agent_name": agent_name,
-                "timestamp": agent_end_time,
-                "duration_ms": 0,
-                "error": str(error),
-            },
-        )
-
-        return agent_name, {
-            "error": str(error),
-            "status": "failed",
-            "model_instance": None,
-        }
 
     async def _execute_agent_with_timeout(
         self, agent_config: dict[str, Any], input_data: str, timeout_seconds: int | None
