@@ -715,6 +715,11 @@ class EnsembleExecutor:
             agent_config, input_data, timeout_seconds
         )
 
+    @property
+    def execution_coordinator(self) -> AgentExecutionCoordinator:
+        """Expose execution coordinator for composition-based callers."""
+        return self._execution_coordinator
+
     def _get_agent_role_description(self, agent_name: str) -> str | None:
         """Get a human-readable role description for an agent."""
         # Try to find the agent in the current ensemble config
