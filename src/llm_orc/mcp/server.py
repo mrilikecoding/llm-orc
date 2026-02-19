@@ -349,7 +349,7 @@ class MCPServer:
             Args:
                 category: Optional category to filter by
             """
-            result = await self._list_scripts_tool({"category": category})
+            result = await self._script_handler.list_scripts({"category": category})
             return json.dumps(result, indent=2)
 
         @self._mcp.tool()
@@ -362,7 +362,7 @@ class MCPServer:
                 browse_type: Type to browse (ensembles, scripts, all)
                 category: Optional category filter
             """
-            result = await self._library_browse_tool(
+            result = await self._library_handler.browse(
                 {"type": browse_type, "category": category}
             )
             return json.dumps(result, indent=2)
@@ -380,7 +380,7 @@ class MCPServer:
                 destination: Optional destination path
                 overwrite: Whether to overwrite existing files
             """
-            result = await self._library_copy_tool(
+            result = await self._library_handler.copy(
                 {
                     "source": source,
                     "destination": destination,
@@ -399,7 +399,7 @@ class MCPServer:
             Args:
                 provider: Optional provider to filter by
             """
-            result = await self._list_profiles_tool({"provider": provider})
+            result = await self._profile_handler.list_profiles({"provider": provider})
             return json.dumps(result, indent=2)
 
         @self._mcp.tool()
@@ -487,7 +487,7 @@ class MCPServer:
                 older_than_days: Delete artifacts older than this
                 dry_run: If True, preview without deleting
             """
-            result = await self._cleanup_artifacts_tool(
+            result = await self._artifact_handler.cleanup_artifacts(
                 {
                     "ensemble_name": ensemble_name,
                     "older_than_days": older_than_days,
@@ -510,7 +510,9 @@ class MCPServer:
                 name: Script name
                 category: Script category
             """
-            result = await self._get_script_tool({"name": name, "category": category})
+            result = await self._script_handler.get_script(
+                {"name": name, "category": category}
+            )
             return json.dumps(result, indent=2)
 
         @self._mcp.tool()
@@ -526,7 +528,7 @@ class MCPServer:
                 category: Script category
                 input: Test input data
             """
-            result = await self._test_script_tool(
+            result = await self._script_handler.test_script(
                 {"name": name, "category": category, "input": input}
             )
             return json.dumps(result, indent=2)
@@ -542,7 +544,7 @@ class MCPServer:
                 category: Script category
                 template: Template to use (basic, extraction, etc.)
             """
-            result = await self._create_script_tool(
+            result = await self._script_handler.create_script(
                 {"name": name, "category": category, "template": template}
             )
             return json.dumps(result, indent=2)
@@ -556,7 +558,7 @@ class MCPServer:
                 category: Script category
                 confirm: Must be True to actually delete
             """
-            result = await self._delete_script_tool(
+            result = await self._script_handler.delete_script(
                 {"name": name, "category": category, "confirm": confirm}
             )
             return json.dumps(result, indent=2)
@@ -571,13 +573,13 @@ class MCPServer:
             Args:
                 query: Search query
             """
-            result = await self._library_search_tool({"query": query})
+            result = await self._library_handler.search({"query": query})
             return json.dumps(result, indent=2)
 
         @self._mcp.tool()
         async def library_info() -> str:
             """Get library information."""
-            result = await self._library_info_tool({})
+            result = await self._library_handler.info({})
             return json.dumps(result, indent=2)
 
     def _setup_provider_discovery_tools(self) -> None:
@@ -591,7 +593,7 @@ class MCPServer:
             - Ollama: Available models from local instance
             - Cloud providers: Whether authentication is configured
             """
-            result = await self._get_provider_status_tool({})
+            result = await self._provider_handler.get_provider_status({})
             return json.dumps(result, indent=2)
 
         @self._mcp.tool()
@@ -844,27 +846,27 @@ class MCPServer:
             # Ensemble CRUD
             "create_ensemble": self._create_ensemble_tool,
             "delete_ensemble": self._delete_ensemble_tool,
-            # Scripts and library (high priority)
-            "list_scripts": self._list_scripts_tool,
-            "library_browse": self._library_browse_tool,
-            "library_copy": self._library_copy_tool,
+            # Scripts and library
+            "list_scripts": self._script_handler.list_scripts,
+            "library_browse": self._library_handler.browse,
+            "library_copy": self._library_handler.copy,
             # Profile CRUD
-            "list_profiles": self._list_profiles_tool,
+            "list_profiles": self._profile_handler.list_profiles,
             "create_profile": self._create_profile_tool,
             "update_profile": self._update_profile_tool,
             "delete_profile": self._delete_profile_tool,
             # Artifact management
             "delete_artifact": self._delete_artifact_tool,
-            "cleanup_artifacts": self._cleanup_artifacts_tool,
-            # Script management (low priority)
-            "get_script": self._get_script_tool,
-            "test_script": self._test_script_tool,
-            "create_script": self._create_script_tool,
-            "delete_script": self._delete_script_tool,
-            # Library extras (low priority)
-            "library_search": self._library_search_tool,
-            "library_info": self._library_info_tool,
-            # Phase 3: Provider & model discovery
+            "cleanup_artifacts": self._artifact_handler.cleanup_artifacts,
+            # Script management
+            "get_script": self._script_handler.get_script,
+            "test_script": self._script_handler.test_script,
+            "create_script": self._script_handler.create_script,
+            "delete_script": self._script_handler.delete_script,
+            # Library extras
+            "library_search": self._library_handler.search,
+            "library_info": self._library_handler.info,
+            # Provider & model discovery
             "get_provider_status": self._get_provider_status_tool,
             "check_ensemble_runnable": self._check_ensemble_runnable_tool,
             # Help
@@ -1022,7 +1024,7 @@ class MCPServer:
             self._mcp.run()
 
     # =========================================================================
-    # Phase 2 CRUD Tool Implementations
+    # Delegation stubs for web API and test callers
     # =========================================================================
 
     async def _create_ensemble_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1037,92 +1039,26 @@ class MCPServer:
         """Delete ensemble (delegation stub for web API)."""
         return await self._ensemble_crud_handler.delete_ensemble(arguments)
 
-    async def _list_scripts_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """List available scripts."""
-        return await self._script_handler.list_scripts(arguments)
-
-    async def _library_browse_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Browse library items."""
-        return await self._library_handler.browse(arguments)
-
-    async def _library_copy_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Copy from library to local."""
-        return await self._library_handler.copy(arguments)
-
-    # =========================================================================
-    # Profile CRUD Tool Implementations
-    # =========================================================================
-
-    async def _list_profiles_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """List model profiles."""
-        return await self._profile_handler.list_profiles(arguments)
-
     async def _create_profile_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Create a new profile."""
+        """Create profile (delegation stub for web API)."""
         return await self._profile_handler.create_profile(arguments)
 
     async def _update_profile_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Update an existing profile."""
+        """Update profile (delegation stub for web API)."""
         return await self._profile_handler.update_profile(arguments)
 
     async def _delete_profile_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Delete a profile."""
+        """Delete profile (delegation stub for web API)."""
         return await self._profile_handler.delete_profile(arguments)
 
-    # =========================================================================
-    # Artifact Management Tool Implementations
-    # =========================================================================
-
     async def _delete_artifact_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Delete an artifact."""
+        """Delete artifact (delegation stub for web API)."""
         return await self._artifact_handler.delete_artifact(arguments)
-
-    async def _cleanup_artifacts_tool(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Cleanup old artifacts."""
-        return await self._artifact_handler.cleanup_artifacts(arguments)
-
-    # =========================================================================
-    # Script Management Tool Implementations (Low Priority)
-    # =========================================================================
-
-    async def _get_script_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Get script details."""
-        return await self._script_handler.get_script(arguments)
-
-    async def _test_script_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Test a script with sample input."""
-        return await self._script_handler.test_script(arguments)
-
-    async def _create_script_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Create a new script."""
-        return await self._script_handler.create_script(arguments)
-
-    async def _delete_script_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Delete a script."""
-        return await self._script_handler.delete_script(arguments)
-
-    # =========================================================================
-    # Library Extras Tool Implementations (Low Priority)
-    # =========================================================================
-
-    async def _library_search_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Search library content."""
-        return await self._library_handler.search(arguments)
-
-    async def _library_info_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Get library information."""
-        return await self._library_handler.info(arguments)
-
-    # =========================================================================
-    # Phase 3: Provider & Model Discovery
-    # =========================================================================
 
     async def _get_provider_status_tool(
         self, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        """Get status of all providers and available models."""
+        """Get provider status (delegation stub for tests)."""
         return await self._provider_handler.get_provider_status(arguments)
 
     async def _check_ensemble_runnable_tool(
