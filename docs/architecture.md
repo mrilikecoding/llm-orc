@@ -74,7 +74,7 @@ Fan-out is woven into the existing phase-based execution pipeline in `EnsembleEx
 
 ### Script Agent Infrastructure
 
-#### EnhancedScriptAgent (`llm_orc/agents/enhanced_script_agent.py`)
+#### ScriptAgent (`llm_orc/agents/script_agent.py`)
 - **JSON I/O Support**: Structured input/output communication with scripts
 - **Script Resolution**: Automatic discovery and path resolution for project scripts
 - **Parameter Injection**: Configuration parameters passed as JSON to scripts
