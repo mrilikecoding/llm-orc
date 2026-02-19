@@ -94,6 +94,65 @@ def classify_failure_type(error_message: str) -> str:
     return "runtime_error"
 
 
+async def _run_validation(
+    config: EnsembleConfig, result: dict[str, Any], start_time: float
+) -> Any:
+    """Run validation on execution results.
+
+    Args:
+        config: Ensemble configuration
+        result: Execution results
+        start_time: Execution start time
+
+    Returns:
+        ValidationResult object
+    """
+    from datetime import datetime
+
+    # Parse validation config (mypy needs explicit type annotation)
+    validation_dict: dict[str, Any] = config.validation or {}
+    validation_config = ValidationConfig(**validation_dict)
+
+    # Convert execution results to EnsembleExecutionResult format
+    execution_order = [
+        agent["name"]
+        for agent in config.agents
+        if agent["name"] in result["results"]
+    ]
+
+    # Convert agent outputs, handling both dict and string responses
+    agent_outputs = {}
+    for agent_name, agent_result in result["results"].items():
+        response = agent_result.get("response", {})
+        # If response is a string, try to parse as JSON first
+        if isinstance(response, str):
+            try:
+                import json as json_module
+
+                agent_outputs[agent_name] = json_module.loads(response)
+            except (json_module.JSONDecodeError, ValueError):
+                # Not JSON, wrap in dict
+                agent_outputs[agent_name] = {"output": response}
+        else:
+            agent_outputs[agent_name] = response
+
+    execution_time = time.time() - start_time
+
+    ensemble_result = EnsembleExecutionResult(
+        ensemble_name=config.name,
+        execution_order=execution_order,
+        agent_outputs=agent_outputs,
+        execution_time=execution_time,
+        timestamp=datetime.now(),
+    )
+
+    # Run validation
+    evaluator = ValidationEvaluator()
+    return await evaluator.evaluate(
+        config.name, ensemble_result, validation_config
+    )
+
+
 class EnsembleExecutor:
     """Executes ensembles of agents and coordinates their responses."""
 
@@ -620,58 +679,8 @@ class EnsembleExecutor:
     async def _run_validation(
         self, config: EnsembleConfig, result: dict[str, Any], start_time: float
     ) -> Any:
-        """Run validation on execution results.
-
-        Args:
-            config: Ensemble configuration
-            result: Execution results
-            start_time: Execution start time
-
-        Returns:
-            ValidationResult object
-        """
-        from datetime import datetime
-
-        # Parse validation config (mypy needs explicit type annotation)
-        validation_dict: dict[str, Any] = config.validation or {}
-        validation_config = ValidationConfig(**validation_dict)
-
-        # Convert execution results to EnsembleExecutionResult format
-        execution_order = [
-            agent["name"]
-            for agent in config.agents
-            if agent["name"] in result["results"]
-        ]
-
-        # Convert agent outputs, handling both dict and string responses
-        agent_outputs = {}
-        for agent_name, agent_result in result["results"].items():
-            response = agent_result.get("response", {})
-            # If response is a string, try to parse as JSON first
-            if isinstance(response, str):
-                try:
-                    import json as json_module
-
-                    agent_outputs[agent_name] = json_module.loads(response)
-                except (json_module.JSONDecodeError, ValueError):
-                    # Not JSON, wrap in dict
-                    agent_outputs[agent_name] = {"output": response}
-            else:
-                agent_outputs[agent_name] = response
-
-        execution_time = time.time() - start_time
-
-        ensemble_result = EnsembleExecutionResult(
-            ensemble_name=config.name,
-            execution_order=execution_order,
-            agent_outputs=agent_outputs,
-            execution_time=execution_time,
-            timestamp=datetime.now(),
-        )
-
-        # Run validation
-        evaluator = ValidationEvaluator()
-        return await evaluator.evaluate(config.name, ensemble_result, validation_config)
+        """Delegate to module-level _run_validation."""
+        return await _run_validation(config, result, start_time)
 
     # ========== Agent dispatch — kept for test compatibility ==========
 
