@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Supported across all providers: Ollama, Anthropic, Google Gemini
   - MCP `create_profile` tool accepts the new parameters
 
+## [0.14.3] - 2026-02-18
+
+### Changed
+- Removed dead code: `RoleManager`, `ModelManager`, `provider_utils`, `visualization/integration`, unused methods from `cli_utils`, `agent_request_processor`, `artifact_manager`, `visualization/stream`
+- Consolidated `get_mcp_server()` singleton across web API modules
+- Consolidated `_get_agent_attr()` helper across MCP handler modules
+- Extracted `_find_profile_file()` in profile handler to remove duplication
+- Deleted 30 pass-only BDD scenarios with no test value
+- Moved 5 integration tests from `tests/unit/` to `tests/integration/`
+- Added shared `TestClient` fixture for web API tests
+- Added `.complexipy_cache/` to `.gitignore`
+
 ## [0.14.2] - 2026-02-16
 
 ### Added
