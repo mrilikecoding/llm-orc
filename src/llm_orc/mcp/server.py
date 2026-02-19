@@ -23,6 +23,7 @@ from llm_orc.mcp.handlers.help_handler import HelpHandler
 from llm_orc.mcp.handlers.library_handler import LibraryHandler
 from llm_orc.mcp.handlers.profile_handler import ProfileHandler
 from llm_orc.mcp.handlers.provider_handler import ProviderHandler
+from llm_orc.mcp.handlers.resource_handler import ResourceHandler
 from llm_orc.mcp.handlers.script_handler import ScriptHandler
 from llm_orc.mcp.handlers.validation_handler import ValidationHandler
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
@@ -102,6 +103,9 @@ class MCPServer:
         self.artifact_manager = ArtifactManager()
         self._executor = executor  # Lazily created if None
         self._help_handler = HelpHandler()
+        self._resource_handler = ResourceHandler(
+            self.config_manager, self.ensemble_loader
+        )
         self._profile_handler = ProfileHandler(self.config_manager)
         self._artifact_handler = ArtifactHandler()
         self._script_handler = ScriptHandler()
@@ -755,278 +759,35 @@ class MCPServer:
         Raises:
             ValueError: If resource not found.
         """
-        # Parse URI
-        if not uri.startswith("llm-orc://"):
-            raise ValueError(f"Invalid URI scheme: {uri}")
-
-        path = uri[len("llm-orc://") :]
-        parts = path.split("/")
-
-        if parts[0] == "ensembles":
-            return await self._read_ensembles_resource()
-        elif parts[0] == "ensemble" and len(parts) > 1:
-            return await self._read_ensemble_resource(parts[1])
-        elif parts[0] == "artifacts" and len(parts) > 1:
-            return await self._read_artifacts_resource(parts[1])
-        elif parts[0] == "artifact" and len(parts) > 2:
-            return await self._read_artifact_resource(parts[1], parts[2])
-        elif parts[0] == "metrics" and len(parts) > 1:
-            return await self._read_metrics_resource(parts[1])
-        elif parts[0] == "profiles":
-            return await self._read_profiles_resource()
-        else:
-            raise ValueError(f"Resource not found: {uri}")
+        return await self._resource_handler.read_resource(uri)
 
     async def _read_ensembles_resource(self) -> list[dict[str, Any]]:
-        """Read all ensembles.
-
-        Returns:
-            List of ensemble metadata.
-        """
-        ensembles: list[dict[str, Any]] = []
-        ensemble_dirs = self.config_manager.get_ensembles_dirs()
-
-        for ensemble_dir in ensemble_dirs:
-            if not Path(ensemble_dir).exists():
-                continue
-
-            source = self._determine_source(ensemble_dir)
-
-            ensemble_dir_path = Path(ensemble_dir)
-            for yaml_file in ensemble_dir_path.glob("**/*.yaml"):
-                try:
-                    config = self.ensemble_loader.load_from_file(str(yaml_file))
-                    if config:
-                        relative_path = str(yaml_file.relative_to(ensemble_dir_path))
-                        ensembles.append(
-                            {
-                                "name": config.name,
-                                "source": source,
-                                "relative_path": relative_path,
-                                "agent_count": len(config.agents),
-                                "description": config.description,
-                            }
-                        )
-                except Exception:
-                    continue
-
-        return ensembles
-
-    def _determine_source(self, ensemble_dir: Path) -> str:
-        """Determine the source type of an ensemble directory.
-
-        Args:
-            ensemble_dir: Path to ensemble directory.
-
-        Returns:
-            Source type: 'local', 'library', or 'global'.
-        """
-        path = ensemble_dir
-        if ".llm-orc" in str(path) and "library" not in str(path):
-            return "local"
-        elif "library" in str(path):
-            return "library"
-        else:
-            return "global"
+        """Read all ensembles (delegation stub for web API)."""
+        return await self._resource_handler.read_ensembles()
 
     async def _read_ensemble_resource(self, name: str) -> dict[str, Any]:
-        """Read specific ensemble configuration.
-
-        Args:
-            name: Ensemble name.
-
-        Returns:
-            Ensemble configuration.
-
-        Raises:
-            ValueError: If ensemble not found.
-        """
-        ensemble_dirs = self.config_manager.get_ensembles_dirs()
-
-        for ensemble_dir in ensemble_dirs:
-            config = self.ensemble_loader.find_ensemble(str(ensemble_dir), name)
-            if config:
-                agents_list = []
-                for agent in config.agents:
-                    # Handle both dict and object forms
-                    if isinstance(agent, dict):
-                        agents_list.append(
-                            {
-                                "name": agent.get("name", ""),
-                                "model_profile": agent.get("model_profile"),
-                                "depends_on": agent.get("depends_on") or [],
-                            }
-                        )
-                    else:
-                        agents_list.append(
-                            {
-                                "name": agent.name,
-                                "model_profile": agent.model_profile,
-                                "depends_on": agent.depends_on or [],
-                            }
-                        )
-                return {
-                    "name": config.name,
-                    "description": config.description,
-                    "agents": agents_list,
-                }
-
-        raise ValueError(f"Ensemble not found: {name}")
+        """Read specific ensemble (delegation stub for web API)."""
+        return await self._resource_handler.read_ensemble(name)
 
     async def _read_artifacts_resource(
         self, ensemble_name: str
     ) -> list[dict[str, Any]]:
-        """Read artifacts for an ensemble.
-
-        Args:
-            ensemble_name: Name of the ensemble.
-
-        Returns:
-            List of artifact metadata.
-        """
-        artifacts: list[dict[str, Any]] = []
-        artifacts_dir = self._get_artifacts_dir() / ensemble_name
-
-        if not artifacts_dir.exists():
-            return []
-
-        # Artifacts are stored as {timestamp_dir}/execution.json
-        for artifact_dir in artifacts_dir.iterdir():
-            if not artifact_dir.is_dir() or artifact_dir.is_symlink():
-                continue
-
-            execution_file = artifact_dir / "execution.json"
-            if not execution_file.exists():
-                continue
-
-            try:
-                artifact_data = json.loads(execution_file.read_text())
-                metadata = artifact_data.get("metadata", {})
-                artifacts.append(
-                    {
-                        "id": artifact_dir.name,
-                        "timestamp": metadata.get("started_at"),
-                        "status": artifact_data.get("status"),
-                        "duration": metadata.get("duration"),
-                        "agent_count": metadata.get("agents_used"),
-                    }
-                )
-            except Exception:
-                continue
-
-        return artifacts
+        """Read artifacts (delegation stub for web API)."""
+        return await self._resource_handler.read_artifacts(ensemble_name)
 
     async def _read_artifact_resource(
         self, ensemble_name: str, artifact_id: str
     ) -> dict[str, Any]:
-        """Read specific artifact.
-
-        Args:
-            ensemble_name: Name of the ensemble.
-            artifact_id: Artifact ID (timestamp directory name).
-
-        Returns:
-            Artifact data.
-
-        Raises:
-            ValueError: If artifact not found.
-        """
-        # Artifacts are stored as {ensemble}/{artifact_id}/execution.json
-        artifact_dir = self._get_artifacts_dir() / ensemble_name / artifact_id
-        execution_file = artifact_dir / "execution.json"
-
-        if not execution_file.exists():
-            raise ValueError(f"Artifact not found: {ensemble_name}/{artifact_id}")
-
-        result: dict[str, Any] = json.loads(execution_file.read_text())
-        return result
+        """Read specific artifact (delegation stub for web API)."""
+        return await self._resource_handler.read_artifact(ensemble_name, artifact_id)
 
     async def _read_metrics_resource(self, ensemble_name: str) -> dict[str, Any]:
-        """Read metrics for an ensemble.
-
-        Args:
-            ensemble_name: Name of the ensemble.
-
-        Returns:
-            Aggregated metrics.
-        """
-        artifacts = await self._read_artifacts_resource(ensemble_name)
-
-        if not artifacts:
-            return {
-                "success_rate": 0.0,
-                "avg_cost": 0.0,
-                "avg_duration": 0.0,
-                "total_executions": 0,
-            }
-
-        success_count = sum(1 for a in artifacts if a.get("status") == "success")
-
-        # Parse duration strings (e.g., "2.3s") to floats
-        def parse_duration(dur: str | float | None) -> float:
-            if dur is None:
-                return 0.0
-            if isinstance(dur, int | float):
-                return float(dur)
-            if isinstance(dur, str) and dur.endswith("s"):
-                try:
-                    return float(dur[:-1])
-                except ValueError:
-                    return 0.0
-            return 0.0
-
-        total_duration = sum(parse_duration(a.get("duration")) for a in artifacts)
-
-        return {
-            "success_rate": success_count / len(artifacts) if artifacts else 0.0,
-            "avg_cost": 0.0,  # Cost not tracked in new artifact format
-            "avg_duration": total_duration / len(artifacts) if artifacts else 0.0,
-            "total_executions": len(artifacts),
-        }
+        """Read metrics (delegation stub for web API)."""
+        return await self._resource_handler.read_metrics(ensemble_name)
 
     async def _read_profiles_resource(self) -> list[dict[str, Any]]:
-        """Read model profiles.
-
-        Returns:
-            List of model profile configurations.
-        """
-        profiles: list[dict[str, Any]] = []
-        model_profiles = self.config_manager.get_model_profiles()
-
-        for name, config in model_profiles.items():
-            profiles.append(
-                {
-                    "name": name,
-                    "provider": config.get("provider", "unknown"),
-                    "model": config.get("model", "unknown"),
-                }
-            )
-
-        return profiles
-
-    def _get_artifacts_dir(self) -> Path:
-        """Get artifacts directory path.
-
-        Returns:
-            Path to artifacts directory.
-        """
-        # Check if global_config_dir points to an artifacts directory (for testing)
-        global_config_path = Path(self.config_manager.global_config_dir)
-        if global_config_path.name == "artifacts" and global_config_path.exists():
-            return global_config_path
-
-        # Check local artifacts first (project-specific)
-        local_artifacts = Path.cwd() / ".llm-orc" / "artifacts"
-        if local_artifacts.exists():
-            return local_artifacts
-
-        # Then check global artifacts
-        global_artifacts = global_config_path / "artifacts"
-        if global_artifacts.exists():
-            return global_artifacts
-
-        # Default to local even if it doesn't exist yet
-        return local_artifacts
+        """Read profiles (delegation stub for web API)."""
+        return await self._resource_handler.read_profiles()
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Call an MCP tool.
