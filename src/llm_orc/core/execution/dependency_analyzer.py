@@ -197,7 +197,8 @@ class DependencyAnalyzer:
 
     # ========== Fan-Out Support (Issue #73) ==========
 
-    def normalize_agent_name(self, name: str) -> str:
+    @staticmethod
+    def normalize_agent_name(name: str) -> str:
         """Normalize agent name by removing instance index if present.
 
         Converts 'extractor[0]' to 'extractor' for dependency checking.
@@ -213,7 +214,8 @@ class DependencyAnalyzer:
             return match.group(1)
         return name
 
-    def is_fan_out_instance_name(self, name: str) -> bool:
+    @staticmethod
+    def is_fan_out_instance_name(name: str) -> bool:
         """Check if name matches the fan-out instance pattern 'agent[N]'.
 
         Args:

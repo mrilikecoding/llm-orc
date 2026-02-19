@@ -202,7 +202,8 @@ class DependencyResolver:
         dependencies = self.get_dependencies(agent_config)
         return all(dep in completed_agents for dep in dependencies)
 
-    def is_fan_out_instance_config(self, agent_config: dict[str, Any]) -> bool:
+    @staticmethod
+    def is_fan_out_instance_config(agent_config: dict[str, Any]) -> bool:
         """Check if an agent config is a fan-out instance.
 
         Args:
