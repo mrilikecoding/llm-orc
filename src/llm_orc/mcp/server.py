@@ -19,6 +19,7 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.mcp.handlers.artifact_handler import ArtifactHandler
+from llm_orc.mcp.handlers.execution_handler import ExecutionHandler
 from llm_orc.mcp.handlers.help_handler import HelpHandler
 from llm_orc.mcp.handlers.library_handler import LibraryHandler
 from llm_orc.mcp.handlers.profile_handler import ProfileHandler
@@ -117,6 +118,13 @@ class MCPServer:
         )
         self._validation_handler = ValidationHandler(
             self.config_manager, self._find_ensemble_by_name
+        )
+        self._execution_handler = ExecutionHandler(
+            self.config_manager,
+            self.ensemble_loader,
+            self.artifact_manager,
+            self._get_executor,
+            self._find_ensemble_by_name,
         )
         self._mcp = FastMCP("llm-orc")
         self._setup_resources()
@@ -891,6 +899,7 @@ class MCPServer:
         # Update project path and invalidate cached executor
         self._project_path = project_dir
         self._executor = None
+        self._execution_handler._project_path = project_dir
 
         # Recreate config manager with new project path
         self.config_manager = ConfigurationManager(project_dir=project_dir)
@@ -909,58 +918,15 @@ class MCPServer:
         return result
 
     async def _invoke_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Execute invoke tool.
-
-        Args:
-            arguments: Tool arguments including ensemble_name and input.
-
-        Returns:
-            Execution result.
-        """
-        ensemble_name = arguments.get("ensemble_name")
-        input_data = arguments.get("input", "")
-
-        if not ensemble_name:
-            raise ValueError("ensemble_name is required")
-
-        # Find ensemble
-        ensemble_dirs = self.config_manager.get_ensembles_dirs()
-        config = None
-
-        for ensemble_dir in ensemble_dirs:
-            config = self.ensemble_loader.find_ensemble(
-                str(ensemble_dir), ensemble_name
-            )
-            if config:
-                break
-
-        if not config:
-            raise ValueError(f"Ensemble does not exist: {ensemble_name}")
-
-        # Execute ensemble
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
-
-        executor = EnsembleExecutor(project_dir=self._project_path)
-        result = await executor.execute(config, input_data)
-
-        return {
-            "results": result.get("results", {}),
-            "synthesis": result.get("synthesis"),
-            "status": result.get("status"),
-        }
+        """Execute invoke tool (delegation stub for web API)."""
+        return await self._execution_handler.invoke(arguments)
 
     async def _invoke_tool_with_streaming(
         self, ensemble_name: str, input_data: str, ctx: Context[Any, Any, Any]
     ) -> dict[str, Any]:
         """Execute invoke tool with streaming progress updates.
 
-        Args:
-            ensemble_name: Name of the ensemble to execute.
-            input_data: Input data for the ensemble.
-            ctx: FastMCP context for progress reporting.
-
-        Returns:
-            Execution result.
+        Bridges FastMCP Context to ProgressReporter.
         """
         reporter = FastMCPProgressReporter(ctx)
         return await self._execute_ensemble_streaming(
@@ -973,45 +939,10 @@ class MCPServer:
         input_data: str,
         reporter: ProgressReporter,
     ) -> dict[str, Any]:
-        """Execute ensemble with streaming progress updates.
-
-        This method is separated from _invoke_tool_with_streaming to allow
-        testing with a mock ProgressReporter.
-
-        Args:
-            ensemble_name: Name of the ensemble to execute.
-            input_data: Input data for the ensemble.
-            reporter: Progress reporter for status updates.
-
-        Returns:
-            Execution result.
-        """
-        if not ensemble_name:
-            raise ValueError("ensemble_name is required")
-
-        config = self._find_ensemble_by_name(ensemble_name)
-        if not config:
-            raise ValueError(f"Ensemble does not exist: {ensemble_name}")
-
-        executor = self._get_executor()
-        total_agents = len(config.agents)
-        state: dict[str, Any] = {
-            "completed": 0,
-            "result": {},
-            "ensemble_name": ensemble_name,
-            "input_data": input_data,
-        }
-
-        msg = f"Starting ensemble '{ensemble_name}' with {total_agents} agents"
-        await reporter.info(msg)
-
-        async for event in executor.execute_streaming(config, input_data):
-            await self._handle_streaming_event(event, reporter, total_agents, state)
-
-        result = state.get("result", {})
-        if not isinstance(result, dict):
-            result = {}
-        return result
+        """Execute streaming (delegation stub for tests)."""
+        return await self._execution_handler.execute_streaming(
+            ensemble_name, input_data, reporter
+        )
 
     async def _handle_streaming_event(
         self,
@@ -1020,114 +951,10 @@ class MCPServer:
         total_agents: int,
         state: dict[str, Any],
     ) -> None:
-        """Handle a single streaming event from ensemble execution.
-
-        Args:
-            event: The streaming event.
-            reporter: Progress reporter for status updates.
-            total_agents: Total number of agents in ensemble.
-            state: Mutable state dict with 'completed' count and 'result'.
-        """
-        event_type = event.get("type", "")
-        event_data = event.get("data", {})
-
-        if event_type == "execution_started":
-            await reporter.report_progress(progress=0, total=total_agents)
-
-        elif event_type == "agent_started":
-            agent_name = event_data.get("agent_name", "unknown")
-            await reporter.info(f"Agent '{agent_name}' started")
-
-        elif event_type == "agent_completed":
-            state["completed"] += 1
-            agent_name = event_data.get("agent_name", "unknown")
-            await reporter.report_progress(state["completed"], total_agents)
-            await reporter.info(f"Agent '{agent_name}' completed")
-
-        elif event_type == "execution_completed":
-            results = event_data.get("results", {})
-            synthesis = event_data.get("synthesis")
-            status = event_data.get("status", "completed")
-            state["result"] = {
-                "results": results,
-                "synthesis": synthesis,
-                "status": status,
-            }
-            # Save artifact for later analysis
-            ensemble_name = state.get("ensemble_name", "unknown")
-            input_data = state.get("input_data", "")
-            self._save_execution_artifact(
-                ensemble_name, input_data, results, synthesis, status
-            )
-            await reporter.report_progress(progress=total_agents, total=total_agents)
-
-        elif event_type == "execution_failed":
-            error_msg = event_data.get("error", "Unknown error")
-            await reporter.error(f"Execution failed: {error_msg}")
-            state["result"] = {
-                "results": {},
-                "synthesis": None,
-                "status": "failed",
-                "error": error_msg,
-            }
-
-        elif event_type == "agent_fallback_started":
-            agent_name = event_data.get("agent_name", "unknown")
-            msg = f"Agent '{agent_name}' falling back to alternate model"
-            await reporter.warning(msg)
-
-    def _save_execution_artifact(
-        self,
-        ensemble_name: str,
-        input_data: str,
-        results: dict[str, Any],
-        synthesis: Any,
-        status: str,
-    ) -> Path | None:
-        """Save execution results as an artifact.
-
-        Args:
-            ensemble_name: Name of the executed ensemble.
-            input_data: Input provided to the ensemble.
-            results: Agent results dictionary.
-            synthesis: Synthesis result (if any).
-            status: Execution status.
-
-        Returns:
-            Path to the artifact directory or None if save failed.
-        """
-        import datetime
-
-        # Build artifact data in expected format
-        artifact_data: dict[str, Any] = {
-            "ensemble_name": ensemble_name,
-            "input": input_data,
-            "timestamp": datetime.datetime.now().isoformat(),
-            "status": status,
-            "results": results,
-            "synthesis": synthesis,
-            "agents": [],
-        }
-
-        # Extract agent info from results
-        for agent_name, agent_result in results.items():
-            if isinstance(agent_result, dict):
-                artifact_data["agents"].append(
-                    {
-                        "name": agent_name,
-                        "status": agent_result.get("status", "unknown"),
-                        "result": agent_result.get("response", ""),
-                    }
-                )
-
-        try:
-            artifact_path = self.artifact_manager.save_execution_results(
-                ensemble_name, artifact_data
-            )
-            return artifact_path
-        except (OSError, TypeError, ValueError):
-            # Log but don't fail execution if artifact save fails
-            return None
+        """Handle streaming event (delegation stub for tests)."""
+        await self._execution_handler.handle_streaming_event(
+            event, reporter, total_agents, state
+        )
 
     async def _validate_ensemble_tool(
         self, arguments: dict[str, Any]
@@ -1249,60 +1076,9 @@ class MCPServer:
     async def invoke_streaming(
         self, params: dict[str, Any]
     ) -> AsyncIterator[dict[str, Any]]:
-        """Invoke ensemble with streaming progress.
-
-        Args:
-            params: Invocation parameters.
-
-        Yields:
-            Progress events.
-        """
-        ensemble_name = params.get("ensemble_name")
-        # input_data is available via params.get("input") when needed for execution
-
-        if not ensemble_name:
-            raise ValueError("ensemble_name is required")
-
-        # Find ensemble
-        ensemble_dirs = self.config_manager.get_ensembles_dirs()
-        config = None
-
-        for ensemble_dir in ensemble_dirs:
-            config = self.ensemble_loader.find_ensemble(
-                str(ensemble_dir), ensemble_name
-            )
-            if config:
-                break
-
-        if not config:
-            raise ValueError(f"Ensemble not found: {ensemble_name}")
-
-        # Emit agent events (simplified streaming)
-        for agent in config.agents:
-            agent_name = _get_agent_attr(agent, "name")
-            yield {
-                "type": "agent_start",
-                "agent": agent_name,
-            }
-
-            # Agent would execute here
-            yield {
-                "type": "agent_progress",
-                "agent": agent_name,
-                "progress": 50,
-            }
-
-            yield {
-                "type": "agent_complete",
-                "agent": agent_name,
-                "status": "success",
-            }
-
-        # Final result
-        yield {
-            "type": "execution_complete",
-            "status": "success",
-        }
+        """Invoke ensemble with streaming progress (delegation stub)."""
+        async for event in self._execution_handler.invoke_streaming(params):
+            yield event
 
     def run(
         self, transport: str = "stdio", host: str = "0.0.0.0", port: int = 8080
