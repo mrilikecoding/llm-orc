@@ -6,6 +6,8 @@ from llm_orc.cli_commands import (
     invoke_ensemble,
     list_ensembles_command,
     list_profiles_command,
+)
+from llm_orc.cli_modules.commands.validation_commands import (
     validate_all_ensembles,
     validate_ensemble,
     validate_ensemble_category,
