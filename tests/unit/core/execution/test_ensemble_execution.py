@@ -1672,7 +1672,7 @@ class TestEnsembleExecutor:
         """
         from unittest.mock import AsyncMock, Mock, patch
 
-        from llm_orc.agents.enhanced_script_agent import EnhancedScriptAgent
+        from llm_orc.agents.script_agent import ScriptAgent
         from llm_orc.core.execution.script_user_input_handler import (
             ScriptUserInputHandler,
         )
@@ -1691,8 +1691,8 @@ class TestEnsembleExecutor:
         mock_user_input_detection = Mock(spec=ScriptUserInputHandler)
         mock_user_input_detection.requires_user_input.return_value = True
 
-        # Mock EnhancedScriptAgent
-        mock_script_agent = Mock(spec=EnhancedScriptAgent)
+        # Mock ScriptAgent
+        mock_script_agent = Mock(spec=ScriptAgent)
         mock_script_agent.name = "interactive_agent"
         mock_script_agent.script = "primitives/user-interaction/get_user_input.py"
         mock_script_agent.environment = {}
@@ -1720,7 +1720,7 @@ class TestEnsembleExecutor:
         # Mock the script detection and agent creation
         with (
             patch(
-                "llm_orc.core.execution.script_agent_runner.EnhancedScriptAgent",
+                "llm_orc.core.execution.script_agent_runner.ScriptAgent",
                 return_value=mock_script_agent,
             ),
             patch(

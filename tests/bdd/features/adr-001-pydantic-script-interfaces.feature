@@ -19,7 +19,7 @@ Feature: ADR-001 Pydantic-Based Script Agent Interface System
   - AgentRequest: target_agent_type, parameters, priority for dynamic communication
   - UserInputRequest/Output: specialized schemas for user interaction patterns
   - FileOperationRequest/Output: specialized schemas for file operation patterns
-  - Schema validation in EnhancedScriptAgent.execute_with_schema() method
+  - Schema validation in ScriptAgent.execute_with_schema() method
   - AgentRequestProcessor for extracting and coordinating dynamic requests
 
   Critical validations:
@@ -128,8 +128,8 @@ Feature: ADR-001 Pydantic-Based Script Agent Interface System
     And operation_performed should be required string field
 
   @enhanced-script-agent @adr-001
-  Scenario: EnhancedScriptAgent validates input using ScriptAgentInput schema
-    Given an EnhancedScriptAgent configured for schema validation
+  Scenario: ScriptAgent validates input using ScriptAgentInput schema
+    Given a ScriptAgent configured for schema validation
     And a valid ScriptAgentInput with agent_name "test" and input_data "test data"
     When I call execute_with_schema() method
     Then the input should be validated against ScriptAgentInput schema
@@ -138,8 +138,8 @@ Feature: ADR-001 Pydantic-Based Script Agent Interface System
     And the context and dependencies should be properly passed to script
 
   @enhanced-script-agent @adr-001
-  Scenario: EnhancedScriptAgent produces ScriptAgentOutput schema
-    Given an EnhancedScriptAgent that executes successfully
+  Scenario: ScriptAgent produces ScriptAgentOutput schema
+    Given a ScriptAgent that executes successfully
     And the script produces valid JSON output
     When the execute_with_schema() method completes
     Then the output should be validated as ScriptAgentOutput schema
@@ -149,8 +149,8 @@ Feature: ADR-001 Pydantic-Based Script Agent Interface System
     And agent_requests should be empty list unless populated by script
 
   @enhanced-script-agent @adr-001
-  Scenario: EnhancedScriptAgent handles schema validation failures
-    Given an EnhancedScriptAgent receiving invalid input
+  Scenario: ScriptAgent handles schema validation failures
+    Given a ScriptAgent receiving invalid input
     When schema validation fails during execute_with_schema()
     Then a ScriptAgentOutput should be returned with success False
     And error field should contain descriptive validation error message
@@ -219,7 +219,7 @@ Feature: ADR-001 Pydantic-Based Script Agent Interface System
   @integration @adr-001
   Scenario: Schema system integrates with existing ensemble execution
     Given an ensemble configuration using script agents
-    And the ensemble includes both EnhancedScriptAgent and regular agents
+    And the ensemble includes both ScriptAgent and regular agents
     When the ensemble executes with schema validation enabled
     Then schema-validated agents should integrate seamlessly
     And execution flow should respect schema validation timing
