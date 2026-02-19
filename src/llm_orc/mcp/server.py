@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, Any, Protocol
 from mcp.server.fastmcp import Context, FastMCP
 
 from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.mcp.handlers.artifact_handler import ArtifactHandler
@@ -26,6 +25,7 @@ from llm_orc.mcp.handlers.profile_handler import ProfileHandler
 from llm_orc.mcp.handlers.provider_handler import ProviderHandler
 from llm_orc.mcp.handlers.script_handler import ScriptHandler
 from llm_orc.mcp.handlers.validation_handler import ValidationHandler
+from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
 
 if TYPE_CHECKING:
     from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
@@ -76,8 +76,6 @@ class FastMCPProgressReporter:
     async def report_progress(self, progress: int, total: int) -> None:
         """Report progress."""
         await self._ctx.report_progress(progress=progress, total=total)
-
-
 
 
 class MCPServer:

@@ -441,4 +441,3 @@ class ArtifactManager:
                     raise ValueError("AgentRequest must have parameters")
 
         return script_output
-

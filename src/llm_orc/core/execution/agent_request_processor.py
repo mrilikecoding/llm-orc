@@ -121,4 +121,3 @@ class AgentRequestProcessor:
 
         except json.JSONDecodeError as e:
             raise RuntimeError(f"Failed to process script output JSON: {str(e)}") from e
-

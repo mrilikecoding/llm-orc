@@ -494,9 +494,7 @@ class TestMCPServerProfileTools:
     """Tests for profile CRUD tools."""
 
     @pytest.mark.asyncio
-    async def test_list_profiles_empty(
-        self, server: MCPServer, tmp_path: Path
-    ) -> None:
+    async def test_list_profiles_empty(self, server: MCPServer, tmp_path: Path) -> None:
         """List profiles returns empty when no profiles exist."""
         _mock_config(server).get_profiles_dirs.return_value = [str(tmp_path)]
 
@@ -941,9 +939,7 @@ class TestMCPServerScriptTools:
             await server.call_tool("delete_script", {"name": "test", "confirm": True})
 
     @pytest.mark.asyncio
-    async def test_delete_script_requires_confirmation(
-        self, server: MCPServer
-    ) -> None:
+    async def test_delete_script_requires_confirmation(self, server: MCPServer) -> None:
         """Delete script requires confirmation."""
         with pytest.raises(ValueError, match="Confirmation required"):
             await server.call_tool(
@@ -1573,9 +1569,7 @@ class TestCheckAgentRunnable:
         assert result["status"] == "available"
         assert result["provider"] == "ollama"
 
-    def test_check_agent_runnable_unavailable_provider(
-        self, server: MCPServer
-    ) -> None:
+    def test_check_agent_runnable_unavailable_provider(self, server: MCPServer) -> None:
         """Agent with unavailable provider has provider_unavailable status."""
         profiles = {"cloud-profile": {"provider": "anthropic-api", "model": "claude"}}
         providers = {"anthropic-api": {"available": False}}

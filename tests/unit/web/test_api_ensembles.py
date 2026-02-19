@@ -79,9 +79,7 @@ class TestEnsemblesAPI:
             data = response.json()
             assert data["status"] == "success"
 
-    def test_validate_ensemble_returns_validation(
-        self, client: TestClient
-    ) -> None:
+    def test_validate_ensemble_returns_validation(self, client: TestClient) -> None:
         """Test that POST /api/ensembles/{name}/validate returns validation."""
         with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
             mock_server = MagicMock()
@@ -126,9 +124,7 @@ class TestEnsemblesAPI:
             assert len(data["agents"]) == 1
             assert data["agents"][0]["status"] == "available"
 
-    def test_check_runnable_with_unavailable_agents(
-        self, client: TestClient
-    ) -> None:
+    def test_check_runnable_with_unavailable_agents(self, client: TestClient) -> None:
         """Test that runnable endpoint shows unavailable agents correctly."""
         with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
             mock_server = MagicMock()
