@@ -292,57 +292,16 @@ class EnsembleExecutor:
         """
         # Check if this ensemble requires interactive mode
         if self._detect_interactive_ensemble(config):
-            # Automatically switch to interactive execution
             user_input_handler = self._create_user_input_handler()
             return await self.execute_with_user_input(
                 config, input_data, user_input_handler
             )
 
-        # Continue with standard execution for non-interactive ensembles
-        start_time = time.time()
-
         # Start ensemble execution with progress controller
         if self._progress_controller:
             await self._progress_controller.start_ensemble(config.name)
 
-        # Initialize execution setup
-        result, results_dict = await self._initialize_execution_setup(
-            config, input_data
-        )
-
-        # Analyze dependencies and prepare phases
-        phases = await self._analyze_and_prepare_phases(config)
-
-        # Execute agents in dependency-based phases
-        has_errors = False
-        for phase_index, phase_agents in enumerate(phases):
-            # Determine input for this phase using DependencyResolver
-            if phase_index == 0:
-                # First phase uses the base input
-                phase_input: str | dict[str, str] = input_data
-            else:
-                # Subsequent phases get enhanced input with dependencies
-                phase_input = self._dependency_resolver.enhance_input_with_dependencies(
-                    input_data, phase_agents, results_dict
-                )
-
-            # Execute phase with full monitoring
-            phase_has_errors, _ = await self._execute_phase_with_monitoring(
-                phase_index, phase_agents, phase_input, results_dict, len(phases)
-            )
-            has_errors = has_errors or phase_has_errors
-
-        # Finalize results with usage, stats, and artifact saving
-        final_result = await self._finalize_execution_results(
-            config, result, has_errors, start_time
-        )
-
-        # Add processed agent requests to metadata if any exist
-        ensemble_metadata = self._phase_result_processor.get_ensemble_metadata()
-        if ensemble_metadata.get("processed_agent_requests"):
-            final_result["metadata"]["processed_agent_requests"] = ensemble_metadata[
-                "processed_agent_requests"
-            ]
+        final_result, _ = await self._execute_core(config, input_data)
 
         # Add execution order for validation
         final_result["execution_order"] = [
@@ -503,56 +462,61 @@ class EnsembleExecutor:
         input_data: str,
         user_input_handler: ScriptUserInputHandler,
     ) -> dict[str, Any]:
-        """Execute an ensemble with user input handling support.
+        """Execute an ensemble with user input handling support."""
+        final_result, user_inputs_collected = await self._execute_core(
+            config, input_data, track_user_inputs=True
+        )
 
-        This enhanced version integrates user input collection during execution
-        and includes metadata about the interactive session.
+        # Add interactive-specific metadata
+        self._add_interactive_metadata(final_result, user_inputs_collected)
 
-        Args:
-            config: Ensemble configuration
-            input_data: Initial input data
-            user_input_handler: Handler for user input collection
+        return final_result
+
+    async def _execute_core(
+        self,
+        config: EnsembleConfig,
+        input_data: str,
+        *,
+        track_user_inputs: bool = False,
+    ) -> tuple[dict[str, Any], int]:
+        """Core execution logic shared by execute() and execute_with_user_input().
 
         Returns:
-            Execution results with interactive metadata
+            Tuple of (final_result, user_inputs_collected)
         """
         start_time = time.time()
 
-        # Initialize execution setup using existing helper
         result, results_dict = await self._initialize_execution_setup(
             config, input_data
         )
 
-        # Analyze dependencies and prepare phases using existing helper
         phases = await self._analyze_and_prepare_phases(config)
 
-        # Execute agents in dependency-based phases with user input tracking
         has_errors = False
         user_inputs_collected = 0
 
         for phase_index, phase_agents in enumerate(phases):
-            # Determine input for this phase using DependencyResolver
             if phase_index == 0:
-                # First phase uses the base input
                 phase_input: str | dict[str, str] = input_data
             else:
-                # Subsequent phases get enhanced input with dependencies
                 phase_input = self._dependency_resolver.enhance_input_with_dependencies(
                     input_data, phase_agents, results_dict
                 )
 
-            # Execute phase with monitoring and user input counting
             (
                 phase_has_errors,
                 user_inputs_from_phase,
             ) = await self._execute_phase_with_monitoring(
-                phase_index, phase_agents, phase_input, results_dict, len(phases)
+                phase_index,
+                phase_agents,
+                phase_input,
+                results_dict,
+                len(phases),
             )
-
             has_errors = has_errors or phase_has_errors
-            user_inputs_collected += user_inputs_from_phase
+            if track_user_inputs:
+                user_inputs_collected += user_inputs_from_phase
 
-        # Finalize results using existing helper
         final_result = await self._finalize_execution_results(
             config, result, has_errors, start_time
         )
@@ -564,10 +528,7 @@ class EnsembleExecutor:
                 "processed_agent_requests"
             ]
 
-        # Add interactive-specific metadata using helper
-        self._add_interactive_metadata(final_result, user_inputs_collected)
-
-        return final_result
+        return final_result, user_inputs_collected
 
     def _count_user_inputs_from_phase_results(
         self, phase_results: dict[str, Any]
