@@ -20,6 +20,7 @@ from llm_orc.cli_library.library import (
 )
 from llm_orc.cli_modules.commands.auth_commands import (
     add_auth_provider,
+    auth_setup,
     list_auth_providers,
     logout_oauth_providers,
     remove_auth_provider,
@@ -580,9 +581,7 @@ def auth_remove(provider: str) -> None:
 @auth.command("setup")
 def auth_setup_command() -> None:
     """Interactive setup wizard for authentication."""
-    from llm_orc.cli_modules.commands.auth_commands import auth_setup as auth_setup_impl
-
-    auth_setup_impl()
+    auth_setup()
 
 
 @auth.command("logout")
