@@ -327,14 +327,14 @@ class OAuthClaudeModel(ModelInterface):
             except Exception as e:
                 # On last attempt or if refresh not possible, raise the error
                 if attempt == max_retries:
-                    raise e
+                    raise
 
                 # Handle token refresh errors and retry if possible
                 should_retry = _handle_oauth_token_refresh_error(
                     self, e, message, role_prompt
                 )
                 if not should_retry:
-                    raise e
+                    raise
                 # If should_retry is True, continue to the next iteration
 
         # This should never be reached, but added for type safety
@@ -434,5 +434,5 @@ class ClaudeCLIModel(ModelInterface):
             ) from e
         except Exception as e:
             if "Claude CLI error" in str(e):
-                raise e
+                raise
             raise Exception(f"Claude CLI error: {str(e)}") from e
