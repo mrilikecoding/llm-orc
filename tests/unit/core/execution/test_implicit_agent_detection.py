@@ -126,10 +126,10 @@ class TestImplicitAgentDetection:
                 mock_llm.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_implicit_detection_with_enhanced_script_agent(
+    async def test_implicit_detection_with_script_agent(
         self, mock_ensemble_executor: Any
     ) -> None:
-        """Test that implicit detection works with EnhancedScriptAgent."""
+        """Test that implicit detection works with ScriptAgent."""
         executor = mock_ensemble_executor
 
         agent_config = {
@@ -140,7 +140,7 @@ class TestImplicitAgentDetection:
 
         # Mock the enhanced script agent execution
         with patch(
-            "llm_orc.core.execution.script_agent_runner.EnhancedScriptAgent"
+            "llm_orc.core.execution.script_agent_runner.ScriptAgent"
         ) as mock_agent_class:
             mock_agent_instance = AsyncMock()
             mock_agent_instance.execute.return_value = {
@@ -151,7 +151,7 @@ class TestImplicitAgentDetection:
 
             await executor._execute_agent(agent_config, "test input")
 
-            # Should use EnhancedScriptAgent for script agents
+            # Should use ScriptAgent for script agents
             mock_agent_class.assert_called_once_with(
                 "enhanced_script", agent_config, project_dir=None
             )

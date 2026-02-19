@@ -68,7 +68,7 @@ def input_parameters(bdd_context: dict[str, Any]) -> None:
 def execute_script_agent_in_ensemble(bdd_context: dict[str, Any]) -> None:
     """Execute the script agent within an ensemble context."""
 
-    from llm_orc.agents.enhanced_script_agent import EnhancedScriptAgent
+    from llm_orc.agents.script_agent import ScriptAgent
     from llm_orc.schemas.script_agent import ScriptAgentInput
 
     # Create script agent configuration
@@ -78,7 +78,7 @@ def execute_script_agent_in_ensemble(bdd_context: dict[str, Any]) -> None:
     }
 
     # Create the enhanced script agent
-    agent = EnhancedScriptAgent("test_agent", agent_config)
+    agent = ScriptAgent("test_agent", agent_config)
 
     # Create schema input
     input_schema = ScriptAgentInput(

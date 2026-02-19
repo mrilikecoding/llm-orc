@@ -12,8 +12,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from llm_orc.agents.enhanced_script_agent import (
-    EnhancedScriptAgent,
+from llm_orc.agents.script_agent import (
+    ScriptAgent,
 )
 from llm_orc.core.execution.script_cache import ScriptCache
 from llm_orc.core.execution.script_user_input_handler import (
@@ -89,7 +89,7 @@ class ScriptAgentRunner:
         self._usage_collector.start_agent_resource_monitoring(agent_name)
 
         try:
-            script_agent = EnhancedScriptAgent(
+            script_agent = ScriptAgent(
                 agent_name,
                 agent_config,
                 project_dir=self._project_dir,
@@ -114,7 +114,7 @@ class ScriptAgentRunner:
 
     async def _execute_with_input_handling(
         self,
-        script_agent: EnhancedScriptAgent,
+        script_agent: ScriptAgent,
         agent_config: dict[str, Any],
         input_data: str,
     ) -> str | dict[str, Any]:
@@ -134,7 +134,7 @@ class ScriptAgentRunner:
 
     async def _execute_with_parsed_input(
         self,
-        script_agent: EnhancedScriptAgent,
+        script_agent: ScriptAgent,
         agent_config: dict[str, Any],
         input_data: str,
         parsed_input: dict[str, Any],
@@ -150,7 +150,7 @@ class ScriptAgentRunner:
 
     async def _execute_with_raw_input(
         self,
-        script_agent: EnhancedScriptAgent,
+        script_agent: ScriptAgent,
         agent_config: dict[str, Any],
         input_data: str,
     ) -> str | dict[str, Any]:
@@ -202,7 +202,7 @@ class ScriptAgentRunner:
 
     async def _execute_interactive(
         self,
-        script_agent: EnhancedScriptAgent,
+        script_agent: ScriptAgent,
         input_data: str | dict[str, Any],
     ) -> str:
         """Execute script interactively, collecting input at Python layer.

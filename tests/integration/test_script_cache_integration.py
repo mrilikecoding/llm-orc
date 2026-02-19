@@ -1,4 +1,4 @@
-"""Integration tests for ScriptCache with EnhancedScriptAgent.
+"""Integration tests for ScriptCache with ScriptAgent.
 
 Tests the integration of ScriptCache with script execution in ensemble scenarios.
 """
@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from llm_orc.agents.enhanced_script_agent import EnhancedScriptAgent
+from llm_orc.agents.script_agent import ScriptAgent
 from llm_orc.core.execution.script_cache import ScriptCache, ScriptCacheConfig
 
 
@@ -59,7 +59,7 @@ class TestScriptCacheIntegration:
         # Prepare for mocking script execution
 
         with patch.object(
-            EnhancedScriptAgent, "execute", new_callable=AsyncMock
+            ScriptAgent, "execute", new_callable=AsyncMock
         ) as mock_execute:
             mock_execute.return_value = json.dumps({"should": "not be called"})
 
@@ -84,7 +84,7 @@ class TestScriptCacheIntegration:
         }
 
         with patch.object(
-            EnhancedScriptAgent, "execute", new_callable=AsyncMock
+            ScriptAgent, "execute", new_callable=AsyncMock
         ) as mock_execute:
             mock_execute.return_value = json.dumps(execution_result)
 

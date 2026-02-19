@@ -31,7 +31,7 @@ def _make_script_agent(
     script: str = "primitives/user-interaction/get_user_input.py",
     timeout: int = 60,
 ) -> Mock:
-    """Create a mock EnhancedScriptAgent."""
+    """Create a mock ScriptAgent."""
     agent = Mock()
     agent.name = name
     agent.script = script

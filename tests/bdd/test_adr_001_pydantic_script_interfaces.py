@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 from pytest_bdd import given, scenarios, then, when
 
-from llm_orc.agents.enhanced_script_agent import EnhancedScriptAgent
+from llm_orc.agents.script_agent import ScriptAgent
 from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
 from llm_orc.schemas.script_agent import (
@@ -141,14 +141,14 @@ def file_operation_agent_producing_results(bdd_context: dict[str, Any]) -> None:
     }
 
 
-@given("an EnhancedScriptAgent configured for schema validation")
+@given("a ScriptAgent configured for schema validation")
 def enhanced_script_agent_configured(bdd_context: dict[str, Any]) -> None:
-    """Set up EnhancedScriptAgent for testing."""
+    """Set up ScriptAgent for testing."""
     config = {
         "script": 'echo \'{"success": true, "data": "test result"}\'',
         "parameters": {"test_param": "test_value"},
     }
-    bdd_context["enhanced_agent"] = EnhancedScriptAgent("test_agent", config)
+    bdd_context["enhanced_agent"] = ScriptAgent("test_agent", config)
 
 
 @given('a valid ScriptAgentInput with agent_name "test" and input_data "test data"')
@@ -159,15 +159,15 @@ def valid_script_agent_input(bdd_context: dict[str, Any]) -> None:
     )
 
 
-@given("an EnhancedScriptAgent that executes successfully")
+@given("a ScriptAgent that executes successfully")
 def enhanced_agent_executes_successfully(bdd_context: dict[str, Any]) -> None:
-    """Set up EnhancedScriptAgent that will execute successfully."""
+    """Set up ScriptAgent that will execute successfully."""
     # Mock the script execution to return valid JSON
     config = {
         "script": "test_script.py",
         "parameters": {"test": True},
     }
-    agent = EnhancedScriptAgent("success_agent", config)
+    agent = ScriptAgent("success_agent", config)
 
     # Mock the execute method to return successful result
     async def mock_execute(
@@ -179,11 +179,11 @@ def enhanced_agent_executes_successfully(bdd_context: dict[str, Any]) -> None:
     bdd_context["successful_agent"] = agent
 
 
-@given("an EnhancedScriptAgent receiving invalid input")
+@given("a ScriptAgent receiving invalid input")
 def enhanced_agent_invalid_input(bdd_context: dict[str, Any]) -> None:
-    """Set up EnhancedScriptAgent with invalid input scenario."""
+    """Set up ScriptAgent with invalid input scenario."""
     config = {"script": "test_script.py"}
-    bdd_context["invalid_input_agent"] = EnhancedScriptAgent("invalid_agent", config)
+    bdd_context["invalid_input_agent"] = ScriptAgent("invalid_agent", config)
     bdd_context["invalid_input_data"] = {"agent_name": 123, "input_data": None}
 
 
@@ -342,7 +342,7 @@ def ensemble_with_script_agents(bdd_context: dict[str, Any]) -> None:
     }
 
 
-@given("the ensemble includes both EnhancedScriptAgent and regular agents")
+@given("the ensemble includes both ScriptAgent and regular agents")
 def ensemble_mixed_agents(bdd_context: dict[str, Any]) -> None:
     """Set up ensemble with mixed agent types."""
     bdd_context["mixed_ensemble"] = {
@@ -498,7 +498,7 @@ def create_file_operation_output(bdd_context: dict[str, Any]) -> None:
 
 @when("I call execute_with_schema() method")
 def call_execute_with_schema(bdd_context: dict[str, Any]) -> None:
-    """Call execute_with_schema method on EnhancedScriptAgent."""
+    """Call execute_with_schema method on ScriptAgent."""
 
     async def run_test() -> None:
         try:
