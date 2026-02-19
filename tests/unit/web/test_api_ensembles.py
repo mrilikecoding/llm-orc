@@ -4,17 +4,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from llm_orc.web.server import create_app
-
 
 class TestEnsemblesAPI:
     """Tests for /api/ensembles endpoints."""
 
-    def test_list_ensembles_returns_list(self) -> None:
+    def test_list_ensembles_returns_list(self, client: TestClient) -> None:
         """Test that GET /api/ensembles returns a list."""
-        app = create_app()
-        client = TestClient(app)
-
         with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
             mock_server = MagicMock()
             mock_server._read_ensembles_resource = AsyncMock(
@@ -32,11 +27,8 @@ class TestEnsemblesAPI:
             assert len(data) == 1
             assert data[0]["name"] == "test-ensemble"
 
-    def test_get_ensemble_returns_detail(self) -> None:
+    def test_get_ensemble_returns_detail(self, client: TestClient) -> None:
         """Test that GET /api/ensembles/{name} returns ensemble detail."""
-        app = create_app()
-        client = TestClient(app)
-
         with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
             mock_server = MagicMock()
             mock_server._read_ensemble_resource = AsyncMock(
@@ -55,11 +47,8 @@ class TestEnsemblesAPI:
             assert data["name"] == "test-ensemble"
             assert "agents" in data
 
-    def test_get_ensemble_not_found(self) -> None:
+    def test_get_ensemble_not_found(self, client: TestClient) -> None:
         """Test that GET /api/ensembles/{name} returns 404 for missing ensemble."""
-        app = create_app()
-        client = TestClient(app)
-
         with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
             mock_server = MagicMock()
             mock_server._read_ensemble_resource = AsyncMock(return_value=None)
@@ -69,11 +58,8 @@ class TestEnsemblesAPI:
 
             assert response.status_code == 404
 
-    def test_execute_ensemble_returns_result(self) -> None:
+    def test_execute_ensemble_returns_result(self, client: TestClient) -> None:
         """Test that POST /api/ensembles/{name}/execute returns result."""
-        app = create_app()
-        client = TestClient(app)
-
         with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
             mock_server = MagicMock()
             mock_server._invoke_tool = AsyncMock(
@@ -93,11 +79,10 @@ class TestEnsemblesAPI:
             data = response.json()
             assert data["status"] == "success"
 
-    def test_validate_ensemble_returns_validation(self) -> None:
+    def test_validate_ensemble_returns_validation(
+        self, client: TestClient
+    ) -> None:
         """Test that POST /api/ensembles/{name}/validate returns validation."""
-        app = create_app()
-        client = TestClient(app)
-
         with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
             mock_server = MagicMock()
             mock_server._validate_ensemble_tool = AsyncMock(
@@ -111,11 +96,8 @@ class TestEnsemblesAPI:
             data = response.json()
             assert data["valid"] is True
 
-    def test_check_runnable_returns_status(self) -> None:
-        """Test that GET /api/ensembles/{name}/runnable returns runnable status."""
-        app = create_app()
-        client = TestClient(app)
-
+    def test_check_runnable_returns_status(self, client: TestClient) -> None:
+        """Test that GET /api/ensembles/{name}/runnable returns status."""
         with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
             mock_server = MagicMock()
             mock_server._check_ensemble_runnable_tool = AsyncMock(
@@ -144,11 +126,10 @@ class TestEnsemblesAPI:
             assert len(data["agents"]) == 1
             assert data["agents"][0]["status"] == "available"
 
-    def test_check_runnable_with_unavailable_agents(self) -> None:
+    def test_check_runnable_with_unavailable_agents(
+        self, client: TestClient
+    ) -> None:
         """Test that runnable endpoint shows unavailable agents correctly."""
-        app = create_app()
-        client = TestClient(app)
-
         with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
             mock_server = MagicMock()
             mock_server._check_ensemble_runnable_tool = AsyncMock(
