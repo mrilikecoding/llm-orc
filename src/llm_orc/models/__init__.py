@@ -4,7 +4,6 @@
 from llm_orc.models.anthropic import ClaudeCLIModel, ClaudeModel, OAuthClaudeModel
 from llm_orc.models.base import HTTPConnectionPool, ModelInterface
 from llm_orc.models.google import GeminiModel
-from llm_orc.models.manager import ModelManager
 from llm_orc.models.ollama import OllamaModel
 
 __all__ = [
@@ -15,5 +14,4 @@ __all__ = [
     "ClaudeCLIModel",
     "GeminiModel",
     "OllamaModel",
-    "ModelManager",
 ]
