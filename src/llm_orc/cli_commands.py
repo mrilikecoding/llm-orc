@@ -10,7 +10,7 @@ from typing import Any
 import click
 import yaml
 
-from llm_orc.cli_modules.commands import AuthCommands, ConfigCommands
+from llm_orc.cli_modules.commands import ConfigCommands
 from llm_orc.cli_modules.utils.config_utils import (
     display_local_profiles,
     get_available_providers,
@@ -519,41 +519,6 @@ def reset_local_config(
 ) -> None:
     """Reset local .llm-orc configuration to template defaults."""
     ConfigCommands.reset_local_config(backup, preserve_ensembles, project_name)
-
-
-def add_auth_provider(
-    provider: str,
-    api_key: str | None,
-    client_id: str | None,
-    client_secret: str | None,
-) -> None:
-    """Add authentication for a provider (API key or OAuth)."""
-    AuthCommands.add_auth_provider(provider, api_key, client_id, client_secret)
-
-
-def list_auth_providers(interactive: bool) -> None:
-    """List configured authentication providers."""
-    AuthCommands.list_auth_providers(interactive)
-
-
-def remove_auth_provider(provider: str) -> None:
-    """Remove authentication for a provider."""
-    AuthCommands.remove_auth_provider(provider)
-
-
-def refresh_token_test(provider: str) -> None:
-    """Test OAuth token refresh for a specific provider."""
-    AuthCommands.test_token_refresh(provider)
-
-
-def auth_setup() -> None:
-    """Interactive setup wizard for authentication."""
-    AuthCommands.auth_setup()
-
-
-def logout_oauth_providers(provider: str | None, logout_all: bool) -> None:
-    """Logout from OAuth providers (revokes tokens and removes credentials)."""
-    AuthCommands.logout_oauth_providers(provider, logout_all)
 
 
 # Script and Artifact Commands

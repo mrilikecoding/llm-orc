@@ -7,11 +7,6 @@ from llm_orc.cli_commands import (
     list_ensembles_command,
     list_profiles_command,
 )
-from llm_orc.cli_modules.commands.validation_commands import (
-    validate_all_ensembles,
-    validate_ensemble,
-    validate_ensemble_category,
-)
 from llm_orc.cli_completion import (
     complete_ensemble_names,
     complete_library_ensemble_paths,
@@ -36,6 +31,11 @@ from llm_orc.cli_modules.commands.config_commands import (
     init_local_config,
     reset_global_config,
     reset_local_config,
+)
+from llm_orc.cli_modules.commands.validation_commands import (
+    validate_all_ensembles,
+    validate_ensemble,
+    validate_ensemble_category,
 )
 
 
@@ -580,7 +580,7 @@ def auth_remove(provider: str) -> None:
 @auth.command("setup")
 def auth_setup_command() -> None:
     """Interactive setup wizard for authentication."""
-    from llm_orc.cli_commands import auth_setup as auth_setup_impl
+    from llm_orc.cli_modules.commands.auth_commands import auth_setup as auth_setup_impl
 
     auth_setup_impl()
 

@@ -801,4 +801,5 @@ add_auth_provider = AuthCommands.add_auth_provider
 list_auth_providers = AuthCommands.list_auth_providers
 remove_auth_provider = AuthCommands.remove_auth_provider
 test_token_refresh = AuthCommands.test_token_refresh
+auth_setup = AuthCommands.auth_setup
 logout_oauth_providers = AuthCommands.logout_oauth_providers
