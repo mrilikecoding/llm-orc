@@ -381,6 +381,7 @@ def _create_api_key_model(
     else:
         return ClaudeModel(
             api_key=api_key,
+            model=model_name,
             temperature=temperature,
             max_tokens=max_tokens,
         )
