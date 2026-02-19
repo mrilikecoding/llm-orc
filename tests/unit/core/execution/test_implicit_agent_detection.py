@@ -22,7 +22,7 @@ class TestImplicitAgentDetection:
             # No 'type' field - should be detected as script agent
         }
 
-        with patch.object(executor, "_execute_script_agent") as mock_script:
+        with patch.object(executor._script_agent_runner, "execute") as mock_script:
             mock_script.return_value = ("Script output", None)
 
             result = await executor._execute_agent(agent_config, "test input")
@@ -44,7 +44,7 @@ class TestImplicitAgentDetection:
             # No 'type' field - should be detected as LLM agent
         }
 
-        with patch.object(executor, "_execute_llm_agent") as mock_llm:
+        with patch.object(executor._llm_agent_runner, "execute") as mock_llm:
             mock_llm.return_value = ("LLM output", MagicMock())
 
             result = await executor._execute_agent(agent_config, "test input")
@@ -84,7 +84,7 @@ class TestImplicitAgentDetection:
             "script": "echo 'Hello'",
         }
 
-        with patch.object(executor, "_execute_script_agent") as mock_script:
+        with patch.object(executor._script_agent_runner, "execute") as mock_script:
             mock_script.return_value = ("Script output", None)
 
             await executor._execute_agent(script_config, "test input")
@@ -97,7 +97,7 @@ class TestImplicitAgentDetection:
             "model_profile": "default-gpt4",
         }
 
-        with patch.object(executor, "_execute_llm_agent") as mock_llm:
+        with patch.object(executor._llm_agent_runner, "execute") as mock_llm:
             mock_llm.return_value = ("LLM output", MagicMock())
 
             await executor._execute_agent(llm_config, "test input")
@@ -116,8 +116,8 @@ class TestImplicitAgentDetection:
             "model_profile": "default-gpt4",  # Both present - script should win
         }
 
-        with patch.object(executor, "_execute_script_agent") as mock_script:
-            with patch.object(executor, "_execute_llm_agent") as mock_llm:
+        with patch.object(executor._script_agent_runner, "execute") as mock_script:
+            with patch.object(executor._llm_agent_runner, "execute") as mock_llm:
                 mock_script.return_value = ("Script output", None)
 
                 await executor._execute_agent(agent_config, "test input")

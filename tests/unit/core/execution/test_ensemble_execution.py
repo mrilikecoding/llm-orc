@@ -836,7 +836,11 @@ class TestEnsembleExecutor:
                 "temperature": 0.9,  # Should override profile
             }
 
-            enhanced = await executor._resolve_model_profile_to_config(agent_config)
+            enhanced = (
+                await executor._llm_agent_runner._resolve_model_profile_to_config(
+                    agent_config
+                )
+            )
 
             # Should merge profile with agent config (agent takes precedence)
             assert enhanced["model"] == "claude-3-5-sonnet"
@@ -862,7 +866,11 @@ class TestEnsembleExecutor:
             }
 
             # Should return original config when profile doesn't exist
-            enhanced = await executor._resolve_model_profile_to_config(agent_config)
+            enhanced = (
+                await executor._llm_agent_runner._resolve_model_profile_to_config(
+                    agent_config
+                )
+            )
             assert enhanced == agent_config
 
     @pytest.mark.asyncio
@@ -881,7 +889,10 @@ class TestEnsembleExecutor:
         ) as mock_execute:
             mock_execute.return_value = ("Agent response", None)
 
-            result, model = await executor._execute_agent_with_timeout(
+            (
+                result,
+                model,
+            ) = await executor._execution_coordinator.execute_agent_with_timeout(
                 agent_config, input_data, None
             )
 
@@ -911,7 +922,7 @@ class TestEnsembleExecutor:
 
             # Test with timeout that should trigger the timeout exception
             with pytest.raises(Exception, match="timed out after 1 seconds"):
-                await executor._execute_agent_with_timeout(
+                await executor._execution_coordinator.execute_agent_with_timeout(
                     agent_config,
                     input_data,
                     1,  # 1 second timeout
@@ -927,7 +938,9 @@ class TestEnsembleExecutor:
         agent_config = {"name": "test_agent", "model": "claude-3-sonnet"}
 
         # Should return copy of original config when no model_profile
-        enhanced = await executor._resolve_model_profile_to_config(agent_config)
+        enhanced = await executor._llm_agent_runner._resolve_model_profile_to_config(
+            agent_config
+        )
         assert enhanced == agent_config
         assert enhanced is not agent_config  # Should be a copy
 
@@ -1658,17 +1671,17 @@ class TestEnsembleExecutor:
     async def test_execute_script_agent_uses_user_input_for_interactive_scripts(
         self, mock_ensemble_executor: Any
     ) -> None:
-        """Test _execute_script_agent automatically detects and handles user input.
+        """Test _script_agent_runner.execute detects and handles user input.
 
         When a script agent configuration references a script that requires user input,
-        _execute_script_agent should:
+        _script_agent_runner.execute should:
         1. Detect that the script requires user input
         2. Automatically call execute_with_user_input() instead of execute()
         3. Pass the user input handler to the script agent
         4. Return the response with actual user input, not "User cancelled input"
 
         RED Phase: This test should fail until automatic detection is implemented
-        in _execute_script_agent method.
+        in ScriptAgentRunner.execute method.
         """
         from unittest.mock import AsyncMock, Mock, patch
 
@@ -1736,9 +1749,9 @@ class TestEnsembleExecutor:
                 '{"user_input": "Test User", "success": true}'
             )
             mock_subprocess_run.return_value.returncode = 0
-            # This is the core test: _execute_script_agent should automatically
+            # This is the core test: _script_agent_runner.execute should automatically
             # detect user input requirement and use execute_with_user_input
-            response, model = await executor._execute_script_agent(
+            response, model = await executor._script_agent_runner.execute(
                 agent_config, input_data
             )
 
@@ -1825,7 +1838,7 @@ class TestEnsembleExecutor:
         }
 
         # Mock the phase execution to simulate interactive script responses
-        original_execute_agents = executor._execute_agents_in_phase_parallel
+        original_execute_agents = executor._agent_dispatcher.execute_agents_in_phase
 
         async def mock_execute_agents_in_phase(
             agents: list[dict[str, Any]], phase_input: str | dict[str, str]
@@ -1844,7 +1857,9 @@ class TestEnsembleExecutor:
                 }
             return results
 
-        executor._execute_agents_in_phase_parallel = mock_execute_agents_in_phase
+        executor._agent_dispatcher.execute_agents_in_phase = (
+            mock_execute_agents_in_phase
+        )
 
         # Execute the method we're testing
         result = await executor.execute_with_user_input(
@@ -1868,7 +1883,7 @@ class TestEnsembleExecutor:
         assert "interactive_script2" in result["results"]
 
         # Restore original method
-        executor._execute_agents_in_phase_parallel = original_execute_agents
+        executor._agent_dispatcher.execute_agents_in_phase = original_execute_agents
 
     @pytest.mark.asyncio
     async def test_initialize_execution_setup(
@@ -2129,8 +2144,9 @@ class TestEnsembleExecutor:
                 "load_model_from_agent_config",
                 new_callable=AsyncMock,
             ) as mock_load_model,
-            patch.object(
-                executor, "_run_validation", new_callable=AsyncMock
+            patch(
+                "llm_orc.core.execution.ensemble_execution._run_validation",
+                new_callable=AsyncMock,
             ) as mock_run_validation,
         ):
             mock_load_role.return_value = role
@@ -2237,7 +2253,9 @@ class TestFanOutExecution:
             },
         }
 
-        fan_out_agents = executor._detect_fan_out_in_phase(phase_agents, results_dict)
+        fan_out_agents = executor._fan_out_coordinator.detect_in_phase(
+            phase_agents, results_dict
+        )
 
         assert len(fan_out_agents) == 1
         agent_config, upstream_array = fan_out_agents[0]
@@ -2267,7 +2285,9 @@ class TestFanOutExecution:
             },
         }
 
-        fan_out_agents = executor._detect_fan_out_in_phase(phase_agents, results_dict)
+        fan_out_agents = executor._fan_out_coordinator.detect_in_phase(
+            phase_agents, results_dict
+        )
 
         # Should return empty - upstream is not an array
         assert len(fan_out_agents) == 0
@@ -2287,7 +2307,9 @@ class TestFanOutExecution:
 
         upstream_array = ["chunk_a", "chunk_b"]
 
-        instances = executor._expand_fan_out_agent(agent_config, upstream_array)
+        instances = executor._fan_out_coordinator.expand_agent(
+            agent_config, upstream_array
+        )
 
         assert len(instances) == 2
         assert instances[0]["name"] == "extractor[0]"
@@ -2308,7 +2330,9 @@ class TestFanOutExecution:
             "extractor[2]": {"status": "success", "response": "result_2"},
         }
 
-        gathered = executor._gather_fan_out_results("extractor", instance_results)
+        gathered = executor._fan_out_coordinator.gather_results(
+            "extractor", instance_results
+        )
 
         assert gathered["fan_out"] is True
         assert gathered["status"] == "success"
@@ -2327,7 +2351,9 @@ class TestFanOutExecution:
             "extractor[2]": {"status": "success", "response": "result_2"},
         }
 
-        gathered = executor._gather_fan_out_results("extractor", instance_results)
+        gathered = executor._fan_out_coordinator.gather_results(
+            "extractor", instance_results
+        )
 
         assert gathered["fan_out"] is True
         assert gathered["status"] == "partial"
