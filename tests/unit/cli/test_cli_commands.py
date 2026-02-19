@@ -12,14 +12,9 @@ from click.exceptions import ClickException
 
 import llm_orc.cli_commands
 from llm_orc.cli_commands import (
-    check_global_config,
-    check_local_config,
-    init_local_config,
     invoke_ensemble,
     list_ensembles_command,
     list_profiles_command,
-    reset_global_config,
-    reset_local_config,
 )
 from llm_orc.cli_modules.commands.auth_commands import (
     AuthCommands,
@@ -1074,42 +1069,6 @@ class TestListProfilesCommandHelpers:
         mock_echo.assert_any_call("    Model: Unknown")
         mock_echo.assert_any_call("    Provider: anthropic")
         mock_echo.assert_any_call("    Cost per token: Not specified")
-
-
-class TestConfigCommands:
-    """Test configuration-related command functions."""
-
-    def test_init_local_config(self) -> None:
-        """Test init local config command delegation."""
-        with patch("llm_orc.cli_commands.ConfigCommands") as mock_config_class:
-            init_local_config("test_project")
-            mock_config_class.init_local_config.assert_called_once_with("test_project")
-
-    def test_reset_global_config(self) -> None:
-        """Test reset global config command delegation."""
-        with patch("llm_orc.cli_commands.ConfigCommands") as mock_config_class:
-            reset_global_config(True, False)
-            mock_config_class.reset_global_config.assert_called_once_with(True, False)
-
-    def test_check_global_config(self) -> None:
-        """Test check global config command delegation."""
-        with patch("llm_orc.cli_commands.ConfigCommands") as mock_config_class:
-            check_global_config()
-            mock_config_class.check_global_config.assert_called_once()
-
-    def test_check_local_config(self) -> None:
-        """Test check local config command delegation."""
-        with patch("llm_orc.cli_commands.ConfigCommands") as mock_config_class:
-            check_local_config()
-            mock_config_class.check_local_config.assert_called_once()
-
-    def test_reset_local_config(self) -> None:
-        """Test reset local config command delegation."""
-        with patch("llm_orc.cli_commands.ConfigCommands") as mock_config_class:
-            reset_local_config(False, True, "project")
-            mock_config_class.reset_local_config.assert_called_once_with(
-                False, True, "project"
-            )
 
 
 class TestInvokeEnsembleHelperMethods:
