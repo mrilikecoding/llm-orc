@@ -113,17 +113,7 @@ class ProfileHandler:
         if not name:
             raise ValueError("name is required")
 
-        profiles_dirs = self._config_manager.get_profiles_dirs()
-        profile_file = None
-
-        for dir_path in profiles_dirs:
-            path = Path(dir_path) / f"{name}.yaml"
-            if path.exists():
-                profile_file = path
-                break
-
-        if not profile_file:
-            raise ValueError(f"Profile '{name}' not found")
+        profile_file = self._find_profile_file(name)
 
         content = profile_file.read_text()
         data = yaml.safe_load(content) or {}
@@ -144,21 +134,22 @@ class ProfileHandler:
         if not confirm:
             raise ValueError("Confirmation required to delete profile")
 
-        profiles_dirs = self._config_manager.get_profiles_dirs()
-        profile_file = None
-
-        for dir_path in profiles_dirs:
-            path = Path(dir_path) / f"{name}.yaml"
-            if path.exists():
-                profile_file = path
-                break
-
-        if not profile_file:
-            raise ValueError(f"Profile '{name}' not found")
-
+        profile_file = self._find_profile_file(name)
         profile_file.unlink()
 
         return {"deleted": True, "name": name}
+
+    def _find_profile_file(self, name: str) -> Path:
+        """Find profile YAML file by name across all profile directories.
+
+        Raises:
+            ValueError: If profile is not found.
+        """
+        for dir_path in self._config_manager.get_profiles_dirs():
+            path = Path(dir_path) / f"{name}.yaml"
+            if path.exists():
+                return path
+        raise ValueError(f"Profile '{name}' not found")
 
     def get_all_profiles(self) -> dict[str, dict[str, Any]]:
         """Get all profiles as a dict keyed by name."""
