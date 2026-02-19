@@ -18,6 +18,7 @@ from llm_orc.core.execution.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.fan_out_expander import FanOutExpander
 from llm_orc.core.execution.fan_out_gatherer import FanOutGatherer
 from llm_orc.core.execution.llm_agent_runner import LlmAgentRunner
+from llm_orc.core.execution.phase_monitor import PhaseMonitor
 from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.results_processor import ResultsProcessor
 from llm_orc.core.execution.script_agent_runner import ScriptAgentRunner
@@ -100,6 +101,10 @@ class EnsembleExecutor:
             self._usage_collector,
             self._emit_performance_event,
             self._classify_failure_type,
+        )
+
+        self._phase_monitor = PhaseMonitor(
+            self._agent_executor, self._emit_performance_event
         )
 
     def _load_script_cache_config(self) -> ScriptCacheConfig:
@@ -441,7 +446,7 @@ class EnsembleExecutor:
 
         # Start per-phase monitoring for performance feedback
         phase_start_time = time.time()
-        await self._start_phase_monitoring(phase_index, expanded_agents)
+        await self._phase_monitor.start(phase_index, expanded_agents)
 
         try:
             # Execute agents in this phase in parallel
@@ -467,9 +472,7 @@ class EnsembleExecutor:
         finally:
             # Stop per-phase monitoring and collect metrics
             phase_duration = time.time() - phase_start_time
-            await self._stop_phase_monitoring(
-                phase_index, expanded_agents, phase_duration
-            )
+            await self._phase_monitor.stop(phase_index, expanded_agents, phase_duration)
 
         # Emit phase completion event
         self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
@@ -1065,115 +1068,6 @@ class EnsembleExecutor:
 
         # Fallback: convert name to readable format
         return agent_name.replace("-", " ").title()
-
-    async def _start_phase_monitoring(
-        self, phase_index: int, phase_agents: list[dict[str, Any]]
-    ) -> None:
-        """Start monitoring for a specific phase."""
-        # Phase metrics are always initialized in AgentExecutor
-
-        # Collect initial phase metrics
-        phase_name = f"phase_{phase_index}"
-        agent_names = [agent["name"] for agent in phase_agents]
-
-        phase_metrics = await self._agent_executor.monitor.collect_phase_metrics(
-            phase_index=phase_index,
-            phase_name=phase_name,
-            agent_count=len(phase_agents),
-        )
-
-        # Add agent details
-        phase_metrics.update(
-            {
-                "agent_names": agent_names,
-                "start_time": time.time(),
-            }
-        )
-
-        self._agent_executor._phase_metrics.append(phase_metrics)
-
-        # Start continuous monitoring for this phase
-        await self._agent_executor.monitor.start_execution_monitoring()
-
-        self._emit_performance_event(
-            "phase_monitoring_started",
-            {
-                "phase_index": phase_index,
-                "agent_count": len(phase_agents),
-                "agent_names": agent_names,
-            },
-        )
-
-    async def _stop_phase_monitoring(
-        self, phase_index: int, phase_agents: list[dict[str, Any]], duration: float
-    ) -> None:
-        """Stop monitoring for a specific phase and collect final metrics."""
-
-        # Find the phase metrics entry
-        phase_metrics = None
-        for metrics in self._agent_executor._phase_metrics:
-            if metrics.get("phase_index") == phase_index:
-                phase_metrics = metrics
-                break
-
-        if phase_metrics:
-            # Stop monitoring and get aggregated metrics for this phase
-            try:
-                phase_execution_metrics = await (
-                    self._agent_executor.monitor.stop_execution_monitoring()
-                )
-
-                # Update with completion data and monitoring results
-                phase_metrics.update(
-                    {
-                        "duration_seconds": duration,
-                        "end_time": time.time(),
-                        "agents_completed": len(phase_agents),
-                        # Add aggregated monitoring data
-                        "peak_cpu": phase_execution_metrics.get("peak_cpu", 0.0),
-                        "avg_cpu": phase_execution_metrics.get("avg_cpu", 0.0),
-                        "peak_memory": phase_execution_metrics.get("peak_memory", 0.0),
-                        "avg_memory": phase_execution_metrics.get("avg_memory", 0.0),
-                        "sample_count": phase_execution_metrics.get("sample_count", 0),
-                    }
-                )
-            except Exception:
-                # Fallback to current snapshot if continuous monitoring fails
-                try:
-                    current_metrics = await (
-                        self._agent_executor.monitor.get_current_metrics()
-                    )
-                    phase_metrics.update(
-                        {
-                            "duration_seconds": duration,
-                            "end_time": time.time(),
-                            "agents_completed": len(phase_agents),
-                            "final_cpu_percent": current_metrics.get(
-                                "cpu_percent", 0.0
-                            ),
-                            "final_memory_percent": current_metrics.get(
-                                "memory_percent", 0.0
-                            ),
-                        }
-                    )
-                except Exception:
-                    # Final fallback - just timing data
-                    phase_metrics.update(
-                        {
-                            "duration_seconds": duration,
-                            "end_time": time.time(),
-                            "agents_completed": len(phase_agents),
-                        }
-                    )
-
-        self._emit_performance_event(
-            "phase_monitoring_stopped",
-            {
-                "phase_index": phase_index,
-                "duration_seconds": duration,
-                "agent_count": len(phase_agents),
-            },
-        )
 
     # ========== Fan-Out Support (Issue #73) ==========
 
