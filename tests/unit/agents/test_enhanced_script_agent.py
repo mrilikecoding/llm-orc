@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from llm_orc.agents.enhanced_script_agent import EnhancedScriptAgent
+from llm_orc.agents.script_agent import ScriptAgent as EnhancedScriptAgent
 
 
 class TestEnhancedScriptAgent:
