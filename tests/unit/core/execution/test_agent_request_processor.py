@@ -129,4 +129,3 @@ class TestAgentRequestProcessor:
         request = processed_result["agent_requests"][0]
         assert request["target_agent_type"] == "user_input"
         assert "prompt" in request["parameters"]
-

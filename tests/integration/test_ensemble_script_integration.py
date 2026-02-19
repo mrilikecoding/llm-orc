@@ -453,4 +453,3 @@ class TestEnsembleScriptIntegration:
             "Expected context to be passed to script, but got empty list. "
             "This confirms ScriptAgentInput JSON is not validated/passed correctly."
         )
-
