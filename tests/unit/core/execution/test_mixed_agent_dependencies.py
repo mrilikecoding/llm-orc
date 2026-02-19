@@ -93,7 +93,9 @@ class TestMixedAgentDependencies:
         # Mock dependencies
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -180,7 +182,9 @@ class TestMixedAgentDependencies:
 
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,

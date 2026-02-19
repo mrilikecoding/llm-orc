@@ -46,9 +46,7 @@ class TestConfigCommands:
             ConfigCommands.init_local_config(project_name)
 
             # Then
-            mock_config_manager.init_local_config.assert_called_once_with(
-                project_name, with_scripts=True
-            )
+            mock_config_manager.init_local_config.assert_called_once_with(project_name)
 
     def test_init_local_config_value_error(self, temp_dir: str) -> None:
         """Test local config initialization with ValueError."""
@@ -535,7 +533,7 @@ class TestConfigCommands:
                         mock_copytree.assert_called_once()
                         mock_rmtree.assert_called()
                         mock_config_manager.init_local_config.assert_called_once_with(
-                            "test", with_scripts=True
+                            "test"
                         )
 
         finally:
@@ -578,7 +576,7 @@ class TestConfigCommands:
                         # Then
                         mock_rmtree.assert_called_once()
                         mock_config_manager.init_local_config.assert_called_once_with(
-                            "test", with_scripts=True
+                            "test"
                         )
                         # Should restore ensemble files
                         assert mock_write_text.call_count >= 0
@@ -1026,7 +1024,7 @@ class TestResetLocalConfigHelperMethods:
 
                 # Mock init_local_config to recreate the directory
                 def mock_init(
-                    project_name: str | None, with_scripts: bool = True
+                    project_name: str | None,
                 ) -> None:
                     local_config_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1041,7 +1039,7 @@ class TestResetLocalConfigHelperMethods:
                 assert local_config_dir.exists()
                 assert not (local_config_dir / "old_file.txt").exists()
                 mock_config_manager.init_local_config.assert_called_once_with(
-                    "test-project", with_scripts=True
+                    "test-project"
                 )
         finally:
             os.chdir(original_cwd)
@@ -1135,26 +1133,6 @@ class TestConfigCommandsCLI:
         """Click test runner."""
         return CliRunner()
 
-    def test_config_init_cli_success(self, runner: CliRunner) -> None:
-        """Test config init through CLI."""
-        with patch("llm_orc.cli.init_local_config") as mock_init:
-            result = runner.invoke(
-                cli, ["config", "init", "--project-name", "test-project"]
-            )
-
-            assert result.exit_code == 0
-            mock_init.assert_called_once_with("test-project", with_scripts=True)
-
-    def test_config_init_cli_error(self, runner: CliRunner) -> None:
-        """Test config init CLI error handling."""
-        with patch("llm_orc.cli.init_local_config") as mock_init:
-            mock_init.side_effect = click.ClickException("Init error")
-
-            result = runner.invoke(cli, ["config", "init"])
-
-            assert result.exit_code != 0
-            assert "Init error" in result.output
-
     def test_config_check_global_cli(self, runner: CliRunner) -> None:
         """Test config check global through CLI."""
         with patch("llm_orc.cli.check_global_config") as mock_check:
@@ -1201,117 +1179,3 @@ class TestConfigCommandsCLI:
 
             assert result.exit_code == 0
             mock_reset.assert_called_once_with(True, True, "test")
-
-
-class TestLibraryPathDiscovery:
-    """Test library path discovery with environment variables."""
-
-    def test_get_library_scripts_path_with_custom_env(self, tmp_path: Path) -> None:
-        """Test library path discovery with LLM_ORC_LIBRARY_PATH env var."""
-        # Given - custom library location
-        custom_lib = tmp_path / "my-custom-library"
-        scripts_dir = custom_lib / "scripts" / "primitives"
-        scripts_dir.mkdir(parents=True)
-
-        # When - set environment variable
-        with patch.dict("os.environ", {"LLM_ORC_LIBRARY_PATH": str(custom_lib)}):
-            result = ConfigCommands._get_library_scripts_path()
-
-        # Then - should find custom location
-        assert result == scripts_dir
-
-    def test_get_library_scripts_path_custom_not_found(self, tmp_path: Path) -> None:
-        """Test library path returns None when custom path doesn't exist."""
-        # Given - non-existent custom library
-        nonexistent = tmp_path / "does-not-exist"
-
-        # When - set environment variable to non-existent path
-        with patch.dict("os.environ", {"LLM_ORC_LIBRARY_PATH": str(nonexistent)}):
-            result = ConfigCommands._get_library_scripts_path()
-
-        # Then - should return None
-        assert result is None
-
-    def test_get_library_scripts_path_falls_back_to_cwd(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Test library path falls back to cwd/llm-orchestra-library."""
-        # Given - library in current working directory
-        monkeypatch.chdir(tmp_path)
-        lib_dir = tmp_path / "llm-orchestra-library" / "scripts" / "primitives"
-        lib_dir.mkdir(parents=True)
-
-        # When - no environment variables set
-        with patch.dict("os.environ", {}, clear=True):
-            result = ConfigCommands._get_library_scripts_path()
-
-        # Then - should find cwd library
-        assert result == lib_dir
-
-    def test_get_library_scripts_path_returns_none_when_not_found(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Test library path returns None when library not found anywhere."""
-        # Given - empty directory with no library
-        monkeypatch.chdir(tmp_path)
-
-        # When - no environment variables, no library in cwd
-        with patch.dict("os.environ", {}, clear=True):
-            result = ConfigCommands._get_library_scripts_path()
-
-        # Then - should return None
-        assert result is None
-
-    def test_get_library_scripts_path_from_dotenv(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Test library path discovery from .llm-orc/.env file."""
-        # Given - .env file in .llm-orc directory
-        monkeypatch.chdir(tmp_path)
-
-        llm_orc_dir = tmp_path / ".llm-orc"
-        llm_orc_dir.mkdir()
-
-        custom_lib = tmp_path / "my-env-library"
-        scripts_dir = custom_lib / "scripts" / "primitives"
-        scripts_dir.mkdir(parents=True)
-
-        # Create .env file with library path
-        env_file = llm_orc_dir / ".env"
-        env_file.write_text(f"LLM_ORC_LIBRARY_PATH={custom_lib}\n")
-
-        # When - no environment variables set (should load from .env)
-        with patch.dict("os.environ", {}, clear=True):
-            result = ConfigCommands._get_library_scripts_path()
-
-        # Then - should find library from .env
-        assert result == scripts_dir
-
-    def test_get_library_scripts_path_env_var_overrides_dotenv(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Test that environment variable takes priority over .env file."""
-        # Given - both .env file and environment variable
-        monkeypatch.chdir(tmp_path)
-
-        llm_orc_dir = tmp_path / ".llm-orc"
-        llm_orc_dir.mkdir()
-
-        env_lib = tmp_path / "env-library"
-        env_scripts = env_lib / "scripts" / "primitives"
-        env_scripts.mkdir(parents=True)
-
-        dotenv_lib = tmp_path / "dotenv-library"
-        dotenv_scripts = dotenv_lib / "scripts" / "primitives"
-        dotenv_scripts.mkdir(parents=True)
-
-        # Create .env file
-        env_file = llm_orc_dir / ".env"
-        env_file.write_text(f"LLM_ORC_LIBRARY_PATH={dotenv_lib}\n")
-
-        # When - environment variable is set (should override .env)
-        with patch.dict("os.environ", {"LLM_ORC_LIBRARY_PATH": str(env_lib)}):
-            result = ConfigCommands._get_library_scripts_path()
-
-        # Then - should use environment variable, not .env
-        assert result == env_scripts

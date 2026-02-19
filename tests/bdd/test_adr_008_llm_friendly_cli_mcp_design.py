@@ -2,13 +2,15 @@
 
 import os
 import shutil
-import subprocess
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
 import pytest
+from click.testing import CliRunner
 from pytest_bdd import given, parsers, scenarios, then, when
+
+from llm_orc.cli import cli
 
 # Load all scenarios from the feature file
 scenarios("features/adr-008-llm-friendly-cli-mcp-design.feature")
@@ -81,13 +83,9 @@ def directory_without_config(cli_context: dict[str, Any]) -> None:
 @given("I have initialized llm-orc")
 def initialized_llm_orc(cli_context: dict[str, Any]) -> None:
     """Initialize llm-orc in test directory."""
-    result = subprocess.run(
-        ["llm-orc", "init"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode == 0, f"Init failed: {result.stderr}"
+    runner = CliRunner()
+    result = runner.invoke(cli, ["init"])
+    assert result.exit_code == 0, f"Init failed: {result.output}"
 
 
 @given(
@@ -209,19 +207,16 @@ def library_directory_with_scripts(cli_context: dict[str, Any], dir_path: str) -
 
 @when(parsers.parse('I execute "{command}"'))
 def execute_command(cli_context: dict[str, Any], command: str) -> None:
-    """Execute a CLI command."""
+    """Execute a CLI command via CliRunner."""
     args = command.split()
-    result = subprocess.run(
-        args,
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=cli_context["test_dir"],
-    )
+    if args and args[0] == "llm-orc":
+        args = args[1:]
+    runner = CliRunner()
+    result = runner.invoke(cli, args)
 
     cli_context["last_command"] = command
-    cli_context["last_output"] = result.stdout + result.stderr
-    cli_context["last_returncode"] = result.returncode
+    cli_context["last_output"] = result.output
+    cli_context["last_returncode"] = result.exit_code
 
 
 # Then steps
@@ -242,14 +237,6 @@ def output_contains(cli_context: dict[str, Any], text: str) -> None:
     assert text in cli_context["last_output"], (
         f"Output does not contain '{text}':\n{cli_context['last_output']}"
     )
-
-
-@then(parsers.parse("the output should mention how to {action}"))
-def output_mentions_action(cli_context: dict[str, Any], action: str) -> None:
-    """Check that output mentions how to perform an action."""
-    # This is a flexible check - just verify output is not empty
-    # More specific checks should be done with 'output should contain'
-    assert len(cli_context["last_output"]) > 0, "Output is empty"
 
 
 @then(parsers.parse('the directory "{dir_path}" should exist'))
@@ -281,15 +268,22 @@ def file_contains(cli_context: dict[str, Any], file_path: str, text: str) -> Non
 
 
 @then("scripts should be installed from the custom library location")
-def scripts_from_custom_library(cli_context: dict[str, Any]) -> None:
-    """Check that scripts were installed from custom library."""
-    scripts_dir = cli_context["test_dir"] / ".llm-orc" / "scripts" / "primitives"
-    assert scripts_dir.exists(), "Scripts directory does not exist"
+@then("core primitives should be available as package modules")
+def primitives_available_as_package(cli_context: dict[str, Any]) -> None:
+    """Check that core primitives are available as package modules."""
+    from llm_orc.primitives import get_output_schema
 
-    # Check that scripts were actually copied
-    py_files = list(scripts_dir.rglob("*.py"))
-    py_files = [f for f in py_files if f.name != "__init__.py"]
-    assert len(py_files) > 0, "No scripts were installed"
+    # Verify core primitives are registered in the package
+    for key in [
+        "user_interaction/get_user_input",
+        "user_interaction/confirm_action",
+        "file_ops/read_file",
+        "file_ops/write_file",
+        "data_transform/json_extract",
+        "control_flow/replicate_n_times",
+    ]:
+        schema = get_output_schema(f"primitives/{key}.py")
+        assert schema is not None, f"Primitive {key} not found in package"
 
 
 @then(
@@ -298,27 +292,22 @@ def scripts_from_custom_library(cli_context: dict[str, Any]) -> None:
     )
 )
 def scripts_from_config_path(cli_context: dict[str, Any], config_type: str) -> None:
-    """Check that scripts were installed from path in config."""
-    scripts_dir = cli_context["test_dir"] / ".llm-orc" / "scripts" / "primitives"
-    assert scripts_dir.exists(), "Scripts directory does not exist"
+    """Check that core primitives are available as package modules."""
+    from llm_orc.primitives import get_output_schema
 
-    py_files = list(scripts_dir.rglob("*.py"))
-    py_files = [f for f in py_files if f.name != "__init__.py"]
-    assert len(py_files) > 0, f"No scripts were installed from {config_type}"
+    schema = get_output_schema("primitives/file_ops/read_file.py")
+    assert schema is not None, f"Primitives not available (checking {config_type})"
 
 
 @then(parsers.parse('scripts should be installed from "{path}" not "{other_path}"'))
 def scripts_from_correct_path(
     cli_context: dict[str, Any], path: str, other_path: str
 ) -> None:
-    """Check that scripts were installed from correct path."""
-    scripts_dir = cli_context["test_dir"] / ".llm-orc" / "scripts" / "primitives"
-    assert scripts_dir.exists(), "Scripts directory does not exist"
+    """Check that core primitives are available as package modules."""
+    from llm_orc.primitives import get_output_schema
 
-    # Check that scripts exist
-    py_files = list(scripts_dir.rglob("*.py"))
-    py_files = [f for f in py_files if f.name != "__init__.py"]
-    assert len(py_files) > 0, f"No scripts were installed (expected from {path})"
+    schema = get_output_schema("primitives/file_ops/read_file.py")
+    assert schema is not None, f"Primitives not available (expected from {path})"
 
 
 @then(parsers.parse('the output should indicate "{message}"'))
@@ -421,24 +410,6 @@ def library_ensembles_exist(cli_context: dict[str, Any], dir_path: str) -> None:
     library_ensemble(cli_context, "library-ensemble-2", dir_path)
 
 
-@given(parsers.parse('the library has ensembles in "{dir_path}"'))
-def library_has_ensembles(cli_context: dict[str, Any], dir_path: str) -> None:
-    """Create ensembles in library examples directory."""
-    # Create the neon-shadows-detective ensemble
-    full_path = cli_context["test_dir"] / dir_path / "neon-shadows-detective"
-    full_path.mkdir(parents=True, exist_ok=True)
-
-    ensemble_yaml = full_path / "ensemble.yaml"
-    ensemble_yaml.write_text(
-        """name: neon-shadows-detective
-description: Interactive cyberpunk detective story
-agents:
-  - name: opening-scene
-    model_profile: creative
-"""
-    )
-
-
 @then("the output should list ensembles from the library")
 def output_lists_library_ensembles(cli_context: dict[str, Any]) -> None:
     """Check that library ensembles are listed."""
@@ -501,21 +472,3 @@ def library_under_section(cli_context: dict[str, Any], section: str) -> None:
     # For now, just verify the section exists
     # TODO: Add more sophisticated parsing
     output_has_section(cli_context, section)
-
-
-@then("the output should list ensembles in the examples category")
-def list_examples_category(cli_context: dict[str, Any]) -> None:
-    """Check that examples category ensembles are listed."""
-    output = cli_context["last_output"]
-    assert "examples" in output.lower() or "ensemble" in output.lower(), (
-        f"Output does not list examples category:\n{output}"
-    )
-
-
-@then("the output should include the newly created narrative ensemble")
-def includes_narrative_ensemble(cli_context: dict[str, Any]) -> None:
-    """Check that neon-shadows-detective ensemble is listed."""
-    output = cli_context["last_output"]
-    assert "neon-shadows" in output.lower() or "detective" in output.lower(), (
-        f"Output does not include narrative ensemble:\n{output}"
-    )

@@ -333,10 +333,17 @@ def primitive_registry_initialized(bdd_context: dict[str, Any]) -> None:
     """Initialize primitive registry for discovery testing."""
     import tempfile
 
-    # Create temporary directory for test scripts
+    # Create temporary directory with test scripts so discovery finds them
     temp_dir = Path(tempfile.mkdtemp())
     scripts_dir = temp_dir / ".llm-orc" / "scripts" / "primitives"
     scripts_dir.mkdir(parents=True)
+
+    # Populate with test scripts so discovery has something to find
+    for category, script_name, content_fn in [
+        ("user-interaction", "get_user_input.py", get_user_input_script_content),
+        ("data-transform", "json_extract.py", get_data_transform_script_content),
+    ]:
+        create_test_script_file(scripts_dir, script_name, category, content_fn())
 
     bdd_context["temp_dir"] = temp_dir
     bdd_context["scripts_dir"] = scripts_dir
@@ -755,8 +762,21 @@ def plugin_system_external_providers(bdd_context: dict[str, Any]) -> None:
 @when("primitive discovery is executed")
 def execute_primitive_discovery(bdd_context: dict[str, Any]) -> None:
     """Execute primitive discovery process."""
+    import os
+
     registry = bdd_context["primitive_registry"]
-    bdd_context["discovered_primitives"] = registry.discover_primitives()
+    # Run discovery from the temp dir where test scripts were created
+    temp_dir = bdd_context.get("temp_dir")
+    if temp_dir:
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(temp_dir)
+            registry._cache.clear()  # Clear cache to re-discover
+            bdd_context["discovered_primitives"] = registry.discover_primitives()
+        finally:
+            os.chdir(original_cwd)
+    else:
+        bdd_context["discovered_primitives"] = registry.discover_primitives()
 
 
 @when("the primitive is executed with JSON input via stdin")

@@ -104,34 +104,6 @@ def display_plain_text_results(
         _display_simplified_plain_text(results, metadata, agents)
 
 
-def display_simplified_results(
-    results: dict[str, Any], metadata: dict[str, Any]
-) -> None:
-    """Display simplified results showing only the final output using markdown."""
-    # console = Console(soft_wrap=True, width=None, force_terminal=True)  # Unused
-
-    # Find the final agent result to display
-    successful_agents = [
-        name for name, result in results.items() if result.get("status") == "success"
-    ]
-
-    if successful_agents:
-        last_agent = successful_agents[-1]
-        response = results[last_agent]["response"]
-        click.echo(f"Result from {last_agent}:")
-        click.echo(response)
-    else:
-        click.echo("❌ No successful results found")
-
-    # Show minimal performance summary
-    if "usage" in metadata:
-        totals = metadata["usage"].get("totals", {})
-        agents_count = totals.get("agents_count", 0)
-        duration = metadata.get("duration", "unknown")
-        click.echo()
-        click.echo(f"⚡ {agents_count} agents completed in {duration}")
-
-
 def _process_agent_results(results: dict[str, Any]) -> dict[str, Any]:
     """Process agent results for display."""
     processed = {}
@@ -275,7 +247,7 @@ def _format_performance_metrics(metadata: dict[str, Any]) -> list[str]:
 
     # Format each section separately
     lines.extend(_format_usage_summary(metadata))
-    lines.extend(_format_adaptive_resource_metrics(metadata))
+    lines.extend(_format_arm_section(metadata))
 
     return lines
 
@@ -367,8 +339,8 @@ def _format_single_agent_usage(
     return lines
 
 
-def _format_adaptive_resource_metrics(metadata: dict[str, Any]) -> list[str]:
-    """Format adaptive resource management metrics."""
+def _format_arm_section(metadata: dict[str, Any]) -> list[str]:
+    """Format adaptive resource management metrics from metadata."""
     lines: list[str] = []
 
     if "adaptive_resource_management" not in metadata:
@@ -380,7 +352,7 @@ def _format_adaptive_resource_metrics(metadata: dict[str, Any]) -> list[str]:
     lines.extend(_format_concurrency_info(arm))
 
     # Execution metrics
-    lines.extend(_format_execution_metrics(arm))
+    lines.extend(_format_arm_execution_section(arm))
 
     # Phase metrics
     lines.extend(_format_phase_metrics(arm))
@@ -402,8 +374,8 @@ def _format_concurrency_info(arm: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _format_execution_metrics(arm: dict[str, Any]) -> list[str]:
-    """Format execution metrics from ARM."""
+def _format_arm_execution_section(arm: dict[str, Any]) -> list[str]:
+    """Format execution metrics from ARM data."""
     lines: list[str] = []
 
     if "execution_metrics" not in arm:

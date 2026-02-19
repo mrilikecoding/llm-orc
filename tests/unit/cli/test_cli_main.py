@@ -167,28 +167,6 @@ class TestMainCLI:
         assert result.exit_code == 0
         assert "Configuration management commands" in result.output
 
-    def test_config_init_command(self) -> None:
-        """Test config init command."""
-        runner = CliRunner()
-
-        with patch("llm_orc.cli.init_local_config") as mock_init:
-            result = runner.invoke(cli, ["config", "init"])
-
-            mock_init.assert_called_once_with(None, with_scripts=True)
-            assert result.exit_code == 0
-
-    def test_config_init_with_project_name(self) -> None:
-        """Test config init command with project name."""
-        runner = CliRunner()
-
-        with patch("llm_orc.cli.init_local_config") as mock_init:
-            result = runner.invoke(
-                cli, ["config", "init", "--project-name", "MyProject"]
-            )
-
-            mock_init.assert_called_once_with("MyProject", with_scripts=True)
-            assert result.exit_code == 0
-
     def test_config_reset_global_command(self) -> None:
         """Test config reset-global command."""
         runner = CliRunner()
@@ -425,26 +403,6 @@ class TestMainCLI:
             mock_test.assert_called_once_with("google")
             assert result.exit_code == 0
 
-    def test_serve_command(self) -> None:
-        """Test serve command."""
-        runner = CliRunner()
-
-        with patch("llm_orc.cli.serve_ensemble") as mock_serve:
-            result = runner.invoke(cli, ["serve", "test_ensemble"])
-
-            mock_serve.assert_called_once_with("test_ensemble", 3000)  # default port
-            assert result.exit_code == 0
-
-    def test_serve_command_custom_port(self) -> None:
-        """Test serve command with custom port."""
-        runner = CliRunner()
-
-        with patch("llm_orc.cli.serve_ensemble") as mock_serve:
-            result = runner.invoke(cli, ["serve", "test_ensemble", "--port", "8080"])
-
-            mock_serve.assert_called_once_with("test_ensemble", 8080)
-            assert result.exit_code == 0
-
     def test_help_command_basic(self) -> None:
         """Test custom help command."""
         runner = CliRunner()
@@ -495,7 +453,6 @@ class TestMainCLI:
             assert "(i )" in result.output  # invoke alias
             assert "(le)" in result.output  # list-ensembles alias
             assert "(lp)" in result.output  # list-profiles alias
-            assert "(s )" in result.output  # serve alias
             assert "(h )" in result.output  # help alias
 
     def test_command_aliases_work(self) -> None:
@@ -529,12 +486,6 @@ class TestMainCLI:
             result = runner.invoke(cli, ["lp"])
             assert result.exit_code == 0
             mock_list.assert_called_once()
-
-        # Test serve alias
-        with patch("llm_orc.cli.serve_ensemble") as mock_serve:
-            result = runner.invoke(cli, ["s", "test_ensemble"])
-            assert result.exit_code == 0
-            mock_serve.assert_called_once()
 
         # Test help alias
         mock_ctx = Mock()
@@ -604,11 +555,6 @@ if "__main__" == "__main__":
         assert result.exit_code != 0
         assert "is not a valid integer" in result.output
 
-        # Test port must be integer
-        result = runner.invoke(cli, ["serve", "test", "--port", "not-a-number"])
-        assert result.exit_code != 0
-        assert "is not a valid integer" in result.output
-
     def test_command_help_messages(self) -> None:
         """Test that all commands have proper help messages."""
         runner = CliRunner()
@@ -618,7 +564,6 @@ if "__main__" == "__main__":
             ["invoke", "--help"],
             ["list-ensembles", "--help"],
             ["list-profiles", "--help"],
-            ["serve", "--help"],
             ["config", "--help"],
             ["auth", "--help"],
         ]
@@ -635,7 +580,6 @@ if "__main__" == "__main__":
 
         # Test config subcommands
         config_commands = [
-            ["config", "init", "--help"],
             ["config", "reset-global", "--help"],
             ["config", "reset-local", "--help"],
             ["config", "check", "--help"],
@@ -675,10 +619,6 @@ if "__main__" == "__main__":
 
         # auth remove requires provider
         result = runner.invoke(cli, ["auth", "remove"])
-        assert result.exit_code != 0
-
-        # serve requires ensemble name
-        result = runner.invoke(cli, ["serve"])
         assert result.exit_code != 0
 
         # auth test-refresh requires provider

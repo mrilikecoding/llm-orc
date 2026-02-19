@@ -1,7 +1,42 @@
 # ADR-006: Library-Based Primitives Architecture with Multi-Language Bridge Support
 
 ## Status
-Implemented
+Amended
+
+## Amendment (2026-02-18): Core Primitives Move to Package
+
+### What Changed
+
+Development practice revealed that the 6 core primitives (get_user_input, confirm_action, json_extract, read_file, write_file, replicate_n_times) receive engine-level fixes that must ship with the main repo. When a bug was fixed in `get_user_input.py`, the library copies drifted silently. Core primitives are infrastructure, not community content.
+
+### New Boundary
+
+- **`src/llm_orc/primitives/`** — Core primitives with Pydantic input/output contracts. These are engine infrastructure, installed with `pip install llm-orc`.
+- **`llm-orchestra-library/`** — Specialized scripts, example ensembles, community contributions, bridge primitives.
+
+### Updated Search Path
+
+```
+Priority 0: LLM_ORC_TEST_PRIMITIVES_DIR (BDD test override)
+Priority 1: .llm-orc/scripts/ (local project overrides)
+Priority 1.5: src/llm_orc/primitives/ (installed package primitives)  ← NEW
+Priority 2: llm-orchestra-library/ (library submodule)
+```
+
+Local overrides still take precedence. Users can still shadow any core primitive by placing a script in `.llm-orc/scripts/primitives/`.
+
+### Contract Enforcement
+
+Each core primitive has Pydantic `Input` and `Output` models. `ScriptAgentRunner` validates output from known primitives at runtime (warn-only, does not block). Hyphen-to-underscore normalization ensures ensemble YAMLs referencing `primitives/user-interaction/get_user_input.py` resolve to `primitives/user_interaction/get_user_input.py`.
+
+### Files Added/Changed
+
+- `src/llm_orc/primitives/` — 6 primitive modules with Pydantic contracts
+- `src/llm_orc/core/execution/script_resolver.py` — Package primitives search path + hyphen normalization
+- `src/llm_orc/core/execution/script_agent_runner.py` — Opt-in output validation
+- `.llm-orc/scripts/primitives/` — Deleted (superseded by package primitives)
+
+---
 
 ## Implementation Status
 - [x] BDD scenarios created in tests/bdd/features/adr-006-library-based-primitives-architecture.feature
@@ -12,8 +47,12 @@ Implemented
 - [x] Integration tests validate orchestration with fixtures
 - [x] Type safety and coding standards compliance
 - [x] Refactoring complete (constants extracted, clean organization)
+- [x] Core primitives moved to `src/llm_orc/primitives/` with Pydantic contracts
+- [x] Package primitives search path added to ScriptResolver
+- [x] Opt-in output validation in ScriptAgentRunner
+- [x] Duplicate local primitive scripts deleted
 
-**Note on Library Content**: This ADR validates llm-orc's orchestration architecture. Library primitive implementations live in the `llm-orchestra-library` repository and are validated through interface contracts (ADR-003). Tests use fixtures to maintain independence from library submodule initialization.
+**Note on Library Content**: This ADR validates llm-orc's orchestration architecture. Core primitives now live in `src/llm_orc/primitives/` as first-class Python modules. The library submodule (`llm-orchestra-library`) contains specialized scripts, example ensembles, and community content. Tests use fixtures to maintain independence from both package primitives and library submodule initialization.
 
 ## BDD Mapping Hints
 ```yaml
@@ -744,3 +783,5 @@ The bridge primitive pattern enables unlimited extensibility without engine comp
 The library-based approach respects the philosophical principle that **primitives are content, not infrastructure** - they are building blocks to be orchestrated, not features of the orchestrator itself.
 
 This decision positions llm-orc for long-term growth as a platform that can coordinate any executable component, in any language, using any execution environment, while maintaining architectural simplicity and clear separation of concerns.
+
+**Amendment note**: The original decision that "primitives are content, not infrastructure" proved partially incorrect for the 6 core primitives. These define the engine's I/O contracts and receive engine-level bug fixes. They are now first-class Python modules in `src/llm_orc/primitives/` with Pydantic contracts. The library remains the home for specialized scripts, example ensembles, and community contributions.

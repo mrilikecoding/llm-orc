@@ -116,11 +116,14 @@ class PrimitiveRegistry:
 
         raise FileNotFoundError(f"Primitive '{primitive_name}' not found")
 
-    def validate_primitive(self, primitive_name: str) -> dict[str, Any]:
+    def validate_primitive(
+        self, primitive_name: str, timeout: int = 10
+    ) -> dict[str, Any]:
         """Validate that a primitive conforms to ScriptAgentInput/Output schemas.
 
         Args:
             primitive_name: Name of the primitive to validate
+            timeout: Maximum execution time in seconds
 
         Returns:
             Validation result dictionary
@@ -149,7 +152,7 @@ class PrimitiveRegistry:
                 capture_output=True,
                 text=True,
                 env=env,
-                timeout=10,
+                timeout=timeout,
             )
 
             if result.returncode != 0:

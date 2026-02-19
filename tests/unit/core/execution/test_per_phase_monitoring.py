@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from llm_orc.core.execution.adaptive_resource_manager import (
-    AdaptiveResourceManager,
     SystemResourceMonitor,
 )
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
@@ -44,18 +43,6 @@ class TestPerPhaseMonitoring:
             }
         )
         return monitor
-
-    @pytest.fixture
-    def mock_adaptive_manager(self, mock_monitor: Mock) -> Mock:
-        """Create a mock adaptive resource manager."""
-        manager = Mock(spec=AdaptiveResourceManager)
-        manager.monitor = mock_monitor
-        manager.get_adaptive_limit = AsyncMock(return_value=3)
-        manager.get_adaptive_limit_for_phase = AsyncMock(return_value=3)
-        manager.base_limit = 4
-        manager.circuit_breaker = Mock()
-        manager.circuit_breaker.state = "CLOSED"
-        return manager
 
     @pytest.fixture
     def mock_ensemble_execution(self) -> Mock:
@@ -99,20 +86,14 @@ class TestPerPhaseMonitoring:
             EnsembleExecutor, "_execute_dependency_phases_with_monitoring"
         )
 
-    def test_adaptive_calculations_removed_by_design(self) -> None:
-        """Test that complex adaptive calculations are intentionally removed.
+    def test_adaptive_resource_manager_removed_by_design(self) -> None:
+        """Test that AdaptiveResourceManager class has been removed.
 
-        The simplified architecture trusts users to set appropriate limits
-        rather than trying to predict unknown model performance.
+        The simplified architecture uses SystemResourceMonitor directly.
         """
-        from llm_orc.core.execution.adaptive_resource_manager import (
-            AdaptiveResourceManager,
-        )
+        import llm_orc.core.execution.adaptive_resource_manager as arm_module
 
-        # Verify that complex adaptive methods don't exist
-        assert not hasattr(AdaptiveResourceManager, "get_adaptive_limit")
-        assert not hasattr(AdaptiveResourceManager, "get_adaptive_limit_for_phase")
-        assert not hasattr(AdaptiveResourceManager, "circuit_breaker")
+        assert not hasattr(arm_module, "AdaptiveResourceManager")
 
     @pytest.mark.asyncio
     async def test_basic_metrics_collection_for_guidance(self) -> None:
@@ -149,19 +130,14 @@ class TestPerPhaseMonitoring:
         - Simple resource monitoring for optimization hints
         """
         from llm_orc.core.execution.adaptive_resource_manager import (
-            AdaptiveResourceManager,
             SystemResourceMonitor,
         )
 
-        # Create simplified components
         monitor = SystemResourceMonitor(polling_interval=0.1)
-        manager = AdaptiveResourceManager(
-            base_limit=4, monitor=monitor, min_limit=1, max_limit=10
-        )
 
         # Test that monitoring still works for performance feedback
-        await manager.monitor.start_execution_monitoring()
-        metrics = await manager.monitor.stop_execution_monitoring()
+        await monitor.start_execution_monitoring()
+        metrics = await monitor.stop_execution_monitoring()
 
         # Should provide basic performance data for user guidance
         assert "peak_cpu" in metrics

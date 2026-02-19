@@ -4,17 +4,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from llm_orc.web.server import create_app
-
 
 class TestProfilesAPI:
     """Tests for /api/profiles endpoints."""
 
-    def test_list_profiles_returns_list(self) -> None:
+    def test_list_profiles_returns_list(self, client: TestClient) -> None:
         """Test that GET /api/profiles returns a list."""
-        app = create_app()
-        client = TestClient(app)
-
         with patch("llm_orc.web.api.profiles.get_mcp_server") as mock_get_mcp:
             mock_server = MagicMock()
             mock_server._read_profiles_resource = AsyncMock(
@@ -32,11 +27,8 @@ class TestProfilesAPI:
             assert len(data) == 1
             assert data[0]["name"] == "default"
 
-    def test_create_profile_success(self) -> None:
+    def test_create_profile_success(self, client: TestClient) -> None:
         """Test that POST /api/profiles creates a profile."""
-        app = create_app()
-        client = TestClient(app)
-
         with patch("llm_orc.web.api.profiles.get_mcp_server") as mock_get_mcp:
             mock_server = MagicMock()
             mock_server._create_profile_tool = AsyncMock(
@@ -53,11 +45,8 @@ class TestProfilesAPI:
             data = response.json()
             assert data["status"] == "created"
 
-    def test_delete_profile_success(self) -> None:
+    def test_delete_profile_success(self, client: TestClient) -> None:
         """Test that DELETE /api/profiles/{name} deletes a profile."""
-        app = create_app()
-        client = TestClient(app)
-
         with patch("llm_orc.web.api.profiles.get_mcp_server") as mock_get_mcp:
             mock_server = MagicMock()
             mock_server._delete_profile_tool = AsyncMock(

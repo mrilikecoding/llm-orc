@@ -56,7 +56,7 @@ class UsageCollector:
         try:
             baseline_metrics = {
                 "start_time": time.time(),
-                "baseline_cpu": psutil.cpu_percent(interval=0.1),
+                "baseline_cpu": psutil.cpu_percent(interval=None),
                 "baseline_memory": psutil.virtual_memory().percent,
                 "sample_count": 0,
                 "peak_cpu": 0.0,

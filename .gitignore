@@ -36,6 +36,9 @@ coverage.xml
 # Type checking
 .mypy_cache/
 
+# Complexity analysis cache
+.complexipy_cache/
+
 # Virtual environments
 .env
 .venv/

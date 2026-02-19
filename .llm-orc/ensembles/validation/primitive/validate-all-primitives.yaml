@@ -1,0 +1,144 @@
+name: validate-all-primitives
+description: >
+  End-to-end validation exercising all 6 core primitives in a single pipeline.
+  Writes JSON data, reads it back, extracts fields, generates replications,
+  collects user confirmation, and records the result.
+
+agents:
+  # 1. Write a JSON test fixture to disk
+  - name: write-fixture
+    script: primitives/file-ops/write_file.py
+    parameters:
+      path: ".llm-orc/artifacts/validation/all-primitives-fixture.json"
+      content: '{"experiment": "primitive-validation", "subjects": 12, "method": "randomized", "status": "pending"}'
+
+  # 2. Read it back (depends on write completing)
+  - name: read-fixture
+    script: primitives/file-ops/read_file.py
+    depends_on: [write-fixture]
+    parameters:
+      path: ".llm-orc/artifacts/validation/all-primitives-fixture.json"
+
+  # 3. Extract specific fields from the read content
+  - name: extract-fields
+    script: primitives/data-transform/json_extract.py
+    depends_on: [read-fixture]
+    parameters:
+      json_data: '{"experiment": "primitive-validation", "subjects": 12, "method": "randomized", "status": "pending"}'
+      fields: ["experiment", "subjects", "method"]
+
+  # 4. Generate replications (independent of file ops)
+  - name: replicate
+    script: primitives/control-flow/replicate_n_times.py
+    parameters:
+      replications: 3
+      seed: 42
+
+  # 5. Ask user to confirm results (depends on extract + replicate)
+  - name: confirm-results
+    script: primitives/user-interaction/confirm_action.py
+    depends_on: [extract-fields, replicate]
+    parameters:
+      prompt: "All primitives executed. Confirm validation passed?"
+      default: "y"
+
+  # 6. Collect a free-form note from the user
+  - name: collect-note
+    script: primitives/user-interaction/get_user_input.py
+    depends_on: [confirm-results]
+    parameters:
+      prompt: "Any notes on this validation run?"
+      multiline: false
+
+validation:
+  structural:
+    required_agents:
+      - write-fixture
+      - read-fixture
+      - extract-fields
+      - replicate
+      - confirm-results
+      - collect-note
+    max_execution_time: 30
+    min_execution_time: 0.01
+
+  schema:
+    - agent: write-fixture
+      required_fields: [success, path, size, bytes_written]
+    - agent: read-fixture
+      required_fields: [success, content, path, size]
+    - agent: extract-fields
+      required_fields: [success, extracted, missing_fields, total_fields, extracted_count]
+    - agent: replicate
+      required_fields: [success, replications, total_replications, base_seed]
+    - agent: confirm-results
+      required_fields: [success, confirmed, input, prompt]
+    - agent: collect-note
+      required_fields: [success, input, multiline, length]
+
+  behavioral:
+    # write-fixture assertions
+    - name: write-succeeds
+      description: "File write should succeed"
+      assertion: "results['write-fixture']['success'] == True"
+
+    - name: write-positive-bytes
+      description: "Should write a positive number of bytes"
+      assertion: "results['write-fixture']['bytes_written'] > 0"
+
+    # read-fixture assertions
+    - name: read-succeeds
+      description: "File read should succeed"
+      assertion: "results['read-fixture']['success'] == True"
+
+    - name: read-content-matches
+      description: "Read content should contain experiment name"
+      assertion: "'primitive-validation' in results['read-fixture']['content']"
+
+    - name: read-roundtrip-size
+      description: "Read size should match write size"
+      assertion: "results['read-fixture']['size'] == results['write-fixture']['size']"
+
+    # extract-fields assertions
+    - name: extract-succeeds
+      description: "JSON extraction should succeed"
+      assertion: "results['extract-fields']['success'] == True"
+
+    - name: extract-correct-count
+      description: "Should extract 3 fields"
+      assertion: "results['extract-fields']['extracted_count'] == 3"
+
+    - name: extract-no-missing
+      description: "No fields should be missing"
+      assertion: "len(results['extract-fields']['missing_fields']) == 0"
+
+    - name: extract-experiment-value
+      description: "Experiment field should match"
+      assertion: "results['extract-fields']['extracted']['experiment'] == 'primitive-validation'"
+
+    # replicate assertions
+    - name: replicate-succeeds
+      description: "Replication should succeed"
+      assertion: "results['replicate']['success'] == True"
+
+    - name: replicate-correct-count
+      description: "Should generate 3 replications"
+      assertion: "results['replicate']['total_replications'] == 3"
+
+    - name: replicate-deterministic-seed
+      description: "Base seed should be 42"
+      assertion: "results['replicate']['base_seed'] == 42"
+
+    - name: replicate-has-fields
+      description: "Each replication should have required fields"
+      assertion: "all('replication_id' in r and 'random_seed' in r for r in results['replicate']['replications'])"
+
+    # confirm-results assertions
+    - name: confirm-succeeds
+      description: "Confirmation should succeed"
+      assertion: "results['confirm-results']['success'] == True"
+
+    # collect-note assertions
+    - name: note-succeeds
+      description: "User input collection should succeed"
+      assertion: "results['collect-note']['success'] == True"

@@ -1,7 +1,8 @@
 """Agent dependency analysis for execution planning."""
 
-import re
 from typing import Any
+
+from llm_orc.core.execution.patterns import INSTANCE_PATTERN
 
 
 class DependencyAnalyzer:
@@ -40,22 +41,21 @@ class DependencyAnalyzer:
 
         while remaining_agents:
             current_phase = []
-            agents_to_remove = []
 
             # Find agents whose dependencies have been processed
             for agent_config in remaining_agents:
                 agent_name = agent_config["name"]
                 dependencies = dependency_map[agent_name]
 
-                # Agent is ready if it has no dependencies or all are processed
                 if self.agent_dependencies_satisfied(dependencies, processed_agents):
                     current_phase.append(agent_config)
-                    agents_to_remove.append(agent_config)
 
-            # Update processed agents and remove from remaining
-            for agent_config in agents_to_remove:
+            # Update processed agents and filter remaining
+            for agent_config in current_phase:
                 processed_agents.add(agent_config["name"])
-                remaining_agents.remove(agent_config)
+            remaining_agents = [
+                a for a in remaining_agents if a["name"] not in processed_agents
+            ]
 
             # Detect circular dependencies
             if not current_phase:
@@ -105,29 +105,44 @@ class DependencyAnalyzer:
         return levels
 
     def calculate_agent_level(
-        self, agent_name: str, dependency_map: dict[str, list[str]]
+        self,
+        agent_name: str,
+        dependency_map: dict[str, list[str]],
+        _cache: dict[str, int] | None = None,
     ) -> int:
         """Calculate the dependency level of an agent.
 
         Args:
             agent_name: Name of the agent
             dependency_map: Mapping of agent names to their dependencies
+            _cache: Internal memoization cache (created automatically)
 
         Returns:
             Dependency level (0 for no dependencies, higher for more levels)
         """
+        if _cache is None:
+            _cache = {}
+
+        if agent_name in _cache:
+            return _cache[agent_name]
+
         if agent_name not in dependency_map:
+            _cache[agent_name] = 0
             return 0
 
         dependencies = dependency_map[agent_name]
         if not dependencies:
+            _cache[agent_name] = 0
             return 0
 
         # Level is 1 + max level of dependencies
         max_dep_level = max(
-            self.calculate_agent_level(dep, dependency_map) for dep in dependencies
+            self.calculate_agent_level(dep, dependency_map, _cache)
+            for dep in dependencies
         )
-        return max_dep_level + 1
+        level = max_dep_level + 1
+        _cache[agent_name] = level
+        return level
 
     def get_execution_phases(
         self, agent_configs: list[dict[str, Any]]
@@ -182,9 +197,6 @@ class DependencyAnalyzer:
 
     # ========== Fan-Out Support (Issue #73) ==========
 
-    # Pattern for instance names: agent_name[index]
-    _INSTANCE_PATTERN = re.compile(r"^(.+)\[(\d+)\]$")
-
     def normalize_agent_name(self, name: str) -> str:
         """Normalize agent name by removing instance index if present.
 
@@ -196,7 +208,7 @@ class DependencyAnalyzer:
         Returns:
             Original agent name without index
         """
-        match = self._INSTANCE_PATTERN.match(name)
+        match = INSTANCE_PATTERN.match(name)
         if match:
             return match.group(1)
         return name
@@ -210,4 +222,4 @@ class DependencyAnalyzer:
         Returns:
             True if name matches instance pattern, False otherwise
         """
-        return bool(self._INSTANCE_PATTERN.match(name))
+        return bool(INSTANCE_PATTERN.match(name))

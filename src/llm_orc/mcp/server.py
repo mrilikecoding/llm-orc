@@ -1,4 +1,4 @@
-"""MCP Server v2 implementation using FastMCP SDK.
+"""MCP Server implementation using FastMCP SDK.
 
 This module implements the MCP server following ADR-009, providing:
 - Resource exposure for ensembles, artifacts, metrics, and profiles
@@ -18,6 +18,14 @@ from mcp.server.fastmcp import Context, FastMCP
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
+from llm_orc.mcp.handlers.artifact_handler import ArtifactHandler
+from llm_orc.mcp.handlers.help_handler import HelpHandler
+from llm_orc.mcp.handlers.library_handler import LibraryHandler
+from llm_orc.mcp.handlers.profile_handler import ProfileHandler
+from llm_orc.mcp.handlers.provider_handler import ProviderHandler
+from llm_orc.mcp.handlers.script_handler import ScriptHandler
+from llm_orc.mcp.handlers.validation_handler import ValidationHandler
+from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
 
 if TYPE_CHECKING:
     from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
@@ -70,49 +78,12 @@ class FastMCPProgressReporter:
         await self._ctx.report_progress(progress=progress, total=total)
 
 
-def _get_agent_attr(agent: Any, attr: str, default: Any = None) -> Any:
-    """Get agent attribute handling both dict and object forms.
-
-    Args:
-        agent: Agent config (dict or object).
-        attr: Attribute name.
-        default: Default value if not found.
-
-    Returns:
-        Attribute value or default.
-    """
-    if isinstance(agent, dict):
-        return agent.get(attr, default)
-    return getattr(agent, attr, default)
-
-
-def _is_script_agent(agent: Any) -> bool:
-    """Check if agent is a script agent (explicit type or script field).
-
-    Args:
-        agent: Agent config (dict or object).
-
-    Returns:
-        True if agent is a script agent.
-    """
-    return (
-        _get_agent_attr(agent, "type") == "script"
-        or _get_agent_attr(agent, "script") is not None
-    )
-
-
-class MCPServerV2:
-    """MCP Server v2 using FastMCP SDK.
+class MCPServer:
+    """MCP Server using FastMCP SDK.
 
     Exposes all llm-orc ensembles as MCP resources and provides
     tools for ensemble management and execution.
     """
-
-    # Optional test overrides for directories
-    _test_library_dir: Path | None = None
-    _test_scripts_dir: Path | None = None
-    _test_artifacts_base: Path | None = None
-    _test_ollama_status: dict[str, Any] | None = None
 
     def __init__(
         self,
@@ -130,6 +101,19 @@ class MCPServerV2:
         self.ensemble_loader = EnsembleLoader()
         self.artifact_manager = ArtifactManager()
         self._executor = executor  # Lazily created if None
+        self._help_handler = HelpHandler()
+        self._profile_handler = ProfileHandler(self.config_manager)
+        self._artifact_handler = ArtifactHandler()
+        self._script_handler = ScriptHandler()
+        self._library_handler = LibraryHandler(
+            self.config_manager, self.ensemble_loader
+        )
+        self._provider_handler = ProviderHandler(
+            self._profile_handler, self._find_ensemble_by_name
+        )
+        self._validation_handler = ValidationHandler(
+            self.config_manager, self._find_ensemble_by_name
+        )
         self._mcp = FastMCP("llm-orc")
         self._setup_resources()
         self._setup_tools()
@@ -622,149 +606,8 @@ class MCPServerV2:
             - Tool categories and their purposes
             - Common workflows
             """
-            result = self._get_help_documentation()
+            result = self._help_handler.get_help_documentation()
             return json.dumps(result, indent=2)
-
-    def _get_help_documentation(self) -> dict[str, Any]:
-        """Build comprehensive help documentation."""
-        return {
-            "overview": (
-                "llm-orc orchestrates multi-agent LLM ensembles. "
-                "Use these tools to discover, run, and manage ensembles."
-            ),
-            "directory_structure": self._get_directory_structure_help(),
-            "schemas": self._get_schema_help(),
-            "tools": self._get_tools_help(),
-            "workflows": self._get_workflow_help(),
-        }
-
-    def _get_directory_structure_help(self) -> dict[str, Any]:
-        """Get directory structure documentation."""
-        return {
-            "local": {
-                "path": ".llm-orc/",
-                "description": "Project-specific configuration (highest priority)",
-                "subdirs": {
-                    "ensembles/": "Project ensembles (YAML files)",
-                    "profiles/": "Model profiles",
-                    "scripts/": "Primitive scripts by category",
-                    "artifacts/": "Execution results (auto-generated)",
-                },
-            },
-            "global": {
-                "path": "~/.config/llm-orc/",
-                "description": "User-wide configuration",
-                "subdirs": {
-                    "ensembles/": "Global ensembles",
-                    "profiles/": "Global model profiles",
-                    "credentials.yaml": "API keys (encrypted)",
-                },
-            },
-            "priority": "Local config overrides global config",
-        }
-
-    def _get_schema_help(self) -> dict[str, Any]:
-        """Get YAML schema documentation."""
-        return {
-            "ensemble": {
-                "description": "Multi-agent workflow definition",
-                "required_fields": ["name", "agents"],
-                "example": {
-                    "name": "code-review",
-                    "description": "Multi-perspective code review",
-                    "agents": [
-                        {
-                            "name": "security-reviewer",
-                            "model_profile": "ollama-llama3",
-                            "system_prompt": "Focus on security issues...",
-                        },
-                        {
-                            "name": "synthesizer",
-                            "model_profile": "ollama-llama3",
-                            "depends_on": ["security-reviewer"],
-                            "system_prompt": "Synthesize the analysis...",
-                        },
-                    ],
-                },
-            },
-            "profile": {
-                "description": "Model configuration shortcut",
-                "required_fields": ["provider", "model"],
-                "example": {
-                    "name": "ollama-llama3",
-                    "provider": "ollama",
-                    "model": "llama3:latest",
-                    "system_prompt": "You are a helpful assistant.",
-                    "timeout_seconds": 60,
-                },
-                "providers": ["ollama", "anthropic", "anthropic-claude-pro-max"],
-            },
-            "agent": {
-                "description": "Agent within an ensemble",
-                "required_fields": ["name", "model_profile"],
-                "optional_fields": [
-                    "system_prompt",
-                    "depends_on",
-                    "output_format",
-                    "timeout_seconds",
-                ],
-            },
-        }
-
-    def _get_tools_help(self) -> dict[str, str]:
-        """Get tool category documentation."""
-        return {
-            "context_management": (
-                "set_project - Set active project directory for all operations"
-            ),
-            "core_execution": (
-                "invoke, list_ensembles, validate_ensemble, "
-                "update_ensemble, analyze_execution"
-            ),
-            "provider_discovery": (
-                "get_provider_status (check available models), "
-                "check_ensemble_runnable (verify ensemble can run)"
-            ),
-            "ensemble_crud": "create_ensemble, delete_ensemble",
-            "profile_crud": (
-                "list_profiles, create_profile, update_profile, delete_profile"
-            ),
-            "script_management": (
-                "list_scripts, get_script, test_script, create_script, delete_script"
-            ),
-            "library": ("library_browse, library_copy, library_search, library_info"),
-            "artifacts": "delete_artifact, cleanup_artifacts",
-        }
-
-    def _get_workflow_help(self) -> dict[str, list[str]]:
-        """Get common workflow documentation."""
-        return {
-            "start_session": [
-                "1. set_project - Point to project directory (optional)",
-                "2. get_provider_status - See available models",
-                "3. list_ensembles - Find available ensembles",
-            ],
-            "discover_and_run": [
-                "1. set_project - Set project context (if not done)",
-                "2. list_ensembles - Find available ensembles",
-                "3. check_ensemble_runnable - Verify it can run",
-                "4. invoke - Execute the ensemble",
-            ],
-            "adapt_from_library": [
-                "1. set_project - Set target project",
-                "2. library_search - Find relevant ensembles",
-                "3. library_copy - Copy to local project",
-                "4. update_ensemble - Adapt for local models",
-                "5. invoke - Run the adapted ensemble",
-            ],
-            "create_new_ensemble": [
-                "1. set_project - Set project context",
-                "2. list_profiles - See available model profiles",
-                "3. create_ensemble - Create with agents",
-                "4. validate_ensemble - Check configuration",
-                "5. invoke - Test execution",
-            ],
-        }
 
     async def handle_initialize(self) -> dict[str, Any]:
         """Handle MCP initialize request.
@@ -1528,34 +1371,8 @@ class MCPServerV2:
     async def _validate_ensemble_tool(
         self, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        """Execute validate_ensemble tool.
-
-        Args:
-            arguments: Tool arguments including ensemble_name.
-
-        Returns:
-            Validation result.
-        """
-        ensemble_name = arguments.get("ensemble_name")
-
-        if not ensemble_name:
-            raise ValueError("ensemble_name is required")
-
-        # Find ensemble
-        config = self._find_ensemble_by_name(ensemble_name)
-        if not config:
-            raise ValueError(f"Ensemble not found: {ensemble_name}")
-
-        # Validate configuration
-        validation_errors = self._collect_validation_errors(config)
-
-        return {
-            "valid": len(validation_errors) == 0,
-            "details": {
-                "errors": validation_errors,
-                "agent_count": len(config.agents),
-            },
-        }
+        """Execute validate_ensemble tool."""
+        return await self._validation_handler.validate_ensemble(arguments)
 
     def _find_ensemble_by_name(self, ensemble_name: str) -> Any:
         """Find ensemble configuration by name.
@@ -1574,147 +1391,6 @@ class MCPServerV2:
             if config:
                 return config
         return None
-
-    def _collect_validation_errors(self, config: Any) -> list[str]:
-        """Collect validation errors for an ensemble configuration.
-
-        Args:
-            config: Ensemble configuration.
-
-        Returns:
-            List of validation error messages.
-        """
-        validation_errors: list[str] = []
-
-        # Check for circular dependencies
-        try:
-            self._check_circular_dependencies(config)
-        except ValueError as e:
-            validation_errors.append(str(e))
-
-        # Check agent references
-        validation_errors.extend(self._validate_agent_references(config))
-
-        # Check model profiles
-        validation_errors.extend(self._validate_model_profiles(config))
-
-        return validation_errors
-
-    def _validate_agent_references(self, config: Any) -> list[str]:
-        """Validate agent dependency references.
-
-        Args:
-            config: Ensemble configuration.
-
-        Returns:
-            List of validation error messages.
-        """
-        errors: list[str] = []
-        agent_names = {_get_agent_attr(agent, "name") for agent in config.agents}
-
-        for agent in config.agents:
-            depends_on = _get_agent_attr(agent, "depends_on") or []
-            for dep in depends_on:
-                if dep not in agent_names:
-                    agent_name = _get_agent_attr(agent, "name")
-                    errors.append(
-                        f"Agent '{agent_name}' depends on unknown agent '{dep}'"
-                    )
-
-        return errors
-
-    def _validate_model_profiles(self, config: Any) -> list[str]:
-        """Validate that model profiles exist and are properly configured.
-
-        Args:
-            config: Ensemble configuration.
-
-        Returns:
-            List of validation error messages.
-        """
-        errors: list[str] = []
-        available_profiles = self.config_manager.get_model_profiles()
-
-        for agent in config.agents:
-            agent_name = _get_agent_attr(agent, "name")
-
-            # Script agents don't need model profiles
-            if _is_script_agent(agent):
-                continue
-
-            model_profile = _get_agent_attr(agent, "model_profile")
-            if not model_profile:
-                errors.append(f"Agent '{agent_name}' has no model_profile configured")
-                continue
-
-            if model_profile not in available_profiles:
-                errors.append(
-                    f"Agent '{agent_name}' uses unknown profile '{model_profile}'"
-                )
-                continue
-
-            # Check profile has required fields
-            profile_config = available_profiles[model_profile]
-            provider = profile_config.get("provider")
-            if not provider:
-                errors.append(
-                    f"Profile '{model_profile}' missing 'provider' configuration"
-                )
-            else:
-                # Check if provider is valid
-                from llm_orc.providers.registry import provider_registry
-
-                if not provider_registry.provider_exists(provider):
-                    errors.append(
-                        f"Profile '{model_profile}' uses unknown provider '{provider}'"
-                    )
-
-            if not profile_config.get("model"):
-                errors.append(
-                    f"Profile '{model_profile}' missing 'model' configuration"
-                )
-
-        return errors
-
-    def _check_circular_dependencies(self, config: Any) -> None:
-        """Check for circular dependencies in ensemble config.
-
-        Args:
-            config: Ensemble configuration.
-
-        Raises:
-            ValueError: If circular dependency detected.
-        """
-        # Build dependency graph
-        graph: dict[str, list[str]] = {}
-        for agent in config.agents:
-            name = _get_agent_attr(agent, "name")
-            depends_on = _get_agent_attr(agent, "depends_on") or []
-            graph[name] = depends_on
-
-        # DFS to detect cycles
-        visited: set[str] = set()
-        path: set[str] = set()
-
-        def visit(node: str) -> bool:
-            if node in path:
-                return True  # Cycle detected
-            if node in visited:
-                return False
-
-            visited.add(node)
-            path.add(node)
-
-            for neighbor in graph.get(node, []):
-                if visit(neighbor):
-                    return True
-
-            path.remove(node)
-            return False
-
-        for agent_name in graph:
-            if visit(agent_name):
-                raise ValueError(f"Circular dependency detected involving {agent_name}")
 
     async def _update_ensemble_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute update_ensemble tool.
@@ -2043,923 +1719,83 @@ class MCPServerV2:
             "path": str(ensemble_file),
         }
 
-    def _collect_root_scripts(self, scripts_dir: Path) -> list[dict[str, Any]]:
-        """Collect scripts at the root level (no category)."""
-        scripts: list[dict[str, Any]] = []
-        for script_file in scripts_dir.glob("*.py"):
-            if script_file.is_file():
-                scripts.append(
-                    {
-                        "name": script_file.stem,
-                        "category": "",
-                        "path": str(script_file),
-                    }
-                )
-        return scripts
-
-    def _collect_category_scripts(
-        self, scripts_dir: Path, category_filter: str | None
-    ) -> list[dict[str, Any]]:
-        """Collect scripts from category subdirectories."""
-        scripts: list[dict[str, Any]] = []
-        for category_dir in scripts_dir.iterdir():
-            if not category_dir.is_dir():
-                continue
-            cat_name = category_dir.name
-            if category_filter and cat_name != category_filter:
-                continue
-            for script_file in category_dir.glob("*.py"):
-                scripts.append(
-                    {
-                        "name": script_file.stem,
-                        "category": cat_name,
-                        "path": str(script_file),
-                    }
-                )
-        return scripts
-
     async def _list_scripts_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """List available scripts.
-
-        Args:
-            arguments: Tool arguments including optional category.
-
-        Returns:
-            Scripts list.
-        """
-        category = arguments.get("category")
-        scripts_dir = Path.cwd() / ".llm-orc" / "scripts"
-
-        if not scripts_dir.exists():
-            return {"scripts": []}
-
-        scripts: list[dict[str, Any]] = []
-        if not category:
-            scripts.extend(self._collect_root_scripts(scripts_dir))
-        scripts.extend(self._collect_category_scripts(scripts_dir, category))
-
-        return {"scripts": scripts}
+        """List available scripts."""
+        return await self._script_handler.list_scripts(arguments)
 
     async def _library_browse_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Browse library items.
-
-        Args:
-            arguments: Tool arguments including type and category.
-
-        Returns:
-            Library items.
-        """
-        browse_type = arguments.get("type", "all")
-        library_dir = self._get_library_dir()
-        result: dict[str, list[dict[str, Any]]] = {}
-
-        if browse_type in ("all", "ensembles"):
-            result["ensembles"] = self._browse_library_ensembles(library_dir)
-
-        if browse_type in ("all", "scripts"):
-            result["scripts"] = self._browse_library_scripts(library_dir)
-
-        return result
-
-    def _browse_library_ensembles(self, library_dir: Path) -> list[dict[str, Any]]:
-        """Browse ensembles in library directory."""
-        ensembles: list[dict[str, Any]] = []
-        ensembles_dir = library_dir / "ensembles"
-        if not ensembles_dir.exists():
-            return ensembles
-
-        for yaml_file in ensembles_dir.glob("**/*.yaml"):
-            try:
-                config = self.ensemble_loader.load_from_file(str(yaml_file))
-                if config:
-                    ensembles.append(
-                        {
-                            "name": config.name,
-                            "description": config.description,
-                            "path": str(yaml_file),
-                        }
-                    )
-            except Exception:
-                continue
-        return ensembles
-
-    def _browse_library_scripts(self, library_dir: Path) -> list[dict[str, Any]]:
-        """Browse scripts in library directory."""
-        scripts: list[dict[str, Any]] = []
-        scripts_dir = library_dir / "scripts"
-        if not scripts_dir.exists():
-            return scripts
-
-        for category_dir in scripts_dir.iterdir():
-            if not category_dir.is_dir():
-                continue
-            for script_file in category_dir.glob("*.py"):
-                scripts.append(
-                    {
-                        "name": script_file.stem,
-                        "category": category_dir.name,
-                        "path": str(script_file),
-                    }
-                )
-        return scripts
-
-    def _resolve_copy_destination(self, source_path: Path) -> Path:
-        """Resolve the default local destination for a library copy."""
-        ensemble_dirs = self.config_manager.get_ensembles_dirs()
-        local_dir = Path.cwd() / ".llm-orc"
-        lib_dir = self._get_library_dir()
-
-        for dir_path in ensemble_dirs:
-            path = Path(dir_path)
-            is_local = ".llm-orc" in str(path)
-            is_library = str(path).startswith(str(lib_dir))
-            if is_local and not is_library:
-                local_dir = path.parent
-                break
-
-        subdir = "ensembles" if "ensembles" in str(source_path) else "scripts"
-        return local_dir / subdir / source_path.name
-
-    def _resolve_library_source(self, source: str) -> Path:
-        """Resolve a library source string to a path, adding .yaml if needed."""
-        library_dir = self._get_library_dir()
-        source_path = library_dir / source
-
-        if not source_path.exists() and not source.endswith(".yaml"):
-            source_path = library_dir / f"{source}.yaml"
-
-        if not source_path.exists():
-            raise ValueError(f"Source not found in library: {source}")
-        return source_path
+        """Browse library items."""
+        return await self._library_handler.browse(arguments)
 
     async def _library_copy_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Copy from library to local.
-
-        Args:
-            arguments: Tool arguments including source, destination, overwrite.
-
-        Returns:
-            Copy result.
-        """
-        import shutil
-
-        source = arguments.get("source")
-        destination = arguments.get("destination")
-        overwrite = arguments.get("overwrite", False)
-
-        if not source:
-            raise ValueError("source is required")
-
-        source_path = self._resolve_library_source(source)
-        dest_path = (
-            Path(destination)
-            if destination
-            else self._resolve_copy_destination(source_path)
-        )
-
-        if dest_path.exists() and not overwrite:
-            raise ValueError(f"File already exists: {dest_path}")
-
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_path, dest_path)
-
-        return {
-            "copied": True,
-            "source": str(source_path),
-            "destination": str(dest_path),
-        }
-
-    def _get_library_dir(self) -> Path:
-        """Get library directory path.
-
-        Returns:
-            Path to library directory.
-        """
-        # Check for test override
-        if self._test_library_dir is not None:
-            return self._test_library_dir
-
-        # Check for library in ensemble dirs
-        for dir_path in self.config_manager.get_ensembles_dirs():
-            if "library" in str(dir_path):
-                # Return parent of ensembles dir
-                return Path(dir_path).parent
-
-        # Default library location
-        return Path.cwd() / "llm-orchestra-library"
+        """Copy from library to local."""
+        return await self._library_handler.copy(arguments)
 
     # =========================================================================
     # Profile CRUD Tool Implementations
     # =========================================================================
 
     async def _list_profiles_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """List model profiles.
-
-        Args:
-            arguments: Tool arguments including optional provider filter.
-
-        Returns:
-            List of profiles.
-        """
-        import yaml
-
-        provider_filter = arguments.get("provider")
-        profiles: list[dict[str, Any]] = []
-
-        # Get profiles from configured directories
-        profiles_dirs = self.config_manager.get_profiles_dirs()
-
-        for dir_path in profiles_dirs:
-            profiles_dir = Path(dir_path)
-            if not profiles_dir.exists():
-                continue
-
-            for yaml_file in profiles_dir.glob("*.yaml"):
-                try:
-                    content = yaml_file.read_text()
-                    data = yaml.safe_load(content) or {}
-                    profile_provider = data.get("provider", "")
-
-                    # Apply filter if specified
-                    if provider_filter and profile_provider != provider_filter:
-                        continue
-
-                    profiles.append(
-                        {
-                            "name": data.get("name", yaml_file.stem),
-                            "provider": profile_provider,
-                            "model": data.get("model", ""),
-                            "path": str(yaml_file),
-                        }
-                    )
-                except Exception:
-                    continue
-
-        return {"profiles": profiles}
-
-    def _get_local_profiles_dir(self) -> Path:
-        """Get the local profiles directory for writing.
-
-        Returns:
-            Path to local profiles directory.
-
-        Raises:
-            ValueError: If no profiles directory is configured.
-        """
-        profiles_dirs = self.config_manager.get_profiles_dirs()
-        for dir_path in profiles_dirs:
-            path = Path(dir_path)
-            if ".llm-orc" in str(path) and "library" not in str(path):
-                return path
-        if profiles_dirs:
-            return Path(profiles_dirs[0])
-        raise ValueError("No profiles directory configured")
+        """List model profiles."""
+        return await self._profile_handler.list_profiles(arguments)
 
     async def _create_profile_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Create a new profile.
-
-        Args:
-            arguments: Tool arguments.
-
-        Returns:
-            Creation result.
-        """
-        import yaml
-
-        name = arguments.get("name")
-        provider = arguments.get("provider")
-        model = arguments.get("model")
-
-        if not name:
-            raise ValueError("name is required")
-        if not provider:
-            raise ValueError("provider is required")
-        if not model:
-            raise ValueError("model is required")
-
-        local_dir = self._get_local_profiles_dir()
-        target_file = local_dir / f"{name}.yaml"
-        if target_file.exists():
-            raise ValueError(f"Profile '{name}' already exists")
-
-        # Build profile data
-        profile_data: dict[str, Any] = {
-            "name": name,
-            "provider": provider,
-            "model": model,
-        }
-        if arguments.get("system_prompt"):
-            profile_data["system_prompt"] = arguments["system_prompt"]
-        if arguments.get("timeout_seconds"):
-            profile_data["timeout_seconds"] = arguments["timeout_seconds"]
-        if arguments.get("temperature") is not None:
-            profile_data["temperature"] = arguments["temperature"]
-        if arguments.get("max_tokens") is not None:
-            profile_data["max_tokens"] = arguments["max_tokens"]
-
-        # Write file
-        local_dir.mkdir(parents=True, exist_ok=True)
-        yaml_content = yaml.safe_dump(profile_data, default_flow_style=False)
-        target_file.write_text(yaml_content)
-
-        return {"created": True, "path": str(target_file)}
+        """Create a new profile."""
+        return await self._profile_handler.create_profile(arguments)
 
     async def _update_profile_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Update an existing profile.
-
-        Args:
-            arguments: Tool arguments.
-
-        Returns:
-            Update result.
-        """
-        import yaml
-
-        name = arguments.get("name")
-        changes = arguments.get("changes", {})
-
-        if not name:
-            raise ValueError("name is required")
-
-        # Find profile file
-        profiles_dirs = self.config_manager.get_profiles_dirs()
-        profile_file = None
-
-        for dir_path in profiles_dirs:
-            path = Path(dir_path) / f"{name}.yaml"
-            if path.exists():
-                profile_file = path
-                break
-
-        if not profile_file:
-            raise ValueError(f"Profile '{name}' not found")
-
-        # Load and update
-        content = profile_file.read_text()
-        data = yaml.safe_load(content) or {}
-        data.update(changes)
-
-        # Write back
-        yaml_content = yaml.safe_dump(data, default_flow_style=False)
-        profile_file.write_text(yaml_content)
-
-        return {"updated": True, "path": str(profile_file)}
+        """Update an existing profile."""
+        return await self._profile_handler.update_profile(arguments)
 
     async def _delete_profile_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Delete a profile.
-
-        Args:
-            arguments: Tool arguments.
-
-        Returns:
-            Deletion result.
-        """
-        name = arguments.get("name")
-        confirm = arguments.get("confirm", False)
-
-        if not name:
-            raise ValueError("name is required")
-        if not confirm:
-            raise ValueError("Confirmation required to delete profile")
-
-        # Find profile file
-        profiles_dirs = self.config_manager.get_profiles_dirs()
-        profile_file = None
-
-        for dir_path in profiles_dirs:
-            path = Path(dir_path) / f"{name}.yaml"
-            if path.exists():
-                profile_file = path
-                break
-
-        if not profile_file:
-            raise ValueError(f"Profile '{name}' not found")
-
-        # Delete
-        profile_file.unlink()
-
-        return {"deleted": True, "name": name}
+        """Delete a profile."""
+        return await self._profile_handler.delete_profile(arguments)
 
     # =========================================================================
     # Artifact Management Tool Implementations
     # =========================================================================
 
-    def _get_artifacts_base(self) -> Path:
-        """Get artifacts base directory."""
-        if self._test_artifacts_base is not None:
-            return self._test_artifacts_base
-        return Path.cwd() / ".llm-orc" / "artifacts"
-
     async def _delete_artifact_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Delete an artifact.
-
-        Args:
-            arguments: Tool arguments.
-
-        Returns:
-            Deletion result.
-        """
-        import shutil
-
-        artifact_id = arguments.get("artifact_id")
-        confirm = arguments.get("confirm", False)
-
-        if not artifact_id:
-            raise ValueError("artifact_id is required")
-        if not confirm:
-            raise ValueError("Confirmation required to delete artifact")
-
-        # Parse artifact_id (format: ensemble/timestamp)
-        parts = artifact_id.split("/")
-        if len(parts) != 2:
-            raise ValueError("Invalid artifact_id format (expected ensemble/timestamp)")
-
-        ensemble_name, timestamp = parts
-
-        # Find artifact directory
-        artifacts_base = self._get_artifacts_base()
-        artifact_dir = artifacts_base / ensemble_name / timestamp
-
-        if not artifact_dir.exists():
-            raise ValueError(f"Artifact '{artifact_id}' not found")
-
-        # Delete
-        shutil.rmtree(artifact_dir)
-
-        return {"deleted": True, "artifact_id": artifact_id}
+        """Delete an artifact."""
+        return await self._artifact_handler.delete_artifact(arguments)
 
     async def _cleanup_artifacts_tool(
         self, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        """Cleanup old artifacts.
-
-        Args:
-            arguments: Tool arguments.
-
-        Returns:
-            Cleanup result.
-        """
-        import time
-
-        ensemble_name = arguments.get("ensemble_name")
-        older_than_days = arguments.get("older_than_days", 30)
-        dry_run = arguments.get("dry_run", True)
-
-        artifacts_base = self._get_artifacts_base()
-        cutoff_time = time.time() - (older_than_days * 24 * 60 * 60)
-
-        ensemble_dirs = self._get_ensemble_artifact_dirs(artifacts_base, ensemble_name)
-        would_delete, deleted = self._process_old_artifacts(
-            ensemble_dirs, cutoff_time, dry_run
-        )
-
-        if dry_run:
-            return {
-                "dry_run": True,
-                "would_delete": would_delete,
-                "count": len(would_delete),
-            }
-        return {"dry_run": False, "deleted": deleted, "count": len(deleted)}
-
-    def _get_ensemble_artifact_dirs(
-        self, artifacts_base: Path, ensemble_name: str | None
-    ) -> list[Path]:
-        """Get list of ensemble artifact directories to check.
-
-        Args:
-            artifacts_base: Base artifacts directory.
-            ensemble_name: Optional specific ensemble to check.
-
-        Returns:
-            List of ensemble directories.
-        """
-        if ensemble_name:
-            return [artifacts_base / ensemble_name]
-        if artifacts_base.exists():
-            return [d for d in artifacts_base.iterdir() if d.is_dir()]
-        return []
-
-    def _process_old_artifacts(
-        self, ensemble_dirs: list[Path], cutoff_time: float, dry_run: bool
-    ) -> tuple[list[str], list[str]]:
-        """Process and optionally delete old artifacts.
-
-        Args:
-            ensemble_dirs: List of ensemble directories to check.
-            cutoff_time: Unix timestamp cutoff for deletion.
-            dry_run: If True, don't actually delete.
-
-        Returns:
-            Tuple of (would_delete list, deleted list).
-        """
-        import shutil
-
-        would_delete: list[str] = []
-        deleted: list[str] = []
-
-        for ensemble_dir in ensemble_dirs:
-            if not ensemble_dir.exists():
-                continue
-
-            for artifact_dir in ensemble_dir.iterdir():
-                if not artifact_dir.is_dir():
-                    continue
-
-                mtime = artifact_dir.stat().st_mtime
-                if mtime < cutoff_time:
-                    artifact_id = f"{ensemble_dir.name}/{artifact_dir.name}"
-                    would_delete.append(artifact_id)
-
-                    if not dry_run:
-                        shutil.rmtree(artifact_dir)
-                        deleted.append(artifact_id)
-
-        return would_delete, deleted
+        """Cleanup old artifacts."""
+        return await self._artifact_handler.cleanup_artifacts(arguments)
 
     # =========================================================================
     # Script Management Tool Implementations (Low Priority)
     # =========================================================================
 
-    def _get_scripts_dir(self) -> Path:
-        """Get scripts directory path.
-
-        Returns:
-            Path to scripts directory.
-        """
-        if self._test_scripts_dir is not None:
-            return self._test_scripts_dir
-        return Path.cwd() / ".llm-orc" / "scripts"
-
     async def _get_script_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Get script details.
-
-        Args:
-            arguments: Tool arguments including name and category.
-
-        Returns:
-            Script details.
-        """
-        name = arguments.get("name")
-        category = arguments.get("category")
-
-        if not name:
-            raise ValueError("name is required")
-        if not category:
-            raise ValueError("category is required")
-
-        scripts_dir = self._get_scripts_dir()
-        script_file = scripts_dir / category / f"{name}.py"
-
-        if not script_file.exists():
-            raise ValueError(f"Script '{category}/{name}' not found")
-
-        content = script_file.read_text()
-        description = self._extract_docstring(content)
-
-        return {
-            "name": name,
-            "category": category,
-            "path": str(script_file),
-            "description": description,
-            "source": content,
-        }
-
-    def _extract_docstring(self, content: str) -> str:
-        """Extract module docstring from Python source code.
-
-        Args:
-            content: Python source code.
-
-        Returns:
-            Extracted docstring or empty string if not found.
-        """
-        lines = content.split("\n")
-        in_docstring = False
-        docstring_lines: list[str] = []
-
-        for line in lines:
-            if '"""' in line or "'''" in line:
-                if in_docstring:
-                    break
-                in_docstring = True
-                # Handle single-line docstring
-                if line.count('"""') == 2 or line.count("'''") == 2:
-                    return self._strip_docstring_quotes(line.strip())
-            elif in_docstring:
-                docstring_lines.append(line)
-
-        if docstring_lines:
-            return "\n".join(docstring_lines).strip()
-        return ""
-
-    def _strip_docstring_quotes(self, text: str) -> str:
-        """Remove docstring quote marks from text.
-
-        Args:
-            text: Text with potential docstring quotes.
-
-        Returns:
-            Text with quotes removed.
-        """
-        for quote in ('"""', "'''"):
-            if text.startswith(quote):
-                text = text[3:]
-            if text.endswith(quote):
-                text = text[:-3]
-        return text.strip()
+        """Get script details."""
+        return await self._script_handler.get_script(arguments)
 
     async def _test_script_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Test a script with sample input.
-
-        Args:
-            arguments: Tool arguments including name, category, and input.
-
-        Returns:
-            Test result.
-        """
-        import subprocess
-        import sys
-
-        name = arguments.get("name")
-        category = arguments.get("category")
-        input_data = arguments.get("input", "")
-
-        if not name:
-            raise ValueError("name is required")
-        if not category:
-            raise ValueError("category is required")
-
-        scripts_dir = self._get_scripts_dir()
-        script_file = scripts_dir / category / f"{name}.py"
-
-        if not script_file.exists():
-            raise ValueError(f"Script '{category}/{name}' not found")
-
-        # Run the script with input
-        try:
-            result = subprocess.run(
-                [sys.executable, str(script_file)],
-                input=input_data,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            return {
-                "success": result.returncode == 0,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "return_code": result.returncode,
-            }
-        except subprocess.TimeoutExpired:
-            return {
-                "success": False,
-                "error": "Script execution timed out",
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "error": str(e),
-            }
+        """Test a script with sample input."""
+        return await self._script_handler.test_script(arguments)
 
     async def _create_script_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Create a new script.
-
-        Args:
-            arguments: Tool arguments including name, category, and template.
-
-        Returns:
-            Creation result.
-        """
-        name = arguments.get("name")
-        category = arguments.get("category")
-        template = arguments.get("template", "basic")
-
-        if not name:
-            raise ValueError("name is required")
-        if not category:
-            raise ValueError("category is required")
-
-        scripts_dir = self._get_scripts_dir()
-        category_dir = scripts_dir / category
-        script_file = category_dir / f"{name}.py"
-
-        if script_file.exists():
-            raise ValueError(f"Script '{category}/{name}' already exists")
-
-        # Generate script from template
-        if template == "extraction":
-            content = f'''"""Extraction script: {name}
-
-Extracts structured data from input text.
-"""
-
-import json
-import sys
-
-
-def extract(text: str) -> dict:
-    """Extract data from text."""
-    # TODO: Implement extraction logic
-    return {{"input_length": len(text)}}
-
-
-if __name__ == "__main__":
-    input_text = sys.stdin.read()
-    result = extract(input_text)
-    print(json.dumps(result))
-'''
-        else:  # basic template
-            content = f'''"""Primitive script: {name}
-
-Process input and produce output.
-"""
-
-import sys
-
-
-def process(text: str) -> str:
-    """Process input text."""
-    # TODO: Implement processing logic
-    return text
-
-
-if __name__ == "__main__":
-    input_text = sys.stdin.read()
-    result = process(input_text)
-    print(result)
-'''
-
-        # Create directory and file
-        category_dir.mkdir(parents=True, exist_ok=True)
-        script_file.write_text(content)
-
-        return {
-            "created": True,
-            "path": str(script_file),
-            "template": template,
-        }
+        """Create a new script."""
+        return await self._script_handler.create_script(arguments)
 
     async def _delete_script_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Delete a script.
-
-        Args:
-            arguments: Tool arguments including name, category, and confirm.
-
-        Returns:
-            Deletion result.
-        """
-        name = arguments.get("name")
-        category = arguments.get("category")
-        confirm = arguments.get("confirm", False)
-
-        if not name:
-            raise ValueError("name is required")
-        if not category:
-            raise ValueError("category is required")
-        if not confirm:
-            raise ValueError("Confirmation required to delete script")
-
-        scripts_dir = self._get_scripts_dir()
-        script_file = scripts_dir / category / f"{name}.py"
-
-        if not script_file.exists():
-            raise ValueError(f"Script '{category}/{name}' not found")
-
-        script_file.unlink()
-
-        return {
-            "deleted": True,
-            "name": name,
-            "category": category,
-        }
+        """Delete a script."""
+        return await self._script_handler.delete_script(arguments)
 
     # =========================================================================
     # Library Extras Tool Implementations (Low Priority)
     # =========================================================================
 
     async def _library_search_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Search library content.
-
-        Args:
-            arguments: Tool arguments including query.
-
-        Returns:
-            Search results.
-        """
-        query = arguments.get("query", "").lower()
-
-        if not query:
-            raise ValueError("query is required")
-
-        library_dir = self._get_library_dir()
-        ensemble_results = self._search_library_ensembles(library_dir, query)
-        script_results = self._search_library_scripts(library_dir, query)
-
-        return {
-            "query": query,
-            "results": {
-                "ensembles": ensemble_results,
-                "scripts": script_results,
-            },
-            "total": len(ensemble_results) + len(script_results),
-        }
-
-    def _search_library_ensembles(
-        self, library_dir: Path, query: str
-    ) -> list[dict[str, Any]]:
-        """Search ensembles in library directory by query."""
-        results: list[dict[str, Any]] = []
-        ensembles_dir = library_dir / "ensembles"
-
-        if not ensembles_dir.exists():
-            return results
-
-        for yaml_file in ensembles_dir.glob("**/*.yaml"):
-            try:
-                config = self.ensemble_loader.load_from_file(str(yaml_file))
-                if config:
-                    name_match = query in config.name.lower()
-                    desc_match = query in (config.description or "").lower()
-                    if name_match or desc_match:
-                        results.append(
-                            {
-                                "name": config.name,
-                                "description": config.description,
-                                "path": str(yaml_file),
-                                "match": "name" if name_match else "description",
-                            }
-                        )
-            except Exception:
-                continue
-
-        return results
-
-    def _search_library_scripts(
-        self, library_dir: Path, query: str
-    ) -> list[dict[str, Any]]:
-        """Search scripts in library directory by query."""
-        results: list[dict[str, Any]] = []
-        scripts_dir = library_dir / "scripts"
-
-        if not scripts_dir.exists():
-            return results
-
-        for category_dir in scripts_dir.iterdir():
-            if not category_dir.is_dir():
-                continue
-            for script_file in category_dir.glob("*.py"):
-                name_match = query in script_file.stem.lower()
-                cat_match = query in category_dir.name.lower()
-                if name_match or cat_match:
-                    results.append(
-                        {
-                            "name": script_file.stem,
-                            "category": category_dir.name,
-                            "path": str(script_file),
-                            "match": "name" if name_match else "category",
-                        }
-                    )
-
-        return results
+        """Search library content."""
+        return await self._library_handler.search(arguments)
 
     async def _library_info_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Get library information.
-
-        Args:
-            arguments: Tool arguments (unused).
-
-        Returns:
-            Library info.
-        """
-        library_dir = self._get_library_dir()
-
-        info: dict[str, Any] = {
-            "path": str(library_dir),
-            "exists": library_dir.exists(),
-            "ensembles_count": 0,
-            "scripts_count": 0,
-            "categories": [],
-        }
-
-        if not library_dir.exists():
-            return info
-
-        # Count ensembles
-        ensembles_dir = library_dir / "ensembles"
-        if ensembles_dir.exists():
-            info["ensembles_count"] = len(list(ensembles_dir.glob("**/*.yaml")))
-
-        # Count scripts and categories
-        scripts_dir = library_dir / "scripts"
-        if scripts_dir.exists():
-            categories: list[str] = []
-            for category_dir in scripts_dir.iterdir():
-                if category_dir.is_dir():
-                    categories.append(category_dir.name)
-                    info["scripts_count"] += len(list(category_dir.glob("*.py")))
-            info["categories"] = sorted(categories)
-
-        return info
+        """Get library information."""
+        return await self._library_handler.info(arguments)
 
     # =========================================================================
     # Phase 3: Provider & Model Discovery
@@ -2968,301 +1804,14 @@ if __name__ == "__main__":
     async def _get_provider_status_tool(
         self, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        """Get status of all providers and available models.
-
-        Args:
-            arguments: Tool arguments (unused).
-
-        Returns:
-            Provider status with available models.
-        """
-        providers: dict[str, Any] = {}
-
-        # Check Ollama
-        providers["ollama"] = await self._get_ollama_status()
-
-        # Check cloud providers via credential storage
-        providers["anthropic-api"] = self._get_cloud_provider_status("anthropic-api")
-        providers["anthropic-claude-pro-max"] = self._get_cloud_provider_status(
-            "anthropic-claude-pro-max"
-        )
-        providers["google-gemini"] = self._get_cloud_provider_status("google-gemini")
-
-        return {"providers": providers}
-
-    async def _get_ollama_status(self) -> dict[str, Any]:
-        """Check Ollama availability and list models.
-
-        Returns:
-            Ollama status with available models.
-        """
-        # Check for test override
-        if self._test_ollama_status is not None:
-            return self._test_ollama_status
-
-        import httpx
-
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get("http://localhost:11434/api/tags")
-                if response.status_code == 200:
-                    data = response.json()
-                    models = [m.get("name", "") for m in data.get("models", [])]
-                    return {
-                        "available": True,
-                        "models": sorted(models),
-                        "model_count": len(models),
-                    }
-        except Exception:
-            pass
-
-        return {"available": False, "models": [], "reason": "Ollama not running"}
-
-    def _get_cloud_provider_status(self, provider: str) -> dict[str, Any]:
-        """Check if a cloud provider is configured.
-
-        Args:
-            provider: Provider name.
-
-        Returns:
-            Provider status.
-        """
-        from llm_orc.core.auth.authentication import CredentialStorage
-
-        storage = CredentialStorage()
-        configured_providers = storage.list_providers()
-
-        if provider in configured_providers:
-            return {"available": True, "reason": "configured"}
-
-        return {"available": False, "reason": "not configured"}
+        """Get status of all providers and available models."""
+        return await self._provider_handler.get_provider_status(arguments)
 
     async def _check_ensemble_runnable_tool(
         self, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        """Check if an ensemble can run with current providers.
-
-        Args:
-            arguments: Tool arguments with ensemble_name.
-
-        Returns:
-            Runnable status with agent details.
-        """
-        ensemble_name = arguments.get("ensemble_name")
-        if not ensemble_name:
-            raise ValueError("ensemble_name is required")
-
-        # Find ensemble
-        config = self._find_ensemble_by_name(ensemble_name)
-        if not config:
-            raise ValueError(f"Ensemble not found: {ensemble_name}")
-
-        # Get provider status
-        provider_status = await self._get_provider_status_tool({})
-        providers = provider_status.get("providers", {})
-
-        # Get all profiles
-        all_profiles = self._get_all_profiles()
-
-        # Check each agent
-        agents: list[dict[str, Any]] = []
-        all_runnable = True
-
-        for agent in config.agents:
-            agent_name = _get_agent_attr(agent, "name", "unknown")
-
-            # Script agents don't need profile validation
-            script_path = _get_agent_attr(agent, "script", "")
-            if script_path:
-                agent_status: dict[str, Any] = {
-                    "name": agent_name,
-                    "profile": "",
-                    "provider": "script",
-                    "status": "available",
-                    "alternatives": [],
-                }
-            else:
-                profile_name = _get_agent_attr(agent, "model_profile", "")
-                agent_status = self._check_agent_runnable(
-                    agent_name, profile_name, all_profiles, providers
-                )
-
-            agents.append(agent_status)
-
-            if agent_status["status"] != "available":
-                all_runnable = False
-
-        return {
-            "ensemble": ensemble_name,
-            "runnable": all_runnable,
-            "agents": agents,
-        }
-
-    def _check_agent_runnable(
-        self,
-        agent_name: str,
-        profile_name: str,
-        all_profiles: dict[str, dict[str, Any]],
-        providers: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Check if an agent can run with current providers.
-
-        Args:
-            agent_name: Name of the agent.
-            profile_name: Name of the profile the agent uses.
-            all_profiles: All available profiles.
-            providers: Provider status from _get_provider_status_tool.
-
-        Returns:
-            Agent runnable status with alternatives.
-        """
-        result: dict[str, Any] = {
-            "name": agent_name,
-            "profile": profile_name,
-            "provider": "",
-            "status": "available",
-            "alternatives": [],
-        }
-
-        # Check if profile exists
-        if profile_name not in all_profiles:
-            result["status"] = "missing_profile"
-            result["alternatives"] = self._suggest_local_alternatives(providers)
-            return result
-
-        # Get profile's provider
-        profile = all_profiles[profile_name]
-        provider = profile.get("provider", "")
-        result["provider"] = provider
-
-        # Check if provider is available
-        provider_info = providers.get(provider, {})
-        if not provider_info.get("available", False):
-            result["status"] = "provider_unavailable"
-            result["alternatives"] = self._suggest_local_alternatives(providers)
-            return result
-
-        # For Ollama, check if model is available
-        if provider == "ollama":
-            model = profile.get("model", "")
-            available_models = provider_info.get("models", [])
-            # Normalize model name (handle tags like :latest)
-            model_base = model.split(":")[0] if ":" in model else model
-            model_found = any(
-                m == model or m.startswith(f"{model_base}:") for m in available_models
-            )
-            if not model_found:
-                result["status"] = "model_unavailable"
-                result["alternatives"] = self._suggest_available_models(
-                    available_models
-                )
-
-        return result
-
-    def _suggest_local_alternatives(self, providers: dict[str, Any]) -> list[str]:
-        """Suggest local profile alternatives.
-
-        Args:
-            providers: Provider status.
-
-        Returns:
-            List of suggested local profile names.
-        """
-        ollama = providers.get("ollama", {})
-        if not ollama.get("available", False):
-            return []
-
-        # Get profiles using ollama
-        all_profiles = self._get_all_profiles()
-        local_profiles: list[str] = []
-
-        for name, profile in all_profiles.items():
-            if profile.get("provider") == "ollama":
-                local_profiles.append(name)
-
-        return sorted(local_profiles)[:5]  # Return top 5
-
-    def _suggest_available_models(self, available_models: list[str]) -> list[str]:
-        """Suggest available Ollama models.
-
-        Args:
-            available_models: List of available Ollama model names.
-
-        Returns:
-            List of suggested models.
-        """
-        return sorted(available_models)[:5]  # Return top 5
-
-    def _get_all_profiles(self) -> dict[str, dict[str, Any]]:
-        """Get all profiles as a dict keyed by name.
-
-        Returns:
-            Dict mapping profile name to profile config.
-        """
-        profiles: dict[str, dict[str, Any]] = {}
-
-        for dir_path in self.config_manager.get_profiles_dirs():
-            profile_dir = Path(dir_path)
-            if not profile_dir.exists():
-                continue
-
-            for yaml_file in profile_dir.glob("*.yaml"):
-                self._load_profiles_from_file(yaml_file, profiles)
-
-        return profiles
-
-    def _load_profiles_from_file(
-        self, yaml_file: Path, profiles: dict[str, dict[str, Any]]
-    ) -> None:
-        """Load profiles from a YAML file into the profiles dict.
-
-        Args:
-            yaml_file: Path to YAML file.
-            profiles: Dict to populate with profiles.
-        """
-        try:
-            import yaml
-
-            with open(yaml_file) as f:
-                data = yaml.safe_load(f) or {}
-
-            self._parse_profile_data(data, profiles)
-        except Exception:
-            pass
-
-    def _parse_profile_data(
-        self, data: dict[str, Any], profiles: dict[str, dict[str, Any]]
-    ) -> None:
-        """Parse profile data from various YAML formats.
-
-        Args:
-            data: Parsed YAML data.
-            profiles: Dict to populate with profiles.
-        """
-        if "model_profiles" in data:
-            self._parse_dict_format_profiles(data["model_profiles"], profiles)
-        elif "profiles" in data:
-            self._parse_list_format_profiles(data["profiles"], profiles)
-        elif "name" in data:
-            profiles[data["name"]] = data
-
-    def _parse_dict_format_profiles(
-        self, model_profiles: dict[str, Any], profiles: dict[str, dict[str, Any]]
-    ) -> None:
-        """Parse dict format: model_profiles: {name: {config...}}."""
-        for name, config in model_profiles.items():
-            if isinstance(config, dict):
-                config["name"] = name
-                profiles[name] = config
-
-    def _parse_list_format_profiles(
-        self, profile_list: list[dict[str, Any]], profiles: dict[str, dict[str, Any]]
-    ) -> None:
-        """Parse list format: profiles: [{name: ..., ...}]."""
-        for p in profile_list:
-            name = p.get("name", "")
-            if name:
-                profiles[name] = p
+        """Check if an ensemble can run with current providers."""
+        return await self._provider_handler.check_ensemble_runnable(arguments)
 
     async def _help_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Get help documentation.
@@ -3273,4 +1822,4 @@ if __name__ == "__main__":
         Returns:
             Comprehensive help documentation.
         """
-        return self._get_help_documentation()
+        return self._help_handler.get_help_documentation()

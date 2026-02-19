@@ -65,7 +65,11 @@ class TestNoArtifactCreation:
         from unittest.mock import AsyncMock, patch
 
         with (
-            patch.object(executor, "_load_role_from_config", new_callable=AsyncMock),
+            patch.object(
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
+            ),
             patch.object(
                 executor, "_execute_script_agent", new_callable=AsyncMock
             ) as mock_script,

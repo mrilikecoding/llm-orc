@@ -23,6 +23,7 @@ from rich.text import Text
 from ..config import VisualizationConfig
 from ..events import ExecutionEvent, ExecutionEventType
 from ..stream import EventStream
+from ..utils import calculate_agent_level
 
 
 class TerminalVisualizer:
@@ -410,19 +411,9 @@ class TerminalVisualizer:
 
     def _calculate_agent_level(self, agent_name: str, dependencies: list[str]) -> int:
         """Calculate the dependency level of an agent (0 = no dependencies)."""
-        if not dependencies:
-            return 0
-
-        # Find the maximum level of all dependencies
-        max_dep_level = 0
-        for dep_name in dependencies:
-            if dep_name in self.execution_state["agents"]:
-                dep_info = self.execution_state["agents"][dep_name]
-                dep_dependencies = dep_info.get("dependencies", [])
-                dep_level = self._calculate_agent_level(dep_name, dep_dependencies)
-                max_dep_level = max(max_dep_level, dep_level)
-
-        return max_dep_level + 1
+        return calculate_agent_level(
+            agent_name, dependencies, self.execution_state["agents"]
+        )
 
     def create_progress_section(self) -> Panel:
         """Create the progress section."""

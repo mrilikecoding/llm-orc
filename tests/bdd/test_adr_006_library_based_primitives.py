@@ -266,13 +266,11 @@ def verify_helpful_error(bdd_context: dict[str, Any]) -> None:
     )
 
 
-@then('the error message should suggest "git submodule update --init --recursive"')
-def verify_submodule_hint(bdd_context: dict[str, Any]) -> None:
-    """Verify error suggests submodule initialization."""
+@then('the error message should suggest "pip install"')
+def verify_install_hint(bdd_context: dict[str, Any]) -> None:
+    """Verify error suggests package installation."""
     error_message = str(bdd_context["resolution_error"])
-    assert "git submodule update --init --recursive" in error_message, (
-        "Should suggest submodule init"
-    )
+    assert "pip install" in error_message, "Should suggest pip install"
 
 
 @then("the error message should suggest creating local implementation")

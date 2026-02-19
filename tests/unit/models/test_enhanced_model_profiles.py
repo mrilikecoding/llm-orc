@@ -87,7 +87,9 @@ class TestEnhancedModelProfiles:
             mock_resolve.return_value = enhanced_profile
 
             # Mock the role loading to capture what system_prompt gets used
-            with patch.object(executor, "_load_role_from_config") as mock_load_role:
+            with patch.object(
+                executor._llm_agent_runner, "_load_role_from_config"
+            ) as mock_load_role:
                 mock_load_role.return_value = RoleDefinition(
                     name="worker1",
                     prompt="You are a diligent worker agent that processes tasks.",
@@ -95,7 +97,7 @@ class TestEnhancedModelProfiles:
 
                 # Mock model loading and execution
                 with patch.object(
-                    executor, "_load_model_from_agent_config"
+                    executor._llm_agent_runner, "_load_model_with_fallback"
                 ) as mock_load_model:
                     mock_model = AsyncMock()
                     mock_model.generate_response.return_value = (
@@ -170,7 +172,9 @@ class TestEnhancedModelProfiles:
                 return_value=mock_model,
             ):
                 with patch.object(
-                    executor, "_load_role_from_config", return_value=mock_role
+                    executor._llm_agent_runner,
+                    "_load_role_from_config",
+                    return_value=mock_role,
                 ):
                     # Mock the execution coordinator method to capture timeout value
                     with patch.object(

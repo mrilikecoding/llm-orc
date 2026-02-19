@@ -173,15 +173,12 @@ class TestInvokeEnsembleComplexityRefactor:
         # This should complete without error (testing the pass statement)
         mock_executor.execute.assert_called_once()
 
-    def test_invoke_ensemble_performance_config_display_with_rich_output(
+    def test_invoke_ensemble_performance_display_with_rich_output(
         self,
         mock_config_manager: Mock,
         mock_ensemble_config: Mock,
     ) -> None:
-        """Test invoke_ensemble performance config display with Rich output format.
-
-        This tests the complex performance display logic branch.
-        """
+        """Test invoke_ensemble performance display with Rich output format."""
         mock_loader = Mock()
         mock_loader.find_ensemble.return_value = mock_ensemble_config
 
@@ -191,60 +188,6 @@ class TestInvokeEnsembleComplexityRefactor:
                 "results": {"agent": {"status": "success", "response": "Test"}},
                 "metadata": {"execution_time": 1.5},
             }
-        )
-
-        # Mock coordinator for performance display
-        mock_coordinator = Mock()
-        mock_coordinator.get_effective_concurrency_limit.return_value = 3
-        mock_executor._execution_coordinator = mock_coordinator
-
-        with (
-            patch(
-                "llm_orc.cli_commands.ConfigurationManager",
-                return_value=mock_config_manager,
-            ),
-            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
-            patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
-            patch("llm_orc.cli_commands.click.echo") as mock_echo,
-        ):
-            invoke_ensemble(
-                ensemble_name="test",
-                input_data="test input",
-                config_dir=None,
-                input_data_option=None,
-                output_format=None,  # Rich output triggers performance display
-                streaming=False,
-                max_concurrent=None,
-                detailed=False,
-            )
-
-        # Verify performance config was loaded and displayed
-        mock_config_manager.load_performance_config.assert_called()
-        mock_echo.assert_called()
-
-    def test_invoke_ensemble_performance_config_exception_fallback(
-        self,
-        mock_config_manager: Mock,
-        mock_ensemble_config: Mock,
-    ) -> None:
-        """Test invoke_ensemble performance config exception fallback branch.
-
-        This tests the exception handling in performance display logic.
-        """
-        mock_loader = Mock()
-        mock_loader.find_ensemble.return_value = mock_ensemble_config
-
-        mock_executor = Mock()
-        mock_executor.execute = AsyncMock(
-            return_value={
-                "results": {"agent": {"status": "success", "response": "Test"}},
-                "metadata": {"execution_time": 1.5},
-            }
-        )
-
-        # Mock performance config to raise exception
-        mock_config_manager.load_performance_config.side_effect = Exception(
-            "Config error"
         )
 
         with (
@@ -267,14 +210,12 @@ class TestInvokeEnsembleComplexityRefactor:
                 detailed=False,
             )
 
-        # Verify fallback output was used
         mock_echo.assert_called()
-        # Should include fallback messages
         echo_calls = [
             str(call.args[0]) for call in mock_echo.call_args_list if call.args
         ]
         echo_output = " ".join(echo_calls)
-        assert "Invoking ensemble: test" in echo_output
+        assert "Executing ensemble 'test'" in echo_output
 
     def test_invoke_ensemble_streaming_determination_text_format(
         self,
@@ -474,15 +415,7 @@ class TestInvokeEnsembleRefactoredFunctions:
         from llm_orc.cli_commands import _setup_performance_display
 
         mock_config_manager = Mock()
-        mock_config_manager.load_performance_config.return_value = {
-            "streaming_enabled": True
-        }
-
         mock_executor = Mock()
-        mock_coordinator = Mock()
-        mock_coordinator.get_effective_concurrency_limit.return_value = 3
-        mock_executor._execution_coordinator = mock_coordinator
-
         mock_ensemble_config = Mock()
         mock_ensemble_config.agents = [{"name": "agent1"}, {"name": "agent2"}]
 
@@ -498,7 +431,12 @@ class TestInvokeEnsembleRefactoredFunctions:
             )
 
         mock_echo.assert_called()
-        mock_config_manager.load_performance_config.assert_called_once()
+        echo_calls = [
+            str(call.args[0]) for call in mock_echo.call_args_list if call.args
+        ]
+        echo_output = " ".join(echo_calls)
+        assert "Executing ensemble 'test_ensemble'" in echo_output
+        assert "2 agents" in echo_output
 
     def test_setup_performance_display_skips_for_text_output(self) -> None:
         """Test helper function skips display for text/json output."""
@@ -520,40 +458,6 @@ class TestInvokeEnsembleRefactoredFunctions:
             )
 
         mock_echo.assert_not_called()
-        mock_config_manager.load_performance_config.assert_not_called()
-
-    def test_setup_performance_display_fallback(self) -> None:
-        """Test helper function to setup performance display fallback."""
-        from llm_orc.cli_commands import _setup_performance_display
-
-        mock_config_manager = Mock()
-        mock_config_manager.load_performance_config.side_effect = Exception(
-            "Config error"
-        )
-
-        mock_executor = Mock()
-        mock_ensemble_config = Mock()
-        mock_ensemble_config.description = "Test ensemble"
-        mock_ensemble_config.agents = [{"name": "agent1"}]
-
-        with patch("llm_orc.cli_commands.click.echo") as mock_echo:
-            _setup_performance_display(
-                mock_config_manager,
-                mock_executor,
-                "test_ensemble",
-                mock_ensemble_config,
-                False,
-                None,  # Rich output format
-                "test input",
-            )
-
-        mock_echo.assert_called()
-        # Should use fallback display
-        echo_calls = [
-            str(call.args[0]) for call in mock_echo.call_args_list if call.args
-        ]
-        echo_output = " ".join(echo_calls)
-        assert "Invoking ensemble: test_ensemble" in echo_output
 
     def test_determine_effective_streaming_text_format(self) -> None:
         """Test helper function to determine effective streaming for text format."""

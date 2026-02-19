@@ -159,16 +159,6 @@ Feature: ADR-001 Pydantic-Based Script Agent Interface System
     And no script execution should occur with invalid input
 
   @agent-request-processing @adr-001
-  Scenario: AgentRequestProcessor extracts requests from ScriptAgentOutput
-    Given a ScriptAgentOutput containing agent_requests
-    And an AgentRequestProcessor instance
-    When I call extract_agent_requests() method
-    Then it should return a list of AgentRequest objects
-    And each request should be properly validated
-    And the extraction should handle empty agent_requests gracefully
-    And invalid request data should be rejected with clear errors
-
-  @agent-request-processing @adr-001
   Scenario: AgentRequestProcessor generates dynamic parameters
     Given an AgentRequest with target_agent_type "user_input"
     And parameters {"prompt": "Enter character name", "multiline": False}
@@ -178,27 +168,6 @@ Feature: ADR-001 Pydantic-Based Script Agent Interface System
     And parameter types should be preserved during generation
     And context should be applied if provided
     And the generation should be deterministic for same inputs
-
-  @agent-request-processing @adr-001
-  Scenario: AgentRequestProcessor validates agent request schemas
-    Given agent request data as dictionary
-    And an AgentRequestProcessor instance
-    When I call validate_agent_request_schema() method
-    Then it should return True for valid AgentRequest data
-    And it should return False for invalid data structure
-    And it should handle missing required fields gracefully
-    And it should validate parameter dictionary structure
-
-  @agent-request-processing @adr-001
-  Scenario: AgentRequestProcessor extracts requests from JSON with error handling
-    Given a JSON string containing agent_requests array
-    And an AgentRequestProcessor instance
-    When I call extract_agent_requests_from_json() method
-    Then it should return list of validated AgentRequest objects
-    And JSON parsing errors should be caught and chained (ADR-003)
-    And schema validation errors should be caught and chained
-    And the error messages should guide debugging
-    And partial extraction should be prevented on validation failure
 
   @json-serialization @adr-001
   Scenario: All schemas support JSON serialization for inter-agent communication

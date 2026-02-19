@@ -1,8 +1,9 @@
 """Results processing and output formatting for ensemble execution."""
 
-import re
 import time
 from typing import Any
+
+from llm_orc.core.execution.patterns import INSTANCE_PATTERN
 
 
 class ResultsProcessor:
@@ -184,9 +185,6 @@ class ResultsProcessor:
 
     # ========== Fan-Out Support (Issue #73) ==========
 
-    # Pattern for instance names: agent_name[index]
-    _INSTANCE_PATTERN = re.compile(r"^(.+)\[(\d+)\]$")
-
     def add_fan_out_metadata(
         self,
         result: dict[str, Any],
@@ -215,7 +213,7 @@ class ResultsProcessor:
         instance_counts: dict[str, dict[str, int]] = {}
 
         for agent_name, result in results.items():
-            match = self._INSTANCE_PATTERN.match(agent_name)
+            match = INSTANCE_PATTERN.match(agent_name)
             if not match:
                 continue
 

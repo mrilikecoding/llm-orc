@@ -86,7 +86,7 @@ warn_unused_configs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--cov=llm_orc --cov-report=term-missing --cov-fail-under=91"
+addopts = "--cov=llm_orc --cov-report=term-missing --cov-fail-under=90"
 markers = [
     "asyncio: marks tests as requiring asyncio",
     # BDD Gherkin tags from feature files

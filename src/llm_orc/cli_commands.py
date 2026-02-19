@@ -23,9 +23,6 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 
-# Import for interactive script support
-from llm_orc.integrations.mcp.runner import MCPServerRunner
-
 
 def _resolve_input_data(positional_input: str | None, option_input: str | None) -> str:
     """Resolve input data using priority: positional > option > stdin > default.
@@ -213,25 +210,11 @@ def _setup_performance_display(
     if output_format is not None:  # Skip for text/json output
         return
 
-    try:
-        config_manager.load_performance_config()  # Ensure config is valid
-        coordinator = executor._execution_coordinator
-        effective_concurrency = coordinator.get_effective_concurrency_limit(
-            len(ensemble_config.agents)
-        )
-        click.echo(
-            f"🚀 Executing ensemble '{ensemble_name}' with "
-            f"{len(ensemble_config.agents)} agents"
-        )
-        click.echo(f"⚡ Performance: max_concurrent={effective_concurrency}")
-        click.echo("─" * 50)
-    except Exception:
-        # Fallback to original output if performance config fails
-        click.echo(f"Invoking ensemble: {ensemble_name}")
-        click.echo(f"Description: {ensemble_config.description}")
-        click.echo(f"Agents: {len(ensemble_config.agents)}")
-        click.echo(f"Input: {input_data}")
-        click.echo("---")
+    click.echo(
+        f"Executing ensemble '{ensemble_name}' with "
+        f"{len(ensemble_config.agents)} agents"
+    )
+    click.echo("─" * 50)
 
 
 def _determine_effective_streaming(
@@ -511,9 +494,9 @@ def list_profiles_command() -> None:
             _display_global_profile(profile_name, profile)
 
 
-def init_local_config(project_name: str | None, with_scripts: bool = True) -> None:
+def init_local_config(project_name: str | None) -> None:
     """Initialize local .llm-orc configuration for current project."""
-    ConfigCommands.init_local_config(project_name, with_scripts=with_scripts)
+    ConfigCommands.init_local_config(project_name)
 
 
 def reset_global_config(backup: bool, preserve_auth: bool) -> None:
@@ -536,12 +519,6 @@ def reset_local_config(
 ) -> None:
     """Reset local .llm-orc configuration to template defaults."""
     ConfigCommands.reset_local_config(backup, preserve_ensembles, project_name)
-
-
-def serve_ensemble(ensemble_name: str, port: int) -> None:
-    """Serve an ensemble as an MCP server."""
-    runner = MCPServerRunner(ensemble_name, port)
-    runner.run()
 
 
 def add_auth_provider(

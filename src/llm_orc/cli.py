@@ -6,7 +6,6 @@ from llm_orc.cli_commands import (
     invoke_ensemble,
     list_ensembles_command,
     list_profiles_command,
-    serve_ensemble,
     validate_all_ensembles,
     validate_ensemble,
     validate_ensemble_category,
@@ -173,16 +172,10 @@ def list_profiles() -> None:
     default=None,
     help="Name for the project (defaults to directory name)",
 )
-@click.option(
-    "--no-scripts",
-    is_flag=True,
-    help="Skip installing primitive scripts from library",
-)
-def init(project_name: str | None, no_scripts: bool) -> None:
-    """Initialize llm-orc project with scripts and examples.
+def init(project_name: str | None) -> None:
+    """Initialize llm-orc project with examples and configuration.
 
     Creates .llm-orc/ directory with:
-      - Primitive scripts from library (file-ops, data-transform, etc.)
       - Example ensembles demonstrating patterns
       - Configuration templates
 
@@ -191,9 +184,6 @@ def init(project_name: str | None, no_scripts: bool) -> None:
       # Initialize with all defaults
       llm-orc init
 
-      # Initialize without primitive scripts
-      llm-orc init --no-scripts
-
       # Specify project name
       llm-orc init --project-name my-ensemble-project
 
@@ -201,25 +191,13 @@ def init(project_name: str | None, no_scripts: bool) -> None:
       llm-orc scripts list          # See installed primitives
       llm-orc list-ensembles        # See example ensembles
     """
-    init_local_config(project_name, with_scripts=not no_scripts)
+    init_local_config(project_name)
 
 
 @cli.group()
 def config() -> None:
     """Configuration management commands."""
     pass
-
-
-@config.command("init")
-@click.option(
-    "--project-name",
-    default=None,
-    help="Name for the project (defaults to directory name)",
-)
-def config_init_deprecated(project_name: str | None) -> None:
-    """(Deprecated) Initialize local config. Use 'llm-orc init' instead."""
-    click.echo("Note: 'llm-orc config init' is deprecated. Use 'llm-orc init' instead.")
-    init_local_config(project_name, with_scripts=True)
 
 
 @config.command("reset-global")
@@ -396,13 +374,13 @@ def web(port: int, host: str, open_browser: bool) -> None:
 def mcp_serve(transport: str, port: int) -> None:
     """Start the MCP server exposing all ensembles.
 
-    Uses the new MCPServerV2 with full resource and tool support.
+    Uses the MCPServer with full resource and tool support.
     Default transport is stdio for MCP client compatibility.
     """
     import signal
     import sys
 
-    from llm_orc.mcp import MCPServerV2
+    from llm_orc.mcp import MCPServer
 
     def handle_shutdown(_signum: int, _frame: object) -> None:
         """Handle shutdown signals gracefully."""
@@ -413,7 +391,7 @@ def mcp_serve(transport: str, port: int) -> None:
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
-    server = MCPServerV2()
+    server = MCPServer()
 
     if transport == "stdio":
         # Minimal output for stdio - it's typically auto-spawned by MCP clients
@@ -622,14 +600,6 @@ def auth_test_refresh(provider: str) -> None:
     test_token_refresh(provider)
 
 
-@cli.command()
-@click.argument("ensemble_name", shell_complete=complete_ensemble_names)
-@click.option("--port", default=3000, help="Port to serve MCP server on")
-def serve(ensemble_name: str, port: int) -> None:
-    """Serve an ensemble as an MCP server."""
-    serve_ensemble(ensemble_name, port)
-
-
 # Help command that shows main help with aliases
 @cli.command()
 def help_command() -> None:
@@ -669,7 +639,6 @@ def help_command() -> None:
             "List available model profiles with their provider/model...",
         ),
         ("scripts", "sc", "Script management commands."),
-        ("serve", "s", "Serve an ensemble as an MCP server."),
     ]
 
     for cmd, alias, desc in commands_with_aliases:
@@ -691,7 +660,6 @@ cli.add_command(scripts, name="sc")
 cli.add_command(artifacts, name="ar")
 cli.add_command(list_ensembles, name="le")
 cli.add_command(list_profiles, name="lp")
-cli.add_command(serve, name="s")
 cli.add_command(mcp, name="m")
 cli.add_command(web, name="w")
 cli.add_command(help_command, name="help")

@@ -3,11 +3,10 @@
 import asyncio
 from collections.abc import Generator
 from datetime import datetime
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import patch
 
 import pytest
 
-from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.visualization.config import (
     TerminalVisualizationConfig,
     VisualizationConfig,
@@ -17,7 +16,6 @@ from llm_orc.visualization.events import (
     ExecutionEvent,
     ExecutionEventType,
 )
-from llm_orc.visualization.integration import VisualizationIntegratedExecutor
 from llm_orc.visualization.stream import EventStream, EventStreamManager
 
 
@@ -180,115 +178,3 @@ class TestVisualizationConfig:
         assert result["enabled"] is False
         assert result["default_mode"] == "web"
         assert "terminal" in result
-
-
-class TestVisualizationIntegratedExecutor:
-    """Test VisualizationIntegratedExecutor class."""
-
-    def test_executor_creation(self) -> None:
-        """Test executor creation."""
-        executor = VisualizationIntegratedExecutor()
-        assert executor.viz_config is not None
-        assert executor.current_stream is None
-
-    @pytest.mark.asyncio
-    async def test_execute_with_visualization_disabled(self) -> None:
-        """Test execution with visualization disabled."""
-        config = VisualizationConfig(enabled=False)
-        executor = VisualizationIntegratedExecutor(config)
-
-        # Mock the parent execute method
-        with patch.object(executor, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = {"result": "test"}
-
-            ensemble_config = Mock(spec=EnsembleConfig)
-            result = await executor.execute_with_visualization(
-                ensemble_config, "test_input"
-            )
-
-            assert result == {"result": "test"}
-            mock_execute.assert_called_once_with(ensemble_config, "test_input")
-
-    @pytest.mark.asyncio
-    async def test_execute_with_terminal_visualization(self) -> None:
-        """Test execution with terminal visualization."""
-        config = VisualizationConfig(enabled=True, default_mode="terminal")
-        executor = VisualizationIntegratedExecutor(config)
-
-        # Mock the parent execute method
-        with patch.object(executor, "execute", new_callable=AsyncMock) as mock_execute:
-            mock_execute.return_value = {"result": "test"}
-
-            # Mock the terminal visualizer
-            with patch(
-                "llm_orc.visualization.integration.TerminalVisualizer"
-            ) as mock_visualizer_class:
-                mock_visualizer = Mock()
-                mock_visualizer.visualize_execution = AsyncMock()
-                mock_visualizer.print_summary = Mock()
-                mock_visualizer_class.return_value = mock_visualizer
-
-                ensemble_config = Mock(spec=EnsembleConfig)
-                ensemble_config.name = "test_ensemble"
-                ensemble_config.agents = [{"name": "test_agent", "role": "test_role"}]
-
-                result = await executor.execute_with_visualization(
-                    ensemble_config, "test_input", "terminal"
-                )
-
-                assert result == {"result": "test"}
-                mock_execute.assert_called_once()
-                mock_visualizer.print_summary.assert_called_once()
-
-    def test_convert_performance_event_agent_started(self) -> None:
-        """Test performance event conversion for agent started."""
-        executor = VisualizationIntegratedExecutor()
-        executor.current_execution_id = "test_id"
-
-        event = executor._convert_performance_event(
-            "agent_started",
-            {
-                "agent_name": "test_agent",
-                "model": "test_model",
-                "depends_on": ["dep1", "dep2"],
-            },
-        )
-
-        assert event is not None
-        assert event.event_type == ExecutionEventType.AGENT_STARTED
-        assert event.agent_name == "test_agent"
-        assert event.execution_id == "test_id"
-        assert event.data["model"] == "test_model"
-        assert event.data["depends_on"] == ["dep1", "dep2"]
-
-    def test_convert_performance_event_agent_completed(self) -> None:
-        """Test performance event conversion for agent completed."""
-        executor = VisualizationIntegratedExecutor()
-        executor.current_execution_id = "test_id"
-
-        event = executor._convert_performance_event(
-            "agent_completed",
-            {
-                "agent_name": "test_agent",
-                "result": "test_result",
-                "duration_ms": 1000,
-                "cost_usd": 0.05,
-            },
-        )
-
-        assert event is not None
-        assert event.event_type == ExecutionEventType.AGENT_COMPLETED
-        assert event.agent_name == "test_agent"
-        assert event.execution_id == "test_id"
-        assert event.data["result"] == "test_result"
-        assert event.data["duration_ms"] == 1000
-        assert event.data["cost_usd"] == 0.05
-
-    def test_convert_performance_event_unknown_type(self) -> None:
-        """Test performance event conversion for unknown event type."""
-        executor = VisualizationIntegratedExecutor()
-        executor.current_execution_id = "test_id"
-
-        event = executor._convert_performance_event("unknown_event", {"data": "test"})
-
-        assert event is None

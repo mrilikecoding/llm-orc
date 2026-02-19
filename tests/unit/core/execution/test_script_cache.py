@@ -7,6 +7,7 @@ as outlined in ADR-001 architecture review.
 import tempfile
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 from llm_orc.core.execution.script_cache import ScriptCache, ScriptCacheConfig
 
@@ -104,9 +105,10 @@ class TestScriptCache:
         cache.set(script_content, parameters, result_data)
         immediate_result = cache.get(script_content, parameters)
 
-        # Wait for TTL expiration
-        time.sleep(1.1)
-        expired_result = cache.get(script_content, parameters)
+        # Simulate TTL expiration by advancing time
+        with patch("llm_orc.core.execution.script_cache.time") as mock_time:
+            mock_time.time.return_value = time.time() + 2
+            expired_result = cache.get(script_content, parameters)
 
         # Assert
         assert immediate_result == result_data
@@ -280,11 +282,11 @@ class TestScriptCacheArtifactPersistence:
             # Save a cache entry
             cache._save_to_artifacts("test_key", {"data": "test"})
 
-            # Wait for TTL to expire
-            time.sleep(1.1)
-
-            # Should return None and delete the file
-            result = cache._load_from_artifacts("test_key")
+            # Simulate TTL expiration by advancing time
+            with patch("llm_orc.core.execution.script_cache.time") as mock_time:
+                mock_time.time.return_value = time.time() + 2
+                # Should return None and delete the file
+                result = cache._load_from_artifacts("test_key")
 
             assert result is None
             # Verify file was deleted

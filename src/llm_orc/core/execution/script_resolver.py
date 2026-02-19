@@ -17,12 +17,10 @@ class ScriptNotFoundError(FileNotFoundError):
         self.is_primitive = is_primitive
 
         if is_primitive and script_ref.startswith("primitives/"):
-            # Helpful guidance for missing library primitives
             message = (
                 f"Primitive script '{script_ref}' not found. "
-                f"To use library primitives:\n"
-                f"  1. Initialize the library submodule: "
-                f"git submodule update --init --recursive\n"
+                f"Primitives are included in the llm-orc package.\n"
+                f"  1. Ensure llm-orc is installed: pip install -e .\n"
                 f"  2. Or create a local implementation at "
                 f".llm-orc/scripts/{script_ref}\n"
                 f"  3. For tests, use TestPrimitiveFactory fixtures"
@@ -81,6 +79,13 @@ class ScriptResolver:
                 str(base),
             ]
         )
+
+        # Priority 1.5: Installed package primitives
+        # The parent of the primitives/ dir so that refs like
+        # "primitives/user_interaction/get_user_input.py" resolve correctly
+        package_primitives = Path(__file__).resolve().parents[2] / "primitives"
+        if package_primitives.exists():
+            search_paths.append(str(package_primitives.parent))
 
         # Priority 2: Library submodule paths
         library_base = base / self.LIBRARY_DIR
@@ -167,6 +172,13 @@ class ScriptResolver:
             if candidate.exists():
                 return str(candidate)
 
+            # Try hyphen-to-underscore normalization
+            normalized_ref = script_ref.replace("-", "_")
+            if normalized_ref != script_ref:
+                candidate_norm = search_dir / normalized_ref
+                if candidate_norm.exists():
+                    return str(candidate_norm)
+
             # Try without "scripts/" prefix for backward compatibility
             scripts_prefix = f"{self.SCRIPTS_DIR}/"
             if script_ref.startswith(scripts_prefix):
@@ -178,60 +190,76 @@ class ScriptResolver:
 
         return None
 
-    def _try_resolve_relative_path(self, script_ref: str) -> str | None:
-        """Legacy method for backward compatibility.
-
-        Args:
-            script_ref: Relative script reference
-
-        Returns:
-            Resolved path or None if not found
-        """
-        # Delegate to new library-aware resolution
-        return self._try_resolve_with_search_paths(script_ref)
-
     def clear_cache(self) -> None:
         """Clear the resolution cache."""
         self._cache.clear()
 
     def list_available_scripts(self) -> list[dict[str, str | None]]:
-        """List all available scripts in .llm-orc/scripts directory and subdirectories.
+        """List available scripts from .llm-orc/scripts and package primitives.
 
         Returns:
             List of script dictionaries with name, path, and relative_path
         """
-        scripts = []
+        scripts: list[dict[str, str | None]] = []
         cwd = Path(os.getcwd())
         scripts_dir = cwd / self.LLM_ORC_DIR / self.SCRIPTS_DIR
 
         if scripts_dir.exists():
-            # Find all script files recursively
-            for ext in self.SCRIPT_EXTENSIONS:
-                pattern = f"*{ext}"
-                for script_file in scripts_dir.rglob(pattern):
-                    # Calculate relative path for hierarchical display
-                    relative_path = script_file.relative_to(scripts_dir)
-                    relative_dir = (
-                        str(relative_path.parent)
-                        if relative_path.parent != Path(".")
-                        else None
-                    )
-                    display_name = (
-                        f"{relative_dir}/{script_file.name}"
-                        if relative_dir
-                        else script_file.name
-                    )
+            self._collect_local_scripts(scripts_dir, scripts)
 
-                    scripts.append(
-                        {
-                            "name": script_file.name,
-                            "display_name": display_name,
-                            "path": str(script_file),
-                            "relative_path": relative_dir,
-                        }
-                    )
+        package_primitives = Path(__file__).resolve().parents[2] / "primitives"
+        if package_primitives.exists():
+            self._collect_package_primitives(package_primitives, scripts)
 
         return sorted(scripts, key=lambda x: x["display_name"] or "")
+
+    def _collect_local_scripts(
+        self,
+        scripts_dir: Path,
+        scripts: list[dict[str, str | None]],
+    ) -> None:
+        """Collect scripts from .llm-orc/scripts directory."""
+        for ext in self.SCRIPT_EXTENSIONS:
+            for script_file in scripts_dir.rglob(f"*{ext}"):
+                relative_path = script_file.relative_to(scripts_dir)
+                relative_dir = (
+                    str(relative_path.parent)
+                    if relative_path.parent != Path(".")
+                    else None
+                )
+                display_name = (
+                    f"{relative_dir}/{script_file.name}"
+                    if relative_dir
+                    else script_file.name
+                )
+                scripts.append(
+                    {
+                        "name": script_file.name,
+                        "display_name": display_name,
+                        "path": str(script_file),
+                        "relative_path": relative_dir,
+                    }
+                )
+
+    @staticmethod
+    def _collect_package_primitives(
+        package_primitives: Path,
+        scripts: list[dict[str, str | None]],
+    ) -> None:
+        """Collect primitives from the installed llm_orc package."""
+        for script_file in package_primitives.rglob("*.py"):
+            if script_file.name.startswith("__"):
+                continue
+            relative_path = script_file.relative_to(package_primitives)
+            category = str(relative_path.parent)
+            scripts.append(
+                {
+                    "name": script_file.name,
+                    "display_name": f"primitives/{category}/{script_file.name}",
+                    "path": str(script_file),
+                    "relative_path": f"primitives/{category}",
+                }
+            )
 
     def get_script_info(self, script_name: str) -> dict[str, str | list[str]] | None:
         """Get information about a specific script.
@@ -257,13 +285,17 @@ class ScriptResolver:
             return None
 
     def test_script(
-        self, script_name: str, parameters: dict[str, str]
+        self,
+        script_name: str,
+        parameters: dict[str, str],
+        timeout: int = 30,
     ) -> dict[str, Any]:
         """Test script execution with given parameters.
 
         Args:
             script_name: Name of the script to test
             parameters: Dictionary of parameters for the script
+            timeout: Maximum execution time in seconds
 
         Returns:
             Dictionary with execution results
@@ -283,7 +315,7 @@ class ScriptResolver:
                 capture_output=True,
                 text=True,
                 env=env,
-                timeout=30,
+                timeout=timeout,
             )
 
             end_time = time.time()
@@ -311,11 +343,12 @@ class ScriptResolver:
                 "duration_ms": 0,
             }
         except subprocess.TimeoutExpired:
+            timeout_ms = timeout * 1000
             return {
                 "success": False,
                 "output": "",
                 "error": "Script execution timed out",
-                "duration_ms": 30000,
+                "duration_ms": timeout_ms,
             }
         except Exception as e:
             return {

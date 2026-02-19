@@ -147,11 +147,10 @@ Feature: Script-Based Agent Support (Issue #24, ADR-001, ADR-002, ADR-003)
   @primitive-library
   Scenario: Primitive scripts provide immediate value after initialization
     Given a fresh llm-orc initialization
-    When primitive scripts are copied from llm-orchestra-library
-    Then core primitives should be available in .llm-orc/scripts/primitives/
+    When the llm-orc package is installed
+    Then core primitives should be available as package modules
     And file-ops primitives should include read_file, write_file operations
     And user-interaction primitives should include get_user_input
     And data-transform primitives should include json_extract, json_merge
-    And network-science primitives should include topology generation
-    And research primitives should include statistical analysis tools
+    And control-flow primitives should include replicate_n_times
     And all primitives should follow consistent JSON I/O patterns

@@ -208,83 +208,6 @@ class TestDependencyResolver:
         names = {agent["name"] for agent in without_deps}
         assert names == {"independent1", "independent2"}
 
-    def test_validate_dependency_chain_valid(self) -> None:
-        """Test validation of valid dependency chain."""
-        resolver, _ = self.setup_resolver()
-
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "role": "test"},
-            {"name": "agent2", "depends_on": ["agent1"]},
-            {"name": "agent3", "depends_on": ["agent1", "agent2"]},
-        ]
-
-        errors = resolver.validate_dependency_chain(agents)
-        assert errors == []
-
-    def test_validate_dependency_chain_self_dependency(self) -> None:
-        """Test validation detects self-dependency."""
-        resolver, _ = self.setup_resolver()
-
-        agents = [{"name": "agent1", "depends_on": ["agent1"]}]
-
-        errors = resolver.validate_dependency_chain(agents)
-        assert len(errors) == 1
-        assert "cannot depend on itself" in errors[0]
-
-    def test_validate_dependency_chain_missing_dependency(self) -> None:
-        """Test validation detects missing dependencies."""
-        resolver, _ = self.setup_resolver()
-
-        agents = [{"name": "agent1", "depends_on": ["missing_agent"]}]
-
-        errors = resolver.validate_dependency_chain(agents)
-        assert len(errors) == 1
-        assert "non-existent agent" in errors[0]
-
-    def test_validate_dependency_chain_circular_dependency(self) -> None:
-        """Test validation detects circular dependencies."""
-        resolver, _ = self.setup_resolver()
-
-        agents = [
-            {"name": "agent1", "depends_on": ["agent2"]},
-            {"name": "agent2", "depends_on": ["agent1"]},
-        ]
-
-        errors = resolver.validate_dependency_chain(agents)
-        assert len(errors) == 1
-        assert "Circular dependency detected" in errors[0]
-
-    def test_validate_dependency_chain_complex_circular(self) -> None:
-        """Test validation detects complex circular dependencies."""
-        resolver, _ = self.setup_resolver()
-
-        agents = [
-            {"name": "agent1", "depends_on": ["agent3"]},
-            {"name": "agent2", "depends_on": ["agent1"]},
-            {"name": "agent3", "depends_on": ["agent2"]},
-        ]
-
-        errors = resolver.validate_dependency_chain(agents)
-        assert len(errors) == 1
-        assert "Circular dependency detected" in errors[0]
-
-    def test_validate_dependency_chain_multiple_errors(self) -> None:
-        """Test validation returns multiple errors when present."""
-        resolver, _ = self.setup_resolver()
-
-        agents = [
-            {"name": "agent1", "depends_on": ["agent1", "missing"]},  # Self + missing
-            {"name": "agent2", "depends_on": ["missing2"]},  # Missing
-        ]
-
-        errors = resolver.validate_dependency_chain(agents)
-        assert len(errors) == 3  # Self-dep, missing1, missing2
-
-        error_text = " ".join(errors)
-        assert "cannot depend on itself" in error_text
-        assert "non-existent agent 'missing'" in error_text
-        assert "non-existent agent 'missing2'" in error_text
-
     def test_enhance_input_role_resolver_called(self) -> None:
         """Test that role resolver is called for dependency attribution."""
         resolver, mock_role_resolver = self.setup_resolver()
@@ -331,13 +254,6 @@ class TestDependencyResolver:
             [], set(), with_dependencies=False
         )
         assert result == []
-
-    def test_validate_empty_agent_list(self) -> None:
-        """Test validation with empty agent list."""
-        resolver, _ = self.setup_resolver()
-
-        errors = resolver.validate_dependency_chain([])
-        assert errors == []
 
     def test_enhance_input_with_mixed_dependency_statuses(self) -> None:
         """Test enhancement with mix of successful, failed, and missing deps."""
@@ -553,238 +469,6 @@ class TestDependencyResolver:
         assert "Previous Agent Results" in llm_input
 
 
-class TestValidateDependencyChainHelperMethods:
-    """Test helper methods extracted from validate_dependency_chain for complexity."""
-
-    def setup_resolver(self) -> DependencyResolver:
-        """Set up resolver for testing."""
-        mock_role_resolver = Mock()
-        mock_role_resolver.return_value = "Test Role"
-        return DependencyResolver(role_resolver=mock_role_resolver)
-
-    def test_validate_basic_dependencies_no_errors(self) -> None:
-        """Test basic dependency validation with no errors."""
-        from llm_orc.core.execution.dependency_resolver import (
-            _validate_basic_dependencies,
-        )
-
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "role": "test"},
-            {"name": "agent2", "depends_on": ["agent1"]},
-        ]
-
-        errors = _validate_basic_dependencies(agents)
-        assert errors == []
-
-    def test_validate_basic_dependencies_self_dependency(self) -> None:
-        """Test basic validation detects self-dependency."""
-        from llm_orc.core.execution.dependency_resolver import (
-            _validate_basic_dependencies,
-        )
-
-        agents: list[dict[str, Any]] = [{"name": "agent1", "depends_on": ["agent1"]}]
-
-        errors = _validate_basic_dependencies(agents)
-        assert len(errors) == 1
-        assert "cannot depend on itself" in errors[0]
-
-    def test_validate_basic_dependencies_missing_dependency(self) -> None:
-        """Test basic validation detects missing dependencies."""
-        from llm_orc.core.execution.dependency_resolver import (
-            _validate_basic_dependencies,
-        )
-
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "depends_on": ["missing_agent"]}
-        ]
-
-        errors = _validate_basic_dependencies(agents)
-        assert len(errors) == 1
-        assert "non-existent agent" in errors[0]
-
-    def test_validate_basic_dependencies_multiple_errors(self) -> None:
-        """Test basic validation returns multiple errors."""
-        from llm_orc.core.execution.dependency_resolver import (
-            _validate_basic_dependencies,
-        )
-
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "depends_on": ["agent1", "missing"]},
-            {"name": "agent2", "depends_on": ["missing2"]},
-        ]
-
-        errors = _validate_basic_dependencies(agents)
-        assert len(errors) == 3  # Self-dep, missing1, missing2
-
-    def test_detect_circular_dependencies_no_cycles(self) -> None:
-        """Test circular dependency detection with no cycles."""
-        from llm_orc.core.execution.dependency_resolver import (
-            _detect_circular_dependencies,
-        )
-
-        resolver = self.setup_resolver()
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "role": "test"},
-            {"name": "agent2", "depends_on": ["agent1"]},
-            {"name": "agent3", "depends_on": ["agent1", "agent2"]},
-        ]
-
-        errors = _detect_circular_dependencies(agents, resolver)
-        assert errors == []
-
-    def test_detect_circular_dependencies_simple_cycle(self) -> None:
-        """Test detection of simple circular dependency."""
-        from llm_orc.core.execution.dependency_resolver import (
-            _detect_circular_dependencies,
-        )
-
-        resolver = self.setup_resolver()
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "depends_on": ["agent2"]},
-            {"name": "agent2", "depends_on": ["agent1"]},
-        ]
-
-        errors = _detect_circular_dependencies(agents, resolver)
-        assert len(errors) == 1
-        assert "Circular dependency detected" in errors[0]
-
-    def test_detect_circular_dependencies_complex_cycle(self) -> None:
-        """Test detection of complex circular dependency."""
-        from llm_orc.core.execution.dependency_resolver import (
-            _detect_circular_dependencies,
-        )
-
-        resolver = self.setup_resolver()
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "depends_on": ["agent3"]},
-            {"name": "agent2", "depends_on": ["agent1"]},
-            {"name": "agent3", "depends_on": ["agent2"]},
-        ]
-
-        errors = _detect_circular_dependencies(agents, resolver)
-        assert len(errors) == 1
-        assert "Circular dependency detected" in errors[0]
-
-    def test_find_agent_by_name_found(self) -> None:
-        """Test finding agent by name when agent exists."""
-        from llm_orc.core.execution.dependency_resolver import _find_agent_by_name
-
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "role": "test"},
-            {"name": "agent2", "depends_on": ["agent1"]},
-        ]
-
-        result = _find_agent_by_name(agents, "agent2")
-        assert result is not None
-        assert result["name"] == "agent2"
-        assert result["depends_on"] == ["agent1"]
-
-    def test_find_agent_by_name_not_found(self) -> None:
-        """Test finding agent by name when agent doesn't exist."""
-        from llm_orc.core.execution.dependency_resolver import _find_agent_by_name
-
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "role": "test"},
-        ]
-
-        result = _find_agent_by_name(agents, "missing_agent")
-        assert result is None
-
-    def test_find_agent_by_name_empty_list(self) -> None:
-        """Test finding agent by name in empty agent list."""
-        from llm_orc.core.execution.dependency_resolver import _find_agent_by_name
-
-        result = _find_agent_by_name([], "any_agent")
-        assert result is None
-
-    def test_check_cycle_from_node_no_cycle(self) -> None:
-        """Test cycle checking from node with no cycles."""
-        from llm_orc.core.execution.dependency_resolver import (
-            _check_cycle_from_node,
-        )
-
-        resolver = self.setup_resolver()
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "role": "test"},
-            {"name": "agent2", "depends_on": ["agent1"]},
-        ]
-        visited: set[str] = set()
-        rec_stack: set[str] = set()
-
-        result = _check_cycle_from_node("agent2", agents, resolver, visited, rec_stack)
-        assert result is False
-        assert "agent1" in visited
-        assert "agent2" in visited
-        assert len(rec_stack) == 0  # Should be empty after completion
-
-    def test_check_cycle_from_node_direct_cycle(self) -> None:
-        """Test cycle checking detects direct cycle."""
-        from llm_orc.core.execution.dependency_resolver import (
-            _check_cycle_from_node,
-        )
-
-        resolver = self.setup_resolver()
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "depends_on": ["agent2"]},
-            {"name": "agent2", "depends_on": ["agent1"]},
-        ]
-        visited: set[str] = set()
-        rec_stack: set[str] = set()
-
-        result = _check_cycle_from_node("agent1", agents, resolver, visited, rec_stack)
-        assert result is True
-
-    def test_check_cycle_from_node_already_visited(self) -> None:
-        """Test cycle checking with already visited node."""
-        from llm_orc.core.execution.dependency_resolver import (
-            _check_cycle_from_node,
-        )
-
-        resolver = self.setup_resolver()
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "role": "test"},
-        ]
-        visited: set[str] = {"agent1"}  # Already visited
-        rec_stack: set[str] = set()
-
-        result = _check_cycle_from_node("agent1", agents, resolver, visited, rec_stack)
-        assert result is False
-
-    def test_check_cycle_from_node_in_recursion_stack(self) -> None:
-        """Test cycle checking detects node in recursion stack."""
-        from llm_orc.core.execution.dependency_resolver import (
-            _check_cycle_from_node,
-        )
-
-        resolver = self.setup_resolver()
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "role": "test"},
-        ]
-        visited: set[str] = set()
-        rec_stack: set[str] = {"agent1"}  # Already in recursion stack
-
-        result = _check_cycle_from_node("agent1", agents, resolver, visited, rec_stack)
-        assert result is True
-
-    def test_check_cycle_from_node_missing_agent(self) -> None:
-        """Test cycle checking with missing agent config."""
-        from llm_orc.core.execution.dependency_resolver import (
-            _check_cycle_from_node,
-        )
-
-        resolver = self.setup_resolver()
-        agents: list[dict[str, Any]] = []  # Empty agents list
-        visited: set[str] = set()
-        rec_stack: set[str] = set()
-
-        result = _check_cycle_from_node(
-            "missing_agent", agents, resolver, visited, rec_stack
-        )
-        assert result is False
-        assert "missing_agent" in visited
-        assert len(rec_stack) == 0
-
-
 class TestFanOutInputPreparation:
     """Test fan-out instance input preparation (issue #73)."""
 
@@ -889,3 +573,21 @@ class TestFanOutInputPreparation:
 
         assert resolver.is_fan_out_instance_config(instance_config) is True
         assert resolver.is_fan_out_instance_config(regular_config) is False
+
+
+class TestGetAgentInput:
+    """Test get_agent_input static method."""
+
+    def test_uniform_string_input(self) -> None:
+        """String input is returned unchanged for any agent."""
+        assert DependencyResolver.get_agent_input("hello", "agent1") == "hello"
+
+    def test_dict_input_returns_matching_agent(self) -> None:
+        """Dict input returns the value for the named agent."""
+        data = {"agent1": "input for 1", "agent2": "input for 2"}
+        assert DependencyResolver.get_agent_input(data, "agent1") == "input for 1"
+
+    def test_dict_input_returns_empty_for_missing_agent(self) -> None:
+        """Dict input returns empty string for an absent agent name."""
+        data = {"agent1": "input for 1"}
+        assert DependencyResolver.get_agent_input(data, "missing") == ""
