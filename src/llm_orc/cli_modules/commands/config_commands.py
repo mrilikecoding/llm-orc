@@ -209,184 +209,168 @@ def _restore_ensembles_and_complete(
         echo_info("Note: All ensembles were reset to template defaults")
 
 
-class ConfigCommands:
-    """Configuration management commands."""
+def init_local_config(project_name: str | None) -> None:
+    """Initialize local .llm-orc configuration for current project.
 
-    @staticmethod
-    def init_local_config(project_name: str | None) -> None:
-        """Initialize local .llm-orc configuration for current project.
+    Args:
+        project_name: Optional project name (defaults to directory name)
+    """
+    config_manager = ConfigurationManager()
 
-        Args:
-            project_name: Optional project name (defaults to directory name)
-        """
-        config_manager = ConfigurationManager()
+    try:
+        config_manager.init_local_config(project_name)
+        echo_success("Local configuration initialized successfully!")
+        click.echo("Created .llm-orc directory with:")
+        click.echo("  - ensembles/   (project-specific ensembles)")
+        click.echo("  - models/      (shared model configurations)")
+        click.echo("  - scripts/     (project-specific scripts)")
+        click.echo("  - config.yaml  (project configuration)")
 
-        try:
-            config_manager.init_local_config(project_name)
-            echo_success("Local configuration initialized successfully!")
-            click.echo("Created .llm-orc directory with:")
-            click.echo("  - ensembles/   (project-specific ensembles)")
-            click.echo("  - models/      (shared model configurations)")
-            click.echo("  - scripts/     (project-specific scripts)")
-            click.echo("  - config.yaml  (project configuration)")
+        click.echo("\nReady! Try:")
+        click.echo("  llm-orc scripts list          # See installed primitives")
+        click.echo("  llm-orc list-ensembles        # See example ensembles")
 
-            click.echo("\nReady! Try:")
-            click.echo("  llm-orc scripts list          # See installed primitives")
-            click.echo("  llm-orc list-ensembles        # See example ensembles")
-
-            echo_info(
-                "You can now create project-specific ensembles in .llm-orc/ensembles/"
-            )
-        except ValueError as e:
-            raise click.ClickException(str(e)) from e
-
-    @staticmethod
-    def reset_global_config(backup: bool, preserve_auth: bool) -> None:
-        """Reset global configuration to template defaults."""
-        config_manager = ConfigurationManager()
-        global_config_dir = Path(config_manager.global_config_dir)
-
-        # Create backup if requested
-        _create_backup_if_requested(backup, global_config_dir)
-
-        # Preserve authentication files if requested
-        auth_files = _preserve_auth_files_if_requested(preserve_auth, global_config_dir)
-
-        # Remove existing config directory and create fresh one
-        _recreate_config_directory(global_config_dir)
-
-        # Copy template to global config and restore auth files
-        template_path = (
-            Path(__file__).parent.parent.parent / "templates" / "global-config.yaml"
+        echo_info(
+            "You can now create project-specific ensembles in .llm-orc/ensembles/"
         )
-        _install_template_and_restore_auth(global_config_dir, template_path, auth_files)
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
 
-    @staticmethod
-    def check_global_config() -> None:
-        """Check global configuration status."""
-        config_manager = ConfigurationManager()
-        global_config_dir = Path(config_manager.global_config_dir)
-        global_config_path = global_config_dir / "config.yaml"
 
-        click.echo("Global Configuration Status:")
-        click.echo(f"Directory: {global_config_dir}")
+def reset_global_config(backup: bool, preserve_auth: bool) -> None:
+    """Reset global configuration to template defaults."""
+    config_manager = ConfigurationManager()
+    global_config_dir = Path(config_manager.global_config_dir)
 
-        if global_config_path.exists():
-            click.echo("Status: configured")
+    # Create backup if requested
+    _create_backup_if_requested(backup, global_config_dir)
 
-            # Show basic info about the config
-            try:
-                # Get available providers first
+    # Preserve authentication files if requested
+    auth_files = _preserve_auth_files_if_requested(preserve_auth, global_config_dir)
+
+    # Remove existing config directory and create fresh one
+    _recreate_config_directory(global_config_dir)
+
+    # Copy template to global config and restore auth files
+    template_path = (
+        Path(__file__).parent.parent.parent / "templates" / "global-config.yaml"
+    )
+    _install_template_and_restore_auth(global_config_dir, template_path, auth_files)
+
+
+def check_global_config() -> None:
+    """Check global configuration status."""
+    config_manager = ConfigurationManager()
+    global_config_dir = Path(config_manager.global_config_dir)
+    global_config_path = global_config_dir / "config.yaml"
+
+    click.echo("Global Configuration Status:")
+    click.echo(f"Directory: {global_config_dir}")
+
+    if global_config_path.exists():
+        click.echo("Status: configured")
+
+        # Show basic info about the config
+        try:
+            # Get available providers first
+            available_providers = get_available_providers(config_manager)
+
+            # Show providers FIRST, right after status
+            display_providers_status(available_providers, config_manager)
+
+            # Read ONLY global config file, not merged profiles
+            global_config = safe_load_yaml(global_config_path)
+
+            # Show default model profiles configuration
+            display_default_models_config(config_manager, available_providers)
+
+            # Check global ensembles SECOND
+            global_ensembles_dir = global_config_dir / "ensembles"
+            check_ensemble_availability(
+                global_ensembles_dir, available_providers, config_manager
+            )
+
+            # Show global profiles
+            display_global_profiles(global_config, available_providers)
+
+        except Exception as e:
+            echo_error(f"Error reading config: {e}")
+    else:
+        click.echo("Status: missing")
+        echo_info("Run 'llm-orc config init' to create it")
+
+
+def check_local_config() -> None:
+    """Check local .llm-orc configuration status."""
+    local_config_dir = Path(".llm-orc")
+    local_config_path = local_config_dir / "config.yaml"
+
+    if local_config_path.exists():
+        # Show basic info about the config
+        try:
+            config_manager = ConfigurationManager()
+
+            # Check project config first to get project name
+            project_config = config_manager.load_project_config()
+            if project_config:
+                project_name = project_config.get("project", {}).get("name", "Unknown")
+                click.echo(f"Local Configuration Status: {project_name}")
+                click.echo(f"Directory: {local_config_dir.absolute()}")
+                click.echo("Status: configured")
+
+                # Get available providers for ensemble checking
                 available_providers = get_available_providers(config_manager)
 
-                # Show providers FIRST, right after status
-                display_providers_status(available_providers, config_manager)
-
-                # Read ONLY global config file, not merged profiles
-                global_config = safe_load_yaml(global_config_path)
-
-                # Show default model profiles configuration
-                display_default_models_config(config_manager, available_providers)
-
-                # Check global ensembles SECOND
-                global_ensembles_dir = global_config_dir / "ensembles"
+                # Check local ensembles with availability indicators
+                ensembles_dir = local_config_dir / "ensembles"
                 check_ensemble_availability(
-                    global_ensembles_dir, available_providers, config_manager
+                    ensembles_dir, available_providers, config_manager
                 )
 
-                # Show global profiles
-                display_global_profiles(global_config, available_providers)
-
-            except Exception as e:
-                echo_error(f"Error reading config: {e}")
-        else:
-            click.echo("Status: missing")
-            echo_info("Run 'llm-orc config init' to create it")
-
-    @staticmethod
-    def check_local_config() -> None:
-        """Check local .llm-orc configuration status."""
-        local_config_dir = Path(".llm-orc")
-        local_config_path = local_config_dir / "config.yaml"
-
-        if local_config_path.exists():
-            # Show basic info about the config
-            try:
-                config_manager = ConfigurationManager()
-
-                # Check project config first to get project name
-                project_config = config_manager.load_project_config()
-                if project_config:
-                    project_name = project_config.get("project", {}).get(
-                        "name", "Unknown"
-                    )
-                    click.echo(f"Local Configuration Status: {project_name}")
-                    click.echo(f"Directory: {local_config_dir.absolute()}")
-                    click.echo("Status: configured")
-
-                    # Get available providers for ensemble checking
-                    available_providers = get_available_providers(config_manager)
-
-                    # Check local ensembles with availability indicators
-                    ensembles_dir = local_config_dir / "ensembles"
-                    check_ensemble_availability(
-                        ensembles_dir, available_providers, config_manager
-                    )
-
-                    # Show local model profiles
-                    local_profiles = project_config.get("model_profiles", {})
-                    if local_profiles:
-                        display_local_profiles(local_profiles, available_providers)
-                else:
-                    click.echo("Local Configuration Status:")
-                    click.echo(f"Directory: {local_config_dir.absolute()}")
-                    click.echo("Status: configured but no project config found")
-
-            except Exception as e:
+                # Show local model profiles
+                local_profiles = project_config.get("model_profiles", {})
+                if local_profiles:
+                    display_local_profiles(local_profiles, available_providers)
+            else:
                 click.echo("Local Configuration Status:")
                 click.echo(f"Directory: {local_config_dir.absolute()}")
-                echo_error(f"Error reading local config: {e}")
-        else:
+                click.echo("Status: configured but no project config found")
+
+        except Exception as e:
             click.echo("Local Configuration Status:")
             click.echo(f"Directory: {local_config_dir.absolute()}")
-            click.echo("Status: missing")
-            echo_info("Run 'llm-orc config init' to create it")
-
-    @staticmethod
-    def reset_local_config(
-        backup: bool, preserve_ensembles: bool, project_name: str | None
-    ) -> None:
-        """Reset local .llm-orc configuration to template defaults."""
-        config_manager = ConfigurationManager()
-        local_config_dir = Path(".llm-orc")
-
-        if not local_config_dir.exists():
-            echo_error("No local .llm-orc directory found")
-            echo_info("Run 'llm-orc config init' to create initial local config")
-            return
-
-        # Create backup if requested
-        _create_local_backup_if_requested(backup, local_config_dir)
-
-        # Preserve ensembles if requested
-        ensembles_backup = _preserve_ensembles_if_requested(
-            preserve_ensembles, local_config_dir
-        )
-
-        # Reset and initialize fresh local config
-        _reset_and_initialize_local_config(
-            local_config_dir, config_manager, project_name
-        )
-
-        # Restore ensembles and complete
-        _restore_ensembles_and_complete(
-            local_config_dir, ensembles_backup, preserve_ensembles
-        )
+            echo_error(f"Error reading local config: {e}")
+    else:
+        click.echo("Local Configuration Status:")
+        click.echo(f"Directory: {local_config_dir.absolute()}")
+        click.echo("Status: missing")
+        echo_info("Run 'llm-orc config init' to create it")
 
 
-# Module-level exports for CLI imports
-init_local_config = ConfigCommands.init_local_config
-reset_global_config = ConfigCommands.reset_global_config
-check_global_config = ConfigCommands.check_global_config
-check_local_config = ConfigCommands.check_local_config
-reset_local_config = ConfigCommands.reset_local_config
+def reset_local_config(
+    backup: bool, preserve_ensembles: bool, project_name: str | None
+) -> None:
+    """Reset local .llm-orc configuration to template defaults."""
+    config_manager = ConfigurationManager()
+    local_config_dir = Path(".llm-orc")
+
+    if not local_config_dir.exists():
+        echo_error("No local .llm-orc directory found")
+        echo_info("Run 'llm-orc config init' to create initial local config")
+        return
+
+    # Create backup if requested
+    _create_local_backup_if_requested(backup, local_config_dir)
+
+    # Preserve ensembles if requested
+    ensembles_backup = _preserve_ensembles_if_requested(
+        preserve_ensembles, local_config_dir
+    )
+
+    # Reset and initialize fresh local config
+    _reset_and_initialize_local_config(local_config_dir, config_manager, project_name)
+
+    # Restore ensembles and complete
+    _restore_ensembles_and_complete(
+        local_config_dir, ensembles_backup, preserve_ensembles
+    )

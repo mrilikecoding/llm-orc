@@ -12,7 +12,13 @@ import yaml
 from click.testing import CliRunner
 
 from llm_orc.cli import cli
-from llm_orc.cli_modules.commands.config_commands import ConfigCommands
+from llm_orc.cli_modules.commands.config_commands import (
+    check_global_config,
+    check_local_config,
+    init_local_config,
+    reset_global_config,
+    reset_local_config,
+)
 
 
 class TestConfigCommands:
@@ -43,7 +49,7 @@ class TestConfigCommands:
             mock_config_manager_class.return_value = mock_config_manager
 
             # When
-            ConfigCommands.init_local_config(project_name)
+            init_local_config(project_name)
 
             # Then
             mock_config_manager.init_local_config.assert_called_once_with(project_name)
@@ -68,7 +74,7 @@ class TestConfigCommands:
             with pytest.raises(
                 click.ClickException, match="Invalid project name"
             ) as exc_info:
-                ConfigCommands.init_local_config(project_name)
+                init_local_config(project_name)
 
             assert "Invalid project name" in str(exc_info.value)
 
@@ -108,9 +114,7 @@ class TestConfigCommands:
                 with patch("shutil.rmtree") as mock_rmtree:
                     with patch("shutil.copy"):
                         # When
-                        ConfigCommands.reset_global_config(
-                            backup=False, preserve_auth=False
-                        )
+                        reset_global_config(backup=False, preserve_auth=False)
 
                         # Then
                         mock_rmtree.assert_called_once()
@@ -157,9 +161,7 @@ class TestConfigCommands:
                                 mock_exists.side_effect = lambda: True
 
                                 # When
-                                ConfigCommands.reset_global_config(
-                                    backup=True, preserve_auth=False
-                                )
+                                reset_global_config(backup=True, preserve_auth=False)
 
                                 # Then
                                 # Should create backup
@@ -195,7 +197,7 @@ class TestConfigCommands:
                                     mock_read_bytes.return_value = b"auth_content"
 
                                     # When
-                                    ConfigCommands.reset_global_config(
+                                    reset_global_config(
                                         backup=False, preserve_auth=True
                                     )
 
@@ -222,9 +224,7 @@ class TestConfigCommands:
 
                 # When / Then
                 with pytest.raises(Exception, match="Template not found") as exc_info:
-                    ConfigCommands.reset_global_config(
-                        backup=False, preserve_auth=False
-                    )
+                    reset_global_config(backup=False, preserve_auth=False)
 
                 assert "Template not found" in str(exc_info.value)
 
@@ -271,7 +271,7 @@ class TestConfigCommands:
                                     mock_safe_load.return_value = {"model_profiles": {}}
 
                                     # When
-                                    ConfigCommands.check_global_config()
+                                    check_global_config()
 
                                     # Then
                                     mock_get_providers.assert_called_once()
@@ -295,7 +295,7 @@ class TestConfigCommands:
             mock_config_manager.global_config_dir = str(global_config_dir)
 
             # When
-            ConfigCommands.check_global_config()
+            check_global_config()
 
             # Then - should complete without error
 
@@ -321,7 +321,7 @@ class TestConfigCommands:
                 mock_get_providers.side_effect = Exception("Provider error")
 
                 # When
-                ConfigCommands.check_global_config()
+                check_global_config()
 
                 # Then - should handle exception gracefully
 
@@ -368,7 +368,7 @@ class TestConfigCommands:
                             mock_get_providers.return_value = {}
 
                             # When
-                            ConfigCommands.check_local_config()
+                            check_local_config()
 
                             # Then
                             mock_config_manager.load_project_config.assert_called_once()
@@ -406,7 +406,7 @@ class TestConfigCommands:
                 mock_config_manager.load_project_config.return_value = None
 
                 # When
-                ConfigCommands.check_local_config()
+                check_local_config()
 
                 # Then
                 mock_config_manager.load_project_config.assert_called_once()
@@ -426,7 +426,7 @@ class TestConfigCommands:
             os.chdir(test_dir)
 
             # When
-            ConfigCommands.check_local_config()
+            check_local_config()
 
             # Then - should complete without error
 
@@ -461,7 +461,7 @@ class TestConfigCommands:
                 )
 
                 # When
-                ConfigCommands.check_local_config()
+                check_local_config()
 
                 # Then - should handle exception gracefully
 
@@ -488,7 +488,7 @@ class TestConfigCommands:
                 mock_config_manager_class.return_value = mock_config_manager
 
                 # When
-                ConfigCommands.reset_local_config(
+                reset_local_config(
                     backup=False, preserve_ensembles=False, project_name=None
                 )
 
@@ -523,7 +523,7 @@ class TestConfigCommands:
                         mock_config_manager_class.return_value = mock_config_manager
 
                         # When
-                        ConfigCommands.reset_local_config(
+                        reset_local_config(
                             backup=True,
                             preserve_ensembles=False,
                             project_name="test",
@@ -567,7 +567,7 @@ class TestConfigCommands:
                         mock_config_manager_class.return_value = mock_config_manager
 
                         # When
-                        ConfigCommands.reset_local_config(
+                        reset_local_config(
                             backup=False,
                             preserve_ensembles=True,
                             project_name="test",
@@ -615,7 +615,7 @@ class TestConfigCommands:
                     with pytest.raises(
                         click.ClickException, match="Init failed"
                     ) as exc_info:
-                        ConfigCommands.reset_local_config(
+                        reset_local_config(
                             backup=False,
                             preserve_ensembles=False,
                             project_name="test",
