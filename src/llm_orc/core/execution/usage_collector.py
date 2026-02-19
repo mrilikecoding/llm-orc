@@ -142,54 +142,6 @@ class UsageCollector:
         """Get collected agent usage data."""
         return copy.deepcopy(self._agent_usage)
 
-    def calculate_usage_summary(
-        self, synthesis_usage: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        """Calculate aggregated usage summary.
-
-        Args:
-            synthesis_usage: Optional synthesis usage to include in totals
-
-        Returns:
-            Dictionary containing agents usage, totals, and optional synthesis
-        """
-        summary = {
-            "agents": copy.deepcopy(self._agent_usage),
-            "totals": {
-                "total_tokens": 0,
-                "total_input_tokens": 0,
-                "total_output_tokens": 0,
-                "total_cost_usd": 0.0,
-                "total_duration_ms": 0,
-                "agents_count": len(self._agent_usage),
-            },
-        }
-
-        # Aggregate agent usage
-        for usage in self._agent_usage.values():
-            summary["totals"]["total_tokens"] += usage.get("total_tokens", 0)
-            summary["totals"]["total_input_tokens"] += usage.get("input_tokens", 0)
-            summary["totals"]["total_output_tokens"] += usage.get("output_tokens", 0)
-            summary["totals"]["total_cost_usd"] += usage.get("cost_usd", 0.0)
-            summary["totals"]["total_duration_ms"] += usage.get("duration_ms", 0)
-
-        # Add synthesis usage
-        if synthesis_usage:
-            summary["synthesis"] = synthesis_usage
-            summary["totals"]["total_tokens"] += synthesis_usage.get("total_tokens", 0)
-            summary["totals"]["total_input_tokens"] += synthesis_usage.get(
-                "input_tokens", 0
-            )
-            summary["totals"]["total_output_tokens"] += synthesis_usage.get(
-                "output_tokens", 0
-            )
-            summary["totals"]["total_cost_usd"] += synthesis_usage.get("cost_usd", 0.0)
-            summary["totals"]["total_duration_ms"] += synthesis_usage.get(
-                "duration_ms", 0
-            )
-
-        return summary
-
     def add_manual_usage(self, agent_name: str, usage: dict[str, Any]) -> None:
         """Manually add usage data for an agent.
 
