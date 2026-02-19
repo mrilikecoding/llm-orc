@@ -7,11 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.4] - 2026-02-19
+
 ### Added
 - Model profiles and agent configs now support `temperature` and `max_tokens` generation parameters
   - Profile YAML sets defaults; agent config in ensemble YAML can override per-agent
   - Supported across all providers: Ollama, Anthropic, Google Gemini
   - MCP `create_profile` tool accepts the new parameters
+
+### Changed
+- Merged `EnhancedScriptAgent` into `ScriptAgent`, removing the re-export shim
+- Dissolved `AuthCommands`, `ConfigCommands`, and `ResultsProcessor` classes into plain module-level functions
+- Extracted `FanOutCoordinator`, `PhaseMonitor`, `PhaseResultProcessor`, `AgentDispatcher` from `EnsembleExecutor`
+- Extracted `EnsembleCrudHandler`, `ExecutionHandler`, `ResourceHandler` from `MCPServer`
+- Unified `execute()` and `execute_with_user_input()` into `_execute_core`
+- Promoted `_run_validation` and `_classify_failure_type` to module-level functions
+- Removed 9 delegation stubs from `EnsembleExecutor`
+- Removed dead code: `RoleManager`, `ModelManager`, `ConversationalDependencyResolver`, visualization subsystem, and other unused modules
+- Removed duplicate `calculate_usage_summary` from `UsageCollector`
+- Marked 3 self-free methods as `@staticmethod` in dependency resolver/analyzer
+- Eliminated 11 thin delegation wrappers from `MCPServer`
+- Consolidated shared helpers across MCP and web API modules
+
+### Fixed
+- Use bare `raise` instead of `raise e` in anthropic.py
+- Pass `model_name` to `ClaudeModel` in `_create_api_key_model`
 
 ## [0.14.3] - 2026-02-18
 
