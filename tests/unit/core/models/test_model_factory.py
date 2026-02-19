@@ -11,7 +11,6 @@ from llm_orc.core.models.model_factory import (
     _create_api_key_model,
     _create_authenticated_model,
     _create_oauth_model,
-    _handle_mock_models,
     _handle_no_authentication,
     _resolve_authentication_method,
 )
@@ -675,13 +674,6 @@ class TestModelFactory:
 
 class TestLoadModelHelperMethods:
     """Test helper methods extracted from load_model."""
-
-    def test_handle_mock_models(self) -> None:
-        """Test mock model handling."""
-        result = _handle_mock_models("mock-test-model")
-
-        assert isinstance(result, MockModel)
-        assert result.name == "mock-test-model"
 
     def test_handle_no_authentication_ollama_fallback(
         self,

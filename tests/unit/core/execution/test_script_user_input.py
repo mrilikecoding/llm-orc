@@ -2,7 +2,7 @@
 
 from unittest.mock import AsyncMock, Mock
 
-from llm_orc.core.communication.protocol import ConversationManager, MessageProtocol
+from llm_orc.core.communication.protocol import ConversationManager
 from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
 
 
@@ -120,7 +120,6 @@ class TestBidirectionalCommunication:
         """Test that CLI can collect user input when requested by script agent."""
         # Setup communication protocol
         conversation_manager = ConversationManager()
-        protocol = MessageProtocol(conversation_manager)
 
         # Setup handler with communication capability
         handler = ScriptUserInputHandler()
@@ -147,7 +146,7 @@ class TestBidirectionalCommunication:
 
         # This should fail because we haven't implemented the communication flow yet
         result = await handler.handle_input_request(
-            input_request, protocol, conversation_id, cli_input_collector
+            input_request, conversation_id, cli_input_collector
         )
 
         assert result == "John Doe"

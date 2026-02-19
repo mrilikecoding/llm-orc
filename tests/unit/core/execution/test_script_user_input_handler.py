@@ -168,9 +168,6 @@ class TestScriptUserInputHandler:
         cli_input_collector = Mock()
         cli_input_collector.collect_input = AsyncMock(return_value="user response")
 
-        # Mock protocol
-        protocol = Mock()
-
         input_request = {
             "prompt": "Enter your name: ",
             "agent_name": "test_agent",
@@ -179,7 +176,6 @@ class TestScriptUserInputHandler:
 
         result = await handler.handle_input_request(
             input_request=input_request,
-            _protocol=protocol,
             conversation_id="conv123",
             cli_input_collector=cli_input_collector,
         )
@@ -198,9 +194,6 @@ class TestScriptUserInputHandler:
         cli_input_collector = Mock()
         cli_input_collector.collect_input = AsyncMock(return_value="test input")
 
-        # Mock protocol
-        protocol = Mock()
-
         input_request = {
             "prompt": "Test prompt: ",
             "agent_name": "script_agent",
@@ -209,7 +202,6 @@ class TestScriptUserInputHandler:
 
         result = await handler.handle_input_request(
             input_request=input_request,
-            _protocol=protocol,
             conversation_id="conv456",
             cli_input_collector=cli_input_collector,
             ensemble_name="test_ensemble",
@@ -236,15 +228,11 @@ class TestScriptUserInputHandler:
             return_value=42
         )  # Non-string return
 
-        # Mock protocol
-        protocol = Mock()
-
         # Minimal input request
         input_request: dict[str, Any] = {}
 
         result = await handler.handle_input_request(
             input_request=input_request,
-            _protocol=protocol,
             conversation_id="conv",
             cli_input_collector=cli_input_collector,
         )
@@ -266,9 +254,6 @@ class TestScriptUserInputHandler:
 
         cli_input_collector.collect_input = delayed_input
 
-        # Mock protocol
-        protocol = Mock()
-
         # Create multiple input requests
         requests = [
             {"prompt": f"Prompt {i}: ", "agent_name": f"agent_{i}"} for i in range(3)
@@ -278,7 +263,6 @@ class TestScriptUserInputHandler:
         tasks = [
             handler.handle_input_request(
                 input_request=req,
-                _protocol=protocol,
                 conversation_id=f"conv_{i}",
                 cli_input_collector=cli_input_collector,
             )
