@@ -187,24 +187,6 @@ def enhanced_agent_invalid_input(bdd_context: dict[str, Any]) -> None:
     bdd_context["invalid_input_data"] = {"agent_name": 123, "input_data": None}
 
 
-@given("a ScriptAgentOutput containing agent_requests")
-def script_output_with_requests(bdd_context: dict[str, Any]) -> None:
-    """Create ScriptAgentOutput with agent requests."""
-    agent_requests = [
-        AgentRequest(
-            target_agent_type="user_input",
-            parameters={"prompt": "Enter name", "multiline": False},
-        ),
-        AgentRequest(
-            target_agent_type="file_ops",
-            parameters={"operation": "read", "path": "test.txt"},
-        ),
-    ]
-    bdd_context["output_with_requests"] = ScriptAgentOutput(
-        success=True, data="test result", agent_requests=agent_requests
-    )
-
-
 @given("an AgentRequestProcessor instance")
 def agent_request_processor_instance(bdd_context: dict[str, Any]) -> None:
     """Create AgentRequestProcessor instance."""
@@ -230,35 +212,6 @@ def agent_request_parameters(bdd_context: dict[str, Any]) -> None:
     # Parameters are already set in the user_input_request step above
     # This step is just for BDD readability
     pass
-
-
-@given("agent request data as dictionary")
-def agent_request_data_dict(bdd_context: dict[str, Any]) -> None:
-    """Create agent request data as dictionary."""
-    bdd_context["valid_request_data"] = {
-        "target_agent_type": "test_agent",
-        "parameters": {"key": "value"},
-        "priority": 1,
-    }
-    bdd_context["invalid_request_data"] = {
-        "target_agent_type": 123,  # Invalid type
-        "parameters": "not_a_dict",  # Invalid type
-    }
-
-
-@given("a JSON string containing agent_requests array")
-def json_string_agent_requests(bdd_context: dict[str, Any]) -> None:
-    """Create JSON string with agent requests."""
-    bdd_context["valid_json_requests"] = json.dumps(
-        {
-            "success": True,
-            "agent_requests": [
-                {"target_agent_type": "agent1", "parameters": {"key1": "value1"}},
-                {"target_agent_type": "agent2", "parameters": {"key2": "value2"}},
-            ],
-        }
-    )
-    bdd_context["invalid_json_requests"] = "invalid json string"
 
 
 @given(
@@ -611,59 +564,12 @@ def schema_validation_fails(bdd_context: dict[str, Any]) -> None:
     asyncio.run(run_invalid_test())
 
 
-@when("I call extract_agent_requests() method")
-def call_extract_agent_requests(bdd_context: dict[str, Any]) -> None:
-    """Call extract_agent_requests method."""
-    processor = bdd_context["agent_request_processor"]
-    output = bdd_context["output_with_requests"]
-    bdd_context["extracted_requests"] = processor.extract_agent_requests(output)
-
-
 @when("I call generate_dynamic_parameters() method")
 def call_generate_dynamic_parameters(bdd_context: dict[str, Any]) -> None:
     """Call generate_dynamic_parameters method."""
     processor = bdd_context["agent_request_processor"]
     request = bdd_context["user_input_request"]
     bdd_context["generated_parameters"] = processor.generate_dynamic_parameters(request)
-
-
-@when("I call validate_agent_request_schema() method")
-def call_validate_agent_request_schema(bdd_context: dict[str, Any]) -> None:
-    """Call validate_agent_request_schema method."""
-    processor = bdd_context["agent_request_processor"]
-    valid_data = bdd_context["valid_request_data"]
-    invalid_data = bdd_context["invalid_request_data"]
-
-    bdd_context["valid_request_validation"] = processor.validate_agent_request_schema(
-        valid_data
-    )
-    bdd_context["invalid_request_validation"] = processor.validate_agent_request_schema(
-        invalid_data
-    )
-
-
-@when("I call extract_agent_requests_from_json() method")
-def call_extract_requests_from_json(bdd_context: dict[str, Any]) -> None:
-    """Call extract_agent_requests_from_json method."""
-    processor = bdd_context["agent_request_processor"]
-
-    try:
-        valid_json = bdd_context["valid_json_requests"]
-        bdd_context["extracted_from_json"] = processor.extract_agent_requests_from_json(
-            valid_json
-        )
-        bdd_context["json_extraction_success"] = True
-    except Exception as e:
-        bdd_context["json_extraction_error"] = e
-        bdd_context["json_extraction_success"] = False
-
-    try:
-        invalid_json = bdd_context["invalid_json_requests"]
-        processor.extract_agent_requests_from_json(invalid_json)
-        bdd_context["invalid_json_extraction_success"] = True
-    except Exception as e:
-        bdd_context["invalid_json_extraction_error"] = e
-        bdd_context["invalid_json_extraction_success"] = False
 
 
 @when("I serialize each schema to JSON using model_dump()")
@@ -1291,48 +1197,6 @@ def no_execution_invalid_input(bdd_context: dict[str, Any]) -> None:
     assert True  # Implicit in the error handling
 
 
-@then("it should return a list of AgentRequest objects")
-def returns_list_agent_requests(bdd_context: dict[str, Any]) -> None:
-    """Verify returns list of AgentRequest objects."""
-    extracted = bdd_context.get("extracted_requests", [])
-    assert isinstance(extracted, list)
-    # Check if the objects have AgentRequest properties instead of using isinstance
-    # due to different import paths creating different classes
-    assert all(
-        hasattr(req, "target_agent_type")
-        and hasattr(req, "parameters")
-        and hasattr(req, "priority")
-        for req in extracted
-    )
-
-
-@then("each request should be properly validated")
-def each_request_validated(bdd_context: dict[str, Any]) -> None:
-    """Verify each request is validated."""
-    extracted = bdd_context.get("extracted_requests", [])
-    for request in extracted:
-        assert hasattr(request, "target_agent_type")
-        assert hasattr(request, "parameters")
-        assert hasattr(request, "priority")
-
-
-@then("the extraction should handle empty agent_requests gracefully")
-def extraction_handles_empty_gracefully(bdd_context: dict[str, Any]) -> None:
-    """Verify extraction handles empty requests gracefully."""
-    empty_output = ScriptAgentOutput(success=True)
-    processor = bdd_context["agent_request_processor"]
-    empty_requests = processor.extract_agent_requests(empty_output)
-    assert isinstance(empty_requests, list)
-    assert len(empty_requests) == 0
-
-
-@then("invalid request data should be rejected with clear errors")
-def invalid_request_data_rejected(bdd_context: dict[str, Any]) -> None:
-    """Verify invalid request data is rejected."""
-    # This is tested through schema validation
-    assert True  # Validation is built into the schema
-
-
 @then("it should return the parameters dictionary")
 def returns_parameters_dictionary(bdd_context: dict[str, Any]) -> None:
     """Verify returns parameters dictionary."""
@@ -1369,87 +1233,6 @@ def generation_deterministic_same_inputs(bdd_context: dict[str, Any]) -> None:
     else:
         # Skip test if required objects are not available
         assert True
-
-
-@then("it should return True for valid AgentRequest data")
-def returns_true_valid_data(bdd_context: dict[str, Any]) -> None:
-    """Verify returns True for valid data."""
-    assert bdd_context.get("valid_request_validation", False) is True
-
-
-@then("it should return False for invalid data structure")
-def returns_false_invalid_data(bdd_context: dict[str, Any]) -> None:
-    """Verify returns False for invalid data."""
-    assert bdd_context.get("invalid_request_validation", True) is False
-
-
-@then("it should handle missing required fields gracefully")
-def handles_missing_fields_gracefully(bdd_context: dict[str, Any]) -> None:
-    """Verify handles missing fields gracefully."""
-    processor = bdd_context.get("agent_request_processor")
-    if processor:
-        incomplete_data = {"target_agent_type": "test"}  # Missing parameters
-        result = processor.validate_agent_request_schema(incomplete_data)
-        assert result is False
-    else:
-        assert True  # Skip if processor not available
-
-
-@then("it should validate parameter dictionary structure")
-def validates_parameter_structure(bdd_context: dict[str, Any]) -> None:
-    """Verify validates parameter structure."""
-    # This is tested through the validation logic
-    assert True  # Parameter validation is built into the schema
-
-
-@then("it should return list of validated AgentRequest objects")
-def returns_validated_agent_requests(bdd_context: dict[str, Any]) -> None:
-    """Verify returns validated AgentRequest objects."""
-    assert bdd_context.get("json_extraction_success", False) is True
-    extracted = bdd_context.get("extracted_from_json", [])
-    assert isinstance(extracted, list)
-    # Check if the objects have AgentRequest properties instead of using isinstance
-    # due to different import paths creating different classes
-    assert all(
-        hasattr(req, "target_agent_type")
-        and hasattr(req, "parameters")
-        and hasattr(req, "priority")
-        for req in extracted
-    )
-
-
-@then("JSON parsing errors should be caught and chained (ADR-003)")
-def json_errors_caught_chained(bdd_context: dict[str, Any]) -> None:
-    """Verify JSON errors are caught and chained."""
-    assert bdd_context.get("invalid_json_extraction_success", True) is False
-    error = bdd_context.get("invalid_json_extraction_error")
-    assert error is not None
-    # Should have proper error chaining
-    assert hasattr(error, "__cause__") or "from" in str(error)
-
-
-@then("schema validation errors should be caught and chained")
-def schema_errors_caught_chained(bdd_context: dict[str, Any]) -> None:
-    """Verify schema errors are caught and chained."""
-    # This is tested through the error handling in the processor
-    assert True  # Error chaining is built into the implementation
-
-
-@then("the error messages should guide debugging")
-def error_messages_guide_debugging(bdd_context: dict[str, Any]) -> None:
-    """Verify error messages guide debugging."""
-    error = bdd_context.get("invalid_json_extraction_error")
-    assert error is not None
-    error_str = str(error)
-    assert len(error_str) > 0
-    assert "JSON" in error_str or "json" in error_str
-
-
-@then("partial extraction should be prevented on validation failure")
-def partial_extraction_prevented(bdd_context: dict[str, Any]) -> None:
-    """Verify partial extraction is prevented."""
-    # The implementation should fail completely rather than partially
-    assert bdd_context.get("invalid_json_extraction_success", True) is False
 
 
 @then("serialization should succeed without data loss")

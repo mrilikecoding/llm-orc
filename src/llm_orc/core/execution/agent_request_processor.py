@@ -8,7 +8,7 @@ import json
 from typing import Any
 
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
-from llm_orc.schemas.script_agent import AgentRequest, ScriptAgentOutput
+from llm_orc.schemas.script_agent import AgentRequest
 
 
 class AgentRequestProcessor:
@@ -21,19 +21,6 @@ class AgentRequestProcessor:
             dependency_resolver: DependencyResolver instance for agent coordination
         """
         self._dependency_resolver = dependency_resolver
-
-    def extract_agent_requests(
-        self, script_output: ScriptAgentOutput
-    ) -> list[AgentRequest]:
-        """Extract AgentRequest objects from ScriptAgentOutput.
-
-        Args:
-            script_output: Validated ScriptAgentOutput containing agent_requests
-
-        Returns:
-            List of AgentRequest objects
-        """
-        return script_output.agent_requests
 
     def generate_dynamic_parameters(
         self, agent_request: AgentRequest, context: dict[str, Any] | None = None
@@ -135,40 +122,3 @@ class AgentRequestProcessor:
         except json.JSONDecodeError as e:
             raise RuntimeError(f"Failed to process script output JSON: {str(e)}") from e
 
-    def validate_agent_request_schema(self, request_data: dict[str, Any]) -> bool:
-        """Validate agent request against schema (ADR-001).
-
-        Args:
-            request_data: Dictionary to validate as AgentRequest
-
-        Returns:
-            True if valid, False otherwise
-        """
-        try:
-            AgentRequest(**request_data)
-            return True
-        except Exception:
-            return False
-
-    def extract_agent_requests_from_json(self, json_string: str) -> list[AgentRequest]:
-        """Extract agent requests from JSON string with error handling (ADR-003).
-
-        Args:
-            json_string: JSON string containing agent_requests
-
-        Returns:
-            List of validated AgentRequest objects
-
-        Raises:
-            RuntimeError: If JSON parsing fails (with chained exception)
-        """
-        try:
-            data = json.loads(json_string)
-            agent_requests_data = data.get("agent_requests", [])
-            return [AgentRequest(**request) for request in agent_requests_data]
-        except json.JSONDecodeError as e:
-            raise RuntimeError(
-                f"Failed to parse JSON for agent requests: {str(e)}"
-            ) from e
-        except Exception as e:
-            raise RuntimeError(f"Failed to extract agent requests: {str(e)}") from e
