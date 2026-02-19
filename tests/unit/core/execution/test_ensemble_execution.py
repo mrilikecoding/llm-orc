@@ -55,7 +55,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -135,7 +137,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -184,7 +188,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -245,7 +251,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -308,7 +316,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -391,7 +401,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -469,7 +481,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -546,111 +560,6 @@ class TestEnsembleExecutor:
             assert model.claude_path == "/usr/local/bin/claude"
 
     @pytest.mark.asyncio
-    async def test_load_model_prompts_for_auth_setup_when_not_configured(
-        self, mock_ensemble_executor: Any
-    ) -> None:
-        """Test that _load_model prompts user to set up auth when not configured."""
-        executor = mock_ensemble_executor
-
-        # Mock authentication system - no auth method configured
-        with (
-            patch(
-                "llm_orc.core.models.model_factory._should_prompt_for_auth",
-                return_value=True,
-            ),
-            patch(
-                "llm_orc.core.models.model_factory._prompt_auth_setup"
-            ) as mock_prompt_setup,
-            patch.object(
-                executor._model_factory, "_credential_storage"
-            ) as mock_storage,
-        ):
-            # Simulate no auth method configured
-            mock_storage.get_auth_method.return_value = None
-
-            # Mock successful auth setup
-            mock_prompt_setup.return_value = True
-
-            # After setup, mock the configured auth method
-            # First call: None, second call: oauth
-            mock_storage.get_auth_method.side_effect = [None, "oauth"]
-            mock_storage.get_oauth_token.return_value = {
-                "access_token": "new_oauth_token",
-                "refresh_token": "new_refresh_token",
-                "client_id": "new_client_id",
-            }
-
-            model = await executor._model_factory.load_model("anthropic-claude-pro-max")
-
-            # Should prompt for auth setup
-            mock_prompt_setup.assert_called_once_with(
-                "anthropic-claude-pro-max", mock_storage
-            )
-
-            # Should create OAuthClaudeModel after setup
-            assert isinstance(model, OAuthClaudeModel)
-
-    @pytest.mark.asyncio
-    async def test_load_model_fallback_when_user_declines_auth_setup(
-        self, mock_ensemble_executor: Any
-    ) -> None:
-        """Test that _load_model falls back to Ollama when user declines auth setup."""
-        executor = mock_ensemble_executor
-
-        # Mock authentication system - no auth method configured
-        with (
-            patch(
-                "llm_orc.core.models.model_factory._should_prompt_for_auth",
-                return_value=True,
-            ),
-            patch(
-                "llm_orc.core.models.model_factory._prompt_auth_setup"
-            ) as mock_prompt_setup,
-            patch.object(
-                executor._model_factory, "_credential_storage"
-            ) as mock_storage,
-        ):
-            # Simulate no auth method configured
-            mock_storage.get_auth_method.return_value = None
-
-            # User declines to set up authentication
-            mock_prompt_setup.return_value = False
-
-            model = await executor._model_factory.load_model("anthropic-claude-pro-max")
-
-            # Should prompt user for auth setup
-            mock_prompt_setup.assert_called_once_with(
-                "anthropic-claude-pro-max", mock_storage
-            )
-
-            # Should fall back to Ollama
-            from llm_orc.models.ollama import OllamaModel
-
-            assert isinstance(model, OllamaModel)
-
-    def test_should_prompt_for_auth_returns_true_for_known_providers(self) -> None:
-        """Test that _should_prompt_for_auth returns True for known provider configs."""
-        from llm_orc.core.models.model_factory import _should_prompt_for_auth
-
-        # Should return True for known provider configurations
-        assert _should_prompt_for_auth("anthropic-api") is True
-        assert _should_prompt_for_auth("anthropic-claude-pro-max") is True
-        assert _should_prompt_for_auth("claude-cli") is True
-        assert _should_prompt_for_auth("openai-api") is True
-        assert _should_prompt_for_auth("google-gemini") is True
-
-    def test_should_prompt_for_auth_returns_false_for_mock_models(self) -> None:
-        """Test that _should_prompt_for_auth returns False for mock/local models."""
-        from llm_orc.core.models.model_factory import _should_prompt_for_auth
-
-        # Should return False for mock models and local models
-        assert _should_prompt_for_auth("mock-model") is False
-        assert _should_prompt_for_auth("mock-claude") is False
-        assert _should_prompt_for_auth("llama3") is False
-        assert _should_prompt_for_auth("llama2") is False
-        assert _should_prompt_for_auth("unknown-model") is False
-
-    @pytest.mark.asyncio
     async def test_ensemble_execution_with_model_profile(
         self, mock_ensemble_executor: Any
     ) -> None:
@@ -683,7 +592,7 @@ class TestEnsembleExecutor:
 
             executor = mock_ensemble_executor
 
-            # Test the _load_model_from_agent_config method directly
+            # Test model_factory.load_model_from_agent_config directly
             with patch.object(
                 executor._config_manager, "resolve_model_profile"
             ) as mock_resolve_model_profile:
@@ -797,7 +706,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -824,28 +735,6 @@ class TestEnsembleExecutor:
 
         # Should not have old coordinator-style synthesis
         assert result["synthesis"] is None
-
-    @pytest.mark.asyncio
-    async def test_load_model_from_agent_config_delegation(
-        self, mock_ensemble_executor: Any
-    ) -> None:
-        """Test _load_model_from_agent_config delegates to model factory."""
-        executor = mock_ensemble_executor
-
-        mock_model = AsyncMock(spec=ModelInterface)
-        agent_config = {"name": "test_agent", "model": "test-model"}
-
-        with patch.object(
-            executor._model_factory,
-            "load_model_from_agent_config",
-            new_callable=AsyncMock,
-        ) as mock_load:
-            mock_load.return_value = mock_model
-
-            result = await executor._load_model_from_agent_config(agent_config)
-
-            assert result == mock_model
-            mock_load.assert_called_once_with(agent_config)
 
     @pytest.mark.asyncio
     async def test_execute_streaming_with_progress_updates(
@@ -881,7 +770,9 @@ class TestEnsembleExecutor:
         # Mock dependencies
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -975,25 +866,6 @@ class TestEnsembleExecutor:
             assert enhanced == agent_config
 
     @pytest.mark.asyncio
-    async def test_load_role_creates_default_role(
-        self, mock_ensemble_executor: Any
-    ) -> None:
-        """Test _load_role creates default role definition."""
-        # Mock dependencies to avoid YAML loading affected by test contamination
-        with (
-            patch("llm_orc.core.execution.ensemble_execution.ConfigurationManager"),
-            patch("llm_orc.core.execution.ensemble_execution.CredentialStorage"),
-        ):
-            executor = mock_ensemble_executor
-
-            role = await executor._load_role("test_analyst")
-
-            assert isinstance(role, RoleDefinition)
-            assert role.name == "test_analyst"
-            assert "test_analyst" in role.prompt
-            assert "helpful analysis" in role.prompt
-
-    @pytest.mark.asyncio
     async def test_execute_agent_with_timeout_no_timeout(
         self, mock_ensemble_executor: Any
     ) -> None:
@@ -1044,63 +916,6 @@ class TestEnsembleExecutor:
                     input_data,
                     1,  # 1 second timeout
                 )
-
-    @pytest.mark.asyncio
-    async def test_analyze_dependencies(self, mock_ensemble_executor: Any) -> None:
-        """Test _analyze_dependencies separates agents correctly."""
-        executor = mock_ensemble_executor
-
-        llm_agents: list[dict[str, Any]] = [
-            {"name": "independent1", "model_profile": "test-analyst"},
-            {"name": "independent2", "model_profile": "test-reviewer"},
-            {
-                "name": "dependent1",
-                "model_profile": "test-synthesizer",
-                "depends_on": ["independent1", "independent2"],
-            },
-            {
-                "name": "dependent2",
-                "model_profile": "test-summarizer",
-                "depends_on": ["dependent1"],
-            },
-        ]
-
-        independent, dependent = executor._analyze_dependencies(llm_agents)
-
-        assert len(independent) == 2
-        assert len(dependent) == 2
-
-        # Check independent agents
-        independent_names = [agent["name"] for agent in independent]
-        assert "independent1" in independent_names
-        assert "independent2" in independent_names
-
-        # Check dependent agents
-        dependent_names = [agent["name"] for agent in dependent]
-        assert "dependent1" in dependent_names
-        assert "dependent2" in dependent_names
-
-    @pytest.mark.asyncio
-    async def test_analyze_dependencies_empty_depends_on(
-        self, mock_ensemble_executor: Any
-    ) -> None:
-        """Test _analyze_dependencies with empty depends_on list."""
-        executor = mock_ensemble_executor
-
-        llm_agents: list[dict[str, Any]] = [
-            {"name": "agent1", "model_profile": "test-analyst"},
-            {
-                "name": "agent2",
-                "model_profile": "test-reviewer",
-                "depends_on": [],  # Empty dependencies
-            },
-        ]
-
-        independent, dependent = executor._analyze_dependencies(llm_agents)
-
-        # Both should be independent since empty depends_on means no dependencies
-        assert len(independent) == 2
-        assert len(dependent) == 0
 
     @pytest.mark.asyncio
     async def test_resolve_model_profile_to_config_without_profile(
@@ -1160,7 +975,9 @@ class TestEnsembleExecutor:
         # Mock dependencies
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -1272,7 +1089,7 @@ class TestEnsembleExecutor:
                 return_value=mock_fallback_model,
             ),
             patch.object(
-                executor,
+                executor._llm_agent_runner,
                 "_load_role_from_config",
                 new_callable=AsyncMock,
                 return_value=Mock(name="oauth-agent", prompt="Test prompt"),
@@ -1374,7 +1191,7 @@ class TestEnsembleExecutor:
                 return_value=mock_fallback_model,
             ),
             patch.object(
-                executor,
+                executor._llm_agent_runner,
                 "_load_role_from_config",
                 new_callable=AsyncMock,
                 return_value=Mock(name="failing-agent", prompt="Test prompt"),
@@ -1482,7 +1299,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -1596,7 +1415,9 @@ class TestEnsembleExecutor:
                 executor, "execute_with_user_input", new_callable=AsyncMock
             ) as mock_execute_interactive,
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -1729,7 +1550,9 @@ class TestEnsembleExecutor:
                 executor, "execute_with_user_input", new_callable=AsyncMock
             ) as mock_execute_interactive,
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -1807,7 +1630,9 @@ class TestEnsembleExecutor:
         # Mock the role and model loading methods
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -1895,15 +1720,16 @@ class TestEnsembleExecutor:
         # Mock the script detection and agent creation
         with (
             patch(
-                "llm_orc.core.execution.ensemble_execution.EnhancedScriptAgent",
+                "llm_orc.core.execution.script_agent_runner.EnhancedScriptAgent",
                 return_value=mock_script_agent,
             ),
             patch(
-                "llm_orc.core.execution.ensemble_execution.ScriptUserInputHandler",
+                "llm_orc.core.execution.script_agent_runner.ScriptUserInputHandler",
                 return_value=mock_user_input_detection,
             ) as mock_handler_class,
             patch("os.path.exists", return_value=True),
             patch("subprocess.run") as mock_subprocess_run,
+            patch("builtins.input", return_value="Test User"),
         ):
             # Mock subprocess to simulate user input collection
             mock_subprocess_run.return_value.stdout = (
@@ -2170,7 +1996,9 @@ class TestEnsembleExecutor:
 
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -2186,8 +2014,7 @@ class TestEnsembleExecutor:
             results_dict: dict[str, Any] = {}
             phase_index = 0
 
-            # This should fail initially since the method doesn't exist yet
-            has_errors = await executor._execute_phase_with_monitoring(
+            has_errors, user_inputs = await executor._execute_phase_with_monitoring(
                 phase_index, phase_agents, input_data, results_dict
             )
 
@@ -2195,8 +2022,9 @@ class TestEnsembleExecutor:
             assert len(results_dict) == 1
             assert "agent1" in results_dict
 
-            # Verify return value
+            # Verify return values
             assert isinstance(has_errors, bool)
+            assert isinstance(user_inputs, int)
 
     @pytest.mark.asyncio
     async def test_finalize_execution_results(
@@ -2292,7 +2120,9 @@ class TestEnsembleExecutor:
 
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,
@@ -2356,7 +2186,9 @@ class TestEnsembleExecutor:
 
         with (
             patch.object(
-                executor, "_load_role_from_config", new_callable=AsyncMock
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
             ) as mock_load_role,
             patch.object(
                 executor._model_factory,

@@ -303,120 +303,18 @@ class DependencyResolver:
         else:
             return [agent for agent in agents if not self.has_dependencies(agent)]
 
-    def validate_dependency_chain(self, agents: list[dict[str, Any]]) -> list[str]:
-        """Validate dependency chain and return list of validation errors."""
-        # Perform basic validation (self-deps and missing deps)
-        errors = _validate_basic_dependencies(agents)
+    @staticmethod
+    def get_agent_input(input_data: str | dict[str, str], agent_name: str) -> str:
+        """Get appropriate input for an agent from uniform or per-agent input.
 
-        # Check for circular dependencies only if basic validation passes
-        if not errors:
-            circular_errors = _detect_circular_dependencies(agents, self)
-            errors.extend(circular_errors)
+        Args:
+            input_data: A string for uniform input, or a dict mapping
+                       agent names to their specific enhanced input
+            agent_name: Name of the agent to get input for
 
-        return errors
-
-
-def _validate_basic_dependencies(agents: list[dict[str, Any]]) -> list[str]:
-    """Validate basic dependency requirements (self-deps and missing deps).
-
-    Args:
-        agents: List of agent configurations
-
-    Returns:
-        List of validation error messages
-    """
-    errors = []
-    agent_names = {agent["name"] for agent in agents}
-
-    for agent in agents:
-        agent_name = agent["name"]
-        dependencies = agent.get("depends_on", [])
-
-        # Check for self-dependency
-        if agent_name in dependencies:
-            errors.append(f"Agent '{agent_name}' cannot depend on itself")
-
-        # Check for missing dependencies
-        for dep in dependencies:
-            if dep not in agent_names:
-                errors.append(
-                    f"Agent '{agent_name}' depends on non-existent agent '{dep}'"
-                )
-
-    return errors
-
-
-def _find_agent_by_name(
-    agents: list[dict[str, Any]], agent_name: str
-) -> dict[str, Any] | None:
-    """Find agent configuration by name.
-
-    Args:
-        agents: List of agent configurations
-        agent_name: Name of agent to find
-
-    Returns:
-        Agent configuration or None if not found
-    """
-    return next((a for a in agents if a["name"] == agent_name), None)
-
-
-def _check_cycle_from_node(
-    agent_name: str,
-    agents: list[dict[str, Any]],
-    resolver: DependencyResolver,
-    visited: set[str],
-    rec_stack: set[str],
-) -> bool:
-    """Check for cycles starting from a specific agent node.
-
-    Args:
-        agent_name: Starting agent name
-        agents: List of agent configurations
-        resolver: Dependency resolver for getting dependencies
-        visited: Set of already visited nodes
-        rec_stack: Set of nodes in current recursion stack
-
-    Returns:
-        True if cycle detected, False otherwise
-    """
-    if agent_name in rec_stack:
-        return True
-    if agent_name in visited:
-        return False
-
-    visited.add(agent_name)
-    rec_stack.add(agent_name)
-
-    agent_config = _find_agent_by_name(agents, agent_name)
-    if agent_config:
-        for dep in resolver.get_dependencies(agent_config):
-            if _check_cycle_from_node(dep, agents, resolver, visited, rec_stack):
-                return True
-
-    rec_stack.remove(agent_name)
-    return False
-
-
-def _detect_circular_dependencies(
-    agents: list[dict[str, Any]], resolver: DependencyResolver
-) -> list[str]:
-    """Detect circular dependencies using depth-first search.
-
-    Args:
-        agents: List of agent configurations
-        resolver: Dependency resolver instance for getting dependencies
-
-    Returns:
-        List of error messages (empty if no cycles detected)
-    """
-    visited: set[str] = set()
-    rec_stack: set[str] = set()
-
-    for agent in agents:
-        agent_name = agent["name"]
-        if agent_name not in visited:
-            if _check_cycle_from_node(agent_name, agents, resolver, visited, rec_stack):
-                return ["Circular dependency detected in agent chain"]
-
-    return []
+        Returns:
+            Input string for the specified agent
+        """
+        if isinstance(input_data, dict):
+            return input_data.get(agent_name, "")
+        return input_data

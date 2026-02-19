@@ -663,7 +663,7 @@ class TestEnsembleExecutionPerformance:
             side_effect=mock_load_model_with_delay,
         ):
             # Mock role loading (not relevant for this test)
-            with patch.object(executor, "_load_role_from_config"):
+            with patch.object(executor._llm_agent_runner, "_load_role_from_config"):
                 # Execute the test
                 start_time = time.time()
                 # Use main execution method with performance optimization
@@ -758,7 +758,7 @@ class TestEnsembleExecutionPerformance:
             executor._model_factory, "load_model", side_effect=mock_load_model_tracking
         ):
             # Mock role loading (not relevant for this test)
-            with patch.object(executor, "_load_role_from_config"):
+            with patch.object(executor._llm_agent_runner, "_load_role_from_config"):
                 # Execute the test
                 # Use main execution method with performance optimization
                 await executor.execute(config, "test input")
@@ -860,7 +860,9 @@ class TestEnsembleExecutionPerformance:
                     mock_load_model.return_value = MagicMock()
 
                     # Mock role loading (not relevant for this test)
-                    with patch.object(executor, "_load_role_from_config"):
+                    with patch.object(
+                        executor._llm_agent_runner, "_load_role_from_config"
+                    ):
                         # Execute the test
                         # Use main execution method with performance optimization
                         await executor.execute(config, "test input")

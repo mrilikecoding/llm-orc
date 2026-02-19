@@ -1,12 +1,10 @@
 """Streaming execution and event handling for real-time visualization."""
 
 import json
-from collections.abc import Callable
 from typing import Any
 
 import click
 from rich.console import Console
-from rich.live import Live
 
 from .dependency import create_dependency_tree
 from .results_display import (
@@ -59,6 +57,8 @@ async def run_streaming_execution(
 
             # Provide the executor with direct progress control for user input
             executor._progress_controller = progress_controller
+            if hasattr(executor, "_script_agent_runner"):
+                executor._script_agent_runner._progress_controller = progress_controller
             async for event in executor.execute_streaming(ensemble_config, input_data):
                 event_type = event["type"]
 
@@ -130,186 +130,6 @@ async def _run_text_json_execution(
             click.echo(json.dumps(error_event))
         else:
             click.echo(f"Error: {e}")
-
-
-async def _run_json_streaming_execution(
-    input_data: str, ensemble_config: Any, execute_stream: Callable[..., Any]
-) -> None:
-    """Run streaming execution with JSON output."""
-    try:
-        # Stream events as JSON objects
-        async for event in execute_stream():
-            click.echo(json.dumps(event))
-    except Exception as e:
-        error_event = {"event_type": "error", "error": str(e), "timestamp": "now"}
-        click.echo(json.dumps(error_event))
-
-
-async def _run_rich_streaming_execution(
-    input_data: str,
-    ensemble_config: Any,
-    execute_stream: Callable[..., Any],
-    agents: list[dict[str, Any]],
-) -> None:
-    """Run streaming execution with Rich live display."""
-    console = Console()
-    agent_progress: dict[str, dict[str, Any]] = {}
-
-    # Initialize agent progress
-    for agent in agents:
-        agent_progress[agent["name"]] = {"status": "⏳ Pending"}
-
-    with Live(
-        create_dependency_tree(agents, dict.fromkeys(agent_progress, "pending")),
-        console=console,
-        refresh_per_second=10,
-    ) as live:
-        try:
-            async for event in execute_stream():
-                _handle_streaming_event(event, agent_progress)
-
-                # Update the live display
-                statuses = {
-                    name: info["status"] for name, info in agent_progress.items()
-                }
-                live.update(create_dependency_tree(agents, statuses))
-
-                # Check if execution completed
-                if event.get("event_type") == "execution_completed":
-                    _process_execution_completed_event(event)
-                    break
-
-        except Exception as e:
-            console.print(f"[red]Error during execution: {e}[/red]")
-
-
-def _handle_streaming_event(
-    event: dict[str, Any], agent_progress: dict[str, dict[str, Any]]
-) -> None:
-    """Handle individual streaming events."""
-    event_type = event.get("event_type")
-    agent_name = event.get("agent_name")
-
-    if not agent_name:
-        return
-
-    if agent_name not in agent_progress:
-        agent_progress[agent_name] = {}
-
-    if event_type == "agent_started":
-        _update_agent_progress_status(agent_name, "🔄 In Progress", agent_progress)
-    elif event_type == "agent_completed":
-        _update_agent_progress_status(agent_name, "✅ Completed", agent_progress)
-    elif event_type == "agent_failed":
-        _update_agent_progress_status(agent_name, "❌ Failed", agent_progress)
-        agent_progress[agent_name]["error"] = event.get("error", "Unknown error")
-    elif event_type == "fallback_started":
-        _handle_fallback_started_event(event, agent_progress)
-    elif event_type == "fallback_completed":
-        _handle_fallback_completed_event(event, agent_progress)
-    elif event_type == "fallback_failed":
-        _handle_fallback_failed_event(event, agent_progress)
-
-
-def _process_execution_completed_event(event: dict[str, Any]) -> None:
-    """Process the execution completed event."""
-    results = event.get("results", {})
-    # metadata = event.get("metadata", {})  # Unused
-
-    # Display final results
-    console = Console()
-    console.print("\n[bold green]✅ Execution Completed[/bold green]")
-
-    # Show summary
-    successful = len([r for r in results.values() if r.get("status") == "success"])
-    total = len(results)
-    console.print(f"Results: {successful}/{total} agents successful")
-
-
-def _update_agent_progress_status(
-    agent_name: str, status: str, agent_progress: dict[str, dict[str, Any]]
-) -> None:
-    """Update the status of a specific agent."""
-    if agent_name not in agent_progress:
-        agent_progress[agent_name] = {}
-    agent_progress[agent_name]["status"] = status
-
-
-def _update_agent_status_by_names(
-    agent_names: list[str], status: str, agent_progress: dict[str, dict[str, Any]]
-) -> None:
-    """Update status for multiple agents by name."""
-    for agent_name in agent_names:
-        _update_agent_progress_status(agent_name, status, agent_progress)
-
-
-def _handle_fallback_started_event(
-    event: dict[str, Any], agent_progress: dict[str, dict[str, Any]]
-) -> None:
-    """Handle fallback started event."""
-    agent_name = event.get("agent_name")
-    original_model = event.get("original_model")
-    fallback_model = event.get("fallback_model")
-
-    if agent_name:
-        _update_agent_progress_status(
-            agent_name,
-            f"🔄 Fallback: {original_model} → {fallback_model}",
-            agent_progress,
-        )
-
-
-def _handle_fallback_completed_event(
-    event: dict[str, Any], agent_progress: dict[str, dict[str, Any]]
-) -> None:
-    """Handle fallback completed event."""
-    agent_name = event.get("agent_name")
-    fallback_model = event.get("fallback_model")
-
-    if agent_name:
-        _update_agent_progress_status(
-            agent_name, f"✅ Completed via {fallback_model}", agent_progress
-        )
-
-
-def _handle_fallback_failed_event(
-    event: dict[str, Any], agent_progress: dict[str, dict[str, Any]]
-) -> None:
-    """Handle fallback failed event."""
-    agent_name = event.get("agent_name")
-    error = event.get("error", "Fallback failed")
-
-    if agent_name:
-        _update_agent_progress_status(agent_name, "❌ Fallback Failed", agent_progress)
-        agent_progress[agent_name]["error"] = error
-
-
-# Text mode streaming event handlers
-def _handle_text_fallback_started(event: dict[str, Any]) -> None:
-    """Handle fallback started in text mode."""
-    agent_name = event.get("agent_name")
-    original_model = event.get("original_model")
-    fallback_model = event.get("fallback_model")
-
-    click.echo(
-        f"🔄 {agent_name}: Falling back from {original_model} to {fallback_model}"
-    )
-
-
-def _handle_text_fallback_completed(event: dict[str, Any]) -> None:
-    """Handle fallback completed in text mode."""
-    agent_name = event.get("agent_name")
-    fallback_model = event.get("fallback_model")
-
-    click.echo(f"✅ {agent_name}: Completed using fallback model {fallback_model}")
-
-
-def _handle_text_fallback_failed(event: dict[str, Any]) -> None:
-    """Handle fallback failed in text mode."""
-    agent_name = event.get("agent_name")
-    error = event.get("error", "Unknown error")
-
-    click.echo(f"❌ {agent_name}: Fallback failed - {error}")
 
 
 def _handle_streaming_event_with_status(

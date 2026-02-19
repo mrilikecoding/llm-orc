@@ -45,9 +45,10 @@ class ScriptUserInputHandler:
         Returns:
             True if the script requires user input, False otherwise
         """
-        # Check if it's a reference to get_user_input.py
-        if "get_user_input.py" in script_ref_or_content:
-            return True
+        interactive_scripts = ("get_user_input.py", "confirm_action.py")
+        for script_name in interactive_scripts:
+            if script_name in script_ref_or_content:
+                return True
 
         # Check if script content contains input() function calls
         if "input(" in script_ref_or_content:
@@ -71,8 +72,9 @@ class ScriptUserInputHandler:
             if not isinstance(agent_config, dict):
                 continue
 
-            # Check if this is a script agent
-            if agent_config.get("type") != "script":
+            # Check if this is a script agent (explicit type or implicit)
+            is_script = agent_config.get("type") == "script" or "script" in agent_config
+            if not is_script:
                 continue
 
             # Check the script reference or content

@@ -6,11 +6,9 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
-from llm_orc.agents.enhanced_script_agent import EnhancedScriptAgent
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
-from llm_orc.core.config.roles import RoleDefinition
 from llm_orc.core.execution.agent_execution_coordinator import AgentExecutionCoordinator
 from llm_orc.core.execution.agent_executor import AgentExecutor
 from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
@@ -19,10 +17,10 @@ from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.fan_out_expander import FanOutExpander
 from llm_orc.core.execution.fan_out_gatherer import FanOutGatherer
-from llm_orc.core.execution.input_enhancer import InputEnhancer
-from llm_orc.core.execution.orchestration import Agent
+from llm_orc.core.execution.llm_agent_runner import LlmAgentRunner
 from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.results_processor import ResultsProcessor
+from llm_orc.core.execution.script_agent_runner import ScriptAgentRunner
 from llm_orc.core.execution.script_cache import ScriptCache, ScriptCacheConfig
 from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
 from llm_orc.core.execution.streaming_progress_tracker import StreamingProgressTracker
@@ -60,7 +58,6 @@ class EnsembleExecutor:
         )
         self._dependency_analyzer = DependencyAnalyzer()
         self._dependency_resolver = DependencyResolver(self._get_agent_role_description)
-        self._input_enhancer = InputEnhancer()
         self._usage_collector = UsageCollector()
         self._results_processor = ResultsProcessor()
         self._streaming_progress_tracker = StreamingProgressTracker()
@@ -83,20 +80,27 @@ class EnsembleExecutor:
             self._performance_config, agent_executor_wrapper
         )
 
-        # Note: AgentOrchestrator not used in current simplified implementation
-
-        # Keep existing agent executor for backward compatibility
-        self._agent_executor = AgentExecutor(
-            self._performance_config,
-            self._emit_performance_event,
-            self._resolve_model_profile_to_config,
-            self._execute_agent_with_timeout,
-            self._input_enhancer.get_agent_input,
-        )
+        self._agent_executor = AgentExecutor(self._performance_config)
 
         # Initialize script cache for reproducible research
         self._script_cache_config = self._load_script_cache_config()
         self._script_cache = ScriptCache(self._script_cache_config)
+
+        self._script_agent_runner = ScriptAgentRunner(
+            self._script_cache,
+            self._usage_collector,
+            self._progress_controller,
+            self._emit_performance_event,
+            self._project_dir,
+        )
+
+        self._llm_agent_runner = LlmAgentRunner(
+            self._model_factory,
+            self._config_manager,
+            self._usage_collector,
+            self._emit_performance_event,
+            self._classify_failure_type,
+        )
 
     def _load_script_cache_config(self) -> ScriptCacheConfig:
         """Load script cache configuration from performance config."""
@@ -109,12 +113,6 @@ class EnsembleExecutor:
             persist_to_artifacts=cache_config.get("persist_to_artifacts", False),
             artifact_base_dir=self._artifact_manager.base_dir,
         )
-
-    async def _load_model_from_agent_config(
-        self, agent_config: dict[str, Any]
-    ) -> ModelInterface:
-        """Delegate to model factory."""
-        return await self._model_factory.load_model_from_agent_config(agent_config)
 
     # Phase 5: Performance hooks system removed - events go directly to streaming queue
 
@@ -307,7 +305,7 @@ class EnsembleExecutor:
                 )
 
             # Execute phase with full monitoring
-            phase_has_errors = await self._execute_phase_with_monitoring(
+            phase_has_errors, _ = await self._execute_phase_with_monitoring(
                 phase_index, phase_agents, phase_input, results_dict, len(phases)
             )
             has_errors = has_errors or phase_has_errors
@@ -412,30 +410,21 @@ class EnsembleExecutor:
         input_data: str | dict[str, str],
         results_dict: dict[str, Any],
         total_phases: int = 1,
-    ) -> bool:
-        """Execute a phase with full monitoring and event handling.
-
-        Args:
-            phase_index: Index of the current phase
-            phase_agents: List of agent configs for this phase
-            input_data: Input data for this phase (base or enhanced with dependencies)
-            results_dict: Results dictionary to populate
-            total_phases: Total number of phases for event reporting
+    ) -> tuple[bool, int]:
+        """Execute a phase with full monitoring, fan-out, and user input counting.
 
         Returns:
-            True if any errors occurred in this phase
+            Tuple of (has_errors, user_inputs_collected)
         """
         # Detect and expand fan-out agents (issue #73)
         fan_out_agents = self._detect_fan_out_in_phase(phase_agents, results_dict)
-        expanded_agents = list(phase_agents)  # Copy to avoid modifying original
+        expanded_agents = list(phase_agents)
         fan_out_original_names: list[str] = []
 
         for agent_config, upstream_array in fan_out_agents:
-            # Remove original fan-out agent from list
             expanded_agents = [
                 a for a in expanded_agents if a["name"] != agent_config["name"]
             ]
-            # Add expanded instances
             instances = self._expand_fan_out_agent(agent_config, upstream_array)
             expanded_agents.extend(instances)
             fan_out_original_names.append(agent_config["name"])
@@ -455,9 +444,14 @@ class EnsembleExecutor:
         await self._start_phase_monitoring(phase_index, expanded_agents)
 
         try:
-            # Execute agents in this phase in parallel (including fan-out instances)
+            # Execute agents in this phase in parallel
             phase_results = await self._execute_agents_in_phase_parallel(
                 expanded_agents, input_data
+            )
+
+            # Count user inputs from phase results
+            user_inputs_from_phase = self._count_user_inputs_from_phase_results(
+                phase_results
             )
 
             # Process parallel execution results
@@ -480,7 +474,7 @@ class EnsembleExecutor:
         # Emit phase completion event
         self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
 
-        return phase_has_errors
+        return phase_has_errors, user_inputs_from_phase
 
     async def execute_with_user_input(
         self,
@@ -530,7 +524,7 @@ class EnsembleExecutor:
             (
                 phase_has_errors,
                 user_inputs_from_phase,
-            ) = await self._execute_phase_with_monitoring_interactive(
+            ) = await self._execute_phase_with_monitoring(
                 phase_index, phase_agents, phase_input, results_dict, len(phases)
             )
 
@@ -587,67 +581,6 @@ class EnsembleExecutor:
         """
         final_result["metadata"]["interactive_mode"] = True
         final_result["metadata"]["user_inputs_collected"] = user_inputs_collected
-
-    async def _execute_phase_with_monitoring_interactive(
-        self,
-        phase_index: int,
-        phase_agents: list[dict[str, Any]],
-        input_data: str | dict[str, str],
-        results_dict: dict[str, Any],
-        total_phases: int = 1,
-    ) -> tuple[bool, int]:
-        """Execute a phase with monitoring and user input counting.
-
-        Args:
-            phase_index: Index of the current phase
-            phase_agents: List of agent configs for this phase
-            input_data: Input data for this phase (base or enhanced with dependencies)
-            results_dict: Results dictionary to populate
-            total_phases: Total number of phases for event reporting
-
-        Returns:
-            Tuple of (has_errors, user_inputs_collected)
-        """
-        # Emit phase started event
-        self._emit_performance_event(
-            "phase_started",
-            {
-                "phase_index": phase_index,
-                "phase_agents": [agent["name"] for agent in phase_agents],
-                "total_phases": total_phases,
-            },
-        )
-
-        # Start per-phase monitoring for performance feedback
-        phase_start_time = time.time()
-        await self._start_phase_monitoring(phase_index, phase_agents)
-
-        try:
-            # Execute agents in this phase in parallel
-            # For interactive mode, we handle user input collection here
-            phase_results = await self._execute_agents_in_phase_parallel(
-                phase_agents, input_data
-            )
-
-            # Count user inputs from phase results
-            user_inputs_from_phase = self._count_user_inputs_from_phase_results(
-                phase_results
-            )
-
-            # Process parallel execution results
-            phase_has_errors = await self._process_phase_results(
-                phase_results, results_dict, phase_agents
-            )
-
-        finally:
-            # Stop per-phase monitoring and collect metrics
-            phase_duration = time.time() - phase_start_time
-            await self._stop_phase_monitoring(phase_index, phase_agents, phase_duration)
-
-        # Emit phase completion event
-        self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
-
-        return phase_has_errors, user_inputs_from_phase
 
     async def _finalize_execution_results(
         self,
@@ -798,483 +731,20 @@ class EnsembleExecutor:
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
         """Execute script agent with caching and resource monitoring."""
-        script_content = agent_config.get("script", "")
-        parameters = agent_config.get("parameters", {})
-
-        # Check cache first
-        cache_key_params = {
-            "input_data": input_data,
-            "parameters": parameters,
-        }
-
-        cached_result = self._script_cache.get(script_content, cache_key_params)
-        if cached_result is not None:
-            # Cache hit - return cached result
-            return cached_result.get("output", ""), None
-
-        # Cache miss - execute script and cache result
-        start_time = time.time()
-        response, model_instance = await self._execute_script_agent_without_cache(
-            agent_config, input_data
-        )
-        duration_ms = int((time.time() - start_time) * 1000)
-
-        # Cache the result
-        cache_result = {
-            "output": response,
-            "execution_metadata": {"duration_ms": duration_ms},
-            "success": True,
-        }
-        self._script_cache.set(script_content, cache_key_params, cache_result)
-
-        return response, model_instance
-
-    async def _execute_script_agent_without_cache(
-        self, agent_config: dict[str, Any], input_data: str
-    ) -> tuple[str, ModelInterface | None]:
-        """Execute script agent with resource monitoring using EnhancedScriptAgent."""
-        agent_name = agent_config["name"]
-
-        # Start resource monitoring for this agent
-        self._usage_collector.start_agent_resource_monitoring(agent_name)
-
-        try:
-            # Use EnhancedScriptAgent for JSON I/O support
-            script_agent = EnhancedScriptAgent(
-                agent_name, agent_config, project_dir=self._project_dir
-            )
-
-            # Sample resources during execution
-            self._usage_collector.sample_agent_resources(agent_name)
-
-            # Execute script with appropriate input handling
-            response = await self._execute_script_with_input_handling(
-                script_agent, agent_config, input_data
-            )
-
-            # Final sample before completion
-            self._usage_collector.sample_agent_resources(agent_name)
-
-            # Convert response to string if it's a dict (JSON output)
-            if isinstance(response, dict):
-                import json
-
-                response = json.dumps(response)
-
-            return response, None  # Script agents don't have model instances
-        finally:
-            # Always finalize resource monitoring
-            self._usage_collector.finalize_agent_resource_monitoring(agent_name)
-
-    async def _execute_script_with_input_handling(
-        self,
-        script_agent: EnhancedScriptAgent,
-        agent_config: dict[str, Any],
-        input_data: str,
-    ) -> str | dict[str, Any]:
-        """Execute script with appropriate input format and interaction handling.
-
-        Args:
-            script_agent: Script agent to execute
-            agent_config: Agent configuration
-            input_data: Input data as JSON string
-
-        Returns:
-            Script execution response
-        """
-        import json
-
-        try:
-            parsed_input = json.loads(input_data)
-            return await self._execute_with_parsed_input(
-                script_agent, agent_config, input_data, parsed_input
-            )
-        except (json.JSONDecodeError, TypeError):
-            return await self._execute_with_raw_input(
-                script_agent, agent_config, input_data
-            )
-
-    async def _execute_with_parsed_input(
-        self,
-        script_agent: EnhancedScriptAgent,
-        agent_config: dict[str, Any],
-        input_data: str,
-        parsed_input: dict[str, Any],
-    ) -> str | dict[str, Any]:
-        """Execute script with parsed JSON input.
-
-        Args:
-            script_agent: Script agent to execute
-            agent_config: Agent configuration
-            input_data: Original input data string
-            parsed_input: Parsed input dictionary
-
-        Returns:
-            Script execution response
-        """
-        import json
-
-        # Check if input is ScriptAgentInput (ADR-001)
-        if self._is_script_agent_input(parsed_input):
-            # ScriptAgentInput JSON - pass directly to script without wrapping
-            return await script_agent.execute_with_schema_json(input_data)
-
-        # Legacy input format - check if user input is needed
-        if self._requires_user_input(agent_config):
-            return await self._execute_interactive_script_agent(
-                script_agent, parsed_input
-            )
-
-        # Use regular execute for non-interactive scripts (convert dict to string)
-        return await script_agent.execute(json.dumps(parsed_input))
-
-    async def _execute_with_raw_input(
-        self,
-        script_agent: EnhancedScriptAgent,
-        agent_config: dict[str, Any],
-        input_data: str,
-    ) -> str | dict[str, Any]:
-        """Execute script with raw string input.
-
-        Args:
-            script_agent: Script agent to execute
-            agent_config: Agent configuration
-            input_data: Raw input data string
-
-        Returns:
-            Script execution response
-        """
-        if self._requires_user_input(agent_config):
-            return await self._execute_interactive_script_agent(
-                script_agent, input_data
-            )
-
-        return await script_agent.execute(input_data)
-
-    def _is_script_agent_input(self, parsed_input: dict[str, Any]) -> bool:
-        """Check if parsed input is a ScriptAgentInput object.
-
-        Args:
-            parsed_input: Parsed input dictionary
-
-        Returns:
-            True if input is ScriptAgentInput format
-        """
-        return (
-            isinstance(parsed_input, dict)
-            and "agent_name" in parsed_input
-            and "input_data" in parsed_input
-        )
-
-    def _requires_user_input(self, agent_config: dict[str, Any]) -> bool:
-        """Check if script requires user input.
-
-        Args:
-            agent_config: Agent configuration
-
-        Returns:
-            True if script requires user input
-        """
-        user_input_detection = ScriptUserInputHandler()
-        script_ref = agent_config.get("script", "")
-        return user_input_detection.requires_user_input(script_ref)
-
-    async def _execute_interactive_script_agent(
-        self, script_agent: EnhancedScriptAgent, input_data: str | dict[str, Any]
-    ) -> str:
-        """Execute script agent interactively with terminal access for input().
-
-        Args:
-            script_agent: The script agent to execute
-            input_data: Input data for the agent
-
-        Returns:
-            Script output as string
-        """
-        # First try to directly pause the progress display if available
-        if hasattr(self, "_progress_controller"):
-            if self._progress_controller:
-                try:
-                    # Extract prompt from script parameters if available
-                    prompt = script_agent.parameters.get("prompt", "")
-                    self._progress_controller.pause_for_user_input(
-                        script_agent.name, prompt
-                    )
-                except Exception:
-                    pass  # Fall back to event system if direct control fails
-
-        # Also emit event for any other listeners
-        self._emit_performance_event(
-            "user_input_required",
-            {
-                "agent_name": script_agent.name,
-                "script": script_agent.script,
-                "message": "Waiting for user input...",
-            },
-        )
-        import json
-        import os
-        import subprocess
-
-        # Get the resolved script path
-        resolved_script = script_agent._script_resolver.resolve_script_path(
-            script_agent.script
-        )
-
-        if not os.path.exists(resolved_script):
-            raise RuntimeError(f"Script file not found: {resolved_script}")
-
-        # Prepare environment with input data and parameters
-        env = os.environ.copy()
-        env.update(script_agent.environment)
-
-        # Pass data via environment instead of stdin so script can access terminal
-        # Convert input_data to JSON string if it's a dict
-        if isinstance(input_data, dict):
-            env["INPUT_DATA"] = json.dumps(input_data)
-        else:
-            env["INPUT_DATA"] = input_data
-        env["AGENT_PARAMETERS"] = json.dumps(script_agent.parameters)
-
-        # Determine interpreter
-        interpreter = script_agent._get_interpreter(resolved_script)
-
-        # Execute with stdin inherited but stdout captured
-        # We need stdout for the result, but stdin must be connected to terminal
-        result = subprocess.run(
-            interpreter + [resolved_script],
-            env=env,
-            timeout=script_agent.timeout,
-            stdin=None,  # Inherit stdin from parent (terminal access)
-            stdout=subprocess.PIPE,  # Capture stdout for result
-            stderr=None,  # Let stderr show in terminal
-            text=True,
-            check=False,
-        )
-
-        if result.returncode != 0:
-            return json.dumps(
-                {
-                    "success": False,
-                    "error": f"Script exited with code {result.returncode}",
-                }
-            )
-
-        # First try to directly resume the progress display if available
-        if hasattr(self, "_progress_controller") and self._progress_controller:
-            try:
-                self._progress_controller.resume_from_user_input(script_agent.name)
-            except Exception:
-                # Fall back to event system if direct control fails  # nosec B110
-                pass
-
-        # Also emit event for any other listeners
-        self._emit_performance_event(
-            "user_input_completed",
-            {
-                "agent_name": script_agent.name,
-                "message": "User input completed, continuing...",
-            },
-        )
-
-        # Return the actual script output
-        if result.stdout:
-            return result.stdout.strip()
-        else:
-            return json.dumps(
-                {
-                    "success": True,
-                    "message": "Interactive script completed (no output)",
-                }
-            )
+        return await self._script_agent_runner.execute(agent_config, input_data)
 
     async def _execute_llm_agent(
         self, agent_config: dict[str, Any], input_data: str
     ) -> tuple[str, ModelInterface | None]:
         """Execute LLM agent with fallback handling and resource monitoring."""
-        agent_name = agent_config["name"]
-
-        # Start resource monitoring for this agent
-        self._usage_collector.start_agent_resource_monitoring(agent_name)
-
-        try:
-            role = await self._load_role_from_config(agent_config)
-            model = await self._load_model_with_fallback(agent_config)
-            agent = Agent(agent_name, role, model)
-
-            # Take periodic resource samples during execution
-            self._usage_collector.sample_agent_resources(agent_name)
-
-            # Generate response with fallback handling for runtime failures
-            try:
-                response = await agent.respond_to_message(input_data)
-
-                # Final resource sample before completing
-                self._usage_collector.sample_agent_resources(agent_name)
-
-                return response, model
-            except Exception as e:
-                return await self._handle_runtime_fallback(
-                    agent_config, role, input_data, e
-                )
-        finally:
-            # Always finalize resource monitoring, even if execution failed
-            self._usage_collector.finalize_agent_resource_monitoring(agent_name)
-
-    async def _load_model_with_fallback(
-        self, agent_config: dict[str, Any]
-    ) -> ModelInterface:
-        """Load model with fallback handling for loading failures."""
-        try:
-            return await self._model_factory.load_model_from_agent_config(agent_config)
-        except Exception as model_loading_error:
-            return await self._handle_model_loading_fallback(
-                agent_config, model_loading_error
-            )
-
-    async def _handle_model_loading_fallback(
-        self, agent_config: dict[str, Any], model_loading_error: Exception
-    ) -> ModelInterface:
-        """Handle model loading failure with fallback."""
-        fallback_model = await self._model_factory.get_fallback_model(
-            context=f"agent_{agent_config['name']}",
-            original_profile=agent_config.get("model_profile"),
-        )
-        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
-
-        # Emit enhanced fallback event for model loading failure
-        failure_type = self._classify_failure_type(str(model_loading_error))
-        self._emit_performance_event(
-            "agent_fallback_started",
-            {
-                "agent_name": agent_config["name"],
-                "failure_type": failure_type,
-                "original_error": str(model_loading_error),
-                "original_model_profile": agent_config.get("model_profile", "unknown"),
-                "fallback_model_profile": None,  # No configurable fallback
-                "fallback_model_name": fallback_model_name,
-            },
-        )
-        return fallback_model
-
-    async def _handle_runtime_fallback(
-        self,
-        agent_config: dict[str, Any],
-        role: RoleDefinition,
-        input_data: str,
-        error: Exception,
-    ) -> tuple[str, ModelInterface]:
-        """Handle runtime failure with fallback model."""
-        fallback_model = await self._model_factory.get_fallback_model(
-            context=f"agent_{agent_config['name']}"
-        )
-        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
-
-        # Emit enhanced fallback event for runtime failure
-        failure_type = self._classify_failure_type(str(error))
-        self._emit_performance_event(
-            "agent_fallback_started",
-            {
-                "agent_name": agent_config["name"],
-                "failure_type": failure_type,
-                "original_error": str(error),
-                "original_model_profile": agent_config.get("model_profile", "unknown"),
-                "fallback_model_profile": None,  # No configurable fallback
-                "fallback_model_name": fallback_model_name,
-            },
-        )
-
-        # Create new agent with fallback model
-        fallback_agent = Agent(agent_config["name"], role, fallback_model)
-
-        # Try with fallback model
-        try:
-            response = await fallback_agent.respond_to_message(input_data)
-            self._emit_fallback_success_event(
-                agent_config["name"], fallback_model, response
-            )
-            return response, fallback_model
-        except Exception as fallback_error:
-            self._emit_fallback_failure_event(
-                agent_config["name"], fallback_model_name, fallback_error
-            )
-            raise fallback_error
-
-    def _emit_fallback_success_event(
-        self, agent_name: str, fallback_model: ModelInterface, response: str
-    ) -> None:
-        """Emit fallback success event."""
-        fallback_model_name = getattr(fallback_model, "model_name", "unknown")
-        response_preview = response[:100] + "..." if len(response) > 100 else response
-        self._emit_performance_event(
-            "agent_fallback_completed",
-            {
-                "agent_name": agent_name,
-                "fallback_model_name": fallback_model_name,
-                "response_preview": response_preview,
-            },
-        )
-
-    def _emit_fallback_failure_event(
-        self, agent_name: str, fallback_model_name: str, fallback_error: Exception
-    ) -> None:
-        """Emit fallback failure event."""
-        fallback_failure_type = self._classify_failure_type(str(fallback_error))
-        self._emit_performance_event(
-            "agent_fallback_failed",
-            {
-                "agent_name": agent_name,
-                "failure_type": fallback_failure_type,
-                "fallback_error": str(fallback_error),
-                "fallback_model_name": fallback_model_name,
-            },
-        )
-
-    async def _load_role_from_config(
-        self, agent_config: dict[str, Any]
-    ) -> RoleDefinition:
-        """Load a role definition from agent configuration."""
-        agent_name = agent_config["name"]
-
-        # Resolve model profile to get enhanced configuration
-        enhanced_config = await self._resolve_model_profile_to_config(agent_config)
-
-        # Use system_prompt from enhanced config if available, otherwise use fallback
-        if "system_prompt" in enhanced_config:
-            prompt = enhanced_config["system_prompt"]
-        else:
-            prompt = f"You are a {agent_name}. Provide helpful analysis."
-
-        return RoleDefinition(name=agent_name, prompt=prompt)
+        return await self._llm_agent_runner.execute(agent_config, input_data)
 
     async def _resolve_model_profile_to_config(
         self, agent_config: dict[str, Any]
     ) -> dict[str, Any]:
-        """Resolve model profile and merge with agent config.
-
-        Agent config takes precedence over model profile defaults.
-        """
-        enhanced_config = agent_config.copy()
-
-        # If model_profile is specified, get its configuration
-        if "model_profile" in agent_config:
-            profiles = self._config_manager.get_model_profiles()
-
-            profile_name = agent_config["model_profile"]
-            if profile_name in profiles:
-                profile_config = profiles[profile_name]
-                # Merge profile defaults with agent config
-                # (agent config takes precedence)
-                enhanced_config = {**profile_config, **agent_config}
-
-        return enhanced_config
-
-    async def _load_role(self, role_name: str) -> RoleDefinition:
-        """Load a role definition."""
-        # For now, create a simple role
-        # TODO: Load from role configuration files
-        return RoleDefinition(
-            name=role_name, prompt=f"You are a {role_name}. Provide helpful analysis."
+        """Resolve model profile and merge with agent config."""
+        return await self._llm_agent_runner._resolve_model_profile_to_config(
+            agent_config
         )
 
     async def _execute_agents_in_phase_parallel(
@@ -1348,7 +818,7 @@ class EnsembleExecutor:
             await self._progress_controller.update_agent_progress(agent_name, "started")
 
         # Get agent input and timeout
-        agent_input = self._input_enhancer.get_agent_input(phase_input, agent_name)
+        agent_input = self._dependency_resolver.get_agent_input(phase_input, agent_name)
         timeout = await self._get_agent_timeout(agent_config)
 
         # Execute agent with timeout coordination
@@ -1577,22 +1047,6 @@ class EnsembleExecutor:
         return await self._execution_coordinator.execute_agent_with_timeout(
             agent_config, input_data, timeout_seconds
         )
-
-    def _analyze_dependencies(
-        self, llm_agents: list[dict[str, Any]]
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """Analyze agent dependencies and return independent and dependent agents."""
-        independent_agents = []
-        dependent_agents = []
-
-        for agent_config in llm_agents:
-            dependencies = agent_config.get("depends_on", [])
-            if dependencies and len(dependencies) > 0:
-                dependent_agents.append(agent_config)
-            else:
-                independent_agents.append(agent_config)
-
-        return independent_agents, dependent_agents
 
     def _get_agent_role_description(self, agent_name: str) -> str | None:
         """Get a human-readable role description for an agent."""

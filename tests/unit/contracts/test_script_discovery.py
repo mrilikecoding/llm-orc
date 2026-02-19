@@ -3,7 +3,6 @@
 import tempfile
 from pathlib import Path
 
-import pytest
 from pydantic import BaseModel, Field
 
 from llm_orc.contracts.contract_validator import ContractValidator
@@ -231,33 +230,6 @@ class RegularClass:
             discovered = validator._discover_scripts()
 
             assert len(discovered) == 0
-
-    @pytest.mark.skip(
-        reason="ContractValidator only searches .llm-orc/scripts/, not library. "
-        "Library scripts need to be copied to .llm-orc/ first via 'llm-orc init'."
-    )
-    def test_discover_scripts_finds_existing_json_extract_script(self) -> None:
-        """Test discovery can find the actual JsonExtractScript in the project."""
-        # Use the actual project directory
-        project_root = Path(__file__).parent.parent.parent.parent
-        validator = ContractValidator(str(project_root))
-
-        discovered = validator._discover_scripts()
-
-        # Should find JsonExtractScript
-        json_extract_scripts = [
-            script for script in discovered if "json_extract" in script["name"].lower()
-        ]
-        assert len(json_extract_scripts) > 0
-
-        # Verify it has the expected contract classes
-        json_script = json_extract_scripts[0]
-        contract_classes = json_script["contract_classes"]
-        # Should find JsonExtractScript or JsonExtractReferenceScript
-        assert any(
-            "JsonExtract" in cls_name and "Script" in cls_name
-            for cls_name in contract_classes
-        ), f"Expected JsonExtract*Script class, found: {contract_classes}"
 
     def test_discover_scripts_returns_structured_data(self) -> None:
         """Test discovery returns properly structured data for each script."""

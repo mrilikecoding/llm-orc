@@ -12,7 +12,6 @@ from llm_orc.cli_modules.utils.visualization.results_display import (
     _process_agent_results,
     display_plain_text_results,
     display_results,
-    display_simplified_results,
 )
 
 
@@ -151,75 +150,6 @@ class TestDisplayPlainTextResults:
         display_plain_text_results(results, metadata, detailed=True)
 
         mock_detailed.assert_called_once_with(results, metadata, [])
-
-
-class TestDisplaySimplifiedResults:
-    """Test simplified results display."""
-
-    @patch("llm_orc.cli_modules.utils.visualization.results_display.Console")
-    @patch("llm_orc.cli_modules.utils.visualization.results_display.click.echo")
-    def test_display_simplified_results_success(
-        self, mock_echo: Mock, mock_console_class: Mock
-    ) -> None:
-        """Test simplified display with successful results."""
-        mock_console = Mock()
-        mock_console_class.return_value = mock_console
-
-        results = {
-            "agent_a": {"status": "success", "response": "Hello"},
-            "agent_b": {"status": "failed"},
-        }
-        metadata = {"usage": {"totals": {"agents_count": 2}}, "duration": "5s"}
-
-        display_simplified_results(results, metadata)
-
-        mock_echo.assert_called()
-        # Should show result from agent_a and performance summary
-        calls = []
-        for call in mock_echo.call_args_list:
-            if call[0]:  # Check if call has positional arguments
-                calls.append(call[0][0])
-        assert any("Result from agent_a:" in call for call in calls)
-        assert any("Hello" in call for call in calls)
-
-    @patch("llm_orc.cli_modules.utils.visualization.results_display.Console")
-    @patch("llm_orc.cli_modules.utils.visualization.results_display.click.echo")
-    def test_display_simplified_results_no_success(
-        self, mock_echo: Mock, mock_console_class: Mock
-    ) -> None:
-        """Test simplified display with no successful results."""
-        mock_console = Mock()
-        mock_console_class.return_value = mock_console
-
-        results = {
-            "agent_a": {"status": "failed"},
-            "agent_b": {"status": "error"},
-        }
-        metadata: dict[str, Any] = {}
-
-        display_simplified_results(results, metadata)
-
-        mock_echo.assert_called_with("❌ No successful results found")
-
-    @patch("llm_orc.cli_modules.utils.visualization.results_display.Console")
-    @patch("llm_orc.cli_modules.utils.visualization.results_display.click.echo")
-    def test_display_simplified_results_with_performance(
-        self, mock_echo: Mock, mock_console_class: Mock
-    ) -> None:
-        """Test simplified display includes performance info."""
-        mock_console = Mock()
-        mock_console_class.return_value = mock_console
-
-        results = {"agent_a": {"status": "success", "response": "Hello"}}
-        metadata = {"usage": {"totals": {"agents_count": 1}}, "duration": "2s"}
-
-        display_simplified_results(results, metadata)
-
-        calls = []
-        for call in mock_echo.call_args_list:
-            if call[0]:  # Check if call has positional arguments
-                calls.append(call[0][0])
-        assert any("⚡ 1 agents completed in 2s" in call for call in calls)
 
 
 class TestProcessAgentResults:

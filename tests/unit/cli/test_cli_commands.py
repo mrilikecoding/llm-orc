@@ -26,7 +26,6 @@ from llm_orc.cli_commands import (
     remove_auth_provider,
     reset_global_config,
     reset_local_config,
-    serve_ensemble,
 )
 
 
@@ -1072,26 +1071,6 @@ class TestListProfilesCommandHelpers:
         mock_echo.assert_any_call("    Cost per token: Not specified")
 
 
-class TestServeEnsemble:
-    """Test the serve_ensemble function."""
-
-    def test_serve_ensemble(self) -> None:
-        """Test serving an ensemble as MCP server."""
-        mock_runner = Mock()
-        mock_runner.run = Mock()
-
-        with patch(
-            "llm_orc.cli_commands.MCPServerRunner", return_value=mock_runner
-        ) as mock_runner_class:
-            serve_ensemble("test_ensemble", 8080)
-
-            # Verify runner was created with correct parameters
-            mock_runner_class.assert_called_once_with("test_ensemble", 8080)
-
-            # Verify runner.run() was called
-            mock_runner.run.assert_called_once()
-
-
 class TestConfigCommands:
     """Test configuration-related command functions."""
 
@@ -1099,9 +1078,7 @@ class TestConfigCommands:
         """Test init local config command delegation."""
         with patch("llm_orc.cli_commands.ConfigCommands") as mock_config_class:
             init_local_config("test_project")
-            mock_config_class.init_local_config.assert_called_once_with(
-                "test_project", with_scripts=True
-            )
+            mock_config_class.init_local_config.assert_called_once_with("test_project")
 
     def test_reset_global_config(self) -> None:
         """Test reset global config command delegation."""

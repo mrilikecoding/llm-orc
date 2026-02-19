@@ -28,6 +28,10 @@ class ConfigurationManager:
             # Discover from cwd
             self._local_config_dir = self._discover_local_config()
 
+        # Profile cache
+        self._profiles_cache: dict[str, dict[str, str]] | None = None
+        self._profiles_cache_mtimes: dict[str, float] = {}
+
         # Create global config directory and setup defaults
         self._global_config_dir.mkdir(parents=True, exist_ok=True)
         (self._global_config_dir / "profiles").mkdir(exist_ok=True)
@@ -293,14 +297,11 @@ class ConfigurationManager:
             else:
                 base[key] = value
 
-    def init_local_config(
-        self, project_name: str | None = None, with_scripts: bool = True
-    ) -> None:
+    def init_local_config(self, project_name: str | None = None) -> None:
         """Initialize local configuration in current directory (idempotent).
 
         Args:
             project_name: Optional project name (defaults to directory name)
-            with_scripts: Install primitive scripts from library (default: True)
         """
         local_dir = Path.cwd() / ".llm-orc"
 
@@ -355,9 +356,9 @@ class ConfigurationManager:
                 if example_template.exists():
                     shutil.copy2(example_template, local_ensemble_file)
 
-        # Copy primitive scripts from llm-orchestra-library GitHub repo (idempotent)
-        if with_scripts:
-            self._copy_primitive_scripts(local_dir / "scripts")
+        # Core primitives now live in the installed package
+        # (src/llm_orc/primitives/) and are resolved via ScriptResolver
+        # priority 1.5. No longer copy from library to avoid shadowing.
 
         # Copy profile templates to local profiles directory (idempotent)
         self._copy_profile_templates(local_dir / "profiles")
@@ -371,7 +372,18 @@ class ConfigurationManager:
                 )
 
     def get_model_profiles(self) -> dict[str, dict[str, str]]:
-        """Get merged model profiles from global and local configs."""
+        """Get merged model profiles from global and local configs.
+
+        Results are cached and invalidated when config files change.
+        """
+        # Check if cache is still valid
+        current_mtimes = self._get_profile_file_mtimes()
+        if (
+            self._profiles_cache is not None
+            and current_mtimes == self._profiles_cache_mtimes
+        ):
+            return self._profiles_cache
+
         # Start with global profiles
         global_profiles = {}
         global_config_file = self._global_config_dir / "config.yaml"
@@ -391,7 +403,21 @@ class ConfigurationManager:
 
         # Merge profiles with local taking precedence
         merged_profiles = {**global_profiles, **local_profiles}
+        self._profiles_cache = merged_profiles
+        self._profiles_cache_mtimes = current_mtimes
         return merged_profiles
+
+    def _get_profile_file_mtimes(self) -> dict[str, float]:
+        """Get modification times for profile config files."""
+        mtimes: dict[str, float] = {}
+        global_config_file = self._global_config_dir / "config.yaml"
+        if global_config_file.exists():
+            mtimes["global"] = global_config_file.stat().st_mtime
+        if self._local_config_dir:
+            local_config_file = self._local_config_dir / "config.yaml"
+            if local_config_file.exists():
+                mtimes["local"] = local_config_file.stat().st_mtime
+        return mtimes
 
     def resolve_model_profile(self, profile_name: str) -> tuple[str, str]:
         """Resolve a model profile to (model, provider) tuple."""
@@ -423,17 +449,6 @@ class ConfigurationManager:
         """
         profiles = self.get_model_profiles()
         return profiles.get(profile_name)
-
-    def _copy_primitive_scripts(self, target_scripts_dir: Path) -> None:
-        """Copy primitive scripts from llm-orchestra-library GitHub repository."""
-        from llm_orc.cli_library.library import copy_primitive_scripts
-
-        try:
-            copy_primitive_scripts(target_scripts_dir)
-        except Exception:
-            # If script copying fails, continue with init
-            # This allows offline usage
-            pass
 
     def _copy_profile_templates(self, target_profiles_dir: Path) -> None:
         """Copy profile templates from llm-orchestra-library GitHub repository."""
