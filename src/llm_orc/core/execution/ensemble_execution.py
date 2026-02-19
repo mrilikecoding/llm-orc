@@ -38,6 +38,62 @@ from llm_orc.core.validation import (
 from llm_orc.models.base import ModelInterface
 
 
+def classify_failure_type(error_message: str) -> str:
+    """Classify failure type based on error message for enhanced events.
+
+    Args:
+        error_message: The error message to classify
+
+    Returns:
+        Failure type: 'oauth_error', 'authentication_error', 'model_loading',
+        or 'runtime_error'
+    """
+    error_lower = error_message.lower()
+
+    # OAuth-specific errors
+    if any(
+        oauth_term in error_lower
+        for oauth_term in [
+            "oauth",
+            "token refresh",
+            "invalid_grant",
+            "refresh token",
+        ]
+    ):
+        return "oauth_error"
+
+    # Authentication errors (API keys, etc.)
+    if any(
+        auth_term in error_lower
+        for auth_term in [
+            "authentication",
+            "invalid x-api-key",
+            "unauthorized",
+            "401",
+        ]
+    ):
+        return "authentication_error"
+
+    # Model loading errors
+    if any(
+        loading_term in error_lower
+        for loading_term in [
+            "model loading",
+            "failed to load model",
+            "network error",
+            "connection failed",
+            "timeout",
+            "not found",
+            "not available",
+            "model provider",
+        ]
+    ):
+        return "model_loading"
+
+    # Default to runtime error
+    return "runtime_error"
+
+
 class EnsembleExecutor:
     """Executes ensembles of agents and coordinates their responses."""
 
@@ -95,7 +151,7 @@ class EnsembleExecutor:
             self._config_manager,
             self._usage_collector,
             self._emit_performance_event,
-            self._classify_failure_type,
+            classify_failure_type,
         )
 
         # Initialize execution coordinator with agent executor function
@@ -159,61 +215,6 @@ class EnsembleExecutor:
         except asyncio.QueueFull:
             # Silently ignore if queue is full to avoid breaking execution
             pass
-
-    def _classify_failure_type(self, error_message: str) -> str:
-        """Classify failure type based on error message for enhanced events.
-
-        Args:
-            error_message: The error message to classify
-
-        Returns:
-            Failure type: 'oauth_error', 'authentication_error', 'model_loading',
-            or 'runtime_error'
-        """
-        error_lower = error_message.lower()
-
-        # OAuth-specific errors
-        if any(
-            oauth_term in error_lower
-            for oauth_term in [
-                "oauth",
-                "token refresh",
-                "invalid_grant",
-                "refresh token",
-            ]
-        ):
-            return "oauth_error"
-
-        # Authentication errors (API keys, etc.)
-        if any(
-            auth_term in error_lower
-            for auth_term in [
-                "authentication",
-                "invalid x-api-key",
-                "unauthorized",
-                "401",
-            ]
-        ):
-            return "authentication_error"
-
-        # Model loading errors
-        if any(
-            loading_term in error_lower
-            for loading_term in [
-                "model loading",
-                "failed to load model",
-                "network error",
-                "connection failed",
-                "timeout",
-                "not found",
-                "not available",
-                "model provider",
-            ]
-        ):
-            return "model_loading"
-
-        # Default to runtime error
-        return "runtime_error"
 
     async def execute_streaming(
         self, config: EnsembleConfig, input_data: str
