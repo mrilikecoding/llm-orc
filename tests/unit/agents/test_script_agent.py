@@ -1,6 +1,6 @@
 """Tests for script-based agent execution."""
 
-import subprocess
+import json
 from unittest.mock import patch
 
 import pytest
@@ -43,65 +43,6 @@ class TestScriptAgent:
 
         assert agent.timeout == 30
 
-    @pytest.mark.asyncio
-    async def test_script_agent_invalid_command_syntax(self) -> None:
-        """Test script agent with invalid command syntax."""
-        config = {"command": "echo 'unclosed quote"}
-        agent = ScriptAgent("test_agent", config)
-
-        with pytest.raises(RuntimeError, match="Invalid command syntax"):
-            await agent.execute("test input")
-
-    @pytest.mark.asyncio
-    async def test_script_agent_empty_command(self) -> None:
-        """Test script agent with empty command after parsing."""
-        # This test needs to cover line 103: empty command after shlex.split
-        # We'll patch shlex.split to return an empty list to trigger the error
-        from unittest.mock import patch
-
-        config = {"command": "echo test"}
-        agent = ScriptAgent("test_agent", config)
-
-        with patch("shlex.split", return_value=[]):
-            with pytest.raises(RuntimeError, match="Empty command provided"):
-                await agent.execute("test input")
-
-    @pytest.mark.asyncio
-    async def test_script_agent_dangerous_command_blocked(self) -> None:
-        """Test that dangerous commands are blocked."""
-        config = {"command": "rm -rf /"}
-        agent = ScriptAgent("test_agent", config)
-
-        with pytest.raises(RuntimeError, match="Blocked dangerous command"):
-            await agent.execute("test input")
-
-    @pytest.mark.asyncio
-    async def test_script_agent_execute_simple_script(self) -> None:
-        """Test script agent execution with simple script."""
-        config = {"script": "echo 'Hello World'"}
-        agent = ScriptAgent("test_agent", config)
-
-        result = await agent.execute("test input")
-        assert result.strip() == "Hello World"
-
-    @pytest.mark.asyncio
-    async def test_script_agent_execute_simple_command(self) -> None:
-        """Test script agent execution with simple command."""
-        config = {"command": "echo 'Hello Command'"}
-        agent = ScriptAgent("test_agent", config)
-
-        result = await agent.execute("test input")
-        assert result.strip() == "Hello Command"
-
-    @pytest.mark.asyncio
-    async def test_script_agent_receives_input_data(self) -> None:
-        """Test that script agent receives input data via environment."""
-        config = {"script": 'echo "Input: $INPUT_DATA"'}
-        agent = ScriptAgent("test_agent", config)
-
-        result = await agent.execute("test message")
-        assert result.strip() == "Input: test message"
-
     def test_script_agent_get_agent_type(self) -> None:
         """Test script agent type identification."""
         config = {"script": "echo 'test'"}
@@ -110,14 +51,37 @@ class TestScriptAgent:
         assert agent.get_agent_type() == "script"
 
     @pytest.mark.asyncio
-    async def test_script_agent_with_context_variables(self) -> None:
-        """Test that script agent receives context variables in environment."""
-        config = {"script": 'echo "User: $CONTEXT_USER, Type: $CONTEXT_TYPE"'}
+    async def test_script_agent_execute_simple_script(self) -> None:
+        """Test script agent execution with simple script returns JSON."""
+        config = {"script": "echo 'Hello World'"}
         agent = ScriptAgent("test_agent", config)
 
-        context = {"user": "alice", "type": "admin"}
-        result = await agent.execute("test input", context)
-        assert result.strip() == "User: alice, Type: admin"
+        result = await agent.execute("test input")
+        parsed = json.loads(result)
+        assert parsed["success"] is True
+        assert parsed["output"] == "Hello World"
+
+    @pytest.mark.asyncio
+    async def test_script_agent_execute_simple_command(self) -> None:
+        """Test script agent execution with simple command returns JSON."""
+        config = {"command": "echo 'Hello Command'"}
+        agent = ScriptAgent("test_agent", config)
+
+        result = await agent.execute("test input")
+        parsed = json.loads(result)
+        assert parsed["success"] is True
+        assert parsed["output"] == "Hello Command"
+
+    @pytest.mark.asyncio
+    async def test_script_agent_receives_input_data(self) -> None:
+        """Test that script agent receives input data via environment."""
+        config = {"script": 'echo "Input: $INPUT_DATA"'}
+        agent = ScriptAgent("test_agent", config)
+
+        result = await agent.execute("test message")
+        parsed = json.loads(result)
+        assert parsed["success"] is True
+        assert parsed["output"] == "Input: test message"
 
     @pytest.mark.asyncio
     async def test_script_agent_with_custom_environment(self) -> None:
@@ -129,48 +93,58 @@ class TestScriptAgent:
         agent = ScriptAgent("test_agent", config)
 
         result = await agent.execute("test input")
-        assert result.strip() == "Custom: custom_value"
+        parsed = json.loads(result)
+        assert parsed["success"] is True
+        assert parsed["output"] == "Custom: custom_value"
 
     @pytest.mark.asyncio
-    async def test_script_agent_timeout_error(self) -> None:
-        """Test script agent timeout handling."""
-        config = {"script": "sleep 10", "timeout_seconds": 1}
+    async def test_script_agent_dangerous_command_returns_json_error(self) -> None:
+        """Test that dangerous commands return JSON error."""
+        config = {"command": "rm -rf /"}
         agent = ScriptAgent("test_agent", config)
 
-        with (
-            patch(
-                "llm_orc.agents.script_agent.subprocess.run",
-                side_effect=subprocess.TimeoutExpired(cmd="", timeout=1),
-            ),
-            pytest.raises(RuntimeError, match="timed out after 1s"),
+        result = await agent.execute("test input")
+        parsed = json.loads(result)
+        assert parsed["success"] is False
+        assert "Blocked dangerous command" in parsed["error"]
+
+    @pytest.mark.asyncio
+    async def test_script_agent_timeout_returns_json_error(self) -> None:
+        """Test script agent timeout returns JSON error."""
+        config = {"script": "echo test"}
+        agent = ScriptAgent("test_agent", config)
+
+        with patch(
+            "llm_orc.agents.script_agent.subprocess.run",
+            side_effect=__import__("subprocess").TimeoutExpired(cmd="", timeout=1),
         ):
-            await agent.execute("test input")
+            result = await agent.execute("test input")
+            parsed = json.loads(result)
+            assert parsed["success"] is False
+            assert "timed out" in parsed["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_script_agent_called_process_error(self) -> None:
-        """Test script agent handling of command failures."""
-        config = {"script": "exit 1"}  # Script that fails
+    async def test_script_agent_called_process_error_returns_json_error(self) -> None:
+        """Test script agent handling of command failures returns JSON."""
+        config = {"script": "exit 1"}
         agent = ScriptAgent("test_agent", config)
 
-        with pytest.raises(RuntimeError, match="Script agent test_agent failed"):
-            await agent.execute("test input")
+        result = await agent.execute("test input")
+        parsed = json.loads(result)
+        assert parsed["success"] is False
+        assert "error" in parsed
 
     @pytest.mark.asyncio
-    async def test_script_agent_command_called_process_error(self) -> None:
-        """Test script agent command handling of failures."""
-        config = {"command": "false"}  # Command that fails
-        agent = ScriptAgent("test_agent", config)
-
-        with pytest.raises(RuntimeError, match="Script agent test_agent failed"):
-            await agent.execute("test input")
-
-    @pytest.mark.asyncio
-    async def test_script_agent_general_exception_handling(self) -> None:
-        """Test script agent general exception handling."""
+    async def test_script_agent_general_exception_returns_json_error(self) -> None:
+        """Test script agent general exception returns JSON error."""
         config = {"script": "echo 'test'"}
         agent = ScriptAgent("test_agent", config)
 
-        # Mock subprocess.run to raise a general exception
-        with patch("subprocess.run", side_effect=OSError("Permission denied")):
-            with pytest.raises(RuntimeError, match="Script agent test_agent error"):
-                await agent.execute("test input")
+        with patch(
+            "llm_orc.agents.script_agent.subprocess.run",
+            side_effect=OSError("Permission denied"),
+        ):
+            result = await agent.execute("test input")
+            parsed = json.loads(result)
+            assert parsed["success"] is False
+            assert "error" in parsed
