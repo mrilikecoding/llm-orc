@@ -19,6 +19,7 @@ from llm_orc.core.execution.fan_out_expander import FanOutExpander
 from llm_orc.core.execution.fan_out_gatherer import FanOutGatherer
 from llm_orc.core.execution.llm_agent_runner import LlmAgentRunner
 from llm_orc.core.execution.phase_monitor import PhaseMonitor
+from llm_orc.core.execution.phase_result_processor import PhaseResultProcessor
 from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.results_processor import ResultsProcessor
 from llm_orc.core.execution.script_agent_runner import ScriptAgentRunner
@@ -106,6 +107,12 @@ class EnsembleExecutor:
         self._phase_monitor = PhaseMonitor(
             self._agent_executor, self._emit_performance_event
         )
+        self._phase_result_processor = PhaseResultProcessor(
+            self._agent_request_processor,
+            self._usage_collector,
+            self._emit_performance_event,
+        )
+        self._ensemble_metadata: dict[str, Any] = {}
 
     def _load_script_cache_config(self) -> ScriptCacheConfig:
         """Load script cache configuration from performance config."""
@@ -321,12 +328,11 @@ class EnsembleExecutor:
         )
 
         # Add processed agent requests to metadata if any exist
-        if hasattr(self, "_ensemble_metadata") and self._ensemble_metadata.get(
-            "processed_agent_requests"
-        ):
-            final_result["metadata"]["processed_agent_requests"] = (
-                self._ensemble_metadata["processed_agent_requests"]
-            )
+        ensemble_metadata = self._phase_result_processor.get_ensemble_metadata()
+        if ensemble_metadata.get("processed_agent_requests"):
+            final_result["metadata"]["processed_agent_requests"] = ensemble_metadata[
+                "processed_agent_requests"
+            ]
 
         # Add execution order for validation
         final_result["execution_order"] = [
@@ -460,7 +466,7 @@ class EnsembleExecutor:
             )
 
             # Process parallel execution results
-            phase_has_errors = await self._process_phase_results(
+            phase_has_errors = await self._phase_result_processor.process_phase_results(
                 phase_results, results_dict, expanded_agents
             )
 
@@ -475,7 +481,9 @@ class EnsembleExecutor:
             await self._phase_monitor.stop(phase_index, expanded_agents, phase_duration)
 
         # Emit phase completion event
-        self._emit_phase_completed_event(phase_index, phase_agents, results_dict)
+        self._phase_result_processor.emit_phase_completed_event(
+            phase_index, phase_agents, results_dict
+        )
 
         return phase_has_errors, user_inputs_from_phase
 
@@ -540,12 +548,11 @@ class EnsembleExecutor:
         )
 
         # Add processed agent requests to metadata if any exist
-        if hasattr(self, "_ensemble_metadata") and self._ensemble_metadata.get(
-            "processed_agent_requests"
-        ):
-            final_result["metadata"]["processed_agent_requests"] = (
-                self._ensemble_metadata["processed_agent_requests"]
-            )
+        ensemble_metadata = self._phase_result_processor.get_ensemble_metadata()
+        if ensemble_metadata.get("processed_agent_requests"):
+            final_result["metadata"]["processed_agent_requests"] = ensemble_metadata[
+                "processed_agent_requests"
+            ]
 
         # Add interactive-specific metadata using helper
         self._add_interactive_metadata(final_result, user_inputs_collected)
@@ -895,153 +902,6 @@ class EnsembleExecutor:
             "status": "failed",
             "model_instance": None,
         }
-
-    async def _process_phase_results(
-        self,
-        phase_results: dict[str, Any],
-        results_dict: dict[str, Any],
-        phase_agents: list[dict[str, Any]],
-    ) -> bool:
-        """Process parallel execution results and return if any errors occurred."""
-        has_errors = False
-        processed_agent_requests: list[dict[str, Any]] = []
-
-        # Create agent lookup for model profile information
-        agent_configs = {agent["name"]: agent for agent in phase_agents}
-
-        for agent_name, agent_result in phase_results.items():
-            # Store result in results_dict
-            self._store_agent_result(results_dict, agent_name, agent_result)
-
-            # Handle errors
-            if agent_result["status"] == "failed":
-                has_errors = True
-
-            # Process successful agents
-            if agent_result["status"] == "success":
-                await self._process_successful_agent_result(
-                    agent_result,
-                    agent_name,
-                    results_dict,
-                    processed_agent_requests,
-                    phase_agents,
-                    agent_configs,
-                )
-
-        # Store processed agent requests in results metadata for coordination
-        self._store_agent_requests_metadata(processed_agent_requests)
-
-        return has_errors
-
-    def _store_agent_result(
-        self,
-        results_dict: dict[str, Any],
-        agent_name: str,
-        agent_result: dict[str, Any],
-    ) -> None:
-        """Store agent result in results dictionary."""
-        results_dict[agent_name] = {
-            "response": agent_result.get("response"),
-            "status": agent_result["status"],
-        }
-        if agent_result["status"] == "failed":
-            results_dict[agent_name]["error"] = agent_result["error"]
-
-    async def _process_successful_agent_result(
-        self,
-        agent_result: dict[str, Any],
-        agent_name: str,
-        results_dict: dict[str, Any],
-        processed_agent_requests: list[dict[str, Any]],
-        phase_agents: list[dict[str, Any]],
-        agent_configs: dict[str, dict[str, Any]],
-    ) -> None:
-        """Process successful agent result for requests and usage."""
-        # Process AgentRequest objects from successful script agents
-        response = agent_result.get("response")
-        if response and isinstance(response, str):
-            await self._process_agent_requests(
-                response,
-                agent_name,
-                results_dict,
-                processed_agent_requests,
-                phase_agents,
-            )
-
-        # Collect usage for successful agents with model instances
-        if agent_result["model_instance"] is not None:
-            agent_config = agent_configs.get(agent_name, {})
-            model_profile = agent_config.get("model_profile", "unknown")
-            self._usage_collector.collect_agent_usage(
-                agent_name, agent_result["model_instance"], model_profile
-            )
-
-    async def _process_agent_requests(
-        self,
-        response: str,
-        agent_name: str,
-        results_dict: dict[str, Any],
-        processed_agent_requests: list[dict[str, Any]],
-        phase_agents: list[dict[str, Any]],
-    ) -> None:
-        """Process agent requests from script output."""
-        try:
-            processed_result = (
-                await self._agent_request_processor.process_script_output_with_requests(
-                    response, agent_name, phase_agents
-                )
-            )
-
-            # Store processed agent requests for coordination
-            if processed_result.get("agent_requests"):
-                processed_agent_requests.extend(processed_result["agent_requests"])
-
-            # Add metadata about processed requests
-            results_dict[agent_name]["agent_requests"] = processed_result.get(
-                "agent_requests", []
-            )
-
-        except Exception:
-            # Silently ignore AgentRequest processing errors
-            pass
-
-    def _store_agent_requests_metadata(
-        self, processed_agent_requests: list[dict[str, Any]]
-    ) -> None:
-        """Store processed agent requests in ensemble metadata."""
-        if processed_agent_requests:
-            if not hasattr(self, "_ensemble_metadata"):
-                self._ensemble_metadata = {}
-            self._ensemble_metadata["processed_agent_requests"] = (
-                processed_agent_requests
-            )
-
-    def _emit_phase_completed_event(
-        self,
-        phase_index: int,
-        phase_agents: list[dict[str, Any]],
-        results_dict: dict[str, Any],
-    ) -> None:
-        """Emit phase completion event with success/failure counts."""
-        successful_agents = [
-            a
-            for a in phase_agents
-            if results_dict.get(a["name"], {}).get("status") == "success"
-        ]
-        failed_agents = [
-            a
-            for a in phase_agents
-            if results_dict.get(a["name"], {}).get("status") == "failed"
-        ]
-
-        self._emit_performance_event(
-            "phase_completed",
-            {
-                "phase_index": phase_index,
-                "successful_agents": len(successful_agents),
-                "failed_agents": len(failed_agents),
-            },
-        )
 
     async def _execute_agent_with_timeout(
         self, agent_config: dict[str, Any], input_data: str, timeout_seconds: int | None
