@@ -1,8 +1,6 @@
 """BDD test configuration for llm-orc script agents."""
 
-import json
 import os
-import tempfile
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -364,50 +362,6 @@ def bdd_context(test_primitives_dir: Path) -> dict[str, Any]:
         "temp_files": [],
         "test_primitives_dir": test_primitives_dir,
         "script_resolver": resolver,
-    }
-
-
-@pytest.fixture
-def temp_script_dir() -> Generator[Path, None, None]:
-    """Temporary directory for test scripts."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        script_dir = Path(tmpdir) / "scripts" / "primitives"
-        script_dir.mkdir(parents=True)
-        yield script_dir
-
-
-@pytest.fixture
-def mock_script_agent() -> type:
-    """Mock script agent for testing."""
-
-    class MockScriptAgent:
-        def __init__(self, script_path: str) -> None:
-            self.script_path = script_path
-
-        async def execute(self, input_data: str) -> str:
-            return json.dumps(
-                {
-                    "success": True,
-                    "data": "mock_output",
-                    "metadata": {"script": self.script_path},
-                }
-            )
-
-    return MockScriptAgent
-
-
-@pytest.fixture
-def sample_ensemble_config() -> dict[str, Any]:
-    """Sample ensemble configuration for testing."""
-    return {
-        "name": "test-ensemble",
-        "agents": [
-            {
-                "name": "test-script",
-                "script": "primitives/test_script.py",
-                "parameters": {"test": True},
-            }
-        ],
     }
 
 
