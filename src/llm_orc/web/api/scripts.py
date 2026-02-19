@@ -23,7 +23,7 @@ class TestScriptRequest(BaseModel):
 async def list_scripts() -> dict[str, Any]:
     """List all available scripts by category."""
     mcp = get_mcp_server()
-    result = await mcp._list_scripts_tool({})
+    result = await mcp._script_handler.list_scripts({})
     return result
 
 
@@ -31,7 +31,7 @@ async def list_scripts() -> dict[str, Any]:
 async def get_script(category: str, name: str) -> dict[str, Any]:
     """Get script details."""
     mcp = get_mcp_server()
-    result = await mcp._get_script_tool({"name": name, "category": category})
+    result = await mcp._script_handler.get_script({"name": name, "category": category})
     return result
 
 
@@ -41,7 +41,7 @@ async def test_script(
 ) -> dict[str, Any]:
     """Test a script with sample input."""
     mcp = get_mcp_server()
-    result = await mcp._test_script_tool(
+    result = await mcp._script_handler.test_script(
         {
             "name": name,
             "category": category,
