@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-02-20
+
+### Added
+- **Composable Ensemble Orchestration** — ensembles can now reference other ensembles, select specific keys from upstream output, and compose with fan-out for routing patterns
+- **Ensemble Agent Type (ADR-013)** — agents can reference another ensemble via `ensemble: child-name`
+  - Child ensembles execute recursively with shared infrastructure (config, credentials, models)
+  - Mutable state (usage, events, streaming) is isolated per child execution
+  - Configurable depth limit prevents unbounded nesting (default: 5)
+  - Cross-ensemble cycle detection at load time via DFS on reference graph
+  - Child executors suppress artifact saving to avoid duplicate persistence
+- **Input Key Routing (ADR-014)** — agents can select a specific key from upstream JSON output via `input_key: key_name`
+  - `DependencyResolver` selects `output[input_key]` from the first upstream dependency
+  - Missing key or non-dict upstream produces a runtime error (per Invariant 14)
+  - Composes with fan-out: `input_key` selects the array, `fan_out` expands per item
+  - Works with all agent types (LLM, script, ensemble)
+- **Pydantic Agent Configs (ADR-012)** — typed, validated agent configuration models
+  - `LlmAgentConfig`, `ScriptAgentConfig`, `EnsembleAgentConfig` with discriminated union
+  - `extra="forbid"` catches typos and invalid fields at parse time
+  - `parse_agent_config()` factory discriminates by key presence (`script`, `ensemble`, `model_profile`)
+  - Replaces `dict[str, Any]` throughout the execution pipeline
+- **Routing Demo Ensemble** — example ensemble demonstrating the classify → route → fan-out → synthesize pattern
+
+### Changed
+- Removed conversational ensemble dead code (ADR-011): `ConversationalEnsembleManager`, `ConversationalDependencyResolver`, `ConversationalConfig`, and related modules
+- Agent type routing in `EnsembleExecutor._execute_agent` now uses `isinstance` dispatch on Pydantic models instead of dict key inspection
+
 ## [0.14.4] - 2026-02-19
 
 ### Added

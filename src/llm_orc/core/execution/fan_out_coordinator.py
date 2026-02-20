@@ -51,13 +51,9 @@ class FanOutCoordinator:
 
             # Apply input_key selection (ADR-014)
             if agent_config.input_key:
-                array_result = self._select_key_array(
-                    response, agent_config.input_key
-                )
+                array_result = self._select_key_array(response, agent_config.input_key)
             else:
-                array_result = self._expander.parse_array_from_result(
-                    response
-                )
+                array_result = self._expander.parse_array_from_result(response)
 
             if array_result is not None and len(array_result) > 0:
                 fan_out_agents.append((agent_config, array_result))
@@ -65,9 +61,7 @@ class FanOutCoordinator:
         return fan_out_agents
 
     @staticmethod
-    def _select_key_array(
-        response: str, input_key: str
-    ) -> list[Any] | None:
+    def _select_key_array(response: str, input_key: str) -> list[Any] | None:
         """Select array value from keyed upstream output (ADR-014)."""
         try:
             parsed = json.loads(response)

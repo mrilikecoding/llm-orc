@@ -45,6 +45,7 @@ LLM Orchestra is a multi-agent LLM communication system designed for ensemble or
 - **Dependency graph analysis**: Topological sorting of agent dependencies
 - **Circular dependency detection**: Prevents invalid ensemble configurations
 - **Phase optimization**: Groups independent agents for parallel execution
+- **Input key selection**: When `input_key` is set, selects a specific key from upstream JSON output before passing to consuming agent
 - **Validation**: Ensures all dependencies are satisfied
 
 ### Fan-Out Execution (Issue #73)
@@ -71,6 +72,29 @@ Fan-out is woven into the existing phase-based execution pipeline in `EnsembleEx
 4. **Execution**: Instances execute in parallel alongside other phase agents
 5. **Gathering**: After phase completion, `FanOutGatherer` assembles instance results under the original name
 6. **Downstream**: Subsequent agents see the gathered result as a normal dependency
+
+### Composable Ensemble Orchestration (ADR-012 through ADR-014)
+
+#### Pydantic Agent Configs (`llm_orc/schemas/agent_config.py`)
+- **Typed models**: `LlmAgentConfig`, `ScriptAgentConfig`, `EnsembleAgentConfig` replace `dict[str, Any]`
+- **Discriminated union**: `AgentConfig = LlmAgentConfig | ScriptAgentConfig | EnsembleAgentConfig`
+- **Parse factory**: `parse_agent_config()` discriminates by key presence (`script`, `ensemble`, `model_profile`)
+- **Strict validation**: `extra="forbid"` catches typos and invalid fields at parse time
+- **Shared fields**: `BaseAgentConfig` provides `name`, `depends_on`, `fan_out`, `input_key`
+
+#### EnsembleAgentRunner (`llm_orc/core/execution/ensemble_agent_runner.py`)
+- **Recursive execution**: Resolves ensemble references and executes child ensembles
+- **Infrastructure sharing**: Child executors share config manager, credential storage, and model factory
+- **State isolation**: Fresh usage collector, event queue, and streaming tracker per child execution
+- **Depth limiting**: Configurable maximum nesting depth (default: 5) prevents unbounded recursion
+- **Cycle detection**: Cross-ensemble reference cycles detected at load time via DFS in `EnsembleLoader`
+
+#### Input Key Selection (ADR-014)
+- **Consumer-side routing**: `input_key` field on `BaseAgentConfig` selects a specific key from upstream JSON output
+- **DependencyResolver integration**: `_apply_input_key_selection()` replaces the first dependency's response with the selected value
+- **FanOutCoordinator integration**: `_select_key_array()` extracts the array for fan-out expansion from keyed output
+- **Error handling**: Missing key or non-dict upstream produces runtime error messages
+- **Composition**: `input_key` + `fan_out` enables the classify → route → expand pattern
 
 ### Script Agent Infrastructure
 
@@ -235,11 +259,12 @@ Agent Config → Script Resolution → Process Execution → JSON I/O → Result
 ```
 
 #### Agent Type Detection
-- **Implicit Detection**: Determined by configuration fields present
-  - `script` field → Script agent execution
-  - `model_profile` field → LLM agent execution
-- **Explicit Override**: `type: script` or `type: llm` field for backward compatibility
-- **Hybrid Workflows**: Script agents can provide context data for LLM agents
+- **Pydantic isinstance dispatch**: `_execute_agent` routes by `isinstance` on typed config models
+  - `ScriptAgentConfig` → Script agent execution
+  - `LlmAgentConfig` → LLM agent execution
+  - `EnsembleAgentConfig` → Ensemble agent (child ensemble) execution
+- **Parse-time discrimination**: `parse_agent_config()` selects the correct type by key presence (`script`, `ensemble`, `model_profile`)
+- **Hybrid Workflows**: Script agents can provide context data for LLM and ensemble agents
 
 ### Dependency Resolution
 

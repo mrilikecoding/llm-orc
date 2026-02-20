@@ -1,0 +1,9 @@
+name: qa-pipeline
+description: Answer a single question concisely (child ensemble for routing-demo)
+
+agents:
+  - name: responder
+    model_profile: ollama-gemma-small
+    system_prompt: >
+      You are a knowledgeable assistant. Answer the given question
+      concisely in 2-3 sentences. Focus on accuracy and clarity.

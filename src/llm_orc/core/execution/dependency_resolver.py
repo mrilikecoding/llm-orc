@@ -51,10 +51,8 @@ class DependencyResolver:
                 continue
 
             # Apply input_key selection (ADR-014)
-            effective_results, input_key_error = (
-                self._apply_input_key_selection(
-                    agent_config, results_dict
-                )
+            effective_results, input_key_error = self._apply_input_key_selection(
+                agent_config, results_dict
             )
             if input_key_error:
                 enhanced_inputs[agent_name] = input_key_error
@@ -147,10 +145,7 @@ class DependencyResolver:
             )
 
         selected = parsed[input_key]
-        new_response = (
-            selected if isinstance(selected, str)
-            else json.dumps(selected)
-        )
+        new_response = selected if isinstance(selected, str) else json.dumps(selected)
 
         modified = dict(results_dict)
         modified[first_dep] = {

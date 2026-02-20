@@ -189,9 +189,7 @@ class TestNoInputKeyBackwardCompatible:
         results_dict: dict[str, Any] = {
             "classifier": {
                 "status": "success",
-                "response": json.dumps(
-                    {"pdfs": ["a.pdf"], "audio": ["c.mp3"]}
-                ),
+                "response": json.dumps({"pdfs": ["a.pdf"], "audio": ["c.mp3"]}),
             },
         }
 
@@ -210,15 +208,9 @@ class TestInputKeyWorksWithAllAgentTypes:
 
     def test_input_key_on_all_types(self) -> None:
         """input_key is available on LLM, Script, and Ensemble configs."""
-        llm = LlmAgentConfig(
-            name="llm", model_profile="gpt4", input_key="text"
-        )
-        script = ScriptAgentConfig(
-            name="script", script="run.py", input_key="data"
-        )
-        ensemble = EnsembleAgentConfig(
-            name="ens", ensemble="child", input_key="items"
-        )
+        llm = LlmAgentConfig(name="llm", model_profile="gpt4", input_key="text")
+        script = ScriptAgentConfig(name="script", script="run.py", input_key="data")
+        ensemble = EnsembleAgentConfig(name="ens", ensemble="child", input_key="items")
 
         assert llm.input_key == "text"
         assert script.input_key == "data"
@@ -281,9 +273,7 @@ class TestIntegrationInputKeyRoutingPattern:
         # Phase ordering via real DependencyAnalyzer
         analyzer = DependencyAnalyzer()
         result = analyzer.analyze_enhanced_dependency_graph(agents)
-        phase_names = [
-            [a.name for a in phase] for phase in result["phases"]
-        ]
+        phase_names = [[a.name for a in phase] for phase in result["phases"]]
 
         assert phase_names[0] == ["classifier"]
         assert set(phase_names[1]) == {
@@ -296,9 +286,7 @@ class TestIntegrationInputKeyRoutingPattern:
         classifier_output: dict[str, Any] = {
             "classifier": {
                 "status": "success",
-                "response": json.dumps(
-                    {"pdfs": ["a.pdf"], "audio": ["c.mp3"]}
-                ),
+                "response": json.dumps({"pdfs": ["a.pdf"], "audio": ["c.mp3"]}),
             },
         }
 
@@ -308,9 +296,7 @@ class TestIntegrationInputKeyRoutingPattern:
         coordinator = FanOutCoordinator(expander, gatherer)
 
         phase_2_agents = result["phases"][1]
-        detected = coordinator.detect_in_phase(
-            phase_2_agents, classifier_output
-        )
+        detected = coordinator.detect_in_phase(phase_2_agents, classifier_output)
 
         # Both extractors should detect their respective arrays
         detected_map = {cfg.name: arr for cfg, arr in detected}
@@ -326,9 +312,7 @@ class TestIntegrationInputKeyRoutingPattern:
             },
             "audio-extractor": {
                 "status": "success",
-                "response": json.dumps(
-                    {"transcript": "Audio transcript"}
-                ),
+                "response": json.dumps({"transcript": "Audio transcript"}),
             },
         }
 
