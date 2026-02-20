@@ -18,6 +18,7 @@ class BaseAgentConfig(BaseModel):
     name: str
     depends_on: list[str | dict[str, Any]] = Field(default_factory=list)
     fan_out: bool = False
+    input_key: str | None = None
 
     # Fan-out instance metadata (runtime only, set by FanOutExpander)
     fan_out_chunk: Any | None = Field(default=None, exclude=True)

@@ -1,5 +1,6 @@
 """Fan-out coordination for ensemble execution."""
 
+import json
 from typing import Any
 
 from llm_orc.core.execution.fan_out_expander import FanOutExpander
@@ -47,12 +48,37 @@ class FanOutCoordinator:
                 continue
 
             response = upstream_result.get("response", "")
-            array_result = self._expander.parse_array_from_result(response)
+
+            # Apply input_key selection (ADR-014)
+            if agent_config.input_key:
+                array_result = self._select_key_array(
+                    response, agent_config.input_key
+                )
+            else:
+                array_result = self._expander.parse_array_from_result(
+                    response
+                )
 
             if array_result is not None and len(array_result) > 0:
                 fan_out_agents.append((agent_config, array_result))
 
         return fan_out_agents
+
+    @staticmethod
+    def _select_key_array(
+        response: str, input_key: str
+    ) -> list[Any] | None:
+        """Select array value from keyed upstream output (ADR-014)."""
+        try:
+            parsed = json.loads(response)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(parsed, dict):
+            return None
+        selected = parsed.get(input_key)
+        if isinstance(selected, list):
+            return selected
+        return None
 
     def expand_agent(
         self,

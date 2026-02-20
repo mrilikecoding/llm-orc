@@ -50,9 +50,19 @@ class DependencyResolver:
                     enhanced_inputs[agent_name] = base_input
                 continue
 
+            # Apply input_key selection (ADR-014)
+            effective_results, input_key_error = (
+                self._apply_input_key_selection(
+                    agent_config, results_dict
+                )
+            )
+            if input_key_error:
+                enhanced_inputs[agent_name] = input_key_error
+                continue
+
             # Extract dependency results as dict for script agents
             dep_results_dict = self._extract_dependency_results_as_dict(
-                dependencies, results_dict
+                dependencies, effective_results
             )
 
             if is_script_agent:
@@ -63,7 +73,7 @@ class DependencyResolver:
             else:
                 # LLM agents get text format
                 dependency_results = self._extract_successful_dependency_results(
-                    dependencies, results_dict
+                    dependencies, effective_results
                 )
                 if dependency_results:
                     enhanced_inputs[agent_name] = (
@@ -90,6 +100,64 @@ class DependencyResolver:
         if isinstance(dep, dict):
             return str(dep["agent_name"])
         return dep
+
+    def _apply_input_key_selection(
+        self,
+        agent_config: AgentConfig,
+        results_dict: dict[str, Any],
+    ) -> tuple[dict[str, Any], str | None]:
+        """Apply input_key selection to upstream results (ADR-014).
+
+        Returns (effective_results, error_or_none). When input_key is
+        set, the first dependency's response is replaced with the
+        selected key's value. On error, returns an error message.
+        """
+        input_key = agent_config.input_key
+        if not input_key or not agent_config.depends_on:
+            return results_dict, None
+
+        first_dep = self._dep_name(agent_config.depends_on[0])
+        dep_result = results_dict.get(first_dep, {})
+
+        if dep_result.get("status") != "success":
+            return results_dict, None
+
+        response = dep_result.get("response", "")
+
+        try:
+            parsed = json.loads(response)
+        except (json.JSONDecodeError, TypeError):
+            return results_dict, (
+                f"input_key error: upstream '{first_dep}' output "
+                f"is not dict-shaped (not valid JSON)"
+            )
+
+        if not isinstance(parsed, dict):
+            return results_dict, (
+                f"input_key error: upstream '{first_dep}' output "
+                f"is not dict (got {type(parsed).__name__})"
+            )
+
+        if input_key not in parsed:
+            available = list(parsed.keys())
+            return results_dict, (
+                f"input_key error: key '{input_key}' not found "
+                f"in upstream '{first_dep}' output. "
+                f"Available keys: {available}"
+            )
+
+        selected = parsed[input_key]
+        new_response = (
+            selected if isinstance(selected, str)
+            else json.dumps(selected)
+        )
+
+        modified = dict(results_dict)
+        modified[first_dep] = {
+            **dep_result,
+            "response": new_response,
+        }
+        return modified, None
 
     def _extract_successful_dependency_results(
         self, dependencies: list[str | dict[str, Any]], results_dict: dict[str, Any]
