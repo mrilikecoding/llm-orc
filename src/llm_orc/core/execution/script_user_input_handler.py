@@ -67,18 +67,13 @@ class ScriptUserInputHandler:
         if not hasattr(ensemble_config, "agents") or not ensemble_config.agents:
             return False
 
+        from llm_orc.schemas.agent_config import ScriptAgentConfig
+
         for agent_config in ensemble_config.agents:
-            if not isinstance(agent_config, dict):
+            if not isinstance(agent_config, ScriptAgentConfig):
                 continue
 
-            # Check if this is a script agent (explicit type or implicit)
-            is_script = agent_config.get("type") == "script" or "script" in agent_config
-            if not is_script:
-                continue
-
-            # Check the script reference or content
-            script_ref = agent_config.get("script", "")
-            if self.requires_user_input(script_ref):
+            if self.requires_user_input(agent_config.script):
                 return True
 
         return False

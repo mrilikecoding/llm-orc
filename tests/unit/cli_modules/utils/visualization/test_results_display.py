@@ -13,6 +13,7 @@ from llm_orc.cli_modules.utils.visualization.results_display import (
     display_plain_text_results,
     display_results,
 )
+from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
 
 
 class TestDisplayResults:
@@ -30,7 +31,9 @@ class TestDisplayResults:
 
         results = {"agent_a": {"response": "Hello world"}}
         metadata: dict[str, Any] = {}
-        agents = [{"name": "agent_a"}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test")
+        ]
 
         display_results(results, metadata, agents, detailed=False)
 
@@ -65,7 +68,9 @@ class TestDisplayResults:
 
         results = {"agent_a": {"status": "success", "response": "Hello"}}
         metadata = {"usage": {"totals": {"tokens": 100}}}
-        agents = [{"name": "agent_a"}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test")
+        ]
 
         display_results(results, metadata, agents, detailed=True)
 
@@ -85,7 +90,7 @@ class TestDisplayResults:
 
         results: dict[str, Any] = {}
         metadata: dict[str, Any] = {}
-        agents: list[dict[str, Any]] = []
+        agents: list[AgentConfig] = []
 
         display_results(results, metadata, agents, detailed=False)
 
@@ -103,7 +108,9 @@ class TestDisplayResults:
 
         results = {"agent_a": {"status": "success"}}  # No response field
         metadata: dict[str, Any] = {}
-        agents = [{"name": "agent_a"}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test")
+        ]
 
         display_results(results, metadata, agents, detailed=False)
 
@@ -120,7 +127,9 @@ class TestDisplayPlainTextResults:
         """Test plain text display in detailed mode."""
         results = {"agent_a": {"status": "success"}}
         metadata: dict[str, Any] = {}
-        agents = [{"name": "agent_a"}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test")
+        ]
 
         display_plain_text_results(results, metadata, detailed=True, agents=agents)
 
@@ -133,7 +142,9 @@ class TestDisplayPlainTextResults:
         """Test plain text display in simple mode passes agents through."""
         results = {"agent_a": {"status": "success"}}
         metadata: dict[str, Any] = {}
-        agents = [{"name": "agent_a", "depends_on": []}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test", depends_on=[])
+        ]
 
         display_plain_text_results(results, metadata, detailed=False, agents=agents)
 
@@ -317,7 +328,10 @@ class TestHelperDisplayFunctions:
             "agent_b": {"status": "failed", "error": "Error occurred"},
         }
         metadata: dict[str, Any] = {}
-        agents = [{"name": "agent_a"}, {"name": "agent_b"}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(name="agent_b", model_profile="test"),
+        ]
 
         _display_detailed_plain_text(results, metadata, agents)
 
@@ -362,9 +376,11 @@ class TestHelperDisplayFunctions:
             "agent_b": {"status": "success", "response": "final answer"},
         }
         metadata: dict[str, Any] = {}
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test", depends_on=[]),
+            LlmAgentConfig(
+                name="agent_b", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
 
         _display_simplified_plain_text(results, metadata, agents)
@@ -382,7 +398,10 @@ class TestHelperDisplayFunctions:
     ) -> None:
         """Test plain text dependency graph display."""
         mock_create_graph.return_value = ["agent_a", "→", "agent_b"]
-        agents = [{"name": "agent_a"}, {"name": "agent_b"}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(name="agent_b", model_profile="test"),
+        ]
 
         _display_plain_text_dependency_graph(agents)
 

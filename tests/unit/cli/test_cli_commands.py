@@ -26,6 +26,7 @@ from llm_orc.cli_modules.commands.auth_commands import (
 from llm_orc.cli_modules.commands.auth_commands import (
     test_token_refresh as refresh_token_test,
 )
+from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 
 
 class TestInvokeEnsemble:
@@ -48,10 +49,11 @@ class TestInvokeEnsemble:
         config = Mock()
         config.name = "test_ensemble"
         config.description = "Test ensemble for testing"
-        # Mock agents as dictionaries with required fields
         config.agents = [
-            {"name": "agent_1", "depends_on": []},
-            {"name": "agent_2", "depends_on": ["agent_1"]},
+            LlmAgentConfig(name="agent_1", model_profile="test", depends_on=[]),
+            LlmAgentConfig(
+                name="agent_2", model_profile="test", depends_on=["agent_1"]
+            ),
         ]
         return config
 
@@ -1385,18 +1387,16 @@ class TestInteractiveScriptIntegration:
         config.description = "Ensemble with interactive scripts"
         # Create agents with script references that need user input
         config.agents = [
-            {
-                "name": "input_collector",
-                "type": "script",
-                "script": "primitives/user-interaction/get_user_input.py",
-                "depends_on": [],
-            },
-            {
-                "name": "data_processor",
-                "type": "script",
-                "script": "data/process_input.py",
-                "depends_on": ["input_collector"],
-            },
+            ScriptAgentConfig(
+                name="input_collector",
+                script="primitives/user-interaction/get_user_input.py",
+                depends_on=[],
+            ),
+            ScriptAgentConfig(
+                name="data_processor",
+                script="data/process_input.py",
+                depends_on=["input_collector"],
+            ),
         ]
         return config
 
@@ -1511,12 +1511,11 @@ class TestInteractiveScriptIntegration:
         non_interactive_config.name = "standard_ensemble"
         non_interactive_config.description = "Standard non-interactive ensemble"
         non_interactive_config.agents = [
-            {
-                "name": "text_processor",
-                "type": "script",
-                "script": "text/analyze.py",
-                "depends_on": [],
-            }
+            ScriptAgentConfig(
+                name="text_processor",
+                script="text/analyze.py",
+                depends_on=[],
+            )
         ]
 
         mock_loader.find_ensemble.return_value = non_interactive_config

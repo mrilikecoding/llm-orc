@@ -4,6 +4,8 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from llm_orc.schemas.agent_config import AgentConfig, ScriptAgentConfig
+
 
 class DependencyResolver:
     """Resolves agent dependencies and enhances input with dependency results."""
@@ -18,7 +20,7 @@ class DependencyResolver:
     def enhance_input_with_dependencies(
         self,
         base_input: str,
-        dependent_agents: list[dict[str, Any]],
+        dependent_agents: list[AgentConfig],
         results_dict: dict[str, Any],
     ) -> dict[str, str]:
         """Enhance input with dependency results for each dependent agent.
@@ -26,8 +28,8 @@ class DependencyResolver:
         Returns a dictionary mapping agent names to their enhanced input.
         Each agent gets only the results from their specific dependencies.
 
-        For script agents (those with 'script' key), returns JSON-formatted
-        input with a 'dependencies' dict containing upstream results.
+        For script agents, returns JSON-formatted input with a
+        'dependencies' dict containing upstream results.
 
         For LLM agents, returns text-formatted input with natural language
         context about previous agent results.
@@ -35,9 +37,9 @@ class DependencyResolver:
         enhanced_inputs = {}
 
         for agent_config in dependent_agents:
-            agent_name = agent_config["name"]
-            dependencies = agent_config.get("depends_on", [])
-            is_script_agent = "script" in agent_config
+            agent_name = agent_config.name
+            dependencies = agent_config.depends_on
+            is_script_agent = isinstance(agent_config, ScriptAgentConfig)
 
             if not dependencies:
                 if is_script_agent:
@@ -78,20 +80,32 @@ class DependencyResolver:
 
         return enhanced_inputs
 
+    @staticmethod
+    def _dep_name(dep: str | dict[str, Any]) -> str:
+        """Extract the agent name from a dependency entry.
+
+        Dependency entries are either a plain string or a dict with a single
+        ``"agent_name"`` key, e.g. ``{"agent_name": "b"}`` for conditional deps.
+        """
+        if isinstance(dep, dict):
+            return str(dep["agent_name"])
+        return dep
+
     def _extract_successful_dependency_results(
-        self, dependencies: list[str], results_dict: dict[str, Any]
+        self, dependencies: list[str | dict[str, Any]], results_dict: dict[str, Any]
     ) -> list[str]:
         """Extract successful dependency results with role attribution.
 
         Args:
-            dependencies: List of dependency names
+            dependencies: List of dependency names (str or dict form)
             results_dict: Dictionary of previous agent results
 
         Returns:
             List of formatted dependency result strings
         """
         dependency_results = []
-        for dep_name in dependencies:
+        for dep in dependencies:
+            dep_name = self._dep_name(dep)
             if (
                 dep_name in results_dict
                 and results_dict[dep_name].get("status") == "success"
@@ -105,19 +119,20 @@ class DependencyResolver:
         return dependency_results
 
     def _extract_dependency_results_as_dict(
-        self, dependencies: list[str], results_dict: dict[str, Any]
+        self, dependencies: list[str | dict[str, Any]], results_dict: dict[str, Any]
     ) -> dict[str, Any]:
         """Extract successful dependency results as a dict.
 
         Args:
-            dependencies: List of dependency agent names
+            dependencies: List of dependency agent names (str or dict form)
             results_dict: Dictionary of previous agent results
 
         Returns:
             Dictionary mapping dependency names to their results
         """
         dep_results = {}
-        for dep_name in dependencies:
+        for dep in dependencies:
+            dep_name = self._dep_name(dep)
             if (
                 dep_name in results_dict
                 and results_dict[dep_name].get("status") == "success"
@@ -185,25 +200,23 @@ class DependencyResolver:
         """
         return f"You are {agent_name}. Please respond to: {base_input}"
 
-    def has_dependencies(self, agent_config: dict[str, Any]) -> bool:
+    def has_dependencies(self, agent_config: AgentConfig) -> bool:
         """Check if an agent has dependencies."""
-        dependencies = agent_config.get("depends_on", [])
-        return bool(dependencies)
+        return bool(agent_config.depends_on)
 
-    def get_dependencies(self, agent_config: dict[str, Any]) -> list[str]:
+    def get_dependencies(self, agent_config: AgentConfig) -> list[str | dict[str, Any]]:
         """Get list of dependencies for an agent."""
-        dependencies = agent_config.get("depends_on", [])
-        return dependencies if isinstance(dependencies, list) else []
+        return agent_config.depends_on
 
     def dependencies_satisfied(
-        self, agent_config: dict[str, Any], completed_agents: set[str]
+        self, agent_config: AgentConfig, completed_agents: set[str]
     ) -> bool:
         """Check if all dependencies for an agent are satisfied."""
         dependencies = self.get_dependencies(agent_config)
-        return all(dep in completed_agents for dep in dependencies)
+        return all(self._dep_name(dep) in completed_agents for dep in dependencies)
 
     @staticmethod
-    def is_fan_out_instance_config(agent_config: dict[str, Any]) -> bool:
+    def is_fan_out_instance_config(agent_config: AgentConfig) -> bool:
         """Check if an agent config is a fan-out instance.
 
         Args:
@@ -212,27 +225,27 @@ class DependencyResolver:
         Returns:
             True if this is a fan-out instance configuration
         """
-        return "_fan_out_original" in agent_config
+        return agent_config.fan_out_original is not None
 
     def prepare_fan_out_instance_input(
         self,
-        instance_config: dict[str, Any],
+        instance_config: AgentConfig,
         base_input: str,
     ) -> str:
         """Prepare input for a fan-out instance.
 
         Args:
-            instance_config: Instance configuration with _fan_out_* metadata
+            instance_config: Instance configuration with fan_out_* metadata
             base_input: Original ensemble input
 
         Returns:
             Prepared input string (JSON for scripts, text for LLMs)
         """
-        chunk = instance_config.get("_fan_out_chunk")
-        index = instance_config.get("_fan_out_index", 0)
-        total = instance_config.get("_fan_out_total", 1)
-        name = instance_config.get("name", "")
-        is_script = "script" in instance_config
+        chunk = instance_config.fan_out_chunk
+        index = instance_config.fan_out_index or 0
+        total = instance_config.fan_out_total or 1
+        name = instance_config.name
+        is_script = isinstance(instance_config, ScriptAgentConfig)
 
         if is_script:
             return self._build_fan_out_script_input(
@@ -282,10 +295,10 @@ class DependencyResolver:
 
     def filter_by_dependency_status(
         self,
-        agents: list[dict[str, Any]],
+        agents: list[AgentConfig],
         completed_agents: set[str],
         with_dependencies: bool = True,
-    ) -> list[dict[str, Any]]:
+    ) -> list[AgentConfig]:
         """Filter agents based on dependency satisfaction status.
 
         Args:

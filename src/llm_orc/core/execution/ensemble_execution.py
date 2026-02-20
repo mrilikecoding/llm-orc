@@ -10,7 +10,9 @@ from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.execution.agent_dispatcher import AgentDispatcher
-from llm_orc.core.execution.agent_execution_coordinator import AgentExecutionCoordinator
+from llm_orc.core.execution.agent_execution_coordinator import (
+    AgentExecutionCoordinator,
+)
 from llm_orc.core.execution.agent_executor import AgentExecutor
 from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
 from llm_orc.core.execution.artifact_manager import ArtifactManager
@@ -30,7 +32,9 @@ from llm_orc.core.execution.results_processor import (
 from llm_orc.core.execution.script_agent_runner import ScriptAgentRunner
 from llm_orc.core.execution.script_cache import ScriptCache, ScriptCacheConfig
 from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
-from llm_orc.core.execution.streaming_progress_tracker import StreamingProgressTracker
+from llm_orc.core.execution.streaming_progress_tracker import (
+    StreamingProgressTracker,
+)
 from llm_orc.core.execution.usage_collector import UsageCollector
 from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.core.validation import (
@@ -39,6 +43,11 @@ from llm_orc.core.validation import (
     ValidationEvaluator,
 )
 from llm_orc.models.base import ModelInterface
+from llm_orc.schemas.agent_config import (
+    AgentConfig,
+    LlmAgentConfig,
+    ScriptAgentConfig,
+)
 
 
 def classify_failure_type(error_message: str) -> str:
@@ -118,7 +127,7 @@ async def _run_validation(
 
     # Convert execution results to EnsembleExecutionResult format
     execution_order = [
-        agent["name"] for agent in config.agents if agent["name"] in result["results"]
+        agent.name for agent in config.agents if agent.name in result["results"]
     ]
 
     # Convert agent outputs, handling both dict and string responses
@@ -215,7 +224,7 @@ class EnsembleExecutor:
         # Initialize execution coordinator with agent executor function
         # Use a wrapper that goes through _execute_agent for test patchability
         async def agent_executor_wrapper(
-            agent_config: dict[str, Any], input_data: str
+            agent_config: AgentConfig, input_data: str
         ) -> tuple[str, ModelInterface | None]:
             return await self._execute_agent(agent_config, input_data)
 
@@ -368,9 +377,9 @@ class EnsembleExecutor:
 
         # Add execution order for validation
         final_result["execution_order"] = [
-            agent["name"]
+            agent.name
             for agent in config.agents
-            if agent["name"] in final_result["results"]
+            if agent.name in final_result["results"]
         ]
 
         # Complete ensemble execution with progress controller
@@ -428,7 +437,7 @@ class EnsembleExecutor:
 
     async def _analyze_and_prepare_phases(
         self, config: EnsembleConfig
-    ) -> list[list[dict[str, Any]]]:
+    ) -> list[list[AgentConfig]]:
         """Analyze dependencies and prepare execution phases.
 
         Args:
@@ -437,17 +446,16 @@ class EnsembleExecutor:
         Returns:
             List of phases, each containing list of agent configs
         """
-        # Use dependency analyzer for ALL agents (script and LLM)
         dependency_analysis = (
             self._dependency_analyzer.analyze_enhanced_dependency_graph(config.agents)
         )
-        phases: list[list[dict[str, Any]]] = dependency_analysis["phases"]
+        phases: list[list[AgentConfig]] = dependency_analysis["phases"]
         return phases
 
     async def _execute_phase_with_monitoring(
         self,
         phase_index: int,
-        phase_agents: list[dict[str, Any]],
+        phase_agents: list[AgentConfig],
         input_data: str | dict[str, str],
         results_dict: dict[str, Any],
         total_phases: int = 1,
@@ -457,7 +465,6 @@ class EnsembleExecutor:
         Returns:
             Tuple of (has_errors, user_inputs_collected)
         """
-        # Detect and expand fan-out agents (issue #73)
         fan_out_agents = self._fan_out_coordinator.detect_in_phase(
             phase_agents, results_dict
         )
@@ -466,20 +473,19 @@ class EnsembleExecutor:
 
         for agent_config, upstream_array in fan_out_agents:
             expanded_agents = [
-                a for a in expanded_agents if a["name"] != agent_config["name"]
+                a for a in expanded_agents if a.name != agent_config.name
             ]
             instances = self._fan_out_coordinator.expand_agent(
                 agent_config, upstream_array
             )
             expanded_agents.extend(instances)
-            fan_out_original_names.append(agent_config["name"])
+            fan_out_original_names.append(agent_config.name)
 
-        # Emit phase started event
         self._emit_performance_event(
             "phase_started",
             {
                 "phase_index": phase_index,
-                "phase_agents": [agent["name"] for agent in expanded_agents],
+                "phase_agents": [agent.name for agent in expanded_agents],
                 "total_phases": total_phases,
             },
         )
@@ -672,19 +678,17 @@ class EnsembleExecutor:
         return final_result
 
     async def _execute_agent(
-        self, agent_config: dict[str, Any], input_data: str
+        self, agent_config: AgentConfig, input_data: str
     ) -> tuple[str, ModelInterface | None]:
         """Execute a single agent, routing by type."""
-        agent_type = self._agent_dispatcher._determine_agent_type(agent_config)
-        if agent_type == "script":
+        if isinstance(agent_config, ScriptAgentConfig):
             return await self._script_agent_runner.execute(agent_config, input_data)
-        elif agent_type == "llm":
+        if isinstance(agent_config, LlmAgentConfig):
             return await self._llm_agent_runner.execute(agent_config, input_data)
-        else:
-            agent_name = agent_config.get("name", "unknown")
-            raise ValueError(
-                f"Agent '{agent_name}' must have either 'script' or 'model_profile'"
-            )
+        raise ValueError(
+            f"Agent '{agent_config.name}' has unknown type: "
+            f"{type(agent_config).__name__}"
+        )
 
     @property
     def execution_coordinator(self) -> AgentExecutionCoordinator:
@@ -693,18 +697,14 @@ class EnsembleExecutor:
 
     def _get_agent_role_description(self, agent_name: str) -> str | None:
         """Get a human-readable role description for an agent."""
-        # Try to find the agent in the current ensemble config
         if hasattr(self, "_current_agent_configs"):
             for agent_config in self._current_agent_configs:
-                if agent_config["name"] == agent_name:
-                    # Try model_profile first, then infer from name
-                    if "model_profile" in agent_config:
-                        profile = str(agent_config["model_profile"])
-                        # Convert kebab-case to title case
-                        return profile.replace("-", " ").title()
-                    else:
-                        # Convert agent name to readable format
-                        return agent_name.replace("-", " ").title()
+                if agent_config.name == agent_name:
+                    if (
+                        isinstance(agent_config, LlmAgentConfig)
+                        and agent_config.model_profile
+                    ):
+                        return agent_config.model_profile.replace("-", " ").title()
+                    return agent_name.replace("-", " ").title()
 
-        # Fallback: convert name to readable format
         return agent_name.replace("-", " ").title()

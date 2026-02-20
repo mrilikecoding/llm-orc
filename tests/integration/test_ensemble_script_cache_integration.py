@@ -13,6 +13,7 @@ import pytest
 
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.core.execution.script_cache import ScriptCache, ScriptCacheConfig
+from llm_orc.schemas.agent_config import ScriptAgentConfig
 
 
 class TestEnsembleScriptCacheIntegration:
@@ -116,7 +117,7 @@ class TestEnsembleScriptCacheIntegration:
                     result,
                     model,
                 ) = await runner._execute_without_cache(
-                    {"name": "test", "script": script_content}, "{}"
+                    ScriptAgentConfig(name="test", script=script_content), "{}"
                 )
 
                 # 3. Cache the result

@@ -11,6 +11,8 @@ from typing import Any
 import pytest
 from pytest_bdd import given, scenarios, then, when
 
+from llm_orc.schemas.agent_config import parse_agent_config
+
 # Load scenarios from feature file
 scenarios("features/issue-24-script-agents.feature")
 
@@ -1030,8 +1032,8 @@ def ensemble_with_script_and_llm_agents(bdd_context: dict[str, Any]) -> None:
                 "name": "pattern-interpreter",
                 "model": "mock-gpt-4",
                 "provider": "openai",
-                "prompt_template": "Analyze network topology data: {context}",
-                "dependencies": {"context": "network-analyzer.analysis_results"},
+                "system_prompt": "Analyze network topology data",
+                "depends_on": ["network-analyzer"],
             },
         ],
     }
@@ -1112,11 +1114,15 @@ def execute_ensemble_with_network_data(bdd_context: dict[str, Any]) -> None:
         # Get ensemble configuration from context
         ensemble_config_dict = bdd_context.get("mixed_ensemble_config", {})
 
+        # Parse raw agent dicts into typed AgentConfig objects
+        raw_agents = ensemble_config_dict.get("agents", [])
+        agents = [parse_agent_config(a) for a in raw_agents]
+
         # Create proper EnsembleConfig object
         ensemble_config = EnsembleConfig(
             name=ensemble_config_dict.get("name", "test-ensemble"),
             description="Test ensemble with script and LLM agents",
-            agents=ensemble_config_dict.get("agents", []),
+            agents=agents,
         )
 
         # Create executor (no config in constructor)
@@ -1388,7 +1394,8 @@ def execute_script_with_permission_error(bdd_context: dict[str, Any]) -> None:
     """Execute script that will encounter permission error."""
     import asyncio
 
-    script_config = bdd_context.get("error_script_config", {})
+    script_config_dict = bdd_context.get("error_script_config", {})
+    agent_config = parse_agent_config(script_config_dict)
 
     async def _async_execute() -> dict[str, Any]:
         from llm_orc.core.config.ensemble_config import EnsembleConfig
@@ -1398,7 +1405,7 @@ def execute_script_with_permission_error(bdd_context: dict[str, Any]) -> None:
         ensemble_config = EnsembleConfig(
             name="error-handling-test",
             description="Test error handling capabilities",
-            agents=[script_config],
+            agents=[agent_config],
         )
 
         # Execute and expect error
@@ -1745,7 +1752,8 @@ def execute_parallel_ensemble(bdd_context: dict[str, Any]) -> None:
     import asyncio
     import time
 
-    parallel_scripts = bdd_context.get("parallel_scripts", [])
+    parallel_scripts_raw = bdd_context.get("parallel_scripts", [])
+    parallel_agents = [parse_agent_config(a) for a in parallel_scripts_raw]
 
     async def _async_parallel_execute() -> dict[str, Any]:
         from llm_orc.core.config.ensemble_config import EnsembleConfig
@@ -1755,7 +1763,7 @@ def execute_parallel_ensemble(bdd_context: dict[str, Any]) -> None:
         ensemble_config = EnsembleConfig(
             name="async-performance-test",
             description="Test async performance characteristics",
-            agents=parallel_scripts,
+            agents=parallel_agents,
         )
 
         start_time = time.time()

@@ -4,14 +4,23 @@ from typing import Any
 
 from rich.tree import Tree
 
+from llm_orc.schemas.agent_config import AgentConfig
 
-def create_dependency_graph(agents: list[dict[str, Any]]) -> str:
+
+def _dep_name(dep: str | dict[str, Any]) -> str:
+    """Extract the agent name from a dependency entry."""
+    if isinstance(dep, dict):
+        return str(dep["agent_name"])
+    return dep
+
+
+def create_dependency_graph(agents: list[AgentConfig]) -> str:
     """Create horizontal dependency graph: A,B,C → D → E,F → G"""
     return create_dependency_graph_with_status(agents, {})
 
 
 def create_dependency_tree(
-    agents: list[dict[str, Any]], agent_statuses: dict[str, str] | None = None
+    agents: list[AgentConfig], agent_statuses: dict[str, str] | None = None
 ) -> Tree:
     """Create a tree visualization of agent dependencies by execution levels."""
     if agent_statuses is None:
@@ -33,7 +42,7 @@ def create_dependency_tree(
         # Create agent status strings for this level
         agent_labels = []
         for agent in level_agents:
-            agent_name = agent["name"]
+            agent_name = agent.name
             status = agent_statuses.get(agent_name, "pending")
 
             if status == "running":
@@ -63,7 +72,7 @@ def create_dependency_tree(
 
 
 def create_dependency_graph_with_status(
-    agents: list[dict[str, Any]], agent_statuses: dict[str, str]
+    agents: list[AgentConfig], agent_statuses: dict[str, str]
 ) -> str:
     """Create dependency graph with status indicators."""
     if not agents:
@@ -84,7 +93,7 @@ def create_dependency_graph_with_status(
         agent_displays = []
 
         for agent in level_agents:
-            name = agent["name"]
+            name = agent.name
             status = agent_statuses.get(name, "pending")
 
             if status == "running":
@@ -101,7 +110,7 @@ def create_dependency_graph_with_status(
     # Return a simple representation for text mode
     return " → ".join(
         [
-            ", ".join([a["name"] for a in level_agents])
+            ", ".join([a.name for a in level_agents])
             for level_agents in agents_by_level.values()
         ]
     )
@@ -109,7 +118,7 @@ def create_dependency_graph_with_status(
 
 def find_final_agent(
     results: dict[str, Any],
-    agents: list[dict[str, Any]] | None = None,
+    agents: list[AgentConfig] | None = None,
 ) -> str | None:
     """Find the final agent that should be displayed.
 
@@ -141,7 +150,7 @@ def find_final_agent(
 
 
 def _find_highest_level_successful_agent(
-    agents: list[dict[str, Any]],
+    agents: list[AgentConfig],
     successful_agents: list[str],
 ) -> str | None:
     """Return the successful agent at the highest dependency level."""
@@ -152,16 +161,16 @@ def _find_highest_level_successful_agent(
     max_level = max(agents_by_level.keys())
     for level in range(max_level, -1, -1):
         for agent in agents_by_level.get(level, []):
-            if agent["name"] in successful_agents:
-                return str(agent["name"])
+            if agent.name in successful_agents:
+                return str(agent.name)
     return None
 
 
 def _group_agents_by_dependency_level(
-    agents: list[dict[str, Any]],
-) -> dict[int, list[dict[str, Any]]]:
+    agents: list[AgentConfig],
+) -> dict[int, list[AgentConfig]]:
     """Group agents by their dependency level."""
-    agents_by_level: dict[int, list[dict[str, Any]]] = {}
+    agents_by_level: dict[int, list[AgentConfig]] = {}
     cache: dict[str, int] = {}
 
     for agent in agents:
@@ -174,28 +183,29 @@ def _group_agents_by_dependency_level(
 
 
 def _calculate_agent_level(
-    agent: dict[str, Any],
-    all_agents: list[dict[str, Any]],
+    agent: AgentConfig,
+    all_agents: list[AgentConfig],
     _cache: dict[str, int] | None = None,
 ) -> int:
     """Calculate the dependency level of an agent."""
     if _cache is None:
         _cache = {}
 
-    name = agent.get("name", "")
+    name = agent.name
     if name in _cache:
         return _cache[name]
 
-    dependencies = agent.get("depends_on", [])
+    dependencies = agent.depends_on
     if not dependencies:
         _cache[name] = 0
         return 0
 
     # Find the maximum level of dependencies
     max_dep_level = 0
-    for dep_name in dependencies:
+    for dep in dependencies:
+        dep_agent_name = _dep_name(dep)
         for dep_agent in all_agents:
-            if dep_agent["name"] == dep_name:
+            if dep_agent.name == dep_agent_name:
                 dep_level = _calculate_agent_level(dep_agent, all_agents, _cache)
                 max_dep_level = max(max_dep_level, dep_level)
 
@@ -204,7 +214,7 @@ def _calculate_agent_level(
     return level
 
 
-def _create_plain_text_dependency_graph(agents: list[dict[str, Any]]) -> list[str]:
+def _create_plain_text_dependency_graph(agents: list[AgentConfig]) -> list[str]:
     """Create a plain text dependency graph."""
     lines = []
     agents_by_level = _group_agents_by_dependency_level(agents)
@@ -220,7 +230,7 @@ def _create_plain_text_dependency_graph(agents: list[dict[str, Any]]) -> list[st
             continue
 
         level_agents = agents_by_level[level]
-        agent_names = [agent["name"] for agent in level_agents]
+        agent_names = [agent.name for agent in level_agents]
 
         if level == 0:
             # First level
@@ -234,14 +244,14 @@ def _create_plain_text_dependency_graph(agents: list[dict[str, Any]]) -> list[st
 
 
 def _create_structured_dependency_info(
-    agents: list[dict[str, Any]],
-) -> tuple[dict[int, list[dict[str, Any]]], dict[str, str]]:
+    agents: list[AgentConfig],
+) -> tuple[dict[int, list[AgentConfig]], dict[str, str]]:
     """Create structured dependency information for display."""
     agents_by_level = _group_agents_by_dependency_level(agents)
     agent_statuses = _create_agent_statuses(agents)
     return agents_by_level, agent_statuses
 
 
-def _create_agent_statuses(agents: list[dict[str, Any]]) -> dict[str, str]:
+def _create_agent_statuses(agents: list[AgentConfig]) -> dict[str, str]:
     """Create initial agent status mapping."""
-    return {agent["name"]: "pending" for agent in agents}
+    return {agent.name: "pending" for agent in agents}

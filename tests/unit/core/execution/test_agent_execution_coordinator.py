@@ -9,6 +9,7 @@ import pytest
 from llm_orc.core.execution.agent_execution_coordinator import (
     AgentExecutionCoordinator,
 )
+from llm_orc.schemas.agent_config import LlmAgentConfig
 
 
 class TestAgentExecutionCoordinator:
@@ -39,7 +40,7 @@ class TestAgentExecutionCoordinator:
         """Test agent execution without timeout."""
         coordinator, mocks = self.setup_coordinator()
 
-        agent_config = {"name": "test_agent", "model": "mock"}
+        agent_config = LlmAgentConfig(name="test_agent", model_profile="mock")
         result = await coordinator.execute_agent_with_timeout(
             agent_config, "test input", None
         )
@@ -60,7 +61,7 @@ class TestAgentExecutionCoordinator:
 
         mocks["agent_executor"].side_effect = quick_execution
 
-        agent_config = {"name": "test_agent", "model": "mock"}
+        agent_config = LlmAgentConfig(name="test_agent", model_profile="mock")
         result = await coordinator.execute_agent_with_timeout(
             agent_config, "test input", 1
         )
@@ -76,7 +77,7 @@ class TestAgentExecutionCoordinator:
             coro.close()
             raise TimeoutError
 
-        agent_config = {"name": "test_agent", "model": "mock"}
+        agent_config = LlmAgentConfig(name="test_agent", model_profile="mock")
 
         with (
             patch(

@@ -126,22 +126,13 @@ class ResourceHandler:
             if config:
                 agents_list = []
                 for agent in config.agents:
-                    if isinstance(agent, dict):
-                        agents_list.append(
-                            {
-                                "name": agent.get("name", ""),
-                                "model_profile": agent.get("model_profile"),
-                                "depends_on": agent.get("depends_on") or [],
-                            }
-                        )
-                    else:
-                        agents_list.append(
-                            {
-                                "name": agent.name,
-                                "model_profile": agent.model_profile,
-                                "depends_on": agent.depends_on or [],
-                            }
-                        )
+                    agents_list.append(
+                        {
+                            "name": agent.name,
+                            "model_profile": getattr(agent, "model_profile", None),
+                            "depends_on": agent.depends_on or [],
+                        }
+                    )
                 return {
                     "name": config.name,
                     "description": config.description,

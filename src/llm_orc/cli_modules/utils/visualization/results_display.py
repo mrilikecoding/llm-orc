@@ -7,6 +7,8 @@ from typing import Any
 import click
 from rich.console import Console
 
+from llm_orc.schemas.agent_config import AgentConfig
+
 from .dependency import _create_plain_text_dependency_graph, find_final_agent
 
 
@@ -30,7 +32,7 @@ def _display_detailed_results(
     console: Console,
     results: dict[str, Any],
     metadata: dict[str, Any],
-    agents: list[dict[str, Any]],
+    agents: list[AgentConfig],
 ) -> None:
     """Display detailed results for all agents."""
     console.print("\n[bold blue]📋 Results[/bold blue]")
@@ -49,7 +51,7 @@ def _display_simple_results(
     console: Console,
     results: dict[str, Any],
     metadata: dict[str, Any],
-    agents: list[dict[str, Any]],
+    agents: list[AgentConfig],
 ) -> None:
     """Display simplified results showing only the final agent."""
     final_agent = find_final_agent(results)
@@ -79,7 +81,7 @@ def _display_simple_results(
 def display_results(
     results: dict[str, Any],
     metadata: dict[str, Any],
-    agents: list[dict[str, Any]],
+    agents: list[AgentConfig],
     detailed: bool = False,
 ) -> None:
     """Display execution results with Rich formatting."""
@@ -95,7 +97,7 @@ def display_plain_text_results(
     results: dict[str, Any],
     metadata: dict[str, Any],
     detailed: bool = False,
-    agents: list[dict[str, Any]] | None = None,
+    agents: list[AgentConfig] | None = None,
 ) -> None:
     """Display results in plain text format."""
     if detailed:
@@ -127,7 +129,7 @@ def _display_agent_result(
     console: Console,
     agent_name: str,
     result: dict[str, Any],
-    agents: list[dict[str, Any]],
+    agents: list[AgentConfig],
     metadata: dict[str, Any] | None = None,
 ) -> None:
     """Display a single agent result."""
@@ -177,7 +179,7 @@ def _display_agent_result(
 def _display_detailed_plain_text(
     results: dict[str, Any],
     metadata: dict[str, Any],
-    agents: list[dict[str, Any]],
+    agents: list[AgentConfig],
 ) -> None:
     """Display detailed plain text results."""
     # Display dependency graph
@@ -216,7 +218,7 @@ def _display_detailed_plain_text(
 def _display_simplified_plain_text(
     results: dict[str, Any],
     metadata: dict[str, Any],
-    agents: list[dict[str, Any]] | None = None,
+    agents: list[AgentConfig] | None = None,
 ) -> None:
     """Display simplified plain text results."""
     final_agent = find_final_agent(results, agents)
@@ -229,7 +231,7 @@ def _display_simplified_plain_text(
         click.echo("❌ No successful results found")
 
 
-def _display_plain_text_dependency_graph(agents: list[dict[str, Any]]) -> None:
+def _display_plain_text_dependency_graph(agents: list[AgentConfig]) -> None:
     """Display dependency graph in plain text."""
     if not agents:
         return
@@ -552,19 +554,21 @@ def _build_model_display(
 
 def _get_agent_model_info(
     agent_name: str,
-    agents: list[dict[str, Any]],
+    agents: list[AgentConfig],
     result: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> str:
     """Get comprehensive model information for an agent."""
     for agent in agents:
-        if agent.get("name") == agent_name:
-            model_profile = agent.get("model_profile")
+        if agent.name == agent_name:
+            model_profile = getattr(agent, "model_profile", None)
             # Get actual model from metadata or agent config
             model = _extract_model_from_metadata(agent_name, metadata)
             if not model:
-                model = agent.get("model")
-            return _build_model_display(model_profile, model, agent.get("provider"))
+                model = getattr(agent, "model", None)
+            return _build_model_display(
+                model_profile, model, getattr(agent, "provider", None)
+            )
 
     return ""
 

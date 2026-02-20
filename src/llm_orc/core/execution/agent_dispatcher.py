@@ -10,9 +10,14 @@ from llm_orc.core.execution.agent_execution_coordinator import (
 )
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.progress_controller import ProgressController
+from llm_orc.schemas.agent_config import (
+    AgentConfig,
+    LlmAgentConfig,
+    ScriptAgentConfig,
+)
 
 # Type alias for the resolve profile callback
-ResolveProfileFn = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+ResolveProfileFn = Callable[[AgentConfig], Awaitable[dict[str, Any]]]
 
 
 class AgentDispatcher:
@@ -41,7 +46,7 @@ class AgentDispatcher:
 
     async def execute_agents_in_phase(
         self,
-        phase_agents: list[dict[str, Any]],
+        phase_agents: list[AgentConfig],
         phase_input: str | dict[str, str],
     ) -> dict[str, Any]:
         """Execute agents in parallel within a phase."""
@@ -60,26 +65,19 @@ class AgentDispatcher:
 
         return phase_results
 
-    def _determine_agent_type(self, agent_config: dict[str, Any]) -> str | None:
-        """Determine agent type from configuration."""
-        explicit_type = agent_config.get("type")
-        if explicit_type == "script":
+    def _determine_agent_type(self, agent_config: AgentConfig) -> str | None:
+        """Determine agent type from configuration using isinstance."""
+        if isinstance(agent_config, ScriptAgentConfig):
             return "script"
-        elif explicit_type == "llm":
+        if isinstance(agent_config, LlmAgentConfig):
             return "llm"
-
-        if "script" in agent_config:
-            return "script"
-        elif "model_profile" in agent_config or "model" in agent_config:
-            return "llm"
-
         return None
 
     async def _execute_single_agent_in_phase(
-        self, agent_config: dict[str, Any], phase_input: str | dict[str, str]
+        self, agent_config: AgentConfig, phase_input: str | dict[str, str]
     ) -> tuple[str, dict[str, Any]]:
         """Execute a single agent in a phase and return (name, result)."""
-        agent_name = agent_config["name"]
+        agent_name = agent_config.name
 
         if self._dependency_resolver.is_fan_out_instance_config(agent_config):
             base_input = (
@@ -100,7 +98,7 @@ class AgentDispatcher:
 
     async def _execute_agent_with_monitoring(
         self,
-        agent_config: dict[str, Any],
+        agent_config: AgentConfig,
         agent_name: str,
         phase_input: str | dict[str, str],
     ) -> tuple[str, dict[str, Any]]:
@@ -133,7 +131,7 @@ class AgentDispatcher:
             "model_instance": model_instance,
         }
 
-    async def _get_agent_timeout(self, agent_config: dict[str, Any]) -> int:
+    async def _get_agent_timeout(self, agent_config: AgentConfig) -> int:
         """Get timeout for agent execution."""
         enhanced_config = await self._resolve_profile(agent_config)
         timeout = enhanced_config.get("timeout_seconds")
@@ -165,10 +163,10 @@ class AgentDispatcher:
             )
 
     async def _handle_agent_execution_failure(
-        self, agent_config: dict[str, Any], error: Exception
+        self, agent_config: AgentConfig, error: Exception
     ) -> tuple[str, dict[str, Any]]:
         """Handle agent execution failure and return error result."""
-        agent_name = agent_config["name"]
+        agent_name = agent_config.name
         agent_end_time = time.time()
 
         self._emit_event(

@@ -11,6 +11,7 @@ from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.config.roles import RoleDefinition
 from llm_orc.models.anthropic import ClaudeCLIModel, ClaudeModel, OAuthClaudeModel
 from llm_orc.models.base import ModelInterface
+from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 
 
 class TestEnsembleExecutor:
@@ -24,8 +25,8 @@ class TestEnsembleExecutor:
             name="test_ensemble",
             description="Test ensemble",
             agents=[
-                {"name": "agent1", "model_profile": "test-tester"},
-                {"name": "agent2", "model_profile": "test-reviewer"},
+                LlmAgentConfig(name="agent1", model_profile="test-tester"),
+                LlmAgentConfig(name="agent2", model_profile="test-reviewer"),
             ],
         )
 
@@ -100,8 +101,8 @@ class TestEnsembleExecutor:
             name="multi_model_ensemble",
             description="Ensemble with different models",
             agents=[
-                {"name": "claude_agent", "model_profile": "claude-analyst"},
-                {"name": "local_agent", "model_profile": "llama-checker"},
+                LlmAgentConfig(name="claude_agent", model_profile="claude-analyst"),
+                LlmAgentConfig(name="local_agent", model_profile="llama-checker"),
             ],
         )
 
@@ -166,8 +167,8 @@ class TestEnsembleExecutor:
             name="test_ensemble_with_failure",
             description="Test ensemble with one failing agent",
             agents=[
-                {"name": "working_agent", "model_profile": "test-tester"},
-                {"name": "failing_agent", "model_profile": "test-reviewer"},
+                LlmAgentConfig(name="working_agent", model_profile="test-tester"),
+                LlmAgentConfig(name="failing_agent", model_profile="test-reviewer"),
             ],
         )
 
@@ -236,7 +237,7 @@ class TestEnsembleExecutor:
             name="dependency_test",
             description="Test dependency-based functionality",
             agents=[
-                {"name": "agent1", "model_profile": "test-analyst"},
+                LlmAgentConfig(name="agent1", model_profile="test-analyst"),
             ],
         )
 
@@ -279,8 +280,8 @@ class TestEnsembleExecutor:
             name="usage_tracking_test",
             description="Test usage tracking",
             agents=[
-                {"name": "agent1", "model_profile": "claude-analyst"},
-                {"name": "agent2", "model_profile": "llama-reviewer"},
+                LlmAgentConfig(name="agent1", model_profile="claude-analyst"),
+                LlmAgentConfig(name="agent2", model_profile="llama-reviewer"),
             ],
         )
 
@@ -369,11 +370,11 @@ class TestEnsembleExecutor:
             name="timeout_test",
             description="Test timeout functionality",
             agents=[
-                {
-                    "name": "slow_agent",
-                    "model_profile": "slow-analyst",
-                    "timeout_seconds": 0.1,  # 100ms timeout at agent level
-                },
+                LlmAgentConfig(
+                    name="slow_agent",
+                    model_profile="slow-analyst",
+                    timeout_seconds=1,  # 1 second timeout at agent level
+                ),
             ],
         )
 
@@ -381,7 +382,7 @@ class TestEnsembleExecutor:
         slow_model = AsyncMock(spec=ModelInterface)
 
         async def slow_response(*args: Any, **kwargs: Any) -> str:
-            await asyncio.sleep(0.2)  # Takes 200ms, longer than 100ms timeout
+            await asyncio.sleep(2.0)  # Takes 2s, longer than 1s timeout
             return "This should timeout"
 
         slow_model.generate_response = slow_response
@@ -432,16 +433,16 @@ class TestEnsembleExecutor:
             name="per_agent_timeout_test",
             description="Test per-agent timeout functionality",
             agents=[
-                {
-                    "name": "fast_agent",
-                    "model_profile": "fast-analyst",
-                    "timeout_seconds": 1.0,
-                },
-                {
-                    "name": "slow_agent",
-                    "model_profile": "slow-reviewer",
-                    "timeout_seconds": 0.05,  # 50ms timeout
-                },
+                LlmAgentConfig(
+                    name="fast_agent",
+                    model_profile="fast-analyst",
+                    timeout_seconds=5,
+                ),
+                LlmAgentConfig(
+                    name="slow_agent",
+                    model_profile="slow-reviewer",
+                    timeout_seconds=1,  # 1 second timeout
+                ),
             ],
         )
 
@@ -461,7 +462,7 @@ class TestEnsembleExecutor:
         slow_model = AsyncMock(spec=ModelInterface)
 
         async def slow_response(*args: Any, **kwargs: Any) -> str:
-            await asyncio.sleep(0.1)  # Takes 100ms, longer than 50ms timeout
+            await asyncio.sleep(2.0)  # Takes 2s, longer than 1s timeout
             return "This should timeout"
 
         slow_model.generate_response = slow_response
@@ -667,19 +668,13 @@ class TestEnsembleExecutor:
             name="dependency_test",
             description="Test dependency-based execution",
             agents=[
-                {
-                    "name": "researcher",
-                    "model_profile": "test-researcher",
-                },
-                {
-                    "name": "analyzer",
-                    "model_profile": "test-analyzer",
-                },
-                {
-                    "name": "synthesizer",
-                    "model_profile": "test-synthesizer",
-                    "depends_on": ["researcher", "analyzer"],
-                },
+                LlmAgentConfig(name="researcher", model_profile="test-researcher"),
+                LlmAgentConfig(name="analyzer", model_profile="test-analyzer"),
+                LlmAgentConfig(
+                    name="synthesizer",
+                    model_profile="test-synthesizer",
+                    depends_on=["researcher", "analyzer"],
+                ),
             ],
         )
 
@@ -745,8 +740,8 @@ class TestEnsembleExecutor:
             name="streaming_test",
             description="Test streaming execution",
             agents=[
-                {"name": "agent1", "model_profile": "test-tester"},
-                {"name": "agent2", "model_profile": "test-reviewer"},
+                LlmAgentConfig(name="agent1", model_profile="test-tester"),
+                LlmAgentConfig(name="agent2", model_profile="test-reviewer"),
             ],
         )
 
@@ -830,11 +825,11 @@ class TestEnsembleExecutor:
             mock_get_profiles.return_value = mock_profiles
 
             # Test with model_profile specified
-            agent_config = {
-                "name": "test_agent",
-                "model_profile": "test-profile",
-                "temperature": 0.9,  # Should override profile
-            }
+            agent_config = LlmAgentConfig(
+                name="test_agent",
+                model_profile="test-profile",
+                temperature=0.9,  # Should override profile
+            )
 
             enhanced = (
                 await executor._llm_agent_runner._resolve_model_profile_to_config(
@@ -860,18 +855,18 @@ class TestEnsembleExecutor:
         ) as mock_get_profiles:
             mock_get_profiles.return_value = {}  # No profiles
 
-            agent_config = {
-                "name": "test_agent",
-                "model_profile": "nonexistent-profile",
-            }
+            agent_config = LlmAgentConfig(
+                name="test_agent",
+                model_profile="nonexistent-profile",
+            )
 
-            # Should return original config when profile doesn't exist
+            # Should return config dict when profile doesn't exist
             enhanced = (
                 await executor._llm_agent_runner._resolve_model_profile_to_config(
                     agent_config
                 )
             )
-            assert enhanced == agent_config
+            assert enhanced == agent_config.model_dump()
 
     @pytest.mark.asyncio
     async def test_execute_agent_with_timeout_no_timeout(
@@ -880,7 +875,7 @@ class TestEnsembleExecutor:
         """Test _execute_agent_with_timeout with no timeout specified."""
         executor = mock_ensemble_executor
 
-        agent_config = {"name": "test_agent", "model": "mock-model"}
+        agent_config = LlmAgentConfig(name="test_agent", model_profile="mock-model")
         input_data = "Test input"
 
         # Mock _execute_agent to return expected result
@@ -907,7 +902,7 @@ class TestEnsembleExecutor:
         """Test _execute_agent_with_timeout when timeout occurs."""
         executor = mock_ensemble_executor
 
-        agent_config = {"name": "test_agent", "model": "mock-model"}
+        agent_config = LlmAgentConfig(name="test_agent", model_profile="mock-model")
         input_data = "Test input"
 
         # Mock the execution coordinator to raise the timeout exception directly
@@ -935,14 +930,18 @@ class TestEnsembleExecutor:
         """Test model profile resolution without model_profile key."""
         executor = mock_ensemble_executor
 
-        agent_config = {"name": "test_agent", "model": "claude-3-sonnet"}
+        agent_config = LlmAgentConfig(
+            name="test_agent",
+            model="claude-3-sonnet",
+            provider="anthropic",
+        )
 
-        # Should return copy of original config when no model_profile
+        # Should return dict copy of config when no model_profile
         enhanced = await executor._llm_agent_runner._resolve_model_profile_to_config(
             agent_config
         )
-        assert enhanced == agent_config
-        assert enhanced is not agent_config  # Should be a copy
+        assert enhanced == agent_config.model_dump()
+        assert enhanced is not agent_config  # Result is a new dict, not the config
 
     @pytest.mark.asyncio
     async def test_parallel_execution_performance(
@@ -959,9 +958,9 @@ class TestEnsembleExecutor:
             name="parallel_test",
             description="Test parallel execution performance",
             agents=[
-                {"name": "agent1", "model_profile": "test-analyst"},
-                {"name": "agent2", "model_profile": "test-reviewer"},
-                {"name": "agent3", "model_profile": "test-synthesizer"},
+                LlmAgentConfig(name="agent1", model_profile="test-analyst"),
+                LlmAgentConfig(name="agent2", model_profile="test-reviewer"),
+                LlmAgentConfig(name="agent3", model_profile="test-synthesizer"),
             ],
         )
 
@@ -1051,11 +1050,11 @@ class TestEnsembleExecutor:
             name="oauth-fallback-test",
             description="Test OAuth fallback display enhancement",
             agents=[
-                {
-                    "name": "oauth-agent",
-                    "model_profile": "premium-claude",  # Uses OAuth authentication
-                    "system_prompt": "You are a test agent.",
-                }
+                LlmAgentConfig(
+                    name="oauth-agent",
+                    model_profile="premium-claude",  # Uses OAuth authentication
+                    system_prompt="You are a test agent.",
+                )
             ],
         )
 
@@ -1165,11 +1164,11 @@ class TestEnsembleExecutor:
             name="model-loading-fallback-test",
             description="Test model loading fallback display enhancement",
             agents=[
-                {
-                    "name": "failing-agent",
-                    "model_profile": "guaranteed-fail",  # Profile designed to fail
-                    "system_prompt": "You are a test agent.",
-                }
+                LlmAgentConfig(
+                    name="failing-agent",
+                    model_profile="guaranteed-fail",  # Profile designed to fail
+                    system_prompt="You are a test agent.",
+                )
             ],
         )
 
@@ -1287,7 +1286,7 @@ class TestEnsembleExecutor:
             name="artifact_test",
             description="Test artifact manager integration",
             agents=[
-                {"name": "agent1", "model_profile": "test-tester"},
+                LlmAgentConfig(name="agent1", model_profile="test-tester"),
             ],
         )
 
@@ -1370,18 +1369,16 @@ class TestEnsembleExecutor:
             name="interactive_ensemble",
             description="Ensemble with interactive script requiring user input",
             agents=[
-                {
-                    "name": "data_collector",
-                    "type": "script",
-                    "script": "primitives/user-interaction/get_user_input.py",
-                    "timeout_seconds": 10,
-                },
-                {
-                    "name": "data_processor",
-                    "model_profile": "claude-analyst",
-                    "system_prompt": "Process the collected data",
-                    "timeout_seconds": 30,
-                },
+                ScriptAgentConfig(
+                    name="data_collector",
+                    script="primitives/user-interaction/get_user_input.py",
+                ),
+                LlmAgentConfig(
+                    name="data_processor",
+                    model_profile="claude-analyst",
+                    system_prompt="Process the collected data",
+                    timeout_seconds=30,
+                ),
             ],
         )
 
@@ -1518,18 +1515,16 @@ class TestEnsembleExecutor:
             name="standard_ensemble",
             description="Standard ensemble with no user input requirements",
             agents=[
-                {
-                    "name": "data_processor",
-                    "model_profile": "claude-analyst",
-                    "system_prompt": "Process the data",
-                    "timeout_seconds": 30,
-                },
-                {
-                    "name": "data_formatter",
-                    "type": "script",
-                    "script": "echo '{\"formatted\": true}'",
-                    "timeout_seconds": 5,
-                },
+                LlmAgentConfig(
+                    name="data_processor",
+                    model_profile="claude-analyst",
+                    system_prompt="Process the data",
+                    timeout_seconds=30,
+                ),
+                ScriptAgentConfig(
+                    name="data_formatter",
+                    script="echo '{\"formatted\": true}'",
+                ),
             ],
         )
 
@@ -1616,7 +1611,7 @@ class TestEnsembleExecutor:
             name="artifact_error_test",
             description="Test artifact manager error handling",
             agents=[
-                {"name": "agent1", "model_profile": "test-tester"},
+                LlmAgentConfig(name="agent1", model_profile="test-tester"),
             ],
         )
 
@@ -1693,11 +1688,11 @@ class TestEnsembleExecutor:
         executor = mock_ensemble_executor
 
         # Create script agent configuration that requires user input
-        agent_config = {
-            "name": "interactive_agent",
-            "script": "primitives/user-interaction/get_user_input.py",
-            "parameters": {"prompt": "What's your name?"},
-        }
+        agent_config = ScriptAgentConfig(
+            name="interactive_agent",
+            script="primitives/user-interaction/get_user_input.py",
+            parameters={"prompt": "What's your name?"},
+        )
         input_data = "start_interactive"
 
         # Mock user input detection
@@ -1793,26 +1788,22 @@ class TestEnsembleExecutor:
             name="interactive_test_ensemble",
             description="Test ensemble with user input handling",
             agents=[
-                {
-                    "name": "user_input_collector",
-                    "type": "script",
-                    "script": "primitives/user-interaction/get_user_input.py",
-                    "timeout_seconds": 10,
-                },
-                {
-                    "name": "data_processor",
-                    "model_profile": "claude-analyst",
-                    "system_prompt": "Process collected data",
-                    "timeout_seconds": 30,
-                    "depends_on": ["user_input_collector"],
-                },
-                {
-                    "name": "interactive_script2",
-                    "type": "script",
-                    "script": "primitives/user-interaction/confirm_action.py",
-                    "timeout_seconds": 5,
-                    "depends_on": ["data_processor"],
-                },
+                ScriptAgentConfig(
+                    name="user_input_collector",
+                    script="primitives/user-interaction/get_user_input.py",
+                ),
+                LlmAgentConfig(
+                    name="data_processor",
+                    model_profile="claude-analyst",
+                    system_prompt="Process collected data",
+                    timeout_seconds=30,
+                    depends_on=["user_input_collector"],
+                ),
+                ScriptAgentConfig(
+                    name="interactive_script2",
+                    script="primitives/user-interaction/confirm_action.py",
+                    depends_on=["data_processor"],
+                ),
             ],
         )
 
@@ -1841,18 +1832,18 @@ class TestEnsembleExecutor:
         original_execute_agents = executor._agent_dispatcher.execute_agents_in_phase
 
         async def mock_execute_agents_in_phase(
-            agents: list[dict[str, Any]], phase_input: str | dict[str, str]
+            agents: list[Any], phase_input: str | dict[str, str]
         ) -> dict[str, Any]:
             results = {}
             for agent in agents:
                 # Simulate interactive script results with collected_data
-                results[agent["name"]] = {
+                results[agent.name] = {
                     "success": True,
                     "status": "success",
-                    "output": f"Interactive script {agent['name']} executed",
+                    "output": f"Interactive script {agent.name} executed",
                     "model_instance": None,  # Script agents don't have models
                     "response": {
-                        "collected_data": {"user_input": f"data from {agent['name']}"}
+                        "collected_data": {"user_input": f"data from {agent.name}"}
                     },
                 }
             return results
@@ -1901,8 +1892,8 @@ class TestEnsembleExecutor:
             name="test_ensemble",
             description="Test ensemble",
             agents=[
-                {"name": "agent1", "model_profile": "test-tester"},
-                {"name": "agent2", "model_profile": "test-reviewer"},
+                LlmAgentConfig(name="agent1", model_profile="test-tester"),
+                LlmAgentConfig(name="agent2", model_profile="test-reviewer"),
             ],
         )
         input_data = "Test input"
@@ -1944,12 +1935,12 @@ class TestEnsembleExecutor:
             name="dependency_test",
             description="Test dependency analysis",
             agents=[
-                {"name": "agent1", "model_profile": "test-analyst"},
-                {
-                    "name": "agent2",
-                    "model_profile": "test-reviewer",
-                    "depends_on": ["agent1"],
-                },
+                LlmAgentConfig(name="agent1", model_profile="test-analyst"),
+                LlmAgentConfig(
+                    name="agent2",
+                    model_profile="test-reviewer",
+                    depends_on=["agent1"],
+                ),
             ],
         )
 
@@ -1963,12 +1954,12 @@ class TestEnsembleExecutor:
         assert len(phases) >= 1
 
         # Verify first phase contains independent agents
-        phase0_names = [agent["name"] for agent in phases[0]]
+        phase0_names = [agent.name for agent in phases[0]]
         assert "agent1" in phase0_names
 
         # Verify dependent agents are in later phases
         if len(phases) > 1:
-            phase1_names = [agent["name"] for agent in phases[1]]
+            phase1_names = [agent.name for agent in phases[1]]
             assert "agent2" in phase1_names
 
     @pytest.mark.asyncio
@@ -1990,7 +1981,7 @@ class TestEnsembleExecutor:
             name="test_ensemble",
             description="Test ensemble",
             agents=[
-                {"name": "agent1", "model_profile": "test-tester"},
+                LlmAgentConfig(name="agent1", model_profile="test-tester"),
             ],
         )
 
@@ -2056,7 +2047,7 @@ class TestEnsembleExecutor:
         config = EnsembleConfig(
             name="test_ensemble",
             description="Test ensemble",
-            agents=[{"name": "agent1", "model_profile": "test-tester"}],
+            agents=[LlmAgentConfig(name="agent1", model_profile="test-tester")],
         )
 
         executor = mock_ensemble_executor
@@ -2104,7 +2095,7 @@ class TestEnsembleExecutor:
             name="validation_test",
             description="Test validation integration",
             agents=[
-                {"name": "agent1", "model_profile": "test-tester"},
+                LlmAgentConfig(name="agent1", model_profile="test-tester"),
             ],
             validation={
                 "structural": {
@@ -2182,7 +2173,7 @@ class TestEnsembleExecutor:
             name="no_validation_test",
             description="Test without validation",
             agents=[
-                {"name": "agent1", "model_profile": "test-tester"},
+                LlmAgentConfig(name="agent1", model_profile="test-tester"),
             ],
         )
 
@@ -2237,13 +2228,13 @@ class TestFanOutExecution:
         executor = mock_ensemble_executor
 
         phase_agents = [
-            {
-                "name": "extractor",
-                "model_profile": "test",
-                "fan_out": True,
-                "depends_on": ["chunker"],
-            },
-            {"name": "normal_agent", "model_profile": "test"},
+            LlmAgentConfig(
+                name="extractor",
+                model_profile="test",
+                fan_out=True,
+                depends_on=["chunker"],
+            ),
+            LlmAgentConfig(name="normal_agent", model_profile="test"),
         ]
 
         results_dict = {
@@ -2259,7 +2250,7 @@ class TestFanOutExecution:
 
         assert len(fan_out_agents) == 1
         agent_config, upstream_array = fan_out_agents[0]
-        assert agent_config["name"] == "extractor"
+        assert agent_config.name == "extractor"
         assert upstream_array == ["chunk1", "chunk2", "chunk3"]
 
     @pytest.mark.asyncio
@@ -2270,12 +2261,12 @@ class TestFanOutExecution:
         executor = mock_ensemble_executor
 
         phase_agents = [
-            {
-                "name": "extractor",
-                "model_profile": "test",
-                "fan_out": True,
-                "depends_on": ["processor"],
-            },
+            LlmAgentConfig(
+                name="extractor",
+                model_profile="test",
+                fan_out=True,
+                depends_on=["processor"],
+            ),
         ]
 
         results_dict = {
@@ -2297,13 +2288,13 @@ class TestFanOutExecution:
         """Test expanding a fan-out agent into instances."""
         executor = mock_ensemble_executor
 
-        agent_config = {
-            "name": "extractor",
-            "model_profile": "test",
-            "fan_out": True,
-            "depends_on": ["chunker"],
-            "system_prompt": "Extract data",
-        }
+        agent_config = LlmAgentConfig(
+            name="extractor",
+            model_profile="test",
+            fan_out=True,
+            depends_on=["chunker"],
+            system_prompt="Extract data",
+        )
 
         upstream_array = ["chunk_a", "chunk_b"]
 
@@ -2312,11 +2303,11 @@ class TestFanOutExecution:
         )
 
         assert len(instances) == 2
-        assert instances[0]["name"] == "extractor[0]"
-        assert instances[1]["name"] == "extractor[1]"
-        assert instances[0]["_fan_out_chunk"] == "chunk_a"
-        assert instances[1]["_fan_out_chunk"] == "chunk_b"
-        assert instances[0]["system_prompt"] == "Extract data"
+        assert instances[0].name == "extractor[0]"
+        assert instances[1].name == "extractor[1]"
+        assert instances[0].fan_out_chunk == "chunk_a"
+        assert instances[1].fan_out_chunk == "chunk_b"
+        assert instances[0].system_prompt == "Extract data"
 
     @pytest.mark.asyncio
     async def test_gather_fan_out_results(self, mock_ensemble_executor: Any) -> None:

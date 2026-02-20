@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
+from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 
 
 class TestScriptUserInputHandler:
@@ -102,9 +103,8 @@ class TestScriptUserInputHandler:
 
         config = Mock(
             agents=[
-                {"type": "llm", "name": "analyzer"},
-                {"type": "api", "name": "fetcher"},
-                {"name": "processor"},  # No type specified
+                LlmAgentConfig(name="analyzer", model_profile="some-profile"),
+                LlmAgentConfig(name="fetcher", model_profile="some-profile"),
             ]
         )
         assert handler.ensemble_requires_user_input(config) is False
@@ -115,9 +115,9 @@ class TestScriptUserInputHandler:
 
         config = Mock(
             agents=[
-                {"type": "script", "script": "process_data.py"},
-                {"type": "script", "script": "analyze.sh"},
-                {"type": "llm", "name": "summarizer"},
+                ScriptAgentConfig(name="processor", script="process_data.py"),
+                ScriptAgentConfig(name="analyzer", script="analyze.sh"),
+                LlmAgentConfig(name="summarizer", model_profile="some-profile"),
             ]
         )
         assert handler.ensemble_requires_user_input(config) is False
@@ -129,9 +129,9 @@ class TestScriptUserInputHandler:
         # One agent requires input
         config = Mock(
             agents=[
-                {"type": "script", "script": "process_data.py"},
-                {"type": "script", "script": "get_user_input.py"},
-                {"type": "llm", "name": "summarizer"},
+                ScriptAgentConfig(name="processor", script="process_data.py"),
+                ScriptAgentConfig(name="input_agent", script="get_user_input.py"),
+                LlmAgentConfig(name="summarizer", model_profile="some-profile"),
             ]
         )
         assert handler.ensemble_requires_user_input(config) is True
@@ -139,7 +139,10 @@ class TestScriptUserInputHandler:
         # Script content with input()
         config2 = Mock(
             agents=[
-                {"type": "script", "script": 'python -c "name = input()"'},
+                ScriptAgentConfig(
+                    name="inline_input",
+                    script='python -c "name = input()"',
+                ),
             ]
         )
         assert handler.ensemble_requires_user_input(config2) is True
@@ -148,13 +151,11 @@ class TestScriptUserInputHandler:
         """Test ensemble with invalid agent configurations."""
         handler = ScriptUserInputHandler()
 
-        # Non-dict agents should be skipped
+        # Non-ScriptAgentConfig agents are skipped; only ScriptAgentConfig is checked
         config = Mock(
             agents=[
-                "invalid_agent_string",
-                123,
-                None,
-                {"type": "script", "script": "get_user_input.py"},
+                LlmAgentConfig(name="llm_agent", model_profile="some-profile"),
+                ScriptAgentConfig(name="input_agent", script="get_user_input.py"),
             ]
         )
         assert handler.ensemble_requires_user_input(config) is True

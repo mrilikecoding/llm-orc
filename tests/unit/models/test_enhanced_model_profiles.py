@@ -11,6 +11,7 @@ import yaml
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.config.roles import RoleDefinition
+from llm_orc.schemas.agent_config import LlmAgentConfig
 
 
 class TestEnhancedModelProfiles:
@@ -68,7 +69,7 @@ class TestEnhancedModelProfiles:
         config = EnsembleConfig(
             name="test_ensemble",
             description="Test ensemble with model profile system prompt",
-            agents=[{"name": "worker1", "model_profile": "worker_bee"}],
+            agents=[LlmAgentConfig(name="worker1", model_profile="worker_bee")],
         )
 
         # Mock the configuration manager to return our enhanced profile
@@ -124,8 +125,8 @@ class TestEnhancedModelProfiles:
                     # The agent config passed to _load_role_from_config is the
                     # original config
                     agent_config = mock_load_role.call_args[0][0]
-                    assert agent_config["name"] == "worker1"
-                    assert agent_config["model_profile"] == "worker_bee"
+                    assert agent_config.name == "worker1"
+                    assert agent_config.model_profile == "worker_bee"
                     # The enhanced config is resolved internally - verify
                     # _resolve_model_profile_to_config was called
                     assert mock_resolve.called
@@ -139,9 +140,7 @@ class TestEnhancedModelProfiles:
         config = EnsembleConfig(
             name="test_ensemble",
             description="Test ensemble with model profile timeout",
-            agents=[
-                {"name": "worker1", "model_profile": "worker_bee", "model": "llama3"}
-            ],
+            agents=[LlmAgentConfig(name="worker1", model_profile="worker_bee")],
         )
 
         # Mock the configuration manager to return our enhanced profile

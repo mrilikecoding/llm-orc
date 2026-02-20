@@ -15,6 +15,7 @@ from llm_orc.core.execution.usage_collector import (
 )
 from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.models.base import ModelInterface
+from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
 
 
 class LlmAgentRunner:
@@ -36,11 +37,11 @@ class LlmAgentRunner:
 
     async def execute(
         self,
-        agent_config: dict[str, Any],
+        agent_config: AgentConfig,
         input_data: str,
     ) -> tuple[str, ModelInterface | None]:
         """Execute LLM agent with fallback handling."""
-        agent_name = agent_config["name"]
+        agent_name = agent_config.name
 
         self._usage_collector.start_agent_resource_monitoring(agent_name)
 
@@ -63,11 +64,12 @@ class LlmAgentRunner:
             self._usage_collector.finalize_agent_resource_monitoring(agent_name)
 
     async def _load_model_with_fallback(
-        self, agent_config: dict[str, Any]
+        self, agent_config: AgentConfig
     ) -> ModelInterface:
         """Load model with fallback handling."""
         try:
-            return await self._model_factory.load_model_from_agent_config(agent_config)
+            config_dict = agent_config.model_dump()
+            return await self._model_factory.load_model_from_agent_config(config_dict)
         except Exception as model_loading_error:
             return await self._handle_model_loading_fallback(
                 agent_config, model_loading_error
@@ -75,13 +77,18 @@ class LlmAgentRunner:
 
     async def _handle_model_loading_fallback(
         self,
-        agent_config: dict[str, Any],
+        agent_config: AgentConfig,
         model_loading_error: Exception,
     ) -> ModelInterface:
         """Handle model loading failure with fallback."""
+        model_profile = (
+            agent_config.model_profile
+            if isinstance(agent_config, LlmAgentConfig)
+            else None
+        )
         fallback_model = await self._model_factory.get_fallback_model(
-            context=f"agent_{agent_config['name']}",
-            original_profile=agent_config.get("model_profile"),
+            context=f"agent_{agent_config.name}",
+            original_profile=model_profile,
         )
         fallback_model_name = getattr(fallback_model, "model_name", "unknown")
 
@@ -89,10 +96,10 @@ class LlmAgentRunner:
         self._emit_event(
             "agent_fallback_started",
             {
-                "agent_name": agent_config["name"],
+                "agent_name": agent_config.name,
                 "failure_type": failure_type,
                 "original_error": str(model_loading_error),
-                "original_model_profile": agent_config.get("model_profile", "unknown"),
+                "original_model_profile": model_profile or "unknown",
                 "fallback_model_profile": None,
                 "fallback_model_name": fallback_model_name,
             },
@@ -101,43 +108,48 @@ class LlmAgentRunner:
 
     async def _handle_runtime_fallback(
         self,
-        agent_config: dict[str, Any],
+        agent_config: AgentConfig,
         role: RoleDefinition,
         input_data: str,
         error: Exception,
     ) -> tuple[str, ModelInterface]:
         """Handle runtime failure with fallback model."""
         fallback_model = await self._model_factory.get_fallback_model(
-            context=f"agent_{agent_config['name']}"
+            context=f"agent_{agent_config.name}"
         )
         fallback_model_name = getattr(fallback_model, "model_name", "unknown")
 
+        model_profile = (
+            agent_config.model_profile
+            if isinstance(agent_config, LlmAgentConfig)
+            else None
+        )
         failure_type = self._classify_failure(str(error))
         self._emit_event(
             "agent_fallback_started",
             {
-                "agent_name": agent_config["name"],
+                "agent_name": agent_config.name,
                 "failure_type": failure_type,
                 "original_error": str(error),
-                "original_model_profile": agent_config.get("model_profile", "unknown"),
+                "original_model_profile": model_profile or "unknown",
                 "fallback_model_profile": None,
                 "fallback_model_name": fallback_model_name,
             },
         )
 
-        fallback_agent = Agent(agent_config["name"], role, fallback_model)
+        fallback_agent = Agent(agent_config.name, role, fallback_model)
 
         try:
             response = await fallback_agent.respond_to_message(input_data)
             self._emit_fallback_success_event(
-                agent_config["name"],
+                agent_config.name,
                 fallback_model,
                 response,
             )
             return response, fallback_model
         except Exception as fallback_error:
             self._emit_fallback_failure_event(
-                agent_config["name"],
+                agent_config.name,
                 fallback_model_name,
                 fallback_error,
             )
@@ -179,11 +191,9 @@ class LlmAgentRunner:
             },
         )
 
-    async def _load_role_from_config(
-        self, agent_config: dict[str, Any]
-    ) -> RoleDefinition:
+    async def _load_role_from_config(self, agent_config: AgentConfig) -> RoleDefinition:
         """Load a role definition from agent configuration."""
-        agent_name = agent_config["name"]
+        agent_name = agent_config.name
 
         enhanced_config = await self._resolve_model_profile_to_config(agent_config)
 
@@ -195,19 +205,26 @@ class LlmAgentRunner:
         return RoleDefinition(name=agent_name, prompt=prompt)
 
     async def _resolve_model_profile_to_config(
-        self, agent_config: dict[str, Any]
+        self, agent_config: AgentConfig
     ) -> dict[str, Any]:
-        """Resolve model profile and merge with agent config."""
-        enhanced_config = agent_config.copy()
+        """Resolve model profile and merge with agent config.
 
-        if "model_profile" in agent_config:
+        Returns a plain dict — this is the boundary between Pydantic
+        models and downstream code that still expects dicts (e.g.
+        ModelFactory).
+        """
+        config_dict = agent_config.model_dump()
+
+        if isinstance(agent_config, LlmAgentConfig) and agent_config.model_profile:
             profiles = self._config_manager.get_model_profiles()
-            profile_name = agent_config["model_profile"]
+            profile_name = agent_config.model_profile
             if profile_name in profiles:
                 profile_config = profiles[profile_name]
-                enhanced_config = {
-                    **profile_config,
-                    **agent_config,
+                # Merge profile first, then let explicit (non-None) agent values
+                # override. None values in config_dict mean "not set by agent".
+                agent_overrides = {
+                    k: v for k, v in config_dict.items() if v is not None
                 }
+                config_dict = {**config_dict, **profile_config, **agent_overrides}
 
-        return enhanced_config
+        return config_dict

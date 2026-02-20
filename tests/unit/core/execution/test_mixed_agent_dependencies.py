@@ -13,6 +13,7 @@ from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.config.roles import RoleDefinition
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.models.base import ModelInterface
+from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 
 
 @pytest.fixture(autouse=True)
@@ -45,22 +46,20 @@ class TestMixedAgentDependencies:
             name="script_llm_script_chain",
             description="Test script→LLM→script dependency chain",
             agents=[
-                {
-                    "name": "data_collector",
-                    "type": "script",
-                    "script": 'echo "Initial data: user_count=100"',
-                },
-                {
-                    "name": "data_analyzer",
-                    "model_profile": "test-analyzer",
-                    "depends_on": ["data_collector"],
-                },
-                {
-                    "name": "report_generator",
-                    "type": "script",
+                ScriptAgentConfig(
+                    name="data_collector",
+                    script='echo "Initial data: user_count=100"',
+                ),
+                LlmAgentConfig(
+                    name="data_analyzer",
+                    model_profile="test-analyzer",
+                    depends_on=["data_collector"],
+                ),
+                ScriptAgentConfig(
+                    name="report_generator",
                     # Script receives JSON with dependencies dict via stdin
                     # Uses Python to parse and extract dependency data
-                    "script": (
+                    script=(
                         'python3 -c "'
                         "import sys,json; "
                         "d=json.load(sys.stdin); "
@@ -69,8 +68,8 @@ class TestMixedAgentDependencies:
                         "print(json.dumps({'success':True,'data':'Report: '+r}))"
                         '"'
                     ),
-                    "depends_on": ["data_analyzer"],
-                },
+                    depends_on=["data_analyzer"],
+                ),
             ],
         )
 
@@ -140,27 +139,24 @@ class TestMixedAgentDependencies:
             name="parallel_script_to_llm",
             description="Parallel scripts feeding LLM",
             agents=[
-                {
-                    "name": "metrics_collector",
-                    "type": "script",
-                    "script": 'echo "metrics: cpu=50%"',
-                },
-                {
-                    "name": "logs_collector",
-                    "type": "script",
-                    "script": 'echo "logs: 10 errors found"',
-                },
-                {
-                    "name": "system_analyzer",
-                    "model_profile": "test-analyzer",
-                    "depends_on": ["metrics_collector", "logs_collector"],
-                },
-                {
-                    "name": "alert_generator",
-                    "type": "script",
-                    "script": 'echo "Alert: $1"',
-                    "depends_on": ["system_analyzer"],
-                },
+                ScriptAgentConfig(
+                    name="metrics_collector",
+                    script='echo "metrics: cpu=50%"',
+                ),
+                ScriptAgentConfig(
+                    name="logs_collector",
+                    script='echo "logs: 10 errors found"',
+                ),
+                LlmAgentConfig(
+                    name="system_analyzer",
+                    model_profile="test-analyzer",
+                    depends_on=["metrics_collector", "logs_collector"],
+                ),
+                ScriptAgentConfig(
+                    name="alert_generator",
+                    script='echo "Alert: $1"',
+                    depends_on=["system_analyzer"],
+                ),
             ],
         )
 
@@ -225,17 +221,16 @@ class TestMixedAgentDependencies:
             name="circular_dependency_test",
             description="Test circular dependency detection",
             agents=[
-                {
-                    "name": "script_a",
-                    "type": "script",
-                    "script": 'echo "Script A"',
-                    "depends_on": ["llm_b"],  # Creates circle
-                },
-                {
-                    "name": "llm_b",
-                    "model_profile": "test-analyzer",
-                    "depends_on": ["script_a"],  # Creates circle
-                },
+                ScriptAgentConfig(
+                    name="script_a",
+                    script='echo "Script A"',
+                    depends_on=["llm_b"],  # Creates circle
+                ),
+                LlmAgentConfig(
+                    name="llm_b",
+                    model_profile="test-analyzer",
+                    depends_on=["script_a"],  # Creates circle
+                ),
             ],
         )
 

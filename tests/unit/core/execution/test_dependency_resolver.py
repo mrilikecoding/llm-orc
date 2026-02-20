@@ -4,6 +4,7 @@ from typing import Any
 from unittest.mock import Mock
 
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
+from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig, ScriptAgentConfig
 
 
 class TestDependencyResolver:
@@ -22,9 +23,9 @@ class TestDependencyResolver:
         """Test enhancement for agents with no dependencies."""
         resolver, _ = self.setup_resolver()
 
-        agents = [
-            {"name": "agent1", "role": "test"},
-            {"name": "agent2", "role": "test"},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent1", model_profile="test-profile"),
+            LlmAgentConfig(name="agent2", model_profile="test-profile"),
         ]
         results_dict: dict[str, Any] = {}
 
@@ -40,9 +41,15 @@ class TestDependencyResolver:
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.side_effect = lambda name: f"{name.title()} Role"
 
-        agents = [
-            {"name": "agent2", "depends_on": ["agent1"]},
-            {"name": "agent3", "depends_on": ["agent1", "agent2"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="agent2", model_profile="test-profile", depends_on=["agent1"]
+            ),
+            LlmAgentConfig(
+                name="agent3",
+                model_profile="test-profile",
+                depends_on=["agent1", "agent2"],
+            ),
         ]
         results_dict = {
             "agent1": {"response": "First result", "status": "success"},
@@ -71,7 +78,13 @@ class TestDependencyResolver:
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.return_value = "Test Role"
 
-        agents = [{"name": "agent2", "depends_on": ["agent1", "failed_agent"]}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="agent2",
+                model_profile="test-profile",
+                depends_on=["agent1", "failed_agent"],
+            )
+        ]
         results_dict = {
             "agent1": {"response": "Success result", "status": "success"},
             "failed_agent": {"error": "Agent failed", "status": "failed"},
@@ -90,7 +103,13 @@ class TestDependencyResolver:
         """Test enhancement when no dependencies are successful."""
         resolver, _ = self.setup_resolver()
 
-        agents = [{"name": "agent2", "depends_on": ["failed_agent"]}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="agent2",
+                model_profile="test-profile",
+                depends_on=["failed_agent"],
+            )
+        ]
         results_dict = {
             "failed_agent": {"error": "Agent failed", "status": "failed"},
         }
@@ -106,7 +125,13 @@ class TestDependencyResolver:
         """Test enhancement when dependencies are missing from results."""
         resolver, _ = self.setup_resolver()
 
-        agents = [{"name": "agent2", "depends_on": ["missing_agent"]}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="agent2",
+                model_profile="test-profile",
+                depends_on=["missing_agent"],
+            )
+        ]
         results_dict: dict[str, Any] = {}
 
         enhanced = resolver.enhance_input_with_dependencies(
@@ -120,34 +145,42 @@ class TestDependencyResolver:
         """Test has_dependencies returns True for agents with dependencies."""
         resolver, _ = self.setup_resolver()
 
-        agent = {"name": "test", "depends_on": ["other"]}
+        agent = LlmAgentConfig(
+            name="test", model_profile="test-profile", depends_on=["other"]
+        )
         assert resolver.has_dependencies(agent) is True
 
     def test_has_dependencies_false(self) -> None:
         """Test has_dependencies returns False for agents without dependencies."""
         resolver, _ = self.setup_resolver()
 
-        agent = {"name": "test"}
+        agent = LlmAgentConfig(name="test", model_profile="test-profile")
         assert resolver.has_dependencies(agent) is False
 
-        agent_empty = {"name": "test", "depends_on": []}
+        agent_empty = LlmAgentConfig(
+            name="test", model_profile="test-profile", depends_on=[]
+        )
         assert resolver.has_dependencies(agent_empty) is False
 
     def test_get_dependencies(self) -> None:
         """Test getting dependencies from agent config."""
         resolver, _ = self.setup_resolver()
 
-        agent_with_deps = {"name": "test", "depends_on": ["dep1", "dep2"]}
+        agent_with_deps = LlmAgentConfig(
+            name="test", model_profile="test-profile", depends_on=["dep1", "dep2"]
+        )
         assert resolver.get_dependencies(agent_with_deps) == ["dep1", "dep2"]
 
-        agent_without = {"name": "test"}
+        agent_without = LlmAgentConfig(name="test", model_profile="test-profile")
         assert resolver.get_dependencies(agent_without) == []
 
     def test_dependencies_satisfied_true(self) -> None:
         """Test dependencies_satisfied returns True when all deps completed."""
         resolver, _ = self.setup_resolver()
 
-        agent = {"name": "test", "depends_on": ["dep1", "dep2"]}
+        agent = LlmAgentConfig(
+            name="test", model_profile="test-profile", depends_on=["dep1", "dep2"]
+        )
         completed = {"dep1", "dep2", "other"}
 
         assert resolver.dependencies_satisfied(agent, completed) is True
@@ -156,7 +189,9 @@ class TestDependencyResolver:
         """Test dependencies_satisfied returns False when deps missing."""
         resolver, _ = self.setup_resolver()
 
-        agent = {"name": "test", "depends_on": ["dep1", "dep2"]}
+        agent = LlmAgentConfig(
+            name="test", model_profile="test-profile", depends_on=["dep1", "dep2"]
+        )
         completed = {"dep1"}  # Missing dep2
 
         assert resolver.dependencies_satisfied(agent, completed) is False
@@ -165,7 +200,7 @@ class TestDependencyResolver:
         """Test dependencies_satisfied returns True when no dependencies."""
         resolver, _ = self.setup_resolver()
 
-        agent = {"name": "test"}
+        agent = LlmAgentConfig(name="test", model_profile="test-profile")
         completed: set[str] = set()
 
         assert resolver.dependencies_satisfied(agent, completed) is True
@@ -174,11 +209,23 @@ class TestDependencyResolver:
         """Test filtering agents with satisfied dependencies."""
         resolver, _ = self.setup_resolver()
 
-        agents: list[dict[str, Any]] = [
-            {"name": "independent", "role": "test"},
-            {"name": "dependent1", "depends_on": ["independent"]},
-            {"name": "dependent2", "depends_on": ["missing"]},
-            {"name": "dependent3", "depends_on": ["independent", "dependent1"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="independent", model_profile="test-profile"),
+            LlmAgentConfig(
+                name="dependent1",
+                model_profile="test-profile",
+                depends_on=["independent"],
+            ),
+            LlmAgentConfig(
+                name="dependent2",
+                model_profile="test-profile",
+                depends_on=["missing"],
+            ),
+            LlmAgentConfig(
+                name="dependent3",
+                model_profile="test-profile",
+                depends_on=["independent", "dependent1"],
+            ),
         ]
         completed = {"independent", "dependent1"}
 
@@ -187,17 +234,21 @@ class TestDependencyResolver:
         )
 
         # Should return dependent1 (deps satisfied) and dependent3 (deps satisfied)
-        names = {agent["name"] for agent in with_deps}
+        names = {agent.name for agent in with_deps}
         assert names == {"dependent1", "dependent3"}
 
     def test_filter_by_dependency_status_without_dependencies(self) -> None:
         """Test filtering agents without dependencies."""
         resolver, _ = self.setup_resolver()
 
-        agents: list[dict[str, Any]] = [
-            {"name": "independent1", "role": "test"},
-            {"name": "independent2", "role": "test"},
-            {"name": "dependent", "depends_on": ["independent1"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="independent1", model_profile="test-profile"),
+            LlmAgentConfig(name="independent2", model_profile="test-profile"),
+            LlmAgentConfig(
+                name="dependent",
+                model_profile="test-profile",
+                depends_on=["independent1"],
+            ),
         ]
         completed: set[str] = set()
 
@@ -205,7 +256,7 @@ class TestDependencyResolver:
             agents, completed, with_dependencies=False
         )
 
-        names = {agent["name"] for agent in without_deps}
+        names = {agent.name for agent in without_deps}
         assert names == {"independent1", "independent2"}
 
     def test_enhance_input_role_resolver_called(self) -> None:
@@ -213,7 +264,11 @@ class TestDependencyResolver:
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.return_value = "Custom Role"
 
-        agents = [{"name": "agent2", "depends_on": ["agent1"]}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="agent2", model_profile="test-profile", depends_on=["agent1"]
+            )
+        ]
         results_dict = {
             "agent1": {"response": "Result", "status": "success"},
         }
@@ -230,7 +285,11 @@ class TestDependencyResolver:
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.return_value = None
 
-        agents = [{"name": "agent2", "depends_on": ["agent1"]}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="agent2", model_profile="test-profile", depends_on=["agent1"]
+            )
+        ]
         results_dict = {
             "agent1": {"response": "Result", "status": "success"},
         }
@@ -260,7 +319,13 @@ class TestDependencyResolver:
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.side_effect = lambda name: f"{name.title()} Role"
 
-        agents = [{"name": "agent4", "depends_on": ["success", "failed", "missing"]}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="agent4",
+                model_profile="test-profile",
+                depends_on=["success", "failed", "missing"],
+            )
+        ]
         results_dict = {
             "success": {"response": "Good result", "status": "success"},
             "failed": {"error": "Failed", "status": "failed"},
@@ -281,7 +346,9 @@ class TestDependencyResolver:
         """Test enhancement with explicitly empty dependencies list."""
         resolver, _ = self.setup_resolver()
 
-        agents = [{"name": "agent1", "depends_on": []}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent1", model_profile="test-profile", depends_on=[])
+        ]
         results_dict: dict[str, Any] = {}
 
         enhanced = resolver.enhance_input_with_dependencies(
@@ -295,11 +362,23 @@ class TestDependencyResolver:
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.side_effect = lambda name: f"{name.title()} Role"
 
-        agents: list[dict[str, Any]] = [
-            {"name": "no_deps", "role": "test"},
-            {"name": "single_dep", "depends_on": ["success1"]},
-            {"name": "multi_deps", "depends_on": ["success1", "success2"]},
-            {"name": "partial_deps", "depends_on": ["success1", "failed1"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="no_deps", model_profile="test-profile"),
+            LlmAgentConfig(
+                name="single_dep",
+                model_profile="test-profile",
+                depends_on=["success1"],
+            ),
+            LlmAgentConfig(
+                name="multi_deps",
+                model_profile="test-profile",
+                depends_on=["success1", "success2"],
+            ),
+            LlmAgentConfig(
+                name="partial_deps",
+                model_profile="test-profile",
+                depends_on=["success1", "failed1"],
+            ),
         ]
         results_dict = {
             "success1": {"response": "First success", "status": "success"},
@@ -334,7 +413,11 @@ class TestDependencyResolver:
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.side_effect = lambda name: f"{name.title()} Role"
 
-        dependencies = ["success", "failed", "missing"]
+        dependencies: list[str | dict[str, Any]] = [
+            "success",
+            "failed",
+            "missing",
+        ]
         results_dict = {
             "success": {"response": "Good result", "status": "success"},
             "failed": {"error": "Failed", "status": "failed"},
@@ -391,12 +474,12 @@ class TestDependencyResolver:
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.return_value = "Test Role"
 
-        agents = [
-            {
-                "name": "aggregator",
-                "script": "aggregator.py",
-                "depends_on": ["extractor"],
-            },
+        agents: list[AgentConfig] = [
+            ScriptAgentConfig(
+                name="aggregator",
+                script="aggregator.py",
+                depends_on=["extractor"],
+            ),
         ]
         results_dict = {
             "extractor": {"status": "success", "response": "Extracted data here"},
@@ -421,8 +504,8 @@ class TestDependencyResolver:
 
         resolver, _ = self.setup_resolver()
 
-        agents = [
-            {"name": "processor", "script": "process.py"},
+        agents: list[AgentConfig] = [
+            ScriptAgentConfig(name="processor", script="process.py"),
         ]
         results_dict: dict[str, Any] = {}
 
@@ -444,13 +527,15 @@ class TestDependencyResolver:
         resolver, mock_role_resolver = self.setup_resolver()
         mock_role_resolver.return_value = "Source Role"
 
-        agents = [
-            {"name": "script_agent", "script": "process.py", "depends_on": ["source"]},
-            {
-                "name": "llm_agent",
-                "model_profile": "ollama-llama3",
-                "depends_on": ["source"],
-            },
+        agents: list[AgentConfig] = [
+            ScriptAgentConfig(
+                name="script_agent", script="process.py", depends_on=["source"]
+            ),
+            LlmAgentConfig(
+                name="llm_agent",
+                model_profile="ollama-llama3",
+                depends_on=["source"],
+            ),
         ]
         results_dict = {"source": {"status": "success", "response": "Source output"}}
 
@@ -484,14 +569,14 @@ class TestFanOutInputPreparation:
 
         resolver = self.setup_resolver()
 
-        instance_config: dict[str, Any] = {
-            "name": "extractor[0]",
-            "script": "extract.py",
-            "_fan_out_chunk": "Scene 1 content",
-            "_fan_out_index": 0,
-            "_fan_out_total": 3,
-            "_fan_out_original": "extractor",
-        }
+        instance_config = ScriptAgentConfig(
+            name="extractor[0]",
+            script="extract.py",
+            fan_out_chunk="Scene 1 content",
+            fan_out_index=0,
+            fan_out_total=3,
+            fan_out_original="extractor",
+        )
 
         result = resolver.prepare_fan_out_instance_input(
             instance_config=instance_config,
@@ -510,14 +595,14 @@ class TestFanOutInputPreparation:
         """Test preparing input for a fan-out LLM agent instance."""
         resolver = self.setup_resolver()
 
-        instance_config: dict[str, Any] = {
-            "name": "extractor[1]",
-            "model_profile": "ollama-llama3",
-            "_fan_out_chunk": "Scene 2 dialogue",
-            "_fan_out_index": 1,
-            "_fan_out_total": 3,
-            "_fan_out_original": "extractor",
-        }
+        instance_config = LlmAgentConfig(
+            name="extractor[1]",
+            model_profile="ollama-llama3",
+            fan_out_chunk="Scene 2 dialogue",
+            fan_out_index=1,
+            fan_out_total=3,
+            fan_out_original="extractor",
+        )
 
         result = resolver.prepare_fan_out_instance_input(
             instance_config=instance_config,
@@ -536,14 +621,14 @@ class TestFanOutInputPreparation:
         resolver = self.setup_resolver()
 
         chunk_data = {"scene": "Act 1", "text": "Dialogue here"}
-        instance_config: dict[str, Any] = {
-            "name": "extractor[0]",
-            "script": "extract.py",
-            "_fan_out_chunk": chunk_data,
-            "_fan_out_index": 0,
-            "_fan_out_total": 2,
-            "_fan_out_original": "extractor",
-        }
+        instance_config = ScriptAgentConfig(
+            name="extractor[0]",
+            script="extract.py",
+            fan_out_chunk=chunk_data,
+            fan_out_index=0,
+            fan_out_total=2,
+            fan_out_original="extractor",
+        )
 
         result = resolver.prepare_fan_out_instance_input(
             instance_config=instance_config,
@@ -558,18 +643,19 @@ class TestFanOutInputPreparation:
         """Test detecting fan-out instance configurations."""
         resolver = self.setup_resolver()
 
-        instance_config: dict[str, Any] = {
-            "name": "extractor[0]",
-            "_fan_out_chunk": "data",
-            "_fan_out_index": 0,
-            "_fan_out_total": 1,
-            "_fan_out_original": "extractor",
-        }
+        instance_config = LlmAgentConfig(
+            name="extractor[0]",
+            model_profile="test-profile",
+            fan_out_chunk="data",
+            fan_out_index=0,
+            fan_out_total=1,
+            fan_out_original="extractor",
+        )
 
-        regular_config: dict[str, Any] = {
-            "name": "extractor",
-            "model_profile": "test",
-        }
+        regular_config = LlmAgentConfig(
+            name="extractor",
+            model_profile="test",
+        )
 
         assert resolver.is_fan_out_instance_config(instance_config) is True
         assert resolver.is_fan_out_instance_config(regular_config) is False

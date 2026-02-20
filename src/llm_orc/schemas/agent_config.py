@@ -66,10 +66,7 @@ class LlmAgentConfig(BaseAgentConfig):
             raise ValueError(msg)
 
         if not has_profile and not has_model:
-            msg = (
-                "LLM agent requires either model_profile or "
-                "model + provider"
-            )
+            msg = "LLM agent requires either model_profile or model + provider"
             raise ValueError(msg)
 
         return self

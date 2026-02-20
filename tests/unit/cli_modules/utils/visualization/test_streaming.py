@@ -11,6 +11,7 @@ from llm_orc.cli_modules.utils.visualization.streaming import (
     run_standard_execution,
     run_streaming_execution,
 )
+from llm_orc.schemas.agent_config import LlmAgentConfig
 
 
 class TestRunStreamingExecution:
@@ -24,7 +25,7 @@ class TestRunStreamingExecution:
         """Test running streaming execution with JSON output format."""
         executor = AsyncMock()
         ensemble_config = Mock()
-        ensemble_config.agents = [{"name": "agent_a"}]
+        ensemble_config.agents = [LlmAgentConfig(name="agent_a", model_profile="test")]
         input_data = "Test input"
 
         await run_streaming_execution(executor, ensemble_config, input_data, "json")
@@ -52,7 +53,7 @@ class TestRunStreamingExecution:
         executor.execute_streaming = mock_execute_streaming
 
         ensemble_config = Mock()
-        ensemble_config.agents = [{"name": "agent_a"}]
+        ensemble_config.agents = [LlmAgentConfig(name="agent_a", model_profile="test")]
         input_data = "Test input"
 
         mock_console = Mock()
@@ -139,7 +140,7 @@ class TestRunStandardExecution:
         }
         executor.execute = AsyncMock(return_value=result)
         ensemble_config = Mock()
-        ensemble_config.agents = [{"name": "agent_a"}]
+        ensemble_config.agents = [LlmAgentConfig(name="agent_a", model_profile="test")]
         input_data = "Test input"
 
         await run_standard_execution(executor, ensemble_config, input_data, "rich")
@@ -148,7 +149,7 @@ class TestRunStandardExecution:
         mock_display.assert_called_once_with(
             {"agent_a": {"status": "success"}},
             {"duration": "5s"},
-            [{"name": "agent_a"}],
+            [LlmAgentConfig(name="agent_a", model_profile="test")],
             detailed=True,
         )
 
@@ -162,7 +163,7 @@ class TestRunTextJsonExecution:
         """Test successful text JSON execution."""
         executor = AsyncMock()
         ensemble_config = Mock()
-        ensemble_config.agents = [{"name": "agent_a"}]
+        ensemble_config.agents = [LlmAgentConfig(name="agent_a", model_profile="test")]
         input_data = "Test input"
 
         # Mock streaming events for JSON output
@@ -191,7 +192,7 @@ class TestRunTextJsonExecution:
         """Test text JSON execution with error."""
         executor = AsyncMock()
         ensemble_config = Mock()
-        ensemble_config.agents = [{"name": "agent_a"}]
+        ensemble_config.agents = [LlmAgentConfig(name="agent_a", model_profile="test")]
         input_data = "Test input"
 
         # Mock execute_streaming to raise an error
@@ -222,7 +223,7 @@ class TestComplexStreamingScenarios:
         """Test JSON streaming execution with successful events."""
         executor = AsyncMock()
         ensemble_config = Mock()
-        ensemble_config.agents = [{"name": "agent_a"}]
+        ensemble_config.agents = [LlmAgentConfig(name="agent_a", model_profile="test")]
         input_data = "Test input"
 
         # Create async generator for events
@@ -257,7 +258,7 @@ class TestComplexStreamingScenarios:
         """Test JSON streaming execution with error."""
         executor = AsyncMock()
         ensemble_config = Mock()
-        ensemble_config.agents = [{"name": "agent_a"}]
+        ensemble_config.agents = [LlmAgentConfig(name="agent_a", model_profile="test")]
         input_data = "Test input"
 
         async def mock_execute_streaming(config: Any, data: str) -> Any:
@@ -286,8 +287,10 @@ class TestComplexStreamingScenarios:
         executor = AsyncMock()
         ensemble_config = Mock()
         ensemble_config.agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+            LlmAgentConfig(name="agent_a", model_profile="test", depends_on=[]),
+            LlmAgentConfig(
+                name="agent_b", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
         input_data = "Test input"
 
@@ -333,7 +336,9 @@ class TestComplexStreamingScenarios:
         """Test rich streaming execution with error during execution."""
         executor = AsyncMock()
         ensemble_config = Mock()
-        ensemble_config.agents = [{"name": "agent_a", "depends_on": []}]
+        ensemble_config.agents = [
+            LlmAgentConfig(name="agent_a", model_profile="test", depends_on=[])
+        ]
         input_data = "Test input"
 
         async def mock_execute_streaming(config: Any, data: str) -> Any:
@@ -391,7 +396,7 @@ class TestProgressControllerPropagation:
         executor.execute_streaming = mock_execute_streaming
 
         ensemble_config = Mock()
-        ensemble_config.agents = [{"name": "agent_a"}]
+        ensemble_config.agents = [LlmAgentConfig(name="agent_a", model_profile="test")]
 
         mock_console = Mock()
         mock_console_class.return_value = mock_console
@@ -424,8 +429,8 @@ class TestNewHelperFunctions:
         agent_statuses = {"agent_a": "pending", "agent_b": "running"}
         ensemble_config = Mock()
         ensemble_config.agents = [
-            {"name": "agent_a"},
-            {"name": "agent_b"},
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(name="agent_b", model_profile="test"),
         ]
 
         with patch(
@@ -514,7 +519,7 @@ class TestNewHelperFunctions:
             }
         }
         ensemble_config = Mock()
-        ensemble_config.agents = [{"name": "agent_a"}]
+        ensemble_config.agents = [LlmAgentConfig(name="agent_a", model_profile="test")]
         status = Mock()
         console = Mock()
 
@@ -544,7 +549,7 @@ class TestNewHelperFunctions:
             }
         }
         ensemble_config = Mock()
-        ensemble_config.agents = [{"name": "agent_a"}]
+        ensemble_config.agents = [LlmAgentConfig(name="agent_a", model_profile="test")]
         status = Mock()
         console = Mock()
 
@@ -570,7 +575,7 @@ class TestNewHelperFunctions:
         results = {"agent_a": {"status": "success"}}
         metadata = {"duration": "5s"}
         ensemble_config = Mock()
-        ensemble_config.agents = [{"name": "agent_a"}]
+        ensemble_config.agents = [LlmAgentConfig(name="agent_a", model_profile="test")]
         results_console = Mock()
 
         with (

@@ -5,6 +5,7 @@ from typing import Any
 
 from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
 from llm_orc.core.execution.usage_collector import UsageCollector
+from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
 
 
 class PhaseResultProcessor:
@@ -33,13 +34,13 @@ class PhaseResultProcessor:
         self,
         phase_results: dict[str, Any],
         results_dict: dict[str, Any],
-        phase_agents: list[dict[str, Any]],
+        phase_agents: list[AgentConfig],
     ) -> bool:
         """Process parallel execution results and return if any errors occurred."""
         has_errors = False
         processed_agent_requests: list[dict[str, Any]] = []
 
-        agent_configs = {agent["name"]: agent for agent in phase_agents}
+        agent_configs = {agent.name: agent for agent in phase_agents}
 
         for agent_name, agent_result in phase_results.items():
             self._store_agent_result(results_dict, agent_name, agent_result)
@@ -64,19 +65,19 @@ class PhaseResultProcessor:
     def emit_phase_completed_event(
         self,
         phase_index: int,
-        phase_agents: list[dict[str, Any]],
+        phase_agents: list[AgentConfig],
         results_dict: dict[str, Any],
     ) -> None:
         """Emit phase completion event with success/failure counts."""
         successful_agents = [
             a
             for a in phase_agents
-            if results_dict.get(a["name"], {}).get("status") == "success"
+            if results_dict.get(a.name, {}).get("status") == "success"
         ]
         failed_agents = [
             a
             for a in phase_agents
-            if results_dict.get(a["name"], {}).get("status") == "failed"
+            if results_dict.get(a.name, {}).get("status") == "failed"
         ]
 
         self._emit_event(
@@ -108,8 +109,8 @@ class PhaseResultProcessor:
         agent_name: str,
         results_dict: dict[str, Any],
         processed_agent_requests: list[dict[str, Any]],
-        phase_agents: list[dict[str, Any]],
-        agent_configs: dict[str, dict[str, Any]],
+        phase_agents: list[AgentConfig],
+        agent_configs: dict[str, AgentConfig],
     ) -> None:
         """Process successful agent result for requests and usage."""
         response = agent_result.get("response")
@@ -123,8 +124,12 @@ class PhaseResultProcessor:
             )
 
         if agent_result["model_instance"] is not None:
-            agent_config = agent_configs.get(agent_name, {})
-            model_profile = agent_config.get("model_profile", "unknown")
+            agent_config = agent_configs.get(agent_name)
+            model_profile = (
+                agent_config.model_profile
+                if agent_config and isinstance(agent_config, LlmAgentConfig)
+                else "unknown"
+            )
             self._usage_collector.collect_agent_usage(
                 agent_name, agent_result["model_instance"], model_profile
             )
@@ -135,7 +140,7 @@ class PhaseResultProcessor:
         agent_name: str,
         results_dict: dict[str, Any],
         processed_agent_requests: list[dict[str, Any]],
-        phase_agents: list[dict[str, Any]],
+        phase_agents: list[AgentConfig],
     ) -> None:
         """Process agent requests from script output."""
         try:

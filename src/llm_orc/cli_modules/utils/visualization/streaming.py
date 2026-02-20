@@ -312,7 +312,7 @@ def _display_detailed_execution_results(
 
 
 def _update_agent_status_by_names_from_lists(
-    agents: list[dict[str, Any]],
+    agents: list[Any],
     started_agent_names: list[str],
     completed_agent_names: list[str],
     agent_statuses: dict[str, str],
