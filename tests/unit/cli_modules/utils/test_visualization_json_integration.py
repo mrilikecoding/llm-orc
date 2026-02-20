@@ -9,6 +9,7 @@ from llm_orc.cli_modules.utils.visualization.results_display import (
     _display_detailed_plain_text,
     display_results,
 )
+from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
 
 
 class TestJSONFirstVisualizationIntegration:
@@ -46,7 +47,9 @@ class TestJSONFirstVisualizationIntegration:
         }
 
         # Call the detailed display function that should use comprehensive rendering
-        agents = [{"name": "agent1"}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent1", model_profile="test")
+        ]
         display_results(results, metadata, agents, detailed=True)
 
         captured = capsys.readouterr()
@@ -78,7 +81,9 @@ class TestJSONFirstVisualizationIntegration:
         ) as console_class:
             console_class.return_value = console_mock
 
-            agents = [{"name": "agent1"}]
+            agents: list[AgentConfig] = [
+                LlmAgentConfig(name="agent1", model_profile="test")
+            ]
             display_results(results, metadata, agents, detailed=True)
 
             # Verify console.print was called with Markdown containing data
@@ -119,7 +124,9 @@ class TestJSONFirstVisualizationIntegration:
             }
         }
 
-        agents = [{"name": "agent1"}]
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent1", model_profile="test")
+        ]
         _display_detailed_plain_text(results, metadata, agents)
 
         captured = capsys.readouterr()
@@ -148,7 +155,9 @@ class TestJSONFirstVisualizationIntegration:
                 "Total tokens: 100",
             ]
 
-            agents = [{"name": "agent1"}]
+            agents: list[AgentConfig] = [
+                LlmAgentConfig(name="agent1", model_profile="test")
+            ]
             _display_detailed_plain_text(results, metadata, agents)
 
             # Verify formatting is called (single source of truth for display)

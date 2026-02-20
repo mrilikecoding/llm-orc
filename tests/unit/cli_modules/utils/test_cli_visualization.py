@@ -15,6 +15,7 @@ from llm_orc.cli_modules.utils.visualization import (
     find_final_agent,
     run_streaming_execution,
 )
+from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
 
 
 class TestBackwardCompatibility:
@@ -30,9 +31,11 @@ class TestBackwardCompatibility:
 
     def test_basic_functionality_works(self) -> None:
         """Test that basic functionality still works after refactoring."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test", depends_on=[]),
+            LlmAgentConfig(
+                name="agent_b", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
 
         # Test dependency graph creation
@@ -54,9 +57,11 @@ class TestBackwardCompatibility:
 
     def test_helper_functions_work(self) -> None:
         """Test that helper functions work correctly."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test", depends_on=[]),
+            LlmAgentConfig(
+                name="agent_b", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
 
         # Test grouping by dependency level

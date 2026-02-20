@@ -1,13 +1,15 @@
 """Agent request processor for dynamic parameter generation (ADR-001).
 
 This module processes AgentRequest objects from ScriptAgentOutput to enable
-inter-agent communication and dynamic parameter generation during ensemble execution.
+inter-agent communication and dynamic parameter generation during ensemble
+execution.
 """
 
 import json
 from typing import Any
 
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
+from llm_orc.schemas.agent_config import AgentConfig
 from llm_orc.schemas.script_agent import AgentRequest
 
 
@@ -45,7 +47,7 @@ class AgentRequestProcessor:
         self,
         agent_requests: list[AgentRequest],
         results_dict: dict[str, Any],
-        phase_agents: list[dict[str, Any]],
+        phase_agents: list[AgentConfig],
     ) -> list[dict[str, Any]]:
         """Coordinate agent execution based on agent requests.
 
@@ -57,21 +59,12 @@ class AgentRequestProcessor:
         Returns:
             Updated agent configurations or execution plan
         """
-        coordinated_agents = []
+        coordinated_agents: list[dict[str, Any]] = []
 
         for request in agent_requests:
-            # Find matching agent in phase_agents
             for agent_config in phase_agents:
-                agent_name = agent_config.get("name", "")
-                agent_type = agent_config.get("type", "")
-
-                # Match by type (for now, simple type matching)
-                if (
-                    request.target_agent_type in agent_name
-                    or request.target_agent_type == agent_type
-                ):
-                    # Create updated agent config with dynamic parameters
-                    updated_config = agent_config.copy()
+                if request.target_agent_type in agent_config.name:
+                    updated_config = agent_config.model_dump()
                     updated_config["dynamic_parameters"] = (
                         self.generate_dynamic_parameters(request)
                     )
@@ -84,7 +77,7 @@ class AgentRequestProcessor:
         self,
         script_response: str,
         source_agent: str,
-        current_phase_agents: list[dict[str, Any]],
+        current_phase_agents: list[AgentConfig],
     ) -> dict[str, Any]:
         """Process script output containing AgentRequest objects.
 

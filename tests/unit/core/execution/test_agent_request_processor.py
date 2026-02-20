@@ -12,6 +12,7 @@ import pytest
 
 from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
+from llm_orc.schemas.agent_config import ScriptAgentConfig
 from llm_orc.schemas.script_agent import AgentRequest
 
 
@@ -71,7 +72,9 @@ class TestAgentRequestProcessor:
         result = processor.coordinate_agent_execution(
             agent_requests,
             results_dict={"story_generator": {"response": "story data"}},
-            phase_agents=[{"name": "user_input", "type": "script"}],
+            phase_agents=[
+                ScriptAgentConfig(name="user_input", script="primitives/user_input.py")
+            ],
         )
 
         # Should return updated agent configurations or execution plan
@@ -113,11 +116,10 @@ class TestAgentRequestProcessor:
             script_response,
             source_agent="story_generator",
             current_phase_agents=[
-                {
-                    "name": "user_input",
-                    "type": "script",
-                    "script": "primitives/user_input.py",
-                }
+                ScriptAgentConfig(
+                    name="user_input",
+                    script="primitives/user_input.py",
+                )
             ],
         )
 

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from llm_orc.core.execution.script_agent_runner import ScriptAgentRunner
+from llm_orc.schemas.agent_config import ScriptAgentConfig
 
 
 def _make_runner() -> ScriptAgentRunner:
@@ -41,11 +41,11 @@ class TestOutputValidation:
             }
         )
 
-        agent_config: dict[str, Any] = {
-            "name": "test_agent",
-            "script": "primitives/user-interaction/get_user_input.py",
-            "parameters": {"prompt": "Enter:"},
-        }
+        agent_config = ScriptAgentConfig(
+            name="test_agent",
+            script="primitives/user-interaction/get_user_input.py",
+            parameters={"prompt": "Enter:"},
+        )
 
         # Mock the input handling to return our controlled output
         with patch.object(
@@ -67,11 +67,11 @@ class TestOutputValidation:
         # Missing required 'success' field for GetUserInputOutput
         invalid_output = json.dumps({"unexpected": "data"})
 
-        agent_config: dict[str, Any] = {
-            "name": "test_agent",
-            "script": "primitives/user-interaction/get_user_input.py",
-            "parameters": {"prompt": "Enter:"},
-        }
+        agent_config = ScriptAgentConfig(
+            name="test_agent",
+            script="primitives/user-interaction/get_user_input.py",
+            parameters={"prompt": "Enter:"},
+        )
 
         with patch.object(
             runner,
@@ -92,11 +92,10 @@ class TestOutputValidation:
         runner = _make_runner()
         output = json.dumps({"custom": "output"})
 
-        agent_config: dict[str, Any] = {
-            "name": "custom_agent",
-            "script": "scripts/custom/my_script.py",
-            "parameters": {},
-        }
+        agent_config = ScriptAgentConfig(
+            name="custom_agent",
+            script="scripts/custom/my_script.py",
+        )
 
         with patch.object(
             runner,
@@ -115,11 +114,10 @@ class TestOutputValidation:
         """Dict responses get serialized before validation."""
         runner = _make_runner()
 
-        agent_config: dict[str, Any] = {
-            "name": "test_agent",
-            "script": "primitives/user-interaction/get_user_input.py",
-            "parameters": {},
-        }
+        agent_config = ScriptAgentConfig(
+            name="test_agent",
+            script="primitives/user-interaction/get_user_input.py",
+        )
 
         with patch.object(
             runner,

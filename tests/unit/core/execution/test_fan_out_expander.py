@@ -1,11 +1,11 @@
 """Tests for fan-out agent expansion (issue #73)."""
 
 import json
-from typing import Any
 
 import pytest
 
 from llm_orc.core.execution.fan_out_expander import FanOutExpander
+from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 
 
 class TestFanOutExpander:
@@ -20,11 +20,11 @@ class TestFanOutExpander:
         self, expander: FanOutExpander
     ) -> None:
         """detect_fan_out_agents returns names of agents with fan_out: true."""
-        agents: list[dict[str, Any]] = [
-            {"name": "chunker", "script": "split.py"},
-            {"name": "extractor", "model_profile": "test", "fan_out": True},
-            {"name": "synthesizer", "model_profile": "test"},
-            {"name": "analyzer", "model_profile": "test", "fan_out": True},
+        agents: list[LlmAgentConfig | ScriptAgentConfig] = [
+            ScriptAgentConfig(name="chunker", script="split.py"),
+            LlmAgentConfig(name="extractor", model_profile="test", fan_out=True),
+            LlmAgentConfig(name="synthesizer", model_profile="test"),
+            LlmAgentConfig(name="analyzer", model_profile="test", fan_out=True),
         ]
 
         result = expander.detect_fan_out_agents(agents)
@@ -33,9 +33,9 @@ class TestFanOutExpander:
 
     def test_detect_fan_out_agents_empty_list(self, expander: FanOutExpander) -> None:
         """detect_fan_out_agents returns empty list when no fan_out agents."""
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "model_profile": "test"},
-            {"name": "agent2", "model_profile": "test", "fan_out": False},
+        agents: list[LlmAgentConfig | ScriptAgentConfig] = [
+            LlmAgentConfig(name="agent1", model_profile="test"),
+            LlmAgentConfig(name="agent2", model_profile="test", fan_out=False),
         ]
 
         result = expander.detect_fan_out_agents(agents)
@@ -92,50 +92,51 @@ class TestFanOutExpander:
         self, expander: FanOutExpander
     ) -> None:
         """expand_fan_out_agent creates N indexed copies of agent config."""
-        agent_config: dict[str, Any] = {
-            "name": "extractor",
-            "model_profile": "ollama-llama3",
-            "fan_out": True,
-            "depends_on": ["chunker"],
-            "system_prompt": "Extract concepts",
-        }
+        agent_config = LlmAgentConfig(
+            name="extractor",
+            model_profile="ollama-llama3",
+            fan_out=True,
+            depends_on=["chunker"],
+            system_prompt="Extract concepts",
+        )
         upstream_array = ["chunk1", "chunk2", "chunk3"]
 
         result = expander.expand_fan_out_agent(agent_config, upstream_array)
 
         assert len(result) == 3
-        assert result[0]["name"] == "extractor[0]"
-        assert result[1]["name"] == "extractor[1]"
-        assert result[2]["name"] == "extractor[2]"
+        assert result[0].name == "extractor[0]"
+        assert result[1].name == "extractor[1]"
+        assert result[2].name == "extractor[2]"
         # Original config preserved
-        assert result[0]["model_profile"] == "ollama-llama3"
-        assert result[0]["system_prompt"] == "Extract concepts"
-        # fan_out removed from instances
-        assert "fan_out" not in result[0]
+        assert isinstance(result[0], LlmAgentConfig)
+        assert result[0].model_profile == "ollama-llama3"
+        assert result[0].system_prompt == "Extract concepts"
+        # fan_out cleared on instances
+        assert result[0].fan_out is False
 
     def test_expand_fan_out_agent_stores_chunk_info(
         self, expander: FanOutExpander
     ) -> None:
         """expand_fan_out_agent stores chunk metadata in each instance."""
-        agent_config: dict[str, Any] = {
-            "name": "extractor",
-            "model_profile": "test",
-            "fan_out": True,
-            "depends_on": ["chunker"],
-        }
+        agent_config = LlmAgentConfig(
+            name="extractor",
+            model_profile="test",
+            fan_out=True,
+            depends_on=["chunker"],
+        )
         upstream_array = ["chunk_a", "chunk_b"]
 
         result = expander.expand_fan_out_agent(agent_config, upstream_array)
 
-        assert result[0]["_fan_out_chunk"] == "chunk_a"
-        assert result[0]["_fan_out_index"] == 0
-        assert result[0]["_fan_out_total"] == 2
-        assert result[0]["_fan_out_original"] == "extractor"
+        assert result[0].fan_out_chunk == "chunk_a"
+        assert result[0].fan_out_index == 0
+        assert result[0].fan_out_total == 2
+        assert result[0].fan_out_original == "extractor"
 
-        assert result[1]["_fan_out_chunk"] == "chunk_b"
-        assert result[1]["_fan_out_index"] == 1
-        assert result[1]["_fan_out_total"] == 2
-        assert result[1]["_fan_out_original"] == "extractor"
+        assert result[1].fan_out_chunk == "chunk_b"
+        assert result[1].fan_out_index == 1
+        assert result[1].fan_out_total == 2
+        assert result[1].fan_out_original == "extractor"
 
     def test_prepare_instance_input_includes_chunk_metadata(
         self, expander: FanOutExpander

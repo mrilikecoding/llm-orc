@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock
 
 from llm_orc.core.communication.protocol import ConversationManager
 from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
+from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 
 
 class TestScriptUserInputDetection:
@@ -57,16 +58,14 @@ class TestScriptUserInputDetection:
         # Mock ensemble config with interactive agents
         mock_ensemble = Mock()
         mock_ensemble.agents = [
-            {
-                "name": "user_input_agent",
-                "type": "script",
-                "script": "primitives/user-interaction/get_user_input.py",
-            },
-            {
-                "name": "regular_agent",
-                "type": "script",
-                "script": "utils/process_data.py",
-            },
+            ScriptAgentConfig(
+                name="user_input_agent",
+                script="primitives/user-interaction/get_user_input.py",
+            ),
+            ScriptAgentConfig(
+                name="regular_agent",
+                script="utils/process_data.py",
+            ),
         ]
 
         result = handler.ensemble_requires_user_input(mock_ensemble)
@@ -80,16 +79,14 @@ class TestScriptUserInputDetection:
         # Mock ensemble config with no interactive agents
         mock_ensemble = Mock()
         mock_ensemble.agents = [
-            {
-                "name": "regular_agent",
-                "type": "script",
-                "script": "utils/process_data.py",
-            },
-            {
-                "name": "llm_agent",
-                "type": "llm",
-                "model_profile": "claude-3-sonnet",
-            },
+            ScriptAgentConfig(
+                name="regular_agent",
+                script="utils/process_data.py",
+            ),
+            LlmAgentConfig(
+                name="llm_agent",
+                model_profile="claude-3-sonnet",
+            ),
         ]
 
         result = handler.ensemble_requires_user_input(mock_ensemble)

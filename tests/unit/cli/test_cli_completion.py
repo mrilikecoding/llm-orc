@@ -28,12 +28,12 @@ class TestEnsembleNameCompletion:
             ensemble1_content = {
                 "name": "test-ensemble-one",
                 "description": "Test ensemble one",
-                "agents": [{"name": "agent1", "model": "gpt-4"}],
+                "agents": [{"name": "agent1", "model_profile": "gpt-4"}],
             }
             ensemble2_content = {
                 "name": "test-ensemble-two",
                 "description": "Test ensemble two",
-                "agents": [{"name": "agent2", "model": "claude-3"}],
+                "agents": [{"name": "agent2", "model_profile": "claude-3"}],
             }
 
             (temp_path / "test-ensemble-one.yaml").write_text(

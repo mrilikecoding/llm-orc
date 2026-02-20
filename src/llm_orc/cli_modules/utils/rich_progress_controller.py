@@ -6,6 +6,7 @@ from rich.console import Console
 
 from llm_orc.cli_modules.utils.visualization import create_dependency_tree
 from llm_orc.core.execution.progress_controller import ProgressController
+from llm_orc.schemas.agent_config import AgentConfig
 
 
 class RichProgressController(ProgressController):
@@ -16,7 +17,7 @@ class RichProgressController(ProgressController):
         console: Console,
         status: Any,
         agent_statuses: dict[str, str],
-        ensemble_agents: list[dict[str, Any]],
+        ensemble_agents: list[AgentConfig],
     ):
         """Initialize with Rich console components.
 

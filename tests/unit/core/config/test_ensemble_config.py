@@ -2,7 +2,6 @@
 
 import tempfile
 from pathlib import Path
-from typing import Any
 
 import pytest
 import yaml
@@ -13,6 +12,7 @@ from llm_orc.core.config.ensemble_config import (
     assert_no_cycles,
     detect_cycle,
 )
+from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig, ScriptAgentConfig
 
 
 class TestEnsembleConfig:
@@ -24,16 +24,19 @@ class TestEnsembleConfig:
             name="test_ensemble",
             description="A test ensemble",
             agents=[
-                {"name": "agent1", "role": "tester", "model": "claude-3-sonnet"},
-                {"name": "agent2", "role": "reviewer", "model": "claude-3-sonnet"},
-                {
-                    "name": "synthesizer",
-                    "role": "synthesizer",
-                    "model": "claude-3-sonnet",
-                    "depends_on": ["agent1", "agent2"],
-                    "synthesis_prompt": "Combine the results",
-                    "output_format": "json",
-                },
+                LlmAgentConfig(
+                    name="agent1", model="claude-3-sonnet", provider="anthropic"
+                ),
+                LlmAgentConfig(
+                    name="agent2", model="claude-3-sonnet", provider="anthropic"
+                ),
+                LlmAgentConfig(
+                    name="synthesizer",
+                    model="claude-3-sonnet",
+                    provider="anthropic",
+                    depends_on=["agent1", "agent2"],
+                    output_format="json",
+                ),
             ],
         )
 
@@ -43,9 +46,10 @@ class TestEnsembleConfig:
 
         # Find synthesizer agent and verify its properties
         synthesizer = next(
-            agent for agent in config.agents if agent["name"] == "synthesizer"
+            agent for agent in config.agents if agent.name == "synthesizer"
         )
-        assert synthesizer["output_format"] == "json"
+        assert isinstance(synthesizer, LlmAgentConfig)
+        assert synthesizer.output_format == "json"
 
 
 class TestEnsembleLoader:
@@ -60,20 +64,19 @@ class TestEnsembleLoader:
             "agents": [
                 {
                     "name": "security_reviewer",
-                    "role": "security_analyst",
                     "model": "claude-3-sonnet",
+                    "provider": "anthropic",
                 },
                 {
                     "name": "performance_reviewer",
-                    "role": "performance_analyst",
                     "model": "claude-3-sonnet",
+                    "provider": "anthropic",
                 },
                 {
                     "name": "synthesizer",
-                    "role": "synthesizer",
                     "model": "claude-3-sonnet",
+                    "provider": "anthropic",
                     "depends_on": ["security_reviewer", "performance_reviewer"],
-                    "synthesis_prompt": "Synthesize security and performance feedback",
                     "output_format": "structured",
                 },
             ],
@@ -89,13 +92,14 @@ class TestEnsembleLoader:
 
             assert config.name == "pr_review"
             assert len(config.agents) == 3
-            assert config.agents[0]["name"] == "security_reviewer"
+            assert config.agents[0].name == "security_reviewer"
 
             # Find synthesizer and verify its properties
             synthesizer = next(
-                agent for agent in config.agents if agent["name"] == "synthesizer"
+                agent for agent in config.agents if agent.name == "synthesizer"
             )
-            assert synthesizer["output_format"] == "structured"
+            assert isinstance(synthesizer, LlmAgentConfig)
+            assert synthesizer.output_format == "structured"
         finally:
             Path(yaml_path).unlink()
 
@@ -106,13 +110,17 @@ class TestEnsembleLoader:
             ensemble1 = {
                 "name": "ensemble1",
                 "description": "First ensemble",
-                "agents": [{"name": "agent1", "role": "role1", "model": "model1"}],
+                "agents": [
+                    {"name": "agent1", "model": "model1", "provider": "anthropic"}
+                ],
             }
 
             ensemble2 = {
                 "name": "ensemble2",
                 "description": "Second ensemble",
-                "agents": [{"name": "agent2", "role": "role2", "model": "model2"}],
+                "agents": [
+                    {"name": "agent2", "model": "model2", "provider": "anthropic"}
+                ],
             }
 
             # Write ensemble files
@@ -147,7 +155,9 @@ class TestEnsembleLoader:
             ensemble = {
                 "name": "target_ensemble",
                 "description": "Target ensemble",
-                "agents": [{"name": "agent", "role": "role", "model": "model"}],
+                "agents": [
+                    {"name": "agent", "model": "model", "provider": "anthropic"}
+                ],
             }
 
             with open(f"{temp_dir}/target_ensemble.yaml", "w") as f:
@@ -202,9 +212,9 @@ class TestEnsembleLoader:
 
             # Find synthesizer agent and verify its dependencies
             synthesizer = next(
-                agent for agent in config.agents if agent["name"] == "synthesizer"
+                agent for agent in config.agents if agent.name == "synthesizer"
             )
-            assert synthesizer["depends_on"] == ["researcher", "analyst"]
+            assert synthesizer.depends_on == ["researcher", "analyst"]
 
         finally:
             Path(yaml_path).unlink()
@@ -282,7 +292,13 @@ class TestEnsembleLoader:
             yaml_config = {
                 "name": "test_ensemble_yaml",
                 "description": "Test ensemble in YAML",
-                "agents": [{"name": "agent1", "model": "claude-3-sonnet"}],
+                "agents": [
+                    {
+                        "name": "agent1",
+                        "model": "claude-3-sonnet",
+                        "provider": "anthropic",
+                    }
+                ],
             }
             yaml_file = Path(temp_dir) / "test.yaml"
             with open(yaml_file, "w") as f:
@@ -292,7 +308,13 @@ class TestEnsembleLoader:
             yml_config = {
                 "name": "test_ensemble_yml",
                 "description": "Test ensemble in YML",
-                "agents": [{"name": "agent2", "model": "claude-3-sonnet"}],
+                "agents": [
+                    {
+                        "name": "agent2",
+                        "model": "claude-3-sonnet",
+                        "provider": "anthropic",
+                    }
+                ],
             }
             yml_file = Path(temp_dir) / "test.yml"
             with open(yml_file, "w") as f:
@@ -323,7 +345,13 @@ class TestEnsembleLoader:
             valid_config = {
                 "name": "valid_ensemble",
                 "description": "Valid ensemble",
-                "agents": [{"name": "agent1", "model": "claude-3-sonnet"}],
+                "agents": [
+                    {
+                        "name": "agent1",
+                        "model": "claude-3-sonnet",
+                        "provider": "anthropic",
+                    }
+                ],
             }
             valid_file = Path(temp_dir) / "valid.yaml"
             with open(valid_file, "w") as f:
@@ -364,10 +392,14 @@ class TestValidateDependenciesHelperMethods:
         """Test missing dependency check with valid dependencies."""
         from llm_orc.core.config.ensemble_config import _check_missing_dependencies
 
-        agents = [
-            {"name": "agent1", "depends_on": []},
-            {"name": "agent2", "depends_on": ["agent1"]},
-            {"name": "agent3", "depends_on": ["agent1", "agent2"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent1", model_profile="test"),
+            LlmAgentConfig(name="agent2", model_profile="test", depends_on=["agent1"]),
+            LlmAgentConfig(
+                name="agent3",
+                model_profile="test",
+                depends_on=["agent1", "agent2"],
+            ),
         ]
 
         # Should not raise any exception
@@ -377,8 +409,10 @@ class TestValidateDependenciesHelperMethods:
         """Test missing dependency check with single missing dependency."""
         from llm_orc.core.config.ensemble_config import _check_missing_dependencies
 
-        agents = [
-            {"name": "agent1", "depends_on": ["missing_agent"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="agent1", model_profile="test", depends_on=["missing_agent"]
+            ),
         ]
 
         with pytest.raises(ValueError, match="missing dependency: 'missing_agent'"):
@@ -388,9 +422,15 @@ class TestValidateDependenciesHelperMethods:
         """Test missing dependency check with multiple missing dependencies."""
         from llm_orc.core.config.ensemble_config import _check_missing_dependencies
 
-        agents = [
-            {"name": "agent1", "depends_on": ["missing1", "missing2"]},
-            {"name": "agent2", "depends_on": ["missing3"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="agent1",
+                model_profile="test",
+                depends_on=["missing1", "missing2"],
+            ),
+            LlmAgentConfig(
+                name="agent2", model_profile="test", depends_on=["missing3"]
+            ),
         ]
 
         with pytest.raises(ValueError, match="missing dependency"):
@@ -400,9 +440,9 @@ class TestValidateDependenciesHelperMethods:
         """Test missing dependency check with agents that have no depends_on field."""
         from llm_orc.core.config.ensemble_config import _check_missing_dependencies
 
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1"},  # No depends_on field
-            {"name": "agent2", "depends_on": ["agent1"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent1", model_profile="test"),
+            LlmAgentConfig(name="agent2", model_profile="test", depends_on=["agent1"]),
         ]
 
         # Should not raise any exception
@@ -414,18 +454,18 @@ class TestCycleDetection:
 
     def test_detect_cycle_returns_none_when_acyclic(self) -> None:
         """No cycle in a simple chain."""
-        agents: list[dict[str, Any]] = [
-            {"name": "a", "depends_on": []},
-            {"name": "b", "depends_on": ["a"]},
-            {"name": "c", "depends_on": ["a", "b"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="a", model_profile="test"),
+            LlmAgentConfig(name="b", model_profile="test", depends_on=["a"]),
+            LlmAgentConfig(name="c", model_profile="test", depends_on=["a", "b"]),
         ]
         assert detect_cycle(agents) is None
 
     def test_detect_cycle_returns_path_for_simple_cycle(self) -> None:
         """A -> B -> A should return the cycle path."""
-        agents: list[dict[str, Any]] = [
-            {"name": "a", "depends_on": ["b"]},
-            {"name": "b", "depends_on": ["a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="a", model_profile="test", depends_on=["b"]),
+            LlmAgentConfig(name="b", model_profile="test", depends_on=["a"]),
         ]
         cycle = detect_cycle(agents)
         assert cycle is not None
@@ -434,10 +474,10 @@ class TestCycleDetection:
 
     def test_detect_cycle_returns_path_for_complex_cycle(self) -> None:
         """A -> B -> C -> A should return the 3-node cycle."""
-        agents: list[dict[str, Any]] = [
-            {"name": "a", "depends_on": ["b"]},
-            {"name": "b", "depends_on": ["c"]},
-            {"name": "c", "depends_on": ["a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="a", model_profile="test", depends_on=["b"]),
+            LlmAgentConfig(name="b", model_profile="test", depends_on=["c"]),
+            LlmAgentConfig(name="c", model_profile="test", depends_on=["a"]),
         ]
         cycle = detect_cycle(agents)
         assert cycle is not None
@@ -446,19 +486,19 @@ class TestCycleDetection:
 
     def test_detect_cycle_self_dependency(self) -> None:
         """Self-dependency is a cycle of length 1."""
-        agents: list[dict[str, Any]] = [
-            {"name": "a", "depends_on": ["a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="a", model_profile="test", depends_on=["a"]),
         ]
         cycle = detect_cycle(agents)
         assert cycle == ["a"]
 
     def test_detect_cycle_mixed_valid_and_cyclic(self) -> None:
         """Only the cyclic subset should appear in the result."""
-        agents: list[dict[str, Any]] = [
-            {"name": "a", "depends_on": []},
-            {"name": "b", "depends_on": ["a"]},
-            {"name": "c", "depends_on": ["d"]},
-            {"name": "d", "depends_on": ["c"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="a", model_profile="test"),
+            LlmAgentConfig(name="b", model_profile="test", depends_on=["a"]),
+            LlmAgentConfig(name="c", model_profile="test", depends_on=["d"]),
+            LlmAgentConfig(name="d", model_profile="test", depends_on=["c"]),
         ]
         cycle = detect_cycle(agents)
         assert cycle is not None
@@ -466,9 +506,17 @@ class TestCycleDetection:
 
     def test_detect_cycle_handles_dict_form_dependencies(self) -> None:
         """Dict-form deps (conditional) should be traversed."""
-        agents: list[dict[str, Any]] = [
-            {"name": "a", "depends_on": [{"agent_name": "b"}]},
-            {"name": "b", "depends_on": [{"agent_name": "a"}]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="a",
+                model_profile="test",
+                depends_on=[{"agent_name": "b"}],
+            ),
+            LlmAgentConfig(
+                name="b",
+                model_profile="test",
+                depends_on=[{"agent_name": "a"}],
+            ),
         ]
         cycle = detect_cycle(agents)
         assert cycle is not None
@@ -480,26 +528,26 @@ class TestCycleDetection:
 
     def test_assert_no_cycles_passes_for_acyclic(self) -> None:
         """assert_no_cycles should not raise for valid graphs."""
-        agents: list[dict[str, Any]] = [
-            {"name": "a"},
-            {"name": "b", "depends_on": ["a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="a", model_profile="test"),
+            LlmAgentConfig(name="b", model_profile="test", depends_on=["a"]),
         ]
         assert_no_cycles(agents)  # Should not raise
 
     def test_assert_no_cycles_raises_with_path(self) -> None:
         """assert_no_cycles should raise ValueError with cycle path."""
-        agents: list[dict[str, Any]] = [
-            {"name": "a", "depends_on": ["b"]},
-            {"name": "b", "depends_on": ["a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="a", model_profile="test", depends_on=["b"]),
+            LlmAgentConfig(name="b", model_profile="test", depends_on=["a"]),
         ]
         with pytest.raises(ValueError, match="Circular dependency detected:"):
             assert_no_cycles(agents)
 
     def test_assert_no_cycles_error_message_contains_arrow_notation(self) -> None:
         """Error message should use 'x -> y -> x' arrow notation."""
-        agents: list[dict[str, Any]] = [
-            {"name": "a", "depends_on": ["b"]},
-            {"name": "b", "depends_on": ["a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="a", model_profile="test", depends_on=["b"]),
+            LlmAgentConfig(name="b", model_profile="test", depends_on=["a"]),
         ]
         with pytest.raises(ValueError, match="->"):
             assert_no_cycles(agents)
@@ -512,23 +560,26 @@ class TestFindAgentByName:
         """Test finding an existing agent by name."""
         from llm_orc.core.config.ensemble_config import _find_agent_by_name
 
-        agents = [
-            {"name": "agent1", "model": "model1"},
-            {"name": "agent2", "model": "model2"},
-            {"name": "agent3", "model": "model3"},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent1", model_profile="model1"),
+            LlmAgentConfig(name="agent2", model_profile="model2"),
+            LlmAgentConfig(name="agent3", model_profile="model3"),
         ]
 
         result = _find_agent_by_name(agents, "agent2")
 
-        assert result == {"name": "agent2", "model": "model2"}
+        assert result is not None
+        assert result.name == "agent2"
+        assert isinstance(result, LlmAgentConfig)
+        assert result.model_profile == "model2"
 
     def test_find_agent_by_name_non_existing(self) -> None:
         """Test finding a non-existing agent by name."""
         from llm_orc.core.config.ensemble_config import _find_agent_by_name
 
-        agents = [
-            {"name": "agent1", "model": "model1"},
-            {"name": "agent2", "model": "model2"},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent1", model_profile="model1"),
+            LlmAgentConfig(name="agent2", model_profile="model2"),
         ]
 
         result = _find_agent_by_name(agents, "non_existing")
@@ -539,7 +590,7 @@ class TestFindAgentByName:
         """Test finding agent in empty list."""
         from llm_orc.core.config.ensemble_config import _find_agent_by_name
 
-        agents: list[dict[str, Any]] = []
+        agents: list[AgentConfig] = []
 
         result = _find_agent_by_name(agents, "any_agent")
 
@@ -553,14 +604,14 @@ class TestFanOutValidation:
         """fan_out: true without depends_on should raise ValueError."""
         from llm_orc.core.config.ensemble_config import _validate_fan_out_dependencies
 
-        agents: list[dict[str, Any]] = [
-            {"name": "chunker", "script": "split.py"},
-            {
-                "name": "extractor",
-                "model_profile": "ollama-llama3",
-                "fan_out": True,
+        agents: list[AgentConfig] = [
+            ScriptAgentConfig(name="chunker", script="split.py"),
+            LlmAgentConfig(
+                name="extractor",
+                model_profile="ollama-llama3",
+                fan_out=True,
                 # Missing depends_on - should fail
-            },
+            ),
         ]
 
         with pytest.raises(ValueError, match="fan_out.*requires.*depends_on"):
@@ -570,19 +621,19 @@ class TestFanOutValidation:
         """fan_out: true with depends_on should pass validation."""
         from llm_orc.core.config.ensemble_config import _validate_fan_out_dependencies
 
-        agents: list[dict[str, Any]] = [
-            {"name": "chunker", "script": "split.py"},
-            {
-                "name": "extractor",
-                "model_profile": "ollama-llama3",
-                "fan_out": True,
-                "depends_on": ["chunker"],
-            },
-            {
-                "name": "synthesizer",
-                "model_profile": "ollama-llama3",
-                "depends_on": ["extractor"],
-            },
+        agents: list[AgentConfig] = [
+            ScriptAgentConfig(name="chunker", script="split.py"),
+            LlmAgentConfig(
+                name="extractor",
+                model_profile="ollama-llama3",
+                fan_out=True,
+                depends_on=["chunker"],
+            ),
+            LlmAgentConfig(
+                name="synthesizer",
+                model_profile="ollama-llama3",
+                depends_on=["extractor"],
+            ),
         ]
 
         # Should not raise any exception
@@ -592,9 +643,9 @@ class TestFanOutValidation:
         """fan_out: false or absent without depends_on should be valid."""
         from llm_orc.core.config.ensemble_config import _validate_fan_out_dependencies
 
-        agents: list[dict[str, Any]] = [
-            {"name": "agent1", "model_profile": "test"},
-            {"name": "agent2", "model_profile": "test", "fan_out": False},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent1", model_profile="test"),
+            LlmAgentConfig(name="agent2", model_profile="test", fan_out=False),
         ]
 
         # Should not raise any exception
@@ -604,13 +655,13 @@ class TestFanOutValidation:
         """fan_out: true with empty depends_on should raise ValueError."""
         from llm_orc.core.config.ensemble_config import _validate_fan_out_dependencies
 
-        agents = [
-            {
-                "name": "extractor",
-                "model_profile": "ollama-llama3",
-                "fan_out": True,
-                "depends_on": [],  # Empty - should fail
-            },
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="extractor",
+                model_profile="ollama-llama3",
+                fan_out=True,
+                depends_on=[],  # Empty - should fail
+            ),
         ]
 
         with pytest.raises(ValueError, match="fan_out.*requires.*depends_on"):

@@ -8,6 +8,7 @@ import pytest
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.execution.streaming_progress_tracker import StreamingProgressTracker
+from llm_orc.schemas.agent_config import LlmAgentConfig
 
 
 class TestStreamingProgressTrackerSimplified:
@@ -27,8 +28,8 @@ class TestStreamingProgressTrackerSimplified:
             name="test_ensemble",
             description="Test",
             agents=[
-                {"name": "agent1", "role": "test", "model": "mock"},
-                {"name": "agent2", "role": "test", "model": "mock"},
+                LlmAgentConfig(name="agent1", model_profile="mock"),
+                LlmAgentConfig(name="agent2", model_profile="mock"),
             ],
         )
 
@@ -85,7 +86,7 @@ class TestStreamingProgressTrackerSimplified:
         config = EnsembleConfig(
             name="test_ensemble",
             description="Test",
-            agents=[{"name": "agent1", "role": "test", "model": "mock"}],
+            agents=[LlmAgentConfig(name="agent1", model_profile="mock")],
         )
 
         # Create a failing execution task
@@ -168,7 +169,7 @@ class TestStreamingProgressTrackerSimplified:
         config = EnsembleConfig(
             name="single_ensemble",
             description="Single agent test",
-            agents=[{"name": "solo_agent", "role": "test", "model": "mock"}],
+            agents=[LlmAgentConfig(name="solo_agent", model_profile="mock")],
         )
 
         final_result = {

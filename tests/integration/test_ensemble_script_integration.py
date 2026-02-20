@@ -9,6 +9,7 @@ import pytest
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 
 
 @pytest.fixture(autouse=True)
@@ -46,13 +47,13 @@ class TestEnsembleScriptIntegration:
             name="test_script_ensemble",
             description="Test ensemble with script agent",
             agents=[
-                {
-                    "name": "echo_agent",
-                    "script": (
+                ScriptAgentConfig(
+                    name="echo_agent",
+                    script=(
                         'echo "{"success": true, "output": "Script output from agent"}"'
                     ),
-                    "timeout_seconds": 1,
-                }
+                    parameters={"timeout_seconds": 1},
+                )
             ],
         )
 
@@ -83,20 +84,19 @@ class TestEnsembleScriptIntegration:
             name="mixed_ensemble",
             description="Mixed script and LLM agents",
             agents=[
-                {
-                    "name": "data_fetcher",
-                    "script": (
+                ScriptAgentConfig(
+                    name="data_fetcher",
+                    script=(
                         'echo "{"success": true, '
                         '"output": "Data fetched successfully"}"'
                     ),
-                    "timeout_seconds": 1,
-                },
-                {
-                    "name": "llm_analyzer",
-                    "model_profile": "claude-analyst",
-                    "system_prompt": "Analyze the provided data",
-                    "timeout_seconds": 2,
-                },
+                ),
+                LlmAgentConfig(
+                    name="llm_analyzer",
+                    model_profile="claude-analyst",
+                    system_prompt="Analyze the provided data",
+                    timeout_seconds=2,
+                ),
             ],
         )
 
@@ -122,22 +122,21 @@ class TestEnsembleScriptIntegration:
         mock_artifact_manager.save_execution_results.assert_called_once()
 
     def test_ensemble_config_validates_agent_types(self) -> None:
-        """Test that ensemble configuration validates agent types."""
+        """Test that ensemble configuration uses typed AgentConfig objects."""
         # This should work - valid script agent
         config = EnsembleConfig(
             name="valid_script",
             description="Valid script agent",
             agents=[
-                {
-                    "name": "valid_agent",
-                    "type": "script",
-                    "command": "echo 'test'",
-                }
+                ScriptAgentConfig(
+                    name="valid_agent",
+                    script="echo 'test'",
+                )
             ],
         )
 
-        assert config.agents[0]["type"] == "script"
-        assert config.agents[0]["command"] == "echo 'test'"
+        assert config.agents[0].name == "valid_agent"
+        assert config.agents[0].script == "echo 'test'"  # type: ignore[union-attr]
 
     @pytest.mark.asyncio
     async def test_integration_tests_do_not_create_artifacts(self) -> None:
@@ -147,11 +146,10 @@ class TestEnsembleScriptIntegration:
             name="test_no_artifacts",
             description="Test that should not create artifacts",
             agents=[
-                {
-                    "name": "test_agent",
-                    "script": 'echo "test output"',
-                    "timeout_seconds": 1,
-                }
+                ScriptAgentConfig(
+                    name="test_agent",
+                    script='echo "test output"',
+                )
             ],
         )
 
@@ -196,11 +194,10 @@ class TestEnsembleScriptIntegration:
                 name="script_resolution_test",
                 description="Test script resolution priority",
                 agents=[
-                    {
-                        "name": "resolver_agent",
-                        "script": str(test_script),
-                        "timeout_seconds": 2,
-                    }
+                    ScriptAgentConfig(
+                        name="resolver_agent",
+                        script=str(test_script),
+                    )
                 ],
             )
 
@@ -221,13 +218,12 @@ class TestEnsembleScriptIntegration:
             name="cache_test_ensemble",
             description="Test caching with deterministic script",
             agents=[
-                {
-                    "name": "deterministic_agent",
-                    "script": (
+                ScriptAgentConfig(
+                    name="deterministic_agent",
+                    script=(
                         'echo "{\\"success\\": true, \\"data\\": \\"cached_result\\"}"'
                     ),
-                    "timeout_seconds": 1,
-                }
+                )
             ],
         )
 
@@ -259,30 +255,27 @@ class TestEnsembleScriptIntegration:
             name="performance_test_ensemble",
             description="Test parallel script execution performance",
             agents=[
-                {
-                    "name": "fast_agent",
-                    "script": (
+                ScriptAgentConfig(
+                    name="fast_agent",
+                    script=(
                         "sleep 0.1 && echo "
                         '"{\\"success\\": true, \\"agent\\": \\"fast\\"}"'
                     ),
-                    "timeout_seconds": 1,
-                },
-                {
-                    "name": "medium_agent",
-                    "script": (
+                ),
+                ScriptAgentConfig(
+                    name="medium_agent",
+                    script=(
                         "sleep 0.2 && echo "
                         '"{\\"success\\": true, \\"agent\\": \\"medium\\"}"'
                     ),
-                    "timeout_seconds": 1,
-                },
-                {
-                    "name": "slow_agent",
-                    "script": (
+                ),
+                ScriptAgentConfig(
+                    name="slow_agent",
+                    script=(
                         "sleep 0.3 && echo "
                         '"{\\"success\\": true, \\"agent\\": \\"slow\\"}"'
                     ),
-                    "timeout_seconds": 1,
-                },
+                ),
             ],
         )
 
@@ -311,18 +304,16 @@ class TestEnsembleScriptIntegration:
             name="error_test_ensemble",
             description="Test error handling and exception chaining",
             agents=[
-                {
-                    "name": "failing_agent",
-                    "script": "exit 1",  # Script that will fail
-                    "timeout_seconds": 1,
-                },
-                {
-                    "name": "success_agent",
-                    "script": (
+                ScriptAgentConfig(
+                    name="failing_agent",
+                    script="exit 1",
+                ),
+                ScriptAgentConfig(
+                    name="success_agent",
+                    script=(
                         'echo "{\\"success\\": true, \\"message\\": \\"I succeeded\\"}"'
                     ),
-                    "timeout_seconds": 1,
-                },
+                ),
             ],
         )
 
@@ -378,11 +369,10 @@ class TestEnsembleScriptIntegration:
             name="json_contract_validation_test",
             description="Test JSON contract validation in ScriptResolver integration",
             agents=[
-                {
-                    "name": "contract_validator",
-                    "script": "test_json_contract_agent.py",  # By ScriptResolver
-                    "timeout_seconds": 5,
-                }
+                ScriptAgentConfig(
+                    name="contract_validator",
+                    script="test_json_contract_agent.py",
+                )
             ],
         )
 

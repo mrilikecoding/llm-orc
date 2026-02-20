@@ -12,6 +12,7 @@ import pytest
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+from llm_orc.schemas.agent_config import AgentConfig, ScriptAgentConfig
 
 
 class TestStoryGeneratorFlow:
@@ -31,11 +32,10 @@ class TestStoryGeneratorFlow:
             name="story_user_input_flow",
             description="Test story generator to user input coordination",
             agents=[
-                {
-                    "name": "cyberpunk_story_generator",
-                    "script": "story_generator_with_requests.py",
-                    "timeout_seconds": 5,
-                }
+                ScriptAgentConfig(
+                    name="cyberpunk_story_generator",
+                    script="story_generator_with_requests.py",
+                )
             ],
         )
 
@@ -143,12 +143,11 @@ class TestStoryGeneratorFlow:
         assert dynamic_params["multiline"] is False
 
         # Test coordination with available agents
-        phase_agents = [
-            {
-                "name": "user_input_collector",
-                "type": "script",
-                "script": "primitives/user_input.py",
-            }
+        phase_agents: list[AgentConfig] = [
+            ScriptAgentConfig(
+                name="user_input_collector",
+                script="primitives/user_input.py",
+            )
         ]
 
         coordinated_agents = processor.coordinate_agent_execution(

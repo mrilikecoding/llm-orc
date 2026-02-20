@@ -14,6 +14,7 @@ import pytest
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.core.execution.script_resolver import ScriptResolver
+from llm_orc.schemas.agent_config import AgentConfig, ScriptAgentConfig
 from llm_orc.schemas.script_agent import AgentRequest
 from tests.fixtures.test_primitives import (
     TestPrimitiveFactory,
@@ -129,17 +130,16 @@ print(json.dumps(output))
                 name="agent_request_test",
                 description="Test AgentRequest processing",
                 agents=[
-                    {
-                        "name": "story_generator",
-                        "script": script_path,
-                        "timeout_seconds": 5,
-                    },
-                    {
-                        "name": "user_input_collector",
-                        "script": (
+                    ScriptAgentConfig(
+                        name="story_generator",
+                        script=script_path,
+                    ),
+                    ScriptAgentConfig(
+                        name="user_input_collector",
+                        script=(
                             'echo \'{"success": true, "data": {"user_input": "J"}}\''
                         ),
-                    },
+                    ),
                 ],
             )
 
@@ -197,20 +197,18 @@ print(json.dumps(output))
             name="story_to_user_input_flow",
             description="Test story generator to user input agent coordination",
             agents=[
-                {
-                    "name": "cyberpunk_story_generator",
-                    "script": "test_json_contract_agent.py",  # Test fixture script
-                    "parameters": {
+                ScriptAgentConfig(
+                    name="cyberpunk_story_generator",
+                    script="test_json_contract_agent.py",
+                    parameters={
                         "theme": "cyberpunk",
                         "character_type": "protagonist",
                     },
-                    "timeout_seconds": 5,
-                },
-                {
-                    "name": "user_input_agent",
-                    "script": "primitives/user_input.py",  # Test fixture primitive
-                    "timeout_seconds": 10,
-                },
+                ),
+                ScriptAgentConfig(
+                    name="user_input_agent",
+                    script="primitives/user_input.py",
+                ),
             ],
         )
 
@@ -285,12 +283,11 @@ print(json.dumps(output))
         )
 
         # Test coordination with dependency resolver
-        phase_agents = [
-            {
-                "name": "user_input_collector",
-                "type": "script",
-                "script": "primitives/user_input.py",
-            }
+        phase_agents: list[AgentConfig] = [
+            ScriptAgentConfig(
+                name="user_input_collector",
+                script="primitives/user_input.py",
+            )
         ]
 
         results_dict = {

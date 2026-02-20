@@ -4,12 +4,13 @@ import json
 from typing import Any
 
 from llm_orc.core.execution.patterns import INSTANCE_PATTERN
+from llm_orc.schemas.agent_config import AgentConfig
 
 
 class FanOutExpander:
     """Expands fan_out agents into N parallel instances at runtime."""
 
-    def detect_fan_out_agents(self, agent_configs: list[dict[str, Any]]) -> list[str]:
+    def detect_fan_out_agents(self, agent_configs: list[AgentConfig]) -> list[str]:
         """Return names of agents with fan_out: true.
 
         Args:
@@ -18,9 +19,7 @@ class FanOutExpander:
         Returns:
             List of agent names that have fan_out: true
         """
-        return [
-            agent["name"] for agent in agent_configs if agent.get("fan_out") is True
-        ]
+        return [agent.name for agent in agent_configs if agent.fan_out is True]
 
     def is_array_result(self, result: Any) -> bool:
         """Check if upstream result is a non-empty array.
@@ -47,9 +46,9 @@ class FanOutExpander:
 
     def expand_fan_out_agent(
         self,
-        agent_config: dict[str, Any],
+        agent_config: AgentConfig,
         upstream_array: list[Any],
-    ) -> list[dict[str, Any]]:
+    ) -> list[AgentConfig]:
         """Create N copies of agent config with indexed names.
 
         Args:
@@ -59,25 +58,21 @@ class FanOutExpander:
         Returns:
             List of agent configs, one per array element, with indexed names
         """
-        original_name = agent_config["name"]
+        original_name = agent_config.name
         instances = []
 
         for index, chunk in enumerate(upstream_array):
-            # Create copy of config without fan_out field
-            instance_config = {
-                key: value for key, value in agent_config.items() if key != "fan_out"
-            }
-
-            # Set indexed name
-            instance_config["name"] = f"{original_name}[{index}]"
-
-            # Store chunk metadata for input preparation
-            instance_config["_fan_out_chunk"] = chunk
-            instance_config["_fan_out_index"] = index
-            instance_config["_fan_out_total"] = len(upstream_array)
-            instance_config["_fan_out_original"] = original_name
-
-            instances.append(instance_config)
+            instance = agent_config.model_copy(
+                update={
+                    "name": f"{original_name}[{index}]",
+                    "fan_out": False,
+                    "fan_out_chunk": chunk,
+                    "fan_out_index": index,
+                    "fan_out_total": len(upstream_array),
+                    "fan_out_original": original_name,
+                },
+            )
+            instances.append(instance)
 
         return instances
 

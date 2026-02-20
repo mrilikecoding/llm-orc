@@ -4,6 +4,14 @@ from typing import Any
 
 from llm_orc.core.execution.fan_out_expander import FanOutExpander
 from llm_orc.core.execution.fan_out_gatherer import FanOutGatherer
+from llm_orc.schemas.agent_config import AgentConfig
+
+
+def _dep_name(dep: str | dict[str, Any]) -> str:
+    """Extract the agent name from a dependency entry."""
+    if isinstance(dep, dict):
+        return str(dep["agent_name"])
+    return dep
 
 
 class FanOutCoordinator:
@@ -19,21 +27,20 @@ class FanOutCoordinator:
 
     def detect_in_phase(
         self,
-        phase_agents: list[dict[str, Any]],
+        phase_agents: list[AgentConfig],
         results_dict: dict[str, Any],
-    ) -> list[tuple[dict[str, Any], list[Any]]]:
+    ) -> list[tuple[AgentConfig, list[Any]]]:
         """Detect fan-out agents in phase with array upstream results."""
-        fan_out_agents: list[tuple[dict[str, Any], list[Any]]] = []
+        fan_out_agents: list[tuple[AgentConfig, list[Any]]] = []
 
         for agent_config in phase_agents:
-            if not agent_config.get("fan_out"):
+            if not agent_config.fan_out:
                 continue
 
-            depends_on = agent_config.get("depends_on", [])
-            if not depends_on:
+            if not agent_config.depends_on:
                 continue
 
-            upstream_name = depends_on[0]
+            upstream_name = _dep_name(agent_config.depends_on[0])
             upstream_result = results_dict.get(upstream_name, {})
 
             if upstream_result.get("status") != "success":
@@ -49,9 +56,9 @@ class FanOutCoordinator:
 
     def expand_agent(
         self,
-        agent_config: dict[str, Any],
+        agent_config: AgentConfig,
         upstream_array: list[Any],
-    ) -> list[dict[str, Any]]:
+    ) -> list[AgentConfig]:
         """Expand a fan-out agent into N instances."""
         return self._expander.expand_fan_out_agent(agent_config, upstream_array)
 

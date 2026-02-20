@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.schemas.agent_config import ScriptAgentConfig
 
 
 class TestNoArtifactCreation:
@@ -54,7 +55,7 @@ class TestNoArtifactCreation:
             name="test_no_artifacts_with_mock",
             description="Test that this doesn't create artifacts with mock",
             agents=[
-                {"name": "agent1", "type": "script", "script": "echo 'test'"},
+                ScriptAgentConfig(name="agent1", script="echo 'test'"),
             ],
         )
 

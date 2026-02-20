@@ -11,6 +11,7 @@ import pytest
 from click.exceptions import ClickException
 
 from llm_orc.cli_commands import invoke_ensemble
+from llm_orc.schemas.agent_config import LlmAgentConfig
 
 
 class TestInvokeEnsembleComplexityRefactor:
@@ -38,8 +39,10 @@ class TestInvokeEnsembleComplexityRefactor:
         config.name = "test_ensemble"
         config.description = "Test ensemble for testing"
         config.agents = [
-            {"name": "agent_1", "depends_on": []},
-            {"name": "agent_2", "depends_on": ["agent_1"]},
+            LlmAgentConfig(name="agent_1", model_profile="test", depends_on=[]),
+            LlmAgentConfig(
+                name="agent_2", model_profile="test", depends_on=["agent_1"]
+            ),
         ]
         return config
 
@@ -417,7 +420,10 @@ class TestInvokeEnsembleRefactoredFunctions:
         mock_config_manager = Mock()
         mock_executor = Mock()
         mock_ensemble_config = Mock()
-        mock_ensemble_config.agents = [{"name": "agent1"}, {"name": "agent2"}]
+        mock_ensemble_config.agents = [
+            LlmAgentConfig(name="agent1", model_profile="test"),
+            LlmAgentConfig(name="agent2", model_profile="test"),
+        ]
 
         with patch("llm_orc.cli_commands.click.echo") as mock_echo:
             _setup_performance_display(

@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
+from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
 
 
 class TestDependencyAnalyzer:
@@ -14,10 +15,10 @@ class TestDependencyAnalyzer:
         """Test analysis with agents having no dependencies."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
-            {"name": "agent_a"},
-            {"name": "agent_b"},
-            {"name": "agent_c"},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(name="agent_b", model_profile="test"),
+            LlmAgentConfig(name="agent_c", model_profile="test"),
         ]
 
         # When
@@ -37,10 +38,14 @@ class TestDependencyAnalyzer:
         """Test analysis with linear dependency chain."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
-            {"name": "agent_c", "depends_on": ["agent_b"]},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", depends_on=["agent_a"], model_profile="test"
+            ),
+            LlmAgentConfig(
+                name="agent_c", depends_on=["agent_b"], model_profile="test"
+            ),
         ]
 
         # When
@@ -52,19 +57,27 @@ class TestDependencyAnalyzer:
         assert len(result["phases"][0]) == 1  # agent_a
         assert len(result["phases"][1]) == 1  # agent_b
         assert len(result["phases"][2]) == 1  # agent_c
-        assert result["phases"][0][0]["name"] == "agent_a"
-        assert result["phases"][1][0]["name"] == "agent_b"
-        assert result["phases"][2][0]["name"] == "agent_c"
+        assert result["phases"][0][0].name == "agent_a"
+        assert result["phases"][1][0].name == "agent_b"
+        assert result["phases"][2][0].name == "agent_c"
 
     def test_analyze_enhanced_dependency_graph_parallel_dependencies(self) -> None:
         """Test analysis with parallel dependencies."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": []},
-            {"name": "agent_c", "depends_on": ["agent_a", "agent_b"]},
-            {"name": "agent_d", "depends_on": ["agent_a", "agent_b"]},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(name="agent_b", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_c",
+                depends_on=["agent_a", "agent_b"],
+                model_profile="test",
+            ),
+            LlmAgentConfig(
+                name="agent_d",
+                depends_on=["agent_a", "agent_b"],
+                model_profile="test",
+            ),
         ]
 
         # When
@@ -77,23 +90,31 @@ class TestDependencyAnalyzer:
         assert len(result["phases"][1]) == 2  # agent_c, agent_d
 
         # Check first phase contains both independent agents
-        phase_0_names = {agent["name"] for agent in result["phases"][0]}
+        phase_0_names = {agent.name for agent in result["phases"][0]}
         assert phase_0_names == {"agent_a", "agent_b"}
 
         # Check second phase contains both dependent agents
-        phase_1_names = {agent["name"] for agent in result["phases"][1]}
+        phase_1_names = {agent.name for agent in result["phases"][1]}
         assert phase_1_names == {"agent_c", "agent_d"}
 
     def test_analyze_enhanced_dependency_graph_complex_dependencies(self) -> None:
         """Test analysis with complex dependency structure."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": []},
-            {"name": "agent_c", "depends_on": ["agent_a"]},
-            {"name": "agent_d", "depends_on": ["agent_b"]},
-            {"name": "agent_e", "depends_on": ["agent_c", "agent_d"]},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(name="agent_b", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_c", depends_on=["agent_a"], model_profile="test"
+            ),
+            LlmAgentConfig(
+                name="agent_d", depends_on=["agent_b"], model_profile="test"
+            ),
+            LlmAgentConfig(
+                name="agent_e",
+                depends_on=["agent_c", "agent_d"],
+                model_profile="test",
+            ),
         ]
 
         # When
@@ -104,25 +125,31 @@ class TestDependencyAnalyzer:
         assert len(result["phases"]) == 3
 
         # Phase 0: agent_a, agent_b (no dependencies)
-        phase_0_names = {agent["name"] for agent in result["phases"][0]}
+        phase_0_names = {agent.name for agent in result["phases"][0]}
         assert phase_0_names == {"agent_a", "agent_b"}
 
         # Phase 1: agent_c, agent_d (depend on phase 0)
-        phase_1_names = {agent["name"] for agent in result["phases"][1]}
+        phase_1_names = {agent.name for agent in result["phases"][1]}
         assert phase_1_names == {"agent_c", "agent_d"}
 
         # Phase 2: agent_e (depends on phase 1)
         assert len(result["phases"][2]) == 1
-        assert result["phases"][2][0]["name"] == "agent_e"
+        assert result["phases"][2][0].name == "agent_e"
 
     def test_analyze_enhanced_dependency_graph_circular_dependency(self) -> None:
         """Test detection of circular dependencies."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
-            {"name": "agent_a", "depends_on": ["agent_b"]},
-            {"name": "agent_b", "depends_on": ["agent_c"]},
-            {"name": "agent_c", "depends_on": ["agent_a"]},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="agent_a", depends_on=["agent_b"], model_profile="test"
+            ),
+            LlmAgentConfig(
+                name="agent_b", depends_on=["agent_c"], model_profile="test"
+            ),
+            LlmAgentConfig(
+                name="agent_c", depends_on=["agent_a"], model_profile="test"
+            ),
         ]
 
         # When / Then
@@ -133,7 +160,7 @@ class TestDependencyAnalyzer:
         """Test analysis with empty agent list."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs: list[dict[str, Any]] = []
+        agent_configs: list[AgentConfig] = []
 
         # When
         result = analyzer.analyze_enhanced_dependency_graph(agent_configs)
@@ -147,7 +174,7 @@ class TestDependencyAnalyzer:
         """Test satisfaction check with no dependencies."""
         # Given
         analyzer = DependencyAnalyzer()
-        dependencies: list[str] = []
+        dependencies: list[str | dict[str, Any]] = []
         processed_agents: set[str] = set()
 
         # When
@@ -160,7 +187,7 @@ class TestDependencyAnalyzer:
         """Test satisfaction check with all dependencies satisfied."""
         # Given
         analyzer = DependencyAnalyzer()
-        dependencies = ["agent_a", "agent_b"]
+        dependencies: list[str | dict[str, Any]] = ["agent_a", "agent_b"]
         processed_agents = {"agent_a", "agent_b", "agent_c"}
 
         # When
@@ -173,7 +200,7 @@ class TestDependencyAnalyzer:
         """Test satisfaction check with some dependencies unsatisfied."""
         # Given
         analyzer = DependencyAnalyzer()
-        dependencies = ["agent_a", "agent_b", "agent_c"]
+        dependencies: list[str | dict[str, Any]] = ["agent_a", "agent_b", "agent_c"]
         processed_agents = {"agent_a", "agent_b"}
 
         # When
@@ -186,7 +213,7 @@ class TestDependencyAnalyzer:
         """Test satisfaction check with no dependencies satisfied."""
         # Given
         analyzer = DependencyAnalyzer()
-        dependencies = ["agent_a", "agent_b"]
+        dependencies: list[str | dict[str, Any]] = ["agent_a", "agent_b"]
         processed_agents: set[str] = set()
 
         # When
@@ -199,10 +226,14 @@ class TestDependencyAnalyzer:
         """Test grouping agents by dependency level."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
-            {"name": "agent_c", "depends_on": ["agent_b"]},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", depends_on=["agent_a"], model_profile="test"
+            ),
+            LlmAgentConfig(
+                name="agent_c", depends_on=["agent_b"], model_profile="test"
+            ),
         ]
 
         # When
@@ -216,18 +247,22 @@ class TestDependencyAnalyzer:
         assert len(result[0]) == 1
         assert len(result[1]) == 1
         assert len(result[2]) == 1
-        assert result[0][0]["name"] == "agent_a"
-        assert result[1][0]["name"] == "agent_b"
-        assert result[2][0]["name"] == "agent_c"
+        assert result[0][0].name == "agent_a"
+        assert result[1][0].name == "agent_b"
+        assert result[2][0].name == "agent_c"
 
     def test_group_agents_by_level_parallel(self) -> None:
         """Test grouping agents with parallel execution opportunities."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": []},
-            {"name": "agent_c", "depends_on": ["agent_a", "agent_b"]},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(name="agent_b", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_c",
+                depends_on=["agent_a", "agent_b"],
+                model_profile="test",
+            ),
         ]
 
         # When
@@ -238,15 +273,15 @@ class TestDependencyAnalyzer:
         assert len(result[0]) == 2  # agent_a, agent_b
         assert len(result[1]) == 1  # agent_c
 
-        level_0_names = {agent["name"] for agent in result[0]}
+        level_0_names = {agent.name for agent in result[0]}
         assert level_0_names == {"agent_a", "agent_b"}
-        assert result[1][0]["name"] == "agent_c"
+        assert result[1][0].name == "agent_c"
 
     def test_calculate_agent_level_no_dependencies(self) -> None:
         """Test calculating level for agent with no dependencies."""
         # Given
         analyzer = DependencyAnalyzer()
-        dependency_map: dict[str, list[str]] = {"agent_a": []}
+        dependency_map: dict[str, list[str | dict[str, Any]]] = {"agent_a": []}
 
         # When
         result = analyzer.calculate_agent_level("agent_a", dependency_map)
@@ -258,7 +293,7 @@ class TestDependencyAnalyzer:
         """Test calculating level for agent not in dependency map."""
         # Given
         analyzer = DependencyAnalyzer()
-        dependency_map: dict[str, list[str]] = {}
+        dependency_map: dict[str, list[str | dict[str, Any]]] = {}
 
         # When
         result = analyzer.calculate_agent_level("agent_a", dependency_map)
@@ -270,7 +305,10 @@ class TestDependencyAnalyzer:
         """Test calculating level for agent with single dependency."""
         # Given
         analyzer = DependencyAnalyzer()
-        dependency_map = {"agent_a": [], "agent_b": ["agent_a"]}
+        dependency_map: dict[str, list[str | dict[str, Any]]] = {
+            "agent_a": [],
+            "agent_b": ["agent_a"],
+        }
 
         # When
         result = analyzer.calculate_agent_level("agent_b", dependency_map)
@@ -282,7 +320,7 @@ class TestDependencyAnalyzer:
         """Test calculating level for agent with nested dependencies."""
         # Given
         analyzer = DependencyAnalyzer()
-        dependency_map = {
+        dependency_map: dict[str, list[str | dict[str, Any]]] = {
             "agent_a": [],
             "agent_b": ["agent_a"],
             "agent_c": ["agent_b"],
@@ -301,7 +339,7 @@ class TestDependencyAnalyzer:
         """Test calculating level with dependencies at different levels."""
         # Given
         analyzer = DependencyAnalyzer()
-        dependency_map = {
+        dependency_map: dict[str, list[str | dict[str, Any]]] = {
             "agent_a": [],
             "agent_b": ["agent_a"],
             "agent_c": ["agent_b"],
@@ -318,9 +356,11 @@ class TestDependencyAnalyzer:
         """Test getting execution phases as agent names."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", depends_on=["agent_a"], model_profile="test"
+            ),
         ]
 
         # When
@@ -335,10 +375,14 @@ class TestDependencyAnalyzer:
         """Test getting execution phases with parallel agents."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": []},
-            {"name": "agent_c", "depends_on": ["agent_a", "agent_b"]},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(name="agent_b", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_c",
+                depends_on=["agent_a", "agent_b"],
+                model_profile="test",
+            ),
         ]
 
         # When
@@ -354,10 +398,16 @@ class TestDependencyAnalyzer:
         """Test validation of valid dependency configuration."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
-            {"name": "agent_c", "depends_on": ["agent_a", "agent_b"]},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", depends_on=["agent_a"], model_profile="test"
+            ),
+            LlmAgentConfig(
+                name="agent_c",
+                depends_on=["agent_a", "agent_b"],
+                model_profile="test",
+            ),
         ]
 
         # When
@@ -370,8 +420,10 @@ class TestDependencyAnalyzer:
         """Test validation detects self-dependency."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
-            {"name": "agent_a", "depends_on": ["agent_a"]},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="agent_a", depends_on=["agent_a"], model_profile="test"
+            ),
         ]
 
         # When
@@ -386,8 +438,10 @@ class TestDependencyAnalyzer:
         """Test validation detects missing dependencies."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
-            {"name": "agent_a", "depends_on": ["missing_agent"]},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="agent_a", depends_on=["missing_agent"], model_profile="test"
+            ),
         ]
 
         # When
@@ -402,9 +456,13 @@ class TestDependencyAnalyzer:
         """Test validation detects circular dependencies."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
-            {"name": "agent_a", "depends_on": ["agent_b"]},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="agent_a", depends_on=["agent_b"], model_profile="test"
+            ),
+            LlmAgentConfig(
+                name="agent_b", depends_on=["agent_a"], model_profile="test"
+            ),
         ]
 
         # When
@@ -418,10 +476,18 @@ class TestDependencyAnalyzer:
         """Test validation detects multiple types of errors."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs = [
-            {"name": "agent_a", "depends_on": ["agent_a", "missing_agent"]},
-            {"name": "agent_b", "depends_on": ["agent_c"]},
-            {"name": "agent_c", "depends_on": ["agent_b"]},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(
+                name="agent_a",
+                depends_on=["agent_a", "missing_agent"],
+                model_profile="test",
+            ),
+            LlmAgentConfig(
+                name="agent_b", depends_on=["agent_c"], model_profile="test"
+            ),
+            LlmAgentConfig(
+                name="agent_c", depends_on=["agent_b"], model_profile="test"
+            ),
         ]
 
         # When
@@ -438,9 +504,11 @@ class TestDependencyAnalyzer:
         """Test validation with agents having no depends_on key."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs: list[dict[str, Any]] = [
-            {"name": "agent_a"},  # No depends_on key
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agent_configs: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", depends_on=["agent_a"], model_profile="test"
+            ),
         ]
 
         # When
@@ -453,7 +521,7 @@ class TestDependencyAnalyzer:
         """Test validation with empty agent list."""
         # Given
         analyzer = DependencyAnalyzer()
-        agent_configs: list[dict[str, Any]] = []
+        agent_configs: list[AgentConfig] = []
 
         # When
         result = analyzer.validate_dependencies(agent_configs)
@@ -485,7 +553,7 @@ class TestFanOutDependencyHandling:
         analyzer = DependencyAnalyzer()
 
         # Downstream depends on "extractor" (original name)
-        dependencies = ["extractor"]
+        dependencies: list[str | dict[str, Any]] = ["extractor"]
 
         # Processed agents include instances extractor[0], extractor[1], etc.
         # plus the gathered result under original name

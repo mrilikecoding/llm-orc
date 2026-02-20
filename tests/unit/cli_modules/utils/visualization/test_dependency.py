@@ -1,7 +1,5 @@
 """Comprehensive tests for dependency visualization module."""
 
-from typing import Any
-
 from rich.tree import Tree
 
 from llm_orc.cli_modules.utils.visualization.dependency import (
@@ -15,6 +13,7 @@ from llm_orc.cli_modules.utils.visualization.dependency import (
     create_dependency_tree,
     find_final_agent,
 )
+from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
 
 
 class TestCreateDependencyGraph:
@@ -22,9 +21,11 @@ class TestCreateDependencyGraph:
 
     def test_create_dependency_graph_simple(self) -> None:
         """Test creating dependency graph with simple agents."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
 
         result = create_dependency_graph(agents)
@@ -33,10 +34,14 @@ class TestCreateDependencyGraph:
 
     def test_create_dependency_graph_complex(self) -> None:
         """Test creating dependency graph with complex dependencies."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": []},
-            {"name": "agent_c", "depends_on": ["agent_a", "agent_b"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(name="agent_b", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_c",
+                model_profile="test",
+                depends_on=["agent_a", "agent_b"],
+            ),
         ]
 
         result = create_dependency_graph(agents)
@@ -54,9 +59,11 @@ class TestCreateDependencyGraph:
 
     def test_create_dependency_graph_with_status_simple(self) -> None:
         """Test creating dependency graph with status indicators."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
         statuses = {"agent_a": "completed", "agent_b": "running"}
 
@@ -68,8 +75,8 @@ class TestCreateDependencyGraph:
 
     def test_create_dependency_graph_with_status_failed(self) -> None:
         """Test dependency graph with failed status."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
         ]
         statuses = {"agent_a": "failed"}
 
@@ -86,7 +93,7 @@ class TestCreateDependencyGraph:
     def test_create_dependency_graph_no_levels(self) -> None:
         """Test dependency graph when no levels found."""
         # This is an edge case where the grouping function returns empty
-        agents: list[dict[str, Any]] = []
+        agents: list[AgentConfig] = []
 
         result = create_dependency_graph_with_status(agents, {})
 
@@ -98,9 +105,11 @@ class TestCreateDependencyTree:
 
     def test_create_dependency_tree_simple(self) -> None:
         """Test creating dependency tree with simple agents."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
 
         result = create_dependency_tree(agents)
@@ -112,9 +121,11 @@ class TestCreateDependencyTree:
 
     def test_create_dependency_tree_with_status(self) -> None:
         """Test creating dependency tree with agent status."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
         statuses = {"agent_a": "completed", "agent_b": "running"}
 
@@ -133,11 +144,17 @@ class TestCreateDependencyTree:
 
     def test_create_dependency_tree_multiple_levels(self) -> None:
         """Test dependency tree with multiple dependency levels."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": []},
-            {"name": "agent_c", "depends_on": ["agent_a", "agent_b"]},
-            {"name": "agent_d", "depends_on": ["agent_c"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(name="agent_b", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_c",
+                model_profile="test",
+                depends_on=["agent_a", "agent_b"],
+            ),
+            LlmAgentConfig(
+                name="agent_d", model_profile="test", depends_on=["agent_c"]
+            ),
         ]
 
         result = create_dependency_tree(agents)
@@ -213,9 +230,11 @@ class TestFindFinalAgent:
             "agent_b": {"status": "success"},
             "agent_a": {"status": "success"},
         }
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
 
         result = find_final_agent(results, agents)
@@ -228,9 +247,11 @@ class TestFindFinalAgent:
             "agent_a": {"status": "success"},
             "coordinator": {"status": "success"},
         }
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "coordinator", "depends_on": ["agent_a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="coordinator", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
 
         result = find_final_agent(results, agents)
@@ -243,9 +264,11 @@ class TestFindFinalAgent:
             "agent_a": {"status": "success"},
             "agent_b": {"status": "failed"},
         }
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
 
         result = find_final_agent(results, agents)
@@ -258,9 +281,11 @@ class TestGroupAgentsByDependencyLevel:
 
     def test_group_agents_simple(self) -> None:
         """Test grouping agents with simple dependencies."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
 
         result = _group_agents_by_dependency_level(agents)
@@ -269,16 +294,22 @@ class TestGroupAgentsByDependencyLevel:
         assert 1 in result
         assert len(result[0]) == 1
         assert len(result[1]) == 1
-        assert result[0][0]["name"] == "agent_a"
-        assert result[1][0]["name"] == "agent_b"
+        assert result[0][0].name == "agent_a"
+        assert result[1][0].name == "agent_b"
 
     def test_group_agents_complex(self) -> None:
         """Test grouping agents with complex dependencies."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": []},
-            {"name": "agent_c", "depends_on": ["agent_a", "agent_b"]},
-            {"name": "agent_d", "depends_on": ["agent_c"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(name="agent_b", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_c",
+                model_profile="test",
+                depends_on=["agent_a", "agent_b"],
+            ),
+            LlmAgentConfig(
+                name="agent_d", model_profile="test", depends_on=["agent_c"]
+            ),
         ]
 
         result = _group_agents_by_dependency_level(agents)
@@ -302,8 +333,8 @@ class TestCalculateAgentLevel:
 
     def test_calculate_agent_level_no_dependencies(self) -> None:
         """Test calculating level for agent with no dependencies."""
-        agent = {"name": "agent_a", "depends_on": []}
-        all_agents = [agent]
+        agent = LlmAgentConfig(name="agent_a", model_profile="test")
+        all_agents: list[AgentConfig] = [agent]
 
         result = _calculate_agent_level(agent, all_agents)
 
@@ -311,9 +342,11 @@ class TestCalculateAgentLevel:
 
     def test_calculate_agent_level_single_dependency(self) -> None:
         """Test calculating level for agent with single dependency."""
-        agent_a = {"name": "agent_a", "depends_on": []}
-        agent_b = {"name": "agent_b", "depends_on": ["agent_a"]}
-        all_agents = [agent_a, agent_b]
+        agent_a = LlmAgentConfig(name="agent_a", model_profile="test")
+        agent_b = LlmAgentConfig(
+            name="agent_b", model_profile="test", depends_on=["agent_a"]
+        )
+        all_agents: list[AgentConfig] = [agent_a, agent_b]
 
         result = _calculate_agent_level(agent_b, all_agents)
 
@@ -321,10 +354,14 @@ class TestCalculateAgentLevel:
 
     def test_calculate_agent_level_nested_dependencies(self) -> None:
         """Test calculating level for agent with nested dependencies."""
-        agent_a = {"name": "agent_a", "depends_on": []}
-        agent_b = {"name": "agent_b", "depends_on": ["agent_a"]}
-        agent_c = {"name": "agent_c", "depends_on": ["agent_b"]}
-        all_agents = [agent_a, agent_b, agent_c]
+        agent_a = LlmAgentConfig(name="agent_a", model_profile="test")
+        agent_b = LlmAgentConfig(
+            name="agent_b", model_profile="test", depends_on=["agent_a"]
+        )
+        agent_c = LlmAgentConfig(
+            name="agent_c", model_profile="test", depends_on=["agent_b"]
+        )
+        all_agents: list[AgentConfig] = [agent_a, agent_b, agent_c]
 
         result = _calculate_agent_level(agent_c, all_agents)
 
@@ -332,8 +369,10 @@ class TestCalculateAgentLevel:
 
     def test_calculate_agent_level_missing_dependency(self) -> None:
         """Test calculating level when dependency doesn't exist."""
-        agent = {"name": "agent_b", "depends_on": ["nonexistent"]}
-        all_agents = [agent]
+        agent = LlmAgentConfig(
+            name="agent_b", model_profile="test", depends_on=["nonexistent"]
+        )
+        all_agents: list[AgentConfig] = [agent]
 
         result = _calculate_agent_level(agent, all_agents)
 
@@ -345,9 +384,11 @@ class TestCreatePlainTextDependencyGraph:
 
     def test_create_plain_text_dependency_graph_simple(self) -> None:
         """Test creating plain text graph with simple agents."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
 
         result = _create_plain_text_dependency_graph(agents)
@@ -358,10 +399,14 @@ class TestCreatePlainTextDependencyGraph:
 
     def test_create_plain_text_dependency_graph_complex(self) -> None:
         """Test creating plain text graph with complex dependencies."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": []},
-            {"name": "agent_c", "depends_on": ["agent_a", "agent_b"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(name="agent_b", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_c",
+                model_profile="test",
+                depends_on=["agent_a", "agent_b"],
+            ),
         ]
 
         result = _create_plain_text_dependency_graph(agents)
@@ -384,9 +429,11 @@ class TestHelperFunctions:
 
     def test_create_structured_dependency_info(self) -> None:
         """Test creating structured dependency information."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
 
         agents_by_level, agent_statuses = _create_structured_dependency_info(agents)
@@ -400,9 +447,9 @@ class TestHelperFunctions:
 
     def test_create_agent_statuses(self) -> None:
         """Test creating initial agent status mapping."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": []},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(name="agent_b", model_profile="test"),
         ]
 
         result = _create_agent_statuses(agents)
@@ -411,9 +458,11 @@ class TestHelperFunctions:
 
     def test_group_agents_by_dependency_level(self) -> None:
         """Test grouping agents by dependency level."""
-        agents = [
-            {"name": "agent_a", "depends_on": []},
-            {"name": "agent_b", "depends_on": ["agent_a"]},
+        agents: list[AgentConfig] = [
+            LlmAgentConfig(name="agent_a", model_profile="test"),
+            LlmAgentConfig(
+                name="agent_b", model_profile="test", depends_on=["agent_a"]
+            ),
         ]
 
         result = _group_agents_by_dependency_level(agents)

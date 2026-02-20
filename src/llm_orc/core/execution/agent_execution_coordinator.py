@@ -5,6 +5,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from llm_orc.models.base import ModelInterface
+from llm_orc.schemas.agent_config import AgentConfig
 
 
 class AgentExecutionCoordinator:
@@ -14,7 +15,7 @@ class AgentExecutionCoordinator:
         self,
         performance_config: dict[str, Any],
         agent_executor: Callable[
-            [dict[str, Any], str], Awaitable[tuple[str, ModelInterface | None]]
+            [AgentConfig, str], Awaitable[tuple[str, ModelInterface | None]]
         ],
     ) -> None:
         """Initialize coordinator with performance config and agent executor."""
@@ -23,7 +24,7 @@ class AgentExecutionCoordinator:
 
     async def execute_agent_with_timeout(
         self,
-        agent_config: dict[str, Any],
+        agent_config: AgentConfig,
         input_data: str,
         timeout_seconds: int | None,
     ) -> tuple[str, ModelInterface | None]:

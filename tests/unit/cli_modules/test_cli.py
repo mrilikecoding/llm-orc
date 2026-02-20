@@ -89,9 +89,7 @@ class TestCLI:
             ensemble = {
                 "name": "test_ensemble",
                 "description": "A test ensemble for CLI testing",
-                "agents": [
-                    {"name": "agent1", "role": "tester", "model": "claude-3-sonnet"}
-                ],  # noqa: E501
+                "agents": [{"name": "agent1", "model_profile": "claude-3-sonnet"}],  # noqa: E501
                 "coordinator": {"synthesis_prompt": "Test", "output_format": "json"},
             }
 
@@ -114,13 +112,11 @@ class TestCLI:
                 "agents": [
                     {
                         "name": "agent1",
-                        "role": "tester",
-                        "model": "claude-3-sonnet",
+                        "model_profile": "claude-3-sonnet",
                     },
                     {
                         "name": "agent2",
-                        "role": "reviewer",
-                        "model": "claude-3-sonnet",
+                        "model_profile": "claude-3-sonnet",
                     },
                 ],
                 "coordinator": {
@@ -185,9 +181,7 @@ class TestCLI:
                 global_ensemble = {
                     "name": "global_ensemble",
                     "description": "Global ensemble for testing",
-                    "agents": [
-                        {"name": "agent1", "role": "tester", "model": "claude-3-sonnet"}
-                    ],
+                    "agents": [{"name": "agent1", "model_profile": "claude-3-sonnet"}],
                     "coordinator": {
                         "synthesis_prompt": "Test",
                         "output_format": "json",
@@ -200,9 +194,7 @@ class TestCLI:
                 local_ensemble = {
                     "name": "local_ensemble",
                     "description": "Local ensemble for testing",
-                    "agents": [
-                        {"name": "agent1", "role": "tester", "model": "claude-3-sonnet"}
-                    ],
+                    "agents": [{"name": "agent1", "model_profile": "claude-3-sonnet"}],
                     "coordinator": {
                         "synthesis_prompt": "Test",
                         "output_format": "json",

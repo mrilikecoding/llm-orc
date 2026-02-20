@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from llm_orc.core.execution.agent_executor import AgentExecutor
+from llm_orc.schemas.agent_config import AgentConfig
 
 
 class PhaseMonitor:
@@ -22,10 +23,10 @@ class PhaseMonitor:
         self._agent_executor = agent_executor
         self._emit_event = emit_event_fn
 
-    async def start(self, phase_index: int, phase_agents: list[dict[str, Any]]) -> None:
+    async def start(self, phase_index: int, phase_agents: list[AgentConfig]) -> None:
         """Start monitoring for a specific phase."""
         phase_name = f"phase_{phase_index}"
-        agent_names = [agent["name"] for agent in phase_agents]
+        agent_names = [agent.name for agent in phase_agents]
 
         phase_metrics = await self._agent_executor.monitor.collect_phase_metrics(
             phase_index=phase_index,
@@ -56,7 +57,7 @@ class PhaseMonitor:
     async def stop(
         self,
         phase_index: int,
-        phase_agents: list[dict[str, Any]],
+        phase_agents: list[AgentConfig],
         duration: float,
     ) -> None:
         """Stop monitoring for a specific phase and collect final metrics."""

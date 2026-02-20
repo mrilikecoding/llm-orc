@@ -23,6 +23,7 @@ from llm_orc.core.execution.usage_collector import (
     UsageCollector,
 )
 from llm_orc.models.base import ModelInterface
+from llm_orc.schemas.agent_config import AgentConfig, ScriptAgentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +48,18 @@ class ScriptAgentRunner:
 
     async def execute(
         self,
-        agent_config: dict[str, Any],
+        agent_config: AgentConfig,
         input_data: str,
     ) -> tuple[str, ModelInterface | None]:
         """Execute script agent with caching."""
-        script_content = agent_config.get("script", "")
-        parameters = agent_config.get("parameters", {})
+        script_content = (
+            agent_config.script if isinstance(agent_config, ScriptAgentConfig) else ""
+        )
+        parameters = (
+            agent_config.parameters
+            if isinstance(agent_config, ScriptAgentConfig)
+            else {}
+        )
 
         cache_key_params = {
             "input_data": input_data,
@@ -80,18 +87,19 @@ class ScriptAgentRunner:
 
     async def _execute_without_cache(
         self,
-        agent_config: dict[str, Any],
+        agent_config: AgentConfig,
         input_data: str,
     ) -> tuple[str, ModelInterface | None]:
         """Execute script agent with resource monitoring."""
-        agent_name = agent_config["name"]
+        agent_name = agent_config.name
 
         self._usage_collector.start_agent_resource_monitoring(agent_name)
 
         try:
+            # ScriptAgent.__init__ expects dict — convert at boundary
             script_agent = ScriptAgent(
                 agent_name,
-                agent_config,
+                agent_config.model_dump(),
                 project_dir=self._project_dir,
             )
 
@@ -106,7 +114,12 @@ class ScriptAgentRunner:
             if isinstance(response, dict):
                 response = json.dumps(response)
 
-            self._validate_primitive_output(agent_config.get("script", ""), response)
+            script_ref = (
+                agent_config.script
+                if isinstance(agent_config, ScriptAgentConfig)
+                else ""
+            )
+            self._validate_primitive_output(script_ref, response)
 
             return response, None
         finally:
@@ -115,7 +128,7 @@ class ScriptAgentRunner:
     async def _execute_with_input_handling(
         self,
         script_agent: ScriptAgent,
-        agent_config: dict[str, Any],
+        agent_config: AgentConfig,
         input_data: str,
     ) -> str | dict[str, Any]:
         """Execute script with appropriate input format."""
@@ -135,7 +148,7 @@ class ScriptAgentRunner:
     async def _execute_with_parsed_input(
         self,
         script_agent: ScriptAgent,
-        agent_config: dict[str, Any],
+        agent_config: AgentConfig,
         input_data: str,
         parsed_input: dict[str, Any],
     ) -> str | dict[str, Any]:
@@ -151,7 +164,7 @@ class ScriptAgentRunner:
     async def _execute_with_raw_input(
         self,
         script_agent: ScriptAgent,
-        agent_config: dict[str, Any],
+        agent_config: AgentConfig,
         input_data: str,
     ) -> str | dict[str, Any]:
         """Execute script with raw string input."""
@@ -168,10 +181,12 @@ class ScriptAgentRunner:
             and "input_data" in parsed_input
         )
 
-    def _requires_user_input(self, agent_config: dict[str, Any]) -> bool:
+    def _requires_user_input(self, agent_config: AgentConfig) -> bool:
         """Check if script requires user input."""
         handler = ScriptUserInputHandler()
-        script_ref = agent_config.get("script", "")
+        script_ref = (
+            agent_config.script if isinstance(agent_config, ScriptAgentConfig) else ""
+        )
         return handler.requires_user_input(script_ref)
 
     def _validate_primitive_output(self, script_ref: str, response: str) -> None:

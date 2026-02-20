@@ -1,15 +1,17 @@
 """Ensemble configuration loading and management."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from llm_orc.schemas.agent_config import AgentConfig, parse_agent_config
+
 
 def _find_agent_by_name(
-    agents: list[dict[str, Any]], agent_name: str
-) -> dict[str, Any] | None:
+    agents: list[AgentConfig], agent_name: str
+) -> AgentConfig | None:
     """Find an agent by name in the agents list.
 
     Args:
@@ -17,14 +19,14 @@ def _find_agent_by_name(
         agent_name: Name of agent to find
 
     Returns:
-        Agent configuration dictionary if found, None otherwise
+        Agent configuration if found, None otherwise
     """
-    return next((a for a in agents if a["name"] == agent_name), None)
+    return next((a for a in agents if a.name == agent_name), None)
 
 
 def _find_cycle_from(
     agent_name: str,
-    agents: list[dict[str, Any]],
+    agents: list[AgentConfig],
     visited: set[str],
     in_stack: set[str],
     path: list[str],
@@ -55,8 +57,7 @@ def _find_cycle_from(
 
     agent_config = _find_agent_by_name(agents, agent_name)
     if agent_config:
-        dependencies = agent_config.get("depends_on", [])
-        for dep in dependencies:
+        for dep in agent_config.depends_on:
             dep_name = dep if isinstance(dep, str) else dep.get("agent_name")
             if dep_name:
                 cycle = _find_cycle_from(dep_name, agents, visited, in_stack, path)
@@ -68,7 +69,7 @@ def _find_cycle_from(
     return None
 
 
-def detect_cycle(agents: list[dict[str, Any]]) -> list[str] | None:
+def detect_cycle(agents: list[AgentConfig]) -> list[str] | None:
     """Detect cycles in agent dependencies using DFS.
 
     Handles both string and dict-form dependencies.
@@ -82,14 +83,14 @@ def detect_cycle(agents: list[dict[str, Any]]) -> list[str] | None:
     visited: set[str] = set()
 
     for agent in agents:
-        if agent["name"] not in visited:
-            cycle = _find_cycle_from(agent["name"], agents, visited, set(), [])
+        if agent.name not in visited:
+            cycle = _find_cycle_from(agent.name, agents, visited, set(), [])
             if cycle is not None:
                 return cycle
     return None
 
 
-def assert_no_cycles(agents: list[dict[str, Any]]) -> None:
+def assert_no_cycles(agents: list[AgentConfig]) -> None:
     """Raise ValueError if any cycle exists in agent dependencies.
 
     Args:
@@ -104,7 +105,7 @@ def assert_no_cycles(agents: list[dict[str, Any]]) -> None:
         raise ValueError(f"Circular dependency detected: {cycle_str}")
 
 
-def _validate_fan_out_dependencies(agents: list[dict[str, Any]]) -> None:
+def _validate_fan_out_dependencies(agents: list[AgentConfig]) -> None:
     """Validate that fan_out agents have required dependencies.
 
     Args:
@@ -114,16 +115,16 @@ def _validate_fan_out_dependencies(agents: list[dict[str, Any]]) -> None:
         ValueError: If any agent has fan_out: true without depends_on
     """
     for agent in agents:
-        if agent.get("fan_out") is True:
-            depends_on = agent.get("depends_on", [])
-            if not depends_on:
+        if agent.fan_out is True:
+            if not agent.depends_on:
                 raise ValueError(
-                    f"Agent '{agent['name']}' has fan_out: true but requires "
-                    f"depends_on to specify the upstream agent providing the array"
+                    f"Agent '{agent.name}' has fan_out: true but requires "
+                    f"depends_on to specify the upstream agent providing "
+                    f"the array"
                 )
 
 
-def _check_missing_dependencies(agents: list[dict[str, Any]]) -> None:
+def _check_missing_dependencies(agents: list[AgentConfig]) -> None:
     """Check for missing dependencies in agent configurations.
 
     Args:
@@ -132,18 +133,14 @@ def _check_missing_dependencies(agents: list[dict[str, Any]]) -> None:
     Raises:
         ValueError: If any agent depends on a non-existent agent
     """
-    # Create a map of agent names for quick lookup
-    agent_names = {agent["name"] for agent in agents}
+    agent_names = {agent.name for agent in agents}
 
-    # Check for missing dependencies
     for agent in agents:
-        dependencies = agent.get("depends_on", [])
-        for dep in dependencies:
-            # Handle both simple string dependencies and conditional dict dependencies
+        for dep in agent.depends_on:
             dep_name = dep if isinstance(dep, str) else dep.get("agent_name")
             if dep_name and dep_name not in agent_names:
                 raise ValueError(
-                    f"Agent '{agent['name']}' has missing dependency: '{dep_name}'"
+                    f"Agent '{agent.name}' has missing dependency: '{dep_name}'"
                 )
 
 
@@ -153,7 +150,7 @@ class EnsembleConfig:
 
     name: str
     description: str
-    agents: list[dict[str, Any]]
+    agents: list[AgentConfig] = field(default_factory=list)
     default_task: str | None = None
     task: str | None = None  # Backward compatibility
     relative_path: str | None = None  # For hierarchical display
@@ -176,10 +173,13 @@ class EnsembleLoader:
         # Support both default_task (preferred) and task (backward compatibility)
         default_task = data.get("default_task") or data.get("task")
 
+        # Parse each agent dict into typed AgentConfig (ADR-012)
+        agents = [parse_agent_config(a) for a in data["agents"]]
+
         config = EnsembleConfig(
             name=data["name"],
             description=data["description"],
-            agents=data["agents"],
+            agents=agents,
             default_task=default_task,
             task=data.get("task"),  # Keep for backward compatibility
             validation=data.get("validation"),
@@ -232,15 +232,10 @@ class EnsembleLoader:
 
         return ensembles
 
-    def _validate_dependencies(self, agents: list[dict[str, Any]]) -> None:
+    def _validate_dependencies(self, agents: list[AgentConfig]) -> None:
         """Validate agent dependencies for cycles and missing dependencies."""
-        # Check for missing dependencies first
         _check_missing_dependencies(agents)
-
-        # Validate fan_out agents have dependencies
         _validate_fan_out_dependencies(agents)
-
-        # Then check for circular dependencies
         assert_no_cycles(agents)
 
     def find_ensemble(self, directory: str, name: str) -> EnsembleConfig | None:
