@@ -21,6 +21,8 @@ Mix expensive cloud models with free local models. Use Claude for strategic synt
 ## Key Features
 
 - **Multi-Agent Ensembles**: Coordinate specialized agents with flexible dependency graphs
+- **Ensemble Agents**: Compose ensembles hierarchically — agents can reference and execute other ensembles
+- **Input Key Routing**: Select specific keys from upstream JSON output for classify → route → fan-out patterns
 - **Agent Dependencies**: Define which agents depend on others for sophisticated orchestration patterns
 - **Script Agent Integration**: Execute custom scripts alongside LLM agents with JSON I/O communication
 - **Model Profiles**: Simplified configuration with named shortcuts for model + provider combinations
@@ -631,6 +633,77 @@ agents:
 ```
 
 Status is `"success"` (all instances passed), `"partial"` (some failed), or `"failed"` (all failed). Partial results are preserved — the ensemble continues with whatever succeeded.
+
+#### Ensemble Agents (Composable Ensembles)
+
+Agents can reference and execute other ensembles, enabling hierarchical composition:
+
+```yaml
+# child ensemble: topic-analysis.yaml
+name: topic-analysis
+agents:
+  - name: analyst
+    model_profile: ollama-gemma-small
+    system_prompt: "Analyze the given topic in 2-3 sentences."
+
+# parent ensemble
+agents:
+  - name: classifier
+    script: scripts/classifier.py
+
+  - name: topic-analyst
+    ensemble: topic-analysis          # references child ensemble
+    depends_on: [classifier]
+
+  - name: synthesizer
+    model_profile: default-claude
+    depends_on: [topic-analyst]
+```
+
+**How it works:**
+
+1. The `ensemble` field identifies which ensemble to execute (resolved by name from `.llm-orc/ensembles/`)
+2. The child ensemble runs as a self-contained execution with its own phases and agents
+3. Child executors share immutable infrastructure (config, credentials, model factory) but isolate mutable state
+4. Nesting depth is limited (default: 5) to prevent unbounded recursion
+5. Cross-ensemble cycles are detected at load time
+
+#### Input Key Routing
+
+Agents can select a specific key from upstream JSON output using `input_key`, enabling routing patterns where a classifier produces keyed output and downstream agents each consume their slice:
+
+```yaml
+agents:
+  # Classifier produces: {"pdfs": ["a.pdf", "b.pdf"], "audio": ["c.mp3"]}
+  - name: classifier
+    script: scripts/classifier.py
+
+  # Selects only the "pdfs" array from classifier output
+  - name: pdf-processor
+    ensemble: pdf-pipeline
+    depends_on: [classifier]
+    input_key: pdfs
+    fan_out: true
+
+  # Selects only the "audio" array
+  - name: audio-processor
+    ensemble: audio-pipeline
+    depends_on: [classifier]
+    input_key: audio
+    fan_out: true
+
+  - name: synthesizer
+    model_profile: default-claude
+    depends_on: [pdf-processor, audio-processor]
+```
+
+**Behavior:**
+
+- `input_key` selects `output[key]` from the first entry in `depends_on`
+- If the key is missing or the upstream output is not JSON/dict, the agent receives a runtime error
+- Without `input_key`, the agent receives the full upstream output (backward compatible)
+- Composes naturally with `fan_out`: `input_key` selects the array, `fan_out` expands per item
+- Works with all agent types: LLM, script, and ensemble
 
 ### Configuration Status Checking
 

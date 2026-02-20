@@ -1,0 +1,10 @@
+name: topic-analysis
+description: Analyze a single topic statement in depth (child ensemble for routing-demo)
+
+agents:
+  - name: analyst
+    model_profile: ollama-gemma-small
+    system_prompt: >
+      You are a topic analyst. Given a topic or statement, provide a brief
+      2-3 sentence analysis of its significance and current relevance.
+      Be concise and informative.

@@ -1,0 +1,30 @@
+name: routing-demo
+description: >
+  Demonstrates the ADR-013/014 routing pattern: a classifier script produces
+  keyed output, ensemble agents select specific keys via input_key, fan_out
+  expands per item, and a synthesizer combines all results.
+
+agents:
+  - name: classifier
+    script: scripts/routing-demo/classifier.py
+
+  - name: topic-analyst
+    ensemble: topic-analysis
+    depends_on: [classifier]
+    input_key: topics
+    fan_out: true
+
+  - name: question-answerer
+    ensemble: qa-pipeline
+    depends_on: [classifier]
+    input_key: questions
+    fan_out: true
+
+  - name: synthesizer
+    model_profile: ollama-llama3
+    depends_on: [topic-analyst, question-answerer]
+    system_prompt: >
+      You are a synthesizer. You receive analysis of topics and answers to
+      questions from specialized agents. Combine their findings into a brief,
+      coherent summary that covers all the topics and questions addressed.
+      Keep it to one paragraph.
