@@ -55,7 +55,8 @@ class ModelFactory:
         max_tokens: int | None = agent_config.get("max_tokens")
 
         # Check if model_profile is specified (takes precedence)
-        if "model_profile" in agent_config:
+        # Use .get() truthy check: model_dump() includes None values as keys
+        if agent_config.get("model_profile"):
             profile_name = agent_config["model_profile"]
             resolved_model, resolved_provider = (
                 self._config_manager.resolve_model_profile(profile_name)
