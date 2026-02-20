@@ -220,3 +220,100 @@ class TestAgentDispatcherUsesIsinstance:
         config = ScriptAgentConfig(name="test", script="scan.py")
         result = AgentDispatcher._determine_agent_type(None, config)  # type: ignore[arg-type]
         assert result == "script"
+
+
+class TestAgentLevelOverridesWinOverProfile:
+    """Scenario 8: Agent-level overrides win over profile defaults."""
+
+    @pytest.mark.asyncio
+    async def test_agent_temperature_overrides_profile(self) -> None:
+        """Agent config temperature=0.2 overrides profile temperature=0.7."""
+        from unittest.mock import Mock, patch
+
+        from llm_orc.core.execution.llm_agent_runner import (
+            LlmAgentRunner,
+        )
+        from llm_orc.core.execution.usage_collector import (
+            UsageCollector,
+        )
+
+        config_manager = Mock()
+        runner = LlmAgentRunner(
+            model_factory=Mock(),
+            config_manager=config_manager,
+            usage_collector=UsageCollector(),
+            emit_event=lambda _e, _d: None,
+            classify_failure=lambda _e: "unknown",
+        )
+
+        config_manager.get_model_profiles.return_value = {
+            "test-profile": {
+                "model": "gpt-4",
+                "provider": "openai",
+                "temperature": 0.7,
+            },
+        }
+        agent = LlmAgentConfig(
+            name="test",
+            model_profile="test-profile",
+            temperature=0.2,
+        )
+        resolved = (
+            await runner._resolve_model_profile_to_config(agent)
+        )
+
+        assert resolved["temperature"] == 0.2
+
+
+class TestIntegrationExecutorWithPydanticConfigs:
+    """Scenario 9: EnsembleExecutor runs with Pydantic agent configs."""
+
+    @pytest.mark.asyncio
+    async def test_yaml_to_executor_round_trip(self) -> None:
+        """Load YAML via EnsembleLoader, execute via EnsembleExecutor."""
+        from unittest.mock import AsyncMock, Mock, patch
+
+        from llm_orc.core.config.ensemble_config import EnsembleLoader
+        from llm_orc.core.execution.ensemble_execution import (
+            EnsembleExecutor,
+        )
+
+        ensemble_yaml = {
+            "name": "round-trip-test",
+            "description": "YAML-to-executor integration",
+            "agents": [
+                {
+                    "name": "scanner",
+                    "script": "echo '{\"success\": true, \"data\": \"ok\"}'",
+                },
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yaml", delete=False
+        ) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            loader = EnsembleLoader()
+            config = loader.load_from_file(yaml_path)
+
+            assert isinstance(config.agents[0], ScriptAgentConfig)
+
+            executor = EnsembleExecutor()
+            mock_artifact = Mock()
+            mock_artifact.save_execution_results = Mock()
+
+            with patch.object(
+                executor, "_artifact_manager", mock_artifact
+            ):
+                result = await executor.execute(config, "test input")
+
+            assert result["status"] in [
+                "completed",
+                "completed_with_errors",
+            ]
+            assert "scanner" in result["results"]
+        finally:
+            Path(yaml_path).unlink()
