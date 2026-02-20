@@ -8,7 +8,7 @@ from typing import Any
 
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.core.config.ensemble_config import EnsembleConfig
+from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
 from llm_orc.core.execution.agent_dispatcher import AgentDispatcher
 from llm_orc.core.execution.agent_execution_coordinator import (
     AgentExecutionCoordinator,
@@ -18,6 +18,7 @@ from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
+from llm_orc.core.execution.ensemble_agent_runner import EnsembleAgentRunner
 from llm_orc.core.execution.fan_out_coordinator import FanOutCoordinator
 from llm_orc.core.execution.fan_out_expander import FanOutExpander
 from llm_orc.core.execution.fan_out_gatherer import FanOutGatherer
@@ -45,6 +46,7 @@ from llm_orc.core.validation import (
 from llm_orc.models.base import ModelInterface
 from llm_orc.schemas.agent_config import (
     AgentConfig,
+    EnsembleAgentConfig,
     LlmAgentConfig,
     ScriptAgentConfig,
 )
@@ -164,14 +166,30 @@ async def _run_validation(
 class EnsembleExecutor:
     """Executes ensembles of agents and coordinates their responses."""
 
-    def __init__(self, project_dir: Path | None = None) -> None:
-        """Initialize the ensemble executor with shared infrastructure."""
-        self._project_dir = project_dir
+    def __init__(
+        self,
+        project_dir: Path | None = None,
+        *,
+        _config_manager: ConfigurationManager | None = None,
+        _credential_storage: CredentialStorage | None = None,
+        _model_factory: ModelFactory | None = None,
+        _depth: int = 0,
+        _save_artifacts: bool = True,
+    ) -> None:
+        """Initialize the ensemble executor.
 
-        # Share configuration and credential infrastructure across model loads
-        # but keep model instances separate for independent contexts
-        self._config_manager = ConfigurationManager()
-        self._credential_storage = CredentialStorage(self._config_manager)
+        For child executors, immutable infrastructure is shared from the
+        parent while mutable state is freshly created (Invariant 10).
+        """
+        self._project_dir = project_dir
+        self._depth = _depth
+        self._save_artifacts = _save_artifacts
+
+        # Immutable infrastructure: share from parent or create new
+        self._config_manager = _config_manager or ConfigurationManager()
+        self._credential_storage = _credential_storage or CredentialStorage(
+            self._config_manager
+        )
 
         # Load performance configuration
         self._performance_config = self._config_manager.load_performance_config()
@@ -179,8 +197,8 @@ class EnsembleExecutor:
         # Phase 5: Unified event system - shared event queue for streaming
         self._streaming_event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-        # Initialize extracted components
-        self._model_factory = ModelFactory(
+        # Immutable infrastructure: share from parent or create new
+        self._model_factory = _model_factory or ModelFactory(
             self._config_manager, self._credential_storage
         )
         self._dependency_analyzer = DependencyAnalyzer()
@@ -219,6 +237,17 @@ class EnsembleExecutor:
             self._usage_collector,
             self._emit_performance_event,
             classify_failure_type,
+        )
+
+        depth_limit = int(
+            self._performance_config.get("execution", {}).get("max_ensemble_depth", 5)
+        )
+        self._ensemble_loader = EnsembleLoader()
+        self._ensemble_agent_runner = EnsembleAgentRunner(
+            ensemble_loader=self._resolve_ensemble_reference,
+            parent_executor=self,
+            current_depth=self._depth,
+            depth_limit=depth_limit,
         )
 
         # Initialize execution coordinator with agent executor function
@@ -667,15 +696,35 @@ class EnsembleExecutor:
             final_result["validation_result"] = validation_result
 
         # Save artifacts (don't fail execution if saving fails)
-        try:
-            self._artifact_manager.save_execution_results(
-                config.name, final_result, relative_path=config.relative_path
-            )
-        except Exception:
-            # Silently ignore artifact saving errors to not break execution
-            pass
+        # Child executors skip artifact saving per Invariant 9
+        if self._save_artifacts:
+            try:
+                self._artifact_manager.save_execution_results(
+                    config.name,
+                    final_result,
+                    relative_path=config.relative_path,
+                )
+            except Exception:
+                pass
 
         return final_result
+
+    def create_child_executor(self, depth: int) -> "EnsembleExecutor":
+        """Create a child executor for recursive ensemble execution.
+
+        Shares immutable infrastructure (config manager, credential
+        storage, model factory) but isolates mutable state (usage
+        collector, event queue, streaming tracker) per Invariant 10.
+        Disables artifact saving per Invariant 9.
+        """
+        return EnsembleExecutor(
+            project_dir=self._project_dir,
+            _config_manager=self._config_manager,
+            _credential_storage=self._credential_storage,
+            _model_factory=self._model_factory,
+            _depth=depth,
+            _save_artifacts=False,
+        )
 
     async def _execute_agent(
         self, agent_config: AgentConfig, input_data: str
@@ -685,6 +734,8 @@ class EnsembleExecutor:
             return await self._script_agent_runner.execute(agent_config, input_data)
         if isinstance(agent_config, LlmAgentConfig):
             return await self._llm_agent_runner.execute(agent_config, input_data)
+        if isinstance(agent_config, EnsembleAgentConfig):
+            return await self._ensemble_agent_runner.execute(agent_config, input_data)
         raise ValueError(
             f"Agent '{agent_config.name}' has unknown type: "
             f"{type(agent_config).__name__}"
@@ -694,6 +745,30 @@ class EnsembleExecutor:
     def execution_coordinator(self) -> AgentExecutionCoordinator:
         """Expose execution coordinator for composition-based callers."""
         return self._execution_coordinator
+
+    def _resolve_ensemble_reference(self, name: str) -> EnsembleConfig:
+        """Resolve an ensemble name to its config.
+
+        Searches the project directory and standard ensemble locations.
+        """
+        # Search in project dir if available
+        search_dirs: list[str] = []
+        if self._project_dir:
+            search_dirs.append(str(self._project_dir / "ensembles"))
+            search_dirs.append(str(self._project_dir))
+
+        # Search standard config locations
+        local_dir = self._config_manager.local_config_dir
+        if local_dir:
+            ensembles_dir = local_dir / "ensembles"
+            if ensembles_dir.exists():
+                search_dirs.append(str(ensembles_dir))
+
+        config = self._ensemble_loader._find_ensemble_in_dirs(name, search_dirs)
+        if config is None:
+            msg = f"Ensemble '{name}' not found"
+            raise FileNotFoundError(msg)
+        return config
 
     def _get_agent_role_description(self, agent_name: str) -> str | None:
         """Get a human-readable role description for an agent."""

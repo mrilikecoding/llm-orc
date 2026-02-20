@@ -6,7 +6,11 @@ from typing import Any
 
 import yaml
 
-from llm_orc.schemas.agent_config import AgentConfig, parse_agent_config
+from llm_orc.schemas.agent_config import (
+    AgentConfig,
+    EnsembleAgentConfig,
+    parse_agent_config,
+)
 
 
 def _find_agent_by_name(
@@ -161,7 +165,11 @@ class EnsembleConfig:
 class EnsembleLoader:
     """Loads ensemble configurations from files."""
 
-    def load_from_file(self, file_path: str) -> EnsembleConfig:
+    def load_from_file(
+        self,
+        file_path: str,
+        search_dirs: list[str] | None = None,
+    ) -> EnsembleConfig:
         """Load ensemble configuration from a YAML file."""
         path = Path(file_path)
         if not path.exists():
@@ -170,7 +178,7 @@ class EnsembleLoader:
         with open(path) as f:
             data = yaml.safe_load(f)
 
-        # Support both default_task (preferred) and task (backward compatibility)
+        # Support both default_task (preferred) and task (backward compat)
         default_task = data.get("default_task") or data.get("task")
 
         # Parse each agent dict into typed AgentConfig (ADR-012)
@@ -181,13 +189,17 @@ class EnsembleLoader:
             description=data["description"],
             agents=agents,
             default_task=default_task,
-            task=data.get("task"),  # Keep for backward compatibility
+            task=data.get("task"),
             validation=data.get("validation"),
             test_mode=data.get("test_mode"),
         )
 
         # Validate agent dependencies
         self._validate_dependencies(config.agents)
+
+        # Cross-ensemble cycle detection (ADR-013, Invariant 5)
+        if search_dirs:
+            self._validate_cross_ensemble_cycles(config.name, agents, search_dirs)
 
         return config
 
@@ -233,10 +245,93 @@ class EnsembleLoader:
         return ensembles
 
     def _validate_dependencies(self, agents: list[AgentConfig]) -> None:
-        """Validate agent dependencies for cycles and missing dependencies."""
+        """Validate agent dependencies for cycles and missing deps."""
         _check_missing_dependencies(agents)
         _validate_fan_out_dependencies(agents)
         assert_no_cycles(agents)
+
+    def _validate_cross_ensemble_cycles(
+        self,
+        root_name: str,
+        agents: list[AgentConfig],
+        search_dirs: list[str],
+    ) -> None:
+        """Detect cross-ensemble reference cycles (Invariant 5).
+
+        Builds the ensemble reference graph by following all
+        EnsembleAgentConfig references and runs DFS to find cycles.
+        """
+        # Build reference graph: ensemble_name -> [referenced ensembles]
+        graph: dict[str, list[str]] = {}
+        self._build_reference_graph(root_name, agents, search_dirs, graph)
+
+        # DFS cycle detection
+        visited: set[str] = set()
+        in_stack: set[str] = set()
+        path: list[str] = []
+
+        def dfs(name: str) -> None:
+            if name in in_stack:
+                cycle_start = path.index(name)
+                cycle = path[cycle_start:] + [name]
+                msg = "cross-ensemble cycle detected: " + " -> ".join(cycle)
+                raise ValueError(msg)
+            if name in visited:
+                return
+
+            visited.add(name)
+            in_stack.add(name)
+            path.append(name)
+
+            for ref in graph.get(name, []):
+                dfs(ref)
+
+            in_stack.remove(name)
+            path.pop()
+
+        dfs(root_name)
+
+    def _build_reference_graph(
+        self,
+        ensemble_name: str,
+        agents: list[AgentConfig],
+        search_dirs: list[str],
+        graph: dict[str, list[str]],
+    ) -> None:
+        """Recursively build ensemble reference graph."""
+        if ensemble_name in graph:
+            return
+
+        refs = [a.ensemble for a in agents if isinstance(a, EnsembleAgentConfig)]
+        graph[ensemble_name] = refs
+
+        # Follow each reference
+        for ref_name in refs:
+            if ref_name in graph:
+                continue
+            ref_config = self._find_ensemble_in_dirs(ref_name, search_dirs)
+            if ref_config:
+                self._build_reference_graph(
+                    ref_name,
+                    ref_config.agents,
+                    search_dirs,
+                    graph,
+                )
+
+    def _find_ensemble_in_dirs(
+        self,
+        name: str,
+        search_dirs: list[str],
+    ) -> EnsembleConfig | None:
+        """Find an ensemble by name across search directories."""
+        for directory in search_dirs:
+            dir_path = Path(directory)
+            for ext in ("yaml", "yml"):
+                candidate = dir_path / f"{name}.{ext}"
+                if candidate.exists():
+                    # Load without cycle detection to avoid recursion
+                    return self.load_from_file(str(candidate))
+        return None
 
     def find_ensemble(self, directory: str, name: str) -> EnsembleConfig | None:
         """Find an ensemble by name in a directory, supporting hierarchical names.

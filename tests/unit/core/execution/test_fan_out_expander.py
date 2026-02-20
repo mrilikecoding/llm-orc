@@ -5,7 +5,7 @@ import json
 import pytest
 
 from llm_orc.core.execution.fan_out_expander import FanOutExpander
-from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
+from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig, ScriptAgentConfig
 
 
 class TestFanOutExpander:
@@ -20,7 +20,7 @@ class TestFanOutExpander:
         self, expander: FanOutExpander
     ) -> None:
         """detect_fan_out_agents returns names of agents with fan_out: true."""
-        agents: list[LlmAgentConfig | ScriptAgentConfig] = [
+        agents: list[AgentConfig] = [
             ScriptAgentConfig(name="chunker", script="split.py"),
             LlmAgentConfig(name="extractor", model_profile="test", fan_out=True),
             LlmAgentConfig(name="synthesizer", model_profile="test"),
@@ -33,7 +33,7 @@ class TestFanOutExpander:
 
     def test_detect_fan_out_agents_empty_list(self, expander: FanOutExpander) -> None:
         """detect_fan_out_agents returns empty list when no fan_out agents."""
-        agents: list[LlmAgentConfig | ScriptAgentConfig] = [
+        agents: list[AgentConfig] = [
             LlmAgentConfig(name="agent1", model_profile="test"),
             LlmAgentConfig(name="agent2", model_profile="test", fan_out=False),
         ]
