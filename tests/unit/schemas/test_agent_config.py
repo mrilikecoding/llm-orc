@@ -9,6 +9,7 @@ import yaml
 from pydantic import ValidationError
 
 from llm_orc.schemas.agent_config import (
+    AgentConfig,
     LlmAgentConfig,
     ScriptAgentConfig,
     parse_agent_config,
@@ -228,7 +229,7 @@ class TestAgentLevelOverridesWinOverProfile:
     @pytest.mark.asyncio
     async def test_agent_temperature_overrides_profile(self) -> None:
         """Agent config temperature=0.2 overrides profile temperature=0.7."""
-        from unittest.mock import Mock, patch
+        from unittest.mock import Mock
 
         from llm_orc.core.execution.llm_agent_runner import (
             LlmAgentRunner,
@@ -258,9 +259,7 @@ class TestAgentLevelOverridesWinOverProfile:
             model_profile="test-profile",
             temperature=0.2,
         )
-        resolved = (
-            await runner._resolve_model_profile_to_config(agent)
-        )
+        resolved = await runner._resolve_model_profile_to_config(agent)
 
         assert resolved["temperature"] == 0.2
 
@@ -271,7 +270,7 @@ class TestIntegrationExecutorWithPydanticConfigs:
     @pytest.mark.asyncio
     async def test_yaml_to_executor_round_trip(self) -> None:
         """Load YAML via EnsembleLoader, execute via EnsembleExecutor."""
-        from unittest.mock import AsyncMock, Mock, patch
+        from unittest.mock import Mock, patch
 
         from llm_orc.core.config.ensemble_config import EnsembleLoader
         from llm_orc.core.execution.ensemble_execution import (
@@ -284,14 +283,12 @@ class TestIntegrationExecutorWithPydanticConfigs:
             "agents": [
                 {
                     "name": "scanner",
-                    "script": "echo '{\"success\": true, \"data\": \"ok\"}'",
+                    "script": 'echo \'{"success": true, "data": "ok"}\'',
                 },
             ],
         }
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             yaml.dump(ensemble_yaml, f)
             yaml_path = f.name
 
@@ -305,9 +302,7 @@ class TestIntegrationExecutorWithPydanticConfigs:
             mock_artifact = Mock()
             mock_artifact.save_execution_results = Mock()
 
-            with patch.object(
-                executor, "_artifact_manager", mock_artifact
-            ):
+            with patch.object(executor, "_artifact_manager", mock_artifact):
                 result = await executor.execute(config, "test input")
 
             assert result["status"] in [
@@ -317,3 +312,100 @@ class TestIntegrationExecutorWithPydanticConfigs:
             assert "scanner" in result["results"]
         finally:
             Path(yaml_path).unlink()
+
+
+# === ADR-013 Scenarios ===
+
+
+class TestEnsembleAgentConfigParsing:
+    """Scenario: Ensemble agent config parsed from YAML."""
+
+    def test_ensemble_agent_parsed(self) -> None:
+        """YAML dict with ensemble key produces EnsembleAgentConfig."""
+        from llm_orc.schemas.agent_config import EnsembleAgentConfig
+
+        data: dict[str, Any] = {
+            "name": "review",
+            "ensemble": "code-review",
+        }
+        config = parse_agent_config(data)
+        assert isinstance(config, EnsembleAgentConfig)
+        assert config.ensemble == "code-review"
+
+
+class TestEnsembleAgentMutualExclusivity:
+    """Scenario: Ensemble agent mutual exclusivity."""
+
+    def test_ensemble_and_model_profile_rejected(self) -> None:
+        """Agent with both ensemble and model_profile is invalid."""
+        from pydantic import ValidationError
+
+        data: dict[str, Any] = {
+            "name": "test",
+            "ensemble": "code-review",
+            "model_profile": "gpt4",
+        }
+        with pytest.raises(ValidationError):
+            parse_agent_config(data)
+
+    def test_ensemble_and_script_rejected(self) -> None:
+        """Agent with both ensemble and script is invalid."""
+        from pydantic import ValidationError
+
+        data: dict[str, Any] = {
+            "name": "test",
+            "ensemble": "code-review",
+            "script": "scan.py",
+        }
+        with pytest.raises(ValidationError):
+            parse_agent_config(data)
+
+
+class TestEnsembleAgentDispatchedByAgentDispatcher:
+    """Scenario 12: AgentDispatcher routes EnsembleAgentConfig."""
+
+    def test_isinstance_dispatch_for_ensemble_agent(self) -> None:
+        """AgentDispatcher uses isinstance for EnsembleAgentConfig."""
+        from llm_orc.core.execution.agent_dispatcher import (
+            AgentDispatcher,
+        )
+        from llm_orc.schemas.agent_config import EnsembleAgentConfig
+
+        config = EnsembleAgentConfig(name="review", ensemble="code-review")
+        result = AgentDispatcher._determine_agent_type(None, config)  # type: ignore[arg-type]
+        assert result == "ensemble"
+
+
+class TestEnsembleAgentInDependencyChain:
+    """Scenario: Ensemble agent participates in dependency chain."""
+
+    def test_ensemble_agent_phases(self) -> None:
+        """scanner(script) → review(ensemble) → summarizer(LLM)."""
+        from llm_orc.core.execution.dependency_analyzer import (
+            DependencyAnalyzer,
+        )
+        from llm_orc.schemas.agent_config import EnsembleAgentConfig
+
+        agents: list[AgentConfig] = [
+            ScriptAgentConfig(name="scanner", script="scan.py"),
+            EnsembleAgentConfig(
+                name="review",
+                ensemble="code-review",
+                depends_on=["scanner"],
+            ),
+            LlmAgentConfig(
+                name="summarizer",
+                model_profile="gpt4",
+                depends_on=["review"],
+            ),
+        ]
+
+        analyzer = DependencyAnalyzer()
+        result = analyzer.analyze_enhanced_dependency_graph(agents)
+
+        phase_names = [[a.name for a in phase] for phase in result["phases"]]
+        assert phase_names == [
+            ["scanner"],
+            ["review"],
+            ["summarizer"],
+        ]

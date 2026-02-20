@@ -693,3 +693,103 @@ class TestFanOutValidation:
                 loader.load_from_file(yaml_path)
         finally:
             Path(yaml_path).unlink()
+
+
+class TestCrossEnsembleCycleDetection:
+    """Scenarios 8-9: Cross-ensemble cycle detection at load time."""
+
+    def test_direct_cycle_detected(self, tmp_path: Path) -> None:
+        """Ensemble A -> B -> A raises cycle error."""
+
+        ensemble_a = {
+            "name": "ensemble-a",
+            "description": "Ensemble A",
+            "agents": [
+                {"name": "worker", "ensemble": "ensemble-b"},
+            ],
+        }
+        ensemble_b = {
+            "name": "ensemble-b",
+            "description": "Ensemble B",
+            "agents": [
+                {"name": "worker", "ensemble": "ensemble-a"},
+            ],
+        }
+
+        (tmp_path / "ensemble-a.yaml").write_text(yaml.dump(ensemble_a))
+        (tmp_path / "ensemble-b.yaml").write_text(yaml.dump(ensemble_b))
+
+        loader = EnsembleLoader()
+
+        with pytest.raises(ValueError, match="cross-ensemble cycle"):
+            loader.load_from_file(
+                str(tmp_path / "ensemble-a.yaml"),
+                search_dirs=[str(tmp_path)],
+            )
+
+    def test_transitive_cycle_detected(self, tmp_path: Path) -> None:
+        """Ensemble A -> B -> C -> A raises cycle error."""
+
+        ensemble_a = {
+            "name": "ens-a",
+            "description": "A",
+            "agents": [
+                {"name": "step", "ensemble": "ens-b"},
+            ],
+        }
+        ensemble_b = {
+            "name": "ens-b",
+            "description": "B",
+            "agents": [
+                {"name": "step", "ensemble": "ens-c"},
+            ],
+        }
+        ensemble_c = {
+            "name": "ens-c",
+            "description": "C",
+            "agents": [
+                {"name": "step", "ensemble": "ens-a"},
+            ],
+        }
+
+        (tmp_path / "ens-a.yaml").write_text(yaml.dump(ensemble_a))
+        (tmp_path / "ens-b.yaml").write_text(yaml.dump(ensemble_b))
+        (tmp_path / "ens-c.yaml").write_text(yaml.dump(ensemble_c))
+
+        loader = EnsembleLoader()
+
+        with pytest.raises(ValueError, match="cross-ensemble cycle"):
+            loader.load_from_file(
+                str(tmp_path / "ens-a.yaml"),
+                search_dirs=[str(tmp_path)],
+            )
+
+    def test_no_cycle_with_linear_references(self, tmp_path: Path) -> None:
+        """A -> B (no cycle) loads without error."""
+        ensemble_a = {
+            "name": "ens-a",
+            "description": "A",
+            "agents": [
+                {"name": "step", "ensemble": "ens-b"},
+            ],
+        }
+        ensemble_b = {
+            "name": "ens-b",
+            "description": "B",
+            "agents": [
+                {
+                    "name": "worker",
+                    "script": "echo ok",
+                },
+            ],
+        }
+
+        (tmp_path / "ens-a.yaml").write_text(yaml.dump(ensemble_a))
+        (tmp_path / "ens-b.yaml").write_text(yaml.dump(ensemble_b))
+
+        loader = EnsembleLoader()
+        config = loader.load_from_file(
+            str(tmp_path / "ens-a.yaml"),
+            search_dirs=[str(tmp_path)],
+        )
+        assert config.name == "ens-a"

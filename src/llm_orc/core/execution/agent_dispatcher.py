@@ -12,6 +12,7 @@ from llm_orc.core.execution.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.progress_controller import ProgressController
 from llm_orc.schemas.agent_config import (
     AgentConfig,
+    EnsembleAgentConfig,
     LlmAgentConfig,
     ScriptAgentConfig,
 )
@@ -71,6 +72,8 @@ class AgentDispatcher:
             return "script"
         if isinstance(agent_config, LlmAgentConfig):
             return "llm"
+        if isinstance(agent_config, EnsembleAgentConfig):
+            return "ensemble"
         return None
 
     async def _execute_single_agent_in_phase(

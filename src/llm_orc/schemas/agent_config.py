@@ -79,7 +79,13 @@ class ScriptAgentConfig(BaseAgentConfig):
     parameters: dict[str, Any] = Field(default_factory=dict)
 
 
-AgentConfig = LlmAgentConfig | ScriptAgentConfig
+class EnsembleAgentConfig(BaseAgentConfig):
+    """Config for an ensemble agent — recursively executes another ensemble."""
+
+    ensemble: str  # Static ensemble reference, resolved at load time
+
+
+AgentConfig = LlmAgentConfig | ScriptAgentConfig | EnsembleAgentConfig
 
 
 def parse_agent_config(data: dict[str, Any]) -> AgentConfig:
@@ -87,10 +93,13 @@ def parse_agent_config(data: dict[str, Any]) -> AgentConfig:
 
     Discriminates by key presence:
     - 'script' -> ScriptAgentConfig
+    - 'ensemble' -> EnsembleAgentConfig
     - 'model_profile' or 'model' -> LlmAgentConfig
     """
     if "script" in data:
         return ScriptAgentConfig(**data)
+    if "ensemble" in data:
+        return EnsembleAgentConfig(**data)
     if "model_profile" in data or "model" in data:
         return LlmAgentConfig(**data)
     # Try LlmAgentConfig to get a useful validation error
