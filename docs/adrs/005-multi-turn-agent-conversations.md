@@ -1,7 +1,9 @@
 # ADR-005: Multi-Turn Agent Conversations
 
 ## Status
-Implemented
+Superseded by ADR-011
+
+> **Superseded (2026-02-20):** Research for composable ensemble orchestration (ADR-011) found that the conversational ensemble system is dead code — never imported by the CLI, MCP server, or any execution path. The regular execution path already supports user-directed flows through script primitives and the ScriptUserInputHandler. All code produced by this ADR is being removed.
 
 ## Implementation Status
 - [x] BDD scenarios created and passing (18/18)
