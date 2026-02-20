@@ -1,0 +1,156 @@
+"""Tests for Pydantic agent config models (ADR-012)."""
+
+from typing import Any
+
+import pytest
+from pydantic import ValidationError
+
+from llm_orc.schemas.agent_config import (
+    LlmAgentConfig,
+    ScriptAgentConfig,
+    parse_agent_config,
+)
+
+
+class TestLlmAgentConfigParsing:
+    """Scenario: LLM agent config parsed from YAML."""
+
+    def test_model_profile_agent(self) -> None:
+        data: dict[str, Any] = {"name": "analyzer", "model_profile": "gpt4"}
+        config = parse_agent_config(data)
+        assert isinstance(config, LlmAgentConfig)
+        assert config.name == "analyzer"
+        assert config.model_profile == "gpt4"
+
+    def test_inline_model_agent(self) -> None:
+        data: dict[str, Any] = {
+            "name": "quick-test",
+            "model": "llama3",
+            "provider": "ollama",
+        }
+        config = parse_agent_config(data)
+        assert isinstance(config, LlmAgentConfig)
+        assert config.model == "llama3"
+        assert config.provider == "ollama"
+
+    def test_llm_agent_with_all_optional_fields(self) -> None:
+        data: dict[str, Any] = {
+            "name": "full",
+            "model_profile": "gpt4",
+            "system_prompt": "You are helpful.",
+            "temperature": 0.5,
+            "max_tokens": 1000,
+            "timeout_seconds": 30,
+            "output_format": "json",
+            "fallback_model_profile": "local-fallback",
+        }
+        config = parse_agent_config(data)
+        assert isinstance(config, LlmAgentConfig)
+        assert config.system_prompt == "You are helpful."
+        assert config.temperature == 0.5
+        assert config.max_tokens == 1000
+
+
+class TestScriptAgentConfigParsing:
+    """Scenario: Script agent config parsed from YAML."""
+
+    def test_script_agent(self) -> None:
+        data: dict[str, Any] = {"name": "scanner", "script": "scripts/scan.py"}
+        config = parse_agent_config(data)
+        assert isinstance(config, ScriptAgentConfig)
+        assert config.name == "scanner"
+        assert config.script == "scripts/scan.py"
+
+    def test_script_agent_with_parameters(self) -> None:
+        data: dict[str, Any] = {
+            "name": "processor",
+            "script": "scripts/process.py",
+            "parameters": {"input_dir": "/tmp"},
+        }
+        config = parse_agent_config(data)
+        assert isinstance(config, ScriptAgentConfig)
+        assert config.parameters == {"input_dir": "/tmp"}
+
+
+class TestInlineModelRequiresProvider:
+    """Scenario: Inline model requires provider."""
+
+    def test_model_without_provider_rejected(self) -> None:
+        data: dict[str, Any] = {"name": "test", "model": "llama3"}
+        with pytest.raises(ValidationError, match="provider"):
+            parse_agent_config(data)
+
+
+class TestProfileXorInlineModel:
+    """Scenario: Profile XOR inline model enforced."""
+
+    def test_both_profile_and_inline_rejected(self) -> None:
+        data: dict[str, Any] = {
+            "name": "test",
+            "model_profile": "gpt4",
+            "model": "llama3",
+            "provider": "ollama",
+        }
+        with pytest.raises(ValidationError):
+            parse_agent_config(data)
+
+    def test_neither_profile_nor_model_rejected(self) -> None:
+        """An LLM agent with no model_profile, model, or script is invalid."""
+        data: dict[str, Any] = {"name": "test", "system_prompt": "hello"}
+        with pytest.raises(ValidationError):
+            parse_agent_config(data)
+
+
+class TestUnknownFieldsRejected:
+    """Scenario: Unknown fields rejected."""
+
+    def test_extra_field_on_llm_agent(self) -> None:
+        data: dict[str, Any] = {
+            "name": "test",
+            "model_profile": "gpt4",
+            "typo_field": "oops",
+        }
+        with pytest.raises(ValidationError, match="typo_field"):
+            parse_agent_config(data)
+
+    def test_extra_field_on_script_agent(self) -> None:
+        data: dict[str, Any] = {
+            "name": "test",
+            "script": "scan.py",
+            "bogus": True,
+        }
+        with pytest.raises(ValidationError, match="bogus"):
+            parse_agent_config(data)
+
+
+class TestBaseAgentConfigFields:
+    """Test shared BaseAgentConfig fields."""
+
+    def test_depends_on_defaults_to_empty(self) -> None:
+        data: dict[str, Any] = {"name": "test", "model_profile": "gpt4"}
+        config = parse_agent_config(data)
+        assert config.depends_on == []
+
+    def test_depends_on_list(self) -> None:
+        data: dict[str, Any] = {
+            "name": "test",
+            "model_profile": "gpt4",
+            "depends_on": ["agent-a", "agent-b"],
+        }
+        config = parse_agent_config(data)
+        assert config.depends_on == ["agent-a", "agent-b"]
+
+    def test_fan_out_defaults_to_false(self) -> None:
+        data: dict[str, Any] = {"name": "test", "model_profile": "gpt4"}
+        config = parse_agent_config(data)
+        assert config.fan_out is False
+
+    def test_fan_out_true(self) -> None:
+        data: dict[str, Any] = {
+            "name": "test",
+            "model_profile": "gpt4",
+            "fan_out": True,
+            "depends_on": ["upstream"],
+        }
+        config = parse_agent_config(data)
+        assert config.fan_out is True
