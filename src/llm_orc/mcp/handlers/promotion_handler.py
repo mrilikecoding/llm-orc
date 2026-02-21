@@ -155,7 +155,6 @@ class PromotionHandler:
         source_tier = found[1] if found else "unknown"
 
         all_profiles = self._profile_handler.get_all_profiles()
-
         provider_status = await self._provider_handler.get_provider_status({})
         providers = provider_status.get("providers", {})
         ollama_models = providers.get("ollama", {}).get("models", [])
@@ -166,50 +165,13 @@ class PromotionHandler:
         providers_needed: set[str] = set()
 
         for agent in config.agents:
-            agent_name = _get_agent_attr(agent, "name", "unknown")
-            script_path = _get_agent_attr(agent, "script", "")
-
-            if script_path:
-                agents.append({
-                    "name": agent_name,
-                    "type": "script",
-                    "script": script_path,
-                })
-                continue
-
-            profile_name = _get_agent_attr(agent, "model_profile", "")
-            agent_info: dict[str, Any] = {
-                "name": agent_name,
-                "model_profile": profile_name,
-                "profile_found": profile_name in all_profiles,
-            }
-
-            if profile_name in all_profiles:
-                profile = all_profiles[profile_name]
-                provider = profile.get("provider", "")
-                model = profile.get("model", "")
-
-                agent_info["profile_tier"] = self._get_profile_tier(profile_name)
-                agent_info["provider"] = provider
-                agent_info["model"] = model
-                agent_info["model_available"] = self._check_model_available(
-                    provider, model, providers, ollama_models
-                )
-
-                profiles_needed.add(profile_name)
-                if model:
-                    models_needed.add(model)
-                if provider:
-                    providers_needed.add(provider)
-            else:
-                agent_info["profile_tier"] = None
-                agent_info["provider"] = None
-                agent_info["model"] = None
-                agent_info["model_available"] = False
-                if profile_name:
-                    profiles_needed.add(profile_name)
-
+            agent_info = self._build_agent_dep_info(
+                agent, all_profiles, providers, ollama_models
+            )
             agents.append(agent_info)
+            self._collect_dep_sets(
+                agent_info, profiles_needed, models_needed, providers_needed
+            )
 
         return {
             "ensemble": ensemble_name,
@@ -284,9 +246,7 @@ class PromotionHandler:
         """
         ensemble_name = arguments.get("ensemble_name")
         tier = arguments.get("tier")
-        remove_orphaned_profiles = arguments.get(
-            "remove_orphaned_profiles", False
-        )
+        remove_orphaned_profiles = arguments.get("remove_orphaned_profiles", False)
         confirm = arguments.get("confirm", False)
 
         if not ensemble_name:
@@ -298,9 +258,7 @@ class PromotionHandler:
         ensemble_file = ensembles_dir / f"{ensemble_name}.yaml"
 
         if not ensemble_file.exists():
-            raise ValueError(
-                f"Ensemble '{ensemble_name}' not found at {tier} tier"
-            )
+            raise ValueError(f"Ensemble '{ensemble_name}' not found at {tier} tier")
 
         orphaned: list[str] = []
         if remove_orphaned_profiles:
@@ -359,9 +317,7 @@ class PromotionHandler:
             return base / "ensembles", base / "profiles"
         raise ValueError(f"Invalid tier: {tier}")
 
-    def _find_ensemble_file(
-        self, ensemble_name: str
-    ) -> tuple[Path, str] | None:
+    def _find_ensemble_file(self, ensemble_name: str) -> tuple[Path, str] | None:
         """Find an ensemble file and identify its source tier.
 
         Args:
@@ -437,10 +393,12 @@ class PromotionHandler:
             if profile_name in dest_existing:
                 already_present.append(profile_name)
             elif profile_name in all_profiles:
-                to_copy.append({
-                    "name": profile_name,
-                    "data": all_profiles[profile_name],
-                })
+                to_copy.append(
+                    {
+                        "name": profile_name,
+                        "data": all_profiles[profile_name],
+                    }
+                )
             else:
                 missing.append(profile_name)
 
@@ -470,9 +428,7 @@ class PromotionHandler:
             if not profile_file.exists() or overwrite:
                 profile_data = dict(profile_info["data"])
                 profile_data["name"] = profile_name
-                content = yaml.safe_dump(
-                    profile_data, default_flow_style=False
-                )
+                content = yaml.safe_dump(profile_data, default_flow_style=False)
                 profile_file.write_text(content)
                 copied.append(profile_name)
         return copied
@@ -507,28 +463,25 @@ class PromotionHandler:
                 already_present.append(profile_name)
             elif profile_name in all_profiles:
                 to_copy.append(profile_name)
-                issues.append({
-                    "type": "missing_profile",
-                    "detail": (
-                        f"Profile '{profile_name}' not "
-                        f"found at {destination} tier"
-                    ),
-                    "resolution": (
-                        "Will be copied during promotion "
-                        "if include_profiles=true"
-                    ),
-                })
+                issues.append(
+                    {
+                        "type": "missing_profile",
+                        "detail": (
+                            f"Profile '{profile_name}' not found at {destination} tier"
+                        ),
+                        "resolution": (
+                            "Will be copied during promotion if include_profiles=true"
+                        ),
+                    }
+                )
             else:
-                issues.append({
-                    "type": "broken_reference",
-                    "detail": (
-                        f"Profile '{profile_name}' not "
-                        "found in any tier"
-                    ),
-                    "resolution": (
-                        "Create the profile before promoting"
-                    ),
-                })
+                issues.append(
+                    {
+                        "type": "broken_reference",
+                        "detail": (f"Profile '{profile_name}' not found in any tier"),
+                        "resolution": ("Create the profile before promoting"),
+                    }
+                )
 
             if profile_name in all_profiles:
                 profile = all_profiles[profile_name]
@@ -537,34 +490,35 @@ class PromotionHandler:
                 p_info = providers.get(provider, {})
 
                 if not p_info.get("available", False):
-                    issues.append({
-                        "type": "provider_unavailable",
-                        "detail": (
-                            f"Provider '{provider}' for "
-                            f"profile '{profile_name}' "
-                            "is not available"
-                        ),
-                        "resolution": (
-                            f"Ensure {provider} is running"
-                        ),
-                    })
+                    issues.append(
+                        {
+                            "type": "provider_unavailable",
+                            "detail": (
+                                f"Provider '{provider}' for "
+                                f"profile '{profile_name}' "
+                                "is not available"
+                            ),
+                            "resolution": (f"Ensure {provider} is running"),
+                        }
+                    )
                 elif provider == "ollama":
                     available = self._check_model_available(
-                        provider, model,
-                        providers, ollama_models,
+                        provider,
+                        model,
+                        providers,
+                        ollama_models,
                     )
                     if not available:
-                        issues.append({
-                            "type": "model_unavailable",
-                            "detail": (
-                                f"Model '{model}' requires "
-                                "Ollama but is not installed"
-                            ),
-                            "resolution": (
-                                "Install with: "
-                                f"ollama pull {model}"
-                            ),
-                        })
+                        issues.append(
+                            {
+                                "type": "model_unavailable",
+                                "detail": (
+                                    f"Model '{model}' requires "
+                                    "Ollama but is not installed"
+                                ),
+                                "resolution": (f"Install with: ollama pull {model}"),
+                            }
+                        )
 
         return issues, to_copy, already_present
 
@@ -633,30 +587,108 @@ class PromotionHandler:
 
         for dir_path in self._config_manager.get_profiles_dirs():
             path = Path(dir_path)
-            if not path.exists():
-                continue
-            # Check direct file match
-            if (path / f"{profile_name}.yaml").exists():
-                return self._classify_dir_tier(
-                    str(dir_path), library_dir, global_dir
-                )
-            # Check multi-profile files
-            for yaml_file in path.glob("*.yaml"):
-                try:
-                    data = yaml.safe_load(yaml_file.read_text()) or {}
-                    if "model_profiles" in data and profile_name in data[
-                        "model_profiles"
-                    ]:
-                        return self._classify_dir_tier(
-                            str(dir_path), library_dir, global_dir
-                        )
-                    if data.get("name") == profile_name:
-                        return self._classify_dir_tier(
-                            str(dir_path), library_dir, global_dir
-                        )
-                except Exception:
-                    continue
+            if path.exists() and self._profile_in_dir(path, profile_name):
+                return self._classify_dir_tier(str(dir_path), library_dir, global_dir)
         return "unknown"
+
+    def _profile_in_dir(self, path: Path, profile_name: str) -> bool:
+        """Check if a profile exists in a directory (direct file or multi-profile).
+
+        Args:
+            path: Directory to search.
+            profile_name: Name of the profile.
+
+        Returns:
+            True if the profile is found in the directory.
+        """
+        if (path / f"{profile_name}.yaml").exists():
+            return True
+        for yaml_file in path.glob("*.yaml"):
+            try:
+                data = yaml.safe_load(yaml_file.read_text()) or {}
+                if "model_profiles" in data and profile_name in data["model_profiles"]:
+                    return True
+                if data.get("name") == profile_name:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _build_agent_dep_info(
+        self,
+        agent: Any,
+        all_profiles: dict[str, dict[str, Any]],
+        providers: dict[str, Any],
+        ollama_models: list[str],
+    ) -> dict[str, Any]:
+        """Build dependency info dict for a single agent.
+
+        Args:
+            agent: Agent configuration object.
+            all_profiles: All available profiles by name.
+            providers: Provider status dict.
+            ollama_models: List of available Ollama model names.
+
+        Returns:
+            Agent dependency info dict.
+        """
+        agent_name = _get_agent_attr(agent, "name", "unknown")
+        script_path = _get_agent_attr(agent, "script", "")
+
+        if script_path:
+            return {"name": agent_name, "type": "script", "script": script_path}
+
+        profile_name = _get_agent_attr(agent, "model_profile", "")
+        agent_info: dict[str, Any] = {
+            "name": agent_name,
+            "model_profile": profile_name,
+            "profile_found": profile_name in all_profiles,
+        }
+
+        if profile_name in all_profiles:
+            profile = all_profiles[profile_name]
+            provider = profile.get("provider", "")
+            model = profile.get("model", "")
+            agent_info["profile_tier"] = self._get_profile_tier(profile_name)
+            agent_info["provider"] = provider
+            agent_info["model"] = model
+            agent_info["model_available"] = self._check_model_available(
+                provider, model, providers, ollama_models
+            )
+        else:
+            agent_info["profile_tier"] = None
+            agent_info["provider"] = None
+            agent_info["model"] = None
+            agent_info["model_available"] = False
+
+        return agent_info
+
+    def _collect_dep_sets(
+        self,
+        agent_info: dict[str, Any],
+        profiles_needed: set[str],
+        models_needed: set[str],
+        providers_needed: set[str],
+    ) -> None:
+        """Accumulate dependency sets from a single agent's info.
+
+        Args:
+            agent_info: Agent dependency info dict from _build_agent_dep_info.
+            profiles_needed: Set to add the agent's profile name to.
+            models_needed: Set to add the agent's model to (if found).
+            providers_needed: Set to add the agent's provider to (if found).
+        """
+        if agent_info.get("type") == "script":
+            return
+        profile_name = agent_info.get("model_profile", "")
+        if profile_name:
+            profiles_needed.add(profile_name)
+        model = agent_info.get("model")
+        provider = agent_info.get("provider")
+        if model:
+            models_needed.add(model)
+        if provider:
+            providers_needed.add(provider)
 
     def _classify_dir_tier(
         self, dir_str: str, library_dir: Path, global_dir: Path
@@ -700,8 +732,7 @@ class PromotionHandler:
         if provider == "ollama":
             model_base = model.split(":")[0] if ":" in model else model
             return any(
-                m == model or m.startswith(f"{model_base}:")
-                for m in ollama_models
+                m == model or m.startswith(f"{model_base}:") for m in ollama_models
             )
         provider_info = providers.get(provider, {})
         return bool(provider_info.get("available", False))
@@ -729,9 +760,7 @@ class PromotionHandler:
             ensemble_name, ensembles_dir
         )
         orphan_candidates = target - used_by_others
-        existing = self._filter_existing_at_tier(
-            orphan_candidates, profiles_dir
-        )
+        existing = self._filter_existing_at_tier(orphan_candidates, profiles_dir)
         return sorted(orphan_candidates & existing)
 
     def _scan_ensemble_profiles(
