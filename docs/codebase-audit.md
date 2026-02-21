@@ -207,6 +207,8 @@ At least 8 sites use `except Exception: pass` or equivalent in execution-critica
 
 **Stewardship:** Replace the four-field mutation with a `ProjectContext` value object set atomically and passed explicitly to handlers.
 
+> **Done (prior to audit — c420fc2):** `config_manager` propagation to all handlers after `set_project` was fixed in commit `c420fc2` ("fix: propagate config_manager to handlers after set_project and fix profile resolution"). The `ProjectContext` value object refactor remains future work.
+
 ---
 
 #### Finding: `OAuthClaudeModel` Silently Discards `role_prompt`
