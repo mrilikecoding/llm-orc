@@ -223,6 +223,8 @@ At least 8 sites use `except Exception: pass` or equivalent in execution-critica
 
 **Stewardship:** Log a warning when `role_prompt` differs from the hardcoded prompt. Surface `SUPPORTS_CUSTOM_ROLE_PROMPT = False` as a class-level attribute.
 
+> **Done (2026-02-21):** `OAuthClaudeModel.SUPPORTS_CUSTOM_ROLE_PROMPT = False` added. `ModelInterface` base class now declares `SUPPORTS_CUSTOM_ROLE_PROMPT: bool = True` as the default. `_inject_role_if_needed` logs a `WARNING` with the differing role_prompt the first time a custom role is established per instance.
+
 ---
 
 #### Finding: Silent Agent Erasure in Parallel Phase Execution
@@ -340,6 +342,8 @@ At least 8 sites use `except Exception: pass` or equivalent in execution-critica
 **Question:** When Anthropic changes token pricing, how many files need updating?
 
 **Stewardship:** Extract shared `_record_usage_with_cost` to the base class. Replace `get_event_loop()` with `get_running_loop()`.
+
+> **Partial (2026-02-21):** `asyncio.get_event_loop()` replaced with `asyncio.get_running_loop()` in both `_execute_oauth_api_call` and `ClaudeCLIModel.generate_response`. The `_record_usage` method is already on the base class; per-class cost calculation logic is sufficiently distinct (real rates vs. 0.0 vs. estimation) that further extraction offers limited value.
 
 ---
 
