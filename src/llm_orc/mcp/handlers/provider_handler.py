@@ -56,9 +56,7 @@ class ProviderHandler:
                     response = await client.get(f"{host}/api/tags")
                     if response.status_code == 200:
                         data = response.json()
-                        models = [
-                            m.get("name", "") for m in data.get("models", [])
-                        ]
+                        models = [m.get("name", "") for m in data.get("models", [])]
                         return {
                             "available": True,
                             "models": sorted(models),
