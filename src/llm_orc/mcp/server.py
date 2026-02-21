@@ -24,6 +24,7 @@ from llm_orc.mcp.handlers.execution_handler import ExecutionHandler
 from llm_orc.mcp.handlers.help_handler import HelpHandler
 from llm_orc.mcp.handlers.library_handler import LibraryHandler
 from llm_orc.mcp.handlers.profile_handler import ProfileHandler
+from llm_orc.mcp.handlers.promotion_handler import PromotionHandler
 from llm_orc.mcp.handlers.provider_handler import ProviderHandler
 from llm_orc.mcp.handlers.resource_handler import ResourceHandler
 from llm_orc.mcp.handlers.script_handler import ScriptHandler
@@ -132,6 +133,13 @@ class MCPServer:
             self._find_ensemble_by_name,
             self._resource_handler.read_artifact,
         )
+        self._promotion_handler = PromotionHandler(
+            self.config_manager,
+            self._profile_handler,
+            self._library_handler,
+            self._provider_handler,
+            self._find_ensemble_by_name,
+        )
         self._mcp = FastMCP("llm-orc")
         self._setup_resources()
         self._setup_tools()
@@ -199,6 +207,7 @@ class MCPServer:
         self._setup_core_tools()
         self._setup_crud_tools()
         self._setup_provider_discovery_tools()
+        self._setup_promotion_tools()
         self._setup_help_tool()
 
     def _setup_context_tools(self) -> None:
@@ -613,6 +622,97 @@ class MCPServer:
             )
             return json.dumps(result, indent=2)
 
+    def _setup_promotion_tools(self) -> None:
+        """Register promotion and demotion tools."""
+
+        @self._mcp.tool()
+        async def promote_ensemble(
+            ensemble_name: str,
+            destination: str,
+            include_profiles: bool = True,
+            dry_run: bool = True,
+            overwrite: bool = False,
+        ) -> str:
+            """Promote an ensemble from local to global or
+            library tier, including profile dependencies.
+
+            Args:
+                ensemble_name: Name of the ensemble to promote
+                destination: Target tier: 'global' or 'library'
+                include_profiles: Copy referenced profiles missing at destination
+                dry_run: Preview what would be copied without actually copying
+                overwrite: Overwrite if ensemble already exists at destination
+            """
+            result = await self._promote_ensemble_tool(
+                {
+                    "ensemble_name": ensemble_name,
+                    "destination": destination,
+                    "include_profiles": include_profiles,
+                    "dry_run": dry_run,
+                    "overwrite": overwrite,
+                }
+            )
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def list_dependencies(ensemble_name: str) -> str:
+            """Show all external dependencies an ensemble
+            requires: profiles, models, and providers.
+
+            Args:
+                ensemble_name: Name of the ensemble to inspect
+            """
+            result = await self._list_dependencies_tool(
+                {"ensemble_name": ensemble_name}
+            )
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def check_promotion_readiness(
+            ensemble_name: str, destination: str
+        ) -> str:
+            """Assess whether an ensemble can be promoted
+            to a target tier, and what's missing.
+
+            Args:
+                ensemble_name: Name of the ensemble to check
+                destination: Target tier: 'global' or 'library'
+            """
+            result = await self._check_promotion_readiness_tool(
+                {
+                    "ensemble_name": ensemble_name,
+                    "destination": destination,
+                }
+            )
+            return json.dumps(result, indent=2)
+
+        @self._mcp.tool()
+        async def demote_ensemble(
+            ensemble_name: str,
+            tier: str,
+            remove_orphaned_profiles: bool = False,
+            confirm: bool = False,
+        ) -> str:
+            """Remove an ensemble from a higher tier
+            (does not delete lower-tier copies).
+
+            Args:
+                ensemble_name: Name of the ensemble to demote
+                tier: Tier to remove from: 'global' or 'library'
+                remove_orphaned_profiles: Also remove profiles
+                    no longer referenced by any ensemble
+                confirm: Must be True to actually delete
+            """
+            result = await self._demote_ensemble_tool(
+                {
+                    "ensemble_name": ensemble_name,
+                    "tier": tier,
+                    "remove_orphaned_profiles": remove_orphaned_profiles,
+                    "confirm": confirm,
+                }
+            )
+            return json.dumps(result, indent=2)
+
     def _setup_help_tool(self) -> None:
         """Register help tool for agent onboarding."""
 
@@ -869,6 +969,11 @@ class MCPServer:
             # Provider & model discovery
             "get_provider_status": self._get_provider_status_tool,
             "check_ensemble_runnable": self._check_ensemble_runnable_tool,
+            # Promotion
+            "promote_ensemble": self._promote_ensemble_tool,
+            "list_dependencies": self._list_dependencies_tool,
+            "check_promotion_readiness": self._check_promotion_readiness_tool,
+            "demote_ensemble": self._demote_ensemble_tool,
             # Help
             "get_help": self._help_tool,
         }
@@ -1066,6 +1171,32 @@ class MCPServer:
     ) -> dict[str, Any]:
         """Check if an ensemble can run with current providers."""
         return await self._provider_handler.check_ensemble_runnable(arguments)
+
+    async def _promote_ensemble_tool(
+        self, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Promote ensemble (delegation stub for web API)."""
+        return await self._promotion_handler.promote_ensemble(arguments)
+
+    async def _list_dependencies_tool(
+        self, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """List dependencies (delegation stub for web API)."""
+        return await self._promotion_handler.list_dependencies(arguments)
+
+    async def _check_promotion_readiness_tool(
+        self, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Check promotion readiness (delegation stub for web API)."""
+        return await self._promotion_handler.check_promotion_readiness(
+            arguments
+        )
+
+    async def _demote_ensemble_tool(
+        self, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Demote ensemble (delegation stub for web API)."""
+        return await self._promotion_handler.demote_ensemble(arguments)
 
     async def _help_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Get help documentation.
