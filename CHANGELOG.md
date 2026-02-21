@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.4] - 2026-02-21
+
+### Fixed
+- **Library browse/search silent failures** — `_browse_ensembles` and `_search_ensembles` now log at DEBUG with full traceback when a YAML file fails to parse, rather than silently skipping it
+- **Library scripts browse depth** — `library_browse`, `library_search`, and `library_info` now recurse fully into nested script directories (e.g. `scripts/specialized/network-science/`) instead of stopping one level short; category is the immediate parent directory name
+- **README `library_copy` example** — source path corrected from `"code-analysis/security-review"` to `"ensembles/code-analysis/security-review"` (path is relative to library root)
+- **`asyncio.get_event_loop()` deprecation** — replaced with `get_running_loop()` in `OAuthClaudeModel` and `ClaudeCLIModel`
+
+### Changed
+- **`OAuthClaudeModel.SUPPORTS_CUSTOM_ROLE_PROMPT = False`** — class-level attribute surfaces the Liskov-breaking behaviour; `ModelInterface` base now declares `SUPPORTS_CUSTOM_ROLE_PROMPT: bool = True` as the default; a `WARNING` is logged when a custom role is injected via conversation turn
+- **README: MCP library tools** — added note that tools are local-filesystem-only and require `LLM_ORC_LIBRARY_PATH` for Homebrew/pip installs; added Contributing to the Library section
+
 ## [0.15.3] - 2026-02-21
 
 ### Fixed
