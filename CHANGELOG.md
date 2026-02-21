@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-02-21
+
+### Fixed
+- **MCP `set_project` handler propagation** — `create_ensemble`, `validate_ensemble`, and `check_ensemble_runnable` now correctly use the project directory after `set_project` is called; previously all handlers held a stale reference to the pre-`set_project` `ConfigurationManager`
+- **`validate_ensemble` profile resolution** — profiles stored as individual YAML files in the profiles directories are now found by validation; previously only profiles declared under `model_profiles:` in a `config.yaml` were recognized
+
+### Refactored
+- Reduced cognitive complexity in `PromotionHandler._get_profile_tier` and `list_dependencies` (extracted `_profile_in_dir`, `_build_agent_dep_info`, `_collect_dep_sets`)
+- Reduced cognitive complexity in `DependencyResolver.enhance_input_with_dependencies` (extracted `_compute_agent_input`)
+
 ## [0.15.1] - 2026-02-20
 
 ### Added
