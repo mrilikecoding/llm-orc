@@ -108,9 +108,7 @@ class TestPromoteEnsemble:
             )
 
     @pytest.mark.asyncio
-    async def test_promote_requires_valid_destination(
-        self, server: MCPServer
-    ) -> None:
+    async def test_promote_requires_valid_destination(self, server: MCPServer) -> None:
         """Promote requires valid destination."""
         with pytest.raises(ValueError, match="destination must be"):
             await server.call_tool(
@@ -325,9 +323,7 @@ class TestPromoteEnsemble:
         assert list(global_profiles.glob("*.yaml")) == []
 
     @pytest.mark.asyncio
-    async def test_promote_to_library(
-        self, server: MCPServer, tmp_path: Path
-    ) -> None:
+    async def test_promote_to_library(self, server: MCPServer, tmp_path: Path) -> None:
         """Promote to library tier writes to library directory."""
         ensembles_dir = _setup_local_ensemble(tmp_path, server)
         profiles_dir = _setup_local_profile(tmp_path, server)
@@ -363,17 +359,13 @@ class TestListDependencies:
     """Tests for list_dependencies tool."""
 
     @pytest.mark.asyncio
-    async def test_list_deps_requires_ensemble_name(
-        self, server: MCPServer
-    ) -> None:
+    async def test_list_deps_requires_ensemble_name(self, server: MCPServer) -> None:
         """List dependencies requires ensemble_name."""
         with pytest.raises(ValueError, match="ensemble_name is required"):
             await server.call_tool("list_dependencies", {})
 
     @pytest.mark.asyncio
-    async def test_list_deps_raises_if_not_found(
-        self, server: MCPServer
-    ) -> None:
+    async def test_list_deps_raises_if_not_found(self, server: MCPServer) -> None:
         """List dependencies raises if ensemble not found."""
         _mock_config(server).get_ensembles_dirs.return_value = []
 
@@ -391,9 +383,7 @@ class TestListDependencies:
             {"name": "extractor", "model_profile": "fast-profile"},
             {"name": "synth", "model_profile": "medium-profile"},
         ]
-        ensembles_dir = _setup_local_ensemble(
-            tmp_path, server, agents=agents
-        )
+        ensembles_dir = _setup_local_ensemble(tmp_path, server, agents=agents)
         profiles_dir = _setup_local_profile(tmp_path, server, "fast-profile")
 
         # Add second profile
@@ -435,9 +425,7 @@ class TestListDependencies:
             {"name": "aggregator", "script": "aggregator.py"},
             {"name": "extractor", "model_profile": "fast-profile"},
         ]
-        ensembles_dir = _setup_local_ensemble(
-            tmp_path, server, agents=agents
-        )
+        ensembles_dir = _setup_local_ensemble(tmp_path, server, agents=agents)
         profiles_dir = _setup_local_profile(tmp_path, server)
 
         _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
@@ -463,9 +451,7 @@ class TestListDependencies:
     ) -> None:
         """Missing profiles are reported as not found."""
         agents = [{"name": "agent1", "model_profile": "nonexistent"}]
-        ensembles_dir = _setup_local_ensemble(
-            tmp_path, server, agents=agents
-        )
+        ensembles_dir = _setup_local_ensemble(tmp_path, server, agents=agents)
 
         _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
         _mock_config(server).get_profiles_dirs.return_value = []
@@ -494,9 +480,7 @@ class TestCheckPromotionReadiness:
     """Tests for check_promotion_readiness tool."""
 
     @pytest.mark.asyncio
-    async def test_readiness_requires_ensemble_name(
-        self, server: MCPServer
-    ) -> None:
+    async def test_readiness_requires_ensemble_name(self, server: MCPServer) -> None:
         """Check readiness requires ensemble_name."""
         with pytest.raises(ValueError, match="ensemble_name is required"):
             await server.call_tool(
@@ -515,9 +499,7 @@ class TestCheckPromotionReadiness:
             )
 
     @pytest.mark.asyncio
-    async def test_readiness_raises_if_not_found(
-        self, server: MCPServer
-    ) -> None:
+    async def test_readiness_raises_if_not_found(self, server: MCPServer) -> None:
         """Check readiness raises if ensemble not found."""
         _mock_config(server).get_ensembles_dirs.return_value = []
 
@@ -563,9 +545,7 @@ class TestCheckPromotionReadiness:
     ) -> None:
         """Reports broken profile references as not ready."""
         agents = [{"name": "agent1", "model_profile": "nonexistent"}]
-        ensembles_dir = _setup_local_ensemble(
-            tmp_path, server, agents=agents
-        )
+        ensembles_dir = _setup_local_ensemble(tmp_path, server, agents=agents)
         _setup_global_dirs(tmp_path, server)
 
         _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
@@ -757,9 +737,7 @@ class TestDemoteEnsemble:
         (global_ensembles / "test-ensemble.yaml").write_text("name: test-ensemble")
 
         # Need to set up so _get_ensemble_profiles works
-        _mock_config(server).get_ensembles_dirs.return_value = [
-            str(global_ensembles)
-        ]
+        _mock_config(server).get_ensembles_dirs.return_value = [str(global_ensembles)]
 
         result = await server.call_tool(
             "demote_ensemble",
@@ -783,15 +761,15 @@ class TestDemoteEnsemble:
         global_ensembles, _ = _setup_global_dirs(tmp_path, server)
         ensemble_file = global_ensembles / "test-ensemble.yaml"
         ensemble_file.write_text(
-            yaml.safe_dump({
-                "name": "test-ensemble",
-                "agents": [{"name": "a1", "model_profile": "p1"}],
-            })
+            yaml.safe_dump(
+                {
+                    "name": "test-ensemble",
+                    "agents": [{"name": "a1", "model_profile": "p1"}],
+                }
+            )
         )
 
-        _mock_config(server).get_ensembles_dirs.return_value = [
-            str(global_ensembles)
-        ]
+        _mock_config(server).get_ensembles_dirs.return_value = [str(global_ensembles)]
 
         result = await server.call_tool(
             "demote_ensemble",
@@ -841,12 +819,8 @@ class TestDemoteEnsemble:
             yaml.safe_dump({"name": "shared-profile", "provider": "ollama"})
         )
 
-        _mock_config(server).get_ensembles_dirs.return_value = [
-            str(global_ensembles)
-        ]
-        _mock_config(server).get_profiles_dirs.return_value = [
-            str(global_profiles)
-        ]
+        _mock_config(server).get_ensembles_dirs.return_value = [str(global_ensembles)]
+        _mock_config(server).get_profiles_dirs.return_value = [str(global_profiles)]
 
         result = await server.call_tool(
             "demote_ensemble",
@@ -883,12 +857,8 @@ class TestDemoteEnsemble:
             yaml.safe_dump({"name": "lonely-profile", "provider": "ollama"})
         )
 
-        _mock_config(server).get_ensembles_dirs.return_value = [
-            str(global_ensembles)
-        ]
-        _mock_config(server).get_profiles_dirs.return_value = [
-            str(global_profiles)
-        ]
+        _mock_config(server).get_ensembles_dirs.return_value = [str(global_ensembles)]
+        _mock_config(server).get_profiles_dirs.return_value = [str(global_profiles)]
 
         result = await server.call_tool(
             "demote_ensemble",
@@ -916,17 +886,13 @@ class TestPromotionDispatchTable:
     """Tests that promotion tools are in the dispatch table."""
 
     @pytest.mark.asyncio
-    async def test_promote_ensemble_in_dispatch_table(
-        self, server: MCPServer
-    ) -> None:
+    async def test_promote_ensemble_in_dispatch_table(self, server: MCPServer) -> None:
         """promote_ensemble is accessible via call_tool."""
         handler = server._get_tool_handler("promote_ensemble")
         assert handler is not None
 
     @pytest.mark.asyncio
-    async def test_list_dependencies_in_dispatch_table(
-        self, server: MCPServer
-    ) -> None:
+    async def test_list_dependencies_in_dispatch_table(self, server: MCPServer) -> None:
         """list_dependencies is accessible via call_tool."""
         handler = server._get_tool_handler("list_dependencies")
         assert handler is not None
@@ -940,9 +906,7 @@ class TestPromotionDispatchTable:
         assert handler is not None
 
     @pytest.mark.asyncio
-    async def test_demote_ensemble_in_dispatch_table(
-        self, server: MCPServer
-    ) -> None:
+    async def test_demote_ensemble_in_dispatch_table(self, server: MCPServer) -> None:
         """demote_ensemble is accessible via call_tool."""
         handler = server._get_tool_handler("demote_ensemble")
         assert handler is not None
