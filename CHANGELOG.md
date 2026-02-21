@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-02-20
+
+### Added
+- **Ensemble Promotion Tools** — 4 new MCP tools for managing ensembles across tiers
+  - `promote_ensemble` — copy ensemble + profile dependencies from local to global or library tier (with dry-run, overwrite, include_profiles options)
+  - `list_dependencies` — inspect all profiles, models, and providers an ensemble requires
+  - `check_promotion_readiness` — assess whether an ensemble can be promoted and what's missing
+  - `demote_ensemble` — remove an ensemble from a higher tier with optional orphaned profile cleanup
+
+### Fixed
+- **Ollama detection in MCP subprocess** — `get_provider_status` now reports the actual error instead of silently returning "Ollama not running" when the check fails in the MCP server subprocess context
+- **Ollama host fallback** — added `OLLAMA_HOST` env var support and automatic localhost→127.0.0.1 fallback for environments where DNS resolution differs
+
 ## [0.15.0] - 2026-02-20
 
 ### Added

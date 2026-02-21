@@ -1,5 +1,6 @@
 """Provider status handler for MCP server."""
 
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -43,24 +44,35 @@ class ProviderHandler:
 
         import httpx
 
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get("http://localhost:11434/api/tags")
-                if response.status_code == 200:
-                    data = response.json()
-                    models = [m.get("name", "") for m in data.get("models", [])]
-                    return {
-                        "available": True,
-                        "models": sorted(models),
-                        "model_count": len(models),
-                    }
-        except Exception:
-            pass
+        ollama_host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        hosts = [ollama_host]
+        if "localhost" in ollama_host:
+            hosts.append(ollama_host.replace("localhost", "127.0.0.1"))
+
+        last_error = ""
+        for host in hosts:
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    response = await client.get(f"{host}/api/tags")
+                    if response.status_code == 200:
+                        data = response.json()
+                        models = [
+                            m.get("name", "") for m in data.get("models", [])
+                        ]
+                        return {
+                            "available": True,
+                            "models": sorted(models),
+                            "model_count": len(models),
+                        }
+                    last_error = f"HTTP {response.status_code} from {host}"
+            except Exception as e:
+                last_error = f"{type(e).__name__}: {e} (host: {host})"
+                continue
 
         return {
             "available": False,
             "models": [],
-            "reason": "Ollama not running",
+            "reason": f"Ollama not reachable: {last_error}",
         }
 
     def _get_cloud_provider_status(self, provider: str) -> dict[str, Any]:
