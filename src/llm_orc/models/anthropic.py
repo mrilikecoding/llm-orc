@@ -1,6 +1,7 @@
 """Anthropic Claude model implementations."""
 
 import asyncio
+import logging
 import subprocess
 import time
 from typing import Any
@@ -9,6 +10,8 @@ from anthropic import AsyncAnthropic
 
 from llm_orc.core.auth.oauth_client import OAuthClaudeClient, OAuthTokenRefreshError
 from llm_orc.models.base import HTTPConnectionPool, ModelInterface
+
+logger = logging.getLogger(__name__)
 
 
 def _handle_proactive_token_refresh(model: "OAuthClaudeModel") -> bool:
@@ -93,7 +96,7 @@ async def _execute_oauth_api_call(
         API response dictionary
     """
     # Run in thread pool since our OAuth client is synchronous
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         None,
         lambda: model.client.create_message(**request_params),
@@ -267,7 +270,15 @@ class ClaudeModel(ModelInterface):
 
 
 class OAuthClaudeModel(ModelInterface):
-    """OAuth-enabled Claude model implementation."""
+    """OAuth-enabled Claude model implementation.
+
+    Note: OAuth authorization requires a fixed system prompt
+    ("You are Claude Code, Anthropic's official CLI for Claude.").
+    Custom role_prompts are injected as conversation turns instead,
+    which differs from the ModelInterface contract.
+    """
+
+    SUPPORTS_CUSTOM_ROLE_PROMPT: bool = False
 
     def __init__(
         self,
@@ -354,6 +365,15 @@ class OAuthClaudeModel(ModelInterface):
         if self._role_established and self._current_role == role_prompt:
             return
 
+        # Warn: role_prompt is injected as a conversation turn, not as the
+        # system prompt — OAuthClaudeModel.SUPPORTS_CUSTOM_ROLE_PROMPT is False.
+        logger.warning(
+            "OAuthClaudeModel: role_prompt %r injected via conversation turn "
+            "(system prompt is always the OAuth-required Claude Code prompt); "
+            "behaviour will differ from other ModelInterface implementations",
+            role_prompt,
+        )
+
         # Inject role establishment
         role_message = f"For this conversation, please act as: {role_prompt}"
         self.add_to_conversation("user", role_message)
@@ -395,7 +415,7 @@ class ClaudeCLIModel(ModelInterface):
 
         try:
             # Run claude command with --no-api-key flag to use local auth
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None,
                 lambda: subprocess.run(  # nosec B603
