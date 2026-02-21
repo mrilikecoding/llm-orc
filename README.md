@@ -346,6 +346,8 @@ mcp__llm-orc__list_ensembles        # See available ensembles
 | `library_search` | Search library by keyword |
 | `library_info` | Get library metadata and statistics |
 
+> **Library tools require a local copy of the library.** These tools read from the local filesystem — they do not fetch from GitHub. The library is auto-detected if the `llm-orchestra-library` submodule is present in the current working directory. For Homebrew or pip installs, set `LLM_ORC_LIBRARY_PATH=/path/to/llm-orchestra-library` to point to a local clone of [llm-orchestra-library](https://github.com/mrilikecoding/llm-orchestra-library). Run `library_info` to verify the library is found.
+
 **Artifact Management**
 | Tool | Description |
 |------|-------------|
@@ -366,14 +368,14 @@ mcp__llm-orc__get_provider_status
 
 # 2. Find an ensemble
 mcp__llm-orc__library_search query="code review"
-# → Found: code-analysis/security-review
+# → Returns results including path "ensembles/code-analysis/security-review.yaml"
 
 # 3. Check if it can run locally
 mcp__llm-orc__check_ensemble_runnable ensemble_name="security-review"
 # → Shows which profiles need local alternatives
 
-# 4. Copy and adapt
-mcp__llm-orc__library_copy source="code-analysis/security-review"
+# 4. Copy and adapt (source path is relative to library root)
+mcp__llm-orc__library_copy source="ensembles/code-analysis/security-review"
 mcp__llm-orc__update_ensemble ensemble_name="security-review" changes={"agents": [...]}
 
 # 5. Run it
@@ -442,6 +444,16 @@ unset LLM_ORC_LIBRARY_SOURCE
 **Requirements for local library:**
 - The `llm-orchestra-library` submodule must be initialized and present
 - Clear error messages guide you if the local library is not found
+
+### Contributing to the Library
+
+The library is a separate repository at [github.com/mrilikecoding/llm-orchestra-library](https://github.com/mrilikecoding/llm-orchestra-library). To add or improve content:
+
+1. Create and test your ensemble locally using `llm-orc` or the MCP tools
+2. Copy the finished YAML into your local library clone under the appropriate category
+3. Open a pull request against the library repository
+
+The MCP `library_copy` tool copies **from** the library **to** your project. There is no reverse direction by design — contributing back goes through a PR rather than automated writes to a shared upstream.
 
 ## Use Cases
 
