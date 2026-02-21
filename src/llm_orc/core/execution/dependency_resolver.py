@@ -34,59 +34,60 @@ class DependencyResolver:
         For LLM agents, returns text-formatted input with natural language
         context about previous agent results.
         """
-        enhanced_inputs = {}
-
-        for agent_config in dependent_agents:
-            agent_name = agent_config.name
-            dependencies = agent_config.depends_on
-            is_script_agent = isinstance(agent_config, ScriptAgentConfig)
-
-            if not dependencies:
-                if is_script_agent:
-                    enhanced_inputs[agent_name] = self._build_script_input(
-                        agent_name, base_input, {}
-                    )
-                else:
-                    enhanced_inputs[agent_name] = base_input
-                continue
-
-            # Apply input_key selection (ADR-014)
-            effective_results, input_key_error = self._apply_input_key_selection(
-                agent_config, results_dict
+        return {
+            agent_config.name: self._compute_agent_input(
+                agent_config, base_input, results_dict
             )
-            if input_key_error:
-                enhanced_inputs[agent_name] = input_key_error
-                continue
+            for agent_config in dependent_agents
+        }
 
-            # Extract dependency results as dict for script agents
-            dep_results_dict = self._extract_dependency_results_as_dict(
-                dependencies, effective_results
-            )
+    def _compute_agent_input(
+        self,
+        agent_config: AgentConfig,
+        base_input: str,
+        results_dict: dict[str, Any],
+    ) -> str:
+        """Compute the enhanced input string for a single agent.
 
+        Args:
+            agent_config: Agent to compute input for.
+            base_input: Original ensemble input.
+            results_dict: Accumulated results from earlier agents.
+
+        Returns:
+            Input string for the agent.
+        """
+        agent_name = agent_config.name
+        dependencies = agent_config.depends_on
+        is_script_agent = isinstance(agent_config, ScriptAgentConfig)
+
+        if not dependencies:
             if is_script_agent:
-                # Script agents get JSON with dependencies dict
-                enhanced_inputs[agent_name] = self._build_script_input(
-                    agent_name, base_input, dep_results_dict
-                )
-            else:
-                # LLM agents get text format
-                dependency_results = self._extract_successful_dependency_results(
-                    dependencies, effective_results
-                )
-                if dependency_results:
-                    enhanced_inputs[agent_name] = (
-                        self._build_enhanced_input_with_dependencies(
-                            agent_name, base_input, dependency_results
-                        )
-                    )
-                else:
-                    enhanced_inputs[agent_name] = (
-                        self._build_enhanced_input_no_dependencies(
-                            agent_name, base_input
-                        )
-                    )
+                return self._build_script_input(agent_name, base_input, {})
+            return base_input
 
-        return enhanced_inputs
+        # Apply input_key selection (ADR-014)
+        effective_results, input_key_error = self._apply_input_key_selection(
+            agent_config, results_dict
+        )
+        if input_key_error:
+            return input_key_error
+
+        dep_results_dict = self._extract_dependency_results_as_dict(
+            dependencies, effective_results
+        )
+
+        if is_script_agent:
+            return self._build_script_input(agent_name, base_input, dep_results_dict)
+
+        dependency_results = self._extract_successful_dependency_results(
+            dependencies, effective_results
+        )
+        if dependency_results:
+            return self._build_enhanced_input_with_dependencies(
+                agent_name, base_input, dependency_results
+            )
+        return self._build_enhanced_input_no_dependencies(agent_name, base_input)
 
     @staticmethod
     def _dep_name(dep: str | dict[str, Any]) -> str:
