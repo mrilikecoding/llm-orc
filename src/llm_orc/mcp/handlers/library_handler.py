@@ -70,23 +70,20 @@ class LibraryHandler:
         return ensembles
 
     def _browse_scripts(self, library_dir: Path) -> list[dict[str, Any]]:
-        """Browse scripts in library directory."""
+        """Browse scripts in library directory (recursive)."""
         scripts: list[dict[str, Any]] = []
         scripts_dir = library_dir / "scripts"
         if not scripts_dir.exists():
             return scripts
 
-        for category_dir in scripts_dir.iterdir():
-            if not category_dir.is_dir():
-                continue
-            for script_file in category_dir.glob("*.py"):
-                scripts.append(
-                    {
-                        "name": script_file.stem,
-                        "category": category_dir.name,
-                        "path": str(script_file),
-                    }
-                )
+        for script_file in scripts_dir.rglob("*.py"):
+            scripts.append(
+                {
+                    "name": script_file.stem,
+                    "category": script_file.parent.name,
+                    "path": str(script_file),
+                }
+            )
         return scripts
 
     def _resolve_copy_destination(self, source_path: Path) -> Path:
@@ -195,28 +192,26 @@ class LibraryHandler:
         return results
 
     def _search_scripts(self, library_dir: Path, query: str) -> list[dict[str, Any]]:
-        """Search scripts in library directory by query."""
+        """Search scripts in library directory by query (recursive)."""
         results: list[dict[str, Any]] = []
         scripts_dir = library_dir / "scripts"
 
         if not scripts_dir.exists():
             return results
 
-        for category_dir in scripts_dir.iterdir():
-            if not category_dir.is_dir():
-                continue
-            for script_file in category_dir.glob("*.py"):
-                name_match = query in script_file.stem.lower()
-                cat_match = query in category_dir.name.lower()
-                if name_match or cat_match:
-                    results.append(
-                        {
-                            "name": script_file.stem,
-                            "category": category_dir.name,
-                            "path": str(script_file),
-                            "match": ("name" if name_match else "category"),
-                        }
-                    )
+        for script_file in scripts_dir.rglob("*.py"):
+            category = script_file.parent.name
+            name_match = query in script_file.stem.lower()
+            cat_match = query in category.lower()
+            if name_match or cat_match:
+                results.append(
+                    {
+                        "name": script_file.stem,
+                        "category": category,
+                        "path": str(script_file),
+                        "match": ("name" if name_match else "category"),
+                    }
+                )
 
         return results
 
@@ -241,11 +236,10 @@ class LibraryHandler:
 
         scripts_dir = library_dir / "scripts"
         if scripts_dir.exists():
-            categories: list[str] = []
-            for category_dir in scripts_dir.iterdir():
-                if category_dir.is_dir():
-                    categories.append(category_dir.name)
-                    result["scripts_count"] += len(list(category_dir.glob("*.py")))
-            result["categories"] = sorted(categories)
+            all_scripts = list(scripts_dir.rglob("*.py"))
+            result["scripts_count"] = len(all_scripts)
+            result["categories"] = sorted(
+                {script.parent.name for script in all_scripts}
+            )
 
         return result
