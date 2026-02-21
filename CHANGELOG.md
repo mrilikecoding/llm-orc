@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-02-21
+
+### Fixed
+- **`eval()` sandbox security** — execution context now passed as `locals` argument rather than merged into `restricted_globals`; prevents LLM-produced context keys (e.g. `__builtins__`, `len`) from shadowing or escaping the sandbox
+- **Version fossil** — `__version__` now resolved at runtime via `importlib.metadata.version("llm-orchestra")` instead of the stale hard-coded string `"0.3.0"`
+- **Silent agent erasure** — `asyncio.gather` exceptions in parallel phase execution now produce a synthetic `status: "failed"` record instead of silently dropping the agent from results
+- **Silent failures logged** — seven previously silent `except Exception: pass` sites (streaming merger, artifact saving, agent request processing, model fallback loading, progress-controller UI calls) now log at `WARNING` or `DEBUG` with full traceback context
+- **Deprecated `asyncio.get_event_loop()`** — replaced with `get_running_loop()` in `OAuthClaudeModel` and `ClaudeCLIModel`; `get_event_loop()` is deprecated in Python 3.10+ and unnecessary inside async context
+
+### Changed
+- **`AgentExecutor` renamed to `AgentResourceMonitor`** — class name and file now reflect actual responsibility (resource monitoring and metrics); execution lives in `LlmAgentRunner` / `ScriptAgentRunner`
+- **`OAuthClaudeModel.SUPPORTS_CUSTOM_ROLE_PROMPT = False`** — class-level attribute surfaces the Liskov-breaking behaviour; `ModelInterface` base now declares `SUPPORTS_CUSTOM_ROLE_PROMPT: bool = True` as the default; a `WARNING` is logged when a custom role is injected via conversation turn
+- **BDD contracts test** — `test_adr_003_testable_contracts.py` now imports `ScriptContract`, `ScriptMetadata`, `TestCase`, `ScriptCapability`, `ScriptDependency` from `llm_orc.contracts` instead of defining local shadow classes
+- **Documentation corrected** — `architecture.md` marks WebSocket/batch/registration system as not yet implemented; `coding-standards.md` coverage threshold aligned to 90% (matching `pyproject.toml`); ADR-010 status changed from Proposed to Implemented
+
+### Removed
+- **Dead code constellation** — deleted orphaned Pydantic event hierarchy (`core/events/base.py`, `script_interaction.py`, `script_schemas.py`), hollow `testing/contract_validator.py` stub and CLI wrapper, and five associated test files
+
+### Security
+- Added `TestEvalSandboxSecurity` test class with five adversarial tests: `__builtins__` key injection, `__import__` unavailability, builtin shadowing via context keys, and a passing legitimate-context test
+
 ## [0.15.2] - 2026-02-21
 
 ### Fixed
