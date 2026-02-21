@@ -7,10 +7,18 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import yaml
 from pytest_bdd import given, scenarios, then, when
 
 # Load all scenarios from the feature file
 scenarios("features/adr-009-mcp-server-architecture.feature")
+
+
+_MOCK_PROFILES = {
+    "fast": {"provider": "anthropic-api", "model": "claude-3-haiku-20240307"},
+    "standard": {"provider": "anthropic-api", "model": "claude-3-5-sonnet-20241022"},
+    "quality": {"provider": "anthropic-api", "model": "claude-3-opus-20240229"},
+}
 
 
 def _create_mock_config_manager(
@@ -25,18 +33,24 @@ def _create_mock_config_manager(
     Returns:
         Mock ConfigurationManager.
     """
+    # Create individual profile YAML files in a profiles dir next to ensembles
+    profile_dirs: list[str] = []
+    if ensemble_dirs:
+        profiles_dir = Path(ensemble_dirs[0]).parent / "profiles"
+        profiles_dir.mkdir(parents=True, exist_ok=True)
+        for name, config in _MOCK_PROFILES.items():
+            profile_data = {"name": name, **config}
+            (profiles_dir / f"{name}.yaml").write_text(
+                yaml.dump(profile_data, default_flow_style=False)
+            )
+        profile_dirs.append(str(profiles_dir))
+
     mock_config = MagicMock()
     mock_config.get_ensembles_dirs.return_value = [str(d) for d in ensemble_dirs]
     # Set global_config_dir to the artifacts directory itself
     mock_config.global_config_dir = str(artifacts_dir) if artifacts_dir else ""
-    mock_config.get_model_profiles.return_value = {
-        "fast": {"provider": "anthropic-api", "model": "claude-3-haiku-20240307"},
-        "standard": {
-            "provider": "anthropic-api",
-            "model": "claude-3-5-sonnet-20241022",
-        },
-        "quality": {"provider": "anthropic-api", "model": "claude-3-opus-20240229"},
-    }
+    mock_config.get_model_profiles.return_value = _MOCK_PROFILES
+    mock_config.get_profiles_dirs.return_value = profile_dirs
     return mock_config
 
 
