@@ -1,11 +1,14 @@
 """Library management handler for MCP server."""
 
+import logging
 import shutil
 from pathlib import Path
 from typing import Any
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
+
+logger = logging.getLogger(__name__)
 
 
 class LibraryHandler:
@@ -66,6 +69,9 @@ class LibraryHandler:
                         }
                     )
             except Exception:
+                logger.debug(
+                    "Skipping unreadable ensemble file %s", yaml_file, exc_info=True
+                )
                 continue
         return ensembles
 
@@ -187,6 +193,9 @@ class LibraryHandler:
                             }
                         )
             except Exception:
+                logger.debug(
+                    "Skipping unreadable ensemble file %s", yaml_file, exc_info=True
+                )
                 continue
 
         return results
