@@ -4,7 +4,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from llm_orc.core.execution.agent_executor import AgentExecutor
+from llm_orc.core.execution.agent_resource_monitor import AgentResourceMonitor
 from llm_orc.schemas.agent_config import AgentConfig
 
 
@@ -12,12 +12,12 @@ class PhaseMonitor:
     """Manages phase-level metrics collection during ensemble execution.
 
     Encapsulates the start/stop monitoring lifecycle for execution phases,
-    collecting CPU, memory, and timing metrics via AgentExecutor's monitor.
+    collecting CPU, memory, and timing metrics via AgentResourceMonitor's monitor.
     """
 
     def __init__(
         self,
-        agent_executor: AgentExecutor,
+        agent_executor: AgentResourceMonitor,
         emit_event_fn: Callable[[str, dict[str, Any]], None],
     ) -> None:
         self._agent_executor = agent_executor

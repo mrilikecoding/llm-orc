@@ -299,10 +299,9 @@ Ensemble → Agent Dependencies → Dependency Graph → Execution Phases → Pa
 - **Artifact Management**: `artifacts list`, `artifacts show` commands for execution result inspection
 
 ### API Integration
-- **RESTful Interface**: HTTP API for programmatic access
-- **WebSocket Support**: Real-time updates for long-running ensembles
-- **Batch Processing**: Multiple inputs with shared ensemble configuration
+- **HTTP API**: Web UI exposes REST-style routes via FastAPI (no stable public contract yet)
 - **Authentication**: API key and OAuth-based access control
+- *(WebSocket support and batch processing are not yet implemented)*
 
 ### Library Integration
 - **Python Package**: Direct import and programmatic usage
@@ -327,10 +326,10 @@ Ensemble → Agent Dependencies → Dependency Graph → Execution Phases → Pa
 ## Extensibility
 
 ### Provider Plugins
-- **Base Interface**: `llm_orc.models.base.BaseModel` for new providers
-- **Registration System**: Dynamic provider discovery and registration
+- **Base Interface**: `llm_orc.models.base.ModelInterface` for new providers
 - **Configuration Schema**: Standardized provider configuration format
 - **Testing Framework**: Common test patterns for provider validation
+- *(Dynamic provider registration system is not yet implemented)*
 
 ### Output Formatters
 - **Pluggable Outputs**: Custom result formatters beyond text/JSON

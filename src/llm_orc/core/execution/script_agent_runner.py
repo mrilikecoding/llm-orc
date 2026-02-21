@@ -236,7 +236,11 @@ class ScriptAgentRunner:
                         script_agent.name, prompt
                     )
                 except Exception:
-                    pass
+                    logger.debug(
+                        "progress_controller.pause_for_user_input failed for %r",
+                        script_agent.name,
+                        exc_info=True,
+                    )
 
             self._emit_event(
                 "user_input_required",
@@ -258,8 +262,12 @@ class ScriptAgentRunner:
             if self._progress_controller:
                 try:
                     self._progress_controller.resume_from_user_input(script_agent.name)
-                except Exception:
-                    pass  # nosec B110
+                except Exception:  # nosec B110
+                    logger.debug(
+                        "progress_controller.resume_from_user_input failed for %r",
+                        script_agent.name,
+                        exc_info=True,
+                    )
 
         # Run subprocess outside the lock
         resolved_script = script_agent._script_resolver.resolve_script_path(

@@ -437,19 +437,31 @@ The Pydantic `Event` hierarchy and the raw-dict streaming events use different k
 
 2. **Fix `eval()` context-merge vulnerability** — Highest urgency (security). Change `restricted_globals.update(context)` to pass context as `locals` parameter: `eval(assertion, restricted_globals, execution_context)`. This is a 4-character fix with meaningful security improvement. Add adversarial tests immediately. *(Findings: eval() Security — 4 lenses converged)*
 
+   > **Done (2026-02-21):** `restricted_globals.update(context)` removed; context now passed as `locals` argument to `eval()` in `evaluator.py`. `TestEvalSandboxSecurity` class added to `tests/unit/core/validation/test_evaluator.py` with 5 adversarial tests covering `__builtins__` injection, `__import__` unavailability, and builtin shadowing.
+
 3. **Introduce typed result models** — High impact. Define `AgentResult`, `PhaseResult`, `ExecutionResult`, `PerformanceEvent` as dataclasses or Pydantic models. Migrate the execution pipeline incrementally, starting with `AgentResult` (the most-trafficked shape). *(Findings: dict[str, Any] — 4 lenses converged)*
 
 4. **Make silent failures visible** — High impact. At each of the 8 `except Exception: pass` sites, add appropriate handling: `WARNING` logs for optional operations, structured error events for caller-affecting operations, synthetic failure records for agent erasure. Add `model_substituted: bool` to execution results. *(Findings: Silent Failure — 3 lenses converged)*
+
+   > **Done (2026-02-21):** All 8 silent suppression sites resolved. `agent_dispatcher.py` now constructs synthetic `status: "failed"` records for `BaseException` cases, ending silent agent erasure. Artifact saving, streaming merger, request processing, model fallback, and progress-controller UI failures all log at appropriate levels. `model_substituted` flag remains future work. Loggers added to `ensemble_execution.py`, `phase_result_processor.py`, `agent_dispatcher.py`.
 
 5. **Delete dead code constellation** — Medium impact, high clarity. Remove `communication/protocol.py`, `core/events/base.py` + `script_interaction.py` + `script_schemas.py`, the `testing/contract_validator.py` stub, and their associated test files. Mark `ConversationalEnsembleExecutor` as experimental or delete it. *(Findings: Dead Code — 4 lenses converged)*
 
    > **Update (2026-02-20):** ADR-011 deletes the `ConversationalEnsembleExecutor`, `conversational_agent.py` schemas, and their tests. Remaining dead code (`communication/protocol.py`, orphaned events hierarchy, `ScriptContract` ABC) is future work.
 
+   > **Done (2026-02-21):** `core/events/` Pydantic hierarchy (`base.py`, `script_interaction.py`, `script_schemas.py`, `__init__.py`) deleted. `testing/contract_validator.py` stub (hollow `validate_all_scripts` implementation) and `testing/__main__.py` deleted along with their 5 test files (`tests/unit/core/events/test_base.py`, `test_script_interaction_events.py`, `test_script_schemas.py`, `tests/unit/testing/test_contract_validator_cli.py`, `tests/integration/test_adr_003_integration.py`). `communication/protocol.py` was already absent.
+
 6. **Fix version fossil** — Low effort, immediate value. Replace `__version__ = "0.3.0"` with `importlib.metadata.version("llm-orchestra")`. *(Findings: Version Drift — 2 lenses converged)*
+
+   > **Done (2026-02-21):** `src/llm_orc/__init__.py` now uses `importlib.metadata.version("llm-orchestra")` with a `PackageNotFoundError` fallback guarded by `# pragma: no cover`.
 
 7. **Align documentation with reality** — Medium effort. Update `architecture.md` to distinguish implemented from planned features. Update ADR-010 status. Fix `BaseModel` to `ModelInterface`. Align coverage threshold in `coding-standards.md` with `pyproject.toml`. *(Findings: Documentation — 4 findings)*
 
+   > **Done (2026-02-21):** `architecture.md` API Integration section retitled (WebSocket/batch marked as not yet implemented); `Provider Plugins` section corrected to `ModelInterface` and Registration System marked as not yet implemented. `coding-standards.md` coverage threshold updated from 95% to 90% to match `pyproject.toml`. ADR-010 status changed from "Proposed" to "Implemented".
+
 8. **Improve test quality** — Ongoing. Split Assertion Roulette tests. Replace BDD local class definitions with production imports. Add cache-hit validation tests. Add `eval()` sandbox adversarial tests. *(Findings: Test Quality — 7 findings)*
+
+   > **Partial (2026-02-21):** `test_adr_003_testable_contracts.py` now imports `ScriptContract`, `ScriptMetadata`, `TestCase`, `ScriptCapability`, `ScriptDependency` from `llm_orc.contracts` instead of defining them locally. `AgentExecutor` renamed to `AgentResourceMonitor` (file, class, and test). `eval()` sandbox adversarial tests added. Assertion Roulette in `test_ensemble_execution.py` and cache-hit validation tests remain future work.
 
 ### Ongoing Practices
 

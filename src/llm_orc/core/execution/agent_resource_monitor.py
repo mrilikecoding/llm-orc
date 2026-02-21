@@ -7,7 +7,7 @@ from llm_orc.core.execution.adaptive_resource_manager import (
 )
 
 
-class AgentExecutor:
+class AgentResourceMonitor:
     """Provides resource monitoring and execution metrics for ensembles."""
 
     def __init__(

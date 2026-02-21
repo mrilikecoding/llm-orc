@@ -214,7 +214,12 @@ class ModelFactory:
                     try:
                         return await self.load_model(resolved_model, resolved_provider)
                     except Exception:
-                        pass
+                        logger.warning(
+                            "Failed to load fallback profile %r, "
+                            "continuing to hardcoded fallback",
+                            fallback_profile,
+                            exc_info=True,
+                        )
             except (ValueError, KeyError):
                 pass
 
