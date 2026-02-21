@@ -27,9 +27,11 @@ class ValidationHandler:
         self,
         config_manager: Any,
         find_ensemble: Callable[[str], EnsembleConfig | None],
+        get_all_profiles_fn: Callable[[], dict[str, dict[str, Any]]],
     ) -> None:
         self._config_manager = config_manager
         self._find_ensemble = find_ensemble
+        self._get_all_profiles_fn = get_all_profiles_fn
 
     async def validate_ensemble(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Validate an ensemble configuration."""
@@ -85,7 +87,7 @@ class ValidationHandler:
     def _validate_model_profiles(self, config: Any) -> list[str]:
         """Validate model profiles exist and are configured."""
         errors: list[str] = []
-        available_profiles = self._config_manager.get_model_profiles()
+        available_profiles = self._get_all_profiles_fn()
 
         for agent in config.agents:
             agent_name = _get_agent_attr(agent, "name")

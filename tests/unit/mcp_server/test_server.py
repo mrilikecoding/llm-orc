@@ -1731,6 +1731,80 @@ class TestSetProjectTool:
         """project_path is None by default."""
         assert server.project_path is None
 
+    def test_set_project_propagates_config_manager_to_ensemble_crud_handler(
+        self, mock_config_manager: Any, tmp_path: Path
+    ) -> None:
+        """After set_project, ensemble_crud_handler uses the new config_manager."""
+        server = MCPServer(config_manager=mock_config_manager)
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+
+        server._handle_set_project(str(project_dir))
+
+        assert server._ensemble_crud_handler._config_manager is server.config_manager
+
+    def test_set_project_propagates_config_manager_to_validation_handler(
+        self, mock_config_manager: Any, tmp_path: Path
+    ) -> None:
+        """After set_project, validation_handler uses the new config_manager."""
+        server = MCPServer(config_manager=mock_config_manager)
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+
+        server._handle_set_project(str(project_dir))
+
+        assert server._validation_handler._config_manager is server.config_manager
+
+    def test_set_project_propagates_config_manager_to_profile_handler(
+        self, mock_config_manager: Any, tmp_path: Path
+    ) -> None:
+        """After set_project, profile_handler uses the new config_manager (Bug 3)."""
+        server = MCPServer(config_manager=mock_config_manager)
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+
+        server._handle_set_project(str(project_dir))
+
+        assert server._profile_handler._config_manager is server.config_manager
+
+
+class TestValidateEnsembleProfileResolution:
+    """Tests for Bug 2: validate_ensemble must find profiles in profiles directories."""
+
+    @pytest.mark.asyncio
+    async def test_validate_ensemble_finds_profile_in_profiles_dir(
+        self, server: MCPServer, tmp_path: Path
+    ) -> None:
+        """validate_ensemble resolves profiles from individual YAML files."""
+        profiles_dir = tmp_path / "profiles"
+        profiles_dir.mkdir()
+        (profiles_dir / "my-profile.yaml").write_text(
+            "name: my-profile\nprovider: ollama\nmodel: llama3\n"
+        )
+
+        ensembles_dir = tmp_path / "ensembles"
+        ensembles_dir.mkdir()
+        (ensembles_dir / "test-ensemble.yaml").write_text(
+            "name: test-ensemble\n"
+            "description: Test\n"
+            "agents:\n"
+            "  - name: agent1\n"
+            "    model_profile: my-profile\n"
+        )
+
+        _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
+        _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]
+        # Profile is NOT in config.yaml model_profiles — only in the profiles directory
+        _mock_config(server).get_model_profiles.return_value = {}
+
+        result = await server._validate_ensemble_tool(
+            {"ensemble_name": "test-ensemble"}
+        )
+
+        assert result["valid"] is True, (
+            f"Expected valid but got errors: {result['details']['errors']}"
+        )
+
 
 class TestReadEnsemblesResource:
     """Tests for _read_ensembles_resource method."""

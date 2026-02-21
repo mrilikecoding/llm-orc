@@ -118,7 +118,9 @@ class MCPServer:
             self._profile_handler, self._find_ensemble_by_name
         )
         self._validation_handler = ValidationHandler(
-            self.config_manager, self._find_ensemble_by_name
+            self.config_manager,
+            self._find_ensemble_by_name,
+            self._profile_handler.get_all_profiles,
         )
         self._execution_handler = ExecutionHandler(
             self.config_manager,
@@ -1017,6 +1019,13 @@ class MCPServer:
         # Recreate config manager with new project path
         self.config_manager = ConfigurationManager(project_dir=project_dir)
 
+        # Propagate new config_manager to all handlers that hold a reference
+        self._ensemble_crud_handler._config_manager = self.config_manager
+        self._validation_handler._config_manager = self.config_manager
+        self._profile_handler._config_manager = self.config_manager
+        self._resource_handler._config_manager = self.config_manager
+        self._library_handler._config_manager = self.config_manager
+
         # Build result
         result: dict[str, Any] = {
             "status": "ok",
@@ -1172,9 +1181,7 @@ class MCPServer:
         """Check if an ensemble can run with current providers."""
         return await self._provider_handler.check_ensemble_runnable(arguments)
 
-    async def _promote_ensemble_tool(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _promote_ensemble_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Promote ensemble (delegation stub for web API)."""
         return await self._promotion_handler.promote_ensemble(arguments)
 
@@ -1188,13 +1195,9 @@ class MCPServer:
         self, arguments: dict[str, Any]
     ) -> dict[str, Any]:
         """Check promotion readiness (delegation stub for web API)."""
-        return await self._promotion_handler.check_promotion_readiness(
-            arguments
-        )
+        return await self._promotion_handler.check_promotion_readiness(arguments)
 
-    async def _demote_ensemble_tool(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _demote_ensemble_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Demote ensemble (delegation stub for web API)."""
         return await self._promotion_handler.demote_ensemble(arguments)
 
