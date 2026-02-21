@@ -264,10 +264,8 @@ class ValidationEvaluator:
             }
         }
 
-        restricted_globals.update(context)
-
         try:
-            result: bool = bool(eval(assertion, restricted_globals, {}))
+            result: bool = bool(eval(assertion, restricted_globals, context))
             return result
         except Exception as e:
             raise RuntimeError(f"Assertion evaluation failed: {assertion}") from e

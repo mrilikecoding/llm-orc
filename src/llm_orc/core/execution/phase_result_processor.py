@@ -1,11 +1,14 @@
 """Phase result processing for ensemble execution."""
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
 from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
 from llm_orc.core.execution.usage_collector import UsageCollector
 from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
+
+logger = logging.getLogger(__name__)
 
 
 class PhaseResultProcessor:
@@ -158,7 +161,9 @@ class PhaseResultProcessor:
             )
 
         except Exception:
-            pass
+            logger.warning(
+                "Failed to process agent requests for %r", agent_name, exc_info=True
+            )
 
     def _store_agent_requests_metadata(
         self, processed_agent_requests: list[dict[str, Any]]

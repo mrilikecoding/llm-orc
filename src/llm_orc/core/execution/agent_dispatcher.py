@@ -1,6 +1,7 @@
 """Agent dispatch and parallel execution for ensemble phases."""
 
 import asyncio
+import logging
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -16,6 +17,8 @@ from llm_orc.schemas.agent_config import (
     LlmAgentConfig,
     ScriptAgentConfig,
 )
+
+logger = logging.getLogger(__name__)
 
 # Type alias for the resolve profile callback
 ResolveProfileFn = Callable[[AgentConfig], Awaitable[dict[str, Any]]]
@@ -58,8 +61,20 @@ class AgentDispatcher:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         phase_results: dict[str, Any] = {}
-        for result in results:
+        for agent_config, result in zip(phase_agents, results, strict=False):
             if isinstance(result, BaseException):
+                agent_name = agent_config.name
+                logger.warning(
+                    "Agent %r raised unhandled exception during parallel execution: %s",
+                    agent_name,
+                    result,
+                    exc_info=result,
+                )
+                phase_results[agent_name] = {
+                    "error": str(result),
+                    "status": "failed",
+                    "model_instance": None,
+                }
                 continue
             agent_name, agent_result = result
             phase_results[agent_name] = agent_result

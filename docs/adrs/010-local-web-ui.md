@@ -1,7 +1,7 @@
 # ADR-010: Local Web UI for Ensemble Management
 
 ## Status
-Proposed
+Implemented
 
 ## BDD Mapping Hints
 ```yaml

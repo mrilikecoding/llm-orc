@@ -1,3 +1,8 @@
 """LLM Orchestra - Multi-agent LLM communication system."""
 
-__version__ = "0.3.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("llm-orchestra")
+except PackageNotFoundError:  # pragma: no cover
+    __version__ = "unknown"

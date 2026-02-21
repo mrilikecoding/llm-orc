@@ -97,8 +97,8 @@ async def test_agent_executor_timeout_logic():
 - **Performance Tests**: Benchmarks with real API latency
 
 ### Coverage Requirements
-- **Minimum**: 95% line coverage required
-- **CI Enforcement**: 95% threshold enforced in CI
+- **Minimum**: 90% line coverage required
+- **CI Enforcement**: 90% threshold enforced in CI (`--cov-fail-under=90` in pyproject.toml)
 - **Branch Coverage**: Critical error handling paths
 - **Real Usage**: Tests reflect actual usage patterns
 

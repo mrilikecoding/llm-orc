@@ -1,5 +1,7 @@
 """Unit tests for ValidationEvaluator."""
 
+from typing import Any
+
 import pytest
 
 from llm_orc.core.validation.evaluator import ValidationEvaluator
@@ -346,3 +348,55 @@ class TestValidationEvaluator:
         assert result is not None
         assert result.passed is False
         assert any("no validator model" in error for error in result.errors)
+
+
+class TestEvalSandboxSecurity:
+    """Security tests for _evaluate_assertion sandbox.
+
+    These tests verify that LLM output in the evaluation context cannot
+    bypass the restricted-builtins sandbox.
+    """
+
+    def test_import_builtin_not_available(self) -> None:
+        """__import__ is not available in restricted globals."""
+        evaluator = ValidationEvaluator()
+        with pytest.raises(RuntimeError, match="Assertion evaluation failed"):
+            evaluator._evaluate_assertion("__import__('os')", {})
+
+    def test_builtins_key_in_context_does_not_override_sandbox(self) -> None:
+        """__builtins__ key in LLM-provided context does not restore dangerous builtins.
+
+        Before the fix, `restricted_globals.update(context)` would merge a
+        malicious `__builtins__` dict into globals, bypassing the sandbox.
+        After the fix, context is passed as locals; Python ignores __builtins__
+        in locals when resolving built-in names.
+        """
+        evaluator = ValidationEvaluator()
+        malicious_context: dict[str, Any] = {"__builtins__": {"__import__": __import__}}
+        with pytest.raises(RuntimeError, match="Assertion evaluation failed"):
+            evaluator._evaluate_assertion("__import__('os')", malicious_context)
+
+    def test_context_key_named_len_shadows_builtin(self) -> None:
+        """A context key named 'len' shadows the builtin in the eval's local scope.
+
+        This is not a sandbox escape — it causes a TypeError — but it confirms
+        that context keys take precedence over builtins in the locals namespace.
+        """
+        evaluator = ValidationEvaluator()
+        context: dict[str, Any] = {"len": "not_a_function"}
+        with pytest.raises(RuntimeError, match="Assertion evaluation failed"):
+            evaluator._evaluate_assertion("len([1, 2, 3])", context)
+
+    def test_context_key_named_sorted_shadows_builtin(self) -> None:
+        """A context key named 'sorted' shadows the builtin in local scope."""
+        evaluator = ValidationEvaluator()
+        context: dict[str, Any] = {"sorted": None}
+        with pytest.raises(RuntimeError, match="Assertion evaluation failed"):
+            evaluator._evaluate_assertion("sorted([3, 1, 2])[0] == 1", context)
+
+    def test_valid_assertion_with_context_still_works(self) -> None:
+        """Legitimate context-based assertions work after the locals fix."""
+        evaluator = ValidationEvaluator()
+        context = {"execution_order": ["agent1", "agent2"], "agent_outputs": {}}
+        result = evaluator._evaluate_assertion("len(execution_order) == 2", context)
+        assert result is True

@@ -1,6 +1,7 @@
 """Ensemble execution with agent coordination."""
 
 import asyncio
+import logging
 import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -13,8 +14,8 @@ from llm_orc.core.execution.agent_dispatcher import AgentDispatcher
 from llm_orc.core.execution.agent_execution_coordinator import (
     AgentExecutionCoordinator,
 )
-from llm_orc.core.execution.agent_executor import AgentExecutor
 from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
+from llm_orc.core.execution.agent_resource_monitor import AgentResourceMonitor
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
@@ -50,6 +51,8 @@ from llm_orc.schemas.agent_config import (
     LlmAgentConfig,
     ScriptAgentConfig,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def classify_failure_type(error_message: str) -> str:
@@ -217,7 +220,7 @@ class EnsembleExecutor:
             self._fan_out_expander, self._fan_out_gatherer
         )
 
-        self._agent_executor = AgentExecutor(self._performance_config)
+        self._agent_executor = AgentResourceMonitor(self._performance_config)
 
         # Initialize script cache for reproducible research
         self._script_cache_config = self._load_script_cache_config()
@@ -368,7 +371,7 @@ class EnsembleExecutor:
                 if progress_event.get("type") == "execution_completed":
                     break
         except Exception:
-            pass
+            logger.warning("Streaming event merger failed", exc_info=True)
 
         # After progress is done, yield any remaining performance events
         async for perf_event in self._yield_queued_performance_events():
@@ -705,7 +708,11 @@ class EnsembleExecutor:
                     relative_path=config.relative_path,
                 )
             except Exception:
-                pass
+                logger.warning(
+                    "Failed to save artifacts for ensemble %r",
+                    config.name,
+                    exc_info=True,
+                )
 
         return final_result
 
