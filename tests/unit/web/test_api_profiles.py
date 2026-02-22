@@ -45,6 +45,24 @@ class TestProfilesAPI:
             data = response.json()
             assert data["status"] == "created"
 
+    def test_update_profile_success(self, client: TestClient) -> None:
+        """Test that PUT /api/profiles/{name} updates a profile."""
+        with patch("llm_orc.web.api.profiles.get_mcp_server") as mock_get_mcp:
+            mock_server = MagicMock()
+            mock_server._update_profile_tool = AsyncMock(
+                return_value={"status": "updated", "name": "my-profile"}
+            )
+            mock_get_mcp.return_value = mock_server
+
+            response = client.put(
+                "/api/profiles/my-profile",
+                json={"model": "llama3.2"},
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "updated"
+
     def test_delete_profile_success(self, client: TestClient) -> None:
         """Test that DELETE /api/profiles/{name} deletes a profile."""
         with patch("llm_orc.web.api.profiles.get_mcp_server") as mock_get_mcp:
