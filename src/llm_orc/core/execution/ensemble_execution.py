@@ -27,6 +27,7 @@ from llm_orc.core.execution.llm_agent_runner import LlmAgentRunner
 from llm_orc.core.execution.phase_monitor import PhaseMonitor
 from llm_orc.core.execution.phase_result_processor import PhaseResultProcessor
 from llm_orc.core.execution.progress_controller import NoOpProgressController
+from llm_orc.core.execution.result_types import AgentResult, ExecutionResult
 from llm_orc.core.execution.results_processor import (
     create_initial_result,
     finalize_result,
@@ -112,7 +113,7 @@ def classify_failure_type(error_message: str) -> str:
 
 
 async def _run_validation(
-    config: EnsembleConfig, result: dict[str, Any], start_time: float
+    config: EnsembleConfig, result: ExecutionResult, start_time: float
 ) -> Any:
     """Run validation on execution results.
 
@@ -132,12 +133,12 @@ async def _run_validation(
 
     # Convert execution results to EnsembleExecutionResult format
     execution_order = [
-        agent.name for agent in config.agents if agent.name in result["results"]
+        agent.name for agent in config.agents if agent.name in result.results
     ]
 
     # Convert agent outputs, handling both dict and string responses
     agent_outputs = {}
-    for agent_name, agent_result in result["results"].items():
+    for agent_name, agent_result in result.results.items():
         response = agent_result.get("response", {})
         # If response is a string, try to parse as JSON first
         if isinstance(response, str):
@@ -408,17 +409,15 @@ class EnsembleExecutor:
         final_result, _ = await self._execute_core(config, input_data)
 
         # Add execution order for validation
-        final_result["execution_order"] = [
-            agent.name
-            for agent in config.agents
-            if agent.name in final_result["results"]
+        final_result.execution_order = [
+            agent.name for agent in config.agents if agent.name in final_result.results
         ]
 
         # Complete ensemble execution with progress controller
         if self._progress_controller:
             await self._progress_controller.complete_ensemble()
 
-        return final_result
+        return final_result.to_dict()
 
     def _detect_interactive_ensemble(self, config: EnsembleConfig) -> bool:
         """Detect if ensemble contains scripts that require user input.
@@ -445,7 +444,7 @@ class EnsembleExecutor:
 
     async def _initialize_execution_setup(
         self, config: EnsembleConfig, input_data: str
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
+    ) -> tuple[ExecutionResult, dict[str, Any]]:
         """Initialize execution setup.
 
         Args:
@@ -460,7 +459,7 @@ class EnsembleExecutor:
 
         # Initialize result structure
         result = create_initial_result(config.name, input_data, len(config.agents))
-        results_dict: dict[str, Any] = result["results"]
+        results_dict: dict[str, Any] = result.results
 
         # Reset usage collector for this execution
         self._usage_collector.reset()
@@ -575,7 +574,7 @@ class EnsembleExecutor:
         # Add interactive-specific metadata
         self._add_interactive_metadata(final_result, user_inputs_collected)
 
-        return final_result
+        return final_result.to_dict()
 
     async def _execute_core(
         self,
@@ -583,7 +582,7 @@ class EnsembleExecutor:
         input_data: str,
         *,
         track_user_inputs: bool = False,
-    ) -> tuple[dict[str, Any], int]:
+    ) -> tuple[ExecutionResult, int]:
         """Core execution logic shared by execute() and execute_with_user_input().
 
         Returns:
@@ -634,9 +633,8 @@ class EnsembleExecutor:
         # Add processed agent requests to metadata if any exist
         ensemble_metadata = self._phase_result_processor.get_ensemble_metadata()
         if ensemble_metadata.get("processed_agent_requests"):
-            final_result["metadata"]["processed_agent_requests"] = ensemble_metadata[
-                "processed_agent_requests"
-            ]
+            processed = ensemble_metadata["processed_agent_requests"]
+            final_result.metadata.processed_agent_requests = processed
 
         return final_result, user_inputs_collected
 
@@ -653,33 +651,35 @@ class EnsembleExecutor:
         """
         user_inputs_collected = 0
         for _agent_name, agent_result in phase_results.items():
-            if agent_result.get("response") and isinstance(
-                agent_result["response"], dict
-            ):
+            if isinstance(agent_result, AgentResult):
+                response = agent_result.response
+            else:
+                response = agent_result.get("response")
+            if response and isinstance(response, dict):
                 # Check if this was an interactive script result
-                if agent_result["response"].get("collected_data"):
+                if response.get("collected_data"):
                     user_inputs_collected += 1
         return user_inputs_collected
 
     def _add_interactive_metadata(
-        self, final_result: dict[str, Any], user_inputs_collected: int
+        self, final_result: ExecutionResult, user_inputs_collected: int
     ) -> None:
         """Add interactive mode metadata to final result.
 
         Args:
-            final_result: The final result dictionary to modify
+            final_result: The ExecutionResult to modify
             user_inputs_collected: Number of user inputs collected
         """
-        final_result["metadata"]["interactive_mode"] = True
-        final_result["metadata"]["user_inputs_collected"] = user_inputs_collected
+        final_result.metadata.interactive_mode = True
+        final_result.metadata.user_inputs_collected = user_inputs_collected
 
     async def _finalize_execution_results(
         self,
         config: EnsembleConfig,
-        result: dict[str, Any],
+        result: ExecutionResult,
         has_errors: bool,
         start_time: float,
-    ) -> dict[str, Any]:
+    ) -> ExecutionResult:
         """Finalize execution results with usage, stats, and artifact saving.
 
         Args:
@@ -689,7 +689,7 @@ class EnsembleExecutor:
             start_time: Execution start time
 
         Returns:
-            Finalized result dictionary
+            Finalized ExecutionResult
         """
         # Get collected usage and adaptive stats, then finalize result using processor
         agent_usage = self._usage_collector.get_agent_usage()
@@ -701,7 +701,7 @@ class EnsembleExecutor:
         # Run validation if config is present
         if config.validation is not None:
             validation_result = await _run_validation(config, final_result, start_time)
-            final_result["validation_result"] = validation_result
+            final_result.validation_result = validation_result
 
         # Save artifacts (don't fail execution if saving fails)
         # Child executors skip artifact saving per Invariant 9
@@ -709,7 +709,7 @@ class EnsembleExecutor:
             try:
                 self._artifact_manager.save_execution_results(
                     config.name,
-                    final_result,
+                    final_result.to_dict(),
                     relative_path=config.relative_path,
                 )
             except Exception:

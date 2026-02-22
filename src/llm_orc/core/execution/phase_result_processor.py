@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Any
 
 from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
+from llm_orc.core.execution.result_types import AgentResult
 from llm_orc.core.execution.usage_collector import UsageCollector
 from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
 
@@ -35,7 +36,7 @@ class PhaseResultProcessor:
 
     async def process_phase_results(
         self,
-        phase_results: dict[str, Any],
+        phase_results: dict[str, AgentResult],
         results_dict: dict[str, Any],
         phase_agents: list[AgentConfig],
     ) -> bool:
@@ -48,10 +49,16 @@ class PhaseResultProcessor:
         for agent_name, agent_result in phase_results.items():
             self._store_agent_result(results_dict, agent_name, agent_result)
 
-            if agent_result["status"] == "failed":
+            status = (
+                agent_result.status
+                if isinstance(agent_result, AgentResult)
+                else agent_result["status"]
+            )
+
+            if status == "failed":
                 has_errors = True
 
-            if agent_result["status"] == "success":
+            if status == "success":
                 await self._process_successful_agent_result(
                     agent_result,
                     agent_name,
@@ -96,20 +103,29 @@ class PhaseResultProcessor:
         self,
         results_dict: dict[str, Any],
         agent_name: str,
-        agent_result: dict[str, Any],
+        agent_result: AgentResult | dict[str, Any],
     ) -> None:
         """Store agent result in results dictionary."""
-        results_dict[agent_name] = {
-            "response": agent_result.get("response"),
-            "status": agent_result["status"],
-            "model_substituted": agent_result.get("model_substituted", False),
-        }
-        if agent_result["status"] == "failed":
-            results_dict[agent_name]["error"] = agent_result["error"]
+        if isinstance(agent_result, AgentResult):
+            results_dict[agent_name] = {
+                "response": agent_result.response,
+                "status": agent_result.status,
+                "model_substituted": agent_result.model_substituted,
+            }
+            if agent_result.status == "failed":
+                results_dict[agent_name]["error"] = agent_result.error
+        else:
+            results_dict[agent_name] = {
+                "response": agent_result.get("response"),
+                "status": agent_result["status"],
+                "model_substituted": agent_result.get("model_substituted", False),
+            }
+            if agent_result["status"] == "failed":
+                results_dict[agent_name]["error"] = agent_result["error"]
 
     async def _process_successful_agent_result(
         self,
-        agent_result: dict[str, Any],
+        agent_result: AgentResult | dict[str, Any],
         agent_name: str,
         results_dict: dict[str, Any],
         processed_agent_requests: list[dict[str, Any]],
@@ -117,7 +133,13 @@ class PhaseResultProcessor:
         agent_configs: dict[str, AgentConfig],
     ) -> None:
         """Process successful agent result for requests and usage."""
-        response = agent_result.get("response")
+        if isinstance(agent_result, AgentResult):
+            response = agent_result.response
+            model_instance = agent_result.model_instance
+        else:
+            response = agent_result.get("response")
+            model_instance = agent_result.get("model_instance")
+
         if response and isinstance(response, str):
             await self._process_agent_requests(
                 response,
@@ -127,7 +149,7 @@ class PhaseResultProcessor:
                 phase_agents,
             )
 
-        if agent_result["model_instance"] is not None:
+        if model_instance is not None:
             agent_config = agent_configs.get(agent_name)
             model_profile = (
                 agent_config.model_profile
@@ -135,7 +157,7 @@ class PhaseResultProcessor:
                 else "unknown"
             )
             self._usage_collector.collect_agent_usage(
-                agent_name, agent_result["model_instance"], model_profile
+                agent_name, model_instance, model_profile
             )
 
     async def _process_agent_requests(

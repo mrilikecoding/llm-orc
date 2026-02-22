@@ -4,6 +4,7 @@ import time
 from typing import Any
 from unittest.mock import Mock
 
+from llm_orc.core.execution.result_types import ExecutionMetadata, ExecutionResult
 from llm_orc.core.execution.results_processor import (
     add_fan_out_metadata,
     calculate_usage_summary,
@@ -28,22 +29,24 @@ class TestResultsProcessor:
         start_time = time.time()
         result = create_initial_result("test_ensemble", "test input", 3)
 
-        assert result["ensemble"] == "test_ensemble"
-        assert result["status"] == "running"
-        assert result["input"]["data"] == "test input"
-        assert result["results"] == {}
-        assert result["synthesis"] is None
-        assert result["metadata"]["agents_used"] == 3
-        assert result["metadata"]["started_at"] >= start_time
+        assert result.ensemble == "test_ensemble"
+        assert result.status == "running"
+        assert result.input["data"] == "test input"
+        assert result.results == {}
+        assert result.synthesis is None
+        assert result.metadata.agents_used == 3
+        assert result.metadata.started_at >= start_time
 
     def test_finalize_result_success(self) -> None:
         """Test finalizing result without errors."""
         start_time = time.time() - 1.5  # Simulate 1.5 second execution
-        result = {
-            "ensemble": "test",
-            "status": "running",
-            "metadata": {"agents_used": 2},
-        }
+        result = ExecutionResult(
+            ensemble="test",
+            status="running",
+            input={"data": "test"},
+            results={},
+            metadata=ExecutionMetadata(agents_used=2, started_at=start_time),
+        )
         agent_usage = {
             "agent1": {"total_tokens": 100, "cost_usd": 0.05},
             "agent2": {"total_tokens": 150, "cost_usd": 0.08},
@@ -51,24 +54,30 @@ class TestResultsProcessor:
 
         finalized = finalize_result(result, agent_usage, False, start_time)
 
-        assert finalized["status"] == "completed"
-        assert "duration" in finalized["metadata"]
-        assert "completed_at" in finalized["metadata"]
-        assert "usage" in finalized["metadata"]
+        assert finalized.status == "completed"
+        assert finalized.metadata.duration is not None
+        assert finalized.metadata.completed_at is not None
+        assert finalized.metadata.usage is not None
 
         # Check duration format
-        duration = finalized["metadata"]["duration"]
+        duration = finalized.metadata.duration
         assert duration.endswith("s")
         assert float(duration[:-1]) > 1.0  # Should be > 1 second
 
     def test_finalize_result_with_errors(self) -> None:
         """Test finalizing result with errors."""
         start_time = time.time()
-        result = {"ensemble": "test", "status": "running", "metadata": {}}
+        result = ExecutionResult(
+            ensemble="test",
+            status="running",
+            input={"data": "test"},
+            results={},
+            metadata=ExecutionMetadata(agents_used=0, started_at=start_time),
+        )
 
         finalized = finalize_result(result, {}, True, start_time)
 
-        assert finalized["status"] == "completed_with_errors"
+        assert finalized.status == "completed_with_errors"
 
     def test_calculate_usage_summary_basic(self) -> None:
         """Test calculating basic usage summary."""
@@ -369,7 +378,7 @@ class TestResultsProcessor:
         """Test complex workflow with multiple operations."""
         # Create initial result
         result = create_initial_result("complex_ensemble", "analyze data", 3)
-        assert result["status"] == "running"
+        assert result.status == "running"
 
         # Process agent results
         mock_model = Mock()
@@ -381,7 +390,7 @@ class TestResultsProcessor:
             ("reporter", ("Report generated", None)),
         ]
 
-        results_dict = result["results"]
+        results_dict = result.results
         agent_usage: dict[str, Any] = {}
 
         process_agent_results(agent_results, results_dict, agent_usage)
@@ -391,16 +400,17 @@ class TestResultsProcessor:
         finalized = finalize_result(result, agent_usage, False, start_time)
 
         # Check final state
-        assert finalized["status"] == "completed"
-        assert len(finalized["results"]) == 3
+        assert finalized.status == "completed"
+        assert len(finalized.results) == 3
 
-        # Format summary
-        summary = format_execution_summary(finalized)
+        # Format summary using serialized dict for backward compat functions
+        finalized_dict = finalized.to_dict()
+        summary = format_execution_summary(finalized_dict)
         assert summary["agents_count"] == 1  # Only analyzer has usage data
         assert summary["has_errors"] is False
 
         # Extract responses
-        responses = extract_agent_responses(finalized["results"])
+        responses = extract_agent_responses(finalized_dict["results"])
         assert len(responses) == 3
         assert "analyzer" in responses
         assert "validator" in responses

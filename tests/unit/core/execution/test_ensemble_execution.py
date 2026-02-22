@@ -9,6 +9,7 @@ import pytest
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.config.roles import RoleDefinition
+from llm_orc.core.execution.result_types import ExecutionMetadata, ExecutionResult
 from llm_orc.models.anthropic import ClaudeCLIModel, ClaudeModel, OAuthClaudeModel
 from llm_orc.models.base import ModelInterface
 from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
@@ -2092,13 +2093,13 @@ class TestEnsembleExecutor:
         assert executor._current_agent_configs == config.agents
 
         # Verify result structure
-        assert result["ensemble"] == "test_ensemble"
-        assert result["input"]["data"] == "Test input"
-        assert "results" in result
-        assert result["metadata"]["agents_used"] == 2
+        assert result.ensemble == "test_ensemble"
+        assert result.input["data"] == "Test input"
+        assert result.results == {}
+        assert result.metadata.agents_used == 2
 
         # Verify results_dict is the same reference
-        assert results_dict is result["results"]
+        assert results_dict is result.results
         assert results_dict == {}  # Initially empty, populated during execution
 
         # Verify usage collector was reset
@@ -2236,17 +2237,16 @@ class TestEnsembleExecutor:
         executor = mock_ensemble_executor
 
         # Mock initial result structure
-        result = {
-            "ensemble": "test_ensemble",
-            "status": "in_progress",
-            "input": {"data": "Test input"},
-            "results": {"agent1": {"response": "Test response", "status": "success"}},
-            "metadata": {},
-            "synthesis": None,
-        }
+        start_time = time.time() - 1.0  # 1 second ago
+        result = ExecutionResult(
+            ensemble="test_ensemble",
+            status="running",
+            input={"data": "Test input"},
+            results={"agent1": {"response": "Test response", "status": "success"}},
+            metadata=ExecutionMetadata(agents_used=1, started_at=start_time),
+        )
 
         has_errors = False
-        start_time = time.time() - 1.0  # 1 second ago
 
         # This should fail initially since the method doesn't exist yet
         final_result = await executor._finalize_execution_results(
@@ -2254,9 +2254,10 @@ class TestEnsembleExecutor:
         )
 
         # Verify result finalization
-        assert final_result["status"] in ["completed", "completed_with_errors"]
-        assert "metadata" in final_result
-        assert "usage" in final_result["metadata"]
+        final_dict = final_result.to_dict()
+        assert final_dict["status"] in ["completed", "completed_with_errors"]
+        assert "metadata" in final_dict
+        assert "usage" in final_dict["metadata"]
 
         # Verify artifacts were saved (mocked)
         # The real implementation should handle save errors gracefully
