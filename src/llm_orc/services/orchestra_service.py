@@ -97,11 +97,13 @@ class OrchestraService:
 
     def _get_executor(self) -> EnsembleExecutor:
         if self._executor is None:
-            from llm_orc.core.execution.ensemble_execution import (
-                EnsembleExecutor,
+            from llm_orc.core.execution.executor_factory import (
+                ExecutorFactory,
             )
 
-            self._executor = EnsembleExecutor(project_dir=self._project_path)
+            self._executor = ExecutorFactory.create_root_executor(
+                project_dir=self._project_path
+            )
         return self._executor
 
     def _find_ensemble_by_name(self, ensemble_name: str) -> Any:
