@@ -215,18 +215,19 @@ class ModelFactory:
                         return await self.load_model(resolved_model, resolved_provider)
                     except Exception:
                         logger.warning(
-                            "Failed to load fallback profile %r, "
-                            "continuing to hardcoded fallback",
+                            "Failed to load fallback profile %r",
                             fallback_profile,
                             exc_info=True,
                         )
             except (ValueError, KeyError):
                 pass
 
+        fallback_model = default_models.get("fallback", "llama3")
+        fallback_provider = default_models.get("fallback_provider", "ollama")
         try:
-            return await self.load_model("llama3", "ollama")
+            return await self.load_model(fallback_model, fallback_provider)
         except Exception:
-            return OllamaModel(model_name="llama3")
+            return OllamaModel(model_name=fallback_model)
 
 
 def _resolve_authentication_method(

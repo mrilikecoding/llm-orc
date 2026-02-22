@@ -497,7 +497,7 @@ class TestModelFactory:
         model_factory: ModelFactory,
         mock_config_manager: Mock,
     ) -> None:
-        """Test last resort when hardcoded fallback fails."""
+        """Test last resort when default fallback model fails to load."""
         mock_config_manager.load_project_config.return_value = {"project": {}}
 
         with patch.object(
@@ -509,6 +509,32 @@ class TestModelFactory:
 
             assert isinstance(model, OllamaModel)
             assert model.model_name == "llama3"
+
+    async def test_get_fallback_model_with_configured_fallback_model(
+        self,
+        model_factory: ModelFactory,
+        mock_config_manager: Mock,
+    ) -> None:
+        """Test that default_models.fallback and fallback_provider are used."""
+        mock_config_manager.load_project_config.return_value = {
+            "project": {
+                "default_models": {
+                    "fallback": "qwen3:0.6b",
+                    "fallback_provider": "ollama",
+                }
+            }
+        }
+
+        with patch.object(
+            model_factory,
+            "load_model",
+            return_value=OllamaModel("qwen3:0.6b"),
+        ) as mock_load:
+            model = await model_factory.get_fallback_model()
+
+            mock_load.assert_called_with("qwen3:0.6b", "ollama")
+            assert isinstance(model, OllamaModel)
+            assert model.model_name == "qwen3:0.6b"
 
     async def test_get_fallback_model_with_configurable_fallback_profile(
         self,
