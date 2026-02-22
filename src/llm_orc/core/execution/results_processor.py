@@ -4,30 +4,33 @@ import time
 from typing import Any
 
 from llm_orc.core.execution.patterns import INSTANCE_PATTERN
+from llm_orc.core.execution.result_types import (
+    ExecutionMetadata,
+    ExecutionResult,
+)
 
 
 def finalize_result(
-    result: dict[str, Any],
+    result: ExecutionResult,
     agent_usage: dict[str, Any],
     has_errors: bool,
     start_time: float,
     adaptive_stats: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+) -> ExecutionResult:
     """Finalize execution result with metadata and usage summary."""
     # Calculate usage totals (no coordinator synthesis in dependency-based model)
     usage_summary = calculate_usage_summary(agent_usage, None)
 
     # Finalize result
     end_time = time.time()
-    result["status"] = "completed_with_errors" if has_errors else "completed"
-    metadata_dict: dict[str, Any] = result["metadata"]
-    metadata_dict["duration"] = f"{(end_time - start_time):.2f}s"
-    metadata_dict["completed_at"] = end_time
-    metadata_dict["usage"] = usage_summary
+    result.status = "completed_with_errors" if has_errors else "completed"
+    result.metadata.duration = f"{(end_time - start_time):.2f}s"
+    result.metadata.completed_at = end_time
+    result.metadata.usage = usage_summary
 
     # Add adaptive resource management statistics if available
     if adaptive_stats:
-        metadata_dict["adaptive_resource_management"] = adaptive_stats
+        result.metadata.adaptive_resource_management = adaptive_stats
 
     return result
 
@@ -105,17 +108,19 @@ def process_agent_results(
 
 def create_initial_result(
     ensemble_name: str, input_data: str, agent_count: int
-) -> dict[str, Any]:
+) -> ExecutionResult:
     """Create initial result structure."""
     start_time = time.time()
-    return {
-        "ensemble": ensemble_name,
-        "status": "running",
-        "input": {"data": input_data},
-        "results": {},
-        "synthesis": None,
-        "metadata": {"agents_used": agent_count, "started_at": start_time},
-    }
+    return ExecutionResult(
+        ensemble=ensemble_name,
+        status="running",
+        input={"data": input_data},
+        results={},
+        metadata=ExecutionMetadata(
+            agents_used=agent_count,
+            started_at=start_time,
+        ),
+    )
 
 
 def format_execution_summary(result: dict[str, Any]) -> dict[str, Any]:
@@ -196,7 +201,7 @@ def add_fan_out_metadata(
     """Add fan-out execution statistics to result metadata.
 
     Args:
-        result: Result dict to modify
+        result: Result dict to modify (plain dict, used in tests)
         fan_out_stats: Dict of agent_name -> instance stats
     """
     if fan_out_stats:

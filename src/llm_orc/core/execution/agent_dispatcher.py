@@ -11,6 +11,7 @@ from llm_orc.core.execution.agent_execution_coordinator import (
 )
 from llm_orc.core.execution.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.progress_controller import ProgressController
+from llm_orc.core.execution.result_types import AgentResult
 from llm_orc.schemas.agent_config import (
     AgentConfig,
     EnsembleAgentConfig,
@@ -52,7 +53,7 @@ class AgentDispatcher:
         self,
         phase_agents: list[AgentConfig],
         phase_input: str | dict[str, str],
-    ) -> dict[str, Any]:
+    ) -> dict[str, AgentResult]:
         """Execute agents in parallel within a phase."""
         tasks = [
             self._execute_single_agent_in_phase(agent_config, phase_input)
@@ -60,7 +61,7 @@ class AgentDispatcher:
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        phase_results: dict[str, Any] = {}
+        phase_results: dict[str, AgentResult] = {}
         for agent_config, result in zip(phase_agents, results, strict=False):
             if isinstance(result, BaseException):
                 agent_name = agent_config.name
@@ -70,12 +71,10 @@ class AgentDispatcher:
                     result,
                     exc_info=result,
                 )
-                phase_results[agent_name] = {
-                    "error": str(result),
-                    "status": "failed",
-                    "model_instance": None,
-                    "model_substituted": False,
-                }
+                phase_results[agent_name] = AgentResult(
+                    status="failed",
+                    error=str(result),
+                )
                 continue
             agent_name, agent_result = result
             phase_results[agent_name] = agent_result
@@ -94,7 +93,7 @@ class AgentDispatcher:
 
     async def _execute_single_agent_in_phase(
         self, agent_config: AgentConfig, phase_input: str | dict[str, str]
-    ) -> tuple[str, dict[str, Any]]:
+    ) -> tuple[str, AgentResult]:
         """Execute a single agent in a phase and return (name, result)."""
         agent_name = agent_config.name
 
@@ -120,7 +119,7 @@ class AgentDispatcher:
         agent_config: AgentConfig,
         agent_name: str,
         phase_input: str | dict[str, str],
-    ) -> tuple[str, dict[str, Any]]:
+    ) -> tuple[str, AgentResult]:
         """Execute agent with full monitoring and progress tracking."""
         agent_start_time = time.time()
 
@@ -145,12 +144,12 @@ class AgentDispatcher:
 
         await self._emit_agent_completion_events(agent_name, agent_start_time)
 
-        return agent_name, {
-            "response": response,
-            "status": "success",
-            "model_instance": model_instance,
-            "model_substituted": model_substituted,
-        }
+        return agent_name, AgentResult(
+            status="success",
+            response=response,
+            model_instance=model_instance,
+            model_substituted=model_substituted,
+        )
 
     async def _get_agent_timeout(self, agent_config: AgentConfig) -> int:
         """Get timeout for agent execution."""
@@ -185,7 +184,7 @@ class AgentDispatcher:
 
     async def _handle_agent_execution_failure(
         self, agent_config: AgentConfig, error: Exception
-    ) -> tuple[str, dict[str, Any]]:
+    ) -> tuple[str, AgentResult]:
         """Handle agent execution failure and return error result."""
         agent_name = agent_config.name
         agent_end_time = time.time()
@@ -200,9 +199,7 @@ class AgentDispatcher:
             },
         )
 
-        return agent_name, {
-            "error": str(error),
-            "status": "failed",
-            "model_instance": None,
-            "model_substituted": False,
-        }
+        return agent_name, AgentResult(
+            status="failed",
+            error=str(error),
+        )
