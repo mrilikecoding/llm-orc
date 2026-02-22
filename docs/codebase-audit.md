@@ -171,6 +171,8 @@ At least 8 sites use `except Exception: pass` or equivalent in execution-critica
 
 **Stewardship:** Add a `model_substituted: bool` field to execution results. Make the hardcoded `llama3` fallback configurable rather than a code constant.
 
+> **Done (2026-02-21):** `model_substituted: bool` added to `LlmAgentRunner.execute()`, `ScriptAgentRunner.execute()`, and `EnsembleAgentRunner.execute()` return types. `True` when a fallback model was triggered; always `False` for script and ensemble agents. `AgentDispatcher._execute_agent_with_monitoring()` unpacks the flag and stores it in the result dict; synthetic failure records also carry `model_substituted: False`. Hardcoded `llama3` fallback replaced: `ModelFactory._try_legacy_fallback()` now reads `default_models.fallback` and `default_models.fallback_provider` from project config (`"llama3"`/`"ollama"` remain as defaults).
+
 ---
 
 #### Finding: Version String Frozen at 0.3.0 While Package Ships as 0.14.4
@@ -258,6 +260,8 @@ At least 8 sites use `except Exception: pass` or equivalent in execution-critica
 **Question:** What is the value of a schema contract if a downstream agent receives the invalid payload and begins processing it?
 
 **Stewardship:** Introduce a `strict_schema_validation` flag in ensemble config, or define a timeline after which registered primitives are enforced.
+
+> **Done (2026-02-21):** `strict_schema_validation: bool = False` added to `ValidationConfig`. When enabled, `ScriptAgentRunner._validate_primitive_output()` raises `ValueError` on schema violations instead of logging a warning. Flag wired into `EnsembleExecutor._execute_core()` at execution start. Cache-hit path now calls `_validate_primitive_output()` before returning, closing the bypass gap that previously allowed stale cached output to skip schema checks entirely.
 
 ---
 
@@ -364,6 +368,8 @@ At least 8 sites use `except Exception: pass` or equivalent in execution-critica
 
 **Stewardship:** Split tests with multiple logical scenarios. Add assertion messages. Separate performance assertions into `@pytest.mark.performance`.
 
+> **Done (2026-02-21):** Worst offenders in `test_ensemble_execution.py` addressed. `test_execute_ensemble_tracks_usage_metrics` (18 assertions) split into `test_execute_ensemble_records_per_agent_usage_fields` and `test_execute_ensemble_aggregates_usage_totals`. `test_oauth_fallback_display_enhancement` and `test_model_loading_fallback_display_enhancement` each split into a functional variant (completion/response checks) and an observability variant (event structure checks). `test_parallel_execution_performance` marked `@pytest.mark.performance`. Diagnostic assertion messages added throughout `test_execute_simple_ensemble` and `test_automatic_interactive_mode_detection_and_integration`.
+
 ---
 
 #### Finding: BDD Tests Define Local Classes Instead of Importing Production Code
@@ -449,7 +455,7 @@ The Pydantic `Event` hierarchy and the raw-dict streaming events use different k
 
 4. **Make silent failures visible** — High impact. At each of the 8 `except Exception: pass` sites, add appropriate handling: `WARNING` logs for optional operations, structured error events for caller-affecting operations, synthetic failure records for agent erasure. Add `model_substituted: bool` to execution results. *(Findings: Silent Failure — 3 lenses converged)*
 
-   > **Done (2026-02-21):** All 8 silent suppression sites resolved. `agent_dispatcher.py` now constructs synthetic `status: "failed"` records for `BaseException` cases, ending silent agent erasure. Artifact saving, streaming merger, request processing, model fallback, and progress-controller UI failures all log at appropriate levels. `model_substituted` flag remains future work. Loggers added to `ensemble_execution.py`, `phase_result_processor.py`, `agent_dispatcher.py`.
+   > **Done (2026-02-21):** All 8 silent suppression sites resolved. `agent_dispatcher.py` now constructs synthetic `status: "failed"` records for `BaseException` cases, ending silent agent erasure. Artifact saving, streaming merger, request processing, model fallback, and progress-controller UI failures all log at appropriate levels. Loggers added to `ensemble_execution.py`, `phase_result_processor.py`, `agent_dispatcher.py`. `model_substituted: bool` flag added to all runner types and propagated through the dispatcher into result dicts (see Hardcoded Fallback finding above).
 
 5. **Delete dead code constellation** — Medium impact, high clarity. Remove `communication/protocol.py`, `core/events/base.py` + `script_interaction.py` + `script_schemas.py`, the `testing/contract_validator.py` stub, and their associated test files. Mark `ConversationalEnsembleExecutor` as experimental or delete it. *(Findings: Dead Code — 4 lenses converged)*
 
@@ -467,7 +473,7 @@ The Pydantic `Event` hierarchy and the raw-dict streaming events use different k
 
 8. **Improve test quality** — Ongoing. Split Assertion Roulette tests. Replace BDD local class definitions with production imports. Add cache-hit validation tests. Add `eval()` sandbox adversarial tests. *(Findings: Test Quality — 7 findings)*
 
-   > **Partial (2026-02-21):** `test_adr_003_testable_contracts.py` now imports `ScriptContract`, `ScriptMetadata`, `TestCase`, `ScriptCapability`, `ScriptDependency` from `llm_orc.contracts` instead of defining them locally. `AgentExecutor` renamed to `AgentResourceMonitor` (file, class, and test). `eval()` sandbox adversarial tests added. Assertion Roulette in `test_ensemble_execution.py` and cache-hit validation tests remain future work.
+   > **Done (2026-02-21):** `test_adr_003_testable_contracts.py` now imports `ScriptContract`, `ScriptMetadata`, `TestCase`, `ScriptCapability`, `ScriptDependency` from `llm_orc.contracts` instead of defining them locally. `AgentExecutor` renamed to `AgentResourceMonitor` (file, class, and test). `eval()` sandbox adversarial tests added. Assertion Roulette in `test_ensemble_execution.py` addressed (see Finding above). Cache-hit validation gap closed: `ScriptAgentRunner` now validates cached output through `_validate_primitive_output()` before returning, with a `TestCacheHitValidation` test class documenting the fix.
 
 ### Ongoing Practices
 
