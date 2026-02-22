@@ -591,6 +591,11 @@ class EnsembleExecutor:
         """
         start_time = time.time()
 
+        # Apply strict_schema_validation from ensemble config to script runner
+        validation_dict: dict[str, Any] = config.validation or {}
+        strict_schema = validation_dict.get("strict_schema_validation", False)
+        self._script_agent_runner._strict_schema = bool(strict_schema)
+
         result, results_dict = await self._initialize_execution_setup(
             config, input_data
         )
