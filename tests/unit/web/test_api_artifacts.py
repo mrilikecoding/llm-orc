@@ -54,9 +54,7 @@ class TestArtifactsAPI:
             data = response.json()
             assert data["id"] == "abc123"
 
-    def test_get_artifact_returns_404_when_not_found(
-        self, client: TestClient
-    ) -> None:
+    def test_get_artifact_returns_404_when_not_found(self, client: TestClient) -> None:
         """GET /api/artifacts/{ensemble}/{artifact_id} returns 404 when missing."""
         with patch("llm_orc.web.api.artifacts.get_mcp_server") as mock_get_mcp:
             mock_server = MagicMock()
