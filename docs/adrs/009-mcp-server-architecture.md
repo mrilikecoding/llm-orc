@@ -228,11 +228,13 @@ llm-orc m serve
 
 ### Phase 1: Complete (2025-12-03)
 
-**MCPServerV2 class** (`src/llm_orc/mcp/server.py`):
+**MCPServer class** (`src/llm_orc/mcp/server.py`):
 - Uses FastMCP SDK with decorator-based registration
 - All resources implemented and tested
 - All tools implemented with streaming support
 - HTTP transport option working
+
+> **Updated (2026-02-22):** Class renamed from `MCPServerV2` to `MCPServer`. MCPServer is now a thin protocol adapter delegating to `OrchestraService` (~1,090 lines, down from ~2,500).
 
 **Resources**:
 - `llm-orc://ensembles` - Lists 68+ ensembles from local/library/global
@@ -305,8 +307,13 @@ llm-orc m serve
 
 ```
 src/llm_orc/mcp/
-├── __init__.py          # Exports MCPServerV2
-└── server.py            # MCPServerV2 implementation (~2500 lines)
+├── __init__.py          # Exports MCPServer
+├── server.py            # MCPServer protocol adapter (~1090 lines)
+└── project_context.py   # ProjectContext frozen dataclass
+
+src/llm_orc/services/
+├── __init__.py          # Exports OrchestraService
+└── orchestra_service.py # Shared application service (~320 lines)
 
 tests/unit/mcp_server/
 ├── __init__.py
@@ -314,6 +321,8 @@ tests/unit/mcp_server/
 
 .mcp.json                # Claude Code MCP configuration
 ```
+
+> **Updated (2026-02-22):** `MCPServerV2` renamed to `MCPServer`. Handler composition extracted to `OrchestraService` — both MCP and web ports delegate to it. `ProjectContext` value object added for atomic handler configuration after `set_project`.
 
 ## How to Use
 

@@ -79,15 +79,15 @@ async def test_anthropic_model_real_api():
 
 # Limited mocking: Only for unit isolation
 @pytest.mark.unit
-async def test_agent_executor_timeout_logic():
+async def test_agent_resource_monitor_timeout_logic():
     """Test timeout logic without external dependencies."""
-    mock_model = Mock(spec=BaseModel)
+    mock_model = Mock(spec=ModelInterface)
     mock_model.generate_response = AsyncMock(side_effect=asyncio.TimeoutError())
-    
-    executor = AgentExecutor(model=mock_model)
-    
+
+    monitor = AgentResourceMonitor(model=mock_model)
+
     with pytest.raises(AgentExecutionTimeoutError):
-        await executor.execute_agent(config, "test", timeout=1)
+        await monitor.execute_agent(config, "test", timeout=1)
 ```
 
 ### Test Organization
@@ -132,7 +132,7 @@ async def execute_agent_with_timeout(
             model.generate_response(input_data),
             timeout=timeout_seconds
         )
-        return AgentResult(success=True, response=response)
+        return AgentResult(status="success", response=response)
         
     except asyncio.TimeoutError as e:
         raise AgentExecutionTimeoutError(f"Timeout after {timeout_seconds}s") from e
