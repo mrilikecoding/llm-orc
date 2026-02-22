@@ -1225,7 +1225,7 @@ wheels = [
 
 [[package]]
 name = "llm-orchestra"
-version = "0.15.3"
+version = "0.15.4"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
