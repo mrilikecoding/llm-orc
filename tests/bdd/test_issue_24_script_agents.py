@@ -907,38 +907,29 @@ def given_alternative_script(bdd_context: dict[str, Any]) -> None:
 
 
 @when("the script resolver attempts to resolve the reference")
-def when_resolver_attempts_resolution(bdd_context: dict[str, Any]) -> None:
+def when_resolver_attempts_resolution(
+    bdd_context: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Use ScriptResolver to resolve the script reference."""
-    import os
-
     from llm_orc.core.execution.script_resolver import ScriptResolver
 
-    # Change to test directory to resolve scripts correctly
-    original_cwd = os.getcwd()
     test_dir = bdd_context.get("test_dir")
+    if test_dir:
+        monkeypatch.chdir(test_dir)
 
     # Clear test environment variable for this test (testing normal priority order)
-    test_primitives_env = os.environ.pop("LLM_ORC_TEST_PRIMITIVES_DIR", None)
+    monkeypatch.delenv("LLM_ORC_TEST_PRIMITIVES_DIR", raising=False)
+
+    resolver = ScriptResolver()
+    script_ref = bdd_context["script_reference"]
 
     try:
-        if test_dir:
-            os.chdir(test_dir)
-
-        resolver = ScriptResolver()
-        script_ref = bdd_context["script_reference"]
-
-        try:
-            resolved_path = resolver.resolve_script_path(script_ref)
-            bdd_context["resolved_path"] = resolved_path
-            bdd_context["resolution_success"] = True
-        except FileNotFoundError as e:
-            bdd_context["resolution_error"] = str(e)
-            bdd_context["resolution_success"] = False
-    finally:
-        os.chdir(original_cwd)
-        # Restore test environment variable
-        if test_primitives_env:
-            os.environ["LLM_ORC_TEST_PRIMITIVES_DIR"] = test_primitives_env
+        resolved_path = resolver.resolve_script_path(script_ref)
+        bdd_context["resolved_path"] = resolved_path
+        bdd_context["resolution_success"] = True
+    except FileNotFoundError as e:
+        bdd_context["resolution_error"] = str(e)
+        bdd_context["resolution_success"] = False
 
 
 @then("it should find the script in .llm-orc/scripts/ first")
@@ -987,33 +978,27 @@ def then_should_handle_missing_gracefully(bdd_context: dict[str, Any]) -> None:
 
 
 @then("the resolution should be cached for performance")
-def then_resolution_should_be_cached(bdd_context: dict[str, Any]) -> None:
+def then_resolution_should_be_cached(
+    bdd_context: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Validate resolution caching."""
-    import os
-
     from llm_orc.core.execution.script_resolver import ScriptResolver
 
-    original_cwd = os.getcwd()
     test_dir = bdd_context.get("test_dir")
+    if test_dir:
+        monkeypatch.chdir(test_dir)
 
-    try:
-        if test_dir:
-            os.chdir(test_dir)
+    resolver = ScriptResolver()
+    script_ref = bdd_context["script_reference"]
 
-        resolver = ScriptResolver()
-        script_ref = bdd_context["script_reference"]
+    # First resolution
+    path1 = resolver.resolve_script_path(script_ref)
 
-        # First resolution
-        path1 = resolver.resolve_script_path(script_ref)
+    # Second resolution (should use cache)
+    path2 = resolver.resolve_script_path(script_ref)
 
-        # Second resolution (should use cache)
-        path2 = resolver.resolve_script_path(script_ref)
-
-        assert path1 == path2, "Cached path differs from original"
-        assert script_ref in resolver._cache, "Script not in cache"
-
-    finally:
-        os.chdir(original_cwd)
+    assert path1 == path2, "Cached path differs from original"
+    assert script_ref in resolver._cache, "Script not in cache"
 
 
 # Ensemble Integration Scenario Steps

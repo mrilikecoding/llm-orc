@@ -1,8 +1,6 @@
 """BDD step definitions for ADR-008 LLM-Friendly CLI and MCP Design."""
 
-import os
 import shutil
-from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -20,26 +18,21 @@ scenarios("features/adr-008-llm-friendly-cli-mcp-design.feature")
 
 
 @pytest.fixture
-def cli_context(tmp_path: Path) -> Generator[dict[str, Any], None, None]:
+def cli_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """CLI test context with temporary working directory."""
-    original_cwd = Path.cwd()
     test_dir = tmp_path / "test_project"
     test_dir.mkdir()
-    os.chdir(test_dir)
+    monkeypatch.chdir(test_dir)
 
     context = {
         "test_dir": test_dir,
-        "original_cwd": original_cwd,
         "last_command": "",
         "last_output": "",
         "last_returncode": 0,
         "env_vars": {},
     }
 
-    yield context
-
-    # Cleanup
-    os.chdir(original_cwd)
+    return context
 
 
 @pytest.fixture
@@ -94,15 +87,23 @@ def initialized_llm_orc(cli_context: dict[str, Any]) -> None:
     )
 )
 def env_var_library_path(
-    cli_context: dict[str, Any], library_path: Path, var_name: str
+    cli_context: dict[str, Any],
+    library_path: Path,
+    var_name: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Set environment variable to library path fixture."""
-    os.environ[var_name] = str(library_path)
+    monkeypatch.setenv(var_name, str(library_path))
     cli_context["env_vars"][var_name] = str(library_path)
 
 
 @given(parsers.parse('the environment variable "{var_name}" is set to "{value}"'))
-def env_var_to_value(cli_context: dict[str, Any], var_name: str, value: str) -> None:
+def env_var_to_value(
+    cli_context: dict[str, Any],
+    var_name: str,
+    value: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Set environment variable to specific value (test-relative if needed)."""
     # Convert test_dir-relative paths
     if not value.startswith("/"):
@@ -111,7 +112,7 @@ def env_var_to_value(cli_context: dict[str, Any], var_name: str, value: str) -> 
         # Convert absolute-looking paths to test-relative
         value = str(cli_context["test_dir"] / value.lstrip("/"))
 
-    os.environ[var_name] = value
+    monkeypatch.setenv(var_name, value)
     cli_context["env_vars"][var_name] = value
 
 
@@ -166,13 +167,12 @@ def ensure_directory_not_exists(cli_context: dict[str, Any], dir_path: str) -> N
 
 
 @given("no environment variables are set")
-def no_env_vars(cli_context: dict[str, Any]) -> None:
+def no_env_vars(cli_context: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
     """Clear relevant environment variables."""
     for var in ["LLM_ORC_LIBRARY_PATH", "LLM_ORC_LIBRARY_SOURCE"]:
-        if var in os.environ:
-            del os.environ[var]
-            if var in cli_context["env_vars"]:
-                del cli_context["env_vars"][var]
+        monkeypatch.delenv(var, raising=False)
+        if var in cli_context["env_vars"]:
+            del cli_context["env_vars"][var]
 
 
 @given("no .env file exists")

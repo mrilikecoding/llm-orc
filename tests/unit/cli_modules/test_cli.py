@@ -455,7 +455,9 @@ class TestCLI:
                     assert "test-provider" in result.output
                     assert "missing-provider" in result.output
 
-    def test_config_check_local_shows_project_name_first(self) -> None:
+    def test_config_check_local_shows_project_name_first(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test that local config check shows project name at the top."""
         with tempfile.TemporaryDirectory() as temp_dir:
             local_config_dir = Path(temp_dir) / ".llm-orc"
@@ -485,20 +487,12 @@ class TestCLI:
                     mock_get_providers.return_value = set()
 
                     # Change to temp directory to simulate being in a project
-                    import os
+                    monkeypatch.chdir(temp_dir)
 
-                    original_cwd = os.getcwd()
-                    try:
-                        os.chdir(temp_dir)
+                    runner = CliRunner()
+                    result = runner.invoke(cli, ["config", "check-local"])
 
-                        runner = CliRunner()
-                        result = runner.invoke(cli, ["config", "check-local"])
-
-                        # Should show project name in the header
-                        assert (
-                            "Local Configuration Status: Test Project Name"
-                            in result.output
-                        )
-
-                    finally:
-                        os.chdir(original_cwd)
+                    # Should show project name in the header
+                    assert (
+                        "Local Configuration Status: Test Project Name" in result.output
+                    )

@@ -1,9 +1,7 @@
 """Tests for script resolution and discovery."""
 
-import os
 import subprocess
 import tempfile
-from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,14 +11,9 @@ from llm_orc.core.execution.script_resolver import ScriptNotFoundError, ScriptRe
 
 
 @pytest.fixture(autouse=True)
-def clear_test_env_vars() -> Generator[None, None, None]:
+def clear_test_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     """Clear test environment variables to prevent pollution from BDD tests."""
-    # Save and clear environment variable
-    old_env = os.environ.pop("LLM_ORC_TEST_PRIMITIVES_DIR", None)
-    yield
-    # Restore if it was set
-    if old_env:
-        os.environ["LLM_ORC_TEST_PRIMITIVES_DIR"] = old_env
+    monkeypatch.delenv("LLM_ORC_TEST_PRIMITIVES_DIR", raising=False)
 
 
 class TestScriptResolver:
@@ -497,7 +490,9 @@ class TestScriptResolver:
         result = resolver.resolve_script_path("custom_script.py")
         assert result == str(script)
 
-    def test_environment_variable_test_primitives_dir(self, tmp_path: Path) -> None:
+    def test_environment_variable_test_primitives_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test ScriptResolver respects LLM_ORC_TEST_PRIMITIVES_DIR env var."""
         # Create test primitives directory
         test_primitives = tmp_path / "test_primitives"
@@ -506,21 +501,13 @@ class TestScriptResolver:
         script.write_text("#!/usr/bin/env python3")
 
         # Set environment variable
-        old_env = os.environ.get("LLM_ORC_TEST_PRIMITIVES_DIR")
-        try:
-            os.environ["LLM_ORC_TEST_PRIMITIVES_DIR"] = str(test_primitives)
+        monkeypatch.setenv("LLM_ORC_TEST_PRIMITIVES_DIR", str(test_primitives))
 
-            # Change to different directory
-            with patch("os.getcwd", return_value=str(tmp_path / "other")):
-                resolver = ScriptResolver()
-                result = resolver.resolve_script_path("test_script.py")
-                assert result == str(script)
-        finally:
-            # Restore environment
-            if old_env:
-                os.environ["LLM_ORC_TEST_PRIMITIVES_DIR"] = old_env
-            else:
-                os.environ.pop("LLM_ORC_TEST_PRIMITIVES_DIR", None)
+        # Change to different directory
+        with patch("os.getcwd", return_value=str(tmp_path / "other")):
+            resolver = ScriptResolver()
+            result = resolver.resolve_script_path("test_script.py")
+            assert result == str(script)
 
     def test_package_primitives_search_path(self, tmp_path: Path) -> None:
         """Test that installed package primitives parent is in search paths."""

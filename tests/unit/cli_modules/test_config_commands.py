@@ -325,306 +325,265 @@ class TestConfigCommands:
 
                 # Then - should handle exception gracefully
 
-    def test_check_local_config_exists_with_project(self, temp_dir: str) -> None:
+    def test_check_local_config_exists_with_project(
+        self, temp_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test checking local config when it exists with project config."""
         # Given
-        original_cwd = Path.cwd()
         test_dir = Path(temp_dir)
 
-        try:
-            # Change to temp directory
-            import os
+        # Change to temp directory
+        monkeypatch.chdir(test_dir)
 
-            os.chdir(test_dir)
+        local_config_dir = test_dir / ".llm-orc"
+        local_config_dir.mkdir(parents=True)
+        config_file = local_config_dir / "config.yaml"
+        config_file.write_text(
+            yaml.dump({"project": {"name": "TestProject"}, "model_profiles": {}})
+        )
 
-            local_config_dir = test_dir / ".llm-orc"
-            local_config_dir.mkdir(parents=True)
-            config_file = local_config_dir / "config.yaml"
-            config_file.write_text(
-                yaml.dump({"project": {"name": "TestProject"}, "model_profiles": {}})
-            )
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
+        )
 
-            config_manager_path = (
-                "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
-            )
-
-            with patch(config_manager_path) as mock_config_manager_class:
+        with patch(config_manager_path) as mock_config_manager_class:
+            with patch(
+                "llm_orc.cli_modules.commands.config_commands.get_available_providers"
+            ) as mock_get_providers:
                 with patch(
-                    "llm_orc.cli_modules.commands.config_commands.get_available_providers"
-                ) as mock_get_providers:
+                    "llm_orc.cli_modules.commands.config_commands.check_ensemble_availability"
+                ) as mock_check_ensembles:
                     with patch(
-                        "llm_orc.cli_modules.commands.config_commands.check_ensemble_availability"
-                    ) as mock_check_ensembles:
-                        with patch(
-                            "llm_orc.cli_modules.commands.config_commands.display_local_profiles"
-                        ) as mock_display_profiles:
-                            mock_config_manager = Mock()
-                            mock_config_manager_class.return_value = mock_config_manager
-                            mock_config_manager.load_project_config.return_value = {
-                                "project": {"name": "TestProject"},
-                                "model_profiles": {"test": "profile"},
-                            }
+                        "llm_orc.cli_modules.commands.config_commands.display_local_profiles"
+                    ) as mock_display_profiles:
+                        mock_config_manager = Mock()
+                        mock_config_manager_class.return_value = mock_config_manager
+                        mock_config_manager.load_project_config.return_value = {
+                            "project": {"name": "TestProject"},
+                            "model_profiles": {"test": "profile"},
+                        }
 
-                            mock_get_providers.return_value = {}
+                        mock_get_providers.return_value = {}
 
-                            # When
-                            check_local_config()
+                        # When
+                        check_local_config()
 
-                            # Then
-                            mock_config_manager.load_project_config.assert_called_once()
-                            mock_get_providers.assert_called_once()
-                            mock_check_ensembles.assert_called_once()
-                            mock_display_profiles.assert_called_once()
+                        # Then
+                        mock_config_manager.load_project_config.assert_called_once()
+                        mock_get_providers.assert_called_once()
+                        mock_check_ensembles.assert_called_once()
+                        mock_display_profiles.assert_called_once()
 
-        finally:
-            # Restore original working directory
-            os.chdir(original_cwd)
-
-    def test_check_local_config_exists_no_project_config(self, temp_dir: str) -> None:
+    def test_check_local_config_exists_no_project_config(
+        self, temp_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test checking local config when it exists but no project config."""
         # Given
-        original_cwd = Path.cwd()
         test_dir = Path(temp_dir)
 
-        try:
-            import os
+        monkeypatch.chdir(test_dir)
 
-            os.chdir(test_dir)
+        local_config_dir = test_dir / ".llm-orc"
+        local_config_dir.mkdir(parents=True)
+        config_file = local_config_dir / "config.yaml"
+        config_file.write_text("some: config")
 
-            local_config_dir = test_dir / ".llm-orc"
-            local_config_dir.mkdir(parents=True)
-            config_file = local_config_dir / "config.yaml"
-            config_file.write_text("some: config")
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
+        )
 
-            config_manager_path = (
-                "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
-            )
-
-            with patch(config_manager_path) as mock_config_manager_class:
-                mock_config_manager = Mock()
-                mock_config_manager_class.return_value = mock_config_manager
-                mock_config_manager.load_project_config.return_value = None
-
-                # When
-                check_local_config()
-
-                # Then
-                mock_config_manager.load_project_config.assert_called_once()
-
-        finally:
-            os.chdir(original_cwd)
-
-    def test_check_local_config_missing(self, temp_dir: str) -> None:
-        """Test checking local config when it doesn't exist."""
-        # Given
-        original_cwd = Path.cwd()
-        test_dir = Path(temp_dir)
-
-        try:
-            import os
-
-            os.chdir(test_dir)
+        with patch(config_manager_path) as mock_config_manager_class:
+            mock_config_manager = Mock()
+            mock_config_manager_class.return_value = mock_config_manager
+            mock_config_manager.load_project_config.return_value = None
 
             # When
             check_local_config()
 
-            # Then - should complete without error
+            # Then
+            mock_config_manager.load_project_config.assert_called_once()
 
-        finally:
-            os.chdir(original_cwd)
+    def test_check_local_config_missing(
+        self, temp_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test checking local config when it doesn't exist."""
+        # Given
+        test_dir = Path(temp_dir)
 
-    def test_check_local_config_exception(self, temp_dir: str) -> None:
+        monkeypatch.chdir(test_dir)
+
+        # When
+        check_local_config()
+
+        # Then - should complete without error
+
+    def test_check_local_config_exception(
+        self, temp_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test checking local config when exception occurs."""
         # Given
-        original_cwd = Path.cwd()
         test_dir = Path(temp_dir)
 
-        try:
-            import os
+        monkeypatch.chdir(test_dir)
 
-            os.chdir(test_dir)
+        local_config_dir = test_dir / ".llm-orc"
+        local_config_dir.mkdir(parents=True)
+        config_file = local_config_dir / "config.yaml"
+        config_file.write_text("some: config")
 
-            local_config_dir = test_dir / ".llm-orc"
-            local_config_dir.mkdir(parents=True)
-            config_file = local_config_dir / "config.yaml"
-            config_file.write_text("some: config")
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
+        )
 
-            config_manager_path = (
-                "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
+        with patch(config_manager_path) as mock_config_manager_class:
+            mock_config_manager = Mock()
+            mock_config_manager_class.return_value = mock_config_manager
+            mock_config_manager.load_project_config.side_effect = Exception(
+                "Config error"
             )
 
-            with patch(config_manager_path) as mock_config_manager_class:
-                mock_config_manager = Mock()
-                mock_config_manager_class.return_value = mock_config_manager
-                mock_config_manager.load_project_config.side_effect = Exception(
-                    "Config error"
-                )
+            # When
+            check_local_config()
 
-                # When
-                check_local_config()
+            # Then - should handle exception gracefully
 
-                # Then - should handle exception gracefully
-
-        finally:
-            os.chdir(original_cwd)
-
-    def test_reset_local_config_no_directory(self, temp_dir: str) -> None:
+    def test_reset_local_config_no_directory(
+        self, temp_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test local config reset when no directory exists."""
         # Given
-        original_cwd = Path.cwd()
         test_dir = Path(temp_dir)
 
-        try:
-            import os
+        monkeypatch.chdir(test_dir)
 
-            os.chdir(test_dir)
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
+        )
 
-            config_manager_path = (
-                "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
+        with patch(config_manager_path) as mock_config_manager_class:
+            mock_config_manager = Mock()
+            mock_config_manager_class.return_value = mock_config_manager
+
+            # When
+            reset_local_config(
+                backup=False, preserve_ensembles=False, project_name=None
             )
 
-            with patch(config_manager_path) as mock_config_manager_class:
-                mock_config_manager = Mock()
-                mock_config_manager_class.return_value = mock_config_manager
+            # Then - should return early with error message
 
-                # When
-                reset_local_config(
-                    backup=False, preserve_ensembles=False, project_name=None
-                )
-
-                # Then - should return early with error message
-
-        finally:
-            os.chdir(original_cwd)
-
-    def test_reset_local_config_with_backup(self, temp_dir: str) -> None:
+    def test_reset_local_config_with_backup(
+        self, temp_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test local config reset with backup creation."""
         # Given
-        original_cwd = Path.cwd()
         test_dir = Path(temp_dir)
 
-        try:
-            import os
+        monkeypatch.chdir(test_dir)
 
-            os.chdir(test_dir)
+        local_config_dir = test_dir / ".llm-orc"
+        local_config_dir.mkdir(parents=True)
+        (local_config_dir / "config.yaml").write_text("existing: config")
 
-            local_config_dir = test_dir / ".llm-orc"
-            local_config_dir.mkdir(parents=True)
-            (local_config_dir / "config.yaml").write_text("existing: config")
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
+        )
 
-            config_manager_path = (
-                "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
-            )
-
-            with patch(config_manager_path) as mock_config_manager_class:
-                with patch("shutil.copytree") as mock_copytree:
-                    with patch("shutil.rmtree") as mock_rmtree:
-                        mock_config_manager = Mock()
-                        mock_config_manager_class.return_value = mock_config_manager
-
-                        # When
-                        reset_local_config(
-                            backup=True,
-                            preserve_ensembles=False,
-                            project_name="test",
-                        )
-
-                        # Then
-                        mock_copytree.assert_called_once()
-                        mock_rmtree.assert_called()
-                        mock_config_manager.init_local_config.assert_called_once_with(
-                            "test"
-                        )
-
-        finally:
-            os.chdir(original_cwd)
-
-    def test_reset_local_config_preserve_ensembles(self, temp_dir: str) -> None:
-        """Test local config reset with ensemble preservation."""
-        # Given
-        original_cwd = Path.cwd()
-        test_dir = Path(temp_dir)
-
-        try:
-            import os
-
-            os.chdir(test_dir)
-
-            local_config_dir = test_dir / ".llm-orc"
-            local_config_dir.mkdir(parents=True)
-            ensembles_dir = local_config_dir / "ensembles"
-            ensembles_dir.mkdir(parents=True)
-            (ensembles_dir / "test-ensemble.yaml").write_text("ensemble: config")
-
-            config_manager_path = (
-                "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
-            )
-
-            with patch(config_manager_path) as mock_config_manager_class:
+        with patch(config_manager_path) as mock_config_manager_class:
+            with patch("shutil.copytree") as mock_copytree:
                 with patch("shutil.rmtree") as mock_rmtree:
-                    with patch("pathlib.Path.write_text") as mock_write_text:
-                        mock_config_manager = Mock()
-                        mock_config_manager_class.return_value = mock_config_manager
-
-                        # When
-                        reset_local_config(
-                            backup=False,
-                            preserve_ensembles=True,
-                            project_name="test",
-                        )
-
-                        # Then
-                        mock_rmtree.assert_called_once()
-                        mock_config_manager.init_local_config.assert_called_once_with(
-                            "test"
-                        )
-                        # Should restore ensemble files
-                        assert mock_write_text.call_count >= 0
-
-        finally:
-            os.chdir(original_cwd)
-
-    def test_reset_local_config_init_error(self, temp_dir: str) -> None:
-        """Test local config reset when init fails."""
-        # Given
-        original_cwd = Path.cwd()
-        test_dir = Path(temp_dir)
-
-        try:
-            import os
-
-            os.chdir(test_dir)
-
-            local_config_dir = test_dir / ".llm-orc"
-            local_config_dir.mkdir(parents=True)
-            (local_config_dir / "config.yaml").write_text("existing: config")
-
-            config_manager_path = (
-                "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
-            )
-
-            with patch(config_manager_path) as mock_config_manager_class:
-                with patch("shutil.rmtree"):
                     mock_config_manager = Mock()
                     mock_config_manager_class.return_value = mock_config_manager
-                    mock_config_manager.init_local_config.side_effect = ValueError(
-                        "Init failed"
+
+                    # When
+                    reset_local_config(
+                        backup=True,
+                        preserve_ensembles=False,
+                        project_name="test",
                     )
 
-                    # When / Then
-                    with pytest.raises(
-                        click.ClickException, match="Init failed"
-                    ) as exc_info:
-                        reset_local_config(
-                            backup=False,
-                            preserve_ensembles=False,
-                            project_name="test",
-                        )
+                    # Then
+                    mock_copytree.assert_called_once()
+                    mock_rmtree.assert_called()
+                    mock_config_manager.init_local_config.assert_called_once_with(
+                        "test"
+                    )
 
-                    assert "Init failed" in str(exc_info.value)
+    def test_reset_local_config_preserve_ensembles(
+        self, temp_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test local config reset with ensemble preservation."""
+        # Given
+        test_dir = Path(temp_dir)
 
-        finally:
-            os.chdir(original_cwd)
+        monkeypatch.chdir(test_dir)
+
+        local_config_dir = test_dir / ".llm-orc"
+        local_config_dir.mkdir(parents=True)
+        ensembles_dir = local_config_dir / "ensembles"
+        ensembles_dir.mkdir(parents=True)
+        (ensembles_dir / "test-ensemble.yaml").write_text("ensemble: config")
+
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
+        )
+
+        with patch(config_manager_path) as mock_config_manager_class:
+            with patch("shutil.rmtree") as mock_rmtree:
+                with patch("pathlib.Path.write_text") as mock_write_text:
+                    mock_config_manager = Mock()
+                    mock_config_manager_class.return_value = mock_config_manager
+
+                    # When
+                    reset_local_config(
+                        backup=False,
+                        preserve_ensembles=True,
+                        project_name="test",
+                    )
+
+                    # Then
+                    mock_rmtree.assert_called_once()
+                    mock_config_manager.init_local_config.assert_called_once_with(
+                        "test"
+                    )
+                    # Should restore ensemble files
+                    assert mock_write_text.call_count >= 0
+
+    def test_reset_local_config_init_error(
+        self, temp_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Test local config reset when init fails."""
+        # Given
+        test_dir = Path(temp_dir)
+
+        monkeypatch.chdir(test_dir)
+
+        local_config_dir = test_dir / ".llm-orc"
+        local_config_dir.mkdir(parents=True)
+        (local_config_dir / "config.yaml").write_text("existing: config")
+
+        config_manager_path = (
+            "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
+        )
+
+        with patch(config_manager_path) as mock_config_manager_class:
+            with patch("shutil.rmtree"):
+                mock_config_manager = Mock()
+                mock_config_manager_class.return_value = mock_config_manager
+                mock_config_manager.init_local_config.side_effect = ValueError(
+                    "Init failed"
+                )
+
+                # When / Then
+                with pytest.raises(
+                    click.ClickException, match="Init failed"
+                ) as exc_info:
+                    reset_local_config(
+                        backup=False,
+                        preserve_ensembles=False,
+                        project_name="test",
+                    )
+
+                assert "Init failed" in str(exc_info.value)
 
 
 class TestResetGlobalConfigHelperMethods:
@@ -841,7 +800,7 @@ class TestResetLocalConfigHelperMethods:
             yield temp_dir
 
     def test_create_local_backup_if_requested_with_backup_enabled(
-        self, temp_dir: str
+        self, temp_dir: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Test local backup creation when backup is requested and config exists."""
         from llm_orc.cli_modules.commands.config_commands import (
@@ -849,30 +808,24 @@ class TestResetLocalConfigHelperMethods:
         )
 
         # Given
-        original_cwd = Path.cwd()
         test_dir = Path(temp_dir)
 
-        try:
-            import os
+        monkeypatch.chdir(test_dir)
 
-            os.chdir(test_dir)
+        local_config_dir = test_dir / ".llm-orc"
+        local_config_dir.mkdir(parents=True)
+        (local_config_dir / "config.yaml").write_text("existing: config")
 
-            local_config_dir = test_dir / ".llm-orc"
-            local_config_dir.mkdir(parents=True)
-            (local_config_dir / "config.yaml").write_text("existing: config")
+        # When
+        _create_local_backup_if_requested(True, local_config_dir)
 
-            # When
-            _create_local_backup_if_requested(True, local_config_dir)
-
-            # Then
-            backup_path = test_dir / ".llm-orc.backup"
-            assert backup_path.exists()
-            assert (backup_path / "config.yaml").read_text() == "existing: config"
-        finally:
-            os.chdir(original_cwd)
+        # Then
+        backup_path = test_dir / ".llm-orc.backup"
+        assert backup_path.exists()
+        assert (backup_path / "config.yaml").read_text() == "existing: config"
 
     def test_create_local_backup_if_requested_overwrite_existing_backup(
-        self, temp_dir: str
+        self, temp_dir: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Test local backup creation when backup already exists."""
         from llm_orc.cli_modules.commands.config_commands import (
@@ -880,36 +833,30 @@ class TestResetLocalConfigHelperMethods:
         )
 
         # Given
-        original_cwd = Path.cwd()
         test_dir = Path(temp_dir)
 
-        try:
-            import os
+        monkeypatch.chdir(test_dir)
 
-            os.chdir(test_dir)
+        # Create existing local config
+        local_config_dir = test_dir / ".llm-orc"
+        local_config_dir.mkdir(parents=True)
+        (local_config_dir / "config.yaml").write_text("new: config")
 
-            # Create existing local config
-            local_config_dir = test_dir / ".llm-orc"
-            local_config_dir.mkdir(parents=True)
-            (local_config_dir / "config.yaml").write_text("new: config")
+        # Create existing backup directory
+        backup_path = test_dir / ".llm-orc.backup"
+        backup_path.mkdir(parents=True)
+        (backup_path / "old_config.yaml").write_text("old: backup")
 
-            # Create existing backup directory
-            backup_path = test_dir / ".llm-orc.backup"
-            backup_path.mkdir(parents=True)
-            (backup_path / "old_config.yaml").write_text("old: backup")
+        # When
+        _create_local_backup_if_requested(True, local_config_dir)
 
-            # When
-            _create_local_backup_if_requested(True, local_config_dir)
-
-            # Then - should overwrite existing backup
-            assert backup_path.exists()
-            assert (backup_path / "config.yaml").read_text() == "new: config"
-            assert not (backup_path / "old_config.yaml").exists()
-        finally:
-            os.chdir(original_cwd)
+        # Then - should overwrite existing backup
+        assert backup_path.exists()
+        assert (backup_path / "config.yaml").read_text() == "new: config"
+        assert not (backup_path / "old_config.yaml").exists()
 
     def test_create_local_backup_if_requested_with_backup_disabled(
-        self, temp_dir: str
+        self, temp_dir: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Test no local backup creation when backup is disabled."""
         from llm_orc.cli_modules.commands.config_commands import (
@@ -917,26 +864,20 @@ class TestResetLocalConfigHelperMethods:
         )
 
         # Given
-        original_cwd = Path.cwd()
         test_dir = Path(temp_dir)
 
-        try:
-            import os
+        monkeypatch.chdir(test_dir)
 
-            os.chdir(test_dir)
+        local_config_dir = test_dir / ".llm-orc"
+        local_config_dir.mkdir(parents=True)
+        (local_config_dir / "config.yaml").write_text("existing: config")
 
-            local_config_dir = test_dir / ".llm-orc"
-            local_config_dir.mkdir(parents=True)
-            (local_config_dir / "config.yaml").write_text("existing: config")
+        # When
+        _create_local_backup_if_requested(False, local_config_dir)
 
-            # When
-            _create_local_backup_if_requested(False, local_config_dir)
-
-            # Then
-            backup_path = test_dir / ".llm-orc.backup"
-            assert not backup_path.exists()
-        finally:
-            os.chdir(original_cwd)
+        # Then
+        backup_path = test_dir / ".llm-orc.backup"
+        assert not backup_path.exists()
 
     def test_preserve_ensembles_if_requested_with_ensembles(
         self, temp_dir: str
@@ -997,55 +938,51 @@ class TestResetLocalConfigHelperMethods:
         # Then
         assert ensembles_backup == {}
 
-    def test_reset_and_initialize_local_config_success(self, temp_dir: str) -> None:
+    def test_reset_and_initialize_local_config_success(
+        self, temp_dir: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test local config reset and initialization success case."""
         from llm_orc.cli_modules.commands.config_commands import (
             _reset_and_initialize_local_config,
         )
 
         # Given
-        original_cwd = Path.cwd()
         test_dir = Path(temp_dir)
 
-        try:
-            import os
+        monkeypatch.chdir(test_dir)
 
-            os.chdir(test_dir)
+        local_config_dir = test_dir / ".llm-orc"
+        local_config_dir.mkdir(parents=True)
+        (local_config_dir / "old_file.txt").write_text("old content")
 
-            local_config_dir = test_dir / ".llm-orc"
-            local_config_dir.mkdir(parents=True)
-            (local_config_dir / "old_file.txt").write_text("old content")
+        with patch(
+            "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
+        ) as mock_config_manager_class:
+            mock_config_manager = Mock()
+            mock_config_manager_class.return_value = mock_config_manager
 
-            with patch(
-                "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
-            ) as mock_config_manager_class:
-                mock_config_manager = Mock()
-                mock_config_manager_class.return_value = mock_config_manager
+            # Mock init_local_config to recreate the directory
+            def mock_init(
+                project_name: str | None,
+            ) -> None:
+                local_config_dir.mkdir(parents=True, exist_ok=True)
 
-                # Mock init_local_config to recreate the directory
-                def mock_init(
-                    project_name: str | None,
-                ) -> None:
-                    local_config_dir.mkdir(parents=True, exist_ok=True)
+            mock_config_manager.init_local_config.side_effect = mock_init
 
-                mock_config_manager.init_local_config.side_effect = mock_init
+            # When
+            _reset_and_initialize_local_config(
+                local_config_dir, mock_config_manager, "test-project"
+            )
 
-                # When
-                _reset_and_initialize_local_config(
-                    local_config_dir, mock_config_manager, "test-project"
-                )
-
-                # Then
-                assert local_config_dir.exists()
-                assert not (local_config_dir / "old_file.txt").exists()
-                mock_config_manager.init_local_config.assert_called_once_with(
-                    "test-project"
-                )
-        finally:
-            os.chdir(original_cwd)
+            # Then
+            assert local_config_dir.exists()
+            assert not (local_config_dir / "old_file.txt").exists()
+            mock_config_manager.init_local_config.assert_called_once_with(
+                "test-project"
+            )
 
     def test_reset_and_initialize_local_config_init_failure(
-        self, temp_dir: str
+        self, temp_dir: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Test local config reset when initialization fails."""
         from llm_orc.cli_modules.commands.config_commands import (
@@ -1053,33 +990,27 @@ class TestResetLocalConfigHelperMethods:
         )
 
         # Given
-        original_cwd = Path.cwd()
         test_dir = Path(temp_dir)
 
-        try:
-            import os
+        monkeypatch.chdir(test_dir)
 
-            os.chdir(test_dir)
+        local_config_dir = test_dir / ".llm-orc"
+        local_config_dir.mkdir(parents=True)
 
-            local_config_dir = test_dir / ".llm-orc"
-            local_config_dir.mkdir(parents=True)
+        with patch(
+            "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
+        ) as mock_config_manager_class:
+            mock_config_manager = Mock()
+            mock_config_manager_class.return_value = mock_config_manager
+            mock_config_manager.init_local_config.side_effect = ValueError(
+                "Init failed"
+            )
 
-            with patch(
-                "llm_orc.cli_modules.commands.config_commands.ConfigurationManager"
-            ) as mock_config_manager_class:
-                mock_config_manager = Mock()
-                mock_config_manager_class.return_value = mock_config_manager
-                mock_config_manager.init_local_config.side_effect = ValueError(
-                    "Init failed"
+            # When/Then
+            with pytest.raises(click.ClickException, match="Init failed"):
+                _reset_and_initialize_local_config(
+                    local_config_dir, mock_config_manager, "test-project"
                 )
-
-                # When/Then
-                with pytest.raises(click.ClickException, match="Init failed"):
-                    _reset_and_initialize_local_config(
-                        local_config_dir, mock_config_manager, "test-project"
-                    )
-        finally:
-            os.chdir(original_cwd)
 
     def test_restore_ensembles_and_complete_with_ensembles(self, temp_dir: str) -> None:
         """Test ensemble restoration and completion with ensembles."""
