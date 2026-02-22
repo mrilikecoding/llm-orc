@@ -1,6 +1,6 @@
 """Ensembles API endpoints.
 
-Provides REST API for ensemble management, delegating to MCPServer.
+Provides REST API for ensemble management, delegating to OrchestraService.
 """
 
 from typing import Any
@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from llm_orc.web.api import get_mcp_server
+from llm_orc.web.api import get_orchestra_service
 
 router = APIRouter(prefix="/api/ensembles", tags=["ensembles"])
 
@@ -25,15 +25,15 @@ async def list_ensembles() -> list[dict[str, Any]]:
 
     Returns ensembles from local, library, and global sources.
     """
-    mcp = get_mcp_server()
-    return await mcp._read_ensembles_resource()
+    service = get_orchestra_service()
+    return await service.read_ensembles()
 
 
 @router.get("/{name}")
 async def get_ensemble(name: str) -> dict[str, Any]:
     """Get detailed configuration for a specific ensemble."""
-    mcp = get_mcp_server()
-    result = await mcp._read_ensemble_resource(name)
+    service = get_orchestra_service()
+    result = await service.read_ensemble(name)
     if result is None:
         raise HTTPException(status_code=404, detail=f"Ensemble '{name}' not found")
     return result
@@ -45,8 +45,8 @@ async def execute_ensemble(name: str, request: ExecuteRequest) -> dict[str, Any]
 
     Returns the execution result including agent outputs.
     """
-    mcp = get_mcp_server()
-    result = await mcp._invoke_tool({"ensemble_name": name, "input": request.input})
+    service = get_orchestra_service()
+    result = await service.invoke({"ensemble_name": name, "input": request.input})
     return result
 
 
@@ -56,8 +56,8 @@ async def validate_ensemble(name: str) -> dict[str, Any]:
 
     Returns validation result with any errors found.
     """
-    mcp = get_mcp_server()
-    result = await mcp._validate_ensemble_tool({"ensemble_name": name})
+    service = get_orchestra_service()
+    result = await service.validate_ensemble({"ensemble_name": name})
     return result
 
 
@@ -70,6 +70,6 @@ async def check_ensemble_runnable(name: str) -> dict[str, Any]:
     - Status of each agent's profile/provider
     - Suggested local alternatives for unavailable profiles
     """
-    mcp = get_mcp_server()
-    result = await mcp._check_ensemble_runnable_tool({"ensemble_name": name})
+    service = get_orchestra_service()
+    result = await service.check_ensemble_runnable({"ensemble_name": name})
     return result

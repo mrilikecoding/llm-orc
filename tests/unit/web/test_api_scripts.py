@@ -9,13 +9,13 @@ class TestScriptsAPI:
     """Tests for /api/scripts endpoints."""
 
     def test_list_scripts_returns_result(self, client: TestClient) -> None:
-        """GET /api/scripts returns the script handler's result."""
-        with patch("llm_orc.web.api.scripts.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._script_handler.list_scripts = AsyncMock(
+        """GET /api/scripts returns the service's result."""
+        with patch("llm_orc.web.api.scripts.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.list_scripts = AsyncMock(
                 return_value={"scripts": {"data_transform": ["json_extract"]}}
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.get("/api/scripts")
 
@@ -25,12 +25,12 @@ class TestScriptsAPI:
 
     def test_get_script_returns_detail(self, client: TestClient) -> None:
         """GET /api/scripts/{category}/{name} returns script detail."""
-        with patch("llm_orc.web.api.scripts.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._script_handler.get_script = AsyncMock(
+        with patch("llm_orc.web.api.scripts.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.get_script = AsyncMock(
                 return_value={"name": "json_extract", "category": "data_transform"}
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.get("/api/scripts/data_transform/json_extract")
 
@@ -40,12 +40,12 @@ class TestScriptsAPI:
 
     def test_test_script_returns_result(self, client: TestClient) -> None:
         """POST /api/scripts/{category}/{name}/test returns test output."""
-        with patch("llm_orc.web.api.scripts.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._script_handler.test_script = AsyncMock(
+        with patch("llm_orc.web.api.scripts.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.test_script = AsyncMock(
                 return_value={"output": "42", "success": True}
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.post(
                 "/api/scripts/data_transform/json_extract/test",
