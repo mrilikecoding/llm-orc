@@ -73,24 +73,28 @@ class TestEnsembleExecutor:
             result = await executor.execute(config, input_data="Test this code")
 
         # Verify result structure
-        assert result["ensemble"] == "test_ensemble"
-        assert result["status"] == "completed"
-        assert "input" in result
-        assert "results" in result
-        assert "metadata" in result
+        assert result["ensemble"] == "test_ensemble", "ensemble name mismatch"
+        assert result["status"] == "completed", "ensemble should be completed"
+        assert "input" in result, "result missing 'input' field"
+        assert "results" in result, "result missing 'results' field"
+        assert "metadata" in result, "result missing 'metadata' field"
         # Synthesis field exists but is None in new architecture
-        assert result["synthesis"] is None
+        assert result["synthesis"] is None, (
+            "synthesis should be None in dependency-based arch"
+        )
 
         # Verify agent results
         agent_results = result["results"]
-        assert len(agent_results) == 2
-        assert "agent1" in agent_results
-        assert "agent2" in agent_results
+        assert len(agent_results) == 2, f"expected 2 agents, got {len(agent_results)}"
+        assert "agent1" in agent_results, "agent1 missing from results"
+        assert "agent2" in agent_results, "agent2 missing from results"
 
         # Verify metadata
         metadata = result["metadata"]
-        assert "duration" in metadata
-        assert metadata["agents_used"] == 2
+        assert "duration" in metadata, "metadata missing 'duration' field"
+        assert metadata["agents_used"] == 2, (
+            f"expected agents_used=2, got {metadata['agents_used']}"
+        )
 
     @pytest.mark.asyncio
     async def test_execute_ensemble_with_different_models(
@@ -272,10 +276,10 @@ class TestEnsembleExecutor:
         assert result["results"]["agent1"]["response"] == "Detailed analysis result"
 
     @pytest.mark.asyncio
-    async def test_execute_ensemble_tracks_usage_metrics(
+    async def test_execute_ensemble_records_per_agent_usage_fields(
         self, mock_ensemble_executor: Any
     ) -> None:
-        """Test that ensemble execution tracks LLM usage metrics."""
+        """Test that per-agent token counts, cost, and model are recorded."""
         config = EnsembleConfig(
             name="usage_tracking_test",
             description="Test usage tracking",
@@ -285,7 +289,6 @@ class TestEnsembleExecutor:
             ],
         )
 
-        # Mock models with usage tracking
         claude_model = AsyncMock(spec=ModelInterface)
         claude_model.generate_response.return_value = "Claude response"
         claude_model.get_last_usage.return_value = {
@@ -303,18 +306,14 @@ class TestEnsembleExecutor:
             "input_tokens": 45,
             "output_tokens": 80,
             "total_tokens": 125,
-            "cost_usd": 0.0,  # Local model, no cost
+            "cost_usd": 0.0,
             "duration_ms": 800,
             "model": "llama3",
         }
 
-        # No synthesis model needed in dependency-based architecture
-
         role = RoleDefinition(name="test", prompt="Test role")
-
         executor = mock_ensemble_executor
 
-        # Mock the role and model loading methods
         with (
             patch.object(
                 executor._llm_agent_runner,
@@ -329,37 +328,84 @@ class TestEnsembleExecutor:
         ):
             mock_load_role.return_value = role
             mock_load_model.side_effect = [claude_model, llama_model]
-
             result = await executor.execute(config, input_data="Test usage tracking")
 
-        # Verify usage tracking is included in results
-        assert "usage" in result["metadata"]
-        usage = result["metadata"]["usage"]
+        agent_usage = result["metadata"]["usage"]["agents"]
 
-        # Check individual agent usage
-        assert "agents" in usage
-        agent_usage = usage["agents"]
+        assert "agent1" in agent_usage, "agent1 should appear in per-agent usage"
+        assert agent_usage["agent1"]["model"] == "claude-3-sonnet", "wrong model"
+        assert agent_usage["agent1"]["input_tokens"] == 50, "wrong input_tokens"
+        assert agent_usage["agent1"]["output_tokens"] == 100, "wrong output_tokens"
+        assert agent_usage["agent1"]["total_tokens"] == 150, "wrong total_tokens"
+        assert agent_usage["agent1"]["cost_usd"] == 0.0045, "cost should be recorded"
+        assert agent_usage["agent1"]["duration_ms"] == 1200, "wrong duration_ms"
 
-        assert "agent1" in agent_usage
-        assert agent_usage["agent1"]["model"] == "claude-3-sonnet"
-        assert agent_usage["agent1"]["input_tokens"] == 50
-        assert agent_usage["agent1"]["output_tokens"] == 100
-        assert agent_usage["agent1"]["total_tokens"] == 150
-        assert agent_usage["agent1"]["cost_usd"] == 0.0045
-        assert agent_usage["agent1"]["duration_ms"] == 1200
+        assert "agent2" in agent_usage, "agent2 should appear in per-agent usage"
+        assert agent_usage["agent2"]["model"] == "llama3", "wrong local model"
+        assert agent_usage["agent2"]["total_tokens"] == 125, "wrong total_tokens"
+        assert agent_usage["agent2"]["cost_usd"] == 0.0, "local model wrong cost"
 
-        assert "agent2" in agent_usage
-        assert agent_usage["agent2"]["model"] == "llama3"
-        assert agent_usage["agent2"]["total_tokens"] == 125
-        assert agent_usage["agent2"]["cost_usd"] == 0.0
+    @pytest.mark.asyncio
+    async def test_execute_ensemble_aggregates_usage_totals(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Test that per-agent usage is summed correctly into totals."""
+        config = EnsembleConfig(
+            name="usage_tracking_test",
+            description="Test usage tracking",
+            agents=[
+                LlmAgentConfig(name="agent1", model_profile="claude-analyst"),
+                LlmAgentConfig(name="agent2", model_profile="llama-reviewer"),
+            ],
+        )
 
-        # Check totals (no synthesis in dependency-based architecture)
-        assert "totals" in usage
-        totals = usage["totals"]
-        assert totals["total_tokens"] == 275  # 150 + 125 (no synthesis)
-        assert totals["total_cost_usd"] == 0.0045  # 0.0045 + 0.0 (no synthesis)
-        assert totals["total_duration_ms"] == 2000  # 1200 + 800 (no synthesis)
-        assert totals["agents_count"] == 2
+        claude_model = AsyncMock(spec=ModelInterface)
+        claude_model.generate_response.return_value = "Claude response"
+        claude_model.get_last_usage.return_value = {
+            "input_tokens": 50,
+            "output_tokens": 100,
+            "total_tokens": 150,
+            "cost_usd": 0.0045,
+            "duration_ms": 1200,
+            "model": "claude-3-sonnet",
+        }
+
+        llama_model = AsyncMock(spec=ModelInterface)
+        llama_model.generate_response.return_value = "Llama response"
+        llama_model.get_last_usage.return_value = {
+            "input_tokens": 45,
+            "output_tokens": 80,
+            "total_tokens": 125,
+            "cost_usd": 0.0,
+            "duration_ms": 800,
+            "model": "llama3",
+        }
+
+        role = RoleDefinition(name="test", prompt="Test role")
+        executor = mock_ensemble_executor
+
+        with (
+            patch.object(
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
+            ) as mock_load_role,
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                new_callable=AsyncMock,
+            ) as mock_load_model,
+        ):
+            mock_load_role.return_value = role
+            mock_load_model.side_effect = [claude_model, llama_model]
+            result = await executor.execute(config, input_data="Test usage tracking")
+
+        totals = result["metadata"]["usage"]["totals"]
+
+        assert totals["total_tokens"] == 275, "total_tokens should be 150 + 125"
+        assert totals["total_cost_usd"] == 0.0045, "total_cost_usd: 0.0045 + 0.0"
+        assert totals["total_duration_ms"] == 2000, "total_duration_ms: 1200 + 800"
+        assert totals["agents_count"] == 2, "agents_count should match number of agents"
 
     @pytest.mark.asyncio
     async def test_execute_ensemble_with_global_timeout(
@@ -943,6 +989,7 @@ class TestEnsembleExecutor:
         assert enhanced == agent_config.model_dump()
         assert enhanced is not agent_config  # Result is a new dict, not the config
 
+    @pytest.mark.performance
     @pytest.mark.asyncio
     async def test_parallel_execution_performance(
         self, mock_ensemble_executor: Any
@@ -1030,42 +1077,34 @@ class TestEnsembleExecutor:
         )
 
     @pytest.mark.asyncio
-    async def test_oauth_fallback_display_enhancement(
+    async def test_oauth_fallback_completes_with_fallback_response(
         self, mock_ensemble_executor: Any
     ) -> None:
-        """Test enhanced OAuth fallback display with specific error messaging.
-
-        This test ensures that OAuth token refresh failures are properly caught
-        and displayed with clear model profile and fallback information.
-        """
+        """OAuth token refresh failure should recover via fallback and complete."""
         from unittest.mock import AsyncMock, Mock, patch
 
         from llm_orc.core.config.ensemble_config import EnsembleConfig
         from llm_orc.models.anthropic import OAuthClaudeModel
 
         executor = mock_ensemble_executor
-
-        # Create test ensemble config with OAuth model
         config = EnsembleConfig(
             name="oauth-fallback-test",
             description="Test OAuth fallback display enhancement",
             agents=[
                 LlmAgentConfig(
                     name="oauth-agent",
-                    model_profile="premium-claude",  # Uses OAuth authentication
+                    model_profile="premium-claude",
                     system_prompt="You are a test agent.",
                 )
             ],
         )
 
-        # Create mock OAuth model that will fail with token refresh error
         mock_oauth_model = Mock(spec=OAuthClaudeModel)
         mock_oauth_model.generate_response = AsyncMock()
         mock_oauth_model.generate_response.side_effect = Exception(
             "OAuth token refresh failed with status 400: "
             '{"error": "invalid_grant", "error_description": "Refresh token not found"}'
         )
-        # Mock the usage collection method to avoid TypeError
         mock_oauth_model.get_last_usage.return_value = {
             "input_tokens": 10,
             "output_tokens": 5,
@@ -1073,7 +1112,6 @@ class TestEnsembleExecutor:
             "cost_usd": 0.01,
         }
 
-        # Create mock fallback model that succeeds
         mock_fallback_model = Mock()
         mock_fallback_model.generate_response = AsyncMock(
             return_value="Fallback response"
@@ -1086,9 +1124,7 @@ class TestEnsembleExecutor:
             "cost_usd": 0.02,
         }
 
-        # Track streaming events (Phase 5: unified event system)
         streaming_events: list[dict[str, Any]] = []
-
         with (
             patch.object(
                 executor._model_factory,
@@ -1107,72 +1143,146 @@ class TestEnsembleExecutor:
                 return_value=Mock(name="oauth-agent", prompt="Test prompt"),
             ),
         ):
-            # Use streaming execution to capture events (Phase 5: unified event system)
             async for event in executor.execute_streaming(
                 config, "Test OAuth fallback"
             ):
                 streaming_events.append(event)
 
-        # Verify the ensemble completed successfully with fallback
         completion_events = [
             e for e in streaming_events if e["type"] == "execution_completed"
         ]
-        assert len(completion_events) == 1
+        assert len(completion_events) == 1, (
+            f"expected 1 completion event, got {len(completion_events)}"
+        )
         result = completion_events[0]["data"]
-        assert result["status"] == "completed"
-        assert result["results"]["oauth-agent"]["status"] == "success"
-        assert result["results"]["oauth-agent"]["response"] == "Fallback response"
+        assert result["status"] == "completed", "should complete after fallback"
+        assert result["results"]["oauth-agent"]["status"] == "success", (
+            "oauth-agent should report success via fallback"
+        )
+        assert result["results"]["oauth-agent"]["response"] == "Fallback response", (
+            "oauth-agent should return fallback model's response"
+        )
 
-        # Verify enhanced OAuth fallback event was emitted through unified system
+    @pytest.mark.asyncio
+    async def test_oauth_fallback_emits_structured_event(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """OAuth fallback emits an agent_fallback_started event with error details."""
+        from unittest.mock import AsyncMock, Mock, patch
+
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+        from llm_orc.models.anthropic import OAuthClaudeModel
+
+        executor = mock_ensemble_executor
+        config = EnsembleConfig(
+            name="oauth-fallback-test",
+            description="Test OAuth fallback display enhancement",
+            agents=[
+                LlmAgentConfig(
+                    name="oauth-agent",
+                    model_profile="premium-claude",
+                    system_prompt="You are a test agent.",
+                )
+            ],
+        )
+
+        mock_oauth_model = Mock(spec=OAuthClaudeModel)
+        mock_oauth_model.generate_response = AsyncMock()
+        mock_oauth_model.generate_response.side_effect = Exception(
+            "OAuth token refresh failed with status 400: "
+            '{"error": "invalid_grant", "error_description": "Refresh token not found"}'
+        )
+        mock_oauth_model.get_last_usage.return_value = {
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "duration_ms": 100,
+            "cost_usd": 0.01,
+        }
+
+        mock_fallback_model = Mock()
+        mock_fallback_model.generate_response = AsyncMock(
+            return_value="Fallback response"
+        )
+        mock_fallback_model.model_name = "llama3"
+        mock_fallback_model.get_last_usage.return_value = {
+            "input_tokens": 15,
+            "output_tokens": 10,
+            "duration_ms": 200,
+            "cost_usd": 0.02,
+        }
+
+        streaming_events: list[dict[str, Any]] = []
+        with (
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                return_value=mock_oauth_model,
+            ),
+            patch.object(
+                executor._model_factory,
+                "get_fallback_model",
+                return_value=mock_fallback_model,
+            ),
+            patch.object(
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
+                return_value=Mock(name="oauth-agent", prompt="Test prompt"),
+            ),
+        ):
+            async for event in executor.execute_streaming(
+                config, "Test OAuth fallback"
+            ):
+                streaming_events.append(event)
+
         oauth_fallback_events = [
             e for e in streaming_events if e["type"] == "agent_fallback_started"
         ]
-
         assert len(oauth_fallback_events) == 1, (
-            f"Expected 1 OAuth fallback event, got {len(oauth_fallback_events)}. "
-            f"Events: {[e['type'] for e in streaming_events]}"
+            f"expected 1 agent_fallback_started, got {len(oauth_fallback_events)}. "
+            f"All types: {[e['type'] for e in streaming_events]}"
         )
 
         event_data = oauth_fallback_events[0]["data"]
-
-        # Verify enhanced OAuth fallback event contains detailed information
-        assert event_data["agent_name"] == "oauth-agent"
-        assert event_data["original_model_profile"] == "premium-claude"
-        assert event_data["fallback_model_name"] == "llama3"
-        assert "OAuth token refresh failed" in event_data["original_error"]
-        assert "invalid_grant" in event_data["original_error"]
-        assert event_data["failure_type"] == "oauth_error"
+        assert event_data["agent_name"] == "oauth-agent", "wrong agent_name in event"
+        assert event_data["original_model_profile"] == "premium-claude", (
+            "event should record the original profile"
+        )
+        assert event_data["fallback_model_name"] == "llama3", (
+            "event should record the fallback model"
+        )
+        assert "OAuth token refresh failed" in event_data["original_error"], (
+            "event should include OAuth error text"
+        )
+        assert "invalid_grant" in event_data["original_error"], (
+            "event should include OAuth error code"
+        )
+        assert event_data["failure_type"] == "oauth_error", (
+            f"wrong failure_type: {event_data.get('failure_type')!r}"
+        )
 
     @pytest.mark.asyncio
-    async def test_model_loading_fallback_display_enhancement(
+    async def test_model_loading_fallback_completes_with_fallback_response(
         self, mock_ensemble_executor: Any
     ) -> None:
-        """Test enhanced model loading fallback display with specific error messaging.
-
-        This test ensures that model loading failures (provider unavailable,
-        model not found, etc.) are properly caught and displayed with clear
-        model profile and fallback information.
-        """
+        """Model loading failure should recover via fallback and complete."""
         from unittest.mock import AsyncMock, Mock, patch
 
         from llm_orc.core.config.ensemble_config import EnsembleConfig
 
         executor = mock_ensemble_executor
-
-        # Create test ensemble config with model that will fail to load
         config = EnsembleConfig(
             name="model-loading-fallback-test",
             description="Test model loading fallback display enhancement",
             agents=[
                 LlmAgentConfig(
                     name="failing-agent",
-                    model_profile="guaranteed-fail",  # Profile designed to fail
+                    model_profile="guaranteed-fail",
                     system_prompt="You are a test agent.",
                 )
             ],
         )
 
-        # Create mock fallback model that succeeds
         mock_fallback_model = Mock()
         mock_fallback_model.generate_response = AsyncMock(
             return_value="Model loading fallback response"
@@ -1185,9 +1295,7 @@ class TestEnsembleExecutor:
             "cost_usd": 0.02,
         }
 
-        # Track streaming events (Phase 5: unified event system)
         streaming_events: list[dict[str, Any]] = []
-
         with (
             patch.object(
                 executor._model_factory,
@@ -1209,46 +1317,115 @@ class TestEnsembleExecutor:
                 return_value=Mock(name="failing-agent", prompt="Test prompt"),
             ),
         ):
-            # Use streaming execution to capture events (Phase 5: unified event system)
             async for event in executor.execute_streaming(
                 config, "Test model loading fallback"
             ):
                 streaming_events.append(event)
 
-        # Verify the ensemble completed successfully with fallback
         completion_events = [
             e for e in streaming_events if e["type"] == "execution_completed"
         ]
-        assert len(completion_events) == 1
+        assert len(completion_events) == 1, (
+            f"expected 1 completion event, got {len(completion_events)}"
+        )
         result = completion_events[0]["data"]
-        assert result["status"] == "completed"
-        assert result["results"]["failing-agent"]["status"] == "success"
+        assert result["status"] == "completed", "should complete after fallback"
+        assert result["results"]["failing-agent"]["status"] == "success", (
+            "failing-agent should report success via fallback"
+        )
         assert (
             result["results"]["failing-agent"]["response"]
             == "Model loading fallback response"
+        ), "failing-agent should return the fallback model's response"
+
+    @pytest.mark.asyncio
+    async def test_model_loading_fallback_emits_structured_event(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Model loading failure emits agent_fallback_started with error details."""
+        from unittest.mock import AsyncMock, Mock, patch
+
+        from llm_orc.core.config.ensemble_config import EnsembleConfig
+
+        executor = mock_ensemble_executor
+        config = EnsembleConfig(
+            name="model-loading-fallback-test",
+            description="Test model loading fallback display enhancement",
+            agents=[
+                LlmAgentConfig(
+                    name="failing-agent",
+                    model_profile="guaranteed-fail",
+                    system_prompt="You are a test agent.",
+                )
+            ],
         )
 
-        # Verify enhanced model loading fallback event was emitted through unified
-        # system
+        mock_fallback_model = Mock()
+        mock_fallback_model.generate_response = AsyncMock(
+            return_value="Model loading fallback response"
+        )
+        mock_fallback_model.model_name = "llama3"
+        mock_fallback_model.get_last_usage.return_value = {
+            "input_tokens": 15,
+            "output_tokens": 10,
+            "duration_ms": 200,
+            "cost_usd": 0.02,
+        }
+
+        streaming_events: list[dict[str, Any]] = []
+        with (
+            patch.object(
+                executor._model_factory,
+                "load_model_from_agent_config",
+                side_effect=Exception(
+                    "Model provider 'nonexistent-provider' not available. "
+                    "Model 'this-model-definitely-does-not-exist' not found."
+                ),
+            ),
+            patch.object(
+                executor._model_factory,
+                "get_fallback_model",
+                return_value=mock_fallback_model,
+            ),
+            patch.object(
+                executor._llm_agent_runner,
+                "_load_role_from_config",
+                new_callable=AsyncMock,
+                return_value=Mock(name="failing-agent", prompt="Test prompt"),
+            ),
+        ):
+            async for event in executor.execute_streaming(
+                config, "Test model loading fallback"
+            ):
+                streaming_events.append(event)
+
         loading_fallback_events = [
             e for e in streaming_events if e["type"] == "agent_fallback_started"
         ]
-
         assert len(loading_fallback_events) == 1, (
-            f"Expected 1 model loading fallback event, "
-            f"got {len(loading_fallback_events)}. "
-            f"Events: {[e['type'] for e in streaming_events]}"
+            f"expected 1 agent_fallback_started, got {len(loading_fallback_events)}. "
+            f"All types: {[e['type'] for e in streaming_events]}"
         )
 
         event_data = loading_fallback_events[0]["data"]
-
-        # Verify enhanced model loading fallback event contains detailed information
-        assert event_data["agent_name"] == "failing-agent"
-        assert event_data["original_model_profile"] == "guaranteed-fail"
-        assert event_data["fallback_model_name"] == "llama3"
-        assert "Model provider" in event_data["original_error"]
-        assert "not available" in event_data["original_error"]
-        assert event_data["failure_type"] == "model_loading"
+        assert event_data["agent_name"] == "failing-agent", (
+            "event should name the failing agent"
+        )
+        assert event_data["original_model_profile"] == "guaranteed-fail", (
+            "event should record the original profile"
+        )
+        assert event_data["fallback_model_name"] == "llama3", (
+            "event should record the fallback model"
+        )
+        assert "Model provider" in event_data["original_error"], (
+            "event should include provider error text"
+        )
+        assert "not available" in event_data["original_error"], (
+            "event should include 'not available' message"
+        )
+        assert event_data["failure_type"] == "model_loading", (
+            f"wrong failure_type: {event_data.get('failure_type')!r}"
+        )
 
     @pytest.mark.asyncio
     async def test_emit_performance_event_queue_full_exception(
@@ -1480,21 +1657,27 @@ class TestEnsembleExecutor:
         )
 
         # Verify execution completed successfully with interactive mode
-        assert result["status"] == "completed"
-        assert result["metadata"]["interactive_mode"] is True
-        assert result["metadata"]["user_inputs_collected"] == 1
-        assert "data_collector" in result["results"]
-        assert "data_processor" in result["results"]
+        assert result["status"] == "completed", "ensemble should complete"
+        assert result["metadata"]["interactive_mode"] is True, (
+            "interactive_mode flag missing"
+        )
+        assert result["metadata"]["user_inputs_collected"] == 1, (
+            f"expected 1 input, got {result['metadata']['user_inputs_collected']}"
+        )
+        assert "data_collector" in result["results"], "data_collector missing"
+        assert "data_processor" in result["results"], "data_processor missing"
 
         # Verify interactive script result contains user data
         collector_result = result["results"]["data_collector"]["response"]
-        assert "John Doe" in str(collector_result)
-        assert collector_result["success"] is True
+        assert "John Doe" in str(collector_result), "collector result missing user data"
+        assert collector_result["success"] is True, "collector should report success"
 
         # Verify LLM agent processed the interactive data
         processor_response = result["results"]["data_processor"]["response"]
-        assert "John Doe" in processor_response
-        assert "processed successfully" in processor_response.lower()
+        assert "John Doe" in processor_response, "processor response missing name"
+        assert "processed successfully" in processor_response.lower(), (
+            "processor response should confirm processing"
+        )
 
     @pytest.mark.asyncio
     async def test_non_interactive_ensemble_bypasses_interactive_mode(
