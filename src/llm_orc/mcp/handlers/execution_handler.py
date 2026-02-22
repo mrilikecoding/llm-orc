@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
+from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
 
 if TYPE_CHECKING:
@@ -43,6 +44,11 @@ class ExecutionHandler:
         self._get_executor = get_executor_fn
         self._find_ensemble = find_ensemble_fn
         self._project_path: Path | None = None
+
+    def set_project_context(self, ctx: ProjectContext) -> None:
+        """Update handler to use new project context."""
+        self._config_manager = ctx.config_manager
+        self._project_path = ctx.project_path
 
     async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute invoke tool.
