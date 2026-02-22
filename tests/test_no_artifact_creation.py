@@ -8,13 +8,15 @@ import pytest
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.schemas.agent_config import ScriptAgentConfig
 
+_project_root = Path(__file__).resolve().parent.parent
+
 
 class TestNoArtifactCreation:
     """Test that no artifacts are created during test runs."""
 
     def test_no_artifacts_created_during_test_instantiation(self) -> None:
         """Test that instantiating EnsembleExecutor doesn't create artifacts."""
-        artifacts_dir = Path(".llm-orc/artifacts")
+        artifacts_dir = _project_root / ".llm-orc" / "artifacts"
 
         # Get initial state
         initial_dirs = set()
@@ -44,7 +46,7 @@ class TestNoArtifactCreation:
         self, mock_ensemble_executor: Any
     ) -> None:
         """Test that using mock_ensemble_executor fixture prevents artifact creation."""
-        artifacts_dir = Path(".llm-orc/artifacts")
+        artifacts_dir = _project_root / ".llm-orc" / "artifacts"
 
         # Get initial state
         initial_dirs = set()

@@ -13,6 +13,8 @@ from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 # Enable BDD testing with pytest-bdd
 pytest_plugins = ["pytest_bdd"]
 
+_project_root = Path(__file__).resolve().parent.parent
+
 
 @pytest.fixture(autouse=True)
 def cleanup_test_artifacts() -> Generator[None, None, None]:
@@ -22,7 +24,7 @@ def cleanup_test_artifacts() -> Generator[None, None, None]:
     created in .llm-orc/artifacts/ during test execution.
     """
     # Store initial top-level artifact directories before test
-    artifacts_path = Path(".llm-orc/artifacts")
+    artifacts_path = _project_root / ".llm-orc" / "artifacts"
     initial_dirs = set()
     if artifacts_path.exists():
         initial_dirs = {d.name for d in artifacts_path.iterdir() if d.is_dir()}

@@ -34,7 +34,7 @@ setup:
 	@echo "✅ Development environment setup complete"
 
 test:
-	uv run pytest
+	uv run pytest -n auto
 
 test-watch:
 	@echo "Running tests in watch mode..."

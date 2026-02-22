@@ -11,6 +11,8 @@ from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 
+_project_root = Path(__file__).resolve().parent.parent.parent
+
 
 @pytest.fixture(autouse=True)
 def mock_expensive_dependencies() -> Generator[None, None, None]:
@@ -169,7 +171,7 @@ class TestEnsembleScriptIntegration:
         mock_artifact_manager.save_execution_results.assert_called_once()
 
         # Verify no real artifacts were created in the file system
-        artifacts_dir = Path(".llm-orc/artifacts/test_no_artifacts")
+        artifacts_dir = _project_root / ".llm-orc" / "artifacts" / "test_no_artifacts"
         assert not artifacts_dir.exists(), (
             "Real artifacts should not be created during tests"
         )

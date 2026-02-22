@@ -760,23 +760,17 @@ def plugin_system_external_providers(bdd_context: dict[str, Any]) -> None:
 
 
 @when("primitive discovery is executed")
-def execute_primitive_discovery(bdd_context: dict[str, Any]) -> None:
+def execute_primitive_discovery(
+    bdd_context: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Execute primitive discovery process."""
-    import os
-
     registry = bdd_context["primitive_registry"]
     # Run discovery from the temp dir where test scripts were created
     temp_dir = bdd_context.get("temp_dir")
     if temp_dir:
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(temp_dir)
-            registry._cache.clear()  # Clear cache to re-discover
-            bdd_context["discovered_primitives"] = registry.discover_primitives()
-        finally:
-            os.chdir(original_cwd)
-    else:
-        bdd_context["discovered_primitives"] = registry.discover_primitives()
+        monkeypatch.chdir(temp_dir)
+    registry._cache.clear()  # Clear cache to re-discover
+    bdd_context["discovered_primitives"] = registry.discover_primitives()
 
 
 @when("the primitive is executed with JSON input via stdin")
