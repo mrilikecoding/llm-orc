@@ -73,7 +73,9 @@ class ScriptAgentRunner:
 
         cached_result = self._script_cache.get(script_content, cache_key_params)
         if cached_result is not None:
-            return cached_result.get("output", ""), None, False
+            cached_output = cached_result.get("output", "")
+            self._validate_primitive_output(script_content, cached_output)
+            return cached_output, None, False
 
         start_time = time.time()
         response, model_instance, substituted = await self._execute_without_cache(

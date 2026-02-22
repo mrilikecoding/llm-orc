@@ -136,6 +136,42 @@ class TestOutputValidation:
         assert json.loads(response)["success"] is True
 
 
+class TestCacheHitValidation:
+    """Cache hits run through validation just like fresh executions."""
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_calls_validate_primitive_output(self) -> None:
+        """Cached results are validated before being returned."""
+        cache = Mock()
+        # Seed cache with a pre-existing result
+        cache.get.return_value = {
+            "output": '{"cached": true}',
+            "success": True,
+        }
+        runner = ScriptAgentRunner(
+            script_cache=cache,
+            usage_collector=Mock(),
+            progress_controller=Mock(),
+            emit_event=Mock(),
+            project_dir=None,
+        )
+
+        agent_config = ScriptAgentConfig(
+            name="test_agent",
+            script="primitives/user-interaction/get_user_input.py",
+        )
+
+        with patch.object(
+            runner, "_validate_primitive_output"
+        ) as mock_validate:
+            await runner.execute(agent_config, "{}")
+
+        mock_validate.assert_called_once_with(
+            "primitives/user-interaction/get_user_input.py",
+            '{"cached": true}',
+        )
+
+
 class TestModelSubstitutedFlag:
     """Script agent always returns model_substituted=False."""
 
