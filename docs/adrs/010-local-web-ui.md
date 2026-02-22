@@ -197,35 +197,29 @@ GET    /api/metrics/{ensemble}           # llm-orc://metrics/{ensemble} resource
 GET    /api/config                       # Current configuration
 ```
 
-### 3.1 MCP Tool Mapping
+### 3.1 Application Service Integration
 
-The Web UI backend calls MCP tools internally, ensuring consistent behavior:
+> **Updated (2026-02-22):** The web API now delegates to `OrchestraService` (a shared application service) rather than calling MCPServer private methods. Both MCP and web ports are thin protocol adapters over the same service.
 
 ```python
-from llm_orc.mcp import MCPServerV2
+from llm_orc.web.api import get_orchestra_service
 
-class EnsemblesAPI:
-    def __init__(self):
-        self.mcp = MCPServerV2()
+# Each web route gets the shared OrchestraService singleton
+async def list_ensembles() -> list[dict]:
+    """GET /api/ensembles"""
+    service = get_orchestra_service()
+    return await service.read_ensembles()
 
-    async def list_ensembles(self) -> list[dict]:
-        """GET /api/ensembles"""
-        return await self.mcp._read_ensembles_resource()
-
-    async def create_ensemble(self, data: dict) -> dict:
-        """POST /api/ensembles"""
-        return await self.mcp._create_ensemble_tool(data)
-
-    async def execute_ensemble(self, name: str, input_data: str) -> dict:
-        """POST /api/ensembles/{name}/execute"""
-        # Uses streaming internally, returns final result
-        return await self.mcp._invoke_tool(name, input_data)
+async def execute_ensemble(name: str, request: ExecuteRequest) -> dict:
+    """POST /api/ensembles/{name}/execute"""
+    service = get_orchestra_service()
+    return await service.invoke({"ensemble_name": name, "input": request.input})
 ```
 
 This approach:
-- Reuses all MCP validation and business logic
+- Reuses all validation and business logic via OrchestraService
 - Ensures CLI, MCP, and Web UI behave identically
-- Reduces code duplication
+- Eliminates private-method coupling between ports
 
 ### 4. WebSocket for Streaming Execution
 
@@ -476,9 +470,11 @@ src/llm_orc/web/
 ### Relationship to MCP
 
 The web UI and MCP server share the same underlying data:
-- Both use `ConfigurationManager`, `EnsembleExecutor`, `ArtifactManager`
+- Both delegate to `OrchestraService`, which owns `ConfigurationManager`, handler instances, and `ArtifactManager`
 - Web UI could potentially consume MCP resources, but direct Python imports are simpler
 - External tools (Manza, etc.) should use MCP; local users can use either
+
+> **Updated (2026-02-22):** The shared infrastructure is now mediated by `OrchestraService` rather than accessed directly. Web routes call `get_orchestra_service()`, not MCPServer private methods.
 
 ## Alternatives Considered
 

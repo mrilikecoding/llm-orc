@@ -176,7 +176,7 @@ Feature: Agent Execution Retry Logic (GitHub Issue #45)
     Then the system should retry with exponential backoff intervals
     And each retry should include jitter to prevent thundering herd
     And all exceptions should maintain proper exception chaining
-    And the final AgentResult should include retry metadata
+    And the final AgentResult should include retry metadata  # NOTE: AgentResult is now a typed dataclass with status/response/error/model_substituted fields
     And execution should complete within overall ensemble timeout
     And no existing Pydantic schemas should be modified
     And the implementation should pass mypy strict type checking
@@ -533,20 +533,18 @@ async def execute_agent_with_retry(
     retry_config: RetryConfig
 ) -> AgentResult:
     """Execute agent with retry logic per BDD scenario requirements."""
-    
+    # NOTE (2026-02-22): AgentResult is now a typed dataclass
+    # (status="success"/"failed", response, error, model_substituted).
+    # retry_metadata shown here is illustrative; actual retry tracking
+    # would extend AgentResult or use execution metadata.
+
     last_exception: Exception | None = None
-    
+
     for attempt in range(retry_config.max_attempts):
         try:
             result = await asyncio.wait_for(
                 self._execute_single_agent(agent_config, input_data),
                 timeout=agent_config.timeout_seconds
-            )
-            
-            # Include retry metadata per BDD scenario requirement
-            result.retry_metadata = RetryMetadata(
-                attempts_made=attempt + 1,
-                total_duration=time.time() - start_time
             )
             return result
             

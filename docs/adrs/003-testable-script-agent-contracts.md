@@ -398,30 +398,24 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
       
-      - name: Validate Core Primitives
-        run: |
-          python -m llm_orc.testing.contract_validator \
-            --directory .llm-orc/scripts/primitives \
-            --level core
-            
-      - name: Validate Base Examples
-        run: |
-          python -m llm_orc.testing.contract_validator \
-            --directory .llm-orc/scripts/examples \
-            --level examples
-            
-      - name: Validate Community Scripts
-        run: |
-          python -m llm_orc.testing.contract_validator \
-            --directory .llm-orc/scripts/community \
-            --level community
-            
+      # NOTE (2026-02-22): llm_orc.testing.contract_validator was deleted
+      # in v0.15.3 (hollow stub). Contract validation now happens via
+      # ScriptAgentRunner._validate_primitive_output() at runtime and
+      # ContractValidator in llm_orc.contracts at test time.
+      #
+      # - name: Validate Core Primitives
+      #   run: python -m llm_orc.testing.contract_validator ...
+      # - name: Validate Base Examples
+      #   run: python -m llm_orc.testing.contract_validator ...
+      # - name: Validate Community Scripts
+      #   run: python -m llm_orc.testing.contract_validator ...
+
       - name: Test Script Composition
         run: |
           python -m llm_orc.testing.composition_tester \
             --test-all-combinations \
             --max-chain-length 5
-            
+
       - name: Generate Function Schemas
         run: |
           python -m llm_orc.schemas.function_generator \

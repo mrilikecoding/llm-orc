@@ -34,6 +34,7 @@ LLM Orchestra is a multi-agent LLM communication system designed for ensemble or
 - **Fan-out expansion**: Agents with `fan_out: true` are automatically expanded into parallel instances over array results
 - **Result synthesis**: Combines agent outputs according to ensemble configuration
 - **Error handling**: Graceful degradation with per-agent error isolation
+- **Factory construction**: Instantiated via `ExecutorFactory` rather than direct construction
 
 #### AgentExecutionCoordinator (`llm_orc/core/execution/agent_execution_coordinator.py`)
 - **Agent lifecycle management**: Spawns, monitors, and coordinates individual agents
@@ -162,10 +163,26 @@ Fan-out is woven into the existing phase-based execution pipeline in `EnsembleEx
 - **Connection management**: Handles HTTP clients and connection pooling
 - **Error recovery**: Fallback strategies for provider failures
 
+### Application Service Layer
+
+#### OrchestraService (`llm_orc/services/orchestra_service.py`)
+Shared application service composing all handlers. Both the MCP server and web API delegate to this service for ensemble management, execution, and configuration. Owns all handler instances, `ConfigurationManager`, `EnsembleLoader`, and `ArtifactManager`.
+
+#### ProjectContext (`llm_orc/mcp/project_context.py`)
+Frozen dataclass grouping `project_path` and `ConfigurationManager` into a single immutable value object. When `set_project` is called, a new `ProjectContext` is created and propagated atomically to all handlers.
+
+#### ExecutorFactory (`llm_orc/core/execution/executor_factory.py`)
+Centralizes `EnsembleExecutor` construction. `create_root_executor()` builds a fresh executor with all collaborators; `create_child_executor()` shares immutable infrastructure (config, credentials, model factory) while isolating mutable state.
+
+### Typed Result Models (`llm_orc/core/execution/result_types.py`)
+- **AgentResult**: Typed dataclass replacing `dict[str, Any]` for individual agent results (`status`, `response`, `error`, `model_substituted`)
+- **ExecutionMetadata**: Accumulated execution metadata (`agents_used`, `started_at`, `duration`, usage, fan-out stats)
+- **ExecutionResult**: Top-level execution result composing `AgentResult` instances and `ExecutionMetadata`
+
 ### MCP Server Integration
 
-#### MCPServerV2 (`llm_orc/mcp/server.py`)
-LLM Orchestra implements a Model Context Protocol (MCP) server using the FastMCP SDK, enabling integration with MCP clients like Claude Code and Claude Desktop.
+#### MCPServer (`llm_orc/mcp/server.py`)
+LLM Orchestra implements a Model Context Protocol (MCP) server using the FastMCP SDK, enabling integration with MCP clients like Claude Code and Claude Desktop. MCPServer is a thin protocol adapter that delegates all operations to `OrchestraService`.
 
 **Resources** (read-only data access):
 - `llm-orc://ensembles` - List all available ensembles with metadata
