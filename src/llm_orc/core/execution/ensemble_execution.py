@@ -257,7 +257,7 @@ class EnsembleExecutor:
         # Use a wrapper that goes through _execute_agent for test patchability
         async def agent_executor_wrapper(
             agent_config: AgentConfig, input_data: str
-        ) -> tuple[str, ModelInterface | None]:
+        ) -> tuple[str, ModelInterface | None, bool]:
             return await self._execute_agent(agent_config, input_data)
 
         self._execution_coordinator = AgentExecutionCoordinator(
@@ -735,7 +735,7 @@ class EnsembleExecutor:
 
     async def _execute_agent(
         self, agent_config: AgentConfig, input_data: str
-    ) -> tuple[str, ModelInterface | None]:
+    ) -> tuple[str, ModelInterface | None, bool]:
         """Execute a single agent, routing by type."""
         if isinstance(agent_config, ScriptAgentConfig):
             return await self._script_agent_runner.execute(agent_config, input_data)

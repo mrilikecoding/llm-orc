@@ -15,7 +15,7 @@ class AgentExecutionCoordinator:
         self,
         performance_config: dict[str, Any],
         agent_executor: Callable[
-            [AgentConfig, str], Awaitable[tuple[str, ModelInterface | None]]
+            [AgentConfig, str], Awaitable[tuple[str, ModelInterface | None, bool]]
         ],
     ) -> None:
         """Initialize coordinator with performance config and agent executor."""
@@ -27,7 +27,7 @@ class AgentExecutionCoordinator:
         agent_config: AgentConfig,
         input_data: str,
         timeout_seconds: int | None,
-    ) -> tuple[str, ModelInterface | None]:
+    ) -> tuple[str, ModelInterface | None, bool]:
         """Execute an agent with optional timeout."""
         if timeout_seconds is None:
             return await self._execute_agent(agent_config, input_data)

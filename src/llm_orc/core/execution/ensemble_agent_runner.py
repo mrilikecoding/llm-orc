@@ -42,12 +42,13 @@ class EnsembleAgentRunner:
         self,
         agent_config: EnsembleAgentConfig,
         input_data: str,
-    ) -> tuple[str, ModelInterface | None]:
+    ) -> tuple[str, ModelInterface | None, bool]:
         """Execute a child ensemble and return its result as JSON.
 
         Returns:
-            Tuple of (JSON-serialized result dict, None).
-            Model instance is always None for ensemble agents.
+            Tuple of (JSON-serialized result dict, None, False).
+            Model instance and model_substituted are always None/False
+            for ensemble agents.
         """
         child_depth = self._current_depth + 1
         if child_depth > self._depth_limit:
@@ -71,4 +72,4 @@ class EnsembleAgentRunner:
         child_result = await child_executor.execute(child_config, input_data)
 
         # Return full result dict as JSON
-        return json.dumps(child_result), None
+        return json.dumps(child_result), None, False

@@ -105,7 +105,7 @@ class TestEnsembleScriptCacheIntegration:
                 "_execute_without_cache",
                 new_callable=AsyncMock,
             ) as mock_execute:
-                mock_execute.return_value = (execution_result, None)
+                mock_execute.return_value = (execution_result, None, False)
 
                 # Simulate the caching flow that should happen
                 # 1. Check cache (miss)
@@ -116,6 +116,7 @@ class TestEnsembleScriptCacheIntegration:
                 (
                     result,
                     model,
+                    _,
                 ) = await runner._execute_without_cache(
                     ScriptAgentConfig(name="test", script=script_content), "{}"
                 )

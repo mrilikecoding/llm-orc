@@ -50,8 +50,13 @@ class ScriptAgentRunner:
         self,
         agent_config: AgentConfig,
         input_data: str,
-    ) -> tuple[str, ModelInterface | None]:
-        """Execute script agent with caching."""
+    ) -> tuple[str, ModelInterface | None, bool]:
+        """Execute script agent with caching.
+
+        Returns:
+            Tuple of (response, model_instance, model_substituted).
+            model_substituted is always False for script agents.
+        """
         script_content = (
             agent_config.script if isinstance(agent_config, ScriptAgentConfig) else ""
         )
@@ -68,10 +73,10 @@ class ScriptAgentRunner:
 
         cached_result = self._script_cache.get(script_content, cache_key_params)
         if cached_result is not None:
-            return cached_result.get("output", ""), None
+            return cached_result.get("output", ""), None, False
 
         start_time = time.time()
-        response, model_instance = await self._execute_without_cache(
+        response, model_instance, substituted = await self._execute_without_cache(
             agent_config, input_data
         )
         duration_ms = int((time.time() - start_time) * 1000)
@@ -83,13 +88,13 @@ class ScriptAgentRunner:
         }
         self._script_cache.set(script_content, cache_key_params, cache_result)
 
-        return response, model_instance
+        return response, model_instance, substituted
 
     async def _execute_without_cache(
         self,
         agent_config: AgentConfig,
         input_data: str,
-    ) -> tuple[str, ModelInterface | None]:
+    ) -> tuple[str, ModelInterface | None, bool]:
         """Execute script agent with resource monitoring."""
         agent_name = agent_config.name
 
@@ -121,7 +126,7 @@ class ScriptAgentRunner:
             )
             self._validate_primitive_output(script_ref, response)
 
-            return response, None
+            return response, None, False
         finally:
             self._usage_collector.finalize_agent_resource_monitoring(agent_name)
 

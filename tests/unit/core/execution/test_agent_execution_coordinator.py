@@ -23,7 +23,7 @@ class TestAgentExecutionCoordinator:
         }
 
         mock_agent_executor = AsyncMock()
-        mock_agent_executor.return_value = ("Response", None)
+        mock_agent_executor.return_value = ("Response", None, False)
 
         coordinator = AgentExecutionCoordinator(
             performance_config=performance_config,
@@ -45,7 +45,7 @@ class TestAgentExecutionCoordinator:
             agent_config, "test input", None
         )
 
-        assert result == ("Response", None)
+        assert result == ("Response", None, False)
         mocks["agent_executor"].assert_called_once_with(agent_config, "test input")
 
     @pytest.mark.asyncio
@@ -55,9 +55,9 @@ class TestAgentExecutionCoordinator:
 
         async def quick_execution(
             config: dict[str, Any], input_data: str
-        ) -> tuple[str, Any]:
+        ) -> tuple[str, Any, bool]:
             await asyncio.sleep(0.01)
-            return ("Quick response", None)
+            return ("Quick response", None, False)
 
         mocks["agent_executor"].side_effect = quick_execution
 
@@ -66,7 +66,7 @@ class TestAgentExecutionCoordinator:
             agent_config, "test input", 1
         )
 
-        assert result == ("Quick response", None)
+        assert result == ("Quick response", None, False)
 
     @pytest.mark.asyncio
     async def test_execute_agent_with_timeout_timeout_error(self) -> None:

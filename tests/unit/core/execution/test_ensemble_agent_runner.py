@@ -151,12 +151,15 @@ class TestChildEnsembleFailureIsAgentFailure:
 
         config = EnsembleAgentConfig(name="analysis", ensemble="child-ensemble")
 
-        response, model_instance = await runner.execute(config, "test input")
+        response, model_instance, model_substituted = await runner.execute(
+            config, "test input"
+        )
 
         # Should return the child result as JSON, not crash
         result_data = json.loads(response)
         assert result_data["status"] == "completed_with_errors"
         assert model_instance is None
+        assert model_substituted is False
 
 
 class TestEnsembleAgentExecutesChildEnsemble:
