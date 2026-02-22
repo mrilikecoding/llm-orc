@@ -210,6 +210,8 @@ At least 8 sites use `except Exception: pass` or equivalent in execution-critica
 **Stewardship:** Replace the four-field mutation with a `ProjectContext` value object set atomically and passed explicitly to handlers.
 
 > **Done (prior to audit — c420fc2):** `config_manager` propagation to all handlers after `set_project` was fixed in commit `c420fc2` ("fix: propagate config_manager to handlers after set_project and fix profile resolution"). The `ProjectContext` value object refactor remains future work.
+>
+> **Done (2026-02-21):** Two additional handlers were found missing from the propagation block: `_execution_handler._config_manager` (only `_project_path` was updated, leaving ensemble directory lookups stale after a project switch) and `_promotion_handler._config_manager` (never updated at all). Both now propagated. Tests added for all five affected handlers.
 
 ---
 
@@ -349,7 +351,7 @@ At least 8 sites use `except Exception: pass` or equivalent in execution-critica
 
 **Stewardship:** Extract shared `_record_usage_with_cost` to the base class. Replace `get_event_loop()` with `get_running_loop()`.
 
-> **Partial (2026-02-21):** `asyncio.get_event_loop()` replaced with `asyncio.get_running_loop()` in both `_execute_oauth_api_call` and `ClaudeCLIModel.generate_response`. The `_record_usage` method is already on the base class; per-class cost calculation logic is sufficiently distinct (real rates vs. 0.0 vs. estimation) that further extraction offers limited value.
+> **Done (2026-02-21):** `asyncio.get_event_loop()` replaced with `asyncio.get_running_loop()` in both `_execute_oauth_api_call` and `ClaudeCLIModel.generate_response`. `_record_usage` is defined once on `ModelInterface` and called by all three subclasses — no definition duplication exists. Per-call-site variation (real rates vs. `0.0` vs. estimated tokens) is intentional and not worth collapsing further.
 
 ---
 
