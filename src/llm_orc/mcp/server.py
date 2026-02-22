@@ -1021,8 +1021,10 @@ class MCPServer:
 
         # Propagate new config_manager to all handlers that hold a reference
         self._ensemble_crud_handler._config_manager = self.config_manager
+        self._execution_handler._config_manager = self.config_manager
         self._validation_handler._config_manager = self.config_manager
         self._profile_handler._config_manager = self.config_manager
+        self._promotion_handler._config_manager = self.config_manager
         self._resource_handler._config_manager = self.config_manager
         self._library_handler._config_manager = self.config_manager
 
