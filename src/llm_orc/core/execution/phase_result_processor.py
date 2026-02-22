@@ -102,6 +102,7 @@ class PhaseResultProcessor:
         results_dict[agent_name] = {
             "response": agent_result.get("response"),
             "status": agent_result["status"],
+            "model_substituted": agent_result.get("model_substituted", False),
         }
         if agent_result["status"] == "failed":
             results_dict[agent_name]["error"] = agent_result["error"]

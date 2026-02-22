@@ -74,6 +74,7 @@ class AgentDispatcher:
                     "error": str(result),
                     "status": "failed",
                     "model_instance": None,
+                    "model_substituted": False,
                 }
                 continue
             agent_name, agent_result = result
@@ -137,6 +138,7 @@ class AgentDispatcher:
         (
             response,
             model_instance,
+            model_substituted,
         ) = await self._execution_coordinator.execute_agent_with_timeout(
             agent_config, agent_input, timeout
         )
@@ -147,6 +149,7 @@ class AgentDispatcher:
             "response": response,
             "status": "success",
             "model_instance": model_instance,
+            "model_substituted": model_substituted,
         }
 
     async def _get_agent_timeout(self, agent_config: AgentConfig) -> int:
@@ -201,4 +204,5 @@ class AgentDispatcher:
             "error": str(error),
             "status": "failed",
             "model_instance": None,
+            "model_substituted": False,
         }

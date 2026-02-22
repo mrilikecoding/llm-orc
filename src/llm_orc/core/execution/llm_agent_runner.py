@@ -39,15 +39,21 @@ class LlmAgentRunner:
         self,
         agent_config: AgentConfig,
         input_data: str,
-    ) -> tuple[str, ModelInterface | None]:
-        """Execute LLM agent with fallback handling."""
+    ) -> tuple[str, ModelInterface | None, bool]:
+        """Execute LLM agent with fallback handling.
+
+        Returns:
+            Tuple of (response, model_instance, model_substituted).
+            model_substituted is True when a fallback model was used
+            instead of the originally configured model.
+        """
         agent_name = agent_config.name
 
         self._usage_collector.start_agent_resource_monitoring(agent_name)
 
         try:
             role = await self._load_role_from_config(agent_config)
-            model = await self._load_model_with_fallback(agent_config)
+            model, substituted = await self._load_model_with_fallback(agent_config)
             agent = Agent(agent_name, role, model)
 
             self._usage_collector.sample_agent_resources(agent_name)
@@ -55,7 +61,7 @@ class LlmAgentRunner:
             try:
                 response = await agent.respond_to_message(input_data)
                 self._usage_collector.sample_agent_resources(agent_name)
-                return response, model
+                return response, model, substituted
             except Exception as e:
                 return await self._handle_runtime_fallback(
                     agent_config, role, input_data, e
@@ -65,15 +71,22 @@ class LlmAgentRunner:
 
     async def _load_model_with_fallback(
         self, agent_config: AgentConfig
-    ) -> ModelInterface:
-        """Load model with fallback handling."""
+    ) -> tuple[ModelInterface, bool]:
+        """Load model with fallback handling.
+
+        Returns:
+            Tuple of (model, substituted) where substituted is True
+            when a fallback model was used.
+        """
         try:
             config_dict = agent_config.model_dump()
-            return await self._model_factory.load_model_from_agent_config(config_dict)
+            model = await self._model_factory.load_model_from_agent_config(config_dict)
+            return model, False
         except Exception as model_loading_error:
-            return await self._handle_model_loading_fallback(
+            fallback = await self._handle_model_loading_fallback(
                 agent_config, model_loading_error
             )
+            return fallback, True
 
     async def _handle_model_loading_fallback(
         self,
@@ -112,7 +125,7 @@ class LlmAgentRunner:
         role: RoleDefinition,
         input_data: str,
         error: Exception,
-    ) -> tuple[str, ModelInterface]:
+    ) -> tuple[str, ModelInterface, bool]:
         """Handle runtime failure with fallback model."""
         fallback_model = await self._model_factory.get_fallback_model(
             context=f"agent_{agent_config.name}"
@@ -146,7 +159,7 @@ class LlmAgentRunner:
                 fallback_model,
                 response,
             )
-            return response, fallback_model
+            return response, fallback_model, True
         except Exception as fallback_error:
             self._emit_fallback_failure_event(
                 agent_config.name,

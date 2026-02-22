@@ -1746,7 +1746,7 @@ class TestEnsembleExecutor:
             mock_subprocess_run.return_value.returncode = 0
             # This is the core test: _script_agent_runner.execute should automatically
             # detect user input requirement and use execute_with_user_input
-            response, model = await executor._script_agent_runner.execute(
+            response, model, _ = await executor._script_agent_runner.execute(
                 agent_config, input_data
             )
 

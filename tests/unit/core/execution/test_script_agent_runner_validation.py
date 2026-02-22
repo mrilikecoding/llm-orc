@@ -54,7 +54,7 @@ class TestOutputValidation:
             new_callable=AsyncMock,
             return_value=valid_output,
         ):
-            response, _ = await runner._execute_without_cache(agent_config, "{}")
+            response, _, _ = await runner._execute_without_cache(agent_config, "{}")
 
         assert json.loads(response)["success"] is True
 
@@ -80,7 +80,7 @@ class TestOutputValidation:
             return_value=invalid_output,
         ):
             with caplog.at_level(logging.WARNING):
-                response, _ = await runner._execute_without_cache(agent_config, "{}")
+                response, _, _ = await runner._execute_without_cache(agent_config, "{}")
 
         # Output still passes through despite validation failure
         assert json.loads(response) == {"unexpected": "data"}
@@ -103,7 +103,7 @@ class TestOutputValidation:
             new_callable=AsyncMock,
             return_value=output,
         ):
-            response, _ = await runner._execute_without_cache(agent_config, "{}")
+            response, _, _ = await runner._execute_without_cache(agent_config, "{}")
 
         assert json.loads(response) == {"custom": "output"}
 
@@ -130,7 +130,52 @@ class TestOutputValidation:
                 "length": 2,
             },
         ):
-            response, _ = await runner._execute_without_cache(agent_config, "{}")
+            response, _, _ = await runner._execute_without_cache(agent_config, "{}")
 
         # Dict gets serialized to JSON string
         assert json.loads(response)["success"] is True
+
+
+class TestModelSubstitutedFlag:
+    """Script agent always returns model_substituted=False."""
+
+    @pytest.mark.asyncio
+    async def test_script_agent_never_substitutes_model(self) -> None:
+        """ScriptAgentRunner.execute always returns model_substituted=False."""
+        runner = _make_runner()
+        output = json.dumps({"custom": "output"})
+
+        agent_config = ScriptAgentConfig(
+            name="custom_agent",
+            script="scripts/custom/my_script.py",
+        )
+
+        with patch.object(
+            runner,
+            "_execute_with_input_handling",
+            new_callable=AsyncMock,
+            return_value=output,
+        ):
+            _, _, model_substituted = await runner._execute_without_cache(
+                agent_config, "{}"
+            )
+
+        assert model_substituted is False, "Script agents never substitute models"
+
+    @pytest.mark.asyncio
+    async def test_script_execute_returns_false_on_cache_hit(self) -> None:
+        """execute() returns model_substituted=False even on cache hit."""
+        cache = Mock()
+        cache.get.return_value = {"output": '{"cached": true}', "success": True}
+        runner = ScriptAgentRunner(
+            script_cache=cache,
+            usage_collector=Mock(),
+            progress_controller=Mock(),
+            emit_event=Mock(),
+            project_dir=None,
+        )
+
+        agent_config = ScriptAgentConfig(name="cached_agent", script="scripts/any.py")
+        _, _, model_substituted = await runner.execute(agent_config, "{}")
+
+        assert model_substituted is False, "Cache hits never substitute models"
