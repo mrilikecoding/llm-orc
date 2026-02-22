@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.6] - 2026-02-22
+
+### Refactored
+- **ProjectContext value object** — frozen dataclass groups `project_path` and `ConfigurationManager` for atomic handler propagation on `set_project`
+- **OrchestraService extraction** — shared application service replaces MCPServer as the composition root; both MCP and web ports are now thin protocol adapters
+- **Typed result models** — `AgentResult`, `ExecutionMetadata`, and `ExecutionResult` dataclasses replace `dict[str, Any]` in the execution pipeline
+- **ExecutorFactory** — centralizes `EnsembleExecutor` construction; child executors share immutable infrastructure while isolating mutable state
+
+### Docs
+- Removed completed `codebase-audit.md` (all 8 stewardship items and 18 findings resolved)
+- Updated `architecture.md`, `coding-standards.md`, and ADRs 003, 004, 009, 010 to reflect structural changes
+
 ## [0.15.5] - 2026-02-21
 
 ### Fixed
