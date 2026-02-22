@@ -9,6 +9,7 @@ from llm_orc.core.config.ensemble_config import (
     EnsembleConfig,
     assert_no_cycles,
 )
+from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
 
 
@@ -32,6 +33,10 @@ class ValidationHandler:
         self._config_manager = config_manager
         self._find_ensemble = find_ensemble
         self._get_all_profiles_fn = get_all_profiles_fn
+
+    def set_project_context(self, ctx: ProjectContext) -> None:
+        """Update handler to use new project context."""
+        self._config_manager = ctx.config_manager
 
     async def validate_ensemble(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Validate an ensemble configuration."""

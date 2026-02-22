@@ -16,6 +16,7 @@ from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.mcp.handlers.library_handler import LibraryHandler
 from llm_orc.mcp.handlers.profile_handler import ProfileHandler
 from llm_orc.mcp.handlers.provider_handler import ProviderHandler
+from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
 
 
@@ -44,6 +45,10 @@ class PromotionHandler:
         self._library_handler = library_handler
         self._provider_handler = provider_handler
         self._find_ensemble = find_ensemble
+
+    def set_project_context(self, ctx: ProjectContext) -> None:
+        """Update handler to use new project context."""
+        self._config_manager = ctx.config_manager
 
     # =========================================================================
     # Public tool methods

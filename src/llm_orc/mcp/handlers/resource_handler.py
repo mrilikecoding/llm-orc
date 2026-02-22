@@ -8,6 +8,7 @@ from typing import Any
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
+from llm_orc.mcp.project_context import ProjectContext
 
 
 class ResourceHandler:
@@ -21,6 +22,10 @@ class ResourceHandler:
         """Initialize with configuration manager and ensemble loader."""
         self._config_manager = config_manager
         self._ensemble_loader = ensemble_loader
+
+    def set_project_context(self, ctx: ProjectContext) -> None:
+        """Update handler to use new project context."""
+        self._config_manager = ctx.config_manager
 
     async def read_resource(self, uri: str) -> Any:
         """Read an MCP resource by URI.

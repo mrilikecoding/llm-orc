@@ -6,6 +6,7 @@ from typing import Any
 import yaml
 
 from llm_orc.core.config.config_manager import ConfigurationManager
+from llm_orc.mcp.project_context import ProjectContext
 
 
 class ProfileHandler:
@@ -17,6 +18,10 @@ class ProfileHandler:
     ) -> None:
         """Initialize with configuration manager."""
         self._config_manager = config_manager
+
+    def set_project_context(self, ctx: ProjectContext) -> None:
+        """Update handler to use new project context."""
+        self._config_manager = ctx.config_manager
 
     async def list_profiles(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """List model profiles."""

@@ -29,6 +29,7 @@ from llm_orc.mcp.handlers.provider_handler import ProviderHandler
 from llm_orc.mcp.handlers.resource_handler import ResourceHandler
 from llm_orc.mcp.handlers.script_handler import ScriptHandler
 from llm_orc.mcp.handlers.validation_handler import ValidationHandler
+from llm_orc.mcp.project_context import ProjectContext
 
 if TYPE_CHECKING:
     from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
@@ -101,6 +102,10 @@ class MCPServer:
         """
         self._project_path: Path | None = None
         self.config_manager = config_manager or ConfigurationManager()
+        self._project_context = ProjectContext(
+            project_path=None,
+            config_manager=self.config_manager,
+        )
         self.ensemble_loader = EnsembleLoader()
         self.artifact_manager = ArtifactManager()
         self._executor = executor  # Lazily created if None
@@ -1011,22 +1016,21 @@ class MCPServer:
                 "error": f"Path does not exist: {path}",
             }
 
-        # Update project path and invalidate cached executor
-        self._project_path = project_dir
+        # Create new project context
+        ctx = ProjectContext.create(project_dir)
+        self._project_context = ctx
+        self._project_path = ctx.project_path
+        self.config_manager = ctx.config_manager
         self._executor = None
-        self._execution_handler._project_path = project_dir
 
-        # Recreate config manager with new project path
-        self.config_manager = ConfigurationManager(project_dir=project_dir)
-
-        # Propagate new config_manager to all handlers that hold a reference
-        self._ensemble_crud_handler._config_manager = self.config_manager
-        self._execution_handler._config_manager = self.config_manager
-        self._validation_handler._config_manager = self.config_manager
-        self._profile_handler._config_manager = self.config_manager
-        self._promotion_handler._config_manager = self.config_manager
-        self._resource_handler._config_manager = self.config_manager
-        self._library_handler._config_manager = self.config_manager
+        # Propagate to all handlers atomically
+        self._ensemble_crud_handler.set_project_context(ctx)
+        self._execution_handler.set_project_context(ctx)
+        self._validation_handler.set_project_context(ctx)
+        self._profile_handler.set_project_context(ctx)
+        self._promotion_handler.set_project_context(ctx)
+        self._resource_handler.set_project_context(ctx)
+        self._library_handler.set_project_context(ctx)
 
         # Build result
         result: dict[str, Any] = {

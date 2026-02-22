@@ -148,6 +148,7 @@ class ScriptUserInputHandler:
         Returns:
             User input as string
         """
+        _ = conversation_id  # reserved for future per-conversation state
         prompt = input_request.get("prompt", "Enter input: ")
         agent_name = input_request.get("agent_name", "script_agent")
         script_path = input_request.get("script_path", "")

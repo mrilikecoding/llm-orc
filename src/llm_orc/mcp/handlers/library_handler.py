@@ -7,6 +7,7 @@ from typing import Any
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
+from llm_orc.mcp.project_context import ProjectContext
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,10 @@ class LibraryHandler:
         """Initialize with config manager and ensemble loader."""
         self._config_manager = config_manager
         self._ensemble_loader = ensemble_loader
+
+    def set_project_context(self, ctx: ProjectContext) -> None:
+        """Update handler to use new project context."""
+        self._config_manager = ctx.config_manager
 
     def get_library_dir(self) -> Path:
         """Get library directory path."""
