@@ -729,14 +729,9 @@ class EnsembleExecutor:
         collector, event queue, streaming tracker) per Invariant 10.
         Disables artifact saving per Invariant 9.
         """
-        return EnsembleExecutor(
-            project_dir=self._project_dir,
-            _config_manager=self._config_manager,
-            _credential_storage=self._credential_storage,
-            _model_factory=self._model_factory,
-            _depth=depth,
-            _save_artifacts=False,
-        )
+        from llm_orc.core.execution.executor_factory import ExecutorFactory
+
+        return ExecutorFactory.create_child_executor(self, depth)
 
     async def _execute_agent(
         self, agent_config: AgentConfig, input_data: str
