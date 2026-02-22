@@ -1767,6 +1767,30 @@ class TestSetProjectTool:
 
         assert server._profile_handler._config_manager is server.config_manager
 
+    def test_set_project_propagates_config_manager_to_execution_handler(
+        self, mock_config_manager: Any, tmp_path: Path
+    ) -> None:
+        """After set_project, execution_handler uses the new config_manager."""
+        server = MCPServer(config_manager=mock_config_manager)
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+
+        server._handle_set_project(str(project_dir))
+
+        assert server._execution_handler._config_manager is server.config_manager
+
+    def test_set_project_propagates_config_manager_to_promotion_handler(
+        self, mock_config_manager: Any, tmp_path: Path
+    ) -> None:
+        """After set_project, promotion_handler uses the new config_manager."""
+        server = MCPServer(config_manager=mock_config_manager)
+        project_dir = tmp_path / "my-project"
+        project_dir.mkdir()
+
+        server._handle_set_project(str(project_dir))
+
+        assert server._promotion_handler._config_manager is server.config_manager
+
 
 class TestValidateEnsembleProfileResolution:
     """Tests for Bug 2: validate_ensemble must find profiles in profiles directories."""
