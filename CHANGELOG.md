@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.5] - 2026-02-21
+
+### Fixed
+- **`set_project` config propagation gaps** — `_execution_handler` and `_promotion_handler` now receive the updated `ConfigurationManager` when `set_project` is called; previously both held a stale pre-`set_project` reference
+
+### Refactored
+- **Dead code deletion** — removed the `communication/protocol.py` cluster (`Message`, `ConversationManager`, `MessageProtocol`) and the `contracts/`+`reference/` packages (`ScriptContract`, `ContractValidator`, `FileWriteScript`, `JsonExtractScript`) — 5,323 lines across 20 files; no production code referenced these clusters
+
+### Tests
+- Reduced assertion roulette in ensemble execution tests: split two multi-concern fallback tests into focused pairs and added diagnostic messages to 20 assertions
+- Added route-level unit tests for `web/api/scripts`, `web/api/artifacts`, and `web/api/profiles` update endpoint; coverage restored to 90.3%
+
 ## [0.15.4] - 2026-02-21
 
 ### Fixed
