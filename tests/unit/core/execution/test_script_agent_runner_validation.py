@@ -161,15 +161,101 @@ class TestCacheHitValidation:
             script="primitives/user-interaction/get_user_input.py",
         )
 
-        with patch.object(
-            runner, "_validate_primitive_output"
-        ) as mock_validate:
+        with patch.object(runner, "_validate_primitive_output") as mock_validate:
             await runner.execute(agent_config, "{}")
 
         mock_validate.assert_called_once_with(
             "primitives/user-interaction/get_user_input.py",
             '{"cached": true}',
         )
+
+
+def _make_strict_runner() -> ScriptAgentRunner:
+    """Create a ScriptAgentRunner with strict_schema enabled."""
+    cache = Mock()
+    cache.get.return_value = None
+    return ScriptAgentRunner(
+        script_cache=cache,
+        usage_collector=Mock(),
+        progress_controller=Mock(),
+        emit_event=Mock(),
+        project_dir=None,
+        strict_schema=True,
+    )
+
+
+class TestStrictSchemaValidation:
+    """strict_schema=True raises ValueError on schema violations."""
+
+    @pytest.mark.asyncio
+    async def test_strict_mode_raises_on_invalid_output(self) -> None:
+        """Invalid output raises ValueError when strict_schema is True."""
+        runner = _make_strict_runner()
+        invalid_output = json.dumps({"unexpected": "data"})  # missing required fields
+
+        agent_config = ScriptAgentConfig(
+            name="test_agent",
+            script="primitives/user-interaction/get_user_input.py",
+            parameters={"prompt": "Enter:"},
+        )
+
+        with patch.object(
+            runner,
+            "_execute_with_input_handling",
+            new_callable=AsyncMock,
+            return_value=invalid_output,
+        ):
+            with pytest.raises(ValueError, match="schema validation failed"):
+                await runner._execute_without_cache(agent_config, "{}")
+
+    @pytest.mark.asyncio
+    async def test_non_strict_mode_warns_on_invalid_output(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Invalid output logs a warning (not raises) when strict_schema is False."""
+        runner = _make_runner()  # strict_schema=False by default
+        invalid_output = json.dumps({"unexpected": "data"})
+
+        agent_config = ScriptAgentConfig(
+            name="test_agent",
+            script="primitives/user-interaction/get_user_input.py",
+            parameters={"prompt": "Enter:"},
+        )
+
+        with patch.object(
+            runner,
+            "_execute_with_input_handling",
+            new_callable=AsyncMock,
+            return_value=invalid_output,
+        ):
+            with caplog.at_level(logging.WARNING):
+                response, _, _ = await runner._execute_without_cache(agent_config, "{}")
+
+        assert json.loads(response) == {"unexpected": "data"}
+        assert any("validation failed" in r.message.lower() for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_strict_mode_passes_on_valid_output(self) -> None:
+        """Valid output does not raise even in strict mode."""
+        runner = _make_strict_runner()
+        valid_output = json.dumps(
+            {"success": True, "input": "hi", "multiline": False, "length": 2}
+        )
+
+        agent_config = ScriptAgentConfig(
+            name="test_agent",
+            script="primitives/user-interaction/get_user_input.py",
+        )
+
+        with patch.object(
+            runner,
+            "_execute_with_input_handling",
+            new_callable=AsyncMock,
+            return_value=valid_output,
+        ):
+            response, _, _ = await runner._execute_without_cache(agent_config, "{}")
+
+        assert json.loads(response)["success"] is True
 
 
 class TestModelSubstitutedFlag:

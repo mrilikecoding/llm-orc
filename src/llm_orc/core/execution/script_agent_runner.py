@@ -38,12 +38,14 @@ class ScriptAgentRunner:
         progress_controller: Any,
         emit_event: Callable[[str, dict[str, Any]], None],
         project_dir: Path | None,
+        strict_schema: bool = False,
     ) -> None:
         self._script_cache = script_cache
         self._usage_collector = usage_collector
         self._progress_controller = progress_controller
         self._emit_event = emit_event
         self._project_dir = project_dir
+        self._strict_schema = strict_schema
         self._input_lock = asyncio.Lock()
 
     async def execute(
@@ -199,8 +201,9 @@ class ScriptAgentRunner:
     def _validate_primitive_output(self, script_ref: str, response: str) -> None:
         """Validate output against Pydantic schema for known primitives.
 
-        Opt-in: only fires for registered primitives. On failure, logs a
-        warning but does not block output (preserves existing workflows).
+        Opt-in: only fires for registered primitives. When strict_schema
+        is enabled, validation failures raise ValueError. Otherwise they
+        log a warning and allow output to pass through.
         """
         if not isinstance(response, str):
             return
@@ -216,7 +219,11 @@ class ScriptAgentRunner:
 
         try:
             output_schema.model_validate_json(response)
-        except Exception:
+        except Exception as exc:
+            if self._strict_schema:
+                raise ValueError(
+                    f"Primitive output schema validation failed for {script_ref}"
+                ) from exc
             logger.warning(
                 "Primitive output validation failed for %s",
                 script_ref,

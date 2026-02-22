@@ -66,6 +66,7 @@ class ValidationConfig(BaseModel):
     behavioral: list[BehavioralAssertion] = Field(default_factory=list)
     quantitative: list[QuantitativeMetric] = Field(default_factory=list)
     semantic: SemanticValidationConfig | None = None
+    strict_schema_validation: bool = False
 
 
 class LLMSimulationConfig(BaseModel):
