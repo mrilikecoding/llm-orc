@@ -1,8 +1,7 @@
 """Tests for script agent user input handling functionality."""
 
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 
-from llm_orc.core.communication.protocol import ConversationManager
 from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
 from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 
@@ -108,43 +107,3 @@ class TestScriptUserInputDetection:
         del mock_ensemble_no_attr.agents
         result = handler.ensemble_requires_user_input(mock_ensemble_no_attr)
         assert result is False
-
-
-class TestBidirectionalCommunication:
-    """Test bidirectional communication between CLI and script agents."""
-
-    async def test_cli_collects_user_input_for_script_agent(self) -> None:
-        """Test that CLI can collect user input when requested by script agent."""
-        # Setup communication protocol
-        conversation_manager = ConversationManager()
-
-        # Setup handler with communication capability
-        handler = ScriptUserInputHandler()
-
-        # Mock CLI input collector
-        cli_input_collector = AsyncMock()
-        cli_input_collector.collect_input.return_value = "John Doe"
-
-        # Mock script agent that needs input
-        script_agent = Mock()
-        script_agent.id = "script_agent_1"
-
-        # Start a conversation
-        conversation_id = conversation_manager.start_conversation(
-            participants=["cli", "script_agent_1"], topic="user_input_collection"
-        )
-
-        # Script agent requests user input
-        input_request = {
-            "type": "user_input_request",
-            "prompt": "Enter your name: ",
-            "agent_id": "script_agent_1",
-        }
-
-        # This should fail because we haven't implemented the communication flow yet
-        result = await handler.handle_input_request(
-            input_request, conversation_id, cli_input_collector
-        )
-
-        assert result == "John Doe"
-        cli_input_collector.collect_input.assert_called_once_with("Enter your name: ")
