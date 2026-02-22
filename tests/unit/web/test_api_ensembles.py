@@ -10,14 +10,14 @@ class TestEnsemblesAPI:
 
     def test_list_ensembles_returns_list(self, client: TestClient) -> None:
         """Test that GET /api/ensembles returns a list."""
-        with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._read_ensembles_resource = AsyncMock(
+        with patch("llm_orc.web.api.ensembles.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.read_ensembles = AsyncMock(
                 return_value=[
                     {"name": "test-ensemble", "description": "Test", "source": "local"}
                 ]
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.get("/api/ensembles")
 
@@ -29,16 +29,16 @@ class TestEnsemblesAPI:
 
     def test_get_ensemble_returns_detail(self, client: TestClient) -> None:
         """Test that GET /api/ensembles/{name} returns ensemble detail."""
-        with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._read_ensemble_resource = AsyncMock(
+        with patch("llm_orc.web.api.ensembles.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.read_ensemble = AsyncMock(
                 return_value={
                     "name": "test-ensemble",
                     "description": "Test ensemble",
                     "agents": [{"name": "agent1", "model_profile": "default"}],
                 }
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.get("/api/ensembles/test-ensemble")
 
@@ -49,10 +49,10 @@ class TestEnsemblesAPI:
 
     def test_get_ensemble_not_found(self, client: TestClient) -> None:
         """Test that GET /api/ensembles/{name} returns 404 for missing ensemble."""
-        with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._read_ensemble_resource = AsyncMock(return_value=None)
-            mock_get_mcp.return_value = mock_server
+        with patch("llm_orc.web.api.ensembles.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.read_ensemble = AsyncMock(return_value=None)
+            mock_get_svc.return_value = mock_service
 
             response = client.get("/api/ensembles/nonexistent")
 
@@ -60,15 +60,15 @@ class TestEnsemblesAPI:
 
     def test_execute_ensemble_returns_result(self, client: TestClient) -> None:
         """Test that POST /api/ensembles/{name}/execute returns result."""
-        with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._invoke_tool = AsyncMock(
+        with patch("llm_orc.web.api.ensembles.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.invoke = AsyncMock(
                 return_value={
                     "status": "success",
                     "results": {"agent1": {"response": "Test output"}},
                 }
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.post(
                 "/api/ensembles/test-ensemble/execute",
@@ -81,12 +81,12 @@ class TestEnsemblesAPI:
 
     def test_validate_ensemble_returns_validation(self, client: TestClient) -> None:
         """Test that POST /api/ensembles/{name}/validate returns validation."""
-        with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._validate_ensemble_tool = AsyncMock(
+        with patch("llm_orc.web.api.ensembles.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.validate_ensemble = AsyncMock(
                 return_value={"valid": True, "details": {"errors": []}}
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.post("/api/ensembles/test-ensemble/validate")
 
@@ -96,9 +96,9 @@ class TestEnsemblesAPI:
 
     def test_check_runnable_returns_status(self, client: TestClient) -> None:
         """Test that GET /api/ensembles/{name}/runnable returns status."""
-        with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._check_ensemble_runnable_tool = AsyncMock(
+        with patch("llm_orc.web.api.ensembles.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.check_ensemble_runnable = AsyncMock(
                 return_value={
                     "ensemble": "test-ensemble",
                     "runnable": True,
@@ -113,7 +113,7 @@ class TestEnsemblesAPI:
                     ],
                 }
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.get("/api/ensembles/test-ensemble/runnable")
 
@@ -126,9 +126,9 @@ class TestEnsemblesAPI:
 
     def test_check_runnable_with_unavailable_agents(self, client: TestClient) -> None:
         """Test that runnable endpoint shows unavailable agents correctly."""
-        with patch("llm_orc.web.api.ensembles.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._check_ensemble_runnable_tool = AsyncMock(
+        with patch("llm_orc.web.api.ensembles.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.check_ensemble_runnable = AsyncMock(
                 return_value={
                     "ensemble": "test-ensemble",
                     "runnable": False,
@@ -143,7 +143,7 @@ class TestEnsemblesAPI:
                     ],
                 }
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.get("/api/ensembles/test-ensemble/runnable")
 

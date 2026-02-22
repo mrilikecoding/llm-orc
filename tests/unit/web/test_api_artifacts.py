@@ -10,12 +10,12 @@ class TestArtifactsAPI:
 
     def test_list_artifacts_returns_list(self, client: TestClient) -> None:
         """GET /api/artifacts returns all ensembles with artifacts."""
-        with patch("llm_orc.web.api.artifacts.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server.artifact_manager.list_ensembles.return_value = [
+        with patch("llm_orc.web.api.artifacts.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.list_artifact_ensembles.return_value = [
                 {"ensemble": "my-ensemble", "count": 3}
             ]
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.get("/api/artifacts")
 
@@ -26,12 +26,12 @@ class TestArtifactsAPI:
 
     def test_get_ensemble_artifacts_returns_list(self, client: TestClient) -> None:
         """GET /api/artifacts/{ensemble} returns artifacts for that ensemble."""
-        with patch("llm_orc.web.api.artifacts.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._read_artifacts_resource = AsyncMock(
+        with patch("llm_orc.web.api.artifacts.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.read_artifacts = AsyncMock(
                 return_value=[{"id": "abc123", "timestamp": "2025-01-01"}]
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.get("/api/artifacts/my-ensemble")
 
@@ -41,12 +41,12 @@ class TestArtifactsAPI:
 
     def test_get_artifact_returns_detail(self, client: TestClient) -> None:
         """GET /api/artifacts/{ensemble}/{artifact_id} returns artifact detail."""
-        with patch("llm_orc.web.api.artifacts.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._read_artifact_resource = AsyncMock(
+        with patch("llm_orc.web.api.artifacts.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.read_artifact = AsyncMock(
                 return_value={"id": "abc123", "status": "completed"}
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.get("/api/artifacts/my-ensemble/abc123")
 
@@ -56,10 +56,10 @@ class TestArtifactsAPI:
 
     def test_get_artifact_returns_404_when_not_found(self, client: TestClient) -> None:
         """GET /api/artifacts/{ensemble}/{artifact_id} returns 404 when missing."""
-        with patch("llm_orc.web.api.artifacts.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._read_artifact_resource = AsyncMock(return_value=None)
-            mock_get_mcp.return_value = mock_server
+        with patch("llm_orc.web.api.artifacts.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.read_artifact = AsyncMock(return_value=None)
+            mock_get_svc.return_value = mock_service
 
             response = client.get("/api/artifacts/my-ensemble/missing")
 
@@ -67,12 +67,15 @@ class TestArtifactsAPI:
 
     def test_delete_artifact_returns_result(self, client: TestClient) -> None:
         """DELETE /api/artifacts/{ensemble}/{artifact_id} deletes the artifact."""
-        with patch("llm_orc.web.api.artifacts.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._delete_artifact_tool = AsyncMock(
-                return_value={"status": "deleted", "artifact_id": "my-ensemble/abc123"}
+        with patch("llm_orc.web.api.artifacts.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.delete_artifact = AsyncMock(
+                return_value={
+                    "status": "deleted",
+                    "artifact_id": "my-ensemble/abc123",
+                }
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.delete("/api/artifacts/my-ensemble/abc123")
 
@@ -82,12 +85,12 @@ class TestArtifactsAPI:
 
     def test_analyze_artifact_returns_result(self, client: TestClient) -> None:
         """POST /api/artifacts/{artifact_id}/analyze returns analysis."""
-        with patch("llm_orc.web.api.artifacts.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._analyze_execution_tool = AsyncMock(
+        with patch("llm_orc.web.api.artifacts.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.analyze_execution = AsyncMock(
                 return_value={"summary": "2 agents ran successfully"}
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.post("/api/artifacts/abc123/analyze")
 

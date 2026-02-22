@@ -18,18 +18,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
-from llm_orc.mcp.handlers.artifact_handler import ArtifactHandler
-from llm_orc.mcp.handlers.ensemble_crud_handler import EnsembleCrudHandler
-from llm_orc.mcp.handlers.execution_handler import ExecutionHandler
-from llm_orc.mcp.handlers.help_handler import HelpHandler
-from llm_orc.mcp.handlers.library_handler import LibraryHandler
-from llm_orc.mcp.handlers.profile_handler import ProfileHandler
-from llm_orc.mcp.handlers.promotion_handler import PromotionHandler
-from llm_orc.mcp.handlers.provider_handler import ProviderHandler
-from llm_orc.mcp.handlers.resource_handler import ResourceHandler
-from llm_orc.mcp.handlers.script_handler import ScriptHandler
-from llm_orc.mcp.handlers.validation_handler import ValidationHandler
-from llm_orc.mcp.project_context import ProjectContext
+from llm_orc.services.orchestra_service import OrchestraService
 
 if TYPE_CHECKING:
     from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
@@ -93,60 +82,23 @@ class MCPServer:
         self,
         config_manager: ConfigurationManager | None = None,
         executor: EnsembleExecutor | None = None,
+        service: OrchestraService | None = None,
     ) -> None:
         """Initialize MCP server.
 
         Args:
             config_manager: Configuration manager instance. Creates default if None.
             executor: Ensemble executor instance. Creates default if None.
+            service: OrchestraService instance. Creates default if None.
         """
-        self._project_path: Path | None = None
-        self.config_manager = config_manager or ConfigurationManager()
-        self._project_context = ProjectContext(
-            project_path=None,
-            config_manager=self.config_manager,
-        )
-        self.ensemble_loader = EnsembleLoader()
-        self.artifact_manager = ArtifactManager()
-        self._executor = executor  # Lazily created if None
-        self._help_handler = HelpHandler()
-        self._resource_handler = ResourceHandler(
-            self.config_manager, self.ensemble_loader
-        )
-        self._profile_handler = ProfileHandler(self.config_manager)
-        self._artifact_handler = ArtifactHandler()
-        self._script_handler = ScriptHandler()
-        self._library_handler = LibraryHandler(
-            self.config_manager, self.ensemble_loader
-        )
-        self._provider_handler = ProviderHandler(
-            self._profile_handler, self._find_ensemble_by_name
-        )
-        self._validation_handler = ValidationHandler(
-            self.config_manager,
-            self._find_ensemble_by_name,
-            self._profile_handler.get_all_profiles,
-        )
-        self._execution_handler = ExecutionHandler(
-            self.config_manager,
-            self.ensemble_loader,
-            self.artifact_manager,
-            self._get_executor,
-            self._find_ensemble_by_name,
-        )
-        self._ensemble_crud_handler = EnsembleCrudHandler(
-            self.config_manager,
-            self.ensemble_loader,
-            self._find_ensemble_by_name,
-            self._resource_handler.read_artifact,
-        )
-        self._promotion_handler = PromotionHandler(
-            self.config_manager,
-            self._profile_handler,
-            self._library_handler,
-            self._provider_handler,
-            self._find_ensemble_by_name,
-        )
+        if service is not None:
+            self._service = service
+        else:
+            self._service = OrchestraService(
+                config_manager=config_manager,
+                executor=executor,
+            )
+
         self._mcp = FastMCP("llm-orc")
         self._setup_resources()
         self._setup_tools()
@@ -154,58 +106,105 @@ class MCPServer:
     @property
     def project_path(self) -> Path | None:
         """Get the current project path."""
-        return self._project_path
+        return self._service.project_path
 
-    def _get_executor(self) -> EnsembleExecutor:
-        """Get or create the ensemble executor.
+    @property
+    def config_manager(self) -> ConfigurationManager:
+        """Get the configuration manager."""
+        return self._service.config_manager
 
-        Returns:
-            EnsembleExecutor instance.
-        """
-        if self._executor is None:
-            from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+    @property
+    def ensemble_loader(self) -> EnsembleLoader:
+        """Get the ensemble loader."""
+        return self._service.ensemble_loader
 
-            self._executor = EnsembleExecutor(project_dir=self._project_path)
-        return self._executor
+    @property
+    def artifact_manager(self) -> ArtifactManager:
+        """Get the artifact manager."""
+        return self._service.artifact_manager
+
+    # Expose handler attributes for tests that access them directly
+    @property
+    def _library_handler(self) -> Any:
+        return self._service._library_handler
+
+    @property
+    def _script_handler(self) -> Any:
+        return self._service._script_handler
+
+    @property
+    def _artifact_handler(self) -> Any:
+        return self._service._artifact_handler
+
+    @property
+    def _provider_handler(self) -> Any:
+        return self._service._provider_handler
+
+    @property
+    def _profile_handler(self) -> Any:
+        return self._service._profile_handler
+
+    @property
+    def _ensemble_crud_handler(self) -> Any:
+        return self._service._ensemble_crud_handler
+
+    @property
+    def _validation_handler(self) -> Any:
+        return self._service._validation_handler
+
+    @property
+    def _help_handler(self) -> Any:
+        return self._service._help_handler
+
+    @property
+    def _execution_handler(self) -> Any:
+        return self._service._execution_handler
+
+    @property
+    def _promotion_handler(self) -> Any:
+        return self._service._promotion_handler
+
+    @property
+    def _executor(self) -> Any:
+        return self._service._executor
 
     def _setup_resources(self) -> None:
         """Register MCP resources with FastMCP."""
 
-        # Use decorator syntax on methods
         @self._mcp.resource("llm-orc://ensembles")
         async def get_ensembles() -> str:
             """List all available ensembles."""
-            result = await self._read_ensembles_resource()
+            result = await self._service.read_ensembles()
             return json.dumps(result, indent=2)
 
         @self._mcp.resource("llm-orc://profiles")
         async def get_profiles() -> str:
             """List configured model profiles."""
-            result = await self._read_profiles_resource()
+            result = await self._service.read_profiles()
             return json.dumps(result, indent=2)
 
         @self._mcp.resource("llm-orc://ensemble/{name}")
         async def get_ensemble(name: str) -> str:
             """Get specific ensemble configuration."""
-            result = await self._read_ensemble_resource(name)
+            result = await self._service.read_ensemble(name)
             return json.dumps(result, indent=2)
 
         @self._mcp.resource("llm-orc://artifacts/{ensemble}")
         async def get_artifacts(ensemble: str) -> str:
             """List execution artifacts for an ensemble."""
-            result = await self._read_artifacts_resource(ensemble)
+            result = await self._service.read_artifacts(ensemble)
             return json.dumps(result, indent=2)
 
         @self._mcp.resource("llm-orc://metrics/{ensemble}")
         async def get_metrics(ensemble: str) -> str:
             """Get aggregated metrics for an ensemble."""
-            result = await self._read_metrics_resource(ensemble)
+            result = await self._service.read_metrics(ensemble)
             return json.dumps(result, indent=2)
 
         @self._mcp.resource("llm-orc://artifact/{ensemble}/{artifact_id}")
         async def get_artifact(ensemble: str, artifact_id: str) -> str:
             """Get individual artifact details."""
-            result = await self._read_artifact_resource(ensemble, artifact_id)
+            result = await self._service.read_artifact(ensemble, artifact_id)
             return json.dumps(result, indent=2)
 
     def _setup_tools(self) -> None:
@@ -228,7 +227,7 @@ class MCPServer:
             Args:
                 path: Path to the project directory
             """
-            result = server._handle_set_project(path)
+            result = server._set_project_tool_sync(path)
             return json.dumps(result, indent=2)
 
     def _setup_core_tools(self) -> None:
@@ -256,7 +255,7 @@ class MCPServer:
             Args:
                 ensemble_name: Name of the ensemble to validate
             """
-            result = await self._validate_ensemble_tool(
+            result = await self._service.validate_ensemble(
                 {
                     "ensemble_name": ensemble_name,
                 }
@@ -266,7 +265,7 @@ class MCPServer:
         @self._mcp.tool()
         async def list_ensembles() -> str:
             """List all available ensembles with their metadata."""
-            result = await self._read_ensembles_resource()
+            result = await self._service.read_ensembles()
             return json.dumps(result, indent=2)
 
         @self._mcp.tool()
@@ -284,7 +283,7 @@ class MCPServer:
                 dry_run: If True, only preview changes without applying
                 backup: If True, create backup before modifying
             """
-            result = await self._update_ensemble_tool(
+            result = await self._service.update_ensemble(
                 {
                     "ensemble_name": ensemble_name,
                     "changes": changes,
@@ -301,7 +300,7 @@ class MCPServer:
             Args:
                 artifact_id: ID of the artifact (format: ensemble_name/artifact_id)
             """
-            result = await self._analyze_execution_tool(
+            result = await self._service.analyze_execution(
                 {
                     "artifact_id": artifact_id,
                 }
@@ -332,7 +331,7 @@ class MCPServer:
                 agents: List of agent configurations
                 from_template: Optional template ensemble to copy from
             """
-            result = await self._create_ensemble_tool(
+            result = await self._service.create_ensemble(
                 {
                     "name": name,
                     "description": description,
@@ -350,7 +349,7 @@ class MCPServer:
                 ensemble_name: Name of the ensemble to delete
                 confirm: Must be True to actually delete
             """
-            result = await self._delete_ensemble_tool(
+            result = await self._service.delete_ensemble(
                 {
                     "ensemble_name": ensemble_name,
                     "confirm": confirm,
@@ -365,7 +364,7 @@ class MCPServer:
             Args:
                 category: Optional category to filter by
             """
-            result = await self._script_handler.list_scripts({"category": category})
+            result = await self._service.list_scripts({"category": category})
             return json.dumps(result, indent=2)
 
         @self._mcp.tool()
@@ -378,7 +377,7 @@ class MCPServer:
                 browse_type: Type to browse (ensembles, scripts, all)
                 category: Optional category filter
             """
-            result = await self._library_handler.browse(
+            result = await self._service.library_browse(
                 {"type": browse_type, "category": category}
             )
             return json.dumps(result, indent=2)
@@ -396,7 +395,7 @@ class MCPServer:
                 destination: Optional destination path
                 overwrite: Whether to overwrite existing files
             """
-            result = await self._library_handler.copy(
+            result = await self._service.library_copy(
                 {
                     "source": source,
                     "destination": destination,
@@ -415,7 +414,7 @@ class MCPServer:
             Args:
                 provider: Optional provider to filter by
             """
-            result = await self._profile_handler.list_profiles({"provider": provider})
+            result = await self._service.list_profiles_tool({"provider": provider})
             return json.dumps(result, indent=2)
 
         @self._mcp.tool()
@@ -439,7 +438,7 @@ class MCPServer:
                 temperature: Optional temperature (0.0-1.0)
                 max_tokens: Optional max tokens for generation
             """
-            result = await self._create_profile_tool(
+            result = await self._service.create_profile(
                 {
                     "name": name,
                     "provider": provider,
@@ -460,7 +459,9 @@ class MCPServer:
                 name: Profile name to update
                 changes: Changes to apply
             """
-            result = await self._update_profile_tool({"name": name, "changes": changes})
+            result = await self._service.update_profile(
+                {"name": name, "changes": changes}
+            )
             return json.dumps(result, indent=2)
 
         @self._mcp.tool()
@@ -471,7 +472,9 @@ class MCPServer:
                 name: Profile name to delete
                 confirm: Must be True to actually delete
             """
-            result = await self._delete_profile_tool({"name": name, "confirm": confirm})
+            result = await self._service.delete_profile(
+                {"name": name, "confirm": confirm}
+            )
             return json.dumps(result, indent=2)
 
     def _setup_artifact_tools(self) -> None:
@@ -485,7 +488,7 @@ class MCPServer:
                 artifact_id: Artifact ID (format: ensemble/timestamp)
                 confirm: Must be True to actually delete
             """
-            result = await self._delete_artifact_tool(
+            result = await self._service.delete_artifact(
                 {"artifact_id": artifact_id, "confirm": confirm}
             )
             return json.dumps(result, indent=2)
@@ -503,7 +506,7 @@ class MCPServer:
                 older_than_days: Delete artifacts older than this
                 dry_run: If True, preview without deleting
             """
-            result = await self._artifact_handler.cleanup_artifacts(
+            result = await self._service.cleanup_artifacts(
                 {
                     "ensemble_name": ensemble_name,
                     "older_than_days": older_than_days,
@@ -526,7 +529,7 @@ class MCPServer:
                 name: Script name
                 category: Script category
             """
-            result = await self._script_handler.get_script(
+            result = await self._service.get_script(
                 {"name": name, "category": category}
             )
             return json.dumps(result, indent=2)
@@ -544,7 +547,7 @@ class MCPServer:
                 category: Script category
                 input: Test input data
             """
-            result = await self._script_handler.test_script(
+            result = await self._service.test_script(
                 {"name": name, "category": category, "input": input}
             )
             return json.dumps(result, indent=2)
@@ -560,7 +563,7 @@ class MCPServer:
                 category: Script category
                 template: Template to use (basic, extraction, etc.)
             """
-            result = await self._script_handler.create_script(
+            result = await self._service.create_script(
                 {"name": name, "category": category, "template": template}
             )
             return json.dumps(result, indent=2)
@@ -574,7 +577,7 @@ class MCPServer:
                 category: Script category
                 confirm: Must be True to actually delete
             """
-            result = await self._script_handler.delete_script(
+            result = await self._service.delete_script(
                 {"name": name, "category": category, "confirm": confirm}
             )
             return json.dumps(result, indent=2)
@@ -589,13 +592,13 @@ class MCPServer:
             Args:
                 query: Search query
             """
-            result = await self._library_handler.search({"query": query})
+            result = await self._service.library_search({"query": query})
             return json.dumps(result, indent=2)
 
         @self._mcp.tool()
         async def library_info() -> str:
             """Get library information."""
-            result = await self._library_handler.info({})
+            result = await self._service.library_info({})
             return json.dumps(result, indent=2)
 
     def _setup_provider_discovery_tools(self) -> None:
@@ -609,7 +612,7 @@ class MCPServer:
             - Ollama: Available models from local instance
             - Cloud providers: Whether authentication is configured
             """
-            result = await self._provider_handler.get_provider_status({})
+            result = await self._service.get_provider_status({})
             return json.dumps(result, indent=2)
 
         @self._mcp.tool()
@@ -624,7 +627,7 @@ class MCPServer:
             - Status of each agent's profile/provider
             - Suggested local alternatives for unavailable profiles
             """
-            result = await self._check_ensemble_runnable_tool(
+            result = await self._service.check_ensemble_runnable(
                 {"ensemble_name": ensemble_name}
             )
             return json.dumps(result, indent=2)
@@ -650,7 +653,7 @@ class MCPServer:
                 dry_run: Preview what would be copied without actually copying
                 overwrite: Overwrite if ensemble already exists at destination
             """
-            result = await self._promote_ensemble_tool(
+            result = await self._service.promote_ensemble(
                 {
                     "ensemble_name": ensemble_name,
                     "destination": destination,
@@ -669,7 +672,7 @@ class MCPServer:
             Args:
                 ensemble_name: Name of the ensemble to inspect
             """
-            result = await self._list_dependencies_tool(
+            result = await self._service.list_dependencies(
                 {"ensemble_name": ensemble_name}
             )
             return json.dumps(result, indent=2)
@@ -685,7 +688,7 @@ class MCPServer:
                 ensemble_name: Name of the ensemble to check
                 destination: Target tier: 'global' or 'library'
             """
-            result = await self._check_promotion_readiness_tool(
+            result = await self._service.check_promotion_readiness(
                 {
                     "ensemble_name": ensemble_name,
                     "destination": destination,
@@ -710,7 +713,7 @@ class MCPServer:
                     no longer referenced by any ensemble
                 confirm: Must be True to actually delete
             """
-            result = await self._demote_ensemble_tool(
+            result = await self._service.demote_ensemble(
                 {
                     "ensemble_name": ensemble_name,
                     "tier": tier,
@@ -733,7 +736,7 @@ class MCPServer:
             - Tool categories and their purposes
             - Common workflows
             """
-            result = self._help_handler.get_help_documentation()
+            result = self._service.get_help_documentation()
             return json.dumps(result, indent=2)
 
     async def handle_initialize(self) -> dict[str, Any]:
@@ -882,35 +885,7 @@ class MCPServer:
         Raises:
             ValueError: If resource not found.
         """
-        return await self._resource_handler.read_resource(uri)
-
-    async def _read_ensembles_resource(self) -> list[dict[str, Any]]:
-        """Read all ensembles (delegation stub for web API)."""
-        return await self._resource_handler.read_ensembles()
-
-    async def _read_ensemble_resource(self, name: str) -> dict[str, Any]:
-        """Read specific ensemble (delegation stub for web API)."""
-        return await self._resource_handler.read_ensemble(name)
-
-    async def _read_artifacts_resource(
-        self, ensemble_name: str
-    ) -> list[dict[str, Any]]:
-        """Read artifacts (delegation stub for web API)."""
-        return await self._resource_handler.read_artifacts(ensemble_name)
-
-    async def _read_artifact_resource(
-        self, ensemble_name: str, artifact_id: str
-    ) -> dict[str, Any]:
-        """Read specific artifact (delegation stub for web API)."""
-        return await self._resource_handler.read_artifact(ensemble_name, artifact_id)
-
-    async def _read_metrics_resource(self, ensemble_name: str) -> dict[str, Any]:
-        """Read metrics (delegation stub for web API)."""
-        return await self._resource_handler.read_metrics(ensemble_name)
-
-    async def _read_profiles_resource(self) -> list[dict[str, Any]]:
-        """Read profiles (delegation stub for web API)."""
-        return await self._resource_handler.read_profiles()
+        return await self._service.read_resource(uri)
 
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Call an MCP tool.
@@ -941,46 +916,46 @@ class MCPServer:
         Returns:
             Handler function or None if not found.
         """
-        # Build dispatch table mapping tool names to handlers
+        svc = self._service
         handlers: dict[str, Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]] = {
             # Context management
             "set_project": self._set_project_tool,
             # Core tools
-            "invoke": self._invoke_tool,
-            "validate_ensemble": self._validate_ensemble_tool,
-            "update_ensemble": self._update_ensemble_tool,
-            "analyze_execution": self._analyze_execution_tool,
+            "invoke": svc.invoke,
+            "validate_ensemble": svc.validate_ensemble,
+            "update_ensemble": svc.update_ensemble,
+            "analyze_execution": svc.analyze_execution,
             # Ensemble CRUD
-            "create_ensemble": self._create_ensemble_tool,
-            "delete_ensemble": self._delete_ensemble_tool,
+            "create_ensemble": svc.create_ensemble,
+            "delete_ensemble": svc.delete_ensemble,
             # Scripts and library
-            "list_scripts": self._script_handler.list_scripts,
-            "library_browse": self._library_handler.browse,
-            "library_copy": self._library_handler.copy,
+            "list_scripts": svc.list_scripts,
+            "library_browse": svc.library_browse,
+            "library_copy": svc.library_copy,
             # Profile CRUD
-            "list_profiles": self._profile_handler.list_profiles,
-            "create_profile": self._create_profile_tool,
-            "update_profile": self._update_profile_tool,
-            "delete_profile": self._delete_profile_tool,
+            "list_profiles": svc.list_profiles_tool,
+            "create_profile": svc.create_profile,
+            "update_profile": svc.update_profile,
+            "delete_profile": svc.delete_profile,
             # Artifact management
-            "delete_artifact": self._delete_artifact_tool,
-            "cleanup_artifacts": self._artifact_handler.cleanup_artifacts,
+            "delete_artifact": svc.delete_artifact,
+            "cleanup_artifacts": svc.cleanup_artifacts,
             # Script management
-            "get_script": self._script_handler.get_script,
-            "test_script": self._script_handler.test_script,
-            "create_script": self._script_handler.create_script,
-            "delete_script": self._script_handler.delete_script,
+            "get_script": svc.get_script,
+            "test_script": svc.test_script,
+            "create_script": svc.create_script,
+            "delete_script": svc.delete_script,
             # Library extras
-            "library_search": self._library_handler.search,
-            "library_info": self._library_handler.info,
+            "library_search": svc.library_search,
+            "library_info": svc.library_info,
             # Provider & model discovery
-            "get_provider_status": self._get_provider_status_tool,
-            "check_ensemble_runnable": self._check_ensemble_runnable_tool,
+            "get_provider_status": svc.get_provider_status,
+            "check_ensemble_runnable": svc.check_ensemble_runnable,
             # Promotion
-            "promote_ensemble": self._promote_ensemble_tool,
-            "list_dependencies": self._list_dependencies_tool,
-            "check_promotion_readiness": self._check_promotion_readiness_tool,
-            "demote_ensemble": self._demote_ensemble_tool,
+            "promote_ensemble": svc.promote_ensemble,
+            "list_dependencies": svc.list_dependencies,
+            "check_promotion_readiness": svc.check_promotion_readiness,
+            "demote_ensemble": svc.demote_ensemble,
             # Help
             "get_help": self._help_tool,
         }
@@ -996,10 +971,14 @@ class MCPServer:
             Project context result.
         """
         path = arguments.get("path", "")
-        return self._handle_set_project(path)
+        return self._service.handle_set_project(path)
+
+    def _set_project_tool_sync(self, path: str) -> dict[str, Any]:
+        """Thin synchronous wrapper for set_project (used in FastMCP closure)."""
+        return self._service.handle_set_project(path)
 
     def _handle_set_project(self, path: str) -> dict[str, Any]:
-        """Handle set_project logic.
+        """Handle set_project logic (kept for backward compatibility in tests).
 
         Args:
             path: Project directory path.
@@ -1007,47 +986,7 @@ class MCPServer:
         Returns:
             Result dict with status and project info.
         """
-        project_dir = Path(path).resolve()
-
-        # Validate path exists
-        if not project_dir.exists():
-            return {
-                "status": "error",
-                "error": f"Path does not exist: {path}",
-            }
-
-        # Create new project context
-        ctx = ProjectContext.create(project_dir)
-        self._project_context = ctx
-        self._project_path = ctx.project_path
-        self.config_manager = ctx.config_manager
-        self._executor = None
-
-        # Propagate to all handlers atomically
-        self._ensemble_crud_handler.set_project_context(ctx)
-        self._execution_handler.set_project_context(ctx)
-        self._validation_handler.set_project_context(ctx)
-        self._profile_handler.set_project_context(ctx)
-        self._promotion_handler.set_project_context(ctx)
-        self._resource_handler.set_project_context(ctx)
-        self._library_handler.set_project_context(ctx)
-
-        # Build result
-        result: dict[str, Any] = {
-            "status": "ok",
-            "project_path": str(project_dir),
-        }
-
-        # Add note if no .llm-orc directory
-        llm_orc_dir = project_dir / ".llm-orc"
-        if not llm_orc_dir.exists():
-            result["note"] = "No .llm-orc directory found; using global config only"
-
-        return result
-
-    async def _invoke_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Execute invoke tool (delegation stub for web API)."""
-        return await self._execution_handler.invoke(arguments)
+        return self._service.handle_set_project(path)
 
     async def _invoke_tool_with_streaming(
         self, ensemble_name: str, input_data: str, ctx: Context[Any, Any, Any]
@@ -1067,8 +1006,8 @@ class MCPServer:
         input_data: str,
         reporter: ProgressReporter,
     ) -> dict[str, Any]:
-        """Execute streaming (delegation stub for tests)."""
-        return await self._execution_handler.execute_streaming(
+        """Execute streaming (thin wrapper for tests)."""
+        return await self._service.execute_streaming(
             ensemble_name, input_data, reporter
         )
 
@@ -1079,51 +1018,58 @@ class MCPServer:
         total_agents: int,
         state: dict[str, Any],
     ) -> None:
-        """Handle streaming event (delegation stub for tests)."""
-        await self._execution_handler.handle_streaming_event(
-            event, reporter, total_agents, state
-        )
-
-    async def _validate_ensemble_tool(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Execute validate_ensemble tool."""
-        return await self._validation_handler.validate_ensemble(arguments)
-
-    def _find_ensemble_by_name(self, ensemble_name: str) -> Any:
-        """Find ensemble configuration by name.
-
-        Args:
-            ensemble_name: Name of ensemble to find.
-
-        Returns:
-            Ensemble configuration or None if not found.
-        """
-        ensemble_dirs = self.config_manager.get_ensembles_dirs()
-        for ensemble_dir in ensemble_dirs:
-            config = self.ensemble_loader.find_ensemble(
-                str(ensemble_dir), ensemble_name
-            )
-            if config:
-                return config
-        return None
-
-    async def _update_ensemble_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Update ensemble (delegation stub for web API)."""
-        return await self._ensemble_crud_handler.update_ensemble(arguments)
-
-    async def _analyze_execution_tool(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Analyze execution (delegation stub for web API)."""
-        return await self._ensemble_crud_handler.analyze_execution(arguments)
+        """Handle streaming event (thin wrapper for tests)."""
+        await self._service.handle_streaming_event(event, reporter, total_agents, state)
 
     async def invoke_streaming(
         self, params: dict[str, Any]
     ) -> AsyncIterator[dict[str, Any]]:
-        """Invoke ensemble with streaming progress (delegation stub)."""
-        async for event in self._execution_handler.invoke_streaming(params):
+        """Invoke ensemble with streaming progress."""
+        async for event in self._service.invoke_streaming(params):
             yield event
+
+    async def _help_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Get help documentation.
+
+        Args:
+            arguments: Tool arguments (none required).
+
+        Returns:
+            Comprehensive help documentation.
+        """
+        return self._service.get_help_documentation()
+
+    # === Backward-compat delegation methods used by tests ===
+
+    async def _get_provider_status_tool(
+        self, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Get provider status (backward-compat wrapper for tests)."""
+        return await self._service.get_provider_status(arguments)
+
+    async def _check_ensemble_runnable_tool(
+        self, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Check ensemble runnable (backward-compat wrapper for tests)."""
+        return await self._service.check_ensemble_runnable(arguments)
+
+    async def _read_ensembles_resource(self) -> list[dict[str, Any]]:
+        """Read all ensembles (backward-compat wrapper for tests)."""
+        return await self._service.read_ensembles()
+
+    async def _validate_ensemble_tool(
+        self, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Execute validate_ensemble tool (backward-compat wrapper)."""
+        return await self._service.validate_ensemble(arguments)
+
+    def _get_executor(self) -> EnsembleExecutor:
+        """Get executor (backward-compat wrapper for tests)."""
+        return self._service._get_executor()
+
+    def _get_local_ensembles_dir(self) -> Path:
+        """Get local ensembles dir (backward-compat wrapper for tests)."""
+        return self._service.get_local_ensembles_dir()
 
     def run(
         self, transport: str = "stdio", host: str = "0.0.0.0", port: int = 8080
@@ -1142,78 +1088,3 @@ class MCPServer:
             uvicorn.run(app, host=host, port=port)
         else:
             self._mcp.run()
-
-    # =========================================================================
-    # Delegation stubs for web API and test callers
-    # =========================================================================
-
-    async def _create_ensemble_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Create ensemble (delegation stub for web API)."""
-        return await self._ensemble_crud_handler.create_ensemble(arguments)
-
-    def _get_local_ensembles_dir(self) -> Path:
-        """Get local ensembles dir (delegation stub for tests)."""
-        return self._ensemble_crud_handler.get_local_ensembles_dir()
-
-    async def _delete_ensemble_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Delete ensemble (delegation stub for web API)."""
-        return await self._ensemble_crud_handler.delete_ensemble(arguments)
-
-    async def _create_profile_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Create profile (delegation stub for web API)."""
-        return await self._profile_handler.create_profile(arguments)
-
-    async def _update_profile_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Update profile (delegation stub for web API)."""
-        return await self._profile_handler.update_profile(arguments)
-
-    async def _delete_profile_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Delete profile (delegation stub for web API)."""
-        return await self._profile_handler.delete_profile(arguments)
-
-    async def _delete_artifact_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Delete artifact (delegation stub for web API)."""
-        return await self._artifact_handler.delete_artifact(arguments)
-
-    async def _get_provider_status_tool(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Get provider status (delegation stub for tests)."""
-        return await self._provider_handler.get_provider_status(arguments)
-
-    async def _check_ensemble_runnable_tool(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Check if an ensemble can run with current providers."""
-        return await self._provider_handler.check_ensemble_runnable(arguments)
-
-    async def _promote_ensemble_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Promote ensemble (delegation stub for web API)."""
-        return await self._promotion_handler.promote_ensemble(arguments)
-
-    async def _list_dependencies_tool(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
-        """List dependencies (delegation stub for web API)."""
-        return await self._promotion_handler.list_dependencies(arguments)
-
-    async def _check_promotion_readiness_tool(
-        self, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Check promotion readiness (delegation stub for web API)."""
-        return await self._promotion_handler.check_promotion_readiness(arguments)
-
-    async def _demote_ensemble_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Demote ensemble (delegation stub for web API)."""
-        return await self._promotion_handler.demote_ensemble(arguments)
-
-    async def _help_tool(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Get help documentation.
-
-        Args:
-            arguments: Tool arguments (none required).
-
-        Returns:
-            Comprehensive help documentation.
-        """
-        return self._help_handler.get_help_documentation()

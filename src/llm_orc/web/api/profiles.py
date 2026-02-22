@@ -1,6 +1,6 @@
 """Profiles API endpoints.
 
-Provides REST API for model profile management, delegating to MCPServer.
+Provides REST API for model profile management, delegating to OrchestraService.
 """
 
 from typing import Any
@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from llm_orc.web.api import get_mcp_server
+from llm_orc.web.api import get_orchestra_service
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 
@@ -26,15 +26,15 @@ class CreateProfileRequest(BaseModel):
 @router.get("")
 async def list_profiles() -> list[dict[str, Any]]:
     """List all configured model profiles."""
-    mcp = get_mcp_server()
-    return await mcp._read_profiles_resource()
+    service = get_orchestra_service()
+    return await service.read_profiles()
 
 
 @router.post("")
 async def create_profile(request: CreateProfileRequest) -> dict[str, Any]:
     """Create a new model profile."""
-    mcp = get_mcp_server()
-    result = await mcp._create_profile_tool(
+    service = get_orchestra_service()
+    result = await service.create_profile(
         {
             "name": request.name,
             "provider": request.provider,
@@ -58,15 +58,15 @@ class UpdateProfileRequest(BaseModel):
 @router.put("/{name}")
 async def update_profile(name: str, request: UpdateProfileRequest) -> dict[str, Any]:
     """Update an existing model profile."""
-    mcp = get_mcp_server()
+    service = get_orchestra_service()
     changes = {k: v for k, v in request.model_dump().items() if v is not None}
-    result = await mcp._update_profile_tool({"name": name, "changes": changes})
+    result = await service.update_profile({"name": name, "changes": changes})
     return result
 
 
 @router.delete("/{name}")
 async def delete_profile(name: str) -> dict[str, Any]:
     """Delete a model profile."""
-    mcp = get_mcp_server()
-    result = await mcp._delete_profile_tool({"name": name, "confirm": True})
+    service = get_orchestra_service()
+    result = await service.delete_profile({"name": name, "confirm": True})
     return result

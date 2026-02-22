@@ -10,14 +10,14 @@ class TestProfilesAPI:
 
     def test_list_profiles_returns_list(self, client: TestClient) -> None:
         """Test that GET /api/profiles returns a list."""
-        with patch("llm_orc.web.api.profiles.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._read_profiles_resource = AsyncMock(
+        with patch("llm_orc.web.api.profiles.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.read_profiles = AsyncMock(
                 return_value=[
                     {"name": "default", "provider": "ollama", "model": "llama3"}
                 ]
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.get("/api/profiles")
 
@@ -29,12 +29,12 @@ class TestProfilesAPI:
 
     def test_create_profile_success(self, client: TestClient) -> None:
         """Test that POST /api/profiles creates a profile."""
-        with patch("llm_orc.web.api.profiles.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._create_profile_tool = AsyncMock(
+        with patch("llm_orc.web.api.profiles.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.create_profile = AsyncMock(
                 return_value={"status": "created", "name": "new-profile"}
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.post(
                 "/api/profiles",
@@ -47,12 +47,12 @@ class TestProfilesAPI:
 
     def test_update_profile_success(self, client: TestClient) -> None:
         """Test that PUT /api/profiles/{name} updates a profile."""
-        with patch("llm_orc.web.api.profiles.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._update_profile_tool = AsyncMock(
+        with patch("llm_orc.web.api.profiles.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.update_profile = AsyncMock(
                 return_value={"status": "updated", "name": "my-profile"}
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.put(
                 "/api/profiles/my-profile",
@@ -65,12 +65,12 @@ class TestProfilesAPI:
 
     def test_delete_profile_success(self, client: TestClient) -> None:
         """Test that DELETE /api/profiles/{name} deletes a profile."""
-        with patch("llm_orc.web.api.profiles.get_mcp_server") as mock_get_mcp:
-            mock_server = MagicMock()
-            mock_server._delete_profile_tool = AsyncMock(
+        with patch("llm_orc.web.api.profiles.get_orchestra_service") as mock_get_svc:
+            mock_service = MagicMock()
+            mock_service.delete_profile = AsyncMock(
                 return_value={"status": "deleted", "name": "old-profile"}
             )
-            mock_get_mcp.return_value = mock_server
+            mock_get_svc.return_value = mock_service
 
             response = client.delete("/api/profiles/old-profile")
 
