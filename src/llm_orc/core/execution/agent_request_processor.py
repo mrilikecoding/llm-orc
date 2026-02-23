@@ -91,26 +91,31 @@ class AgentRequestProcessor:
         """
         try:
             response_data = json.loads(script_response)
-
-            # Extract agent_requests if present
-            agent_requests_data = response_data.get("agent_requests", [])
-            agent_requests = [
-                AgentRequest(**request_data) for request_data in agent_requests_data
-            ]
-
-            # Coordinate execution if requests exist
-            coordinated_agents = []
-            if agent_requests:
-                coordinated_agents = self.coordinate_agent_execution(
-                    agent_requests, {}, current_phase_agents
-                )
-
+        except json.JSONDecodeError:
+            # Plain text output (not JSON) means no agent requests — not an error.
             return {
                 "source_agent": source_agent,
-                "response_data": response_data,
-                "agent_requests": agent_requests_data,
-                "coordinated_agents": coordinated_agents,
+                "response_data": {},
+                "agent_requests": [],
+                "coordinated_agents": [],
             }
 
-        except json.JSONDecodeError as e:
-            raise RuntimeError(f"Failed to process script output JSON: {str(e)}") from e
+        # Extract agent_requests if present
+        agent_requests_data = response_data.get("agent_requests", [])
+        agent_requests = [
+            AgentRequest(**request_data) for request_data in agent_requests_data
+        ]
+
+        # Coordinate execution if requests exist
+        coordinated_agents = []
+        if agent_requests:
+            coordinated_agents = self.coordinate_agent_execution(
+                agent_requests, {}, current_phase_agents
+            )
+
+        return {
+            "source_agent": source_agent,
+            "response_data": response_data,
+            "agent_requests": agent_requests_data,
+            "coordinated_agents": coordinated_agents,
+        }

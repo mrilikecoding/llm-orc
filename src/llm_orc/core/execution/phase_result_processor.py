@@ -7,7 +7,7 @@ from typing import Any
 from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
 from llm_orc.core.execution.result_types import AgentResult
 from llm_orc.core.execution.usage_collector import UsageCollector
-from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
+from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig, ScriptAgentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +140,12 @@ class PhaseResultProcessor:
             response = agent_result.get("response")
             model_instance = agent_result.get("model_instance")
 
-        if response and isinstance(response, str):
+        agent_config = agent_configs.get(agent_name)
+        if (
+            response
+            and isinstance(response, str)
+            and isinstance(agent_config, ScriptAgentConfig)
+        ):
             await self._process_agent_requests(
                 response,
                 agent_name,
@@ -150,7 +155,6 @@ class PhaseResultProcessor:
             )
 
         if model_instance is not None:
-            agent_config = agent_configs.get(agent_name)
             model_profile = (
                 agent_config.model_profile
                 if agent_config and isinstance(agent_config, LlmAgentConfig)
