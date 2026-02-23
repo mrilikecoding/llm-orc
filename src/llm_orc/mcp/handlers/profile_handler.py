@@ -157,8 +157,15 @@ class ProfileHandler:
         raise ValueError(f"Profile '{name}' not found")
 
     def get_all_profiles(self) -> dict[str, dict[str, Any]]:
-        """Get all profiles as a dict keyed by name."""
-        profiles: dict[str, dict[str, Any]] = {}
+        """Get all profiles as a dict keyed by name.
+
+        Merges profiles from config.yaml model_profiles sections (global and
+        local) with profiles from profiles/ directories. Directory-based
+        profiles take precedence over config.yaml-based profiles.
+        """
+        profiles: dict[str, dict[str, Any]] = dict(
+            self._config_manager.get_model_profiles()
+        )
 
         for dir_path in self._config_manager.get_profiles_dirs():
             profile_dir = Path(dir_path)

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.7] - 2026-02-22
+
+### Fixed
+- **Profile validation in web UI** — `ProfileHandler.get_all_profiles()` now seeds from `ConfigurationManager.get_model_profiles()` before scanning `profiles/` directories; profiles defined only in `config.yaml` (e.g. `validate-ollama`) were previously invisible to the UI and treated as unvalidated
+- **Spurious `RuntimeError` on plain-text agent output** — `AgentRequestProcessor.process_script_output_with_requests()` now returns gracefully with empty `agent_requests` when the response is not JSON; callers also guard the call to script agents only, preventing the error from appearing for LLM agent responses
+- **Ensemble runs reported as "Failed" in web UI** — `ExecutionHandler.invoke()` now maps internal status `"completed"` → `"success"` and `"completed_with_errors"` → `"error"` at the API boundary; the frontend was receiving `"completed"` and treating it as failure
+
 ## [0.15.6] - 2026-02-22
 
 ### Refactored

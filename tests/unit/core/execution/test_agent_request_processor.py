@@ -131,3 +131,19 @@ class TestAgentRequestProcessor:
         request = processed_result["agent_requests"][0]
         assert request["target_agent_type"] == "user_input"
         assert "prompt" in request["parameters"]
+
+    @pytest.mark.asyncio
+    async def test_plain_text_response_returns_empty_agent_requests(self) -> None:
+        """Plain text (non-JSON) output returns empty agent_requests, not an error."""
+        dependency_resolver = Mock(spec=DependencyResolver)
+        processor = AgentRequestProcessor(dependency_resolver)
+
+        result = await processor.process_script_output_with_requests(
+            "Authentication working",
+            source_agent="validator",
+            current_phase_agents=[],
+        )
+
+        assert result["agent_requests"] == []
+        assert result["coordinated_agents"] == []
+        assert result["source_agent"] == "validator"

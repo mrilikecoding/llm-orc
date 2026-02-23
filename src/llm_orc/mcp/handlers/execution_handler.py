@@ -83,10 +83,17 @@ class ExecutionHandler:
         executor = EnsembleExecutor(project_dir=self._project_path)
         result = await executor.execute(config, input_data)
 
+        raw_status: str | None = result.get("status")
+        # Normalize internal status values to the API contract expected by clients.
+        # "completed"             → "success"  (all agents succeeded)
+        # "completed_with_errors" → "error"    (some agents failed)
+        status_map = {"completed": "success", "completed_with_errors": "error"}
+        status = status_map.get(raw_status, raw_status) if raw_status else raw_status
+
         return {
             "results": result.get("results", {}),
             "synthesis": result.get("synthesis"),
-            "status": result.get("status"),
+            "status": status,
         }
 
     async def execute_streaming(
