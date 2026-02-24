@@ -11,7 +11,6 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.mcp.project_context import ProjectContext
-from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
 
 if TYPE_CHECKING:
     from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
@@ -276,26 +275,7 @@ class ExecutionHandler:
         if not config:
             raise ValueError(f"Ensemble not found: {ensemble_name}")
 
-        for agent in config.agents:
-            agent_name = _get_agent_attr(agent, "name")
-            yield {
-                "type": "agent_start",
-                "agent": agent_name,
-            }
-
-            yield {
-                "type": "agent_progress",
-                "agent": agent_name,
-                "progress": 50,
-            }
-
-            yield {
-                "type": "agent_complete",
-                "agent": agent_name,
-                "status": "success",
-            }
-
-        yield {
-            "type": "execution_complete",
-            "status": "success",
-        }
+        input_data = params.get("input", "")
+        executor = self._get_executor()
+        async for event in executor.execute_streaming(config, input_data):
+            yield event
