@@ -648,7 +648,7 @@ Note: User-input primitive validation skipped (requires interactive testing bett
 **Issue #2: Script Resolution Search Paths** ✅
 - **Symptom**: ScriptResolver couldn't find library scripts at `llm-orchestra-library/scripts/primitives/`
 - **Root Cause**: Missing `llm-orchestra-library/scripts/` in search paths
-- **Resolution**: Added `library_base / SCRIPTS_DIR` to search paths in `script_resolver.py`
+- **Resolution**: Added `library_base / SCRIPTS_DIR` to search paths in `scripting/resolver.py`
 - **Commit**: 0548af5
 - **Impact**: Library primitives now discoverable
 
@@ -685,7 +685,7 @@ Note: Phase 4 deferred as validation infrastructure is complete. Research extens
 5. All validation layers functional with comprehensive assertions
 
 **Files Modified**:
-- `src/llm_orc/core/execution/script_resolver.py` - Library scripts search path
+- `src/llm_orc/core/execution/scripting/resolver.py` - Library scripts search path
 - `src/llm_orc/core/execution/ensemble_execution.py` - execution_order tracking, JSON parsing
 - `src/llm_orc/cli_commands.py` - Validation execution integration
 - `src/llm_orc/core/validation/evaluator.py` - Assertion context alias

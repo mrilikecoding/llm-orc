@@ -60,7 +60,8 @@ llm-orc/                          # Orchestration infrastructure
 └── src/llm_orc/
     ├── agents/script_agent.py    # Script execution engine
     ├── core/execution/
-    │   └── script_resolver.py    # Script discovery
+    │   └── scripting/
+    │       └── resolver.py       # Script discovery
     └── schemas/script_agent.py   # Type-safe I/O schemas
 
 llm-orchestra-library/            # Orchestrable content
