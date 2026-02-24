@@ -6,6 +6,7 @@ MCP and web ports.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -51,6 +52,8 @@ class OrchestraService:
         self.ensemble_loader = EnsembleLoader()
         self.artifact_manager = ArtifactManager()
         self._executor = executor
+
+        self._project_lock = asyncio.Lock()
 
         self._help_handler = HelpHandler()
         self._resource_handler = ResourceHandler(
@@ -151,6 +154,15 @@ class OrchestraService:
         if not llm_orc_dir.exists():
             result["note"] = "No .llm-orc directory found; using global config only"
         return result
+
+    async def handle_set_project_async(self, path: str) -> dict[str, Any]:
+        """Thread-safe async wrapper for handle_set_project.
+
+        Serializes concurrent project switches via a lock to prevent
+        partial state corruption when multiple callers race.
+        """
+        async with self._project_lock:
+            return self.handle_set_project(path)
 
     # === Resource reading ===
 

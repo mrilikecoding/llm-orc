@@ -971,7 +971,7 @@ class MCPServer:
             Project context result.
         """
         path = arguments.get("path", "")
-        return self._service.handle_set_project(path)
+        return await self._service.handle_set_project_async(path)
 
     def _set_project_tool_sync(self, path: str) -> dict[str, Any]:
         """Thin synchronous wrapper for set_project (used in FastMCP closure)."""
