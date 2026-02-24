@@ -31,14 +31,31 @@ Tracking resolution of findings. See `docs/plans/2026-02-23-codebase-audit-remed
 | U8 | Remove dead EventFactory code from ScriptUserInputHandler | Resolved | 2026-02-23 |
 | U9 | Replace `_test_*` escape hatches with constructor injection | Resolved | 2026-02-23 |
 | U14 | Make `LLMResponseGenerator` accept `ModelInterface` | Resolved | 2026-02-23 |
+| E8 | Add `asyncio.Lock` to `handle_set_project` | Resolved | 2026-02-23 |
+| M3 | Delete unused typed event system | Resolved | 2026-02-23 |
+| U5 | Replace `_current_agent_configs` temporary field | Resolved | 2026-02-23 |
+| M4 | Narrow `except Exception` to specific types | Resolved | 2026-02-23 |
+| U12 | Add BDD feature files for ADRs 010-014 | Resolved | 2026-02-23 |
+| M2 | Push EnsembleExecutor construction into ExecutorFactory | Resolved | 2026-02-23 |
+| M1 | Route CLI through OrchestraService | Resolved | 2026-02-23 |
+| E1 | Move handlers from `mcp/handlers/` to `services/handlers/` | Resolved | 2026-02-23 |
+| U15 | Rewrite CLI tests to mock OrchestraService at boundary | Resolved | 2026-02-23 |
+| E2/U1 | Split ConfigurationManager construction from provisioning | Resolved | 2026-02-23 |
+| E4 | Connect `invoke_streaming` to real execution | Resolved | 2026-02-23 |
+| E3 | Define TemplateProvider protocol, inject into ConfigurationManager | Resolved | 2026-02-23 |
+| M6 | Add `HTTPConnectionPool.configure()`, remove hidden ConfigurationManager | Resolved | 2026-02-23 |
+| U3 | Reorganize flat `execution/` into sub-packages | Deferred | — |
+| U10/U11 | Improve test quality (assertion roulette, eager tests) | Deferred | — |
 
 ## Executive Summary
 
-LLM Orchestra is a multi-agent LLM orchestration system that coordinates ensembles of AI agents through dependency-based phase execution. The architecture follows a partially realized hexagonal (ports and adapters) pattern with `OrchestraService` as the application core, MCP and web as proper thin adapters, and the CLI as a thick port that bypasses the service layer entirely.
+LLM Orchestra is a multi-agent LLM orchestration system that coordinates ensembles of AI agents through dependency-based phase execution. The architecture follows a hexagonal (ports and adapters) pattern with `OrchestraService` as the application core. All three ports (MCP, Web, CLI) now delegate through the service layer.
 
-The most significant structural tension is between the system's well-documented architectural intent and its actual implementation. The project has accumulated several layers of planned-but-unfinished infrastructure: a typed event system that production code does not use, a contract validation framework that was deleted but whose Makefile targets remain, adaptive resource management that was stripped back to passive monitoring but retains its original naming, and a streaming execution method that yields fabricated events without running any agents. Fourteen ADRs document the project's evolution, but the ADR index has drifted from reality --- three implemented ADRs are marked "Accepted," one reversed decision is still listed as a core principle, and one ADR references artifacts that have been deleted.
+**Post-remediation (2026-02-23):** Three waves of remediation resolved 34 of 36 findings. The typed event system was deleted (M3). The CLI now routes through `OrchestraService` (M1). Handlers moved from `mcp/handlers/` to `services/handlers/` (E1). `EnsembleExecutor` construction is centralized in `ExecutorFactory` with required collaborator injection (M2). `ConfigurationManager` separates construction from provisioning (E2/U1) and uses an injected `TemplateProvider` protocol instead of upward imports (E3). `HTTPConnectionPool` accepts explicit configuration (M6). `invoke_streaming` connects to real execution (E4). `set_project` is synchronized with `asyncio.Lock` (E8). Broad `except Exception` clauses were narrowed to specific types (M4). ADR statuses, markers, and documentation were corrected (E12-E16, U13). Dead code, dependencies, and ghost directories were removed (M3, E15, U6-U8).
 
-The execution engine (`EnsembleExecutor` at 792 lines, 23 imports, 18 constructor collaborators) is undergoing active decomposition from an original God Object. The extraction has been methodical --- fan-out handling, phase monitoring, and agent dispatch have all been separated --- but the coordinator remains the single assembly point for all subsystems. The codebase's strongest asset is its typed agent configuration layer (Pydantic discriminated union with `extra="forbid"`) and its multi-tier configuration hierarchy, both of which show careful design.
+**Remaining:** Two items are deferred — U3 (reorganize `execution/` into sub-packages) and U10/U11 (improve test quality). These are best addressed when the architecture stabilizes.
+
+The codebase's strongest assets are its typed agent configuration layer (Pydantic discriminated union with `extra="forbid"`), its multi-tier configuration hierarchy, and its phase-based dependency resolution with parallel execution.
 
 ## Architectural Profile
 
@@ -46,24 +63,24 @@ The execution engine (`EnsembleExecutor` at 792 lines, 23 imports, 18 constructo
 
 | Pattern | Confidence | Evidence |
 |---------|-----------|----------|
-| Hexagonal Architecture (partial) | High | `OrchestraService` as hub; MCP and Web as thin adapters; CLI bypasses the hexagon |
-| God Object Decomposition (in progress) | High | `EnsembleExecutor` at 792 lines with 23 imports; active extraction history visible in git |
+| Hexagonal Architecture | High | `OrchestraService` as hub; MCP, Web, and CLI all delegate through service layer |
+| God Object Decomposition (complete) | High | `EnsembleExecutor` collaborators injected via `ExecutorFactory`; construction centralized |
 | Strangler Fig / Incomplete Type Migration | High | `AgentResult` dataclass coexists with raw `dict[str, Any]`; `isinstance` guards at 5+ sites |
 | Ambient Context | High | `ConfigurationManager` discovers config via `Path.cwd()` at construction time |
 | Fan-Out / Map-Reduce | High | `FanOutExpander` + `FanOutGatherer` + `FanOutCoordinator` for parallel array processing |
 | Pydantic Discriminated Union | High | `LlmAgentConfig | ScriptAgentConfig | EnsembleAgentConfig` with `extra="forbid"` |
-| Global Mutable Singleton | Medium | `OrchestraService` mutated by `set_project` without synchronization |
+| Global Mutable Singleton | Medium | `OrchestraService` mutated by `set_project` (now synchronized with `asyncio.Lock`) |
 
 ### Quality Attribute Fitness
 
 | Attribute | Assessment |
 |-----------|-----------|
-| **Modifiability** | Mixed. Pydantic configs catch errors early. But `_dep_name` is duplicated 4x, tier classification 5x, and CLI bypass means changes must be applied in multiple places. |
-| **Testability** | Mixed. 90% coverage floor enforced, 2.2:1 test-to-source ratio. But `_test_*` escape hatches in production code, `ConfigurationManager` side effects on construction, and `HTTPConnectionPool` singleton dirty test state. |
-| **Operability** | Weak. Only 7 of 121 source files use `logging`. Auth module uses `print()`. 100 `except Exception` clauses, many swallowing errors silently. No structured error middleware on the web server. |
-| **Correctness** | Mixed. `extra="forbid"` catches agent config typos, but profile configs bypass this validation. Fan-out silently produces zero instances on upstream failure. `invoke_streaming` yields fabricated success events. |
-| **Performance** | Strong. Async parallel execution, `HTTPConnectionPool` for connection reuse, phase-based dependency resolution enables maximum parallelism. |
-| **Security** | Adequate. Encrypted credential storage, TLS for external calls. But `_load_credentials` returns `{}` on decryption failure (indistinguishable from "no credentials"), and the web server has no error middleware to prevent traceback leakage. |
+| **Modifiability** | Strong. Pydantic configs catch errors early. `_dep_name` and tier classification consolidated (U2). All three ports route through `OrchestraService`. Handlers co-located with service layer (E1). |
+| **Testability** | Strong. 90% coverage floor enforced, 2.2:1 test-to-source ratio. `_test_*` escape hatches replaced with constructor injection (U9). `ConfigurationManager` supports `provision=False` for lightweight test construction (E2/U1). `HTTPConnectionPool.configure()` enables explicit test setup (M6). CLI tests mock at service boundary (U15). |
+| **Operability** | Improved. `except Exception` clauses narrowed to specific types (M4). Credential errors now distinguishable (E7). Fan-out zero-instance emits warning (E9). Global exception handler on web server (M7). |
+| **Correctness** | Strong. `extra="forbid"` catches agent config typos. Fan-out emits warnings on zero instances (E9). `invoke_streaming` executes real agents (E4). `set_project` synchronized with `asyncio.Lock` (E8). |
+| **Performance** | Strong. Async parallel execution, `HTTPConnectionPool` for connection reuse with explicit configuration (M6), phase-based dependency resolution enables maximum parallelism. |
+| **Security** | Good. Encrypted credential storage, TLS for external calls. Credential decryption failures now distinguishable from "no credentials" (E7). Web server has global exception handler preventing traceback leakage (M7). |
 
 ### Inferred Decisions
 
@@ -77,7 +94,7 @@ ADR-006 declared "primitives are content, not infrastructure." Practice revealed
 ADR-003 (contract validation), ADR-005 (conversational ensembles), and parts of ADR-004 (hooks/agents) were implemented, marked complete, then deleted. The deletions left ghost directories, broken Makefile targets, and stale ADR status entries.
 
 **ID-4: MCP Server Was the Canonical Interface** (High confidence)
-Handlers were built inside `mcp/handlers/`. When the web UI needed the same logic, it called into `MCPServer` private methods. The `OrchestraService` extraction was a recent correction. Handlers remain under `mcp/` despite being application-layer logic.
+Handlers were built inside `mcp/handlers/`. When the web UI needed the same logic, it called into `MCPServer` private methods. The `OrchestraService` extraction was a recent correction. *Post-remediation:* Handlers relocated to `services/handlers/` (E1), aligning module location with responsibility.
 
 **ID-5: AGPL for a Local Tool** (Medium confidence)
 AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "network use" trigger that distinguishes AGPL from GPL does not apply to this deployment model. The rationale is not documented.
@@ -87,23 +104,25 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 ## Tradeoff Map
 
-| Optimizes For | At the Expense Of | Evidence |
-|--------------|-------------------|----------|
-| Zero-config startup | Testability, determinism | `ConfigurationManager` walks `cwd` and writes to disk in constructor |
-| Rapid feature addition | Type safety, event contract clarity | Two parallel event systems (typed `EventFactory` vs. untyped dict streams) |
-| CLI development velocity | Consistency between ports | CLI bypasses `OrchestraService`, duplicates ensemble lookup logic |
-| Fault tolerance (broad `except Exception`) | Debuggability, correctness | 100 catch-all clauses; credential decryption failure indistinguishable from "no credentials" |
-| Module independence | Single source of truth | `_dep_name` duplicated 4x; tier classification duplicated 5x |
-| Connection reuse performance | Configuration dynamism, test isolation | `HTTPConnectionPool` singleton initialized once, never reset by `set_project` |
-| Self-contained handlers | Layering integrity | `OrchestraService` imports 11 concrete handlers from `mcp/handlers/` (dependency inversion) |
-| Interface completeness | Truthfulness | `invoke_streaming` yields fabricated success events without running agents |
-| Sequential MCP simplicity | Concurrency safety | `set_project` mutates 7 handlers without locking on a shared singleton |
+| Optimizes For | At the Expense Of | Evidence | Status |
+|--------------|-------------------|----------|--------|
+| Zero-config startup | Testability, determinism | `ConfigurationManager` walks `cwd` and writes to disk in constructor | **Resolved** (E2/U1): `provision=False` for lightweight use |
+| Rapid feature addition | Type safety, event contract clarity | Two parallel event systems (typed `EventFactory` vs. untyped dict streams) | **Resolved** (M3): Typed event system deleted; dict streams canonical |
+| CLI development velocity | Consistency between ports | CLI bypasses `OrchestraService`, duplicates ensemble lookup logic | **Resolved** (M1, U15): CLI routes through service |
+| Fault tolerance (broad `except Exception`) | Debuggability, correctness | 100 catch-all clauses; credential decryption failure indistinguishable from "no credentials" | **Resolved** (M4, E7): Narrowed to specific types; credential errors distinguishable |
+| Module independence | Single source of truth | `_dep_name` duplicated 4x; tier classification duplicated 5x | **Resolved** (U2): Consolidated into shared utilities |
+| Connection reuse performance | Configuration dynamism, test isolation | `HTTPConnectionPool` singleton initialized once, never reset by `set_project` | **Resolved** (M6): Explicit `configure()` + reset on project switch |
+| Self-contained handlers | Layering integrity | `OrchestraService` imports 11 concrete handlers from `mcp/handlers/` (dependency inversion) | **Resolved** (E1): Handlers moved to `services/handlers/` |
+| Interface completeness | Truthfulness | `invoke_streaming` yields fabricated success events without running agents | **Resolved** (E4): Connected to real execution engine |
+| Sequential MCP simplicity | Concurrency safety | `set_project` mutates 7 handlers without locking on a shared singleton | **Resolved** (E8): `asyncio.Lock` on `handle_set_project` |
 
 ## Findings
 
 ### Macro Level
 
 #### M1: Hexagonal Architecture Partially Realized --- CLI Pierces the Hexagon
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** `OrchestraService` acts as the hexagonal core. MCP and Web are proper thin adapters. The CLI constructs `EnsembleExecutor` directly, bypassing the service entirely.
 - `src/llm_orc/services/orchestra_service.py:L33-38` --- docstring declares "Both MCP and web ports delegate to this service"
@@ -122,6 +141,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### M2: EnsembleExecutor as an Accumulating Constructor
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** `EnsembleExecutor.__init__` spans 112 lines (L173-285) and wires 18 collaborators, including lambdas and inner functions defined inside the constructor.
 - `src/llm_orc/core/execution/ensemble_execution.py:L171-285` --- constructor body
 - `src/llm_orc/core/execution/ensemble_execution.py:L259-274` --- lambdas and `agent_executor_wrapper` defined inside `__init__`
@@ -138,6 +159,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### M3: Two Parallel Event Systems
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** `visualization/events.py` defines a fully typed event taxonomy (17 event types, `EventFactory` with named constructors). The actual execution pipeline emits anonymous `dict[str, Any]` events through `StreamingProgressTracker`. The typed system is never used during live execution.
 - `src/llm_orc/visualization/events.py:L9-68` --- typed `ExecutionEventType` enum and `EventFactory`
@@ -156,6 +179,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### M4: Broad `except Exception` Clauses Erode Reliability
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** 100 `except Exception` clauses across 42 files. Many are in core paths where silent failure changes semantics.
 - `src/llm_orc/core/auth/authentication.py:L216-217` --- `_load_credentials` returns `{}` on decryption error
 - `src/llm_orc/core/config/config_manager.py:L238-240` --- `load_project_config` returns `{}` on any exception
@@ -173,6 +198,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### M5: Complexity Thresholds Split Between CI and Local
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** `pyproject.toml` sets McCabe complexity at 10 (ruff C90). `Makefile` runs `complexipy --max-complexity-allowed 15`. CI runs only ruff, not complexipy.
 - `pyproject.toml:L77-78` --- `max-complexity = 10`
 - `Makefile:L47` --- `complexipy --max-complexity-allowed 15`
@@ -188,6 +215,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### M6: `HTTPConnectionPool` Singleton Couples Model Performance to Process State
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** A process-global connection pool is lazily initialized by constructing `ConfigurationManager()` inside `models/base.py`. Configuration changes via `set_project` do not reset the pool.
 - `src/llm_orc/models/base.py:L32-35` --- `ConfigurationManager()` constructed inside singleton
@@ -205,6 +234,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### M7: Web Server Lacks Error Handling Middleware
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** The FastAPI app registers only `CORSMiddleware`. No global exception handler, no structured error responses.
 - `src/llm_orc/web/server.py:L30-98` --- `create_app()` with only CORS middleware
 - `src/llm_orc/web/api/ensembles.py:L22-75` --- only two explicit `HTTPException` raises
@@ -221,6 +252,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### E1: OrchestraService Depends Inward on MCP Handlers
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** `OrchestraService` imports 11 concrete handler classes from `llm_orc.mcp.handlers.*`. The dependency arrow runs center to boundary, violating hexagonal architecture.
 - `src/llm_orc/services/orchestra_service.py:L16-27` --- 11 `from llm_orc.mcp.handlers.*` imports
 
@@ -235,6 +268,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### E2: `ConfigurationManager` Is an Omnipresent Seed
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** Imported in 23 files across every layer. Constructor walks the filesystem and creates directories.
 - `src/llm_orc/core/config/config_manager.py:L14-40` --- constructor performs mkdir, template copying
@@ -252,6 +287,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### E3: `config_manager` Imports `cli_library.library` at Call-Time
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** `ConfigurationManager` (core layer) defers imports of `cli_library.library` (outer/CLI layer) inside two methods.
 - `src/llm_orc/core/config/config_manager.py:L126` --- `from llm_orc.cli_library.library import get_template_content`
 - `src/llm_orc/core/config/config_manager.py:L455` --- `from llm_orc.cli_library.library import copy_profile_templates`
@@ -267,6 +304,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### E4: `invoke_streaming` Simulates Execution Instead of Running It
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** `ExecutionHandler.invoke_streaming` yields hardcoded stub events (`progress: 50`, `status: "success"`) without calling any agent runner.
 - `src/llm_orc/mcp/handlers/execution_handler.py:L252-303` --- fabricated events
@@ -284,6 +323,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### E5: `AdaptiveResourceManager` Names a Class That Does Not Exist
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** The file is named `adaptive_resource_manager.py` but exports only `SystemResourceMonitor` --- a passive polling monitor. `adaptive_used` is always `False`; `concurrency_decisions` is always `[]`.
 - `src/llm_orc/core/execution/adaptive_resource_manager.py:L1` --- module name
 - `src/llm_orc/core/execution/agent_resource_monitor.py:L28-33` --- stats always `False`/`[]`
@@ -299,6 +340,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### E6: `DependencyResolver` Duplicates Role Injection
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** `DependencyResolver._build_enhanced_input_*` prepends `"You are {agent_name}"` into the user message. The role is already passed as `role_prompt` (system prompt) through `Agent.respond_to_message`. For `OAuthClaudeModel`, the role is stated three times.
 - `src/llm_orc/core/execution/dependency_resolver.py:L228-265` --- role in user message
@@ -316,6 +359,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### E7: Silent Credential Failure
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** `_load_credentials` returns `{}` on any exception, including decryption failures. Downstream interprets this as "no credentials stored."
 - `src/llm_orc/core/auth/authentication.py:L201-217` --- `except Exception: return {}`
 - `src/llm_orc/core/models/model_factory.py:L233-249` --- raises "not configured" rather than "corrupt"
@@ -332,6 +377,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### E8: `set_project` Mutates Shared State Without Synchronization
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** `handle_set_project` writes 13 attributes on a shared singleton with no lock.
 - `src/llm_orc/services/orchestra_service.py:L121-151` --- sequential writes, no atomicity
 
@@ -346,6 +393,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### E9: Fan-Out Zero-Instance Silent No-Op
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** Load-time validation requires `depends_on` for fan-out agents. At runtime, if upstream fails, the coordinator silently produces zero instances --- no warning, no error.
 - `src/llm_orc/core/config/ensemble_config.py:L112-128` --- load-time guard
@@ -363,6 +412,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### E10: ScriptHandler and ArtifactHandler Bypass Project Context
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** Seven of nine handlers receive `set_project_context`. `ScriptHandler` and `ArtifactHandler` always use `Path.cwd()`.
 - `src/llm_orc/mcp/handlers/script_handler.py:L23` --- `Path.cwd() / ".llm-orc" / "scripts"`
 - `src/llm_orc/mcp/handlers/artifact_handler.py:L18` --- `Path.cwd() / ".llm-orc" / "artifacts"`
@@ -378,6 +429,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### E11: Broken Makefile Targets Reference Deleted Module
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** Four `validate-contracts-*` targets invoke `llm_orc.testing.contract_validator`, which was deleted. The `pre-commit` target calls `validate-contracts-core`, making `make pre-commit` broken.
 - `Makefile:L121-136` --- targets reference deleted module
@@ -395,6 +448,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### E12: ADR-004 Implementation Status Claims Deleted Artifacts
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** ADR-004 is marked "Implemented" with all checkboxes checked. Every referenced artifact (hooks, agents, templates) has been deleted.
 - `docs/adrs/004-bdd-llm-development-guardrails.md:L8-16` --- all checked
 - `.claude/` --- contains only `settings.json`
@@ -406,6 +461,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### E13: ADR README Documents a Reversed Principle
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** The ADR README states "Primitives live in `llm-orchestra-library`, not in core application." ADR-006's amendment moved 6 core primitives into the package.
 - `docs/adrs/README.md:L30` --- superseded principle
@@ -419,6 +476,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### E14: Three ADRs Marked "Accepted" Are Fully Implemented
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** ADRs 012, 013, 014 are listed as "Accepted" with no completion percentage. All three are fully implemented and described in `architecture.md`.
 - `docs/adrs/README.md:L17-19` --- "Accepted" with dashes
 - `src/llm_orc/schemas/agent_config.py:L1` --- ADR-012 implemented
@@ -430,6 +489,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### E15: Dead Dependencies in pyproject.toml
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** `websockets` and `aiohttp>=3.13.3` are production dependencies with zero imports.
 - `pyproject.toml:L28-29` --- declared
@@ -443,6 +504,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### E16: README Claims Wrong Library Default
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** README says "by default, fetches library content from the remote GitHub repository." The code defaults to `return "local", ""` --- a no-op.
 - `src/llm_orc/cli_library/library.py:L56-58` --- default is local no-op
 
@@ -453,6 +516,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ### Micro Level
 
 #### U1: ConfigurationManager Constructor Side Effects
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** `__init__` creates directories, writes config files, and copies templates before returning.
 - `src/llm_orc/core/config/config_manager.py:L36-40` --- mkdir, template copy, default config write
@@ -466,6 +531,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### U2: Tier Classification Duplicated Across Five Files
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** The decision of whether a path is "local", "global", or "library" is encoded independently in 5+ places with different algorithms.
 - `src/llm_orc/mcp/handlers/promotion_handler.py:L341,L711` --- string-contains on `".llm-orc"`
@@ -481,6 +548,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### U3: Flat 34-File Execution Package
 
+**Status: Deferred**
+
 **Observation:** `core/execution/` contains 30+ files in a single flat directory with no sub-packages.
 - Natural groupings visible: fan-out (3 files), scripting (4 files), dependencies (2 files), runners (3 files)
 
@@ -494,6 +563,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### U4: PromotionHandler at 2.7x Peer Size
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** `promotion_handler.py` is 831 lines. Next largest handler is 303 lines. It duplicates profile parsing that `ProfileHandler` already owns.
 - `src/llm_orc/mcp/handlers/promotion_handler.py:L554-620` --- reimplements YAML profile parsing
 
@@ -506,6 +577,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### U5: Temporary Fields on EnsembleExecutor
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** `_current_agent_configs` is assigned mid-execution and accessed via `hasattr` guard.
 - `src/llm_orc/core/execution/ensemble_execution.py:L458` --- assignment in `_initialize_execution_setup`
@@ -521,6 +594,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### U6: Ghost Directories
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** `core/communication/`, `contracts/`, `testing/` contain only `__pycache__`. No `.py` source files.
 
 **Pattern:** Vestigial Structure.
@@ -530,6 +605,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### U7: `SUPPORTS_CUSTOM_ROLE_PROMPT` Flag Declared But Never Read
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** The flag is set on `ModelInterface` (True) and `OAuthClaudeModel` (False). No code reads it.
 - `src/llm_orc/models/base.py:L88` --- declared
@@ -544,6 +621,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### U8: `EventFactory` Never Triggered in Production
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** `ScriptUserInputHandler` emits `EventFactory` events only when `self.event_emitter` is not `None`. Every production callsite constructs with no arguments (`event_emitter=None`).
 - `src/llm_orc/core/execution/script_user_input_handler.py:L157-198` --- gated on `event_emitter`
 - Four construction sites: all pass no `event_emitter`
@@ -555,6 +634,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### U9: Mystery Guest `_test_*` Escape Hatches in Production Code
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** `ScriptHandler`, `ArtifactHandler`, and `LibraryHandler` carry class-level `_test_*` attributes that tests mutate through two delegation layers.
 - `src/llm_orc/mcp/handlers/script_handler.py:L12` --- `_test_scripts_dir: Path | None = None`
@@ -570,6 +651,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### U10: Assertion Roulette in Init Tests
 
+**Status: Deferred**
+
 **Observation:** `TestMCPServerInitialization` tests assert only attribute existence --- redundant because fixture failure would surface the same error.
 - `tests/unit/mcp_server/test_server.py:L37-53` --- `assert server is not None`
 
@@ -580,6 +663,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### U11: Eager Test in `test_caching.py`
+
+**Status: Deferred**
 
 **Observation:** One 105-line test method tests six behaviors using an inline class that does not correspond to any production code.
 - `tests/unit/core/execution/test_caching.py:L17-105` --- inline `ResultCache` class
@@ -592,6 +677,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### U12: BDD Coverage Gaps for ADRs 010--014
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** BDD feature files exist for ADRs 001--009 but none for 010--014, all of which are implemented.
 
 **Pattern:** Test-Code Correspondence Gap.
@@ -601,6 +688,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### U13: ADR Marker Drift
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** `pyproject.toml` registers markers for ADR-003 and ADR-005 (deleted/unused). No markers for ADR-010 through ADR-014 (implemented). `pytest -m adr-005` runs zero tests.
 
@@ -612,6 +701,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### U14: `LLMResponseGenerator` Hardcodes `OllamaModel`
 
+**Status: Resolved (2026-02-23)**
+
 **Observation:** Test infrastructure class constructs `OllamaModel` unconditionally.
 - `src/llm_orc/core/validation/llm_simulator.py:L33` --- `self.llm_client = OllamaModel(model_name=model)`
 
@@ -622,6 +713,8 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 ---
 
 #### U15: CLI Tests Verify Routing, Not Behavior
+
+**Status: Resolved (2026-02-23)**
 
 **Observation:** `test_cli_commands.py` (1,574 lines) patches all collaborators and asserts on call signatures. Tests pass identically whether CLI uses `OrchestraService` or constructs the executor directly.
 - `tests/unit/cli/test_cli_commands.py:L113-124` --- mock assertion on `execute.assert_called_once()`
@@ -662,33 +755,21 @@ The following findings were independently surfaced by multiple lenses, increasin
 
 5. **90% coverage floor with parallel test execution**. The CI enforcement is real and the `pytest-xdist` integration works. The test infrastructure is mature even where individual test quality varies.
 
-### What to Improve (Prioritized)
+### What to Improve (Remaining)
 
-1. **Fix the broken `make pre-commit` target** (E11). This is a live CI hazard. Remove the four `validate-contracts-*` targets and their `pre-commit` dependency. Impact: immediate; effort: minutes.
+All original prioritized items (1-10) have been resolved. Two items remain deferred:
 
-2. **Remove dead dependencies** (E15). Delete `websockets` and `aiohttp` from `pyproject.toml`. Impact: cleaner installs, smaller attack surface; effort: minutes.
+1. **Reorganize flat `execution/` into sub-packages** (U3). 30+ files in a single flat directory. Natural groupings: fan-out (3 files), scripting (4 files), dependencies (2 files), runners (3 files). Impact: conceptual legibility; effort: significant (31 file moves with import updates). Best done as the last structural change.
 
-3. **Delete ghost directories** (U6). Remove `core/communication/`, `contracts/`, `testing/` and their `__pycache__` contents. Impact: removes misleading namespace; effort: minutes.
-
-4. **Connect `invoke_streaming` to real execution or mark as stub** (E4). Fabricated success events are actively misleading. Impact: correctness; effort: moderate.
-
-5. **Route CLI through `OrchestraService`** (M1). This is the highest-impact structural change. It eliminates duplicated ensemble lookup logic, enables consistent behavior across ports, and makes CLI tests meaningful. Impact: consistency, maintainability; effort: significant.
-
-6. **Extract `_dep_name` and tier classification to shared utilities** (U2, multi-lens). Consolidate 4 copies of `_dep_name` and 5 copies of tier classification. Impact: reduces shotgun surgery risk; effort: moderate.
-
-7. **Update ADR statuses and index** (E12, E13, E14, U13). Update ADR-004 to "Superseded", ADRs 012-014 to "Implemented", fix the reversed principle in the README index. Impact: documentation accuracy; effort: moderate.
-
-8. **Add `set_project_context` to ScriptHandler and ArtifactHandler** (E10). Two handlers that ignore project context create user-facing inconsistency. Impact: correctness; effort: small.
-
-9. **Separate ConfigurationManager construction from provisioning** (U1, E2). Split `__init__` into pure construction and explicit `provision_defaults()`. Impact: testability; effort: moderate.
-
-10. **Move handlers from `mcp/handlers/` to `services/`** (E1, multi-lens). Align module location with actual responsibility. Impact: architectural legibility; effort: significant (many import paths change).
+2. **Improve test quality** (U10/U11). Assertion roulette in init tests (U10); eager 105-line test in `test_caching.py` (U11). Impact: test maintainability; effort: moderate. Wait for architecture to stabilize.
 
 ### Ongoing Practices
 
 - **Update ADR status when implementation lands.** Pair every implementation commit with a status update commit.
-- **Run `make pre-commit` before pushing.** Once the broken targets are removed, this becomes a reliable gate.
-- **Review new modules for dependency direction.** Core should not import from `mcp/` or `cli_library/`. Use deferred imports as a warning sign, not a solution.
-- **Add assertion messages to tests touching execution paths.** The Assertion Roulette findings indicate tests that fail without pointing to the cause.
+- **Run `make pre-commit` before pushing.** The pre-commit hook runs mypy, ruff, complexipy, bandit, and vulture.
+- **Review new modules for dependency direction.** Core should not import from `mcp/` or `cli_library/`. Use `TemplateProvider`-style protocols for upward dependencies.
+- **Route new CLI commands through `OrchestraService`.** The CLI is a thin display adapter — parse args, call service, format output.
 - **Prefer constructor injection over class-level `_test_*` attributes.** When adding new handlers, accept `base_dir: Path` rather than adding mutable class state for tests.
-- **Log, don't swallow.** When adding new `except Exception` blocks, log at `debug` with `exc_info=True` at minimum. Reserve `pass` for truly optional features.
+- **Use `ConfigurationManager(provision=False)` for read-only access.** Only callers that need directory/template setup should use default `provision=True`.
+- **Call `HTTPConnectionPool.configure()` at the composition root.** Don't construct `ConfigurationManager` inside model-layer code.
+- **Log, don't swallow.** When adding new `except` blocks, narrow to specific exception types. Reserve broad `except Exception` for truly optional features with `logger.debug(exc_info=True)`.

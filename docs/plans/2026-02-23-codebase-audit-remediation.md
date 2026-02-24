@@ -44,18 +44,18 @@ Self-contained, moderate judgment. Sequential but independent.
 
 Dependency-ordered. Each change cascades.
 
-- [ ] **M1** Route CLI through `OrchestraService`
-- [ ] **E1** Move handlers from `mcp/handlers/` to `services/` (after M1)
-- [ ] **M2** Push `EnsembleExecutor` construction fully into `ExecutorFactory` (after M1)
-- [ ] **E2/U1** Separate `ConfigurationManager` construction from provisioning (after E1)
-- [ ] **E3** Define `TemplateProvider` protocol, remove upward imports (after E2)
-- [ ] **M3** Unify event systems (after M2)
-- [ ] **E4** Connect `invoke_streaming` to real execution (after M3)
-- [ ] **M6** Constructor injection for `HTTPConnectionPool` (after E2)
-- [ ] **E8** Add `asyncio.Lock` to `set_project` (after M1)
-- [ ] **U3** Reorganize flat `execution/` into sub-packages (after M2)
-- [ ] **U5** Remove temporary fields on `EnsembleExecutor` (after M2)
-- [ ] **M4** Triage 100 `except Exception` clauses (standalone)
-- [ ] **U10/U11** Improve test quality (after related fixes)
-- [ ] **U12** Add BDD feature files for ADRs 010-014 (after wave 2)
-- [ ] **U15** Rewrite CLI tests (after M1)
+- [x] **E8** Add `asyncio.Lock` to `set_project`
+- [x] **M3** Delete unused typed event system (`visualization/events.py` + `EventFactory`)
+- [x] **U5** Replace `_current_agent_configs` temporary field with typed attribute
+- [x] **M4** Triage `except Exception` clauses (Category A: control-flow, Category B: boundary I/O)
+- [x] **U12** Add BDD feature files for ADRs 010-014
+- [x] **M2** Push `EnsembleExecutor` construction fully into `ExecutorFactory`
+- [x] **M1** Route CLI through `OrchestraService`
+- [x] **E1** Move handlers from `mcp/handlers/` to `services/handlers/`
+- [x] **U15** Rewrite CLI tests to mock `OrchestraService` at the boundary
+- [x] **E2/U1** Separate `ConfigurationManager` construction from provisioning
+- [x] **E4** Connect `invoke_streaming` to real execution engine
+- [x] **E3** Define `TemplateProvider` protocol, inject into ConfigurationManager
+- [x] **M6** Add `HTTPConnectionPool.configure()` classmethod, remove hidden ConfigurationManager construction
+- [ ] **U3** Reorganize flat `execution/` into sub-packages — **deferred** (high-churn, best as last structural change)
+- [ ] **U10/U11** Improve test quality — **deferred** (wait for architecture to stabilize)
