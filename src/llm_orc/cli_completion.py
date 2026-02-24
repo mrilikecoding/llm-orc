@@ -31,7 +31,7 @@ def complete_ensemble_names(
             ensemble_dirs = [Path(config_dir)]
         else:
             # Initialize configuration manager
-            config_manager = ConfigurationManager()
+            config_manager = ConfigurationManager(provision=False)
             ensemble_dirs = config_manager.get_ensembles_dirs()
 
         # Load ensembles from all directories
@@ -71,7 +71,7 @@ def complete_providers(
         List of matching provider names
     """
     try:
-        config_manager = ConfigurationManager()
+        config_manager = ConfigurationManager(provision=False)
         providers = get_available_providers(config_manager)
         matches = [name for name in providers if name.startswith(incomplete)]
         return sorted(matches)

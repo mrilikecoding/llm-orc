@@ -11,13 +11,21 @@ import yaml
 class ConfigurationManager:
     """Manages configuration directories and file locations."""
 
-    def __init__(self, project_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        project_dir: Path | None = None,
+        *,
+        provision: bool = True,
+    ) -> None:
         """Initialize configuration manager.
 
         Args:
             project_dir: Optional project directory. If provided, uses
                 project_dir/.llm-orc as local config instead of discovering
                 from cwd.
+            provision: If True (default), call provision() to create global
+                config directories and copy default templates. Pass False for
+                lightweight read-only usage (e.g. tab completion, perf config).
         """
         self._global_config_dir = self._get_global_config_dir()
         if project_dir is not None:
@@ -32,7 +40,11 @@ class ConfigurationManager:
         self._profiles_cache: dict[str, dict[str, str]] | None = None
         self._profiles_cache_mtimes: dict[str, float] = {}
 
-        # Create global config directory and setup defaults
+        if provision:
+            self.provision()
+
+    def provision(self) -> None:
+        """Create global config directories and copy default templates."""
         self._global_config_dir.mkdir(parents=True, exist_ok=True)
         (self._global_config_dir / "profiles").mkdir(exist_ok=True)
         self._setup_default_config()
