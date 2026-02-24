@@ -3,6 +3,16 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
+_DEFAULT_PERFORMANCE_CONFIG: dict[str, Any] = {
+    "concurrency": {
+        "connection_pool": {
+            "max_connections": 100,
+            "max_keepalive": 20,
+            "keepalive_expiry": 30,
+        }
+    }
+}
+
 
 class HTTPConnectionPool:
     """Manages shared HTTP connections for better performance."""
@@ -17,6 +27,15 @@ class HTTPConnectionPool:
         return cls._instance
 
     @classmethod
+    def configure(cls, performance_config: dict[str, Any]) -> None:
+        """Set pool configuration explicitly. Call before first use."""
+        cls._performance_config = performance_config
+        # Close existing client so next call creates one with new config
+        if cls._httpx_client is not None and not cls._httpx_client.is_closed:
+            cls._httpx_client.close()
+            cls._httpx_client = None
+
+    @classmethod
     def get_httpx_client(cls) -> Any:
         """Get or create a shared httpx client with connection pooling."""
         # Ensure singleton instance exists
@@ -26,29 +45,15 @@ class HTTPConnectionPool:
         if cls._httpx_client is None or cls._httpx_client.is_closed:
             import httpx
 
-            # Load performance configuration
-            if cls._performance_config is None:
-                try:
-                    from llm_orc.core.config.config_manager import ConfigurationManager
-
-                    config_manager = ConfigurationManager(provision=False)
-                    cls._performance_config = config_manager.load_performance_config()
-                except Exception:
-                    # Fallback to defaults if configuration loading fails
-                    cls._performance_config = {
-                        "concurrency": {
-                            "connection_pool": {
-                                "max_connections": 100,
-                                "max_keepalive": 20,
-                                "keepalive_expiry": 30,
-                            }
-                        }
-                    }
+            # Use configured values or fall back to defaults
+            config = (
+                cls._performance_config
+                if cls._performance_config is not None
+                else _DEFAULT_PERFORMANCE_CONFIG
+            )
 
             # Get connection pool settings from configuration
-            pool_config = cls._performance_config.get("concurrency", {}).get(
-                "connection_pool", {}
-            )
+            pool_config = config.get("concurrency", {}).get("connection_pool", {})
 
             # Configure connection pooling for better performance
             limits = httpx.Limits(

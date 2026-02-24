@@ -69,31 +69,74 @@ class TestHTTPConnectionPool:
         await HTTPConnectionPool.close()
 
     @pytest.mark.asyncio
-    async def test_config_loading_fallback(self) -> None:
-        """Test fallback when configuration loading fails."""
-        # Reset singleton to ensure clean state
-        HTTPConnectionPool._instance = None
-        HTTPConnectionPool._httpx_client = None
-        HTTPConnectionPool._performance_config = None
+    async def test_get_httpx_client_uses_defaults_when_not_configured(
+        self,
+    ) -> None:
+        """Test get_httpx_client works with defaults when configure() not called."""
+        # Given - no configure() call, _performance_config is None
+        assert HTTPConnectionPool._performance_config is None
 
-        # Given - mock config loading failure at import time
-        with patch(
-            "llm_orc.core.config.config_manager.ConfigurationManager"
-        ) as mock_config:
-            mock_config.side_effect = Exception("Config load failed")
+        # When
+        client = HTTPConnectionPool.get_httpx_client()
 
-            # When
-            client = HTTPConnectionPool.get_httpx_client()
+        # Then - should create client without error; class config stays None
+        assert client is not None
+        assert HTTPConnectionPool._httpx_client is client
 
-            # Then - should use fallback config
-            assert client is not None
-            assert HTTPConnectionPool._performance_config is not None
-            assert (
-                HTTPConnectionPool._performance_config["concurrency"][
-                    "connection_pool"
-                ]["max_connections"]
-                == 100
-            )
+        # Cleanup
+        await HTTPConnectionPool.close()
+
+    @pytest.mark.asyncio
+    async def test_configure_sets_performance_config(self) -> None:
+        """Test that configure() sets the performance config on the class."""
+        # Given
+        custom_config: dict[str, object] = {
+            "concurrency": {
+                "connection_pool": {
+                    "max_connections": 50,
+                    "max_keepalive": 10,
+                    "keepalive_expiry": 15,
+                }
+            }
+        }
+
+        # When
+        HTTPConnectionPool.configure(custom_config)
+
+        # Then
+        assert HTTPConnectionPool._performance_config is custom_config
+
+        # Cleanup
+        await HTTPConnectionPool.close()
+
+    @pytest.mark.asyncio
+    async def test_configure_closes_existing_client(self, mock_httpx: Mock) -> None:
+        """Test that configure() closes any existing open client."""
+        # Given - create a client first
+        HTTPConnectionPool.get_httpx_client()
+        assert HTTPConnectionPool._httpx_client is not None
+
+        # When
+        HTTPConnectionPool.configure({"concurrency": {"connection_pool": {}}})
+
+        # Then - existing client should be closed synchronously and cleared
+        mock_httpx.close.assert_called_once()
+        assert HTTPConnectionPool._httpx_client is None
+
+        # Cleanup
+        await HTTPConnectionPool.close()
+
+    @pytest.mark.asyncio
+    async def test_configure_no_client_does_not_error(self) -> None:
+        """Test that configure() works when no client exists yet."""
+        # Given - no client created
+        assert HTTPConnectionPool._httpx_client is None
+
+        # When - should not raise
+        HTTPConnectionPool.configure({"concurrency": {"connection_pool": {}}})
+
+        # Then
+        assert HTTPConnectionPool._performance_config is not None
 
         # Cleanup
         await HTTPConnectionPool.close()
