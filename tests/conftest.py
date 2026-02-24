@@ -18,6 +18,33 @@ _project_root = Path(__file__).resolve().parent.parent
 
 
 @pytest.fixture(autouse=True)
+def _reset_http_connection_pool() -> Generator[None, None, None]:
+    """Reset HTTPConnectionPool singleton between tests.
+
+    OrchestraService.__init__ calls HTTPConnectionPool.configure() with the
+    result of config_manager.load_performance_config(). When config_manager
+    is a Mock, this stores a MagicMock as _performance_config. A later test
+    that creates a real ClaudeModel then feeds Mock values into httpx.Limits,
+    which fails on internal '<' comparisons.
+    """
+    from llm_orc.models.base import HTTPConnectionPool
+
+    yield
+
+    # Close the client synchronously before dropping the reference,
+    # otherwise AsyncClient.__del__ creates an unawaited coroutine.
+    client = HTTPConnectionPool._httpx_client
+    if client is not None and hasattr(client, "close"):
+        try:
+            client.close()
+        except Exception:
+            pass
+    HTTPConnectionPool._httpx_client = None
+    HTTPConnectionPool._performance_config = None
+    HTTPConnectionPool._instance = None
+
+
+@pytest.fixture(autouse=True)
 def cleanup_test_artifacts() -> Generator[None, None, None]:
     """Automatically clean up test artifacts after each test.
 
