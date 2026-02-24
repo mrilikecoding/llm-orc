@@ -66,11 +66,11 @@ class OrchestraService:
             self.config_manager, self.ensemble_loader
         )
         self._provider_handler = ProviderHandler(
-            self._profile_handler, self._find_ensemble_by_name
+            self._profile_handler, self.find_ensemble_by_name
         )
         self._validation_handler = ValidationHandler(
             self.config_manager,
-            self._find_ensemble_by_name,
+            self.find_ensemble_by_name,
             self._profile_handler.get_all_profiles,
         )
         self._execution_handler = ExecutionHandler(
@@ -78,12 +78,12 @@ class OrchestraService:
             self.ensemble_loader,
             self.artifact_manager,
             self._get_executor,
-            self._find_ensemble_by_name,
+            self.find_ensemble_by_name,
         )
         self._ensemble_crud_handler = EnsembleCrudHandler(
             self.config_manager,
             self.ensemble_loader,
-            self._find_ensemble_by_name,
+            self.find_ensemble_by_name,
             self._resource_handler.read_artifact,
         )
         self._promotion_handler = PromotionHandler(
@@ -91,7 +91,7 @@ class OrchestraService:
             self._profile_handler,
             self._library_handler,
             self._provider_handler,
-            self._find_ensemble_by_name,
+            self.find_ensemble_by_name,
         )
 
     @property
@@ -109,7 +109,7 @@ class OrchestraService:
             )
         return self._executor
 
-    def _find_ensemble_by_name(self, ensemble_name: str) -> Any:
+    def find_ensemble_by_name(self, ensemble_name: str) -> Any:
         ensemble_dirs = self.config_manager.get_ensembles_dirs()
         for ensemble_dir in ensemble_dirs:
             config = self.ensemble_loader.find_ensemble(
@@ -118,6 +118,23 @@ class OrchestraService:
             if config:
                 return config
         return None
+
+    def list_ensembles_grouped(self) -> dict[str, list[Any]]:
+        """List all ensembles grouped by tier."""
+        ensemble_dirs = self.config_manager.get_ensembles_dirs()
+        local: list[Any] = []
+        library: list[Any] = []
+        global_: list[Any] = []
+        for dir_path in ensemble_dirs:
+            ensembles = self.ensemble_loader.list_ensembles(str(dir_path))
+            tier = self.config_manager.classify_tier(dir_path)
+            if tier == "local":
+                local.extend(ensembles)
+            elif tier == "library":
+                library.extend(ensembles)
+            else:
+                global_.extend(ensembles)
+        return {"local": local, "library": library, "global": global_}
 
     # === Context management ===
 

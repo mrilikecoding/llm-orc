@@ -18,9 +18,14 @@ from llm_orc.cli_modules.utils.visualization import (
     run_standard_execution,
     run_streaming_execution,
 )
-from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
-from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+
+
+def _get_service() -> Any:
+    """Create an OrchestraService instance for CLI use."""
+    from llm_orc.services.orchestra_service import OrchestraService
+
+    return OrchestraService()
 
 
 def _resolve_input_data(positional_input: str | None, option_input: str | None) -> str:
@@ -80,37 +85,6 @@ def _find_ensemble_config(
     return ensemble_config
 
 
-def _get_grouped_ensembles(
-    config_manager: ConfigurationManager, ensemble_dirs: list[Path]
-) -> tuple[list[EnsembleConfig], list[EnsembleConfig], list[EnsembleConfig]]:
-    """Group ensembles into local, library, and global categories.
-
-    Args:
-        config_manager: Configuration manager instance
-        ensemble_dirs: List of ensemble directories to search
-
-    Returns:
-        tuple: (local_ensembles, library_ensembles, global_ensembles)
-    """
-    loader = EnsembleLoader()
-    local_ensembles: list[EnsembleConfig] = []
-    library_ensembles: list[EnsembleConfig] = []
-    global_ensembles: list[EnsembleConfig] = []
-
-    for dir_path in ensemble_dirs:
-        ensembles = loader.list_ensembles(str(dir_path))
-        tier = config_manager.classify_tier(dir_path)
-
-        if tier == "local":
-            local_ensembles.extend(ensembles)
-        elif tier == "library":
-            library_ensembles.extend(ensembles)
-        else:
-            global_ensembles.extend(ensembles)
-
-    return local_ensembles, library_ensembles, global_ensembles
-
-
 def _format_ensemble_display_name(ensemble: EnsembleConfig) -> str:
     """Format ensemble name for display."""
     if ensemble.relative_path:
@@ -129,7 +103,7 @@ def _display_ensemble_group(ensembles: Sequence[EnsembleConfig], header: str) ->
 
 
 def _display_grouped_ensembles(
-    config_manager: ConfigurationManager,
+    config_manager: Any,
     local_ensembles: Sequence[EnsembleConfig],
     library_ensembles: Sequence[EnsembleConfig],
     global_ensembles: Sequence[EnsembleConfig],
@@ -153,38 +127,9 @@ def _display_grouped_ensembles(
     _display_ensemble_group(global_ensembles, global_header)
 
 
-def _determine_ensemble_directories(
-    config_manager: ConfigurationManager, config_dir: str | None
-) -> list[Path]:
-    """Determine ensemble directories from config manager or custom directory.
-
-    Args:
-        config_manager: Configuration manager instance
-        config_dir: Custom config directory path or None
-
-    Returns:
-        List of ensemble directories to search
-
-    Raises:
-        click.ClickException: If no ensemble directories found
-    """
-    if config_dir is None:
-        # Use configuration manager to get ensemble directories
-        ensemble_dirs = config_manager.get_ensembles_dirs()
-        if not ensemble_dirs:
-            raise click.ClickException(
-                "No ensemble directories found. Run 'llm-orc config init' to set up "
-                "local configuration."
-            )
-        return ensemble_dirs
-    else:
-        # Use specified config directory
-        return [Path(config_dir)]
-
-
 def _setup_performance_display(
-    config_manager: ConfigurationManager,
-    executor: "EnsembleExecutor",
+    config_manager: Any,
+    executor: Any,
     ensemble_name: str,
     ensemble_config: "EnsembleConfig",
     streaming: bool,
@@ -213,7 +158,7 @@ def _setup_performance_display(
 
 
 def _determine_effective_streaming(
-    config_manager: ConfigurationManager,
+    config_manager: Any,
     output_format: str | None,
     streaming: bool,
 ) -> bool:
@@ -242,7 +187,7 @@ def _determine_effective_streaming(
 
 
 def _execute_ensemble_with_mode(
-    executor: "EnsembleExecutor",
+    executor: Any,
     ensemble_config: "EnsembleConfig",
     input_data: str,
     output_format: str | None,
@@ -298,35 +243,41 @@ def invoke_ensemble(
     detailed: bool,
 ) -> None:
     """Invoke an ensemble of agents."""
-    # Initialize configuration manager
-    config_manager = ConfigurationManager()
-
-    # Determine ensemble directories
-    ensemble_dirs = _determine_ensemble_directories(config_manager, config_dir)
+    service = _get_service()
 
     # Resolve input data using helper method
     input_data = _resolve_input_data(input_data, input_data_option)
 
-    # Find ensemble configuration using helper method
-    ensemble_config = _find_ensemble_config(ensemble_name, ensemble_dirs)
+    # Find ensemble configuration
+    if config_dir is not None:
+        ensemble_config = _find_ensemble_config(ensemble_name, [Path(config_dir)])
+    else:
+        ensemble_config = service.find_ensemble_by_name(ensemble_name)
+        if ensemble_config is None:
+            ensemble_dirs = service.config_manager.get_ensembles_dirs()
+            searched = [str(d) for d in ensemble_dirs]
+            raise click.ClickException(
+                f"Ensemble '{ensemble_name}' not found in: {', '.join(searched)}"
+            )
 
-    # Create standard executor
-    executor = EnsembleExecutor()
+    # Get executor from service
+    executor = service._get_executor()
 
     # Check if ensemble contains interactive scripts
-    from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
+    from llm_orc.core.execution.script_user_input_handler import (
+        ScriptUserInputHandler,
+    )
 
     input_handler = ScriptUserInputHandler()
     requires_user_input = input_handler.ensemble_requires_user_input(ensemble_config)
 
     # Override concurrency settings if provided
     if max_concurrent is not None:
-        # Apply concurrency limit to executor configuration
-        pass  # This would be implemented as needed
+        pass  # Would be applied to executor config
 
     # Show performance configuration only for default Rich interface (not text/json)
     _setup_performance_display(
-        config_manager,
+        service.config_manager,
         executor,
         ensemble_name,
         ensemble_config,
@@ -337,7 +288,7 @@ def invoke_ensemble(
 
     # Determine effective streaming setting
     effective_streaming = _determine_effective_streaming(
-        config_manager, output_format, streaming
+        service.config_manager, output_format, streaming
     )
 
     # Execute the ensemble
@@ -352,7 +303,7 @@ def invoke_ensemble(
             effective_streaming,
         )
     except Exception as e:
-        raise click.ClickException(f"Ensemble execution failed: {str(e)}") from e
+        raise click.ClickException(f"Ensemble execution failed: {e!s}") from e
 
 
 def _list_ensembles_from_dir(config_dir: str) -> None:
@@ -369,19 +320,21 @@ def _list_ensembles_from_dir(config_dir: str) -> None:
             click.echo(f"  {ensemble.name}: {ensemble.description}")
 
 
-def _list_ensembles_auto(config_manager: ConfigurationManager) -> None:
-    """List ensembles from all configured directories."""
-    ensemble_dirs = config_manager.get_ensembles_dirs()
+def list_ensembles_command(config_dir: str | None) -> None:
+    """List available ensembles."""
+    if config_dir is not None:
+        _list_ensembles_from_dir(config_dir)
+        return
+
+    service = _get_service()
+    ensemble_dirs = service.config_manager.get_ensembles_dirs()
     if not ensemble_dirs:
         click.echo("No ensemble directories found.")
         click.echo("Run 'llm-orc config init' to set up local configuration.")
         return
 
-    local_ensembles, library_ensembles, global_ensembles = _get_grouped_ensembles(
-        config_manager, ensemble_dirs
-    )
-
-    if not local_ensembles and not library_ensembles and not global_ensembles:
+    grouped = service.list_ensembles_grouped()
+    if not any(grouped.values()):
         click.echo("No ensembles found in any configured directories:")
         for dir_path in ensemble_dirs:
             click.echo(f"  {dir_path}")
@@ -389,16 +342,11 @@ def _list_ensembles_auto(config_manager: ConfigurationManager) -> None:
         return
 
     _display_grouped_ensembles(
-        config_manager, local_ensembles, library_ensembles, global_ensembles
+        service.config_manager,
+        grouped["local"],
+        grouped["library"],
+        grouped["global"],
     )
-
-
-def list_ensembles_command(config_dir: str | None) -> None:
-    """List available ensembles."""
-    if config_dir is not None:
-        _list_ensembles_from_dir(config_dir)
-        return
-    _list_ensembles_auto(ConfigurationManager())
 
 
 def _load_profiles_from_config(config_file: Path) -> dict[str, Any]:
@@ -446,8 +394,8 @@ def _display_global_profile(profile_name: str, profile: Any) -> None:
 
 def list_profiles_command() -> None:
     """List available model profiles with their provider/model details."""
-    # Initialize configuration manager
-    config_manager = ConfigurationManager()
+    service = _get_service()
+    config_manager = service.config_manager
 
     # Get all model profiles (merged global + local)
     all_profiles = config_manager.get_model_profiles()
