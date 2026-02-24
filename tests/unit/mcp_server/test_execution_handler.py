@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from llm_orc.mcp.handlers.execution_handler import ExecutionHandler
 
 
-def _make_handler(ensemble_config: Any = None) -> ExecutionHandler:
+def _make_handler(
+    ensemble_config: Any = None,
+    executor_execute_return: dict[str, Any] | None = None,
+) -> ExecutionHandler:
     config_manager = MagicMock()
     config_manager.get_ensembles_dirs.return_value = ["/fake/ensembles"]
 
@@ -19,11 +22,14 @@ def _make_handler(ensemble_config: Any = None) -> ExecutionHandler:
 
     artifact_manager = MagicMock()
 
+    mock_executor = MagicMock()
+    mock_executor.execute = AsyncMock(return_value=executor_execute_return or {})
+
     return ExecutionHandler(
         config_manager=config_manager,
         ensemble_loader=ensemble_loader,
         artifact_manager=artifact_manager,
-        get_executor_fn=MagicMock(),
+        get_executor_fn=lambda: mock_executor,
         find_ensemble_fn=lambda name: ensemble_config,
     )
 
@@ -40,50 +46,45 @@ class TestInvokeStatusNormalization:
 
     @pytest.mark.asyncio
     async def test_completed_maps_to_success(self) -> None:
-        handler = _make_handler(_fake_ensemble())
-        with patch(
-            "llm_orc.core.execution.ensemble_execution.EnsembleExecutor"
-        ) as mock_executor:
-            mock_executor.return_value.execute = AsyncMock(
-                return_value={"status": "completed", "results": {}, "synthesis": None}
-            )
+        handler = _make_handler(
+            _fake_ensemble(),
+            executor_execute_return={
+                "status": "completed",
+                "results": {},
+                "synthesis": None,
+            },
+        )
 
-            result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
+        result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
 
         assert result["status"] == "success"
 
     @pytest.mark.asyncio
     async def test_completed_with_errors_maps_to_error(self) -> None:
-        handler = _make_handler(_fake_ensemble())
-        with patch(
-            "llm_orc.core.execution.ensemble_execution.EnsembleExecutor"
-        ) as mock_executor:
-            mock_executor.return_value.execute = AsyncMock(
-                return_value={
-                    "status": "completed_with_errors",
-                    "results": {},
-                    "synthesis": None,
-                }
-            )
+        handler = _make_handler(
+            _fake_ensemble(),
+            executor_execute_return={
+                "status": "completed_with_errors",
+                "results": {},
+                "synthesis": None,
+            },
+        )
 
-            result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
+        result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
 
         assert result["status"] == "error"
 
     @pytest.mark.asyncio
     async def test_unknown_status_passes_through(self) -> None:
-        handler = _make_handler(_fake_ensemble())
-        with patch(
-            "llm_orc.core.execution.ensemble_execution.EnsembleExecutor"
-        ) as mock_executor:
-            mock_executor.return_value.execute = AsyncMock(
-                return_value={
-                    "status": "running",
-                    "results": {},
-                    "synthesis": None,
-                }
-            )
+        handler = _make_handler(
+            _fake_ensemble(),
+            executor_execute_return={
+                "status": "running",
+                "results": {},
+                "synthesis": None,
+            },
+        )
 
-            result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
+        result = await handler.invoke({"ensemble_name": "test", "input": "hello"})
 
         assert result["status"] == "running"

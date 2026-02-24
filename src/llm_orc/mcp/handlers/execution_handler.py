@@ -78,9 +78,7 @@ class ExecutionHandler:
         if not config:
             raise ValueError(f"Ensemble does not exist: {ensemble_name}")
 
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
-
-        executor = EnsembleExecutor(project_dir=self._project_path)
+        executor = self._get_executor()
         result = await executor.execute(config, input_data)
 
         raw_status: str | None = result.get("status")

@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from click.exceptions import ClickException
 
 from llm_orc.cli_commands import invoke_ensemble
 from llm_orc.schemas.agent_config import LlmAgentConfig
@@ -51,13 +50,10 @@ class TestInvokeEnsembleComplexityRefactor:
         mock_config_manager: Mock,
         mock_ensemble_config: Mock,
     ) -> None:
-        """Test invoke_ensemble with config_dir=None uses config manager directories.
+        """Test invoke_ensemble with config_dir=None uses service find_ensemble.
 
         This tests the first complexity branch: config_dir determination.
         """
-        mock_loader = Mock()
-        mock_loader.find_ensemble.return_value = mock_ensemble_config
-
         mock_executor = Mock()
         mock_executor.execute = AsyncMock(
             return_value={
@@ -66,14 +62,12 @@ class TestInvokeEnsembleComplexityRefactor:
             }
         )
 
-        with (
-            patch(
-                "llm_orc.cli_commands.ConfigurationManager",
-                return_value=mock_config_manager,
-            ),
-            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
-            patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
-        ):
+        mock_service = Mock()
+        mock_service.config_manager = mock_config_manager
+        mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
+        mock_service._get_executor.return_value = mock_executor
+
+        with patch("llm_orc.cli_commands._get_service", return_value=mock_service):
             invoke_ensemble(
                 ensemble_name="test",
                 input_data="test input",
@@ -85,8 +79,8 @@ class TestInvokeEnsembleComplexityRefactor:
                 detailed=False,
             )
 
-        # Verify config manager was used for dirs
-        mock_config_manager.get_ensembles_dirs.assert_called_once()
+        # Verify service was used for ensemble lookup
+        mock_service.find_ensemble_by_name.assert_called_once_with("test")
 
     def test_invoke_ensemble_config_dir_provided_uses_custom_dir(
         self,
@@ -110,13 +104,13 @@ class TestInvokeEnsembleComplexityRefactor:
 
         custom_dir = "/custom/config"
 
+        mock_service = Mock()
+        mock_service.config_manager = mock_config_manager
+        mock_service._get_executor.return_value = mock_executor
+
         with (
-            patch(
-                "llm_orc.cli_commands.ConfigurationManager",
-                return_value=mock_config_manager,
-            ),
+            patch("llm_orc.cli_commands._get_service", return_value=mock_service),
             patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
-            patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
         ):
             invoke_ensemble(
                 ensemble_name="test",
@@ -129,9 +123,9 @@ class TestInvokeEnsembleComplexityRefactor:
                 detailed=False,
             )
 
-        # Verify config manager dirs was NOT called
-        mock_config_manager.get_ensembles_dirs.assert_not_called()
-        # Verify loader was called with custom dir
+        # Verify service find_ensemble_by_name was NOT called for custom dir
+        mock_service.find_ensemble_by_name.assert_not_called()
+        # Verify loader was called with custom dir via _find_ensemble_config
         mock_loader.find_ensemble.assert_called_once_with(custom_dir, "test")
 
     def test_invoke_ensemble_max_concurrent_override_branch(
@@ -143,9 +137,6 @@ class TestInvokeEnsembleComplexityRefactor:
 
         This tests the max_concurrent handling branch (currently a pass statement).
         """
-        mock_loader = Mock()
-        mock_loader.find_ensemble.return_value = mock_ensemble_config
-
         mock_executor = Mock()
         mock_executor.execute = AsyncMock(
             return_value={
@@ -154,14 +145,12 @@ class TestInvokeEnsembleComplexityRefactor:
             }
         )
 
-        with (
-            patch(
-                "llm_orc.cli_commands.ConfigurationManager",
-                return_value=mock_config_manager,
-            ),
-            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
-            patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
-        ):
+        mock_service = Mock()
+        mock_service.config_manager = mock_config_manager
+        mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
+        mock_service._get_executor.return_value = mock_executor
+
+        with patch("llm_orc.cli_commands._get_service", return_value=mock_service):
             invoke_ensemble(
                 ensemble_name="test",
                 input_data="test input",
@@ -182,9 +171,6 @@ class TestInvokeEnsembleComplexityRefactor:
         mock_ensemble_config: Mock,
     ) -> None:
         """Test invoke_ensemble performance display with Rich output format."""
-        mock_loader = Mock()
-        mock_loader.find_ensemble.return_value = mock_ensemble_config
-
         mock_executor = Mock()
         mock_executor.execute = AsyncMock(
             return_value={
@@ -193,13 +179,13 @@ class TestInvokeEnsembleComplexityRefactor:
             }
         )
 
+        mock_service = Mock()
+        mock_service.config_manager = mock_config_manager
+        mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
+        mock_service._get_executor.return_value = mock_executor
+
         with (
-            patch(
-                "llm_orc.cli_commands.ConfigurationManager",
-                return_value=mock_config_manager,
-            ),
-            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
-            patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
+            patch("llm_orc.cli_commands._get_service", return_value=mock_service),
             patch("llm_orc.cli_commands.click.echo") as mock_echo,
         ):
             invoke_ensemble(
@@ -229,9 +215,6 @@ class TestInvokeEnsembleComplexityRefactor:
 
         This tests the streaming determination logic complexity branch.
         """
-        mock_loader = Mock()
-        mock_loader.find_ensemble.return_value = mock_ensemble_config
-
         mock_executor = Mock()
         mock_executor.execute = AsyncMock(
             return_value={
@@ -240,13 +223,13 @@ class TestInvokeEnsembleComplexityRefactor:
             }
         )
 
+        mock_service = Mock()
+        mock_service.config_manager = mock_config_manager
+        mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
+        mock_service._get_executor.return_value = mock_executor
+
         with (
-            patch(
-                "llm_orc.cli_commands.ConfigurationManager",
-                return_value=mock_config_manager,
-            ),
-            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
-            patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
+            patch("llm_orc.cli_commands._get_service", return_value=mock_service),
             patch("llm_orc.cli_commands.run_standard_execution") as mock_standard,
             patch("llm_orc.cli_commands.run_streaming_execution") as mock_streaming,
             patch("llm_orc.cli_commands.asyncio.run"),
@@ -275,9 +258,6 @@ class TestInvokeEnsembleComplexityRefactor:
 
         This tests the streaming configuration loading branch.
         """
-        mock_loader = Mock()
-        mock_loader.find_ensemble.return_value = mock_ensemble_config
-
         mock_executor = Mock()
         mock_executor.execute = AsyncMock(
             return_value={
@@ -290,13 +270,13 @@ class TestInvokeEnsembleComplexityRefactor:
             "streaming_enabled": True  # Config enables streaming
         }
 
+        mock_service = Mock()
+        mock_service.config_manager = mock_config_manager
+        mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
+        mock_service._get_executor.return_value = mock_executor
+
         with (
-            patch(
-                "llm_orc.cli_commands.ConfigurationManager",
-                return_value=mock_config_manager,
-            ),
-            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
-            patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
+            patch("llm_orc.cli_commands._get_service", return_value=mock_service),
             patch("llm_orc.cli_commands.run_standard_execution") as mock_standard,
             patch("llm_orc.cli_commands.run_streaming_execution") as mock_streaming,
             patch("llm_orc.cli_commands.asyncio.run"),
@@ -325,9 +305,6 @@ class TestInvokeEnsembleComplexityRefactor:
 
         This tests the interactive script detection and execution logic.
         """
-        mock_loader = Mock()
-        mock_loader.find_ensemble.return_value = mock_ensemble_config
-
         mock_executor = Mock()
         mock_executor.execute = AsyncMock(
             return_value={
@@ -340,13 +317,13 @@ class TestInvokeEnsembleComplexityRefactor:
         mock_input_handler = Mock()
         mock_input_handler.ensemble_requires_user_input.return_value = True
 
+        mock_service = Mock()
+        mock_service.config_manager = mock_config_manager
+        mock_service.find_ensemble_by_name.return_value = mock_ensemble_config
+        mock_service._get_executor.return_value = mock_executor
+
         with (
-            patch(
-                "llm_orc.cli_commands.ConfigurationManager",
-                return_value=mock_config_manager,
-            ),
-            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
-            patch("llm_orc.cli_commands.EnsembleExecutor", return_value=mock_executor),
+            patch("llm_orc.cli_commands._get_service", return_value=mock_service),
             patch(
                 "llm_orc.core.execution.script_user_input_handler.ScriptUserInputHandler",
                 return_value=mock_input_handler,
@@ -376,42 +353,6 @@ class TestInvokeEnsembleRefactoredFunctions:
     These tests verify that the extracted helper functions work correctly
     and preserve the original behavior.
     """
-
-    def test_determine_ensemble_directories_with_config_manager(self) -> None:
-        """Test helper function to determine directories from config manager."""
-        from llm_orc.cli_commands import _determine_ensemble_directories
-
-        mock_config_manager = Mock()
-        mock_config_manager.get_ensembles_dirs.return_value = [Path("/test/ensembles")]
-
-        result = _determine_ensemble_directories(mock_config_manager, None)
-
-        assert result == [Path("/test/ensembles")]
-        mock_config_manager.get_ensembles_dirs.assert_called_once()
-
-    def test_determine_ensemble_directories_with_custom_dir(self) -> None:
-        """Test helper function to determine ensemble directories from custom dir."""
-        from llm_orc.cli_commands import _determine_ensemble_directories
-
-        mock_config_manager = Mock()
-        custom_dir = "/custom/config"
-
-        result = _determine_ensemble_directories(mock_config_manager, custom_dir)
-
-        assert result == [Path(custom_dir)]
-        mock_config_manager.get_ensembles_dirs.assert_not_called()
-
-    def test_determine_ensemble_directories_no_dirs_found_raises_exception(
-        self,
-    ) -> None:
-        """Test helper function raises exception when no directories found."""
-        from llm_orc.cli_commands import _determine_ensemble_directories
-
-        mock_config_manager = Mock()
-        mock_config_manager.get_ensembles_dirs.return_value = []
-
-        with pytest.raises(ClickException, match="No ensemble directories found"):
-            _determine_ensemble_directories(mock_config_manager, None)
 
     def test_setup_performance_display_success(self) -> None:
         """Test helper function to setup performance display."""
