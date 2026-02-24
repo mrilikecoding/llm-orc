@@ -31,7 +31,7 @@ class HTTPConnectionPool:
                 try:
                     from llm_orc.core.config.config_manager import ConfigurationManager
 
-                    config_manager = ConfigurationManager()
+                    config_manager = ConfigurationManager(provision=False)
                     cls._performance_config = config_manager.load_performance_config()
                 except Exception:
                     # Fallback to defaults if configuration loading fails
