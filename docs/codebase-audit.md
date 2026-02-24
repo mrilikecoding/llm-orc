@@ -45,7 +45,7 @@ Tracking resolution of findings. See `docs/plans/2026-02-23-codebase-audit-remed
 | E3 | Define TemplateProvider protocol, inject into ConfigurationManager | Resolved | 2026-02-23 |
 | M6 | Add `HTTPConnectionPool.configure()`, remove hidden ConfigurationManager | Resolved | 2026-02-23 |
 | U3 | Reorganize flat `execution/` into sub-packages | Resolved | 2026-02-24 |
-| U10/U11 | Improve test quality (assertion roulette, eager tests) | Deferred | — |
+| U10/U11 | Improve test quality (assertion roulette, eager tests) | Resolved | 2026-02-24 |
 
 ## Executive Summary
 
@@ -53,7 +53,7 @@ LLM Orchestra is a multi-agent LLM orchestration system that coordinates ensembl
 
 **Post-remediation (2026-02-23):** Three waves of remediation resolved 34 of 36 findings. The typed event system was deleted (M3). The CLI now routes through `OrchestraService` (M1). Handlers moved from `mcp/handlers/` to `services/handlers/` (E1). `EnsembleExecutor` construction is centralized in `ExecutorFactory` with required collaborator injection (M2). `ConfigurationManager` separates construction from provisioning (E2/U1) and uses an injected `TemplateProvider` protocol instead of upward imports (E3). `HTTPConnectionPool` accepts explicit configuration (M6). `invoke_streaming` connects to real execution (E4). `set_project` is synchronized with `asyncio.Lock` (E8). Broad `except Exception` clauses were narrowed to specific types (M4). ADR statuses, markers, and documentation were corrected (E12-E16, U13). Dead code, dependencies, and ghost directories were removed (M3, E15, U6-U8).
 
-**Remaining:** One item is deferred — U10/U11 (improve test quality). U3 (reorganize `execution/` into sub-packages) was resolved on 2026-02-24, splitting 21 files into 5 sub-packages (fan_out, scripting, runners, phases, monitoring).
+**All 37 findings resolved.** U3 (reorganize `execution/` into sub-packages) was resolved on 2026-02-24, splitting 21 files into 5 sub-packages. U10/U11 (test quality) resolved on 2026-02-24 — removed assertion roulette init tests and deleted the eager `test_caching.py` (inline class with no production counterpart, behaviors already covered by `test_script_cache.py`).
 
 The codebase's strongest assets are its typed agent configuration layer (Pydantic discriminated union with `extra="forbid"`), its multi-tier configuration hierarchy, and its phase-based dependency resolution with parallel execution.
 
@@ -646,27 +646,17 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### U10: Assertion Roulette in Init Tests
 
-**Status: Deferred**
+**Status: Resolved (2026-02-24)**
 
-**Observation:** `TestMCPServerInitialization` tests assert only attribute existence --- redundant because fixture failure would surface the same error.
-- `tests/unit/mcp_server/test_server.py:L37-53` --- `assert server is not None`
-
-**Pattern:** Assertion Roulette / Redundant Assertion.
-
-**Stewardship:** Replace with tests that verify contracts, not attribute existence.
+**Resolution:** Removed 3 redundant `assert X is not None` tests from `TestMCPServerInitialization`. Kept the DI contract test (`test_init_with_custom_config_manager`) which verifies the injected config_manager is the returned instance.
 
 ---
 
 #### U11: Eager Test in `test_caching.py`
 
-**Status: Deferred**
+**Status: Resolved (2026-02-24)**
 
-**Observation:** One 105-line test method tests six behaviors using an inline class that does not correspond to any production code.
-- `tests/unit/core/execution/test_caching.py:L17-105` --- inline `ResultCache` class
-
-**Pattern:** Eager Test / General Fixture.
-
-**Stewardship:** Decompose into six focused tests. If no production `ResultCache` exists, evaluate whether the test is needed.
+**Resolution:** Deleted `test_caching.py`. The inline `ResultCache` class had no production counterpart. All 5 behaviors it tested (miss, hit, key uniqueness, invalidation, reproducibility) are covered by `test_script_cache.py`'s 24 tests against the real `ScriptCache`.
 
 ---
 
@@ -752,9 +742,7 @@ The following findings were independently surfaced by multiple lenses, increasin
 
 ### What to Improve (Remaining)
 
-All original prioritized items (1-10) have been resolved. U3 was resolved on 2026-02-24. One item remains deferred:
-
-1. **Improve test quality** (U10/U11). Assertion roulette in init tests (U10); eager 105-line test in `test_caching.py` (U11). Impact: test maintainability; effort: moderate. Wait for architecture to stabilize.
+All 37 audit findings have been resolved as of 2026-02-24.
 
 ### Ongoing Practices
 

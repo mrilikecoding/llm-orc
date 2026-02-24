@@ -34,23 +34,10 @@ def server(mock_config_manager: Any) -> MCPServer:
 class TestMCPServerInitialization:
     """Tests for MCPServer initialization."""
 
-    def test_init_creates_server(self, server: MCPServer) -> None:
-        """Server initializes correctly."""
-        assert server is not None
-        assert server.config_manager is not None
-
     def test_init_with_custom_config_manager(self, mock_config_manager: Any) -> None:
-        """Server accepts custom config manager."""
+        """Server accepts injected config manager and returns it."""
         server = MCPServer(config_manager=mock_config_manager)
         assert server.config_manager is mock_config_manager
-
-    def test_init_creates_ensemble_loader(self, server: MCPServer) -> None:
-        """Server creates ensemble loader."""
-        assert server.ensemble_loader is not None
-
-    def test_init_creates_artifact_manager(self, server: MCPServer) -> None:
-        """Server creates artifact manager."""
-        assert server.artifact_manager is not None
 
 
 class TestMCPServerHandleInitialize:
