@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.8] - 2026-02-24
+
+### Refactored
+- **Execution sub-packages (U3)** — reorganized flat `core/execution/` (32 files) into 5 sub-packages: `fan_out/`, `scripting/`, `runners/`, `phases/`, `monitoring/`; 21 files moved, ~170 import statements rewritten, zero cross-sub-package imports
+- **OrchestraService as composition root (M1)** — CLI commands now route through `OrchestraService` instead of constructing handlers directly; both MCP and CLI share the same application service
+- **ExecutorFactory required collaborators (M2)** — `EnsembleExecutor` construction pushed into factory; child executors share immutable infrastructure while isolating mutable state
+- **Narrow exception handling (M4)** — replaced broad `except Exception` clauses with specific exception types across execution pipeline
+- **HTTPConnectionPool.configure() (M6)** — classmethod replaces module-level mutation for connection pool configuration
+- **TemplateProvider protocol (E3)** — `ConfigurationManager` now receives an injected `TemplateProvider` instead of importing template logic directly
+- **ConfigurationManager split (E2/U1)** — separated construction from provision; lighter initialization path
+- **Handler relocation (E1)** — moved handler files from `mcp/handlers/` to `services/handlers/`
+- **set_project concurrency (E8)** — added `asyncio.Lock` to prevent concurrent `handle_set_project` calls
+- **Typed agent configs (U5)** — replaced `_current_agent_configs` temporary field with typed dataclass
+- **CLI test routing (U15)** — remaining CLI tests now exercise `OrchestraService` instead of bypassing it
+
+### Removed
+- **Typed event system (M3)** — deleted unused Pydantic event hierarchy (`core/events/`)
+- **Completed audit documentation** — removed `codebase-audit.md` and remediation plan (all 36 findings resolved)
+
+### Fixed
+- **Intermittent test failures** — resolved timing-sensitive tests and suppressed spurious warnings
+- **`invoke_streaming` wiring (E4)** — connected streaming invocation to real execution engine
+
+### Tests
+- Reduced assertion roulette (U10): removed 3 redundant `assert X is not None` tests that duplicated DI contract test
+- Removed eager test (U11): deleted `test_caching.py` with inline `ResultCache` class that had no production counterpart
+- Added BDD feature files (U12) for ADRs 010–014
+
+### Docs
+- Updated `architecture.md`, `script-agent-architecture.md`, and ADRs 002, 006, 007 to reflect execution sub-package paths
+
 ## [0.15.7] - 2026-02-22
 
 ### Fixed
