@@ -9,8 +9,8 @@ from pydantic import BaseModel, ValidationError
 from pytest_bdd import given, scenarios, then, when
 
 from llm_orc.agents.script_agent import ScriptAgent
-from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
-from llm_orc.core.execution.dependency_resolver import DependencyResolver
+from llm_orc.core.execution.phases.agent_request_processor import AgentRequestProcessor
+from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
 from llm_orc.schemas.script_agent import (
     AgentRequest,
     FileOperationOutput,

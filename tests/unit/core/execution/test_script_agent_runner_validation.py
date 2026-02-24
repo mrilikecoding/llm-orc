@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from llm_orc.core.execution.script_agent_runner import ScriptAgentRunner
+from llm_orc.core.execution.scripting.agent_runner import ScriptAgentRunner
 from llm_orc.schemas.agent_config import ScriptAgentConfig
 
 

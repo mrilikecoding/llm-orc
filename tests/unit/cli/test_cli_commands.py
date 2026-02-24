@@ -1462,7 +1462,7 @@ class TestInteractiveScriptIntegration:
                 return_value=mock_service,
             ),
             patch(
-                "llm_orc.core.execution.script_user_input_handler.ScriptUserInputHandler"
+                "llm_orc.core.execution.scripting.user_input_handler.ScriptUserInputHandler"
             ) as mock_input_handler_class,
         ):
             # Mock the input handler instance
@@ -1533,7 +1533,7 @@ class TestInteractiveScriptIntegration:
                 return_value=mock_service,
             ),
             patch(
-                "llm_orc.core.execution.script_user_input_handler.ScriptUserInputHandler"
+                "llm_orc.core.execution.scripting.user_input_handler.ScriptUserInputHandler"
             ) as mock_input_handler_class,
         ):
             # Mock input handler that detects no interactive scripts

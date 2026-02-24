@@ -93,7 +93,7 @@ class TestDepthLimitPreventsUnboundedNesting:
     @pytest.mark.asyncio
     async def test_depth_limit_error(self) -> None:
         """Execution at depth exceeding limit raises error."""
-        from llm_orc.core.execution.ensemble_agent_runner import (
+        from llm_orc.core.execution.runners.ensemble_runner import (
             EnsembleAgentRunner,
         )
 
@@ -117,7 +117,7 @@ class TestChildEnsembleFailureIsAgentFailure:
     @pytest.mark.asyncio
     async def test_child_failure_returns_error_status(self) -> None:
         """Failed child ensemble produces agent failure, not crash."""
-        from llm_orc.core.execution.ensemble_agent_runner import (
+        from llm_orc.core.execution.runners.ensemble_runner import (
             EnsembleAgentRunner,
         )
 

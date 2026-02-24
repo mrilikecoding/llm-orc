@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from llm_orc.core.execution.progress_controller import NoOpProgressController
-from llm_orc.core.execution.script_agent_runner import ScriptAgentRunner
+from llm_orc.core.execution.scripting.agent_runner import ScriptAgentRunner
 
 
 def _make_runner(

@@ -17,8 +17,8 @@ import pytest
 from pydantic import BaseModel, Field
 from pytest_bdd import given, scenarios, then, when
 
-from llm_orc.core.execution.primitive_composer import PrimitiveComposer
-from llm_orc.core.execution.primitive_registry import PrimitiveRegistry
+from llm_orc.core.execution.scripting.primitive_composer import PrimitiveComposer
+from llm_orc.core.execution.scripting.primitive_registry import PrimitiveRegistry
 from llm_orc.schemas.script_agent import ScriptAgentInput, ScriptAgentOutput
 
 # Load all scenarios from the feature file

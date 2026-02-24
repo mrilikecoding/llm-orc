@@ -125,7 +125,7 @@ class TestScriptCommands:
         mock_resolver.get_script_info.return_value = None
 
         with patch(
-            "llm_orc.core.execution.script_resolver.ScriptResolver",
+            "llm_orc.core.execution.scripting.resolver.ScriptResolver",
             return_value=mock_resolver,
         ):
             result = runner.invoke(cli, ["scripts", "show", "missing-script.py"])
@@ -145,7 +145,7 @@ class TestScriptCommands:
         }
 
         with patch(
-            "llm_orc.core.execution.script_resolver.ScriptResolver",
+            "llm_orc.core.execution.scripting.resolver.ScriptResolver",
             return_value=mock_resolver,
         ):
             result = runner.invoke(
@@ -178,7 +178,7 @@ class TestScriptCommands:
         }
 
         with patch(
-            "llm_orc.core.execution.script_resolver.ScriptResolver",
+            "llm_orc.core.execution.scripting.resolver.ScriptResolver",
             return_value=mock_resolver,
         ):
             result = runner.invoke(cli, ["scripts", "test", "test-script.py"])
@@ -210,7 +210,7 @@ class TestScriptCommands:
         }
 
         with patch(
-            "llm_orc.core.execution.script_resolver.ScriptResolver",
+            "llm_orc.core.execution.scripting.resolver.ScriptResolver",
             return_value=mock_resolver,
         ):
             result = runner.invoke(cli, ["scripts", "test", "test-script.py"])

@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from llm_orc.core.execution.primitive_registry import PrimitiveRegistry
+from llm_orc.core.execution.scripting.primitive_registry import PrimitiveRegistry
 
 
 class TestPrimitiveRegistry:
@@ -363,7 +363,7 @@ print(json.dumps({"success": True, "data": "test", "agent_requests": []}))
             with (
                 patch("pathlib.Path.cwd", return_value=Path(temp_dir)),
                 patch(
-                    "llm_orc.core.execution.primitive_registry.subprocess.run",
+                    "llm_orc.core.execution.scripting.primitive_registry.subprocess.run",
                     side_effect=subprocess.TimeoutExpired(cmd="timeout.py", timeout=1),
                 ),
             ):

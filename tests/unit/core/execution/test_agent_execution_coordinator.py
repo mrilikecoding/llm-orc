@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from llm_orc.core.execution.agent_execution_coordinator import (
+from llm_orc.core.execution.phases.agent_execution_coordinator import (
     AgentExecutionCoordinator,
 )
 from llm_orc.schemas.agent_config import LlmAgentConfig
@@ -81,7 +81,7 @@ class TestAgentExecutionCoordinator:
 
         with (
             patch(
-                "llm_orc.core.execution.agent_execution_coordinator.asyncio.wait_for",
+                "llm_orc.core.execution.phases.agent_execution_coordinator.asyncio.wait_for",
                 side_effect=mock_wait_for,
             ),
             pytest.raises(Exception, match="timed out after 1 seconds"),

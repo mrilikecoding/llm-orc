@@ -15,8 +15,8 @@ from typing import Any
 from llm_orc.agents.script_agent import (
     ScriptAgent,
 )
-from llm_orc.core.execution.script_cache import ScriptCache
-from llm_orc.core.execution.script_user_input_handler import (
+from llm_orc.core.execution.scripting.cache import ScriptCache
+from llm_orc.core.execution.scripting.user_input_handler import (
     ScriptUserInputHandler,
 )
 from llm_orc.core.execution.usage_collector import (

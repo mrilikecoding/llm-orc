@@ -4,7 +4,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
+from llm_orc.core.execution.phases.agent_request_processor import AgentRequestProcessor
 from llm_orc.core.execution.result_types import AgentResult
 from llm_orc.core.execution.usage_collector import UsageCollector
 from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig, ScriptAgentConfig

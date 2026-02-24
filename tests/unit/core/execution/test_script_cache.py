@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
-from llm_orc.core.execution.script_cache import ScriptCache, ScriptCacheConfig
+from llm_orc.core.execution.scripting.cache import ScriptCache, ScriptCacheConfig
 
 
 class TestScriptCache:
@@ -106,7 +106,7 @@ class TestScriptCache:
         immediate_result = cache.get(script_content, parameters)
 
         # Simulate TTL expiration by advancing time
-        with patch("llm_orc.core.execution.script_cache.time") as mock_time:
+        with patch("llm_orc.core.execution.scripting.cache.time") as mock_time:
             mock_time.time.return_value = time.time() + 2
             expired_result = cache.get(script_content, parameters)
 
@@ -283,7 +283,7 @@ class TestScriptCacheArtifactPersistence:
             cache._save_to_artifacts("test_key", {"data": "test"})
 
             # Simulate TTL expiration by advancing time
-            with patch("llm_orc.core.execution.script_cache.time") as mock_time:
+            with patch("llm_orc.core.execution.scripting.cache.time") as mock_time:
                 mock_time.time.return_value = time.time() + 2
                 # Should return None and delete the file
                 result = cache._load_from_artifacts("test_key")

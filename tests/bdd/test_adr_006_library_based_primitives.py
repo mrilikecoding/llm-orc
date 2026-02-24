@@ -9,7 +9,7 @@ from typing import Any
 from pytest_bdd import given, scenarios, then, when
 
 # Import ScriptNotFoundError for library-aware error messages
-from llm_orc.core.execution.script_resolver import ScriptResolver
+from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from tests.fixtures.test_primitives import TestPrimitiveFactory
 
 # Load all scenarios from the feature file

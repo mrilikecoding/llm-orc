@@ -2,7 +2,7 @@
 
 import pytest
 
-from llm_orc.core.execution.system_resource_monitor import (
+from llm_orc.core.execution.monitoring.system_resource_monitor import (
     SystemResourceMonitor,
 )
 

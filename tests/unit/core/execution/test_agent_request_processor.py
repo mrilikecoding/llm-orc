@@ -10,8 +10,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
-from llm_orc.core.execution.dependency_resolver import DependencyResolver
+from llm_orc.core.execution.phases.agent_request_processor import AgentRequestProcessor
+from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
 from llm_orc.schemas.agent_config import ScriptAgentConfig
 from llm_orc.schemas.script_agent import AgentRequest
 

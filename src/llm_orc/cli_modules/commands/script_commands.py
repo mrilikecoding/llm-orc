@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from llm_orc.core.execution.primitive_registry import PrimitiveRegistry
+from llm_orc.core.execution.scripting.primitive_registry import PrimitiveRegistry
 
 
 def list_scripts_impl(category: str | None = None, json_output: bool = False) -> str:

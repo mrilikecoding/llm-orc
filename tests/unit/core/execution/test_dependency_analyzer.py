@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from llm_orc.core.execution.dependency_analyzer import DependencyAnalyzer
+from llm_orc.core.execution.phases.dependency_analyzer import DependencyAnalyzer
 from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig
 
 

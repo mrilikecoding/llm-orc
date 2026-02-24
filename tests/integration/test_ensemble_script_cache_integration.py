@@ -13,7 +13,7 @@ import pytest
 
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
 from llm_orc.core.execution.executor_factory import ExecutorFactory
-from llm_orc.core.execution.script_cache import ScriptCache, ScriptCacheConfig
+from llm_orc.core.execution.scripting.cache import ScriptCache, ScriptCacheConfig
 from llm_orc.schemas.agent_config import ScriptAgentConfig
 
 

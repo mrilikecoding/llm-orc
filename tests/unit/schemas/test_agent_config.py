@@ -203,7 +203,7 @@ class TestAgentDispatcherUsesIsinstance:
 
     def test_isinstance_dispatch_for_llm_agent(self) -> None:
         """AgentDispatcher uses isinstance for LlmAgentConfig."""
-        from llm_orc.core.execution.agent_dispatcher import (
+        from llm_orc.core.execution.phases.agent_dispatcher import (
             AgentDispatcher,
         )
 
@@ -214,7 +214,7 @@ class TestAgentDispatcherUsesIsinstance:
 
     def test_isinstance_dispatch_for_script_agent(self) -> None:
         """AgentDispatcher uses isinstance for ScriptAgentConfig."""
-        from llm_orc.core.execution.agent_dispatcher import (
+        from llm_orc.core.execution.phases.agent_dispatcher import (
             AgentDispatcher,
         )
 
@@ -231,7 +231,7 @@ class TestAgentLevelOverridesWinOverProfile:
         """Agent config temperature=0.2 overrides profile temperature=0.7."""
         from unittest.mock import Mock
 
-        from llm_orc.core.execution.llm_agent_runner import (
+        from llm_orc.core.execution.runners.llm_runner import (
             LlmAgentRunner,
         )
         from llm_orc.core.execution.usage_collector import (
@@ -364,7 +364,7 @@ class TestEnsembleAgentDispatchedByAgentDispatcher:
 
     def test_isinstance_dispatch_for_ensemble_agent(self) -> None:
         """AgentDispatcher uses isinstance for EnsembleAgentConfig."""
-        from llm_orc.core.execution.agent_dispatcher import (
+        from llm_orc.core.execution.phases.agent_dispatcher import (
             AgentDispatcher,
         )
         from llm_orc.schemas.agent_config import EnsembleAgentConfig
@@ -379,7 +379,7 @@ class TestEnsembleAgentInDependencyChain:
 
     def test_ensemble_agent_phases(self) -> None:
         """scanner(script) → review(ensemble) → summarizer(LLM)."""
-        from llm_orc.core.execution.dependency_analyzer import (
+        from llm_orc.core.execution.phases.dependency_analyzer import (
             DependencyAnalyzer,
         )
         from llm_orc.schemas.agent_config import EnsembleAgentConfig

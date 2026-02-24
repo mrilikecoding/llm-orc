@@ -7,7 +7,9 @@ from typing import Any
 import pytest
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
-from llm_orc.core.execution.streaming_progress_tracker import StreamingProgressTracker
+from llm_orc.core.execution.monitoring.streaming_progress_tracker import (
+    StreamingProgressTracker,
+)
 from llm_orc.schemas.agent_config import LlmAgentConfig
 
 

@@ -44,7 +44,7 @@ Tracking resolution of findings. See `docs/plans/2026-02-23-codebase-audit-remed
 | E4 | Connect `invoke_streaming` to real execution | Resolved | 2026-02-23 |
 | E3 | Define TemplateProvider protocol, inject into ConfigurationManager | Resolved | 2026-02-23 |
 | M6 | Add `HTTPConnectionPool.configure()`, remove hidden ConfigurationManager | Resolved | 2026-02-23 |
-| U3 | Reorganize flat `execution/` into sub-packages | Deferred | — |
+| U3 | Reorganize flat `execution/` into sub-packages | Resolved | 2026-02-24 |
 | U10/U11 | Improve test quality (assertion roulette, eager tests) | Deferred | — |
 
 ## Executive Summary
@@ -53,7 +53,7 @@ LLM Orchestra is a multi-agent LLM orchestration system that coordinates ensembl
 
 **Post-remediation (2026-02-23):** Three waves of remediation resolved 34 of 36 findings. The typed event system was deleted (M3). The CLI now routes through `OrchestraService` (M1). Handlers moved from `mcp/handlers/` to `services/handlers/` (E1). `EnsembleExecutor` construction is centralized in `ExecutorFactory` with required collaborator injection (M2). `ConfigurationManager` separates construction from provisioning (E2/U1) and uses an injected `TemplateProvider` protocol instead of upward imports (E3). `HTTPConnectionPool` accepts explicit configuration (M6). `invoke_streaming` connects to real execution (E4). `set_project` is synchronized with `asyncio.Lock` (E8). Broad `except Exception` clauses were narrowed to specific types (M4). ADR statuses, markers, and documentation were corrected (E12-E16, U13). Dead code, dependencies, and ghost directories were removed (M3, E15, U6-U8).
 
-**Remaining:** Two items are deferred — U3 (reorganize `execution/` into sub-packages) and U10/U11 (improve test quality). These are best addressed when the architecture stabilizes.
+**Remaining:** One item is deferred — U10/U11 (improve test quality). U3 (reorganize `execution/` into sub-packages) was resolved on 2026-02-24, splitting 21 files into 5 sub-packages (fan_out, scripting, runners, phases, monitoring).
 
 The codebase's strongest assets are its typed agent configuration layer (Pydantic discriminated union with `extra="forbid"`), its multi-tier configuration hierarchy, and its phase-based dependency resolution with parallel execution.
 
@@ -548,16 +548,11 @@ AGPL-3.0 is chosen for a tool designed to run on localhost via stdio/MCP. The "n
 
 #### U3: Flat 34-File Execution Package
 
-**Status: Deferred**
+**Status: Resolved (2026-02-24)**
 
-**Observation:** `core/execution/` contains 30+ files in a single flat directory with no sub-packages.
-- Natural groupings visible: fan-out (3 files), scripting (4 files), dependencies (2 files), runners (3 files)
+**Observation:** `core/execution/` contained 32 files in a single flat directory with no sub-packages.
 
-**Pattern:** Flat namespace enabling Bloater tendency.
-
-**Tradeoff:** Optimizes for import simplicity at the expense of conceptual legibility.
-
-**Stewardship:** Introduce sub-packages: `execution/fan_out/`, `execution/scripting/`, `execution/phases/`, `execution/runners/`.
+**Resolution:** Reorganized into 5 sub-packages: `fan_out/` (3 files), `scripting/` (6 files), `runners/` (2 files), `phases/` (6 files), `monitoring/` (4 files). 11 shared/hub files remain at root. Zero cross-sub-package imports. All 21 moves with full import rewrites across ~70 files.
 
 ---
 
@@ -757,11 +752,9 @@ The following findings were independently surfaced by multiple lenses, increasin
 
 ### What to Improve (Remaining)
 
-All original prioritized items (1-10) have been resolved. Two items remain deferred:
+All original prioritized items (1-10) have been resolved. U3 was resolved on 2026-02-24. One item remains deferred:
 
-1. **Reorganize flat `execution/` into sub-packages** (U3). 30+ files in a single flat directory. Natural groupings: fan-out (3 files), scripting (4 files), dependencies (2 files), runners (3 files). Impact: conceptual legibility; effort: significant (31 file moves with import updates). Best done as the last structural change.
-
-2. **Improve test quality** (U10/U11). Assertion roulette in init tests (U10); eager 105-line test in `test_caching.py` (U11). Impact: test maintainability; effort: moderate. Wait for architecture to stabilize.
+1. **Improve test quality** (U10/U11). Assertion roulette in init tests (U10); eager 105-line test in `test_caching.py` (U11). Impact: test maintainability; effort: moderate. Wait for architecture to stabilize.
 
 ### Ongoing Practices
 

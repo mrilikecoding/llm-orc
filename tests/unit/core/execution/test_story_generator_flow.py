@@ -107,8 +107,10 @@ class TestStoryGeneratorFlow:
         that was missing from ADR-001 implementation.
         """
         # Test the AgentRequestProcessor directly to show dynamic parameter generation
-        from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
-        from llm_orc.core.execution.dependency_resolver import DependencyResolver
+        from llm_orc.core.execution.phases.agent_request_processor import (
+            AgentRequestProcessor,
+        )
+        from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
         from llm_orc.schemas.script_agent import AgentRequest
 
         # Create components

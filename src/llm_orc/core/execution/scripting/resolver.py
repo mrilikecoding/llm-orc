@@ -83,7 +83,7 @@ class ScriptResolver:
         # Priority 1.5: Installed package primitives
         # The parent of the primitives/ dir so that refs like
         # "primitives/user_interaction/get_user_input.py" resolve correctly
-        package_primitives = Path(__file__).resolve().parents[2] / "primitives"
+        package_primitives = Path(__file__).resolve().parents[3] / "primitives"
         if package_primitives.exists():
             search_paths.append(str(package_primitives.parent))
 
@@ -207,7 +207,7 @@ class ScriptResolver:
         if scripts_dir.exists():
             self._collect_local_scripts(scripts_dir, scripts)
 
-        package_primitives = Path(__file__).resolve().parents[2] / "primitives"
+        package_primitives = Path(__file__).resolve().parents[3] / "primitives"
         if package_primitives.exists():
             self._collect_package_primitives(package_primitives, scripts)
 

@@ -8,7 +8,7 @@ execution.
 import json
 from typing import Any
 
-from llm_orc.core.execution.dependency_resolver import DependencyResolver
+from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
 from llm_orc.schemas.agent_config import AgentConfig
 from llm_orc.schemas.script_agent import AgentRequest
 

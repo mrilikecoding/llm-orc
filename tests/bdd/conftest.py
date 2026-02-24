@@ -350,7 +350,7 @@ if __name__ == "__main__":
 @pytest.fixture
 def bdd_context(test_primitives_dir: Path) -> dict[str, Any]:
     """Shared context for BDD scenarios with test primitives configured."""
-    from llm_orc.core.execution.script_resolver import ScriptResolver
+    from llm_orc.core.execution.scripting.resolver import ScriptResolver
 
     # Create resolver with test primitives directory
     resolver = ScriptResolver(search_paths=[str(test_primitives_dir.parent)])

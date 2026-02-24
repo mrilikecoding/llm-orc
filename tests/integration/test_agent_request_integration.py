@@ -13,7 +13,7 @@ import pytest
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.execution.executor_factory import ExecutorFactory
-from llm_orc.core.execution.script_resolver import ScriptResolver
+from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.schemas.agent_config import AgentConfig, ScriptAgentConfig
 from llm_orc.schemas.script_agent import AgentRequest
 from tests.fixtures.test_primitives import (
@@ -262,8 +262,10 @@ print(json.dumps(output))
 
         RED PHASE: Will fail because integration isn't implemented yet.
         """
-        from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
-        from llm_orc.core.execution.dependency_resolver import DependencyResolver
+        from llm_orc.core.execution.phases.agent_request_processor import (
+            AgentRequestProcessor,
+        )
+        from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
 
         # Create mock role resolver
         mock_role_resolver = Mock(return_value="Test Role")

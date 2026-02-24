@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from llm_orc.core.execution.agent_request_processor import AgentRequestProcessor
-from llm_orc.core.execution.phase_result_processor import PhaseResultProcessor
+from llm_orc.core.execution.phases.agent_request_processor import AgentRequestProcessor
+from llm_orc.core.execution.phases.phase_result_processor import PhaseResultProcessor
 from llm_orc.core.execution.result_types import AgentResult
 from llm_orc.core.execution.usage_collector import UsageCollector
 from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from llm_orc.core.execution.script_user_input_handler import ScriptUserInputHandler
+from llm_orc.core.execution.scripting.user_input_handler import ScriptUserInputHandler
 from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 
 

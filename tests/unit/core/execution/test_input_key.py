@@ -16,7 +16,7 @@ class TestInputKeySelectsFromUpstream:
 
     def test_input_key_selects_pdfs(self) -> None:
         """Downstream agent receives only the selected key's value."""
-        from llm_orc.core.execution.dependency_resolver import (
+        from llm_orc.core.execution.phases.dependency_resolver import (
             DependencyResolver,
         )
 
@@ -57,13 +57,13 @@ class TestInputKeyWithFanOut:
 
     def test_input_key_selects_then_fan_out_expands(self) -> None:
         """input_key selects array, fan_out expands to N instances."""
-        from llm_orc.core.execution.fan_out_coordinator import (
+        from llm_orc.core.execution.fan_out.coordinator import (
             FanOutCoordinator,
         )
-        from llm_orc.core.execution.fan_out_expander import (
+        from llm_orc.core.execution.fan_out.expander import (
             FanOutExpander,
         )
-        from llm_orc.core.execution.fan_out_gatherer import (
+        from llm_orc.core.execution.fan_out.gatherer import (
             FanOutGatherer,
         )
 
@@ -100,7 +100,7 @@ class TestMissingInputKeyIsRuntimeError:
 
     def test_missing_key_produces_error(self) -> None:
         """Non-existent key in upstream output is a runtime error."""
-        from llm_orc.core.execution.dependency_resolver import (
+        from llm_orc.core.execution.phases.dependency_resolver import (
             DependencyResolver,
         )
 
@@ -137,7 +137,7 @@ class TestNonDictUpstreamWithInputKey:
 
     def test_plain_string_upstream_produces_error(self) -> None:
         """input_key on non-dict upstream is a runtime error."""
-        from llm_orc.core.execution.dependency_resolver import (
+        from llm_orc.core.execution.phases.dependency_resolver import (
             DependencyResolver,
         )
 
@@ -172,7 +172,7 @@ class TestNoInputKeyBackwardCompatible:
 
     def test_no_input_key_passes_full_output(self) -> None:
         """Without input_key, agent receives full upstream output."""
-        from llm_orc.core.execution.dependency_resolver import (
+        from llm_orc.core.execution.phases.dependency_resolver import (
             DependencyResolver,
         )
 
@@ -227,20 +227,20 @@ class TestIntegrationInputKeyRoutingPattern:
         Verifies DependencyAnalyzer, FanOutCoordinator, and
         DependencyResolver compose with input_key using real components.
         """
-        from llm_orc.core.execution.dependency_analyzer import (
-            DependencyAnalyzer,
-        )
-        from llm_orc.core.execution.dependency_resolver import (
-            DependencyResolver,
-        )
-        from llm_orc.core.execution.fan_out_coordinator import (
+        from llm_orc.core.execution.fan_out.coordinator import (
             FanOutCoordinator,
         )
-        from llm_orc.core.execution.fan_out_expander import (
+        from llm_orc.core.execution.fan_out.expander import (
             FanOutExpander,
         )
-        from llm_orc.core.execution.fan_out_gatherer import (
+        from llm_orc.core.execution.fan_out.gatherer import (
             FanOutGatherer,
+        )
+        from llm_orc.core.execution.phases.dependency_analyzer import (
+            DependencyAnalyzer,
+        )
+        from llm_orc.core.execution.phases.dependency_resolver import (
+            DependencyResolver,
         )
 
         # Build the routing ensemble
