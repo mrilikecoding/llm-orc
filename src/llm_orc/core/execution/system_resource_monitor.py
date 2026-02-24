@@ -1,12 +1,10 @@
-"""Adaptive resource management system with circuit breaker patterns."""
+"""System resource monitoring for execution telemetry."""
 
 import asyncio
 import time
 from typing import Any
 
 import psutil
-
-# Removed ResourceMonitoringCircuitBreaker - no longer needed with simplified approach
 
 
 class SystemResourceMonitor:

@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from llm_orc.core.execution.adaptive_resource_manager import (
+from llm_orc.core.execution.system_resource_monitor import (
     SystemResourceMonitor,
 )
 

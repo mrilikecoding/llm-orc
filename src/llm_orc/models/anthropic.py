@@ -278,8 +278,6 @@ class OAuthClaudeModel(ModelInterface):
     which differs from the ModelInterface contract.
     """
 
-    SUPPORTS_CUSTOM_ROLE_PROMPT: bool = False
-
     def __init__(
         self,
         access_token: str,
@@ -366,7 +364,7 @@ class OAuthClaudeModel(ModelInterface):
             return
 
         # Warn: role_prompt is injected as a conversation turn, not as the
-        # system prompt — OAuthClaudeModel.SUPPORTS_CUSTOM_ROLE_PROMPT is False.
+        # system prompt (OAuth requires a fixed system prompt).
         logger.warning(
             "OAuthClaudeModel: role_prompt %r injected via conversation turn "
             "(system prompt is always the OAuth-required Claude Code prompt); "
