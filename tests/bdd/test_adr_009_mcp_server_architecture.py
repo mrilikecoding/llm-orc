@@ -1057,8 +1057,8 @@ def notifications_include_event_types(bdd_context: dict[str, Any]) -> None:
 
     events = bdd_context.get("streaming_events", [])
     event_types = {e.get("type") for e in events}
-    assert "agent_start" in event_types, "Should have agent_start events"
-    assert "agent_complete" in event_types, "Should have agent_complete events"
+    assert "agent_started" in event_types, "Should have agent_started events"
+    assert "agent_completed" in event_types, "Should have agent_completed events"
 
 
 # ============================================================================
