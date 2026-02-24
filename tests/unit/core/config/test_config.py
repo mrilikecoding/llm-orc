@@ -159,14 +159,30 @@ class TestConfigurationManager:
 
     def test_setup_default_config_from_template(self) -> None:
         """Test that global config is created from template file."""
+        from unittest.mock import MagicMock
+
+        mock_template_content = """model_profiles:
+  default:
+    model: claude-3-5-sonnet-20241022
+    provider: anthropic
+  micro-local:
+    model: llama3.2
+    provider: ollama
+  validate-anthropic-api:
+    model: claude-3-haiku-20240307
+    provider: anthropic
+"""
+        mock_provider = MagicMock()
+        mock_provider.get_template_content.return_value = mock_template_content
+
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
 
-            # Mock global config directory
+            # Mock global config directory and inject template provider
             with patch.object(
                 ConfigurationManager, "_get_global_config_dir", return_value=temp_path
             ):
-                ConfigurationManager()
+                ConfigurationManager(template_provider=mock_provider)
 
                 # Check that config.yaml was created
                 config_file = temp_path / "config.yaml"
@@ -182,6 +198,8 @@ class TestConfigurationManager:
 
     def test_init_local_config_from_templates(self) -> None:
         """Test that local config initialization uses templates."""
+        from unittest.mock import MagicMock
+
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
 
@@ -198,18 +216,21 @@ agents:
     instructions: "You are a test agent."
 """
 
-            # Mock cwd and template content
+            mock_provider = MagicMock()
+
+            def _template_side_effect(name: str) -> str:
+                if "local-config" in name:
+                    return mock_config_template
+                return mock_ensemble_template
+
+            mock_provider.get_template_content.side_effect = _template_side_effect
+
+            # Mock cwd and inject mock template provider
             with patch("pathlib.Path.cwd", return_value=temp_path):
-                with patch(
-                    "llm_orc.cli_library.library.get_template_content",
-                    side_effect=lambda name: (
-                        mock_config_template
-                        if "local-config" in name
-                        else mock_ensemble_template
-                    ),
-                ):
-                    config_manager = ConfigurationManager()
-                    config_manager.init_local_config("test-project")
+                config_manager = ConfigurationManager(
+                    template_provider=mock_provider,
+                )
+                config_manager.init_local_config("test-project")
 
                 # Check directory structure was created
                 local_dir = temp_path / ".llm-orc"
@@ -357,23 +378,20 @@ agents:
                     assert content == existing_content
 
     def test_get_template_config_content_not_found(self) -> None:
-        """Test template config content raises error when file not found."""
+        """Test template config content raises error when no provider configured."""
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
 
             with patch.object(
                 ConfigurationManager, "_get_global_config_dir", return_value=temp_path
             ):
-                with patch(
-                    "llm_orc.cli_library.library.get_template_content",
-                    side_effect=FileNotFoundError(),
-                ):
-                    config_manager = ConfigurationManager()
+                # No template_provider injected — method must raise FileNotFoundError
+                config_manager = ConfigurationManager()
 
-                    with pytest.raises(
-                        FileNotFoundError, match="Template not found: nonexistent.yaml"
-                    ):
-                        config_manager._get_template_config_content("nonexistent.yaml")
+                with pytest.raises(
+                    FileNotFoundError, match="Template not found: nonexistent.yaml"
+                ):
+                    config_manager._get_template_config_content("nonexistent.yaml")
 
     def test_get_model_profile_existing(self) -> None:
         """Test getting an existing model profile."""
