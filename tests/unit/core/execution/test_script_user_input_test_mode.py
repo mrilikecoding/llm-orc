@@ -1,7 +1,4 @@
-"""Unit tests for ScriptUserInputHandler test mode with LLM simulation.
-
-RED Phase: These tests will fail until we implement test mode functionality.
-"""
+"""Unit tests for ScriptUserInputHandler test mode with LLM simulation."""
 
 from unittest.mock import AsyncMock
 
@@ -38,7 +35,7 @@ class TestScriptUserInputHandlerTestMode:
         }
 
         # Mock OllamaModel to avoid requiring Ollama in tests
-        with patch("llm_orc.core.validation.llm_simulator.OllamaModel") as mock_ollama:
+        with patch("llm_orc.models.ollama.OllamaModel") as mock_ollama:
             mock_ollama.return_value = MagicMock()
             handler = ScriptUserInputHandler(test_mode=True, llm_config=llm_config)
             assert handler.test_mode is True
@@ -80,7 +77,7 @@ class TestScriptUserInputHandlerTestMode:
         }
 
         # Mock OllamaModel to avoid requiring Ollama in tests
-        with patch("llm_orc.core.validation.llm_simulator.OllamaModel") as mock_ollama:
+        with patch("llm_orc.models.ollama.OllamaModel") as mock_ollama:
             mock_client = MagicMock()
             mock_client.generate_response = AsyncMock(return_value="simulated response")
             mock_ollama.return_value = mock_client
@@ -130,7 +127,7 @@ class TestScriptUserInputHandlerTestMode:
         }
 
         # Mock OllamaModel to avoid requiring Ollama in tests
-        with patch("llm_orc.core.validation.llm_simulator.OllamaModel") as mock_ollama:
+        with patch("llm_orc.models.ollama.OllamaModel") as mock_ollama:
             mock_ollama.return_value = MagicMock()
             handler = ScriptUserInputHandler(test_mode=True, llm_config=llm_config)
 
@@ -165,7 +162,7 @@ class TestScriptUserInputHandlerTestMode:
         }
 
         # Mock OllamaModel to avoid requiring Ollama in tests
-        with patch("llm_orc.core.validation.llm_simulator.OllamaModel") as mock_ollama:
+        with patch("llm_orc.models.ollama.OllamaModel") as mock_ollama:
             mock_ollama.return_value = MagicMock()
             handler = ScriptUserInputHandler(test_mode=True, llm_config=llm_config)
 
@@ -183,15 +180,6 @@ class TestScriptUserInputHandlerBackwardCompatibility:
 
         # Should work with no test mode (default)
         assert not hasattr(handler, "test_mode") or handler.test_mode is False
-
-    def test_event_emitter_still_works(self) -> None:
-        """Test that event emitter functionality is preserved."""
-
-        event_emitter = AsyncMock()
-        handler = ScriptUserInputHandler(event_emitter=event_emitter)
-
-        # Event emitter should still be set
-        assert handler.event_emitter is event_emitter
 
     def test_requires_user_input_still_works(self) -> None:
         """Test that requires_user_input detection still works."""

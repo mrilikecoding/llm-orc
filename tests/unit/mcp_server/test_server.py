@@ -327,8 +327,8 @@ class TestMCPServerLibraryBrowse:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Browse empty library returns empty lists."""
-        server._library_handler._test_library_dir = tmp_path / "empty-library"
-        server._library_handler._test_library_dir.mkdir()
+        server._library_handler._library_dir = tmp_path / "empty-library"
+        server._library_handler._library_dir.mkdir()
 
         result = await server.call_tool("library_browse", {})
 
@@ -347,7 +347,7 @@ class TestMCPServerLibraryBrowse:
             "name: test\ndescription: Test\nagents: []"
         )
 
-        server._library_handler._test_library_dir = library_dir
+        server._library_handler._library_dir = library_dir
 
         result = await server.call_tool("library_browse", {"type": "ensembles"})
 
@@ -373,7 +373,7 @@ class TestMCPServerLibraryCopy:
         local_dir = tmp_path / ".llm-orc" / "ensembles"
         local_dir.mkdir(parents=True)
 
-        server._library_handler._test_library_dir = library_dir
+        server._library_handler._library_dir = library_dir
         _mock_config(server).get_ensembles_dirs.return_value = [str(local_dir)]
 
         result = await server.call_tool(
@@ -392,7 +392,7 @@ class TestMCPServerLibraryCopy:
         library_dir = tmp_path / "library"
         library_dir.mkdir()
 
-        server._library_handler._test_library_dir = library_dir
+        server._library_handler._library_dir = library_dir
 
         with pytest.raises(ValueError, match="not found in library"):
             await server.call_tool(
@@ -416,7 +416,7 @@ class TestMCPServerLibraryCopy:
         local_dir.mkdir(parents=True)
         (local_dir / "exists.yaml").write_text("name: local")
 
-        server._library_handler._test_library_dir = library_dir
+        server._library_handler._library_dir = library_dir
         _mock_config(server).get_ensembles_dirs.return_value = [str(local_dir)]
 
         with pytest.raises(ValueError, match="already exists"):
@@ -441,7 +441,7 @@ class TestMCPServerLibraryCopy:
         local_dir.mkdir(parents=True)
         (local_dir / "exists.yaml").write_text("name: local-version")
 
-        server._library_handler._test_library_dir = library_dir
+        server._library_handler._library_dir = library_dir
         _mock_config(server).get_ensembles_dirs.return_value = [str(local_dir)]
 
         result = await server.call_tool(
@@ -457,11 +457,11 @@ class TestMCPServerLibraryCopy:
 class TestMCPServerGetLibraryDir:
     """Tests for _get_library_dir method."""
 
-    def test_get_library_dir_from_test_override(
+    def test_get_library_dir_with_injected_path(
         self, server: MCPServer, tmp_path: Path
     ) -> None:
-        """Test override takes precedence."""
-        server._library_handler._test_library_dir = tmp_path / "test-lib"
+        """Injected library_dir takes precedence."""
+        server._library_handler._library_dir = tmp_path / "test-lib"
 
         result = server._library_handler.get_library_dir()
 
@@ -705,7 +705,7 @@ class TestMCPServerArtifactTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Delete artifact validates artifact_id format."""
-        server._artifact_handler._test_artifacts_base = tmp_path
+        server._artifact_handler._project_path = tmp_path
 
         with pytest.raises(ValueError, match="Invalid artifact_id format"):
             await server.call_tool(
@@ -717,7 +717,7 @@ class TestMCPServerArtifactTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Delete artifact fails if not found."""
-        server._artifact_handler._test_artifacts_base = tmp_path
+        server._artifact_handler._project_path = tmp_path
 
         with pytest.raises(ValueError, match="not found"):
             await server.call_tool(
@@ -730,10 +730,11 @@ class TestMCPServerArtifactTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Delete artifact removes the directory."""
-        artifacts_dir = tmp_path / "test-ensemble" / "20231201_120000"
+        base = tmp_path / ".llm-orc" / "artifacts"
+        artifacts_dir = base / "test-ensemble" / "20231201_120000"
         artifacts_dir.mkdir(parents=True)
         (artifacts_dir / "execution.json").write_text("{}")
-        server._artifact_handler._test_artifacts_base = tmp_path
+        server._artifact_handler._project_path = tmp_path
 
         result = await server.call_tool(
             "delete_artifact",
@@ -751,12 +752,13 @@ class TestMCPServerArtifactTools:
         import os
         import time
 
-        artifacts_dir = tmp_path / "test-ensemble" / "old_artifact"
+        base = tmp_path / ".llm-orc" / "artifacts"
+        artifacts_dir = base / "test-ensemble" / "old_artifact"
         artifacts_dir.mkdir(parents=True)
         # Set old modification time
         old_time = time.time() - (60 * 24 * 60 * 60)  # 60 days ago
         os.utime(artifacts_dir, (old_time, old_time))
-        server._artifact_handler._test_artifacts_base = tmp_path
+        server._artifact_handler._project_path = tmp_path
 
         result = await server.call_tool(
             "cleanup_artifacts", {"older_than_days": 30, "dry_run": True}
@@ -774,11 +776,12 @@ class TestMCPServerArtifactTools:
         import os
         import time
 
-        artifacts_dir = tmp_path / "test-ensemble" / "old_artifact"
+        base = tmp_path / ".llm-orc" / "artifacts"
+        artifacts_dir = base / "test-ensemble" / "old_artifact"
         artifacts_dir.mkdir(parents=True)
         old_time = time.time() - (60 * 24 * 60 * 60)
         os.utime(artifacts_dir, (old_time, old_time))
-        server._artifact_handler._test_artifacts_base = tmp_path
+        server._artifact_handler._project_path = tmp_path
 
         result = await server.call_tool(
             "cleanup_artifacts", {"older_than_days": 30, "dry_run": False}
@@ -799,12 +802,13 @@ class TestMCPServerArtifactTools:
         old_time = time.time() - (60 * 24 * 60 * 60)
 
         # Create artifacts in two ensembles
+        artifacts_base = tmp_path / ".llm-orc" / "artifacts"
         for name in ["ensemble-a", "ensemble-b"]:
-            artifact_dir = tmp_path / name / "old"
+            artifact_dir = artifacts_base / name / "old"
             artifact_dir.mkdir(parents=True)
             os.utime(artifact_dir, (old_time, old_time))
 
-        server._artifact_handler._test_artifacts_base = tmp_path
+        server._artifact_handler._project_path = tmp_path
 
         result = await server.call_tool(
             "cleanup_artifacts",
@@ -835,7 +839,7 @@ class TestMCPServerScriptTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Get script fails if not found."""
-        server._script_handler._test_scripts_dir = tmp_path
+        server._script_handler._project_path = tmp_path
 
         with pytest.raises(ValueError, match="not found"):
             await server.call_tool(
@@ -847,11 +851,11 @@ class TestMCPServerScriptTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Get script returns script details."""
-        scripts_dir = tmp_path / "extraction"
+        scripts_dir = tmp_path / ".llm-orc" / "scripts" / "extraction"
         scripts_dir.mkdir(parents=True)
         script_content = '"""Test script for extraction."""\nimport sys\nprint("hello")'
         (scripts_dir / "test.py").write_text(script_content)
-        server._script_handler._test_scripts_dir = tmp_path
+        server._script_handler._project_path = tmp_path
 
         result = await server.call_tool(
             "get_script", {"name": "test", "category": "extraction"}
@@ -879,7 +883,7 @@ class TestMCPServerScriptTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Create script with basic template."""
-        server._script_handler._test_scripts_dir = tmp_path
+        server._script_handler._project_path = tmp_path
 
         result = await server.call_tool(
             "create_script",
@@ -887,7 +891,7 @@ class TestMCPServerScriptTools:
         )
 
         assert result["created"] is True
-        script_file = tmp_path / "utils" / "new-script.py"
+        script_file = tmp_path / ".llm-orc" / "scripts" / "utils" / "new-script.py"
         assert script_file.exists()
         content = script_file.read_text()
         assert "Primitive script" in content
@@ -897,7 +901,7 @@ class TestMCPServerScriptTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Create script with extraction template."""
-        server._script_handler._test_scripts_dir = tmp_path
+        server._script_handler._project_path = tmp_path
 
         result = await server.call_tool(
             "create_script",
@@ -905,7 +909,9 @@ class TestMCPServerScriptTools:
         )
 
         assert result["created"] is True
-        content = (tmp_path / "extraction" / "extractor.py").read_text()
+        content = (
+            tmp_path / ".llm-orc" / "scripts" / "extraction" / "extractor.py"
+        ).read_text()
         assert "Extraction script" in content
         assert "json" in content
 
@@ -914,10 +920,10 @@ class TestMCPServerScriptTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Create script fails if already exists."""
-        scripts_dir = tmp_path / "extraction"
+        scripts_dir = tmp_path / ".llm-orc" / "scripts" / "extraction"
         scripts_dir.mkdir(parents=True)
         (scripts_dir / "existing.py").write_text("# existing")
-        server._script_handler._test_scripts_dir = tmp_path
+        server._script_handler._project_path = tmp_path
 
         with pytest.raises(ValueError, match="already exists"):
             await server.call_tool(
@@ -952,7 +958,7 @@ class TestMCPServerScriptTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Delete script fails if not found."""
-        server._script_handler._test_scripts_dir = tmp_path
+        server._script_handler._project_path = tmp_path
 
         with pytest.raises(ValueError, match="not found"):
             await server.call_tool(
@@ -965,11 +971,11 @@ class TestMCPServerScriptTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Delete script removes the file."""
-        scripts_dir = tmp_path / "extraction"
+        scripts_dir = tmp_path / ".llm-orc" / "scripts" / "extraction"
         scripts_dir.mkdir(parents=True)
         script_file = scripts_dir / "test.py"
         script_file.write_text("# test")
-        server._script_handler._test_scripts_dir = tmp_path
+        server._script_handler._project_path = tmp_path
 
         result = await server.call_tool(
             "delete_script",
@@ -998,12 +1004,12 @@ class TestMCPServerScriptTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Test script runs the script with input."""
-        scripts_dir = tmp_path / "utils"
+        scripts_dir = tmp_path / ".llm-orc" / "scripts" / "utils"
         scripts_dir.mkdir(parents=True)
         (scripts_dir / "echo.py").write_text(
             "import sys\nprint(sys.stdin.read().upper())"
         )
-        server._script_handler._test_scripts_dir = tmp_path
+        server._script_handler._project_path = tmp_path
 
         result = await server.call_tool(
             "test_script", {"name": "echo", "category": "utils", "input": "hello"}
@@ -1033,7 +1039,7 @@ class TestMCPServerLibraryExtraTools:
         (ensembles_dir / "code-review.yaml").write_text(
             "name: code-review\ndescription: Review code changes\nagents: []"
         )
-        server._library_handler._test_library_dir = library_dir
+        server._library_handler._library_dir = library_dir
 
         result = await server.call_tool("library_search", {"query": "review"})
 
@@ -1050,7 +1056,7 @@ class TestMCPServerLibraryExtraTools:
         scripts_dir = library_dir / "scripts" / "extraction"
         scripts_dir.mkdir(parents=True)
         (scripts_dir / "json-parser.py").write_text("# JSON parser")
-        server._library_handler._test_library_dir = library_dir
+        server._library_handler._library_dir = library_dir
 
         result = await server.call_tool("library_search", {"query": "json"})
 
@@ -1065,7 +1071,7 @@ class TestMCPServerLibraryExtraTools:
         """Library search returns empty for no matches."""
         library_dir = tmp_path / "library"
         library_dir.mkdir()
-        server._library_handler._test_library_dir = library_dir
+        server._library_handler._library_dir = library_dir
 
         result = await server.call_tool(
             "library_search", {"query": "nonexistent-query"}
@@ -1080,7 +1086,7 @@ class TestMCPServerLibraryExtraTools:
         """Library info returns library metadata."""
         library_dir = tmp_path / "library"
         library_dir.mkdir()
-        server._library_handler._test_library_dir = library_dir
+        server._library_handler._library_dir = library_dir
 
         result = await server.call_tool("library_info", {})
 
@@ -1098,7 +1104,7 @@ class TestMCPServerLibraryExtraTools:
         ensembles_dir.mkdir(parents=True)
         (ensembles_dir / "test1.yaml").write_text("name: test1\nagents: []")
         (ensembles_dir / "test2.yaml").write_text("name: test2\nagents: []")
-        server._library_handler._test_library_dir = library_dir
+        server._library_handler._library_dir = library_dir
 
         result = await server.call_tool("library_info", {})
 
@@ -1114,7 +1120,7 @@ class TestMCPServerLibraryExtraTools:
             scripts_dir = library_dir / "scripts" / cat
             scripts_dir.mkdir(parents=True)
             (scripts_dir / "script.py").write_text("# test")
-        server._library_handler._test_library_dir = library_dir
+        server._library_handler._library_dir = library_dir
 
         result = await server.call_tool("library_info", {})
 
@@ -1127,7 +1133,7 @@ class TestMCPServerLibraryExtraTools:
         self, server: MCPServer, tmp_path: Path
     ) -> None:
         """Library info handles nonexistent library."""
-        server._library_handler._test_library_dir = tmp_path / "nonexistent"
+        server._library_handler._library_dir = tmp_path / "nonexistent"
 
         result = await server.call_tool("library_info", {})
 
@@ -1172,22 +1178,22 @@ class TestMCPServerHelperMethods:
 
         assert result == "Test docstring"
 
-    def test_get_scripts_dir_from_test_override(
+    def test_get_scripts_dir_with_project_path(
         self, server: MCPServer, tmp_path: Path
     ) -> None:
-        """Get scripts dir uses test override."""
-        server._script_handler._test_scripts_dir = tmp_path / "test-scripts"
+        """Get scripts dir uses project path when set."""
+        server._script_handler._project_path = tmp_path / "my-project"
 
         result = server._script_handler._get_scripts_dir()
 
-        assert result == tmp_path / "test-scripts"
+        assert result == tmp_path / "my-project" / ".llm-orc" / "scripts"
 
     def test_get_scripts_dir_default(
         self, server: MCPServer, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Get scripts dir defaults to .llm-orc/scripts."""
+        """Get scripts dir defaults to .llm-orc/scripts when no project path."""
         monkeypatch.chdir(tmp_path)
-        server._script_handler._test_scripts_dir = None
+        server._script_handler._project_path = None
 
         result = server._script_handler._get_scripts_dir()
 

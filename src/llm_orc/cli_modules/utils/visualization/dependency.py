@@ -4,14 +4,8 @@ from typing import Any
 
 from rich.tree import Tree
 
+from llm_orc.core.execution.utils import dep_name
 from llm_orc.schemas.agent_config import AgentConfig
-
-
-def _dep_name(dep: str | dict[str, Any]) -> str:
-    """Extract the agent name from a dependency entry."""
-    if isinstance(dep, dict):
-        return str(dep["agent_name"])
-    return dep
 
 
 def create_dependency_graph(agents: list[AgentConfig]) -> str:
@@ -203,7 +197,7 @@ def _calculate_agent_level(
     # Find the maximum level of dependencies
     max_dep_level = 0
     for dep in dependencies:
-        dep_agent_name = _dep_name(dep)
+        dep_agent_name = dep_name(dep)
         for dep_agent in all_agents:
             if dep_agent.name == dep_agent_name:
                 dep_level = _calculate_agent_level(dep_agent, all_agents, _cache)

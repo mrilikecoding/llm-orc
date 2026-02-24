@@ -4,16 +4,20 @@ Provides REST API endpoints for ensemble management and execution,
 with WebSocket support for streaming execution updates.
 """
 
+import logging
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from llm_orc.web.api import artifacts, ensembles, profiles, scripts
+
+logger = logging.getLogger(__name__)
 
 # Static files directory (built frontend assets)
 STATIC_DIR = Path(__file__).parent / "static"
@@ -47,6 +51,27 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(
+        request: Request, exc: HTTPException
+    ) -> JSONResponse:
+        """Return a consistent JSON body for HTTP errors."""
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": exc.detail},
+        )
+
+    @app.exception_handler(Exception)
+    async def global_exception_handler(
+        request: Request, exc: Exception
+    ) -> JSONResponse:
+        """Catch unhandled exceptions and return structured JSON."""
+        logger.error("Unhandled error: %s", exc, exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal server error", "detail": str(exc)},
+        )
 
     # Register API routers
     app.include_router(ensembles.router)

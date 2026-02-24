@@ -29,16 +29,16 @@ All items are deletions, renames, or status updates. No judgment calls.
 
 Self-contained, moderate judgment. Sequential but independent.
 
-- [ ] **E10** Add `set_project_context` to `ScriptHandler` and `ArtifactHandler`
-- [ ] **E9** Emit structured warning when fan-out produces zero instances
-- [ ] **E7** Distinguish credential decryption errors from missing credentials
-- [ ] **M5** Align complexity thresholds (add complexipy to CI or document which is primary)
-- [ ] **M7** Register global exception handler on FastAPI app
-- [ ] **U2** Extract shared `classify_tier()` + consolidate `_dep_name` duplication
-- [ ] **U4** Extract profile parsing from `PromotionHandler` → `ProfileHandler`
-- [ ] **U8** Wire `EventFactory` into pipeline or delete dead code
-- [ ] **U9** Replace `_test_*` escape hatches with constructor injection
-- [ ] **U14** Make `LLMResponseGenerator` accept `ModelInterface` parameter
+- [x] **E10** Add `set_project_context` to `ScriptHandler` and `ArtifactHandler`
+- [x] **E9** Emit structured warning when fan-out produces zero instances
+- [x] **E7** Distinguish credential decryption errors from missing credentials
+- [x] **M5** Align complexity thresholds — already resolved (complexipy in lint target)
+- [x] **M7** Register global exception handler on FastAPI app
+- [x] **U2** Extract shared `classify_tier()` + consolidate `_dep_name` duplication
+- [x] **U4** Extract profile parsing from `PromotionHandler` → `ProfileHandler`
+- [x] **U8** Removed dead `EventFactory` code from `ScriptUserInputHandler`
+- [x] **U9** Replace `_test_*` escape hatches with constructor injection
+- [x] **U14** Make `LLMResponseGenerator` accept `ModelInterface` parameter
 
 ## Wave 3 — Architectural Changes
 

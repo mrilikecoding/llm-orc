@@ -156,6 +156,25 @@ class ProfileHandler:
                 return path
         raise ValueError(f"Profile '{name}' not found")
 
+    def get_profiles_from_dir(self, directory: Path) -> dict[str, dict[str, Any]]:
+        """Get profiles available in a specific directory.
+
+        Scans only the given directory for YAML profile files and returns
+        their parsed data. Does not include config.yaml model_profiles.
+
+        Args:
+            directory: Directory to scan for profile YAML files.
+
+        Returns:
+            Dict of profile_name -> profile_data for all profiles found.
+        """
+        profiles: dict[str, dict[str, Any]] = {}
+        if not directory.exists():
+            return profiles
+        for yaml_file in directory.glob("*.yaml"):
+            self._load_profiles_from_file(yaml_file, profiles)
+        return profiles
+
     def get_all_profiles(self) -> dict[str, dict[str, Any]]:
         """Get all profiles as a dict keyed by name.
 

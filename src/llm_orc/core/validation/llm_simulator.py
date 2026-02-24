@@ -4,7 +4,7 @@ import hashlib
 import json
 from typing import Any
 
-from llm_orc.models.ollama import OllamaModel
+from llm_orc.models.base import ModelInterface
 
 
 class LLMResponseGenerator:
@@ -16,6 +16,7 @@ class LLMResponseGenerator:
         persona: str = "helpful_user",
         system_prompt: str | None = None,
         response_cache: dict[str, str] | None = None,
+        client: ModelInterface | None = None,
     ) -> None:
         """Initialize the LLM response generator.
 
@@ -24,13 +25,19 @@ class LLMResponseGenerator:
             persona: Persona type for system prompt
             system_prompt: Optional custom system prompt
             response_cache: Optional cache for deterministic responses
+            client: Optional model client; if not provided, OllamaModel is used
         """
         self.model = model
         self.persona = persona
         self.system_prompt = system_prompt or self._default_persona_prompts()[persona]
         self.response_cache = response_cache or {}
         self.conversation_history: list[dict[str, str]] = []
-        self.llm_client = OllamaModel(model_name=model)
+        if client is not None:
+            self.llm_client: ModelInterface = client
+        else:
+            from llm_orc.models.ollama import OllamaModel
+
+            self.llm_client = OllamaModel(model_name=model)
 
     async def generate_response(self, prompt: str, context: dict[str, Any]) -> str:
         """Generate contextual response using LLM.

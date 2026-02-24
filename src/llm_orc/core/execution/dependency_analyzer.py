@@ -3,6 +3,7 @@
 from typing import Any
 
 from llm_orc.core.execution.patterns import INSTANCE_PATTERN
+from llm_orc.core.execution.utils import dep_name
 from llm_orc.schemas.agent_config import AgentConfig
 
 
@@ -77,19 +78,8 @@ class DependencyAnalyzer:
             True if all dependencies are satisfied
         """
         return len(dependencies) == 0 or all(
-            self._dep_name(dep) in processed_agents for dep in dependencies
+            dep_name(dep) in processed_agents for dep in dependencies
         )
-
-    @staticmethod
-    def _dep_name(dep: str | dict[str, Any]) -> str:
-        """Extract the agent name from a dependency entry.
-
-        Dependency entries are either a plain string or a dict with a single
-        ``"agent_name"`` key, e.g. ``{"agent_name": "b"}`` for conditional deps.
-        """
-        if isinstance(dep, dict):
-            return str(dep["agent_name"])
-        return dep
 
     def group_agents_by_level(
         self, agent_configs: list[AgentConfig]
@@ -143,7 +133,7 @@ class DependencyAnalyzer:
 
         # Level is 1 + max level of dependencies
         max_dep_level = max(
-            self.calculate_agent_level(self._dep_name(dep), dependency_map, _cache)
+            self.calculate_agent_level(dep_name(dep), dependency_map, _cache)
             for dep in dependencies
         )
         level = max_dep_level + 1
@@ -176,15 +166,15 @@ class DependencyAnalyzer:
 
         for agent_config in agent_configs:
             agent_name = agent_config.name
-            dep_names = [self._dep_name(d) for d in agent_config.depends_on]
+            dep_names = [dep_name(d) for d in agent_config.depends_on]
 
             if agent_name in dep_names:
                 errors.append(f"Agent '{agent_name}' cannot depend on itself")
 
-            for dep_name in dep_names:
-                if dep_name not in agent_names:
+            for d_name in dep_names:
+                if d_name not in agent_names:
                     errors.append(
-                        f"Agent '{agent_name}' depends on missing agent '{dep_name}'"
+                        f"Agent '{agent_name}' depends on missing agent '{d_name}'"
                     )
 
         try:

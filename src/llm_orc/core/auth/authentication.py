@@ -1,12 +1,13 @@
 """Authentication system for LLM Orchestra supporting credential storage."""
 
+import logging
 import os
 import time
 import webbrowser
 from typing import Any
 
 import yaml
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 from llm_orc.core.auth.oauth_flows import (
     AnthropicOAuthFlow,
@@ -16,6 +17,8 @@ from llm_orc.core.auth.oauth_flows import (
     create_oauth_flow,
 )
 from llm_orc.core.config.config_manager import ConfigurationManager
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "CredentialStorage",
@@ -213,7 +216,16 @@ class CredentialStorage:
             decrypted_data = self._encryption_key.decrypt(encrypted_data.encode())
             loaded_data = yaml.safe_load(decrypted_data.decode())
             return loaded_data if isinstance(loaded_data, dict) else {}
-        except Exception:
+        except InvalidToken:
+            logger.warning(
+                "Credential decryption failed — encryption key may have changed"
+            )
+            return {}
+        except yaml.YAMLError as e:
+            logger.warning("Credential file could not be parsed as YAML: %s", e)
+            return {}
+        except Exception as e:
+            logger.warning("Unexpected error loading credentials: %s", e, exc_info=True)
             return {}
 
     def _save_credentials(self, credentials: dict[str, Any]) -> None:

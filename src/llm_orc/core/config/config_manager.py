@@ -143,6 +143,37 @@ class ConfigurationManager:
         """Get the local configuration directory if found."""
         return self._local_config_dir
 
+    def classify_tier(self, path: Path) -> str:
+        """Classify a path as belonging to the local, global, or library tier.
+
+        Args:
+            path: Path to classify (file or directory).
+
+        Returns:
+            One of ``"local"``, ``"global"``, ``"library"``, or ``"unknown"``.
+        """
+        library_dir = self._get_library_dir()
+
+        if self._local_config_dir and path.is_relative_to(self._local_config_dir):
+            return "local"
+        if library_dir is not None and path.is_relative_to(library_dir):
+            return "library"
+        if path.is_relative_to(self._global_config_dir):
+            return "global"
+        return "unknown"
+
+    def _get_library_dir(self) -> Path | None:
+        """Resolve the library base directory (without requiring it to exist).
+
+        Resolution order:
+        1. ``LLM_ORC_LIBRARY_PATH`` environment variable
+        2. ``<cwd>/llm-orchestra-library`` (default submodule location)
+        """
+        library_path_env = os.environ.get("LLM_ORC_LIBRARY_PATH")
+        if library_path_env:
+            return Path(library_path_env)
+        return Path.cwd() / "llm-orchestra-library"
+
     def get_ensembles_dirs(self) -> list[Path]:
         """Get ensemble directories in priority order (local → library → global).
 

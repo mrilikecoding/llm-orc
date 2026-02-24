@@ -1,10 +1,8 @@
-"""Handler for script agent user input requirements with event emission."""
+"""Handler for script agent user input requirements."""
 
-from collections.abc import Callable, Coroutine
 from typing import Any
 
 from llm_orc.core.validation import LLMResponseGenerator
-from llm_orc.visualization.events import EventFactory
 
 
 class ScriptUserInputHandler:
@@ -17,18 +15,15 @@ class ScriptUserInputHandler:
 
     def __init__(
         self,
-        event_emitter: Callable[[Any], Coroutine[Any, Any, None]] | None = None,
         test_mode: bool = False,
         llm_config: dict[str, Any] | None = None,
     ) -> None:
-        """Initialize the handler with optional event emitter and test mode.
+        """Initialize the handler with optional test mode.
 
         Args:
-            event_emitter: Optional async function to emit events
             test_mode: If True, use LLM simulation for user input
             llm_config: LLM simulation configuration per agent
         """
-        self.event_emitter = event_emitter
         self.test_mode = test_mode
         self.llm_simulators: dict[str, LLMResponseGenerator] = {}
 
@@ -133,8 +128,6 @@ class ScriptUserInputHandler:
         input_request: dict[str, Any],
         conversation_id: str,
         cli_input_collector: Any,
-        ensemble_name: str | None = None,
-        execution_id: str | None = None,
     ) -> str:
         """Handle user input request from script agent.
 
@@ -142,59 +135,12 @@ class ScriptUserInputHandler:
             input_request: Dictionary containing input request details
             conversation_id: ID of the conversation
             cli_input_collector: CLI component that collects user input
-            ensemble_name: Name of the ensemble being executed
-            execution_id: ID of the current execution
 
         Returns:
             User input as string
         """
         _ = conversation_id  # reserved for future per-conversation state
         prompt = input_request.get("prompt", "Enter input: ")
-        agent_name = input_request.get("agent_name", "script_agent")
-        script_path = input_request.get("script_path", "")
 
-        # Emit STREAMING_PAUSED event
-        if self.event_emitter:
-            paused_event = EventFactory.streaming_paused(
-                ensemble_name=ensemble_name or "unknown",
-                execution_id=execution_id or "unknown",
-                reason="waiting_for_user_input",
-            )
-            await self.event_emitter(paused_event)
-
-        # Emit USER_INPUT_REQUIRED event
-        if self.event_emitter:
-            input_required_event = EventFactory.user_input_required(
-                agent_name=agent_name,
-                ensemble_name=ensemble_name or "unknown",
-                execution_id=execution_id or "unknown",
-                prompt=prompt,
-                script_path=script_path,
-            )
-            await self.event_emitter(input_required_event)
-
-        # Collect user input
         result = await cli_input_collector.collect_input(prompt)
-        user_input = str(result)
-
-        # Emit USER_INPUT_RECEIVED event
-        if self.event_emitter:
-            input_received_event = EventFactory.user_input_received(
-                agent_name=agent_name,
-                ensemble_name=ensemble_name or "unknown",
-                execution_id=execution_id or "unknown",
-                user_input=user_input,
-                script_path=script_path,
-            )
-            await self.event_emitter(input_received_event)
-
-        # Emit STREAMING_RESUMED event
-        if self.event_emitter:
-            resumed_event = EventFactory.streaming_resumed(
-                ensemble_name=ensemble_name or "unknown",
-                execution_id=execution_id or "unknown",
-                reason="user_input_received",
-            )
-            await self.event_emitter(resumed_event)
-
-        return user_input
+        return str(result)

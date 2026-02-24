@@ -162,7 +162,7 @@ class TestScriptUserInputHandler:
 
     @pytest.mark.asyncio
     async def test_handle_input_request_basic(self) -> None:
-        """Test basic input request handling without event emission."""
+        """Test basic input request handling."""
         handler = ScriptUserInputHandler()
 
         # Mock CLI input collector
@@ -183,40 +183,6 @@ class TestScriptUserInputHandler:
 
         assert result == "user response"
         cli_input_collector.collect_input.assert_called_once_with("Enter your name: ")
-
-    @pytest.mark.asyncio
-    async def test_handle_input_request_with_events(self) -> None:
-        """Test input request handling with event emission."""
-        # Mock event emitter
-        event_emitter = AsyncMock()
-        handler = ScriptUserInputHandler(event_emitter=event_emitter)
-
-        # Mock CLI input collector
-        cli_input_collector = Mock()
-        cli_input_collector.collect_input = AsyncMock(return_value="test input")
-
-        input_request = {
-            "prompt": "Test prompt: ",
-            "agent_name": "script_agent",
-            "script_path": "test.py",
-        }
-
-        result = await handler.handle_input_request(
-            input_request=input_request,
-            conversation_id="conv456",
-            cli_input_collector=cli_input_collector,
-            ensemble_name="test_ensemble",
-            execution_id="exec789",
-        )
-
-        assert result == "test input"
-
-        # Verify 4 events were emitted
-        assert event_emitter.call_count == 4
-
-        # Check event types (can't check exact objects without EventFactory)
-        calls = event_emitter.call_args_list
-        assert len(calls) == 4
 
     @pytest.mark.asyncio
     async def test_handle_input_request_default_values(self) -> None:
@@ -276,13 +242,8 @@ class TestScriptUserInputHandler:
         for i, result in enumerate(results):
             assert result == f"response_to_Prompt {i}: "
 
-    def test_initialization_without_event_emitter(self) -> None:
-        """Test handler initialization without event emitter."""
+    def test_initialization_defaults(self) -> None:
+        """Test handler default initialization."""
         handler = ScriptUserInputHandler()
-        assert handler.event_emitter is None
-
-    def test_initialization_with_event_emitter(self) -> None:
-        """Test handler initialization with event emitter."""
-        mock_emitter = Mock()
-        handler = ScriptUserInputHandler(event_emitter=mock_emitter)
-        assert handler.event_emitter is mock_emitter
+        assert handler.test_mode is False
+        assert handler.llm_simulators == {}

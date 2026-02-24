@@ -15,16 +15,16 @@ logger = logging.getLogger(__name__)
 class LibraryHandler:
     """Manages library browsing, copying, and search operations."""
 
-    _test_library_dir: Path | None = None
-
     def __init__(
         self,
         config_manager: ConfigurationManager,
         ensemble_loader: EnsembleLoader,
+        library_dir: Path | None = None,
     ) -> None:
-        """Initialize with config manager and ensemble loader."""
+        """Initialize with config manager, ensemble loader, and optional library dir."""
         self._config_manager = config_manager
         self._ensemble_loader = ensemble_loader
+        self._library_dir = library_dir
 
     def set_project_context(self, ctx: ProjectContext) -> None:
         """Update handler to use new project context."""
@@ -32,8 +32,8 @@ class LibraryHandler:
 
     def get_library_dir(self) -> Path:
         """Get library directory path."""
-        if self._test_library_dir is not None:
-            return self._test_library_dir
+        if self._library_dir is not None:
+            return self._library_dir
 
         for dir_path in self._config_manager.get_ensembles_dirs():
             if "library" in str(dir_path):

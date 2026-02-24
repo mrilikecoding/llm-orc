@@ -331,20 +331,10 @@ class PromotionHandler:
         Returns:
             Tuple of (file_path, tier_name) or None if not found.
         """
-        library_dir = self._library_handler.get_library_dir()
-        global_dir = self._config_manager.global_config_dir
-
         for dir_path in self._config_manager.get_ensembles_dirs():
             potential = Path(dir_path) / f"{ensemble_name}.yaml"
             if potential.exists():
-                dir_str = str(dir_path)
-                if ".llm-orc" in dir_str and "library" not in dir_str:
-                    return potential, "local"
-                elif dir_str.startswith(str(library_dir)):
-                    return potential, "library"
-                elif dir_str.startswith(str(global_dir)):
-                    return potential, "global"
-                return potential, "unknown"
+                return potential, self._config_manager.classify_tier(Path(dir_path))
         return None
 
     def _get_ensemble_profiles(self, ensemble_name: str) -> set[str]:
@@ -537,46 +527,7 @@ class PromotionHandler:
             Dict of profile_name -> profile_data.
         """
         _, profiles_dir = self._get_tier_dirs(tier)
-        profiles: dict[str, dict[str, Any]] = {}
-
-        if not profiles_dir.exists():
-            return profiles
-
-        for yaml_file in profiles_dir.glob("*.yaml"):
-            try:
-                data = yaml.safe_load(yaml_file.read_text()) or {}
-                self._parse_profiles_from_file(data, profiles)
-            except Exception:
-                continue
-
-        return profiles
-
-    def _parse_profiles_from_file(
-        self,
-        data: dict[str, Any],
-        profiles: dict[str, dict[str, Any]],
-    ) -> None:
-        """Parse profile entries from a YAML file's data.
-
-        Handles three formats: model_profiles dict, profiles list,
-        and single-profile with top-level name key.
-
-        Args:
-            data: Parsed YAML data from a profile file.
-            profiles: Dict to populate with name -> profile_data.
-        """
-        if "model_profiles" in data:
-            for name, config in data["model_profiles"].items():
-                if isinstance(config, dict):
-                    config["name"] = name
-                    profiles[name] = config
-        elif "profiles" in data:
-            for p in data["profiles"]:
-                name = p.get("name", "")
-                if name:
-                    profiles[name] = p
-        elif "name" in data:
-            profiles[data["name"]] = data
+        return self._profile_handler.get_profiles_from_dir(profiles_dir)
 
     def _get_profile_tier(self, profile_name: str) -> str:
         """Determine which tier a profile lives in.
@@ -587,13 +538,10 @@ class PromotionHandler:
         Returns:
             Tier name ('local', 'global', 'library', or 'unknown').
         """
-        library_dir = self._library_handler.get_library_dir()
-        global_dir = self._config_manager.global_config_dir
-
         for dir_path in self._config_manager.get_profiles_dirs():
             path = Path(dir_path)
             if path.exists() and self._profile_in_dir(path, profile_name):
-                return self._classify_dir_tier(str(dir_path), library_dir, global_dir)
+                return self._config_manager.classify_tier(path)
         return "unknown"
 
     def _profile_in_dir(self, path: Path, profile_name: str) -> bool:
@@ -694,27 +642,6 @@ class PromotionHandler:
             models_needed.add(model)
         if provider:
             providers_needed.add(provider)
-
-    def _classify_dir_tier(
-        self, dir_str: str, library_dir: Path, global_dir: Path
-    ) -> str:
-        """Classify a directory path as local, global, or library.
-
-        Args:
-            dir_str: Directory path string.
-            library_dir: Library base directory.
-            global_dir: Global config directory.
-
-        Returns:
-            Tier name.
-        """
-        if ".llm-orc" in dir_str and "library" not in dir_str:
-            return "local"
-        if dir_str.startswith(str(library_dir)):
-            return "library"
-        if dir_str.startswith(str(global_dir)):
-            return "global"
-        return "unknown"
 
     def _check_model_available(
         self,
