@@ -4,8 +4,8 @@ import json
 import logging
 from typing import Any
 
-from llm_orc.core.execution.fan_out_expander import FanOutExpander
-from llm_orc.core.execution.fan_out_gatherer import FanOutGatherer
+from llm_orc.core.execution.fan_out.expander import FanOutExpander
+from llm_orc.core.execution.fan_out.gatherer import FanOutGatherer
 from llm_orc.core.execution.utils import dep_name
 from llm_orc.schemas.agent_config import AgentConfig
 

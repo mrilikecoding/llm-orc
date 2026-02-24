@@ -4,7 +4,9 @@ from typing import Any
 
 import pytest
 
-from llm_orc.core.execution.agent_resource_monitor import AgentResourceMonitor
+from llm_orc.core.execution.monitoring.agent_resource_monitor import (
+    AgentResourceMonitor,
+)
 
 
 class TestAgentResourceMonitor:

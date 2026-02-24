@@ -3,7 +3,7 @@
 from typing import Any
 from unittest.mock import Mock
 
-from llm_orc.core.execution.dependency_resolver import DependencyResolver
+from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
 from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig, ScriptAgentConfig
 
 

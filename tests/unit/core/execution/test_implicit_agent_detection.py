@@ -116,7 +116,7 @@ class TestImplicitAgentDetection:
 
         # Mock the enhanced script agent execution
         with patch(
-            "llm_orc.core.execution.script_agent_runner.ScriptAgent"
+            "llm_orc.core.execution.scripting.agent_runner.ScriptAgent"
         ) as mock_agent_class:
             mock_agent_instance = AsyncMock()
             mock_agent_instance.execute.return_value = {

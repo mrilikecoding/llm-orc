@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
-from llm_orc.core.execution.system_resource_monitor import (
+from llm_orc.core.execution.monitoring.system_resource_monitor import (
     SystemResourceMonitor,
 )
 
@@ -91,14 +91,14 @@ class TestPerPhaseMonitoring:
 
         The simplified architecture uses SystemResourceMonitor directly.
         """
-        import llm_orc.core.execution.system_resource_monitor as arm_module
+        import llm_orc.core.execution.monitoring.system_resource_monitor as arm_module
 
         assert not hasattr(arm_module, "AdaptiveResourceManager")
 
     @pytest.mark.asyncio
     async def test_basic_metrics_collection_for_guidance(self) -> None:
         """Test that basic metrics collection still works for user guidance."""
-        from llm_orc.core.execution.system_resource_monitor import (
+        from llm_orc.core.execution.monitoring.system_resource_monitor import (
             SystemResourceMonitor,
         )
 
@@ -129,7 +129,7 @@ class TestPerPhaseMonitoring:
         - Performance feedback and guidance
         - Simple resource monitoring for optimization hints
         """
-        from llm_orc.core.execution.system_resource_monitor import (
+        from llm_orc.core.execution.monitoring.system_resource_monitor import (
             SystemResourceMonitor,
         )
 

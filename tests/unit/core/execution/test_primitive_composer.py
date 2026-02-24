@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from llm_orc.core.execution.primitive_composer import PrimitiveComposer
+from llm_orc.core.execution.scripting.primitive_composer import PrimitiveComposer
 from llm_orc.schemas.script_agent import ScriptAgentInput
 
 

@@ -356,7 +356,7 @@ class TestEnsembleScriptIntegration:
         import json
         from pathlib import Path
 
-        from llm_orc.core.execution.script_resolver import ScriptResolver
+        from llm_orc.core.execution.scripting.resolver import ScriptResolver
         from llm_orc.schemas.script_agent import ScriptAgentInput, ScriptAgentOutput
 
         # Create script resolver and test discovery

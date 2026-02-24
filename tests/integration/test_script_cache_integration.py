@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from llm_orc.agents.script_agent import ScriptAgent
-from llm_orc.core.execution.script_cache import ScriptCache, ScriptCacheConfig
+from llm_orc.core.execution.scripting.cache import ScriptCache, ScriptCacheConfig
 
 
 class TestScriptCacheIntegration:

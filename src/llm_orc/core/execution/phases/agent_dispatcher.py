@@ -6,10 +6,10 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from llm_orc.core.execution.agent_execution_coordinator import (
+from llm_orc.core.execution.phases.agent_execution_coordinator import (
     AgentExecutionCoordinator,
 )
-from llm_orc.core.execution.dependency_resolver import DependencyResolver
+from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
 from llm_orc.core.execution.progress_controller import ProgressController
 from llm_orc.core.execution.result_types import AgentResult
 from llm_orc.schemas.agent_config import (

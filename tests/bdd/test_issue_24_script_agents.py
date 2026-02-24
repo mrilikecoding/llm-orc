@@ -911,7 +911,7 @@ def when_resolver_attempts_resolution(
     bdd_context: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Use ScriptResolver to resolve the script reference."""
-    from llm_orc.core.execution.script_resolver import ScriptResolver
+    from llm_orc.core.execution.scripting.resolver import ScriptResolver
 
     test_dir = bdd_context.get("test_dir")
     if test_dir:
@@ -970,7 +970,7 @@ def then_should_validate_executable(bdd_context: dict[str, Any]) -> None:
 def then_should_handle_missing_gracefully(bdd_context: dict[str, Any]) -> None:
     """Validate error handling for missing scripts."""
     # Test with a non-existent script
-    from llm_orc.core.execution.script_resolver import ScriptResolver
+    from llm_orc.core.execution.scripting.resolver import ScriptResolver
 
     resolver = ScriptResolver()
     with pytest.raises(FileNotFoundError, match="(?i)not found"):
@@ -982,7 +982,7 @@ def then_resolution_should_be_cached(
     bdd_context: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Validate resolution caching."""
-    from llm_orc.core.execution.script_resolver import ScriptResolver
+    from llm_orc.core.execution.scripting.resolver import ScriptResolver
 
     test_dir = bdd_context.get("test_dir")
     if test_dir:

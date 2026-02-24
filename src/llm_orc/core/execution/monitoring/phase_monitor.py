@@ -4,7 +4,9 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from llm_orc.core.execution.agent_resource_monitor import AgentResourceMonitor
+from llm_orc.core.execution.monitoring.agent_resource_monitor import (
+    AgentResourceMonitor,
+)
 from llm_orc.schemas.agent_config import AgentConfig
 
 

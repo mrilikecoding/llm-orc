@@ -268,7 +268,7 @@ def invoke_ensemble(
     executor = service._get_executor()
 
     # Check if ensemble contains interactive scripts
-    from llm_orc.core.execution.script_user_input_handler import (
+    from llm_orc.core.execution.scripting.user_input_handler import (
         ScriptUserInputHandler,
     )
 
@@ -487,7 +487,7 @@ def _parse_json_parameters(parameters_json: str | None) -> dict[str, Any]:
 
 def scripts_test_command(script_name: str, parameters_json: str | None) -> None:
     """Test script with parameters."""
-    from llm_orc.core.execution.script_resolver import ScriptResolver
+    from llm_orc.core.execution.scripting.resolver import ScriptResolver
 
     resolver = ScriptResolver()
     parameters = _parse_json_parameters(parameters_json)

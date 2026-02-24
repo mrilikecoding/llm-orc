@@ -320,7 +320,7 @@ class TestInvokeEnsembleComplexityRefactor:
         with (
             patch("llm_orc.cli_commands._get_service", return_value=mock_service),
             patch(
-                "llm_orc.core.execution.script_user_input_handler.ScriptUserInputHandler",
+                "llm_orc.core.execution.scripting.user_input_handler.ScriptUserInputHandler",
                 return_value=mock_input_handler,
             ),
             patch("llm_orc.cli_commands.run_streaming_execution") as mock_streaming,

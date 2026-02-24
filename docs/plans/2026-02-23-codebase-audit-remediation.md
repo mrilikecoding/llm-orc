@@ -57,5 +57,5 @@ Dependency-ordered. Each change cascades.
 - [x] **E4** Connect `invoke_streaming` to real execution engine
 - [x] **E3** Define `TemplateProvider` protocol, inject into ConfigurationManager
 - [x] **M6** Add `HTTPConnectionPool.configure()` classmethod, remove hidden ConfigurationManager construction
-- [ ] **U3** Reorganize flat `execution/` into sub-packages — **deferred** (high-churn, best as last structural change)
+- [x] **U3** Reorganize flat `execution/` into sub-packages — resolved 2026-02-24
 - [ ] **U10/U11** Improve test quality — **deferred** (wait for architecture to stabilize)

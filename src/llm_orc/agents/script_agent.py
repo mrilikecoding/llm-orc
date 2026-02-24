@@ -9,7 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from llm_orc.core.execution.script_resolver import ScriptResolver
+from llm_orc.core.execution.scripting.resolver import ScriptResolver
 from llm_orc.schemas.script_agent import ScriptAgentInput, ScriptAgentOutput
 
 

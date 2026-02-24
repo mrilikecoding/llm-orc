@@ -7,7 +7,10 @@ from unittest.mock import patch
 
 import pytest
 
-from llm_orc.core.execution.script_resolver import ScriptNotFoundError, ScriptResolver
+from llm_orc.core.execution.scripting.resolver import (
+    ScriptNotFoundError,
+    ScriptResolver,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -369,7 +372,7 @@ class TestScriptResolver:
         script.chmod(0o755)
 
         with patch(
-            "llm_orc.core.execution.script_resolver.subprocess.run",
+            "llm_orc.core.execution.scripting.resolver.subprocess.run",
             side_effect=subprocess.TimeoutExpired(cmd=str(script), timeout=1),
         ):
             resolver = ScriptResolver()

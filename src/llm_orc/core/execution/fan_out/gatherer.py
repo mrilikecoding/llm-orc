@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from llm_orc.core.execution.fan_out_expander import FanOutExpander
+from llm_orc.core.execution.fan_out.expander import FanOutExpander
 
 
 class FanOutGatherer:

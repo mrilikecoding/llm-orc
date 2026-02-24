@@ -1538,7 +1538,7 @@ class TestEnsembleExecutor:
         """
         from unittest.mock import AsyncMock, Mock, patch
 
-        from llm_orc.core.execution.script_user_input_handler import (
+        from llm_orc.core.execution.scripting.user_input_handler import (
             ScriptUserInputHandler,
         )
 
@@ -1690,7 +1690,7 @@ class TestEnsembleExecutor:
         """
         from unittest.mock import AsyncMock, Mock, patch
 
-        from llm_orc.core.execution.script_user_input_handler import (
+        from llm_orc.core.execution.scripting.user_input_handler import (
             ScriptUserInputHandler,
         )
 
@@ -1865,7 +1865,7 @@ class TestEnsembleExecutor:
         from unittest.mock import AsyncMock, Mock, patch
 
         from llm_orc.agents.script_agent import ScriptAgent
-        from llm_orc.core.execution.script_user_input_handler import (
+        from llm_orc.core.execution.scripting.user_input_handler import (
             ScriptUserInputHandler,
         )
 
@@ -1912,11 +1912,11 @@ class TestEnsembleExecutor:
         # Mock the script detection and agent creation
         with (
             patch(
-                "llm_orc.core.execution.script_agent_runner.ScriptAgent",
+                "llm_orc.core.execution.scripting.agent_runner.ScriptAgent",
                 return_value=mock_script_agent,
             ),
             patch(
-                "llm_orc.core.execution.script_agent_runner.ScriptUserInputHandler",
+                "llm_orc.core.execution.scripting.agent_runner.ScriptUserInputHandler",
                 return_value=mock_user_input_detection,
             ) as mock_handler_class,
             patch("os.path.exists", return_value=True),
@@ -1963,7 +1963,7 @@ class TestEnsembleExecutor:
         """
         from unittest.mock import AsyncMock, Mock
 
-        from llm_orc.core.execution.script_user_input_handler import (
+        from llm_orc.core.execution.scripting.user_input_handler import (
             ScriptUserInputHandler,
         )
 
