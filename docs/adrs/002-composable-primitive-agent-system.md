@@ -131,7 +131,7 @@ process.stdin.on('end', () => {
 ```
 
 #### 2. Primitive Registry & Discovery
-**Implementation**: `src/llm_orc/core/execution/primitive_registry.py`
+**Implementation**: `src/llm_orc/core/execution/scripting/primitive_registry.py`
 
 ```python
 class PrimitiveRegistry:
@@ -342,7 +342,7 @@ class PromptGeneratorOutput(BaseModel):
 ### Workflow Composition
 
 #### Primitive Chaining via Ensemble Configuration
-**Implementation**: `src/llm_orc/core/execution/primitive_composer.py`
+**Implementation**: `src/llm_orc/core/execution/scripting/primitive_composer.py`
 
 Primitives are composed declaratively via YAML ensemble configurations:
 

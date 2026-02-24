@@ -32,8 +32,8 @@ Each core primitive has Pydantic `Input` and `Output` models. `ScriptAgentRunner
 ### Files Added/Changed
 
 - `src/llm_orc/primitives/` — 6 primitive modules with Pydantic contracts
-- `src/llm_orc/core/execution/script_resolver.py` — Package primitives search path + hyphen normalization
-- `src/llm_orc/core/execution/script_agent_runner.py` — Opt-in output validation
+- `src/llm_orc/core/execution/scripting/resolver.py` — Package primitives search path + hyphen normalization
+- `src/llm_orc/core/execution/scripting/agent_runner.py` — Opt-in output validation
 - `.llm-orc/scripts/primitives/` — Deleted (superseded by package primitives)
 
 ---
@@ -112,7 +112,7 @@ related_adrs:
 # Implementation components affected
 implementation_scope:
   - "tests/fixtures/test_primitives.py"
-  - "src/llm_orc/core/execution/script_resolver.py"
+  - "src/llm_orc/core/execution/scripting/resolver.py"
   - "tests/unit/core/execution/test_ensemble_script_integration.py"
   - "tests/unit/core/execution/test_agent_request_integration.py"
   - "llm-orchestra-library/primitives/python/"

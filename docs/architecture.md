@@ -36,13 +36,13 @@ LLM Orchestra is a multi-agent LLM communication system designed for ensemble or
 - **Error handling**: Graceful degradation with per-agent error isolation
 - **Factory construction**: Instantiated via `ExecutorFactory` rather than direct construction
 
-#### AgentExecutionCoordinator (`llm_orc/core/execution/agent_execution_coordinator.py`)
+#### AgentExecutionCoordinator (`llm_orc/core/execution/phases/agent_execution_coordinator.py`)
 - **Agent lifecycle management**: Spawns, monitors, and coordinates individual agents
 - **Timeout enforcement**: Per-agent timeout with graceful termination
 - **Model instance management**: Handles provider-specific model instantiation
 - **Performance monitoring**: Usage tracking and timing metrics
 
-#### DependencyResolver (`llm_orc/core/execution/dependency_resolver.py`)
+#### DependencyResolver (`llm_orc/core/execution/phases/dependency_resolver.py`)
 - **Dependency graph analysis**: Topological sorting of agent dependencies
 - **Circular dependency detection**: Prevents invalid ensemble configurations
 - **Phase optimization**: Groups independent agents for parallel execution
@@ -53,13 +53,13 @@ LLM Orchestra is a multi-agent LLM communication system designed for ensemble or
 
 Map-reduce style parallel processing for agents that need to operate on each element of an array independently.
 
-#### FanOutExpander (`llm_orc/core/execution/fan_out_expander.py`)
+#### FanOutExpander (`llm_orc/core/execution/fan_out/expander.py`)
 - **Array detection**: Identifies when upstream agents produce array results (direct lists, JSON arrays, or `{"data": [...]}` script output)
 - **Agent expansion**: Creates N indexed copies of the fan-out agent config (`processor[0]`, `processor[1]`, etc.)
 - **Chunk metadata**: Each instance receives `_fan_out_chunk`, `_fan_out_index`, `_fan_out_total`, and `_fan_out_original` fields
 - **Instance naming**: Pattern `agent_name[index]` with regex-based parsing for normalization
 
-#### FanOutGatherer (`llm_orc/core/execution/fan_out_gatherer.py`)
+#### FanOutGatherer (`llm_orc/core/execution/fan_out/gatherer.py`)
 - **Result collection**: Records per-instance results with success/failure tracking
 - **Ordered assembly**: Gathers results into an ordered array under the original agent name
 - **Status tracking**: Determines overall status (`success`, `partial`, `failed`)
@@ -83,7 +83,7 @@ Fan-out is woven into the existing phase-based execution pipeline in `EnsembleEx
 - **Strict validation**: `extra="forbid"` catches typos and invalid fields at parse time
 - **Shared fields**: `BaseAgentConfig` provides `name`, `depends_on`, `fan_out`, `input_key`
 
-#### EnsembleAgentRunner (`llm_orc/core/execution/ensemble_agent_runner.py`)
+#### EnsembleAgentRunner (`llm_orc/core/execution/runners/ensemble_runner.py`)
 - **Recursive execution**: Resolves ensemble references and executes child ensembles
 - **Infrastructure sharing**: Child executors share config manager, credential storage, and model factory
 - **State isolation**: Fresh usage collector, event queue, and streaming tracker per child execution
@@ -105,7 +105,7 @@ Fan-out is woven into the existing phase-based execution pipeline in `EnsembleEx
 - **Parameter Injection**: Configuration parameters passed as JSON to scripts
 - **Context Sharing**: Results from script agents become context for LLM agents
 
-#### ScriptResolver (`llm_orc/core/execution/script_resolver.py`)
+#### ScriptResolver (`llm_orc/core/execution/scripting/resolver.py`)
 - **Script Discovery**: Finds scripts in project `.llm-orc/scripts/` directories
 - **Path Resolution**: Resolves relative script paths within project structure
 - **Metadata Extraction**: Extracts documentation and parameters from script headers
