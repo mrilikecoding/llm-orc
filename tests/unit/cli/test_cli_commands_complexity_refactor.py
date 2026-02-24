@@ -91,9 +91,6 @@ class TestInvokeEnsembleComplexityRefactor:
 
         This tests the else branch of config_dir determination.
         """
-        mock_loader = Mock()
-        mock_loader.find_ensemble.return_value = mock_ensemble_config
-
         mock_executor = Mock()
         mock_executor.execute = AsyncMock(
             return_value={
@@ -107,11 +104,9 @@ class TestInvokeEnsembleComplexityRefactor:
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service._get_executor.return_value = mock_executor
+        mock_service.find_ensemble_in_dir.return_value = mock_ensemble_config
 
-        with (
-            patch("llm_orc.cli_commands._get_service", return_value=mock_service),
-            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
-        ):
+        with patch("llm_orc.cli_commands._get_service", return_value=mock_service):
             invoke_ensemble(
                 ensemble_name="test",
                 input_data="test input",
@@ -125,8 +120,8 @@ class TestInvokeEnsembleComplexityRefactor:
 
         # Verify service find_ensemble_by_name was NOT called for custom dir
         mock_service.find_ensemble_by_name.assert_not_called()
-        # Verify loader was called with custom dir via _find_ensemble_config
-        mock_loader.find_ensemble.assert_called_once_with(custom_dir, "test")
+        # Verify service was called with custom dir via _find_ensemble_config
+        mock_service.find_ensemble_in_dir.assert_called_once_with("test", custom_dir)
 
     def test_invoke_ensemble_max_concurrent_override_branch(
         self,

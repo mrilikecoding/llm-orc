@@ -5,7 +5,7 @@ import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import click
 import yaml
@@ -18,7 +18,7 @@ from llm_orc.cli_modules.utils.visualization import (
     run_standard_execution,
     run_streaming_execution,
 )
-from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
+from llm_orc.core.config.ensemble_config import EnsembleConfig
 
 
 def _get_service() -> Any:
@@ -53,13 +53,14 @@ def _resolve_input_data(positional_input: str | None, option_input: str | None) 
 
 
 def _find_ensemble_config(
-    ensemble_name: str, ensemble_dirs: list[Path]
+    ensemble_name: str, ensemble_dirs: list[Path], service: Any
 ) -> EnsembleConfig:
     """Find ensemble configuration in the provided directories.
 
     Args:
         ensemble_name: Name of the ensemble to find
         ensemble_dirs: List of directories to search
+        service: OrchestraService instance for ensemble loading
 
     Returns:
         EnsembleConfig: The found ensemble configuration
@@ -67,12 +68,13 @@ def _find_ensemble_config(
     Raises:
         click.ClickException: If ensemble is not found in any directory
     """
-    # Find ensemble in the directories
-    loader = EnsembleLoader()
     ensemble_config = None
 
     for ensemble_dir in ensemble_dirs:
-        ensemble_config = loader.find_ensemble(str(ensemble_dir), ensemble_name)
+        ensemble_config = cast(
+            "EnsembleConfig | None",
+            service.find_ensemble_in_dir(ensemble_name, str(ensemble_dir)),
+        )
         if ensemble_config is not None:
             break
 
@@ -250,7 +252,9 @@ def invoke_ensemble(
 
     # Find ensemble configuration
     if config_dir is not None:
-        ensemble_config = _find_ensemble_config(ensemble_name, [Path(config_dir)])
+        ensemble_config = _find_ensemble_config(
+            ensemble_name, [Path(config_dir)], service
+        )
     else:
         ensemble_config = service.find_ensemble_by_name(ensemble_name)
         if ensemble_config is None:
@@ -306,10 +310,9 @@ def invoke_ensemble(
         raise click.ClickException(f"Ensemble execution failed: {e!s}") from e
 
 
-def _list_ensembles_from_dir(config_dir: str) -> None:
+def _list_ensembles_from_dir(config_dir: str, service: Any) -> None:
     """List ensembles from a specific directory."""
-    loader = EnsembleLoader()
-    ensembles = loader.list_ensembles(config_dir)
+    ensembles = service.list_ensembles_in_dir(config_dir)
 
     if not ensembles:
         click.echo(f"No ensembles found in {config_dir}")
@@ -323,7 +326,8 @@ def _list_ensembles_from_dir(config_dir: str) -> None:
 def list_ensembles_command(config_dir: str | None) -> None:
     """List available ensembles."""
     if config_dir is not None:
-        _list_ensembles_from_dir(config_dir)
+        service = _get_service()
+        _list_ensembles_from_dir(config_dir, service)
         return
 
     service = _get_service()
