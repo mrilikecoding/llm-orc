@@ -370,54 +370,65 @@ class TestConfigurationManagerTemplateIntegration:
 
     def test_setup_default_config_uses_library_template(self) -> None:
         """Should use library template for default config setup."""
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
 
         from llm_orc.core.config.config_manager import ConfigurationManager
 
-        with (
-            patch("llm_orc.core.config.config_manager.Path.home") as mock_home,
-            patch("llm_orc.core.config.config_manager.Path.mkdir"),
-            patch("llm_orc.core.config.config_manager.Path.exists") as mock_exists,
-            patch(
-                "llm_orc.cli_library.library.get_template_content"
-            ) as mock_get_template,
-            patch("builtins.open", mock_open()) as mock_file,
-        ):
-            # Setup mock paths
-            mock_home.return_value = Path("/home/test")
-            mock_exists.return_value = False  # Config doesn't exist yet
-
-            # Mock template content
-            mock_get_template.return_value = """
+        mock_provider = MagicMock()
+        mock_provider.get_template_content.return_value = """
 model_profiles:
   default:
     model: claude-3-5-sonnet-20241022
     provider: anthropic
 """
 
-            # Create config manager (triggers _setup_default_config)
-            ConfigurationManager()
+        with (
+            patch("llm_orc.core.config.config_manager.Path.home") as mock_home,
+            patch("llm_orc.core.config.config_manager.Path.mkdir"),
+            patch("llm_orc.core.config.config_manager.Path.exists") as mock_exists,
+            patch("builtins.open", mock_open()) as mock_file,
+        ):
+            # Setup mock paths
+            mock_home.return_value = Path("/home/test")
+            mock_exists.return_value = False  # Config doesn't exist yet
 
-            # Verify template was fetched
-            mock_get_template.assert_called_with("global-config.yaml")
+            # Create config manager (triggers _setup_default_config)
+            ConfigurationManager(template_provider=mock_provider)
+
+            # Verify template was fetched via the provider
+            mock_provider.get_template_content.assert_called_with("global-config.yaml")
 
             # Verify file was written
             mock_file.assert_called()
 
     def test_init_local_config_uses_library_template(self) -> None:
         """Should use library template for local config initialization."""
-        from unittest.mock import patch
+        from unittest.mock import MagicMock, patch
 
         from llm_orc.core.config.config_manager import ConfigurationManager
+
+        mock_provider = MagicMock()
+        mock_provider.get_template_content.side_effect = [
+            """# Global config template
+model_profiles:
+  default:
+    model: claude-3-5-sonnet-20241022
+    provider: anthropic
+""",
+            """# Local project configuration for {project_name}
+project:
+  name: "{project_name}"
+""",
+            """name: example-local-ensemble
+description: Example ensemble
+""",
+        ]
 
         with (
             patch("llm_orc.core.config.config_manager.Path.home") as mock_home,
             patch("llm_orc.core.config.config_manager.Path.cwd") as mock_cwd,
             patch("llm_orc.core.config.config_manager.Path.mkdir"),
             patch("llm_orc.core.config.config_manager.Path.exists") as mock_exists,
-            patch(
-                "llm_orc.cli_library.library.get_template_content"
-            ) as mock_get_template,
             patch("builtins.open", mock_open()),
         ):
             # Setup mock paths
@@ -425,57 +436,41 @@ model_profiles:
             mock_cwd.return_value = Path("/project")
             mock_exists.return_value = False
 
-            # Mock template content for initialization and local config
-            mock_get_template.side_effect = [
-                """# Global config template
-model_profiles:
-  default:
-    model: claude-3-5-sonnet-20241022
-    provider: anthropic
-""",
-                """# Local project configuration for {project_name}
-project:
-  name: "{project_name}"
-""",
-                """name: example-local-ensemble
-description: Example ensemble
-""",
-            ]
-
             # Create config manager and initialize local config
-            config_manager = ConfigurationManager()
+            config_manager = ConfigurationManager(template_provider=mock_provider)
             config_manager.init_local_config("test-project")
 
-            # Verify templates were fetched (global + local + ensemble)
-            assert mock_get_template.call_count == 3
-            mock_get_template.assert_any_call("global-config.yaml")
-            mock_get_template.assert_any_call("local-config.yaml")
-            mock_get_template.assert_any_call("example-local-ensemble.yaml")
+            # Verify templates were fetched via the provider (global + local + ensemble)
+            assert mock_provider.get_template_content.call_count == 3
+            mock_provider.get_template_content.assert_any_call("global-config.yaml")
+            mock_provider.get_template_content.assert_any_call("local-config.yaml")
+            mock_provider.get_template_content.assert_any_call(
+                "example-local-ensemble.yaml"
+            )
 
     def test_template_content_fallback_mechanism(self) -> None:
-        """Should have fallback mechanism for template content retrieval."""
-        from unittest.mock import patch
+        """Should have fallback mechanism when provider cannot find the template."""
+        from unittest.mock import MagicMock, patch
 
         from llm_orc.core.config.config_manager import ConfigurationManager
 
-        # Test the template content method directly
-        config_manager = ConfigurationManager()
+        mock_provider = MagicMock()
+        mock_provider.get_template_content.side_effect = FileNotFoundError(
+            "Template not found"
+        )
+
+        # Create config manager with a provider that raises FileNotFoundError
+        config_manager = ConfigurationManager(template_provider=mock_provider)
 
         with (
-            patch(
-                "llm_orc.cli_library.library.get_template_content"
-            ) as mock_get_template,
             patch("builtins.open", mock_open(read_data="fallback_content")),
             patch("llm_orc.core.config.config_manager.Path.exists", return_value=True),
         ):
-            # Mock library template not found
-            mock_get_template.side_effect = FileNotFoundError("Template not found")
-
             # Should fallback to local template
             result = config_manager._get_template_config_content("test.yaml")
 
             assert result == "fallback_content"
-            mock_get_template.assert_called_with("test.yaml")
+            mock_provider.get_template_content.assert_called_with("test.yaml")
 
 
 class TestLibraryIntegration:

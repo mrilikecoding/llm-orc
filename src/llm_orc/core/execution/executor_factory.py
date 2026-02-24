@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from llm_orc.cli_library.template_provider import LibraryTemplateProvider
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.models.model_factory import ModelFactory
@@ -40,7 +41,9 @@ class ExecutorFactory:
             EnsembleExecutor,
         )
 
-        config_manager = ConfigurationManager()
+        config_manager = ConfigurationManager(
+            template_provider=LibraryTemplateProvider(),
+        )
         credential_storage = CredentialStorage(config_manager)
         model_factory = ModelFactory(config_manager, credential_storage)
 

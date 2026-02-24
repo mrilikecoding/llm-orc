@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from llm_orc.core.config.template_provider import TemplateProvider
+
 
 class ConfigurationManager:
     """Manages configuration directories and file locations."""
@@ -16,6 +18,7 @@ class ConfigurationManager:
         project_dir: Path | None = None,
         *,
         provision: bool = True,
+        template_provider: TemplateProvider | None = None,
     ) -> None:
         """Initialize configuration manager.
 
@@ -26,7 +29,11 @@ class ConfigurationManager:
             provision: If True (default), call provision() to create global
                 config directories and copy default templates. Pass False for
                 lightweight read-only usage (e.g. tab completion, perf config).
+            template_provider: Optional provider for template content. When
+                None, template operations are skipped silently (no-op). Pass
+                a LibraryTemplateProvider for full CLI functionality.
         """
+        self._template_provider = template_provider
         self._global_config_dir = self._get_global_config_dir()
         if project_dir is not None:
             # Use explicit project directory
@@ -134,13 +141,16 @@ class ConfigurationManager:
         return package_dir / "templates" / "ensembles"
 
     def _get_template_config_content(self, filename: str) -> str:
-        """Get template config content from library repository."""
-        from llm_orc.cli_library.library import get_template_content
+        """Get template config content via the injected TemplateProvider."""
+        if self._template_provider is None:
+            raise FileNotFoundError(
+                f"Template not found: {filename} (no template provider configured)"
+            )
 
         try:
-            return get_template_content(filename)
+            return self._template_provider.get_template_content(filename)
         except FileNotFoundError:
-            # Fallback to local template if library template not found
+            # Fallback to local template if provider cannot locate the file
             package_dir = Path(__file__).parent.parent.parent
             local_template_path = package_dir / "templates" / filename
 
@@ -494,11 +504,12 @@ class ConfigurationManager:
         return profiles.get(profile_name)
 
     def _copy_profile_templates(self, target_profiles_dir: Path) -> None:
-        """Copy profile templates from llm-orchestra-library GitHub repository."""
-        from llm_orc.cli_library.library import copy_profile_templates
+        """Copy profile templates via the injected TemplateProvider."""
+        if self._template_provider is None:
+            return
 
         try:
-            copy_profile_templates(target_profiles_dir)
+            self._template_provider.copy_profile_templates(target_profiles_dir)
         except (OSError, FileNotFoundError):
             # If profile copying fails, continue with init
             # This allows offline usage

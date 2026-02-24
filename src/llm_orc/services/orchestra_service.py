@@ -11,10 +11,12 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from llm_orc.cli_library.template_provider import LibraryTemplateProvider
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.mcp.project_context import ProjectContext
+from llm_orc.models.base import HTTPConnectionPool
 from llm_orc.services.handlers.artifact_handler import ArtifactHandler
 from llm_orc.services.handlers.ensemble_crud_handler import EnsembleCrudHandler
 from llm_orc.services.handlers.execution_handler import ExecutionHandler
@@ -44,7 +46,9 @@ class OrchestraService:
         executor: EnsembleExecutor | None = None,
     ) -> None:
         self._project_path: Path | None = None
-        self.config_manager = config_manager or ConfigurationManager()
+        self.config_manager = config_manager or ConfigurationManager(
+            template_provider=LibraryTemplateProvider(),
+        )
         self._project_context = ProjectContext(
             project_path=None,
             config_manager=self.config_manager,
@@ -54,6 +58,9 @@ class OrchestraService:
         self._executor = executor
 
         self._project_lock = asyncio.Lock()
+
+        # Configure HTTP connection pool with project performance settings
+        self._configure_http_pool()
 
         self._help_handler = HelpHandler()
         self._resource_handler = ResourceHandler(
@@ -97,6 +104,14 @@ class OrchestraService:
     @property
     def project_path(self) -> Path | None:
         return self._project_path
+
+    def _configure_http_pool(self) -> None:
+        """Configure the HTTP connection pool from current project config."""
+        try:
+            performance_config = self.config_manager.load_performance_config()
+            HTTPConnectionPool.configure(performance_config)
+        except Exception:
+            pass  # Pool will use module-level defaults
 
     def _get_executor(self) -> EnsembleExecutor:
         if self._executor is None:
@@ -176,6 +191,7 @@ class OrchestraService:
         self.config_manager = ctx.config_manager
         self._executor = None
 
+        self._configure_http_pool()
         self._ensemble_crud_handler.set_project_context(ctx)
         self._execution_handler.set_project_context(ctx)
         self._validation_handler.set_project_context(ctx)
