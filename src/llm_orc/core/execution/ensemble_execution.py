@@ -174,9 +174,9 @@ class EnsembleExecutor:
         self,
         project_dir: Path | None = None,
         *,
-        _config_manager: ConfigurationManager | None = None,
-        _credential_storage: CredentialStorage | None = None,
-        _model_factory: ModelFactory | None = None,
+        _config_manager: ConfigurationManager,
+        _credential_storage: CredentialStorage,
+        _model_factory: ModelFactory,
         _depth: int = 0,
         _save_artifacts: bool = True,
     ) -> None:
@@ -184,16 +184,30 @@ class EnsembleExecutor:
 
         For child executors, immutable infrastructure is shared from the
         parent while mutable state is freshly created (Invariant 10).
+
+        Use ExecutorFactory.create_root_executor() to construct a top-level
+        executor, or ExecutorFactory.create_child_executor() for nested ones.
         """
         self._project_dir = project_dir
         self._depth = _depth
         self._save_artifacts = _save_artifacts
 
-        # Immutable infrastructure: share from parent or create new
-        self._config_manager = _config_manager or ConfigurationManager()
-        self._credential_storage = _credential_storage or CredentialStorage(
-            self._config_manager
-        )
+        # Immutable infrastructure: must be supplied by caller (factory)
+        if _config_manager is None:
+            msg = (
+                "config_manager is required. "
+                "Use ExecutorFactory.create_root_executor() instead."
+            )
+            raise ValueError(msg)
+        self._config_manager = _config_manager
+
+        if _credential_storage is None:
+            msg = (
+                "credential_storage is required. "
+                "Use ExecutorFactory.create_root_executor() instead."
+            )
+            raise ValueError(msg)
+        self._credential_storage = _credential_storage
 
         # Load performance configuration
         self._performance_config = self._config_manager.load_performance_config()
@@ -201,10 +215,14 @@ class EnsembleExecutor:
         # Phase 5: Unified event system - shared event queue for streaming
         self._streaming_event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-        # Immutable infrastructure: share from parent or create new
-        self._model_factory = _model_factory or ModelFactory(
-            self._config_manager, self._credential_storage
-        )
+        # Immutable infrastructure: must be supplied by caller (factory)
+        if _model_factory is None:
+            msg = (
+                "model_factory is required. "
+                "Use ExecutorFactory.create_root_executor() instead."
+            )
+            raise ValueError(msg)
+        self._model_factory = _model_factory
         self._dependency_analyzer = DependencyAnalyzer()
         self._dependency_resolver = DependencyResolver(self._get_agent_role_description)
         self._usage_collector = UsageCollector()

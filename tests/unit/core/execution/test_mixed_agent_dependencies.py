@@ -11,7 +11,7 @@ import pytest
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.config.roles import RoleDefinition
-from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+from llm_orc.core.execution.executor_factory import ExecutorFactory
 from llm_orc.models.base import ModelInterface
 from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 
@@ -87,7 +87,7 @@ class TestMixedAgentDependencies:
         }
 
         role = RoleDefinition(name="analyzer", prompt="Analyze the data")
-        executor = EnsembleExecutor()
+        executor = ExecutorFactory.create_root_executor()
 
         # Mock dependencies
         with (
@@ -174,7 +174,7 @@ class TestMixedAgentDependencies:
         }
 
         role = RoleDefinition(name="analyzer", prompt="Analyze system status")
-        executor = EnsembleExecutor()
+        executor = ExecutorFactory.create_root_executor()
 
         with (
             patch.object(
@@ -234,7 +234,7 @@ class TestMixedAgentDependencies:
             ],
         )
 
-        executor = EnsembleExecutor()
+        executor = ExecutorFactory.create_root_executor()
 
         # This should raise a circular dependency error
         with (

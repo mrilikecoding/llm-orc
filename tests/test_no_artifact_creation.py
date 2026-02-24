@@ -24,10 +24,10 @@ class TestNoArtifactCreation:
             initial_dirs = {d.name for d in artifacts_dir.iterdir() if d.is_dir()}
 
         # Create a simple EnsembleExecutor to simulate what tests do
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.execution.executor_factory import ExecutorFactory
 
         # This should NOT create artifacts during instantiation
-        _ = EnsembleExecutor()
+        _ = ExecutorFactory.create_root_executor()
 
         # Check that no new directories were created from instantiation
         current_dirs = set()

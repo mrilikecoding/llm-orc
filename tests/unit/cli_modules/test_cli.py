@@ -137,20 +137,23 @@ class TestCLI:
                 "status": "success",
             }
 
-            with patch("llm_orc.cli_commands.EnsembleExecutor") as mock_cls:
-                mock_executor = MagicMock()
-                mock_executor.execute = AsyncMock(return_value=mock_result)
+            mock_executor = MagicMock()
+            mock_executor.execute = AsyncMock(return_value=mock_result)
 
-                async def mock_streaming(*args: object, **kwargs: object) -> object:
-                    yield {
-                        "type": "complete",
-                        "results": mock_result["results"],
-                        "synthesis": "Combined results",
-                    }
+            async def mock_streaming(*args: object, **kwargs: object) -> object:
+                yield {
+                    "type": "complete",
+                    "results": mock_result["results"],
+                    "synthesis": "Combined results",
+                }
 
-                mock_executor.execute_streaming = mock_streaming
-                mock_cls.return_value = mock_executor
+            mock_executor.execute_streaming = mock_streaming
 
+            mock_service = Mock()
+            mock_service.config_manager = Mock()
+            mock_service._get_executor.return_value = mock_executor
+
+            with patch("llm_orc.cli_commands._get_service", return_value=mock_service):
                 runner = CliRunner()
                 result = runner.invoke(
                     cli,
@@ -203,26 +206,33 @@ class TestCLI:
                 with open(local_ensembles_path / "local_ensemble.yaml", "w") as f:
                     yaml.dump(local_ensemble, f)
 
-                # Mock ConfigurationManager to return our test directories
+                # Mock _get_service to return a service using our test directories
+                from llm_orc.core.config.ensemble_config import EnsembleLoader
+
+                loader = EnsembleLoader()
+                local_ens = loader.list_ensembles(str(local_ensembles_path))
+                global_ens = loader.list_ensembles(str(global_ensembles_path))
+
+                mock_config_manager = Mock()
+                mock_config_manager.global_config_dir = global_config_path
+                mock_config_manager.local_config_dir = local_config_path
+                mock_config_manager.get_ensembles_dirs.return_value = [
+                    local_ensembles_path,
+                    global_ensembles_path,
+                ]
+
+                mock_service = Mock()
+                mock_service.config_manager = mock_config_manager
+                mock_service.list_ensembles_grouped.return_value = {
+                    "local": local_ens,
+                    "library": [],
+                    "global": global_ens,
+                }
+
                 with patch(
-                    "llm_orc.cli_commands.ConfigurationManager"
-                ) as mock_config_manager:
-                    mock_instance = mock_config_manager.return_value
-                    mock_instance.global_config_dir = global_config_path
-                    mock_instance.local_config_dir = local_config_path
-                    mock_instance.get_ensembles_dirs.return_value = [
-                        local_ensembles_path,
-                        global_ensembles_path,
-                    ]
-                    mock_instance.needs_migration.return_value = False
-
-                    def _classify(path: Path) -> str:
-                        if str(path).startswith(str(local_config_path)):
-                            return "local"
-                        return "global"
-
-                    mock_instance.classify_tier = _classify
-
+                    "llm_orc.cli_commands._get_service",
+                    return_value=mock_service,
+                ):
                     runner = CliRunner()
                     result = runner.invoke(cli, ["list-ensembles"])
 

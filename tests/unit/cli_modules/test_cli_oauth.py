@@ -52,7 +52,8 @@ class TestOAuthCLI:
         provider = "anthropic-claude-pro-max"
 
         # Mock the configuration and storage
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
+        cm_path = "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        with patch(cm_path) as mock_config_manager:
             with patch("webbrowser.open") as mock_webbrowser_open:
                 with patch("requests.post") as mock_requests_post:
                     # Setup config manager mocks
@@ -130,7 +131,8 @@ class TestOAuthCLI:
         provider = "anthropic-claude-pro-max"
 
         # Mock configuration
-        with patch("llm_orc.cli_commands.ConfigurationManager") as mock_config_manager:
+        cm_path = "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
+        with patch(cm_path) as mock_config_manager:
             with patch("webbrowser.open"):
                 with patch("requests.post") as mock_requests_post:
                     # Setup mocks

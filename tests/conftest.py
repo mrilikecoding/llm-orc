@@ -9,6 +9,7 @@ import pytest
 
 from llm_orc.core.execution.artifact_manager import ArtifactManager
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+from llm_orc.core.execution.executor_factory import ExecutorFactory
 
 # Enable BDD testing with pytest-bdd
 pytest_plugins = ["pytest_bdd"]
@@ -76,7 +77,7 @@ def mock_ensemble_executor() -> Generator[EnsembleExecutor, None, None]:
                 "llm_orc.core.config.config_manager.ConfigurationManager._copy_profile_templates"
             ):
                 # Create real executor with mocked I/O
-                executor = EnsembleExecutor()
+                executor = ExecutorFactory.create_root_executor()
 
                 # Mock the ArtifactManager to prevent real artifact creation
                 mock_artifact_manager = Mock(spec=ArtifactManager)
