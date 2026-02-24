@@ -2090,7 +2090,7 @@ class TestEnsembleExecutor:
         )
 
         # Verify agent configs were stored
-        assert executor._current_agent_configs == config.agents
+        assert executor._agent_configs == config.agents
 
         # Verify result structure
         assert result.ensemble == "test_ensemble"
