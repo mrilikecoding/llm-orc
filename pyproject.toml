@@ -85,6 +85,19 @@ warn_unused_configs = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "--cov=llm_orc --cov-report=term-missing --cov-fail-under=90"
+filterwarnings = [
+    # Python 3.13 + AsyncMock: gc collects unawaited coroutines from mock
+    # internals and from tests that mock asyncio.run. Not actionable.
+    "ignore:coroutine '_async_noop' was never awaited:RuntimeWarning",
+    "ignore:coroutine 'AsyncMockMixin._execute_mock_call' was never awaited:RuntimeWarning",
+    "ignore:coroutine 'run_standard_execution' was never awaited:RuntimeWarning",
+    "ignore:coroutine 'run_streaming_execution' was never awaited:RuntimeWarning",
+    # gherkin library passes maxsplit as positional arg; fixed upstream but
+    # not yet released. https://github.com/cucumber/gherkin/issues/198
+    "ignore:'maxsplit' is passed as positional argument:DeprecationWarning",
+    # pytest tries to collect Click commands named test_* as test functions
+    "ignore:cannot collect 'test_script' because it is not a function:pytest.PytestCollectionWarning",
+]
 markers = [
     "asyncio: marks tests as requiring asyncio",
     # BDD Gherkin tags from feature files

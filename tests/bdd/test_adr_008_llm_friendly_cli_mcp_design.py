@@ -1,8 +1,10 @@
 """BDD step definitions for ADR-008 LLM-Friendly CLI and MCP Design."""
 
 import shutil
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -12,6 +14,26 @@ from llm_orc.cli import cli
 
 # Load all scenarios from the feature file
 scenarios("features/adr-008-llm-friendly-cli-mcp-design.feature")
+
+
+@pytest.fixture(autouse=True)
+def _mock_ensemble_execution() -> Generator[None, None, None]:
+    """Mock ensemble execution to avoid real model calls.
+
+    These BDD tests validate CLI discovery and routing, not model execution.
+    Without this mock, invoke tests hit Ollama and take ~19s per call.
+    """
+    with (
+        patch(
+            "llm_orc.cli_commands.run_streaming_execution",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "llm_orc.cli_commands.run_standard_execution",
+            new_callable=AsyncMock,
+        ),
+    ):
+        yield
 
 
 # Pytest fixtures
