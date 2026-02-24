@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+from llm_orc.core.execution.executor_factory import ExecutorFactory
 from llm_orc.core.execution.script_cache import ScriptCache, ScriptCacheConfig
 from llm_orc.schemas.agent_config import ScriptAgentConfig
 
@@ -39,7 +40,7 @@ class TestEnsembleScriptCacheIntegration:
     @pytest.fixture
     def ensemble_executor(self) -> EnsembleExecutor:
         """Create ensemble executor for testing."""
-        return EnsembleExecutor()
+        return ExecutorFactory.create_root_executor()
 
     def test_script_cache_integration_avoids_duplicate_execution(
         self, ensemble_executor: EnsembleExecutor, cache_config: ScriptCacheConfig

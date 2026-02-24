@@ -1094,7 +1094,7 @@ def execute_ensemble_with_network_data(bdd_context: dict[str, Any]) -> None:
     # Red/Green phase: Call real implementation with proper interface
     try:
         from llm_orc.core.config.ensemble_config import EnsembleConfig
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.execution.executor_factory import ExecutorFactory
 
         # Get ensemble configuration from context
         ensemble_config_dict = bdd_context.get("mixed_ensemble_config", {})
@@ -1110,8 +1110,8 @@ def execute_ensemble_with_network_data(bdd_context: dict[str, Any]) -> None:
             agents=agents,
         )
 
-        # Create executor (no config in constructor)
-        executor = EnsembleExecutor()
+        # Create executor via factory
+        executor = ExecutorFactory.create_root_executor()
 
         # Execute with network topology data as JSON string
         input_data = json.dumps({"topology_data": network_data})
@@ -1384,7 +1384,7 @@ def execute_script_with_permission_error(bdd_context: dict[str, Any]) -> None:
 
     async def _async_execute() -> dict[str, Any]:
         from llm_orc.core.config.ensemble_config import EnsembleConfig
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.execution.executor_factory import ExecutorFactory
 
         # Create ensemble with error-prone script
         ensemble_config = EnsembleConfig(
@@ -1394,7 +1394,7 @@ def execute_script_with_permission_error(bdd_context: dict[str, Any]) -> None:
         )
 
         # Execute and expect error
-        executor = EnsembleExecutor()
+        executor = ExecutorFactory.create_root_executor()
         try:
             result = await executor.execute(ensemble_config, "test input")
             return result
@@ -1742,7 +1742,7 @@ def execute_parallel_ensemble(bdd_context: dict[str, Any]) -> None:
 
     async def _async_parallel_execute() -> dict[str, Any]:
         from llm_orc.core.config.ensemble_config import EnsembleConfig
-        from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+        from llm_orc.core.execution.executor_factory import ExecutorFactory
 
         # Create ensemble with multiple parallel scripts
         ensemble_config = EnsembleConfig(
@@ -1752,7 +1752,7 @@ def execute_parallel_ensemble(bdd_context: dict[str, Any]) -> None:
         )
 
         start_time = time.time()
-        executor = EnsembleExecutor()
+        executor = ExecutorFactory.create_root_executor()
 
         # Execute with sample input
         test_input = '{"topology_data": {"nodes": ["A", "B"], "edges": []}}'

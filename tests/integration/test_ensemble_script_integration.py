@@ -8,7 +8,7 @@ import pytest
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.execution.artifact_manager import ArtifactManager
-from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+from llm_orc.core.execution.executor_factory import ExecutorFactory
 from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 
 _project_root = Path(__file__).resolve().parent.parent.parent
@@ -31,11 +31,11 @@ def mock_expensive_dependencies() -> Generator[None, None, None]:
     mock_config_manager.get_model_profiles.return_value = {}
 
     with patch(
-        "llm_orc.core.execution.ensemble_execution.ConfigurationManager",
+        "llm_orc.core.execution.executor_factory.ConfigurationManager",
         return_value=mock_config_manager,
     ):
-        with patch("llm_orc.core.execution.ensemble_execution.CredentialStorage"):
-            with patch("llm_orc.core.execution.ensemble_execution.ModelFactory"):
+        with patch("llm_orc.core.execution.executor_factory.CredentialStorage"):
+            with patch("llm_orc.core.execution.executor_factory.ModelFactory"):
                 yield
 
 
@@ -59,7 +59,7 @@ class TestEnsembleScriptIntegration:
             ],
         )
 
-        executor = EnsembleExecutor()
+        executor = ExecutorFactory.create_root_executor()
 
         # Mock ArtifactManager to prevent real artifact creation
         mock_artifact_manager = Mock(spec=ArtifactManager)
@@ -102,7 +102,7 @@ class TestEnsembleScriptIntegration:
             ],
         )
 
-        executor = EnsembleExecutor()
+        executor = ExecutorFactory.create_root_executor()
 
         # Mock ArtifactManager to prevent real artifact creation
         mock_artifact_manager = Mock(spec=ArtifactManager)
@@ -155,7 +155,7 @@ class TestEnsembleScriptIntegration:
             ],
         )
 
-        executor = EnsembleExecutor()
+        executor = ExecutorFactory.create_root_executor()
 
         # Mock ArtifactManager to prevent real artifact creation
         mock_artifact_manager = Mock(spec=ArtifactManager)
@@ -203,7 +203,7 @@ class TestEnsembleScriptIntegration:
                 ],
             )
 
-            executor = EnsembleExecutor()
+            executor = ExecutorFactory.create_root_executor()
             mock_artifact_manager = Mock(spec=ArtifactManager)
             mock_artifact_manager.save_execution_results = Mock()
 
@@ -229,7 +229,7 @@ class TestEnsembleScriptIntegration:
             ],
         )
 
-        executor = EnsembleExecutor()
+        executor = ExecutorFactory.create_root_executor()
         mock_artifact_manager = Mock(spec=ArtifactManager)
         mock_artifact_manager.save_execution_results = Mock()
 
@@ -281,7 +281,7 @@ class TestEnsembleScriptIntegration:
             ],
         )
 
-        executor = EnsembleExecutor()
+        executor = ExecutorFactory.create_root_executor()
         mock_artifact_manager = Mock(spec=ArtifactManager)
         mock_artifact_manager.save_execution_results = Mock()
 
@@ -319,7 +319,7 @@ class TestEnsembleScriptIntegration:
             ],
         )
 
-        executor = EnsembleExecutor()
+        executor = ExecutorFactory.create_root_executor()
         mock_artifact_manager = Mock(spec=ArtifactManager)
         mock_artifact_manager.save_execution_results = Mock()
 
@@ -386,7 +386,7 @@ class TestEnsembleScriptIntegration:
             dependencies={"upstream_agent": "some_result"},
         )
 
-        executor = EnsembleExecutor()
+        executor = ExecutorFactory.create_root_executor()
         mock_artifact_manager = Mock(spec=ArtifactManager)
         mock_artifact_manager.save_execution_results = Mock()
 

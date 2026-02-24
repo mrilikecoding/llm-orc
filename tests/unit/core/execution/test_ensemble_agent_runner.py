@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
-from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+from llm_orc.core.execution.executor_factory import ExecutorFactory
 from llm_orc.schemas.agent_config import (
     EnsembleAgentConfig,
     ScriptAgentConfig,
@@ -21,7 +21,7 @@ class TestChildExecutorSharesImmutableInfrastructure:
 
     def test_child_shares_config_manager_and_credentials(self) -> None:
         """Child executor uses same config manager and credentials."""
-        parent = EnsembleExecutor()
+        parent = ExecutorFactory.create_root_executor()
 
         child = parent.create_child_executor(depth=1)
 
@@ -35,7 +35,7 @@ class TestChildExecutorIsolatesMutableState:
 
     def test_child_has_own_usage_collector(self) -> None:
         """Child executor has its own usage collector."""
-        parent = EnsembleExecutor()
+        parent = ExecutorFactory.create_root_executor()
 
         child = parent.create_child_executor(depth=1)
 
@@ -48,7 +48,7 @@ class TestChildEnsembleNoArtifact:
     @pytest.mark.asyncio
     async def test_child_executor_skips_artifact_saving(self) -> None:
         """Child executor does not write artifact files."""
-        parent = EnsembleExecutor()
+        parent = ExecutorFactory.create_root_executor()
         child = parent.create_child_executor(depth=1)
 
         # Child's artifact manager should be disabled
@@ -78,7 +78,7 @@ class TestDepthLimitPreventsUnboundedNesting:
 
     def test_child_executor_tracks_depth(self) -> None:
         """Child executor records its depth."""
-        parent = EnsembleExecutor()
+        parent = ExecutorFactory.create_root_executor()
 
         child = parent.create_child_executor(depth=1)
 
@@ -86,7 +86,7 @@ class TestDepthLimitPreventsUnboundedNesting:
 
     def test_default_depth_is_zero(self) -> None:
         """Top-level executor has depth 0."""
-        executor = EnsembleExecutor()
+        executor = ExecutorFactory.create_root_executor()
 
         assert executor._depth == 0
 
@@ -196,7 +196,7 @@ class TestEnsembleAgentExecutesChildEnsemble:
         )
 
         try:
-            executor = EnsembleExecutor()
+            executor = ExecutorFactory.create_root_executor()
             mock_artifact = Mock()
             mock_artifact.save_execution_results = Mock()
 

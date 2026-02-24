@@ -273,9 +273,7 @@ class TestIntegrationExecutorWithPydanticConfigs:
         from unittest.mock import Mock, patch
 
         from llm_orc.core.config.ensemble_config import EnsembleLoader
-        from llm_orc.core.execution.ensemble_execution import (
-            EnsembleExecutor,
-        )
+        from llm_orc.core.execution.executor_factory import ExecutorFactory
 
         ensemble_yaml = {
             "name": "round-trip-test",
@@ -298,7 +296,7 @@ class TestIntegrationExecutorWithPydanticConfigs:
 
             assert isinstance(config.agents[0], ScriptAgentConfig)
 
-            executor = EnsembleExecutor()
+            executor = ExecutorFactory.create_root_executor()
             mock_artifact = Mock()
             mock_artifact.save_execution_results = Mock()
 

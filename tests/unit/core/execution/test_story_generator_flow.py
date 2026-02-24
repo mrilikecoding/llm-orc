@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
-from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
+from llm_orc.core.execution.executor_factory import ExecutorFactory
 from llm_orc.schemas.agent_config import AgentConfig, ScriptAgentConfig
 
 
@@ -39,7 +39,7 @@ class TestStoryGeneratorFlow:
             ],
         )
 
-        executor = EnsembleExecutor()
+        executor = ExecutorFactory.create_root_executor()
 
         # Mock artifact manager to prevent real artifact creation
         mock_artifact_manager = Mock()
