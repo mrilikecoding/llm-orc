@@ -121,15 +121,13 @@ class TestInvokeEnsemble:
         self,
         mock_config_manager: Mock,
         mock_ensemble_config: Mock,
-        mock_loader: Mock,
         mock_executor: Mock,
     ) -> None:
         """Test ensemble invocation with custom config directory."""
-        mock_loader.find_ensemble.return_value = mock_ensemble_config
-
         mock_service = Mock()
         mock_service.config_manager = mock_config_manager
         mock_service._get_executor.return_value = mock_executor
+        mock_service.find_ensemble_in_dir.return_value = mock_ensemble_config
 
         # Mock the executor.execute method to return expected structure
         mock_executor.execute = AsyncMock(
@@ -141,12 +139,9 @@ class TestInvokeEnsemble:
             }
         )
 
-        with (
-            patch(
-                "llm_orc.cli_commands._get_service",
-                return_value=mock_service,
-            ),
-            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
+        with patch(
+            "llm_orc.cli_commands._get_service",
+            return_value=mock_service,
         ):
             invoke_ensemble(
                 ensemble_name="test_ensemble",
@@ -163,8 +158,8 @@ class TestInvokeEnsemble:
             mock_service.find_ensemble_by_name.assert_not_called()
 
             # Should use custom config directory via _find_ensemble_config
-            mock_loader.find_ensemble.assert_called_once_with(
-                "/custom/config", "test_ensemble"
+            mock_service.find_ensemble_in_dir.assert_called_once_with(
+                "test_ensemble", "/custom/config"
             )
 
             # Verify executor.execute was called with correct parameters
@@ -768,14 +763,17 @@ class TestListEnsemblesCommand:
         mock_ensemble.description = "Custom test ensemble"
         mock_ensemble.relative_path = None
 
-        mock_loader = Mock()
-        mock_loader.list_ensembles.return_value = [mock_ensemble]
+        mock_service = Mock()
+        mock_service.list_ensembles_in_dir.return_value = [mock_ensemble]
 
-        with patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader):
+        with patch(
+            "llm_orc.cli_commands._get_service",
+            return_value=mock_service,
+        ):
             list_ensembles_command(config_dir="/custom/config")
 
-            # Should call list_ensembles with custom directory
-            mock_loader.list_ensembles.assert_called_once_with("/custom/config")
+            # Should call list_ensembles_in_dir with custom directory
+            mock_service.list_ensembles_in_dir.assert_called_once_with("/custom/config")
 
     def test_list_ensembles_no_directories_found(self) -> None:
         """Test when no ensemble directories are found."""
@@ -865,11 +863,14 @@ class TestListEnsemblesCommand:
 
     def test_list_ensembles_custom_dir_no_ensembles(self) -> None:
         """Test custom directory with no ensembles (lines 203-204)."""
-        mock_loader = Mock()
-        mock_loader.list_ensembles.return_value = []
+        mock_service = Mock()
+        mock_service.list_ensembles_in_dir.return_value = []
 
         with (
-            patch("llm_orc.cli_commands.EnsembleLoader", return_value=mock_loader),
+            patch(
+                "llm_orc.cli_commands._get_service",
+                return_value=mock_service,
+            ),
             patch("click.echo") as mock_echo,
         ):
             list_ensembles_command("/custom/config")
@@ -1198,22 +1199,22 @@ class TestInvokeEnsembleHelperMethods:
         mock_config = Mock()
         mock_config.name = "test-ensemble"
 
-        # When
-        with patch("llm_orc.cli_commands.EnsembleLoader") as mock_loader_class:
-            mock_loader = Mock()
-            mock_loader_class.return_value = mock_loader
-            mock_loader.find_ensemble.side_effect = [
-                mock_config,
-                None,
-            ]  # Found in first
+        mock_service = Mock()
+        mock_service.find_ensemble_in_dir.side_effect = [
+            mock_config,
+            None,
+        ]  # Found in first
 
-            result = llm_orc.cli_commands._find_ensemble_config(
-                ensemble_name, ensemble_dirs
-            )
+        # When
+        result = llm_orc.cli_commands._find_ensemble_config(
+            ensemble_name, ensemble_dirs, mock_service
+        )
 
         # Then
         assert result == mock_config
-        mock_loader.find_ensemble.assert_called_once_with("/dir1", "test-ensemble")
+        mock_service.find_ensemble_in_dir.assert_called_once_with(
+            "test-ensemble", "/dir1"
+        )
 
     def test_find_ensemble_config_found_in_second_dir(self) -> None:
         """Test ensemble config found in second directory."""
@@ -1222,22 +1223,20 @@ class TestInvokeEnsembleHelperMethods:
         ensemble_dirs = [Path("/dir1"), Path("/dir2")]
         mock_config = Mock()
 
-        # When
-        with patch("llm_orc.cli_commands.EnsembleLoader") as mock_loader_class:
-            mock_loader = Mock()
-            mock_loader_class.return_value = mock_loader
-            mock_loader.find_ensemble.side_effect = [
-                None,
-                mock_config,
-            ]  # Found in second
+        mock_service = Mock()
+        mock_service.find_ensemble_in_dir.side_effect = [
+            None,
+            mock_config,
+        ]  # Found in second
 
-            result = llm_orc.cli_commands._find_ensemble_config(
-                ensemble_name, ensemble_dirs
-            )
+        # When
+        result = llm_orc.cli_commands._find_ensemble_config(
+            ensemble_name, ensemble_dirs, mock_service
+        )
 
         # Then
         assert result == mock_config
-        assert mock_loader.find_ensemble.call_count == 2
+        assert mock_service.find_ensemble_in_dir.call_count == 2
 
     def test_find_ensemble_config_not_found(self) -> None:
         """Test ensemble config not found in any directory."""
@@ -1245,17 +1244,17 @@ class TestInvokeEnsembleHelperMethods:
         ensemble_name = "missing-ensemble"
         ensemble_dirs = [Path("/dir1"), Path("/dir2")]
 
-        # When/Then
-        with patch("llm_orc.cli_commands.EnsembleLoader") as mock_loader_class:
-            mock_loader = Mock()
-            mock_loader_class.return_value = mock_loader
-            mock_loader.find_ensemble.return_value = None  # Not found anywhere
+        mock_service = Mock()
+        mock_service.find_ensemble_in_dir.return_value = None  # Not found anywhere
 
-            with pytest.raises(
-                click.ClickException,
-                match="Ensemble 'missing-ensemble' not found in: /dir1, /dir2",
-            ):
-                llm_orc.cli_commands._find_ensemble_config(ensemble_name, ensemble_dirs)
+        # When/Then
+        with pytest.raises(
+            click.ClickException,
+            match="Ensemble 'missing-ensemble' not found in: /dir1, /dir2",
+        ):
+            llm_orc.cli_commands._find_ensemble_config(
+                ensemble_name, ensemble_dirs, mock_service
+            )
 
 
 class TestListEnsemblesHelperMethods:

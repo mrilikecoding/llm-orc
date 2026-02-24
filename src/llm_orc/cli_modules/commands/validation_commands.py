@@ -9,6 +9,7 @@ import click
 from llm_orc.cli_commands import _find_ensemble_config
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.execution.executor_factory import ExecutorFactory
+from llm_orc.services.orchestra_service import OrchestraService
 
 
 def _build_execution_result(result_dict: dict[str, Any], ensemble_name: str) -> Any:
@@ -76,8 +77,9 @@ def validate_ensemble(
     )
 
     config_manager = ConfigurationManager()
+    service = OrchestraService(config_manager=config_manager)
     ensemble_dirs = _resolve_ensemble_dirs(config_dir, config_manager)
-    ensemble_config = _find_ensemble_config(ensemble_name, ensemble_dirs)
+    ensemble_config = _find_ensemble_config(ensemble_name, ensemble_dirs, service)
 
     if not hasattr(ensemble_config, "validation") or ensemble_config.validation is None:
         click.echo(
