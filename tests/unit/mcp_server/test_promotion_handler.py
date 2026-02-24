@@ -43,7 +43,8 @@ def _setup_local_ensemble(
     if agents is None:
         agents = [{"name": "agent1", "model_profile": "fast-profile"}]
 
-    ensembles_dir = tmp_path / ".llm-orc" / "ensembles"
+    local_dir = tmp_path / ".llm-orc"
+    ensembles_dir = local_dir / "ensembles"
     ensembles_dir.mkdir(parents=True, exist_ok=True)
 
     ensemble_data = {
@@ -55,6 +56,9 @@ def _setup_local_ensemble(
     ensemble_file.write_text(yaml.safe_dump(ensemble_data, default_flow_style=False))
 
     _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
+    _mock_config(server).classify_tier.side_effect = lambda p: (
+        "local" if Path(p).is_relative_to(local_dir) else "global"
+    )
     return ensembles_dir
 
 
@@ -330,7 +334,7 @@ class TestPromoteEnsemble:
 
         library_dir = tmp_path / "llm-orchestra-library"
         library_dir.mkdir()
-        server._library_handler._test_library_dir = library_dir
+        server._library_handler._library_dir = library_dir
 
         _mock_config(server).get_ensembles_dirs.return_value = [str(ensembles_dir)]
         _mock_config(server).get_profiles_dirs.return_value = [str(profiles_dir)]

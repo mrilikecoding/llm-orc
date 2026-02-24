@@ -5,22 +5,30 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from llm_orc.mcp.project_context import ProjectContext
+
 
 class ScriptHandler:
     """Manages primitive script operations."""
 
-    _test_scripts_dir: Path | None = None
+    def __init__(self, project_path: Path | None = None) -> None:
+        """Initialize with optional project path."""
+        self._project_path = project_path
+
+    def set_project_context(self, ctx: ProjectContext) -> None:
+        """Update handler to use new project context."""
+        self._project_path = ctx.project_path
 
     def _get_scripts_dir(self) -> Path:
         """Get scripts directory path."""
-        if self._test_scripts_dir is not None:
-            return self._test_scripts_dir
+        if self._project_path is not None:
+            return self._project_path / ".llm-orc" / "scripts"
         return Path.cwd() / ".llm-orc" / "scripts"
 
     async def list_scripts(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """List available scripts."""
         category = arguments.get("category")
-        scripts_dir = Path.cwd() / ".llm-orc" / "scripts"
+        scripts_dir = self._get_scripts_dir()
 
         if not scripts_dir.exists():
             return {"scripts": []}

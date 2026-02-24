@@ -1,18 +1,15 @@
 """Fan-out coordination for ensemble execution."""
 
 import json
+import logging
 from typing import Any
 
 from llm_orc.core.execution.fan_out_expander import FanOutExpander
 from llm_orc.core.execution.fan_out_gatherer import FanOutGatherer
+from llm_orc.core.execution.utils import dep_name
 from llm_orc.schemas.agent_config import AgentConfig
 
-
-def _dep_name(dep: str | dict[str, Any]) -> str:
-    """Extract the agent name from a dependency entry."""
-    if isinstance(dep, dict):
-        return str(dep["agent_name"])
-    return dep
+logger = logging.getLogger(__name__)
 
 
 class FanOutCoordinator:
@@ -41,7 +38,7 @@ class FanOutCoordinator:
             if not agent_config.depends_on:
                 continue
 
-            upstream_name = _dep_name(agent_config.depends_on[0])
+            upstream_name = dep_name(agent_config.depends_on[0])
             upstream_result = results_dict.get(upstream_name, {})
 
             if upstream_result.get("status") != "success":
@@ -57,6 +54,13 @@ class FanOutCoordinator:
 
             if array_result is not None and len(array_result) > 0:
                 fan_out_agents.append((agent_config, array_result))
+            else:
+                logger.warning(
+                    "Fan-out agent '%s' produced zero instances from upstream"
+                    " '%s' — skipping",
+                    agent_config.name,
+                    upstream_name,
+                )
 
         return fan_out_agents
 

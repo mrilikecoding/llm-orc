@@ -216,6 +216,13 @@ class TestCLI:
                     ]
                     mock_instance.needs_migration.return_value = False
 
+                    def _classify(path: Path) -> str:
+                        if str(path).startswith(str(local_config_path)):
+                            return "local"
+                        return "global"
+
+                    mock_instance.classify_tier = _classify
+
                     runner = CliRunner()
                     result = runner.invoke(cli, ["list-ensembles"])
 

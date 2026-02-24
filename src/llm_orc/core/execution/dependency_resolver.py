@@ -4,6 +4,7 @@ import json
 from collections.abc import Callable
 from typing import Any
 
+from llm_orc.core.execution.utils import dep_name
 from llm_orc.schemas.agent_config import AgentConfig, ScriptAgentConfig
 
 
@@ -89,17 +90,6 @@ class DependencyResolver:
             )
         return self._build_enhanced_input_no_dependencies(agent_name, base_input)
 
-    @staticmethod
-    def _dep_name(dep: str | dict[str, Any]) -> str:
-        """Extract the agent name from a dependency entry.
-
-        Dependency entries are either a plain string or a dict with a single
-        ``"agent_name"`` key, e.g. ``{"agent_name": "b"}`` for conditional deps.
-        """
-        if isinstance(dep, dict):
-            return str(dep["agent_name"])
-        return dep
-
     def _apply_input_key_selection(
         self,
         agent_config: AgentConfig,
@@ -115,7 +105,7 @@ class DependencyResolver:
         if not input_key or not agent_config.depends_on:
             return results_dict, None
 
-        first_dep = self._dep_name(agent_config.depends_on[0])
+        first_dep = dep_name(agent_config.depends_on[0])
         dep_result = results_dict.get(first_dep, {})
 
         if dep_result.get("status") != "success":
@@ -169,16 +159,18 @@ class DependencyResolver:
         """
         dependency_results = []
         for dep in dependencies:
-            dep_name = self._dep_name(dep)
+            agent_dep_name = dep_name(dep)
             if (
-                dep_name in results_dict
-                and results_dict[dep_name].get("status") == "success"
+                agent_dep_name in results_dict
+                and results_dict[agent_dep_name].get("status") == "success"
             ):
-                response = results_dict[dep_name]["response"]
-                dep_role = self._get_agent_role_description(dep_name)
+                response = results_dict[agent_dep_name]["response"]
+                dep_role = self._get_agent_role_description(agent_dep_name)
                 role_text = f" ({dep_role})" if dep_role else ""
 
-                dependency_results.append(f"Agent {dep_name}{role_text}:\n{response}")
+                dependency_results.append(
+                    f"Agent {agent_dep_name}{role_text}:\n{response}"
+                )
 
         return dependency_results
 
@@ -196,12 +188,12 @@ class DependencyResolver:
         """
         dep_results = {}
         for dep in dependencies:
-            dep_name = self._dep_name(dep)
+            agent_dep_name = dep_name(dep)
             if (
-                dep_name in results_dict
-                and results_dict[dep_name].get("status") == "success"
+                agent_dep_name in results_dict
+                and results_dict[agent_dep_name].get("status") == "success"
             ):
-                dep_results[dep_name] = results_dict[dep_name]
+                dep_results[agent_dep_name] = results_dict[agent_dep_name]
         return dep_results
 
     def _build_script_input(
@@ -277,7 +269,7 @@ class DependencyResolver:
     ) -> bool:
         """Check if all dependencies for an agent are satisfied."""
         dependencies = self.get_dependencies(agent_config)
-        return all(self._dep_name(dep) in completed_agents for dep in dependencies)
+        return all(dep_name(dep) in completed_agents for dep in dependencies)
 
     @staticmethod
     def is_fan_out_instance_config(agent_config: AgentConfig) -> bool:

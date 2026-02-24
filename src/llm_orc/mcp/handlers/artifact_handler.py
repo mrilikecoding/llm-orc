@@ -5,16 +5,24 @@ import time
 from pathlib import Path
 from typing import Any
 
+from llm_orc.mcp.project_context import ProjectContext
+
 
 class ArtifactHandler:
     """Manages execution artifact operations."""
 
-    _test_artifacts_base: Path | None = None
+    def __init__(self, project_path: Path | None = None) -> None:
+        """Initialize with optional project path."""
+        self._project_path = project_path
+
+    def set_project_context(self, ctx: ProjectContext) -> None:
+        """Update handler to use new project context."""
+        self._project_path = ctx.project_path
 
     def _get_artifacts_base(self) -> Path:
         """Get artifacts base directory."""
-        if self._test_artifacts_base is not None:
-            return self._test_artifacts_base
+        if self._project_path is not None:
+            return self._project_path / ".llm-orc" / "artifacts"
         return Path.cwd() / ".llm-orc" / "artifacts"
 
     async def delete_artifact(self, arguments: dict[str, Any]) -> dict[str, Any]:

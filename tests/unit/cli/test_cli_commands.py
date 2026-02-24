@@ -827,6 +827,7 @@ class TestListEnsemblesCommand:
             Path("/home/.llm-orc/ensembles")
         ]
         mock_config_manager.local_config_dir = Path("/home/.llm-orc")
+        mock_config_manager.classify_tier.return_value = "local"
 
         mock_ensemble = Mock()
         mock_ensemble.name = "local_ensemble"
@@ -1217,6 +1218,9 @@ class TestListEnsemblesHelperMethods:
         # Given
         config_manager = Mock()
         config_manager.local_config_dir = Path("/local")
+        config_manager.classify_tier.side_effect = lambda p: (
+            "local" if str(p).startswith("/local") else "global"
+        )
         ensemble_dirs = [Path("/local/ensembles"), Path("/global/ensembles")]
 
         mock_local_ensemble = Mock()
@@ -1250,6 +1254,7 @@ class TestListEnsemblesHelperMethods:
         # Given
         config_manager = Mock()
         config_manager.local_config_dir = None
+        config_manager.classify_tier.return_value = "global"
         ensemble_dirs = [Path("/global/ensembles")]
 
         mock_ensemble = Mock()

@@ -96,18 +96,14 @@ def _get_grouped_ensembles(
     local_ensembles: list[EnsembleConfig] = []
     library_ensembles: list[EnsembleConfig] = []
     global_ensembles: list[EnsembleConfig] = []
-    cwd = Path.cwd()
 
     for dir_path in ensemble_dirs:
         ensembles = loader.list_ensembles(str(dir_path))
-        is_local = config_manager.local_config_dir and str(dir_path).startswith(
-            str(config_manager.local_config_dir)
-        )
-        is_library = str(dir_path).startswith(str(cwd / "llm-orchestra-library"))
+        tier = config_manager.classify_tier(dir_path)
 
-        if is_local:
+        if tier == "local":
             local_ensembles.extend(ensembles)
-        elif is_library:
+        elif tier == "library":
             library_ensembles.extend(ensembles)
         else:
             global_ensembles.extend(ensembles)

@@ -140,6 +140,8 @@ class OrchestraService:
         self._promotion_handler.set_project_context(ctx)
         self._resource_handler.set_project_context(ctx)
         self._library_handler.set_project_context(ctx)
+        self._script_handler.set_project_context(ctx)
+        self._artifact_handler.set_project_context(ctx)
 
         result: dict[str, Any] = {
             "status": "ok",

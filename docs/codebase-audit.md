@@ -21,6 +21,16 @@ Tracking resolution of findings. See `docs/plans/2026-02-23-codebase-audit-remed
 | U6 | Delete ghost directories | Resolved | 2026-02-23 |
 | U7 | Remove dead `SUPPORTS_CUSTOM_ROLE_PROMPT` flag | Resolved | 2026-02-23 |
 | U13 | Clean up pytest markers | Resolved | 2026-02-23 |
+| E7 | Distinguish credential decryption errors from missing credentials | Resolved | 2026-02-23 |
+| E9 | Emit warning when fan-out produces zero instances | Resolved | 2026-02-23 |
+| E10 | Add `set_project_context` to ScriptHandler and ArtifactHandler | Resolved | 2026-02-23 |
+| M5 | Align complexity thresholds | Resolved | 2026-02-23 |
+| M7 | Register global exception handler on FastAPI app | Resolved | 2026-02-23 |
+| U2 | Extract shared `classify_tier()` + consolidate `_dep_name` | Resolved | 2026-02-23 |
+| U4 | Extract profile parsing from PromotionHandler to ProfileHandler | Resolved | 2026-02-23 |
+| U8 | Remove dead EventFactory code from ScriptUserInputHandler | Resolved | 2026-02-23 |
+| U9 | Replace `_test_*` escape hatches with constructor injection | Resolved | 2026-02-23 |
+| U14 | Make `LLMResponseGenerator` accept `ModelInterface` | Resolved | 2026-02-23 |
 
 ## Executive Summary
 
