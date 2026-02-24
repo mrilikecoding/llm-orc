@@ -51,9 +51,7 @@ Tracking resolution of findings. See `docs/plans/2026-02-23-codebase-audit-remed
 
 LLM Orchestra is a multi-agent LLM orchestration system that coordinates ensembles of AI agents through dependency-based phase execution. The architecture follows a hexagonal (ports and adapters) pattern with `OrchestraService` as the application core. All three ports (MCP, Web, CLI) now delegate through the service layer.
 
-**Post-remediation (2026-02-23):** Three waves of remediation resolved 34 of 36 findings. The typed event system was deleted (M3). The CLI now routes through `OrchestraService` (M1). Handlers moved from `mcp/handlers/` to `services/handlers/` (E1). `EnsembleExecutor` construction is centralized in `ExecutorFactory` with required collaborator injection (M2). `ConfigurationManager` separates construction from provisioning (E2/U1) and uses an injected `TemplateProvider` protocol instead of upward imports (E3). `HTTPConnectionPool` accepts explicit configuration (M6). `invoke_streaming` connects to real execution (E4). `set_project` is synchronized with `asyncio.Lock` (E8). Broad `except Exception` clauses were narrowed to specific types (M4). ADR statuses, markers, and documentation were corrected (E12-E16, U13). Dead code, dependencies, and ghost directories were removed (M3, E15, U6-U8).
-
-**All 37 findings resolved.** U3 (reorganize `execution/` into sub-packages) was resolved on 2026-02-24, splitting 21 files into 5 sub-packages. U10/U11 (test quality) resolved on 2026-02-24 — removed assertion roulette init tests and deleted the eager `test_caching.py` (inline class with no production counterpart, behaviors already covered by `test_script_cache.py`).
+**Post-remediation:** All 36 audit findings resolved across three waves (2026-02-23) plus a final pass (2026-02-24). The typed event system was deleted (M3). The CLI routes through `OrchestraService` (M1). Handlers moved from `mcp/handlers/` to `services/handlers/` (E1). `EnsembleExecutor` construction is centralized in `ExecutorFactory` with required collaborator injection (M2). `ConfigurationManager` separates construction from provisioning (E2/U1) and uses an injected `TemplateProvider` protocol instead of upward imports (E3). `HTTPConnectionPool` accepts explicit configuration (M6). `invoke_streaming` connects to real execution (E4). `set_project` is synchronized with `asyncio.Lock` (E8). Broad `except Exception` clauses were narrowed to specific types (M4). ADR statuses, markers, and documentation were corrected (E12-E16, U13). Dead code, dependencies, and ghost directories were removed (M3, E15, U6-U8). `execution/` was reorganized into 5 sub-packages (U3). Assertion roulette init tests were removed and the eager `test_caching.py` deleted (U10/U11).
 
 The codebase's strongest assets are its typed agent configuration layer (Pydantic discriminated union with `extra="forbid"`), its multi-tier configuration hierarchy, and its phase-based dependency resolution with parallel execution.
 
@@ -734,15 +732,15 @@ The following findings were independently surfaced by multiple lenses, increasin
 
 2. **Phase-based dependency resolution** (`dependency_resolver.py`, `dependency_analyzer.py`). The topological sort with parallel execution grouping is correct and well-tested. The fan-out/gather pattern is a genuine architectural contribution.
 
-3. **`OrchestraService` as the hexagonal core**. The extraction from `MCPServer` was the right move. The service layer exists and works for two of three ports. Protect this pattern by routing the CLI through it.
+3. **`OrchestraService` as the hexagonal core**. All three ports (MCP, Web, CLI) now delegate through the service layer. Protect this pattern when adding new entry points.
 
-4. **ADR discipline**. The project has 14 ADRs documenting decisions, reversals, and deletions. The practice of recording decisions --- including mistakes --- is valuable. The index just needs maintenance.
+4. **ADR discipline**. The project has 14 ADRs documenting decisions, reversals, and deletions. The practice of recording decisions --- including mistakes --- is valuable. The index is current.
 
 5. **90% coverage floor with parallel test execution**. The CI enforcement is real and the `pytest-xdist` integration works. The test infrastructure is mature even where individual test quality varies.
 
 ### What to Improve (Remaining)
 
-All 37 audit findings have been resolved as of 2026-02-24.
+All 36 audit findings have been resolved as of 2026-02-24.
 
 ### Ongoing Practices
 
