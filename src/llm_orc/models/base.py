@@ -85,8 +85,6 @@ class HTTPConnectionPool:
 class ModelInterface(ABC):
     """Abstract interface for LLM models."""
 
-    SUPPORTS_CUSTOM_ROLE_PROMPT: bool = True
-
     def __init__(
         self,
         *,

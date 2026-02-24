@@ -240,13 +240,13 @@ class DependencyResolver:
         """
         deps_text = "\n\n".join(dependency_results)
         return (
-            f"You are {agent_name}. Please respond to the following input, "
+            f"Please respond to the following input, "
             f"taking into account the results from the previous agents "
             f"in the dependency chain.\n\n"
             f"Original Input:\n{base_input}\n\n"
             f"Previous Agent Results (for your reference):\n"
             f"{deps_text}\n\n"
-            f"Please provide your own analysis as {agent_name}, building upon "
+            f"Please provide your own analysis, building upon "
             f"(but not simply repeating) the previous results."
         )
 
@@ -262,7 +262,7 @@ class DependencyResolver:
         Returns:
             Simple enhanced input string
         """
-        return f"You are {agent_name}. Please respond to: {base_input}"
+        return base_input
 
     def has_dependencies(self, agent_config: AgentConfig) -> bool:
         """Check if an agent has dependencies."""

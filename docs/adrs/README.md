@@ -9,14 +9,17 @@ This directory contains Architecture Decision Records documenting key architectu
 | [001](001-pydantic-script-agent-interfaces.md) | Pydantic-Based Script Agent Interface System | Implemented | 100% |
 | [002](002-composable-primitive-agent-system.md) | Composable Primitive Agent System | Implemented | 100% |
 | [003](003-testable-script-agent-contracts.md) | Testable Script Agent Contracts | Implemented | 100% |
-| [004](004-bdd-llm-development-guardrails.md) | BDD as LLM Development Guardrails | Implemented | 100% |
+| [004](004-bdd-llm-development-guardrails.md) | BDD as LLM Development Guardrails | Superseded | — |
 | [005](005-multi-turn-agent-conversations.md) | Multi-Turn Agent Conversations | Superseded by 011 | — |
 | [006](006-library-based-primitives-architecture.md) | Library-Based Primitives Architecture | Implemented | 100% |
 | [007](007-progressive-ensemble-validation-suite.md) | Progressive Ensemble Validation Suite | Implemented | 90% |
-| [011](011-remove-conversational-ensemble-system.md) | Remove Conversational Ensemble System | Accepted | — |
-| [012](012-pydantic-agent-config-models.md) | Pydantic Agent Config Models | Accepted | — |
-| [013](013-ensemble-agent-type.md) | Ensemble Agent Type | Accepted | — |
-| [014](014-input-key-selective-upstream-consumption.md) | Input Key for Selective Upstream Consumption | Accepted | — |
+| [008](008-llm-friendly-cli-mcp-design.md) | LLM-Friendly CLI and MCP Design | Proposed | — |
+| [009](009-mcp-server-architecture.md) | MCP Server Architecture | Implemented | 100% |
+| [010](010-local-web-ui.md) | Local Web UI for Ensemble Management | Implemented | 100% |
+| [011](011-remove-conversational-ensemble-system.md) | Remove Conversational Ensemble System | Implemented | 100% |
+| [012](012-pydantic-agent-config-models.md) | Pydantic Agent Config Models | Implemented | 100% |
+| [013](013-ensemble-agent-type.md) | Ensemble Agent Type | Implemented | 100% |
+| [014](014-input-key-selective-upstream-consumption.md) | Input Key for Selective Upstream Consumption | Implemented | 100% |
 
 ## ADR Overview
 
@@ -27,7 +30,7 @@ ADRs 001-006 collectively implement [Issue #24](https://github.com/anthropics/ll
 **Core Architectural Principles:**
 - **Pure Primitive-Driven**: Everything flows through `llm-orc invoke` with behavior emerging from primitive composition
 - **Implicit Agent Typing**: Agents identified by fields present (`script` = script agent, `model_profile` = LLM agent)
-- **Library-Based Content**: Primitives live in `llm-orchestra-library`, not in core application
+- **Library-Based Content**: Primitives live in `llm-orchestra-library` with core primitives also available in `src/llm_orc/primitives/` per ADR-006 amendment
 - **Type-Safe Communication**: All agents use Pydantic schemas for JSON I/O
 
 ### Key Features Enabled

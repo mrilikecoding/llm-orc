@@ -61,13 +61,11 @@ class TestDependencyResolver:
         )
 
         # Check agent2 enhancement
-        assert "You are agent2" in enhanced["agent2"]
         assert "base input" in enhanced["agent2"]
         assert "Agent agent1 (Agent1 Role):" in enhanced["agent2"]
         assert "First result" in enhanced["agent2"]
 
         # Check agent3 enhancement
-        assert "You are agent3" in enhanced["agent3"]
         assert "Agent agent1 (Agent1 Role):" in enhanced["agent3"]
         assert "Agent agent2 (Agent2 Role):" in enhanced["agent3"]
         assert "First result" in enhanced["agent3"]
@@ -118,8 +116,8 @@ class TestDependencyResolver:
             "base input", agents, results_dict
         )
 
-        # Should fall back to simple prompt
-        assert enhanced["agent2"] == "You are agent2. Please respond to: base input"
+        # Should fall back to base input
+        assert enhanced["agent2"] == "base input"
 
     def test_enhance_input_with_dependencies_missing_deps(self) -> None:
         """Test enhancement when dependencies are missing from results."""
@@ -138,8 +136,8 @@ class TestDependencyResolver:
             "base input", agents, results_dict
         )
 
-        # Should fall back to simple prompt
-        assert enhanced["agent2"] == "You are agent2. Please respond to: base input"
+        # Should fall back to base input
+        assert enhanced["agent2"] == "base input"
 
     def test_has_dependencies_true(self) -> None:
         """Test has_dependencies returns True for agents with dependencies."""
@@ -448,7 +446,6 @@ class TestDependencyResolver:
             agent_name, base_input, dependency_results
         )
 
-        assert "You are test_agent" in enhanced_input
         assert "test input" in enhanced_input
         assert "Agent dep1 (Dep1 Role):\nResult 1" in enhanced_input
         assert "Agent dep2 (Dep2 Role):\nResult 2" in enhanced_input
@@ -465,7 +462,7 @@ class TestDependencyResolver:
             agent_name, base_input
         )
 
-        assert enhanced_input == "You are test_agent. Please respond to: test input"
+        assert enhanced_input == "test input"
 
     def test_enhance_input_script_agent_gets_json_with_dependencies(self) -> None:
         """Test script agents receive JSON-formatted input with dependencies."""
@@ -550,7 +547,6 @@ class TestDependencyResolver:
 
         # LLM agent gets text format
         llm_input = enhanced["llm_agent"]
-        assert "You are llm_agent" in llm_input
         assert "Previous Agent Results" in llm_input
 
 

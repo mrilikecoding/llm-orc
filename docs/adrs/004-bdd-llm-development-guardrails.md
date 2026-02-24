@@ -1,7 +1,7 @@
 # ADR-004: BDD as LLM Development Guardrails & Architectural Enforcement
 
 ## Status
-Implemented
+Superseded
 
 ## Implementation Status
 
