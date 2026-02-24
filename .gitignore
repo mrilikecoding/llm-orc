@@ -85,6 +85,9 @@ credentials.enc
 # Uncomment to ignore project config variations per developer
 # .llm-orc/config.yaml
 
+# Worktrees
+.worktrees/
+
 # Meta-repo context
 CLAUDE.md
 .claude/settings.local.json
