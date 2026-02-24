@@ -283,6 +283,7 @@ class EnsembleExecutor:
             self._emit_performance_event,
         )
         self._ensemble_metadata: dict[str, Any] = {}
+        self._agent_configs: list[AgentConfig] | None = None
 
     def _load_script_cache_config(self) -> ScriptCacheConfig:
         """Load script cache configuration from performance config."""
@@ -455,7 +456,7 @@ class EnsembleExecutor:
             Tuple of (result, results_dict)
         """
         # Store agent configs for role descriptions
-        self._current_agent_configs = config.agents
+        self._agent_configs = config.agents
 
         # Initialize result structure
         result = create_initial_result(config.name, input_data, len(config.agents))
@@ -779,8 +780,8 @@ class EnsembleExecutor:
 
     def _get_agent_role_description(self, agent_name: str) -> str | None:
         """Get a human-readable role description for an agent."""
-        if hasattr(self, "_current_agent_configs"):
-            for agent_config in self._current_agent_configs:
+        if self._agent_configs is not None:
+            for agent_config in self._agent_configs:
                 if agent_config.name == agent_name:
                     if (
                         isinstance(agent_config, LlmAgentConfig)
