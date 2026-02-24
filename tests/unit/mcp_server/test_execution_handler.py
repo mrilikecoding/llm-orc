@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from llm_orc.mcp.handlers.execution_handler import ExecutionHandler
+from llm_orc.services.handlers.execution_handler import ExecutionHandler
 
 
 def _make_handler(

@@ -5,8 +5,8 @@ from collections.abc import Callable
 from typing import Any
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
-from llm_orc.mcp.handlers.profile_handler import ProfileHandler
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
+from llm_orc.services.handlers.profile_handler import ProfileHandler
 
 
 class ProviderHandler:

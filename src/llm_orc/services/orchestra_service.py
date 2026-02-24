@@ -14,18 +14,18 @@ from typing import TYPE_CHECKING, Any
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleLoader
 from llm_orc.core.execution.artifact_manager import ArtifactManager
-from llm_orc.mcp.handlers.artifact_handler import ArtifactHandler
-from llm_orc.mcp.handlers.ensemble_crud_handler import EnsembleCrudHandler
-from llm_orc.mcp.handlers.execution_handler import ExecutionHandler
-from llm_orc.mcp.handlers.help_handler import HelpHandler
-from llm_orc.mcp.handlers.library_handler import LibraryHandler
-from llm_orc.mcp.handlers.profile_handler import ProfileHandler
-from llm_orc.mcp.handlers.promotion_handler import PromotionHandler
-from llm_orc.mcp.handlers.provider_handler import ProviderHandler
-from llm_orc.mcp.handlers.resource_handler import ResourceHandler
-from llm_orc.mcp.handlers.script_handler import ScriptHandler
-from llm_orc.mcp.handlers.validation_handler import ValidationHandler
 from llm_orc.mcp.project_context import ProjectContext
+from llm_orc.services.handlers.artifact_handler import ArtifactHandler
+from llm_orc.services.handlers.ensemble_crud_handler import EnsembleCrudHandler
+from llm_orc.services.handlers.execution_handler import ExecutionHandler
+from llm_orc.services.handlers.help_handler import HelpHandler
+from llm_orc.services.handlers.library_handler import LibraryHandler
+from llm_orc.services.handlers.profile_handler import ProfileHandler
+from llm_orc.services.handlers.promotion_handler import PromotionHandler
+from llm_orc.services.handlers.provider_handler import ProviderHandler
+from llm_orc.services.handlers.resource_handler import ResourceHandler
+from llm_orc.services.handlers.script_handler import ScriptHandler
+from llm_orc.services.handlers.validation_handler import ValidationHandler
 
 if TYPE_CHECKING:
     from llm_orc.core.execution.ensemble_execution import EnsembleExecutor
@@ -135,6 +135,29 @@ class OrchestraService:
             else:
                 global_.extend(ensembles)
         return {"local": local, "library": library, "global": global_}
+
+    def find_ensemble_in_dir(self, ensemble_name: str, dir_path: str) -> Any:
+        """Find an ensemble by name in a specific directory.
+
+        Args:
+            ensemble_name: Name of the ensemble to find
+            dir_path: Directory path to search in
+
+        Returns:
+            EnsembleConfig if found, None otherwise
+        """
+        return self.ensemble_loader.find_ensemble(dir_path, ensemble_name)
+
+    def list_ensembles_in_dir(self, dir_path: str) -> list[Any]:
+        """List all ensembles in a specific directory.
+
+        Args:
+            dir_path: Directory path to list ensembles from
+
+        Returns:
+            List of EnsembleConfig objects
+        """
+        return self.ensemble_loader.list_ensembles(dir_path)
 
     # === Context management ===
 

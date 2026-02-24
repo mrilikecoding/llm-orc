@@ -6,7 +6,3 @@ and metrics as MCP resources, and provides tools for execution and management.
 
 Architecture follows ADR-009: MCP Server Architecture and Plexus Integration.
 """
-
-from llm_orc.mcp.server import MCPServer
-
-__all__ = ["MCPServer"]

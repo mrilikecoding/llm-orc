@@ -383,7 +383,7 @@ def mcp_serve(transport: str, port: int) -> None:
     import signal
     import sys
 
-    from llm_orc.mcp import MCPServer
+    from llm_orc.mcp.server import MCPServer
 
     def handle_shutdown(_signum: int, _frame: object) -> None:
         """Handle shutdown signals gracefully."""
