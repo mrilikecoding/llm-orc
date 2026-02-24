@@ -13,11 +13,11 @@ import yaml
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig
-from llm_orc.mcp.handlers.library_handler import LibraryHandler
-from llm_orc.mcp.handlers.profile_handler import ProfileHandler
-from llm_orc.mcp.handlers.provider_handler import ProviderHandler
 from llm_orc.mcp.project_context import ProjectContext
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
+from llm_orc.services.handlers.library_handler import LibraryHandler
+from llm_orc.services.handlers.profile_handler import ProfileHandler
+from llm_orc.services.handlers.provider_handler import ProviderHandler
 
 
 class PromotionHandler:

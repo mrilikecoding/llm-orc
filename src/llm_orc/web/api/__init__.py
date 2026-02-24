@@ -1,7 +1,7 @@
 """API module for llm-orc web server."""
 
-from llm_orc.mcp import MCPServer
-from llm_orc.services import OrchestraService
+from llm_orc.mcp.server import MCPServer
+from llm_orc.services.orchestra_service import OrchestraService
 
 _mcp_server: MCPServer | None = None
 _orchestra_service: OrchestraService | None = None

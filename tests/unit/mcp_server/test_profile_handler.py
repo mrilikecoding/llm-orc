@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
-from llm_orc.mcp.handlers.profile_handler import ProfileHandler
+from llm_orc.services.handlers.profile_handler import ProfileHandler
 
 
 @pytest.fixture

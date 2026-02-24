@@ -149,9 +149,15 @@ class TestCLI:
 
             mock_executor.execute_streaming = mock_streaming
 
+            from llm_orc.core.config.ensemble_config import EnsembleLoader
+
+            real_loader = EnsembleLoader()
             mock_service = Mock()
             mock_service.config_manager = Mock()
             mock_service._get_executor.return_value = mock_executor
+            mock_service.find_ensemble_in_dir.side_effect = lambda name, dir_path: (
+                real_loader.find_ensemble(dir_path, name)
+            )
 
             with patch("llm_orc.cli_commands._get_service", return_value=mock_service):
                 runner = CliRunner()
