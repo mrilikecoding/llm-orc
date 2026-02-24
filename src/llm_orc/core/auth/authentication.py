@@ -76,7 +76,7 @@ def _get_authorization_url_and_open_browser(oauth_flow: OAuthFlow) -> bool:
         print(f"   URL: {auth_url}")
         webbrowser.open(auth_url)
         return True
-    except Exception as e:
+    except (ValueError, OSError) as e:
         print(f"❌ Failed to get authorization URL: {e}")
         return False
 
@@ -124,7 +124,7 @@ def _exchange_authorization_code_for_tokens(
 
         print("✅ Access tokens received!")
         return tokens
-    except Exception as e:
+    except (ValueError, OSError, ConnectionError) as e:
         print(f"❌ Token exchange failed: {e}")
         return None
 
@@ -152,7 +152,7 @@ def _store_tokens_and_create_client(
             expires_at,
         )
         print("✅ Tokens stored securely!")
-    except Exception as e:
+    except (OSError, ValueError) as e:
         print(f"❌ Failed to store tokens: {e}")
         return None
 
@@ -485,7 +485,7 @@ class AuthenticationManager:
             print(f"✅ Manual OAuth tokens stored successfully for {provider}")
             return True
 
-        except Exception as e:
+        except (OSError, ValueError) as e:
             print(f"❌ Failed to store manual OAuth tokens: {e}")
             return False
 
@@ -555,7 +555,7 @@ class AuthenticationManager:
             try:
                 # Attempt to revoke tokens
                 oauth_client.revoke_all_tokens(client_id)
-            except Exception:
+            except (OSError, ConnectionError):
                 # Continue even if token revocation fails
                 # (tokens may already be expired or network issues)
                 pass
@@ -569,7 +569,7 @@ class AuthenticationManager:
 
             return True
 
-        except Exception:
+        except (OSError, KeyError, ValueError):
             return False
 
     def logout_all_oauth_providers(self) -> dict[str, bool]:
