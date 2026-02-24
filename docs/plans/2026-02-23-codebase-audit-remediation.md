@@ -58,4 +58,4 @@ Dependency-ordered. Each change cascades.
 - [x] **E3** Define `TemplateProvider` protocol, inject into ConfigurationManager
 - [x] **M6** Add `HTTPConnectionPool.configure()` classmethod, remove hidden ConfigurationManager construction
 - [x] **U3** Reorganize flat `execution/` into sub-packages — resolved 2026-02-24
-- [ ] **U10/U11** Improve test quality — **deferred** (wait for architecture to stabilize)
+- [x] **U10/U11** Improve test quality — resolved 2026-02-24
