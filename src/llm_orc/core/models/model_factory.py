@@ -188,7 +188,7 @@ class ModelFactory:
                     self._config_manager.resolve_model_profile(fallback_profile_name)
                 )
                 return await self.load_model(resolved_model, resolved_provider)
-            except Exception:
+            except (ValueError, KeyError):
                 current_profile = fallback_profile_name
                 continue
 
@@ -213,7 +213,7 @@ class ModelFactory:
                 if resolved_provider == "ollama":
                     try:
                         return await self.load_model(resolved_model, resolved_provider)
-                    except Exception:
+                    except (ValueError, OSError):
                         logger.warning(
                             "Failed to load fallback profile %r",
                             fallback_profile,
@@ -226,7 +226,7 @@ class ModelFactory:
         fallback_provider = default_models.get("fallback_provider", "ollama")
         try:
             return await self.load_model(fallback_model, fallback_provider)
-        except Exception:
+        except (ValueError, OSError):
             return OllamaModel(model_name=fallback_model)
 
 

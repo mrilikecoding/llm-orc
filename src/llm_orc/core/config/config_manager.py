@@ -267,7 +267,7 @@ class ConfigurationManager:
         try:
             with open(config_file) as f:
                 return yaml.safe_load(f) or {}
-        except Exception:
+        except (yaml.YAMLError, OSError):
             return {}
 
     def _load_global_config(self) -> dict[str, Any]:
@@ -279,7 +279,7 @@ class ConfigurationManager:
         try:
             with open(config_file) as f:
                 return yaml.safe_load(f) or {}
-        except Exception:
+        except (yaml.YAMLError, OSError):
             return {}
 
     def load_performance_config(self) -> dict[str, Any]:
@@ -487,7 +487,7 @@ class ConfigurationManager:
 
         try:
             copy_profile_templates(target_profiles_dir)
-        except Exception:
+        except (OSError, FileNotFoundError):
             # If profile copying fails, continue with init
             # This allows offline usage
             pass

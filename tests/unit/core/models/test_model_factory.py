@@ -503,7 +503,7 @@ class TestModelFactory:
         with patch.object(
             model_factory,
             "load_model",
-            side_effect=Exception("Ollama not available"),
+            side_effect=ValueError("Ollama not available"),
         ):
             model = await model_factory.get_fallback_model()
 
@@ -602,7 +602,7 @@ class TestModelFactory:
         def mock_load_side_effect(model: str, provider: str) -> OllamaModel:
             model_load_calls.append((model, provider))
             if len(model_load_calls) <= 2:
-                raise Exception("Model failed")
+                raise ValueError("Model failed")
             return OllamaModel("llama3")
 
         resolve_calls: list[str] = []
@@ -686,7 +686,7 @@ class TestModelFactory:
         with patch.object(
             model_factory,
             "load_model",
-            side_effect=Exception("Model load failed"),
+            side_effect=ValueError("Model load failed"),
         ):
             with pytest.raises(
                 ValueError,

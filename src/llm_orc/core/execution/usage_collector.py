@@ -1,12 +1,15 @@
 """Usage tracking and aggregation for agent execution."""
 
 import copy
+import logging
 import time
 from typing import Any
 
 import psutil
 
 from llm_orc.models.base import ModelInterface
+
+logger = logging.getLogger(__name__)
 
 
 class UsageCollector:
@@ -70,6 +73,7 @@ class UsageCollector:
             return baseline_metrics
         except Exception:
             # If resource monitoring fails, return empty baseline
+            logger.debug("Resource monitoring start failed", exc_info=True)
             return {}
 
     def sample_agent_resources(self, agent_name: str) -> None:
@@ -99,7 +103,7 @@ class UsageCollector:
 
         except Exception:
             # Silently handle monitoring errors
-            pass
+            logger.debug("Resource sampling failed", exc_info=True)
 
     def finalize_agent_resource_monitoring(self, agent_name: str) -> dict[str, Any]:
         """Finalize resource monitoring for an agent and return the metrics.
@@ -136,6 +140,7 @@ class UsageCollector:
             return final_metrics
 
         except Exception:
+            logger.debug("Resource monitoring finalization failed", exc_info=True)
             return {}
 
     def get_agent_usage(self) -> dict[str, Any]:

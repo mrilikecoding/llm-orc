@@ -954,7 +954,7 @@ class TestImprovedAuthenticationManager:
 
         # Mock credential storage to raise exception
         def mock_store_oauth_token(*args: Any, **kwargs: Any) -> None:
-            raise Exception("Storage error")
+            raise OSError("Storage error")
 
         monkeypatch.setattr(
             auth_manager.credential_storage, "store_oauth_token", mock_store_oauth_token
@@ -1424,7 +1424,9 @@ class TestAuthenticateOAuthHelperMethods:
 
         # Given
         mock_flow = Mock()
-        mock_flow.get_authorization_url.side_effect = Exception("URL generation failed")
+        mock_flow.get_authorization_url.side_effect = ValueError(
+            "URL generation failed"
+        )
 
         # When
         result = _get_authorization_url_and_open_browser(mock_flow)
@@ -1569,7 +1571,7 @@ class TestAuthenticateOAuthHelperMethods:
         with patch.object(
             auth_manager.credential_storage,
             "store_oauth_token",
-            side_effect=Exception("Storage failed"),
+            side_effect=OSError("Storage failed"),
         ):
             result = _store_tokens_and_create_client(auth_manager, provider, tokens)
 
