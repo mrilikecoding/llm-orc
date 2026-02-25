@@ -20,6 +20,8 @@ class BaseAgentConfig(BaseModel):
     fan_out: bool = False
     input_key: str | None = None
 
+    timeout_seconds: int | None = None
+
     # Fan-out instance metadata (runtime only, set by FanOutExpander)
     fan_out_chunk: Any | None = Field(default=None, exclude=True)
     fan_out_index: int | None = Field(default=None, exclude=True)
@@ -36,7 +38,6 @@ class LlmAgentConfig(BaseAgentConfig):
     system_prompt: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
-    timeout_seconds: int | None = None
     output_format: str | None = None
     fallback_model_profile: str | None = None
 
