@@ -221,14 +221,14 @@ class MCPServer:
         server = self  # Capture for closure
 
         @self._mcp.tool()
-        async def set_project(path: str) -> str:
+        async def set_project(path: str) -> dict[str, Any]:
             """Set the active project directory for subsequent operations.
 
             Args:
                 path: Path to the project directory
             """
             result = server._set_project_tool_sync(path)
-            return json.dumps(result, indent=2)
+            return result
 
     def _setup_core_tools(self) -> None:
         """Register core MCP tools."""
@@ -236,7 +236,7 @@ class MCPServer:
         @self._mcp.tool()
         async def invoke(
             ensemble_name: str, input_data: str, ctx: Context[Any, Any, Any]
-        ) -> str:
+        ) -> dict[str, Any]:
             """Execute an ensemble with input data.
 
             Args:
@@ -246,10 +246,10 @@ class MCPServer:
             result = await self._invoke_tool_with_streaming(
                 ensemble_name, input_data, ctx
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
-        async def validate_ensemble(ensemble_name: str) -> str:
+        async def validate_ensemble(ensemble_name: str) -> dict[str, Any]:
             """Validate ensemble configuration.
 
             Args:
@@ -260,13 +260,12 @@ class MCPServer:
                     "ensemble_name": ensemble_name,
                 }
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
-        async def list_ensembles() -> str:
+        async def list_ensembles() -> list[dict[str, Any]]:
             """List all available ensembles with their metadata."""
-            result = await self._service.read_ensembles()
-            return json.dumps(result, indent=2)
+            return await self._service.read_ensembles()
 
         @self._mcp.tool()
         async def update_ensemble(
@@ -274,7 +273,7 @@ class MCPServer:
             changes: dict[str, Any],
             dry_run: bool = True,
             backup: bool = True,
-        ) -> str:
+        ) -> dict[str, Any]:
             """Modify ensemble configuration.
 
             Args:
@@ -291,10 +290,10 @@ class MCPServer:
                     "backup": backup,
                 }
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
-        async def analyze_execution(artifact_id: str) -> str:
+        async def analyze_execution(artifact_id: str) -> dict[str, Any]:
             """Analyze execution artifact.
 
             Args:
@@ -305,7 +304,7 @@ class MCPServer:
                     "artifact_id": artifact_id,
                 }
             )
-            return json.dumps(result, indent=2)
+            return result
 
     def _setup_crud_tools(self) -> None:
         """Register Phase 2 CRUD tools."""
@@ -322,7 +321,7 @@ class MCPServer:
             description: str = "",
             agents: list[dict[str, Any]] | None = None,
             from_template: str | None = None,
-        ) -> str:
+        ) -> dict[str, Any]:
             """Create a new ensemble from scratch or template.
 
             Args:
@@ -339,10 +338,12 @@ class MCPServer:
                     "from_template": from_template,
                 }
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
-        async def delete_ensemble(ensemble_name: str, confirm: bool = False) -> str:
+        async def delete_ensemble(
+            ensemble_name: str, confirm: bool = False
+        ) -> dict[str, Any]:
             """Delete an ensemble.
 
             Args:
@@ -355,22 +356,22 @@ class MCPServer:
                     "confirm": confirm,
                 }
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
-        async def list_scripts(category: str | None = None) -> str:
+        async def list_scripts(category: str | None = None) -> dict[str, Any]:
             """List available primitive scripts.
 
             Args:
                 category: Optional category to filter by
             """
             result = await self._service.list_scripts({"category": category})
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
         async def library_browse(
             browse_type: str = "all", category: str | None = None
-        ) -> str:
+        ) -> dict[str, Any]:
             """Browse library ensembles and scripts.
 
             Args:
@@ -380,14 +381,14 @@ class MCPServer:
             result = await self._service.library_browse(
                 {"type": browse_type, "category": category}
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
         async def library_copy(
             source: str,
             destination: str | None = None,
             overwrite: bool = False,
-        ) -> str:
+        ) -> dict[str, Any]:
             """Copy from library to local project.
 
             Args:
@@ -402,20 +403,20 @@ class MCPServer:
                     "overwrite": overwrite,
                 }
             )
-            return json.dumps(result, indent=2)
+            return result
 
     def _setup_profile_tools(self) -> None:
         """Register profile CRUD tools."""
 
         @self._mcp.tool()
-        async def list_profiles(provider: str | None = None) -> str:
+        async def list_profiles(provider: str | None = None) -> dict[str, Any]:
             """List all model profiles.
 
             Args:
                 provider: Optional provider to filter by
             """
             result = await self._service.list_profiles_tool({"provider": provider})
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
         async def create_profile(
@@ -426,7 +427,7 @@ class MCPServer:
             timeout_seconds: int | None = None,
             temperature: float | None = None,
             max_tokens: int | None = None,
-        ) -> str:
+        ) -> dict[str, Any]:
             """Create a new model profile.
 
             Args:
@@ -449,10 +450,10 @@ class MCPServer:
                     "max_tokens": max_tokens,
                 }
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
-        async def update_profile(name: str, changes: dict[str, Any]) -> str:
+        async def update_profile(name: str, changes: dict[str, Any]) -> dict[str, Any]:
             """Update an existing profile.
 
             Args:
@@ -462,10 +463,10 @@ class MCPServer:
             result = await self._service.update_profile(
                 {"name": name, "changes": changes}
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
-        async def delete_profile(name: str, confirm: bool = False) -> str:
+        async def delete_profile(name: str, confirm: bool = False) -> dict[str, Any]:
             """Delete a model profile.
 
             Args:
@@ -475,13 +476,15 @@ class MCPServer:
             result = await self._service.delete_profile(
                 {"name": name, "confirm": confirm}
             )
-            return json.dumps(result, indent=2)
+            return result
 
     def _setup_artifact_tools(self) -> None:
         """Register artifact management tools."""
 
         @self._mcp.tool()
-        async def delete_artifact(artifact_id: str, confirm: bool = False) -> str:
+        async def delete_artifact(
+            artifact_id: str, confirm: bool = False
+        ) -> dict[str, Any]:
             """Delete an execution artifact.
 
             Args:
@@ -491,14 +494,14 @@ class MCPServer:
             result = await self._service.delete_artifact(
                 {"artifact_id": artifact_id, "confirm": confirm}
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
         async def cleanup_artifacts(
             ensemble_name: str | None = None,
             older_than_days: int = 30,
             dry_run: bool = True,
-        ) -> str:
+        ) -> dict[str, Any]:
             """Cleanup old artifacts.
 
             Args:
@@ -513,7 +516,7 @@ class MCPServer:
                     "dry_run": dry_run,
                 }
             )
-            return json.dumps(result, indent=2)
+            return result
 
         self._setup_script_tools()
         self._setup_library_extra_tools()
@@ -522,7 +525,7 @@ class MCPServer:
         """Register script management tools."""
 
         @self._mcp.tool()
-        async def get_script(name: str, category: str) -> str:
+        async def get_script(name: str, category: str) -> dict[str, Any]:
             """Get script details.
 
             Args:
@@ -532,14 +535,14 @@ class MCPServer:
             result = await self._service.get_script(
                 {"name": name, "category": category}
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
         async def test_script(
             name: str,
             category: str,
             input: str,  # noqa: A002
-        ) -> str:
+        ) -> dict[str, Any]:
             """Test a script with sample input.
 
             Args:
@@ -550,12 +553,12 @@ class MCPServer:
             result = await self._service.test_script(
                 {"name": name, "category": category, "input": input}
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
         async def create_script(
             name: str, category: str, template: str = "basic"
-        ) -> str:
+        ) -> dict[str, Any]:
             """Create a new primitive script.
 
             Args:
@@ -566,10 +569,12 @@ class MCPServer:
             result = await self._service.create_script(
                 {"name": name, "category": category, "template": template}
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
-        async def delete_script(name: str, category: str, confirm: bool = False) -> str:
+        async def delete_script(
+            name: str, category: str, confirm: bool = False
+        ) -> dict[str, Any]:
             """Delete a script.
 
             Args:
@@ -580,32 +585,32 @@ class MCPServer:
             result = await self._service.delete_script(
                 {"name": name, "category": category, "confirm": confirm}
             )
-            return json.dumps(result, indent=2)
+            return result
 
     def _setup_library_extra_tools(self) -> None:
         """Register library extra tools."""
 
         @self._mcp.tool()
-        async def library_search(query: str) -> str:
+        async def library_search(query: str) -> dict[str, Any]:
             """Search library content.
 
             Args:
                 query: Search query
             """
             result = await self._service.library_search({"query": query})
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
-        async def library_info() -> str:
+        async def library_info() -> dict[str, Any]:
             """Get library information."""
             result = await self._service.library_info({})
-            return json.dumps(result, indent=2)
+            return result
 
     def _setup_provider_discovery_tools(self) -> None:
         """Register provider & model discovery tools."""
 
         @self._mcp.tool()
-        async def get_provider_status() -> str:
+        async def get_provider_status() -> dict[str, Any]:
             """Show which providers are configured and available models.
 
             Returns status of all providers including:
@@ -613,10 +618,10 @@ class MCPServer:
             - Cloud providers: Whether authentication is configured
             """
             result = await self._service.get_provider_status({})
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
-        async def check_ensemble_runnable(ensemble_name: str) -> str:
+        async def check_ensemble_runnable(ensemble_name: str) -> dict[str, Any]:
             """Check if ensemble can run with current providers.
 
             Args:
@@ -630,7 +635,7 @@ class MCPServer:
             result = await self._service.check_ensemble_runnable(
                 {"ensemble_name": ensemble_name}
             )
-            return json.dumps(result, indent=2)
+            return result
 
     def _setup_promotion_tools(self) -> None:
         """Register promotion and demotion tools."""
@@ -642,7 +647,7 @@ class MCPServer:
             include_profiles: bool = True,
             dry_run: bool = True,
             overwrite: bool = False,
-        ) -> str:
+        ) -> dict[str, Any]:
             """Promote an ensemble from local to global or
             library tier, including profile dependencies.
 
@@ -662,10 +667,10 @@ class MCPServer:
                     "overwrite": overwrite,
                 }
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
-        async def list_dependencies(ensemble_name: str) -> str:
+        async def list_dependencies(ensemble_name: str) -> dict[str, Any]:
             """Show all external dependencies an ensemble
             requires: profiles, models, and providers.
 
@@ -675,12 +680,12 @@ class MCPServer:
             result = await self._service.list_dependencies(
                 {"ensemble_name": ensemble_name}
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
         async def check_promotion_readiness(
             ensemble_name: str, destination: str
-        ) -> str:
+        ) -> dict[str, Any]:
             """Assess whether an ensemble can be promoted
             to a target tier, and what's missing.
 
@@ -694,7 +699,7 @@ class MCPServer:
                     "destination": destination,
                 }
             )
-            return json.dumps(result, indent=2)
+            return result
 
         @self._mcp.tool()
         async def demote_ensemble(
@@ -702,7 +707,7 @@ class MCPServer:
             tier: str,
             remove_orphaned_profiles: bool = False,
             confirm: bool = False,
-        ) -> str:
+        ) -> dict[str, Any]:
             """Remove an ensemble from a higher tier
             (does not delete lower-tier copies).
 
@@ -721,13 +726,13 @@ class MCPServer:
                     "confirm": confirm,
                 }
             )
-            return json.dumps(result, indent=2)
+            return result
 
     def _setup_help_tool(self) -> None:
         """Register help tool for agent onboarding."""
 
         @self._mcp.tool()
-        async def get_help() -> str:
+        async def get_help() -> dict[str, Any]:
             """Get comprehensive documentation for using llm-orc MCP server.
 
             Returns documentation including:
@@ -736,8 +741,7 @@ class MCPServer:
             - Tool categories and their purposes
             - Common workflows
             """
-            result = self._service.get_help_documentation()
-            return json.dumps(result, indent=2)
+            return self._service.get_help_documentation()
 
     async def handle_initialize(self) -> dict[str, Any]:
         """Handle MCP initialize request.
