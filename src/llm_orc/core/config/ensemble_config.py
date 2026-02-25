@@ -1,5 +1,6 @@
 """Ensemble configuration loading and management."""
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,8 @@ from llm_orc.schemas.agent_config import (
     EnsembleAgentConfig,
     parse_agent_config,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _find_agent_by_name(
@@ -210,11 +213,9 @@ class EnsembleLoader:
             return []
 
         ensembles = []
-        # Use rglob for recursive search in subdirectories
-        for yaml_file in dir_path.rglob("*.yaml"):
+        for yaml_file in self._find_yaml_files(dir_path):
             try:
                 config = self.load_from_file(str(yaml_file))
-                # Store relative path for hierarchical display
                 relative_path = yaml_file.relative_to(dir_path)
                 config.relative_path = (
                     str(relative_path.parent)
@@ -222,27 +223,18 @@ class EnsembleLoader:
                     else None
                 )
                 ensembles.append(config)
-            except Exception:
-                # Skip invalid files
-                continue
-
-        # Also check for .yml files
-        for yml_file in dir_path.rglob("*.yml"):
-            try:
-                config = self.load_from_file(str(yml_file))
-                # Store relative path for hierarchical display
-                relative_path = yml_file.relative_to(dir_path)
-                config.relative_path = (
-                    str(relative_path.parent)
-                    if relative_path.parent != Path(".")
-                    else None
-                )
-                ensembles.append(config)
-            except Exception:
-                # Skip invalid files
+            except Exception as exc:
+                logger.warning("Skipping invalid ensemble %s: %s", yaml_file, exc)
                 continue
 
         return ensembles
+
+    @staticmethod
+    def _find_yaml_files(dir_path: Path) -> list[Path]:
+        """Find all .yaml and .yml files recursively."""
+        files = list(dir_path.rglob("*.yaml"))
+        files.extend(dir_path.rglob("*.yml"))
+        return files
 
     def _validate_dependencies(self, agents: list[AgentConfig]) -> None:
         """Validate agent dependencies for cycles and missing deps."""

@@ -19,7 +19,6 @@ agents:
     depends_on: [market-analyst, financial-analyst, competitive-analyst, user-experience-analyst]
     output_format: json
     timeout_seconds: 120
-    synthesis_timeout_seconds: 90
     system_prompt: |
       You are a Chief Product Officer making a critical product strategy decision. Synthesize insights from market, financial, competitive, and user experience analysts.
       
