@@ -364,6 +364,37 @@ class TestEnsembleLoader:
             assert len(result) == 1
             assert result[0].name == "valid_ensemble"
 
+    def test_list_ensembles_logs_warning_for_invalid_files(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Invalid ensemble files should log a warning, not fail silently."""
+        import logging
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Ensemble with an extra field that extra="forbid" rejects
+            bad_config = {
+                "name": "bad_ensemble",
+                "description": "Has invalid agent field",
+                "agents": [
+                    {
+                        "name": "agent1",
+                        "model_profile": "test",
+                        "synthesis_timeout_seconds": 90,
+                    }
+                ],
+            }
+            bad_file = Path(temp_dir) / "bad.yaml"
+            with open(bad_file, "w") as f:
+                yaml.dump(bad_config, f)
+
+            loader = EnsembleLoader()
+            with caplog.at_level(logging.WARNING):
+                result = loader.list_ensembles(temp_dir)
+
+            assert result == []
+            assert any("bad.yaml" in rec.message for rec in caplog.records)
+
     def test_list_ensembles_empty_directory(self) -> None:
         """Test listing ensembles from empty directory."""
         with tempfile.TemporaryDirectory() as temp_dir:
