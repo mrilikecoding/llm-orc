@@ -1,5 +1,6 @@
 """Configuration management system for llm-orc."""
 
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -8,6 +9,8 @@ from typing import Any
 import yaml
 
 from llm_orc.core.config.template_provider import TemplateProvider
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigurationManager:
@@ -425,11 +428,16 @@ class ConfigurationManager:
                 )
 
     def get_model_profiles(self) -> dict[str, dict[str, str]]:
-        """Get merged model profiles from global and local configs.
+        """Get merged model profiles from all sources.
 
-        Results are cached and invalidated when config files change.
+        Sources (lowest to highest precedence):
+        1. Global config.yaml model_profiles section
+        2. Global profiles/ directory (individual YAML files)
+        3. Local config.yaml model_profiles section
+        4. Local profiles/ directory (individual YAML files)
+
+        Results are cached and invalidated when source files change.
         """
-        # Check if cache is still valid
         current_mtimes = self._get_profile_file_mtimes()
         if (
             self._profiles_cache is not None
@@ -437,39 +445,68 @@ class ConfigurationManager:
         ):
             return self._profiles_cache
 
-        # Start with global profiles
-        global_profiles = {}
+        merged: dict[str, dict[str, str]] = {}
+
+        # Global config.yaml
         global_config_file = self._global_config_dir / "config.yaml"
         if global_config_file.exists():
             with open(global_config_file) as f:
                 global_config = yaml.safe_load(f) or {}
-                global_profiles = global_config.get("model_profiles", {})
+                merged.update(global_config.get("model_profiles", {}))
 
-        # Merge with local profiles (local overrides global)
-        local_profiles = {}
+        # Global profiles/ directory
+        self._load_profile_yaml_files(self._global_config_dir / "profiles", merged)
+
+        # Local config.yaml
         if self._local_config_dir:
             local_config_file = self._local_config_dir / "config.yaml"
             if local_config_file.exists():
                 with open(local_config_file) as f:
                     local_config = yaml.safe_load(f) or {}
-                    local_profiles = local_config.get("model_profiles", {})
+                    merged.update(local_config.get("model_profiles", {}))
 
-        # Merge profiles with local taking precedence
-        merged_profiles = {**global_profiles, **local_profiles}
-        self._profiles_cache = merged_profiles
+            # Local profiles/ directory
+            self._load_profile_yaml_files(self._local_config_dir / "profiles", merged)
+
+        self._profiles_cache = merged
         self._profiles_cache_mtimes = current_mtimes
-        return merged_profiles
+        return merged
+
+    @staticmethod
+    def _load_profile_yaml_files(
+        profiles_dir: Path,
+        target: dict[str, dict[str, str]],
+    ) -> None:
+        """Load individual profile YAML files from a directory."""
+        if not profiles_dir.exists():
+            return
+        for yaml_file in profiles_dir.glob("*.yaml"):
+            try:
+                with open(yaml_file) as f:
+                    data = yaml.safe_load(f) or {}
+                if isinstance(data, dict) and "name" in data:
+                    target[data["name"]] = data
+            except Exception:
+                logger.warning("Skipping invalid profile %s", yaml_file)
 
     def _get_profile_file_mtimes(self) -> dict[str, float]:
-        """Get modification times for profile config files."""
+        """Get modification times for profile source files."""
         mtimes: dict[str, float] = {}
         global_config_file = self._global_config_dir / "config.yaml"
         if global_config_file.exists():
             mtimes["global"] = global_config_file.stat().st_mtime
+        global_profiles_dir = self._global_config_dir / "profiles"
+        if global_profiles_dir.exists():
+            for f in global_profiles_dir.glob("*.yaml"):
+                mtimes[f"global_prof_{f.name}"] = f.stat().st_mtime
         if self._local_config_dir:
             local_config_file = self._local_config_dir / "config.yaml"
             if local_config_file.exists():
                 mtimes["local"] = local_config_file.stat().st_mtime
+            local_profiles_dir = self._local_config_dir / "profiles"
+            if local_profiles_dir.exists():
+                for f in local_profiles_dir.glob("*.yaml"):
+                    mtimes[f"local_prof_{f.name}"] = f.stat().st_mtime
         return mtimes
 
     def resolve_model_profile(self, profile_name: str) -> tuple[str, str]:

@@ -483,3 +483,58 @@ agents:
 
                 with pytest.raises(ValueError, match="is incomplete.*Both.*required"):
                     config_manager.resolve_model_profile("incomplete-profile")
+
+    def test_get_model_profiles_includes_profile_yaml_files(self) -> None:
+        """Profiles from profiles/ directory are visible to runtime."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Create profiles/ directory with an individual YAML file
+            profiles_dir = temp_path / "profiles"
+            profiles_dir.mkdir()
+            profile_data = {
+                "name": "analyst-qwen",
+                "model": "qwen3:0.6b",
+                "provider": "ollama",
+            }
+            profile_file = profiles_dir / "analyst-qwen.yaml"
+            with open(profile_file, "w") as f:
+                yaml.dump(profile_data, f)
+
+            with patch.object(
+                ConfigurationManager,
+                "_get_global_config_dir",
+                return_value=temp_path,
+            ):
+                config_manager = ConfigurationManager()
+                profiles = config_manager.get_model_profiles()
+
+                assert "analyst-qwen" in profiles
+                assert profiles["analyst-qwen"]["model"] == "qwen3:0.6b"
+                assert profiles["analyst-qwen"]["provider"] == "ollama"
+
+    def test_resolve_model_profile_finds_profile_yaml_file(self) -> None:
+        """resolve_model_profile works for profiles in profiles/ dir."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            profiles_dir = temp_path / "profiles"
+            profiles_dir.mkdir()
+            profile_data = {
+                "name": "analyst-qwen",
+                "model": "qwen3:0.6b",
+                "provider": "ollama",
+            }
+            with open(profiles_dir / "analyst-qwen.yaml", "w") as f:
+                yaml.dump(profile_data, f)
+
+            with patch.object(
+                ConfigurationManager,
+                "_get_global_config_dir",
+                return_value=temp_path,
+            ):
+                config_manager = ConfigurationManager()
+                model, provider = config_manager.resolve_model_profile("analyst-qwen")
+
+                assert model == "qwen3:0.6b"
+                assert provider == "ollama"
