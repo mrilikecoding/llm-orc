@@ -60,6 +60,13 @@ class ExecutionHandler:
         """
         ensemble_name = arguments.get("ensemble_name")
         input_data = arguments.get("input", "")
+        input_file = arguments.get("input_file")
+
+        if not input_data and input_file:
+            path = Path(input_file)
+            if not path.is_file():
+                raise FileNotFoundError(f"Input file not found: {input_file}")
+            input_data = path.read_text()
 
         if not ensemble_name:
             raise ValueError("ensemble_name is required")

@@ -28,25 +28,37 @@ def _get_service() -> Any:
     return OrchestraService()
 
 
-def _resolve_input_data(positional_input: str | None, option_input: str | None) -> str:
-    """Resolve input data using priority: positional > option > stdin > default.
+def _resolve_input_data(
+    positional_input: str | None,
+    option_input: str | None,
+    file_input: str | None = None,
+) -> str:
+    """Resolve input data with priority: positional > option > file > stdin > default.
 
     Args:
-        positional_input: Input data from positional argument
-        option_input: Input data from --input option
+        positional_input: Input data from positional argument.
+        option_input: Input data from --input option.
+        file_input: Path to a file whose contents become input data.
 
     Returns:
-        str: Resolved input data
+        Resolved input data string.
+
+    Raises:
+        FileNotFoundError: If file_input path does not exist.
     """
-    # Handle input data priority: positional > option > stdin > default
     final_input_data = positional_input or option_input
+
+    if final_input_data is None and file_input is not None:
+        path = Path(file_input)
+        if not path.is_file():
+            msg = f"Input file not found: {file_input}"
+            raise FileNotFoundError(msg)
+        final_input_data = path.read_text()
 
     if final_input_data is None:
         if not sys.stdin.isatty():
-            # Read from stdin (piped input)
             final_input_data = sys.stdin.read().strip()
         else:
-            # No input provided and not piped, use default
             final_input_data = "Please analyze this."
 
     return final_input_data
@@ -243,12 +255,16 @@ def invoke_ensemble(
     streaming: bool,
     max_concurrent: int | None,
     detailed: bool,
+    *,
+    input_file: str | None = None,
 ) -> None:
     """Invoke an ensemble of agents."""
     service = _get_service()
 
     # Resolve input data using helper method
-    input_data = _resolve_input_data(input_data, input_data_option)
+    input_data = _resolve_input_data(
+        input_data, input_data_option, file_input=input_file
+    )
 
     # Find ensemble configuration
     if config_dir is not None:

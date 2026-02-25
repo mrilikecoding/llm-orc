@@ -1191,6 +1191,77 @@ class TestInvokeEnsembleHelperMethods:
         # Then
         assert result == "Please analyze this."
 
+    def test_resolve_input_data_file_reads_content(self, tmp_path: Path) -> None:
+        """File input reads file content when positional/option are None."""
+        # Given
+        input_file = tmp_path / "input.txt"
+        input_file.write_text("content from file")
+
+        # When
+        with patch("llm_orc.cli_commands.sys.stdin") as mock_stdin:
+            mock_stdin.isatty.return_value = True
+            result = llm_orc.cli_commands._resolve_input_data(
+                None, None, file_input=str(input_file)
+            )
+
+        # Then
+        assert result == "content from file"
+
+    def test_resolve_input_data_positional_over_file(self, tmp_path: Path) -> None:
+        """Positional argument takes priority over file input."""
+        # Given
+        input_file = tmp_path / "input.txt"
+        input_file.write_text("content from file")
+
+        # When
+        with patch("llm_orc.cli_commands.sys.stdin") as mock_stdin:
+            mock_stdin.isatty.return_value = True
+            result = llm_orc.cli_commands._resolve_input_data(
+                "positional data", None, file_input=str(input_file)
+            )
+
+        # Then
+        assert result == "positional data"
+
+    def test_resolve_input_data_option_over_file(self, tmp_path: Path) -> None:
+        """Option argument takes priority over file input."""
+        # Given
+        input_file = tmp_path / "input.txt"
+        input_file.write_text("content from file")
+
+        # When
+        with patch("llm_orc.cli_commands.sys.stdin") as mock_stdin:
+            mock_stdin.isatty.return_value = True
+            result = llm_orc.cli_commands._resolve_input_data(
+                None, "option data", file_input=str(input_file)
+            )
+
+        # Then
+        assert result == "option data"
+
+    def test_resolve_input_data_file_not_found_raises(self) -> None:
+        """Nonexistent file raises FileNotFoundError."""
+        with pytest.raises(FileNotFoundError):
+            llm_orc.cli_commands._resolve_input_data(
+                None, None, file_input="/nonexistent/path.txt"
+            )
+
+    def test_resolve_input_data_file_preserves_newlines(self, tmp_path: Path) -> None:
+        """File input preserves multiline content with newlines."""
+        # Given
+        input_file = tmp_path / "multiline.txt"
+        input_file.write_text("line one\nline two\nline three")
+
+        # When
+        with patch("llm_orc.cli_commands.sys.stdin") as mock_stdin:
+            mock_stdin.isatty.return_value = True
+            result = llm_orc.cli_commands._resolve_input_data(
+                None, None, file_input=str(input_file)
+            )
+
+        # Then
+        assert result == "line one\nline two\nline three"
+
     def test_find_ensemble_config_found_in_first_dir(self) -> None:
         """Test ensemble config found in first directory."""
         # Given
