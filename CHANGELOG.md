@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.9] - 2026-02-25
+
+### Fixed
+- **Profile registry unification** — `ConfigurationManager.get_model_profiles()` now scans individual YAML files in `profiles/` directories, matching what `ProfileHandler` already found; profiles created via `create_profile` are now visible at runtime
+- **Silent ensemble swallowing** — `EnsembleLoader` now logs warnings for invalid ensemble YAML instead of silently skipping them
+- **timeout_seconds on all agent types** — moved `timeout_seconds` from `LlmAgentConfig` to `BaseAgentConfig` so script and ensemble agents accept it (previously rejected by `extra="forbid"`)
+- **Newline mangling in script agent input** — added `INPUT_TEXT` env var that preserves real newlines for text-processing scripts; `INPUT_DATA` retains the full JSON contract for schema-aware scripts
+
+### Added
+- **`--input-file` / `-f` for invoke** — CLI and MCP invoke now accept a file path whose contents become the input data; priority: positional > option > file > stdin > default
+
 ## [0.15.8] - 2026-02-24
 
 ### Refactored
