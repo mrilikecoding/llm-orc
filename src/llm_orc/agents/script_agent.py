@@ -44,8 +44,16 @@ class ScriptEnvironmentManager:
         env.update(self.base_environment)
 
         if direct_json:
-            # Pass ScriptAgentInput JSON directly for schema validation
+            # Full ScriptAgentInput JSON for schema-aware scripts
             env["INPUT_DATA"] = input_data
+            # Raw input text with real newlines for text-processing
+            # scripts (avoids JSON escape sequences like \n appearing
+            # as literal characters).
+            try:
+                parsed = json.loads(input_data)
+                env["INPUT_TEXT"] = parsed.get("input_data", "")
+            except (json.JSONDecodeError, TypeError):
+                env["INPUT_TEXT"] = input_data
             env["AGENT_PARAMETERS"] = json.dumps(self.agent_parameters)
         else:
             # Parse json_input to extract ScriptAgentInput for environment variables
@@ -56,13 +64,16 @@ class ScriptEnvironmentManager:
                 # Set INPUT_DATA environment variable for script compatibility
                 if isinstance(actual_input, str):
                     env["INPUT_DATA"] = actual_input
+                    env["INPUT_TEXT"] = actual_input
                 else:
                     env["INPUT_DATA"] = json.dumps(actual_input)
+                    env["INPUT_TEXT"] = json.dumps(actual_input)
                 # Set AGENT_PARAMETERS for additional parameters
                 env["AGENT_PARAMETERS"] = json.dumps(parsed_input.get("parameters", {}))
             except (json.JSONDecodeError, KeyError):
                 # Fallback to passing raw input_data as INPUT_DATA
                 env["INPUT_DATA"] = input_data
+                env["INPUT_TEXT"] = input_data
                 env["AGENT_PARAMETERS"] = "{}"
 
         return env

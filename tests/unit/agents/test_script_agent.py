@@ -624,7 +624,11 @@ print("This is not JSON")
         assert result.error is not None
 
     async def test_execute_with_schema_json_success(self) -> None:
-        """Test execute_with_schema_json with valid input."""
+        """Test execute_with_schema_json with valid input.
+
+        INPUT_DATA contains the full ScriptAgentInput JSON.
+        INPUT_TEXT contains the raw input text.
+        """
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".py", delete=False
         ) as script_file:
@@ -658,6 +662,56 @@ print(json.dumps(output))
             parsed_result = json.loads(result)
             assert parsed_result["success"] is True
             assert parsed_result["data"] == "test input"
+        finally:
+            Path(script_path).unlink(missing_ok=True)
+
+    async def test_execute_with_schema_json_preserves_newlines_in_input_data(
+        self,
+    ) -> None:
+        """INPUT_TEXT env var contains raw text with actual newlines.
+
+        Regression: scripts doing text processing (tokenization, NLP)
+        saw JSON escape sequences (\\n) instead of actual newlines,
+        producing garbage tokens like "nthe" from "\\nthe".
+        INPUT_TEXT provides the raw input_data field with real newlines.
+        """
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False
+        ) as script_file:
+            script_file.write(
+                """#!/usr/bin/env python3
+import os, json
+raw = os.environ.get('INPUT_TEXT', '')
+# If newlines are preserved, "Line 1" and "Line 2" are on separate lines.
+# If mangled, raw contains JSON escapes like \\n instead of real newlines.
+ok = '\\n' in raw and '\\\\n' not in raw
+out = {"success": True, "data": raw, "has_real_newlines": ok, "error": None}
+print(json.dumps(out))
+"""
+            )
+            script_path = script_file.name
+
+        try:
+            config = {"script": script_path}
+            agent = ScriptAgent("test_agent", config)
+
+            input_json = json.dumps(
+                {
+                    "agent_name": "test_agent",
+                    "input_data": "Line 1\nLine 2\nLine 3",
+                    "dependencies": {},
+                    "context": {},
+                }
+            )
+
+            result = await agent.execute_with_schema_json(input_json)
+
+            parsed_result = json.loads(result)
+            assert parsed_result["success"] is True
+            assert parsed_result["has_real_newlines"] is True, (
+                f"INPUT_TEXT has mangled newlines: {parsed_result['data']!r}"
+            )
+            assert "Line 1\nLine 2" in parsed_result["data"]
         finally:
             Path(script_path).unlink(missing_ok=True)
 
