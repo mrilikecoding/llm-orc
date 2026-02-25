@@ -808,13 +808,19 @@ class MCPServer:
                             "type": "string",
                             "description": "Input data for the ensemble",
                         },
+                        "input_file": {
+                            "type": "string",
+                            "description": (
+                                "Path to a file whose contents become the input data"
+                            ),
+                        },
                         "output_format": {
                             "type": "string",
                             "enum": ["text", "json"],
                             "default": "json",
                         },
                     },
-                    "required": ["ensemble_name", "input"],
+                    "required": ["ensemble_name"],
                 },
             },
             {

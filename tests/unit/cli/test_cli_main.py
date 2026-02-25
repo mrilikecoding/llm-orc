@@ -46,6 +46,7 @@ class TestMainCLI:
                 True,  # streaming (default)
                 None,  # max_concurrent (default)
                 True,  # detailed (default)
+                input_file=None,
             )
             assert result.exit_code == 0
 
@@ -82,6 +83,7 @@ class TestMainCLI:
                 True,  # streaming
                 5,  # max_concurrent
                 True,  # detailed
+                input_file=None,
             )
             assert result.exit_code == 0
 
@@ -111,6 +113,7 @@ class TestMainCLI:
                 True,  # streaming (default)
                 None,  # max_concurrent (default)
                 True,  # detailed (default)
+                input_file=None,
             )
 
     def test_invoke_command_output_format_choices(self) -> None:

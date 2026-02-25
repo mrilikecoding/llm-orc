@@ -108,6 +108,14 @@ def completion(shell: str | None) -> None:
     help="Input data for the ensemble (alternative to positional argument)",
 )
 @click.option(
+    "--input-file",
+    "-f",
+    "input_file",
+    default=None,
+    type=click.Path(exists=True),
+    help="Read input data from a file",
+)
+@click.option(
     "--output-format",
     type=click.Choice(["json", "text"]),
     default=None,
@@ -134,6 +142,7 @@ def invoke(
     input_data: str | None,
     config_dir: str | None,
     input_data_option: str | None,
+    input_file: str | None,
     output_format: str,
     streaming: bool,
     max_concurrent: int | None,
@@ -149,6 +158,7 @@ def invoke(
         streaming,
         max_concurrent,
         detailed,
+        input_file=input_file,
     )
 
 
