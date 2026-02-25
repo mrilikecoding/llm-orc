@@ -127,6 +127,24 @@ class TestUnknownFieldsRejected:
             parse_agent_config(data)
 
 
+class TestTimeoutSecondsOnAllAgentTypes:
+    """Scenario: timeout_seconds accepted on all agent types.
+
+    The runtime (AgentDispatcher._get_agent_timeout) reads timeout_seconds
+    for every agent type, so it must be a BaseAgentConfig field.
+    """
+
+    def test_script_agent_accepts_timeout_seconds(self) -> None:
+        config = ScriptAgentConfig(
+            name="slow-scan", script="scan.py", timeout_seconds=120
+        )
+        assert config.timeout_seconds == 120
+
+    def test_script_agent_timeout_defaults_to_none(self) -> None:
+        config = ScriptAgentConfig(name="scan", script="scan.py")
+        assert config.timeout_seconds is None
+
+
 class TestBaseAgentConfigFields:
     """Test shared BaseAgentConfig fields."""
 
