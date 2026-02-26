@@ -53,6 +53,7 @@ class ModelFactory:
         # Extract generation parameters from agent config
         temperature: float | None = agent_config.get("temperature")
         max_tokens: int | None = agent_config.get("max_tokens")
+        agent_options: dict[str, Any] | None = agent_config.get("options")
 
         # Check if model_profile is specified (takes precedence)
         # Use .get() truthy check: model_dump() includes None values as keys
@@ -61,11 +62,16 @@ class ModelFactory:
             resolved_model, resolved_provider = (
                 self._config_manager.resolve_model_profile(profile_name)
             )
+            # Merge profile options with agent options (agent wins)
+            profile = self._config_manager.get_model_profile(profile_name)
+            profile_options = (profile or {}).get("options")
+            merged_options = _merge_options(profile_options, agent_options)
             return await self.load_model(
                 resolved_model,
                 resolved_provider,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                options=merged_options,
             )
 
         # Fall back to explicit model+provider
@@ -82,6 +88,7 @@ class ModelFactory:
             provider,
             temperature=temperature,
             max_tokens=max_tokens,
+            options=agent_options,
         )
 
     async def load_model(
@@ -91,6 +98,7 @@ class ModelFactory:
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
     ) -> ModelInterface:
         """Load a model interface based on authentication configuration.
 
@@ -99,6 +107,7 @@ class ModelFactory:
             provider: Optional provider name
             temperature: Optional temperature for generation
             max_tokens: Optional max tokens for generation
+            options: Optional provider-specific options (e.g. Ollama options)
 
         Returns:
             Configured model interface
@@ -121,9 +130,10 @@ class ModelFactory:
                 provider,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                options=options,
             )
 
-        # Create authenticated model
+        # Create authenticated model (cloud providers don't use options)
         return _create_authenticated_model(
             model_name,
             provider,
@@ -310,6 +320,7 @@ def _handle_no_authentication(
     *,
     temperature: float | None = None,
     max_tokens: int | None = None,
+    options: dict[str, Any] | None = None,
 ) -> ModelInterface:
     """Handle cases when no authentication is configured.
 
@@ -318,6 +329,7 @@ def _handle_no_authentication(
         provider: Optional provider name
         temperature: Optional temperature for generation
         max_tokens: Optional max tokens for generation
+        options: Optional provider-specific options forwarded to OllamaModel
 
     Returns:
         Model interface for providers that don't require auth
@@ -330,6 +342,7 @@ def _handle_no_authentication(
             model_name=model_name,
             temperature=temperature,
             max_tokens=max_tokens,
+            options=options,
         )
     elif provider:
         raise ValueError(
@@ -347,6 +360,7 @@ def _handle_no_authentication(
             model_name=model_name,
             temperature=temperature,
             max_tokens=max_tokens,
+            options=options,
         )
 
 
@@ -428,3 +442,13 @@ def _create_oauth_model(
         temperature=temperature,
         max_tokens=max_tokens,
     )
+
+
+def _merge_options(
+    profile_options: dict[str, Any] | None,
+    agent_options: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Merge profile and agent options dicts. Agent keys win."""
+    if not profile_options and not agent_options:
+        return None
+    return {**(profile_options or {}), **(agent_options or {})}

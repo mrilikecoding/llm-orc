@@ -1,5 +1,6 @@
 """Tests for ModelFactory."""
 
+from typing import cast
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -12,6 +13,7 @@ from llm_orc.core.models.model_factory import (
     _create_authenticated_model,
     _create_oauth_model,
     _handle_no_authentication,
+    _merge_options,
     _resolve_authentication_method,
 )
 from llm_orc.models.anthropic import (
@@ -79,6 +81,7 @@ class TestModelFactory:
             "claude-3-sonnet",
             "anthropic",
         )
+        mock_config_manager.get_model_profile.return_value = None
 
         with patch.object(
             model_factory,
@@ -95,6 +98,7 @@ class TestModelFactory:
                 "anthropic",
                 temperature=None,
                 max_tokens=None,
+                options=None,
             )
             assert result is not None
 
@@ -119,6 +123,7 @@ class TestModelFactory:
                 "anthropic",
                 temperature=None,
                 max_tokens=None,
+                options=None,
             )
             assert result is not None
 
@@ -140,6 +145,7 @@ class TestModelFactory:
                 None,
                 temperature=None,
                 max_tokens=None,
+                options=None,
             )
             assert result is not None
 
@@ -166,6 +172,7 @@ class TestModelFactory:
                 "ollama",
                 temperature=0.7,
                 max_tokens=500,
+                options=None,
             )
 
     async def test_load_model_from_agent_config_missing_model(
@@ -879,3 +886,130 @@ class TestLoadModelHelperMethods:
                 "unknown",
                 storage,
             )
+
+
+class TestMergeOptions:
+    """Test the _merge_options helper."""
+
+    def test_both_none(self) -> None:
+        assert _merge_options(None, None) is None
+
+    def test_profile_only(self) -> None:
+        assert _merge_options({"num_ctx": 8192}, None) == {"num_ctx": 8192}
+
+    def test_agent_only(self) -> None:
+        assert _merge_options(None, {"top_k": 20}) == {"top_k": 20}
+
+    def test_agent_wins_on_conflict(self) -> None:
+        result = _merge_options({"top_k": 40, "num_ctx": 8192}, {"top_k": 20})
+        assert result == {"top_k": 20, "num_ctx": 8192}
+
+    def test_merge_distinct_keys(self) -> None:
+        result = _merge_options({"num_ctx": 8192}, {"top_k": 20})
+        assert result == {"num_ctx": 8192, "top_k": 20}
+
+
+class TestOptionsPassThrough:
+    """Scenario: options threaded from config to OllamaModel."""
+
+    @pytest.fixture
+    def factory(self) -> ModelFactory:
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+        credential_storage.get_auth_method.return_value = None
+        return ModelFactory(config_manager, credential_storage)
+
+    async def test_load_model_from_agent_config_passes_options(
+        self, factory: ModelFactory
+    ) -> None:
+        """Options from agent config dict reach load_model."""
+        agent_config = {
+            "model": "qwen3:8b",
+            "provider": "ollama",
+            "options": {"num_ctx": 8192, "top_k": 20},
+        }
+
+        with patch.object(factory, "load_model", return_value=AsyncMock()) as mock_load:
+            await factory.load_model_from_agent_config(agent_config)
+            mock_load.assert_called_once_with(
+                "qwen3:8b",
+                "ollama",
+                temperature=None,
+                max_tokens=None,
+                options={"num_ctx": 8192, "top_k": 20},
+            )
+
+    async def test_load_model_from_agent_config_no_options(
+        self, factory: ModelFactory
+    ) -> None:
+        """No options field passes None (backward compat)."""
+        agent_config = {"model": "llama3", "provider": "ollama"}
+
+        with patch.object(factory, "load_model", return_value=AsyncMock()) as mock_load:
+            await factory.load_model_from_agent_config(agent_config)
+            mock_load.assert_called_once_with(
+                "llama3",
+                "ollama",
+                temperature=None,
+                max_tokens=None,
+                options=None,
+            )
+
+    async def test_load_model_from_agent_config_merges_profile_options(
+        self, factory: ModelFactory
+    ) -> None:
+        """Profile options merged with agent options, agent wins."""
+        config_mock = cast(Mock, factory._config_manager)
+        config_mock.resolve_model_profile.return_value = (
+            "qwen3:8b",
+            "ollama",
+        )
+        config_mock.get_model_profile.return_value = {
+            "model": "qwen3:8b",
+            "provider": "ollama",
+            "options": {"num_ctx": 8192, "top_k": 40},
+        }
+
+        agent_config = {
+            "model_profile": "analyst-qwen",
+            "options": {"top_k": 20, "top_p": 0.8},
+        }
+
+        with patch.object(factory, "load_model", return_value=AsyncMock()) as mock_load:
+            await factory.load_model_from_agent_config(agent_config)
+            mock_load.assert_called_once_with(
+                "qwen3:8b",
+                "ollama",
+                temperature=None,
+                max_tokens=None,
+                options={"num_ctx": 8192, "top_k": 20, "top_p": 0.8},
+            )
+
+    async def test_load_model_forwards_options_to_ollama(
+        self, factory: ModelFactory
+    ) -> None:
+        """load_model passes options to OllamaModel constructor."""
+        model = await factory.load_model(
+            "qwen3:8b",
+            "ollama",
+            options={"num_ctx": 8192},
+        )
+
+        assert isinstance(model, OllamaModel)
+        assert model._options == {"num_ctx": 8192}
+
+    async def test_load_model_non_ollama_ignores_options(
+        self, factory: ModelFactory
+    ) -> None:
+        """Non-Ollama providers don't break when options is passed."""
+        storage_mock = cast(Mock, factory._credential_storage)
+        storage_mock.get_auth_method.return_value = "api_key"
+        storage_mock.get_api_key.return_value = "test-key"
+
+        model = await factory.load_model(
+            "claude-3-sonnet",
+            "anthropic",
+            options={"num_ctx": 8192},
+        )
+
+        assert isinstance(model, ClaudeModel)
