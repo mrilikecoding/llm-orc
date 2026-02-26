@@ -445,3 +445,44 @@ class TestEnsembleAgentInDependencyChain:
             ["review"],
             ["summarizer"],
         ]
+
+
+class TestOptionsFlowFromProfileToModel:
+    """Scenario: options from profile YAML reach OllamaModel."""
+
+    @pytest.mark.asyncio
+    async def test_profile_options_reach_ollama_model(self) -> None:
+        """End-to-end: profile with options -> factory -> OllamaModel."""
+        from unittest.mock import Mock
+
+        from llm_orc.core.models.model_factory import ModelFactory
+
+        config_manager = Mock()
+        config_manager.resolve_model_profile.return_value = (
+            "qwen3:8b",
+            "ollama",
+        )
+        config_manager.get_model_profile.return_value = {
+            "model": "qwen3:8b",
+            "provider": "ollama",
+            "options": {"num_ctx": 8192, "top_k": 40},
+        }
+
+        credential_storage = Mock()
+        credential_storage.get_auth_method.return_value = None
+
+        factory = ModelFactory(config_manager, credential_storage)
+
+        agent = LlmAgentConfig(
+            name="analyzer",
+            model_profile="analyst-qwen",
+            options={"top_k": 20, "top_p": 0.8},
+        )
+        config_dict = agent.model_dump()
+
+        model = await factory.load_model_from_agent_config(config_dict)
+
+        from llm_orc.models.ollama import OllamaModel
+
+        assert isinstance(model, OllamaModel)
+        assert model._options == {"num_ctx": 8192, "top_k": 20, "top_p": 0.8}
