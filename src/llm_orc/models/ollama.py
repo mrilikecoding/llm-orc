@@ -1,6 +1,7 @@
 """Ollama model implementation."""
 
 import time
+from typing import Any
 
 import ollama
 
@@ -17,11 +18,13 @@ class OllamaModel(ModelInterface):
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
+        options: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(temperature=temperature, max_tokens=max_tokens)
         self.model_name = model_name
         self.host = host
         self.client = ollama.AsyncClient(host=host)
+        self._options = options
 
     @property
     def name(self) -> str:
@@ -31,8 +34,10 @@ class OllamaModel(ModelInterface):
         """Generate response using Ollama API."""
         start_time = time.time()
 
-        # Build options dict for temperature and max_tokens
+        # Build options: generic options underlay, explicit fields overlay
         options: dict[str, float | int] = {}
+        if self._options:
+            options.update(self._options)
         if self.temperature is not None:
             options["temperature"] = self.temperature
         if self.max_tokens is not None:
