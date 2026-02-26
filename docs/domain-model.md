@@ -10,7 +10,7 @@
 | **LLM Agent** | An agent that sends input to a language model and returns its response. Identified by presence of `model_profile` or `model` key. | "model agent" |
 | **Script Agent** | An agent that executes a script as a subprocess and returns its output. Identified by presence of `script` key. | "command agent" |
 | **Ensemble Agent** | An agent that recursively executes another ensemble and returns its result. Identified by presence of `ensemble` key. The mechanism for ensemble composition. | "meta-agent", "sub-ensemble", "nested ensemble" |
-| **Model Profile** | A named configuration combining model identifier, provider, and defaults (system prompt, timeout, temperature). Stored in config YAML, referenced by name from LLM agents. | "model config" |
+| **Model Profile** | A named configuration combining model identifier, provider, and defaults (system prompt, timeout, temperature, provider-specific options). Stored in config YAML, referenced by name from LLM agents. | "model config" |
 | **Inline Model** | An LLM agent specification using `model` + `provider` directly, bypassing the profile system. For experimentation. | "anonymous model", "direct model" |
 | **Dependency** | A declared ordering relationship between agents (`depends_on`). Upstream agents must complete before downstream agents execute. | "prerequisite", "requirement" |
 | **Phase** | A group of agents with no unresolved dependencies between them, eligible for parallel execution. Produced by topological sort of the dependency graph. | "stage", "level", "tier" |
@@ -84,7 +84,7 @@
 
 11. **Extra fields are forbidden**: Agent configs reject unknown fields at parse time (`extra="forbid"`). This catches typos and invalid configurations at load time rather than runtime.
 
-12. **Agent-level overrides win**: When an LLM agent specifies both a `model_profile` and an agent-level field (e.g., `system_prompt`, `temperature`), the agent-level value overrides the profile default.
+12. **Agent-level overrides win**: When an LLM agent specifies both a `model_profile` and an agent-level field (e.g., `system_prompt`, `temperature`, `options`), the agent-level value overrides the profile default. For the `options` dict, profile and agent options are deep-merged with agent keys winning on conflict.
 
 13. **Execution is resilient**: An agent failure does not halt ensemble execution. Agents that do not depend on the failed agent continue to execute. Downstream agents that depend on the failed agent receive the failure status in their dependency context. The ensemble completes with partial results and a `has_errors` flag. This applies equally to LLM agents, script agents, and ensemble agents — a child ensemble failure is an agent failure, not an orchestration failure.
 
