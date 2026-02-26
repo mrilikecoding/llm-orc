@@ -392,6 +392,26 @@ class TestEnsembleAgentDispatchedByAgentDispatcher:
         assert result == "ensemble"
 
 
+class TestOptionsFieldAccepted:
+    """Scenario: options dict accepted on LLM agent config."""
+
+    def test_llm_agent_with_options(self) -> None:
+        data: dict[str, Any] = {
+            "name": "analyzer",
+            "model_profile": "local-qwen",
+            "options": {"num_ctx": 8192, "top_k": 20},
+        }
+        config = parse_agent_config(data)
+        assert isinstance(config, LlmAgentConfig)
+        assert config.options == {"num_ctx": 8192, "top_k": 20}
+
+    def test_llm_agent_without_options(self) -> None:
+        data: dict[str, Any] = {"name": "analyzer", "model_profile": "gpt4"}
+        config = parse_agent_config(data)
+        assert isinstance(config, LlmAgentConfig)
+        assert config.options is None
+
+
 class TestEnsembleAgentInDependencyChain:
     """Scenario: Ensemble agent participates in dependency chain."""
 

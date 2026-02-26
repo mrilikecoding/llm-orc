@@ -38,6 +38,7 @@ class LlmAgentConfig(BaseAgentConfig):
     system_prompt: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
+    options: dict[str, Any] | None = None
     output_format: str | None = None
     fallback_model_profile: str | None = None
 
