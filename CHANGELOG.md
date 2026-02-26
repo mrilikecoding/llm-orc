@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.10] - 2026-02-25
+
+### Added
+- **Ollama options pass-through** — profiles and agents can now specify an `options` dict with provider-specific parameters (`num_ctx`, `top_k`, `top_p`, `repeat_penalty`, `seed`, etc.) that are forwarded to the Ollama API; profile and agent options are deep-merged with agent keys winning on conflict; explicit `temperature` and `max_tokens` fields always take precedence
+
 ## [0.15.9] - 2026-02-25
 
 ### Fixed

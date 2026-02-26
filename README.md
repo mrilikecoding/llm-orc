@@ -495,6 +495,9 @@ model_profiles:
     timeout_seconds: 30
     temperature: 0.7
     max_tokens: 500
+    options:              # Provider-specific parameters (Ollama)
+      num_ctx: 4096
+      top_k: 40
 
   default-claude:
     model: claude-sonnet-4-20250514
@@ -524,7 +527,7 @@ model_profiles:
 - **Simplified Configuration**: Use `model_profile: default-claude` instead of explicit model + provider + system_prompt + timeout
 - **Consistency**: Same profile names work across all ensembles with consistent behavior
 - **Cost Tracking**: Built-in cost information for budgeting
-- **Generation Control**: Set `temperature` and `max_tokens` per profile for reproducible behavior
+- **Generation Control**: Set `temperature`, `max_tokens`, and provider-specific `options` per profile
 - **Flexibility**: Local profiles override global ones, explicit agent configs override profile defaults
 
 **Usage in Ensembles:**
@@ -549,6 +552,8 @@ agents:
     timeout_seconds: 60            # Overrides profile timeout_seconds
     temperature: 0.1               # Overrides profile temperature
     max_tokens: 200                # Overrides profile max_tokens
+    options:                       # Merged with profile options (agent wins)
+      num_ctx: 8192
 ```
 
 ### Ensemble Configuration
@@ -556,7 +561,7 @@ Ensemble configurations support:
 
 - **Model profiles** for simplified, consistent model selection
 - **Agent specialization** with role-specific prompts
-- **Generation parameters** (`temperature`, `max_tokens`) per profile or per agent
+- **Generation parameters** (`temperature`, `max_tokens`, `options`) per profile or per agent
 - **Agent dependencies** using `depends_on` for sophisticated orchestration
 - **Dependency validation** with automatic cycle detection and missing dependency checks
 - **Timeout management** per agent with performance configuration
