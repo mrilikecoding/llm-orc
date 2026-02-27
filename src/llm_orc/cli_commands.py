@@ -293,7 +293,7 @@ def invoke_ensemble(
 
     # Override concurrency settings if provided
     if max_concurrent is not None:
-        pass  # Would be applied to executor config
+        executor.set_max_concurrent_agents(max_concurrent)
 
     # Show performance configuration only for default Rich interface (not text/json)
     _setup_performance_display(

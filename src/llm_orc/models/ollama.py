@@ -19,12 +19,14 @@ class OllamaModel(ModelInterface):
         temperature: float | None = None,
         max_tokens: int | None = None,
         options: dict[str, Any] | None = None,
+        ollama_format: str | dict[str, Any] | None = None,
     ) -> None:
         super().__init__(temperature=temperature, max_tokens=max_tokens)
         self.model_name = model_name
         self.host = host
         self.client = ollama.AsyncClient(host=host)
         self._options = options
+        self._format = ollama_format
 
     @property
     def name(self) -> str:
@@ -43,28 +45,50 @@ class OllamaModel(ModelInterface):
         if self.max_tokens is not None:
             options["num_predict"] = self.max_tokens
 
-        response = await self.client.chat(
-            model=self.model_name,
-            messages=[
+        chat_kwargs: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": [
                 {"role": "system", "content": role_prompt},
                 {"role": "user", "content": message},
             ],
-            options=options if options else None,
-        )
+            "options": options if options else None,
+        }
+        if self._format is not None:
+            chat_kwargs["format"] = self._format
 
-        duration_ms = int((time.time() - start_time) * 1000)
+        response = await self.client.chat(**chat_kwargs)
 
         content = response["message"]["content"]
 
-        estimated_input_tokens = self._estimate_tokens(role_prompt + message)
-        estimated_output_tokens = self._estimate_tokens(content)
+        # Use real Ollama metrics when available, fall back to estimates
+        input_tokens = response.get(
+            "prompt_eval_count",
+            self._estimate_tokens(role_prompt + message),
+        )
+        output_tokens = response.get(
+            "eval_count",
+            self._estimate_tokens(content),
+        )
+
+        total_duration_ns = response.get("total_duration")
+        if total_duration_ns is not None:
+            duration_ms = int(total_duration_ns / 1_000_000)
+        else:
+            duration_ms = int((time.time() - start_time) * 1000)
 
         self._record_usage(
-            input_tokens=estimated_input_tokens,
-            output_tokens=estimated_output_tokens,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
             duration_ms=duration_ms,
-            cost_usd=0.0,  # Local models have no API cost
+            cost_usd=0.0,
             model_name=self.model_name,
         )
+
+        # Attach Ollama timing breakdown when available
+        if self._last_usage is not None and total_duration_ns is not None:
+            for key in ("eval_duration", "prompt_eval_duration", "load_duration"):
+                value = response.get(key)
+                if value is not None:
+                    self._last_usage[f"{key}_ns"] = value
 
         return str(content)

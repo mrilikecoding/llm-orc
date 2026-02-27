@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.11] - 2026-02-27
+
+### Added
+- **Ollama structured output (`ollama_format`)** — agent configs accept an `ollama_format` field (JSON schema dict or `"json"` string) that is passed to Ollama's constrained decoding via the `format` parameter; eliminates hallucinated output structure and suppresses Qwen3 thinking-token leaks on short inputs
+- **Real Ollama token counts** — `OllamaModel` now reads `prompt_eval_count` and `eval_count` from Ollama responses instead of estimating via `len/4`; falls back to estimation when fields are absent
+- **Real Ollama timing** — `duration_ms` now uses Ollama's `total_duration` instead of wall-clock time; detailed breakdown (`eval_duration_ns`, `prompt_eval_duration_ns`, `load_duration_ns`) included in per-agent usage metadata and artifacts
+
+### Fixed
+- **`--max-concurrent` now works** — the CLI flag and `concurrency.max_concurrent_agents` config value were plumbed through the system but never connected to execution; `AgentDispatcher` now uses an `asyncio.Semaphore` to enforce the limit, enabling sequential GPU scheduling for consumer hardware
+
 ## [0.15.10] - 2026-02-25
 
 ### Added

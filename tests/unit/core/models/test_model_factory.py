@@ -99,6 +99,7 @@ class TestModelFactory:
                 temperature=None,
                 max_tokens=None,
                 options=None,
+                ollama_format=None,
             )
             assert result is not None
 
@@ -124,6 +125,7 @@ class TestModelFactory:
                 temperature=None,
                 max_tokens=None,
                 options=None,
+                ollama_format=None,
             )
             assert result is not None
 
@@ -146,6 +148,7 @@ class TestModelFactory:
                 temperature=None,
                 max_tokens=None,
                 options=None,
+                ollama_format=None,
             )
             assert result is not None
 
@@ -173,6 +176,7 @@ class TestModelFactory:
                 temperature=0.7,
                 max_tokens=500,
                 options=None,
+                ollama_format=None,
             )
 
     async def test_load_model_from_agent_config_missing_model(
@@ -937,6 +941,7 @@ class TestOptionsPassThrough:
                 temperature=None,
                 max_tokens=None,
                 options={"num_ctx": 8192, "top_k": 20},
+                ollama_format=None,
             )
 
     async def test_load_model_from_agent_config_no_options(
@@ -953,6 +958,7 @@ class TestOptionsPassThrough:
                 temperature=None,
                 max_tokens=None,
                 options=None,
+                ollama_format=None,
             )
 
     async def test_load_model_from_agent_config_merges_profile_options(
@@ -983,6 +989,7 @@ class TestOptionsPassThrough:
                 temperature=None,
                 max_tokens=None,
                 options={"num_ctx": 8192, "top_k": 20, "top_p": 0.8},
+                ollama_format=None,
             )
 
     async def test_load_model_forwards_options_to_ollama(
@@ -1013,3 +1020,78 @@ class TestOptionsPassThrough:
         )
 
         assert isinstance(model, ClaudeModel)
+
+
+class TestOllamaFormatPassThrough:
+    """Scenario: ollama_format threaded from agent config to OllamaModel."""
+
+    @pytest.fixture
+    def factory(self) -> ModelFactory:
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+        credential_storage.get_auth_method.return_value = None
+        return ModelFactory(config_manager, credential_storage)
+
+    async def test_ollama_format_extracted_from_agent_config(
+        self, factory: ModelFactory
+    ) -> None:
+        """ollama_format from agent config dict reaches load_model."""
+        schema = {"type": "object", "properties": {"name": {"type": "string"}}}
+        agent_config = {
+            "model": "qwen3:14b",
+            "provider": "ollama",
+            "ollama_format": schema,
+        }
+
+        with patch.object(factory, "load_model", return_value=AsyncMock()) as mock_load:
+            await factory.load_model_from_agent_config(agent_config)
+            mock_load.assert_called_once_with(
+                "qwen3:14b",
+                "ollama",
+                temperature=None,
+                max_tokens=None,
+                options=None,
+                ollama_format=schema,
+            )
+
+    async def test_ollama_format_none_when_absent(self, factory: ModelFactory) -> None:
+        """No ollama_format passes None (backward compat)."""
+        agent_config = {"model": "llama3", "provider": "ollama"}
+
+        with patch.object(factory, "load_model", return_value=AsyncMock()) as mock_load:
+            await factory.load_model_from_agent_config(agent_config)
+            mock_load.assert_called_once_with(
+                "llama3",
+                "ollama",
+                temperature=None,
+                max_tokens=None,
+                options=None,
+                ollama_format=None,
+            )
+
+    async def test_load_model_forwards_format_to_ollama(
+        self, factory: ModelFactory
+    ) -> None:
+        """load_model passes ollama_format to OllamaModel constructor."""
+        schema = {"type": "object"}
+        model = await factory.load_model(
+            "qwen3:14b",
+            "ollama",
+            ollama_format=schema,
+        )
+
+        assert isinstance(model, OllamaModel)
+        assert model._format == schema
+
+    async def test_load_model_string_format_to_ollama(
+        self, factory: ModelFactory
+    ) -> None:
+        """load_model passes string 'json' format to OllamaModel."""
+        model = await factory.load_model(
+            "qwen3:14b",
+            "ollama",
+            ollama_format="json",
+        )
+
+        assert isinstance(model, OllamaModel)
+        assert model._format == "json"
