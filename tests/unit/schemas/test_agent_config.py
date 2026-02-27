@@ -412,6 +412,41 @@ class TestOptionsFieldAccepted:
         assert config.options is None
 
 
+class TestOllamaFormatFieldAccepted:
+    """Scenario: ollama_format accepted on LLM agent config."""
+
+    def test_llm_agent_with_schema_format(self) -> None:
+        schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        }
+        data: dict[str, Any] = {
+            "name": "extractor",
+            "model_profile": "local-qwen",
+            "ollama_format": schema,
+        }
+        config = parse_agent_config(data)
+        assert isinstance(config, LlmAgentConfig)
+        assert config.ollama_format == schema
+
+    def test_llm_agent_with_string_format(self) -> None:
+        data: dict[str, Any] = {
+            "name": "extractor",
+            "model_profile": "local-qwen",
+            "ollama_format": "json",
+        }
+        config = parse_agent_config(data)
+        assert isinstance(config, LlmAgentConfig)
+        assert config.ollama_format == "json"
+
+    def test_llm_agent_without_ollama_format(self) -> None:
+        data: dict[str, Any] = {"name": "analyzer", "model_profile": "gpt4"}
+        config = parse_agent_config(data)
+        assert isinstance(config, LlmAgentConfig)
+        assert config.ollama_format is None
+
+
 class TestEnsembleAgentInDependencyChain:
     """Scenario: Ensemble agent participates in dependency chain."""
 

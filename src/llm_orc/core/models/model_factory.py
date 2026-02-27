@@ -54,6 +54,7 @@ class ModelFactory:
         temperature: float | None = agent_config.get("temperature")
         max_tokens: int | None = agent_config.get("max_tokens")
         agent_options: dict[str, Any] | None = agent_config.get("options")
+        ollama_format: str | dict[str, Any] | None = agent_config.get("ollama_format")
 
         # Check if model_profile is specified (takes precedence)
         # Use .get() truthy check: model_dump() includes None values as keys
@@ -72,6 +73,7 @@ class ModelFactory:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 options=merged_options,
+                ollama_format=ollama_format,
             )
 
         # Fall back to explicit model+provider
@@ -89,6 +91,7 @@ class ModelFactory:
             temperature=temperature,
             max_tokens=max_tokens,
             options=agent_options,
+            ollama_format=ollama_format,
         )
 
     async def load_model(
@@ -99,6 +102,7 @@ class ModelFactory:
         temperature: float | None = None,
         max_tokens: int | None = None,
         options: dict[str, Any] | None = None,
+        ollama_format: str | dict[str, Any] | None = None,
     ) -> ModelInterface:
         """Load a model interface based on authentication configuration.
 
@@ -131,6 +135,7 @@ class ModelFactory:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 options=options,
+                ollama_format=ollama_format,
             )
 
         # Create authenticated model (cloud providers don't use options)
@@ -321,6 +326,7 @@ def _handle_no_authentication(
     temperature: float | None = None,
     max_tokens: int | None = None,
     options: dict[str, Any] | None = None,
+    ollama_format: str | dict[str, Any] | None = None,
 ) -> ModelInterface:
     """Handle cases when no authentication is configured.
 
@@ -343,6 +349,7 @@ def _handle_no_authentication(
             temperature=temperature,
             max_tokens=max_tokens,
             options=options,
+            ollama_format=ollama_format,
         )
     elif provider:
         raise ValueError(
@@ -361,6 +368,7 @@ def _handle_no_authentication(
             temperature=temperature,
             max_tokens=max_tokens,
             options=options,
+            ollama_format=ollama_format,
         )
 
 

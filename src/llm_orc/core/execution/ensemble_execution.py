@@ -309,6 +309,15 @@ class EnsembleExecutor:
         self._ensemble_metadata: dict[str, Any] = {}
         self._agent_configs: list[AgentConfig] | None = None
 
+    def set_max_concurrent_agents(self, n: int) -> None:
+        """Override the max concurrent agents for this executor.
+
+        Args:
+            n: Maximum number of agents to run in parallel per phase.
+               0 means unlimited.
+        """
+        self._agent_dispatcher._semaphore = asyncio.Semaphore(n) if n > 0 else None
+
     def _load_script_cache_config(self) -> ScriptCacheConfig:
         """Load script cache configuration from performance config."""
         cache_config = self._performance_config.get("script_cache", {})

@@ -48,6 +48,12 @@ class AgentDispatcher:
         self._emit_event = emit_event_fn
         self._resolve_profile = resolve_profile_fn
         self._performance_config = performance_config
+        max_concurrent = performance_config.get("concurrency", {}).get(
+            "max_concurrent_agents", 0
+        )
+        self._semaphore: asyncio.Semaphore | None = (
+            asyncio.Semaphore(max_concurrent) if max_concurrent > 0 else None
+        )
 
     async def execute_agents_in_phase(
         self,
@@ -55,10 +61,23 @@ class AgentDispatcher:
         phase_input: str | dict[str, str],
     ) -> dict[str, AgentResult]:
         """Execute agents in parallel within a phase."""
-        tasks = [
-            self._execute_single_agent_in_phase(agent_config, phase_input)
-            for agent_config in phase_agents
-        ]
+        if self._semaphore is not None:
+            sem = self._semaphore
+
+            async def _throttled(
+                agent_config: AgentConfig,
+            ) -> tuple[str, AgentResult]:
+                async with sem:
+                    return await self._execute_single_agent_in_phase(
+                        agent_config, phase_input
+                    )
+
+            tasks = [_throttled(ac) for ac in phase_agents]
+        else:
+            tasks = [
+                self._execute_single_agent_in_phase(agent_config, phase_input)
+                for agent_config in phase_agents
+            ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         phase_results: dict[str, AgentResult] = {}

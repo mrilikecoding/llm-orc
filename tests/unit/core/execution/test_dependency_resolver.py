@@ -673,3 +673,29 @@ class TestGetAgentInput:
         """Dict input returns empty string for an absent agent name."""
         data = {"agent1": "input for 1"}
         assert DependencyResolver.get_agent_input(data, "missing") == ""
+
+
+class TestDepName:
+    """Test dep_name utility for dict-form dependencies."""
+
+    def test_dict_dependency(self) -> None:
+        """Dict form extracts the agent_name key."""
+        from llm_orc.core.execution.utils import dep_name
+
+        assert dep_name({"agent_name": "b"}) == "b"
+
+    def test_string_dependency(self) -> None:
+        """String form passes through unchanged."""
+        from llm_orc.core.execution.utils import dep_name
+
+        assert dep_name("a") == "a"
+
+
+class TestGetAgentAttr:
+    """Test get_agent_attr utility from mcp.utils."""
+
+    def test_dict_agent(self) -> None:
+        """Dict agent returns value via .get()."""
+        from llm_orc.mcp.utils import get_agent_attr
+
+        assert get_agent_attr({"name": "x"}, "name") == "x"

@@ -92,6 +92,8 @@ class HelpHandler:
                     "depends_on",
                     "output_format",
                     "timeout_seconds",
+                    "options",
+                    "ollama_format",
                 ],
             },
         }
