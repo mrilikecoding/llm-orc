@@ -1599,6 +1599,357 @@ class TestSuggestAvailableModels:
         assert len(result) <= 5  # Should limit to 5
 
 
+class TestGetOpenAICompatibleStatus:
+    """Tests for _get_openai_compatible_status helper."""
+
+    @pytest.mark.asyncio
+    async def test_no_profiles_returns_unavailable(self, server: MCPServer) -> None:
+        """No openai-compatible profiles means unavailable."""
+        handler = server._provider_handler
+        # Ensure no profiles exist
+        handler._profile_handler.get_all_profiles = lambda: {}
+        result = await handler._get_openai_compatible_status()
+        assert result.available is False
+        assert result.endpoints == []
+        assert result.models == []
+
+    @pytest.mark.asyncio
+    async def test_reachable_endpoint_lists_models(self, server: MCPServer) -> None:
+        """Reachable endpoint returns models and profiles."""
+        handler = server._provider_handler
+        handler._profile_handler.get_all_profiles = lambda: {
+            "my-openai": {
+                "provider": "openai-compatible",
+                "model": "gpt-4",
+                "base_url": "http://fake:8080/v1",
+            }
+        }
+
+        from llm_orc.providers.status_types import (
+            EndpointStatus,
+            OpenAICompatibleStatus,
+        )
+
+        handler._test_openai_compat_status = OpenAICompatibleStatus(
+            available=True,
+            endpoints=[
+                EndpointStatus(
+                    base_url="http://fake:8080/v1",
+                    available=True,
+                    models=["gpt-4", "gpt-3.5-turbo"],
+                    profiles=["my-openai"],
+                )
+            ],
+            models=["gpt-4", "gpt-3.5-turbo"],
+            model_count=2,
+        )
+
+        result = await handler._get_openai_compatible_status()
+        assert result.available is True
+        assert len(result.endpoints) == 1
+        assert "gpt-4" in result.models
+        assert result.model_count == 2
+
+        handler._test_openai_compat_status = None
+
+    @pytest.mark.asyncio
+    async def test_unreachable_endpoint(self, server: MCPServer) -> None:
+        """Unreachable endpoint returns available False with reason."""
+        from unittest.mock import AsyncMock, patch
+
+        handler = server._provider_handler
+        handler._profile_handler.get_all_profiles = lambda: {
+            "my-openai": {
+                "provider": "openai-compatible",
+                "model": "gpt-4",
+                "base_url": "http://unreachable:9999/v1",
+            }
+        }
+
+        import httpx
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await handler._get_openai_compatible_status()
+
+        assert result.available is False
+        assert len(result.endpoints) == 1
+        assert result.endpoints[0].available is False
+        assert "refused" in result.endpoints[0].reason
+
+    @pytest.mark.asyncio
+    async def test_multiple_endpoints_partial_availability(
+        self, server: MCPServer
+    ) -> None:
+        """Multiple endpoints with partial availability."""
+        from llm_orc.providers.status_types import (
+            EndpointStatus,
+            OpenAICompatibleStatus,
+        )
+
+        handler = server._provider_handler
+
+        handler._test_openai_compat_status = OpenAICompatibleStatus(
+            available=True,
+            endpoints=[
+                EndpointStatus(
+                    base_url="http://good:8080/v1",
+                    available=True,
+                    models=["llama3"],
+                    profiles=["local-oai"],
+                ),
+                EndpointStatus(
+                    base_url="http://bad:9999/v1",
+                    available=False,
+                    profiles=["remote-oai"],
+                    reason="ConnectError: refused",
+                ),
+            ],
+            models=["llama3"],
+            model_count=1,
+        )
+
+        result = await handler._get_openai_compatible_status()
+        assert result.available is True
+        assert len(result.endpoints) == 2
+        available_eps = [e for e in result.endpoints if e.available]
+        assert len(available_eps) == 1
+
+        handler._test_openai_compat_status = None
+
+    @pytest.mark.asyncio
+    async def test_deduplication_of_base_url(self, server: MCPServer) -> None:
+        """Multiple profiles with same base_url are grouped."""
+        from unittest.mock import AsyncMock, patch
+
+        handler = server._provider_handler
+        handler._profile_handler.get_all_profiles = lambda: {
+            "profile-a": {
+                "provider": "openai-compatible",
+                "model": "gpt-4",
+                "base_url": "http://shared:8080/v1",
+            },
+            "profile-b": {
+                "provider": "openai-compatible/my-scope",
+                "model": "gpt-3.5-turbo",
+                "base_url": "http://shared:8080/v1",
+            },
+        }
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": [{"id": "gpt-4"}, {"id": "gpt-3.5-turbo"}]
+        }
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            result = await handler._get_openai_compatible_status()
+
+        # Only one endpoint despite two profiles
+        assert len(result.endpoints) == 1
+        assert sorted(result.endpoints[0].profiles) == ["profile-a", "profile-b"]
+
+    @pytest.mark.asyncio
+    async def test_escape_hatch(self, server: MCPServer) -> None:
+        """Test injection escape hatch returns injected status."""
+        from llm_orc.providers.status_types import OpenAICompatibleStatus
+
+        handler = server._provider_handler
+        handler._test_openai_compat_status = OpenAICompatibleStatus(available=False)
+
+        result = await handler._get_openai_compatible_status()
+        assert result.available is False
+
+        handler._test_openai_compat_status = None
+
+    @pytest.mark.asyncio
+    async def test_provider_status_includes_openai_compat(
+        self, server: MCPServer
+    ) -> None:
+        """get_provider_status includes openai-compatible with endpoint data."""
+        from llm_orc.providers.status_types import OpenAICompatibleStatus
+
+        handler = server._provider_handler
+        handler._test_openai_compat_status = OpenAICompatibleStatus(available=False)
+
+        result = await handler.get_provider_status({})
+        compat = result["providers"]["openai-compatible"]
+        assert "available" in compat
+        assert "endpoints" in compat
+        assert "models" in compat
+
+        handler._test_openai_compat_status = None
+
+
+class TestCheckAgentRunnableOpenAICompat:
+    """Tests for openai-compatible agent runnability checks."""
+
+    def test_model_available_at_endpoint(self, server: MCPServer) -> None:
+        """Agent with model available at endpoint has available status."""
+        profiles = {
+            "oai-profile": {
+                "provider": "openai-compatible",
+                "model": "gpt-4",
+                "base_url": "http://fake:8080/v1",
+            }
+        }
+        providers = {
+            "openai-compatible": {
+                "available": True,
+                "endpoints": [
+                    {
+                        "base_url": "http://fake:8080/v1",
+                        "available": True,
+                        "models": ["gpt-4", "gpt-3.5-turbo"],
+                        "profiles": ["oai-profile"],
+                    }
+                ],
+                "models": ["gpt-4", "gpt-3.5-turbo"],
+            }
+        }
+
+        result = server._provider_handler._check_agent_runnable(
+            "agent1", "oai-profile", profiles, providers
+        )
+        assert result.status == "available"
+
+    def test_model_not_at_endpoint(self, server: MCPServer) -> None:
+        """Agent with model not at endpoint has model_unavailable status."""
+        profiles = {
+            "oai-profile": {
+                "provider": "openai-compatible",
+                "model": "gpt-4-turbo",
+                "base_url": "http://fake:8080/v1",
+            }
+        }
+        providers = {
+            "openai-compatible": {
+                "available": True,
+                "endpoints": [
+                    {
+                        "base_url": "http://fake:8080/v1",
+                        "available": True,
+                        "models": ["gpt-4", "gpt-3.5-turbo"],
+                        "profiles": ["oai-profile"],
+                    }
+                ],
+                "models": ["gpt-4", "gpt-3.5-turbo"],
+            }
+        }
+
+        result = server._provider_handler._check_agent_runnable(
+            "agent1", "oai-profile", profiles, providers
+        )
+        assert result.status == "model_unavailable"
+        assert "gpt-4" in result.alternatives
+
+    def test_endpoint_not_reachable(self, server: MCPServer) -> None:
+        """Agent with unreachable endpoint has provider_unavailable status."""
+        profiles = {
+            "oai-profile": {
+                "provider": "openai-compatible",
+                "model": "gpt-4",
+                "base_url": "http://dead:9999/v1",
+            }
+        }
+        providers = {
+            "openai-compatible": {
+                "available": True,
+                "endpoints": [
+                    {
+                        "base_url": "http://dead:9999/v1",
+                        "available": False,
+                        "models": [],
+                        "profiles": ["oai-profile"],
+                        "reason": "ConnectError",
+                    }
+                ],
+                "models": [],
+            }
+        }
+
+        result = server._provider_handler._check_agent_runnable(
+            "agent1", "oai-profile", profiles, providers
+        )
+        assert result.status == "provider_unavailable"
+
+    def test_scoped_provider_name(self, server: MCPServer) -> None:
+        """openai-compatible/scope provider name recognized."""
+        profiles = {
+            "scoped-profile": {
+                "provider": "openai-compatible/my-llm",
+                "model": "my-model",
+                "base_url": "http://fake:8080/v1",
+            }
+        }
+        providers = {
+            "openai-compatible": {
+                "available": True,
+                "endpoints": [
+                    {
+                        "base_url": "http://fake:8080/v1",
+                        "available": True,
+                        "models": ["my-model"],
+                        "profiles": ["scoped-profile"],
+                    }
+                ],
+                "models": ["my-model"],
+            }
+        }
+
+        result = server._provider_handler._check_agent_runnable(
+            "agent1", "scoped-profile", profiles, providers
+        )
+        assert result.status == "available"
+
+
+class TestSuggestLocalAlternativesOpenAICompat:
+    """Tests for openai-compatible profiles in local alternatives."""
+
+    def test_openai_compat_profiles_included_when_available(
+        self, server: MCPServer
+    ) -> None:
+        """openai-compatible profiles included when endpoint available."""
+        handler = server._provider_handler
+        handler._profile_handler.get_all_profiles = lambda: {
+            "ollama-prof": {"provider": "ollama"},
+            "oai-prof": {"provider": "openai-compatible"},
+        }
+        providers = {
+            "ollama": {"available": True},
+            "openai-compatible": {"available": True},
+        }
+        result = handler._suggest_local_alternatives(providers)
+        assert "oai-prof" in result
+        assert "ollama-prof" in result
+
+    def test_openai_compat_profiles_excluded_when_unavailable(
+        self, server: MCPServer
+    ) -> None:
+        """openai-compatible profiles excluded when not available."""
+        handler = server._provider_handler
+        handler._profile_handler.get_all_profiles = lambda: {
+            "ollama-prof": {"provider": "ollama"},
+            "oai-prof": {"provider": "openai-compatible"},
+        }
+        providers = {
+            "ollama": {"available": True},
+            "openai-compatible": {"available": False},
+        }
+        result = handler._suggest_local_alternatives(providers)
+        assert "ollama-prof" in result
+        assert "oai-prof" not in result
+
+
 class TestHelpTool:
     """Tests for the get_help tool."""
 
