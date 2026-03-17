@@ -6,6 +6,13 @@ from typing import Any
 
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.mcp.utils import get_agent_attr as _get_agent_attr
+from llm_orc.providers.status_types import (
+    AgentRunnability,
+    AgentStatus,
+    CloudProviderStatus,
+    EnsembleRunnability,
+    OllamaProviderStatus,
+)
 from llm_orc.services.handlers.profile_handler import ProfileHandler
 
 
@@ -34,6 +41,9 @@ class ProviderHandler:
             "anthropic-claude-pro-max"
         )
         providers["google-gemini"] = self._get_cloud_provider_status("google-gemini")
+        providers["openai-compatible"] = self._get_cloud_provider_status(
+            "openai-compatible"
+        )
 
         return {"providers": providers}
 
@@ -57,21 +67,20 @@ class ProviderHandler:
                     if response.status_code == 200:
                         data = response.json()
                         models = [m.get("name", "") for m in data.get("models", [])]
-                        return {
-                            "available": True,
-                            "models": sorted(models),
-                            "model_count": len(models),
-                        }
+                        return OllamaProviderStatus(
+                            available=True,
+                            models=sorted(models),
+                            model_count=len(models),
+                        ).model_dump()
                     last_error = f"HTTP {response.status_code} from {host}"
             except Exception as e:
                 last_error = f"{type(e).__name__}: {e} (host: {host})"
                 continue
 
-        return {
-            "available": False,
-            "models": [],
-            "reason": f"Ollama not reachable: {last_error}",
-        }
+        return OllamaProviderStatus(
+            available=False,
+            reason=f"Ollama not reachable: {last_error}",
+        ).model_dump()
 
     def _get_cloud_provider_status(self, provider: str) -> dict[str, Any]:
         """Check if a cloud provider is configured."""
@@ -83,12 +92,11 @@ class ProviderHandler:
         configured_providers = storage.list_providers()
 
         if provider in configured_providers:
-            return {"available": True, "reason": "configured"}
+            return CloudProviderStatus(available=True, reason="configured").model_dump()
 
-        return {
-            "available": False,
-            "reason": "not configured",
-        }
+        return CloudProviderStatus(
+            available=False, reason="not configured"
+        ).model_dump()
 
     async def check_ensemble_runnable(
         self, arguments: dict[str, Any]
@@ -107,7 +115,7 @@ class ProviderHandler:
 
         all_profiles = self._profile_handler.get_all_profiles()
 
-        agents: list[dict[str, Any]] = []
+        agent_results: list[AgentRunnability] = []
         all_runnable = True
 
         for agent in config.agents:
@@ -115,32 +123,30 @@ class ProviderHandler:
 
             script_path = _get_agent_attr(agent, "script", "")
             if script_path:
-                agent_status: dict[str, Any] = {
-                    "name": agent_name,
-                    "profile": "",
-                    "provider": "script",
-                    "status": "available",
-                    "alternatives": [],
-                }
+                agent_result = AgentRunnability(
+                    name=agent_name,
+                    profile="",
+                    provider="script",
+                )
             else:
                 profile_name = _get_agent_attr(agent, "model_profile", "")
-                agent_status = self._check_agent_runnable(
+                agent_result = self._check_agent_runnable(
                     agent_name,
                     profile_name,
                     all_profiles,
                     providers,
                 )
 
-            agents.append(agent_status)
+            agent_results.append(agent_result)
 
-            if agent_status["status"] != "available":
+            if agent_result.status != AgentStatus.AVAILABLE:
                 all_runnable = False
 
-        return {
-            "ensemble": ensemble_name,
-            "runnable": all_runnable,
-            "agents": agents,
-        }
+        return EnsembleRunnability(
+            ensemble=ensemble_name,
+            runnable=all_runnable,
+            agents=agent_results,
+        ).model_dump()
 
     def _check_agent_runnable(
         self,
@@ -148,29 +154,23 @@ class ProviderHandler:
         profile_name: str,
         all_profiles: dict[str, dict[str, Any]],
         providers: dict[str, Any],
-    ) -> dict[str, Any]:
+    ) -> AgentRunnability:
         """Check if an agent can run with current providers."""
-        result: dict[str, Any] = {
-            "name": agent_name,
-            "profile": profile_name,
-            "provider": "",
-            "status": "available",
-            "alternatives": [],
-        }
+        result = AgentRunnability(name=agent_name, profile=profile_name)
 
         if profile_name not in all_profiles:
-            result["status"] = "missing_profile"
-            result["alternatives"] = self._suggest_local_alternatives(providers)
+            result.status = AgentStatus.MISSING_PROFILE
+            result.alternatives = self._suggest_local_alternatives(providers)
             return result
 
         profile = all_profiles[profile_name]
         provider = profile.get("provider", "")
-        result["provider"] = provider
+        result.provider = provider
 
         provider_info = providers.get(provider, {})
         if not provider_info.get("available", False):
-            result["status"] = "provider_unavailable"
-            result["alternatives"] = self._suggest_local_alternatives(providers)
+            result.status = AgentStatus.PROVIDER_UNAVAILABLE
+            result.alternatives = self._suggest_local_alternatives(providers)
             return result
 
         if provider == "ollama":
@@ -181,10 +181,8 @@ class ProviderHandler:
                 m == model or m.startswith(f"{model_base}:") for m in available_models
             )
             if not model_found:
-                result["status"] = "model_unavailable"
-                result["alternatives"] = self._suggest_available_models(
-                    available_models
-                )
+                result.status = AgentStatus.MODEL_UNAVAILABLE
+                result.alternatives = self._suggest_available_models(available_models)
 
         return result
 

@@ -1492,7 +1492,10 @@ class TestCheckEnsembleRunnableTool:
         # Mock the ensemble config
         mock_config = MagicMock()
         mock_config.name = "test-ensemble"
-        mock_config.agents = [MagicMock(name="agent1", model_profile="fast")]
+        mock_agent = MagicMock()
+        mock_agent.name = "agent1"
+        mock_agent.model_profile = "fast"
+        mock_config.agents = [mock_agent]
 
         # Mock _find_ensemble on the provider handler
         with patch.object(
@@ -1516,8 +1519,8 @@ class TestCheckAgentRunnable:
         """Agent with missing profile has missing_profile status."""
         handler = server._provider_handler
         result = handler._check_agent_runnable("agent1", "nonexistent", {}, {})
-        assert result["status"] == "missing_profile"
-        assert result["name"] == "agent1"
+        assert result.status == "missing_profile"
+        assert result.name == "agent1"
 
     @pytest.mark.asyncio
     async def test_check_ensemble_runnable_recognizes_script_agents(
@@ -1559,8 +1562,8 @@ class TestCheckAgentRunnable:
         result = server._provider_handler._check_agent_runnable(
             "agent1", "ollama-profile", profiles, providers
         )
-        assert result["status"] == "available"
-        assert result["provider"] == "ollama"
+        assert result.status == "available"
+        assert result.provider == "ollama"
 
     def test_check_agent_runnable_unavailable_provider(self, server: MCPServer) -> None:
         """Agent with unavailable provider has provider_unavailable status."""
@@ -1570,7 +1573,7 @@ class TestCheckAgentRunnable:
         result = server._provider_handler._check_agent_runnable(
             "agent1", "cloud-profile", profiles, providers
         )
-        assert result["status"] == "provider_unavailable"
+        assert result.status == "provider_unavailable"
 
 
 class TestSuggestLocalAlternatives:
