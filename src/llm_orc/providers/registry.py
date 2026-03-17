@@ -83,6 +83,18 @@ class ProviderRegistry:
             )
         )
 
+        # OpenAI Compatible - API key optional
+        self.register(
+            ProviderInfo(
+                key="openai-compatible",
+                display_name="OpenAI Compatible",
+                description="Any OpenAI-compatible API "
+                "(vLLM, LM Studio, OpenRouter, OpenAI, etc.)",
+                auth_methods=[AuthMethod.API_KEY, AuthMethod.NONE],
+                emoji="🔌",
+            )
+        )
+
         # Ollama - no auth needed
         self.register(
             ProviderInfo(

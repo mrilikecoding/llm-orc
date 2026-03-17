@@ -291,9 +291,44 @@ def _determine_auth_method(provider_key: str) -> str:
         return "api_key"  # Anthropic API only supports API key
     elif provider_key == "google-gemini":
         return "api_key"  # Google Gemini only supports API key
+    elif provider_key == "openai-compatible":
+        return "api_key"  # OpenAI-compatible uses API key
     else:
         # For other providers, use the menu system
         return AuthMenus.get_auth_method_for_provider(provider_key)
+
+
+def _handle_api_key_setup(
+    provider_key: str,
+    provider: "ProviderInfo",
+    storage: "CredentialStorage",
+) -> None:
+    """Handle API key setup for a specific provider."""
+    from llm_orc.menu_system import show_success
+
+    if provider_key == "anthropic-api":
+        api_key = click.prompt("Anthropic API key", hide_input=True)
+        storage.store_api_key("anthropic-api", api_key)
+        show_success("Anthropic API key configured!")
+    elif provider_key == "google-gemini":
+        api_key = click.prompt("Google Gemini API key", hide_input=True)
+        storage.store_api_key("google-gemini", api_key)
+        show_success("Google Gemini API key configured!")
+    elif provider_key == "openai-compatible":
+        api_key = click.prompt(
+            "OpenAI-compatible API key (leave empty for local endpoints)",
+            default="",
+            show_default=False,
+        )
+        if api_key:
+            storage.store_api_key("openai-compatible", api_key)
+            show_success("OpenAI-compatible API key configured!")
+        else:
+            show_success("No API key stored. Local endpoints will work without auth.")
+    else:
+        api_key = click.prompt(f"{provider.display_name} API key", hide_input=True)
+        storage.store_api_key(provider_key, api_key)
+        show_success(f"{provider.display_name} API key configured!")
 
 
 def _handle_authentication_setup(
@@ -323,19 +358,8 @@ def _handle_authentication_setup(
         show_working("Setting up Claude Pro/Max OAuth...")
         handle_claude_pro_max_oauth(auth_manager, storage)
         show_success("Claude Pro/Max OAuth configured!")
-    elif auth_method == "api_key" and provider_key == "anthropic-api":
-        api_key = click.prompt("Anthropic API key", hide_input=True)
-        storage.store_api_key("anthropic-api", api_key)
-        show_success("Anthropic API key configured!")
-    elif auth_method == "api_key" and provider_key == "google-gemini":
-        api_key = click.prompt("Google Gemini API key", hide_input=True)
-        storage.store_api_key("google-gemini", api_key)
-        show_success("Google Gemini API key configured!")
-    elif auth_method == "api_key" or auth_method == "api-key":
-        # Generic API key setup for other providers
-        api_key = click.prompt(f"{provider.display_name} API key", hide_input=True)
-        storage.store_api_key(provider_key, api_key)
-        show_success(f"{provider.display_name} API key configured!")
+    elif auth_method in ("api_key", "api-key"):
+        _handle_api_key_setup(provider_key, provider, storage)
     elif auth_method == "oauth":
         # Generic OAuth setup for other providers
         client_id = click.prompt("OAuth client ID")

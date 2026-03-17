@@ -13,6 +13,7 @@ from llm_orc.core.models.model_factory import (
     _create_authenticated_model,
     _create_oauth_model,
     _handle_no_authentication,
+    _is_openai_compatible,
     _merge_options,
     _resolve_authentication_method,
 )
@@ -23,6 +24,7 @@ from llm_orc.models.anthropic import (
 )
 from llm_orc.models.mock import MockModel
 from llm_orc.models.ollama import OllamaModel
+from llm_orc.models.openai_compat import OpenAICompatibleModel
 
 
 class TestModelFactory:
@@ -100,6 +102,7 @@ class TestModelFactory:
                 max_tokens=None,
                 options=None,
                 ollama_format=None,
+                base_url=None,
             )
             assert result is not None
 
@@ -826,6 +829,7 @@ class TestLoadModelHelperMethods:
             "anthropic",
             temperature=None,
             max_tokens=None,
+            base_url=None,
         )
 
     def test_create_authenticated_model_oauth(self) -> None:
@@ -990,6 +994,7 @@ class TestOptionsPassThrough:
                 max_tokens=None,
                 options={"num_ctx": 8192, "top_k": 20, "top_p": 0.8},
                 ollama_format=None,
+                base_url=None,
             )
 
     async def test_load_model_forwards_options_to_ollama(
@@ -1095,3 +1100,140 @@ class TestOllamaFormatPassThrough:
 
         assert isinstance(model, OllamaModel)
         assert model._format == "json"
+
+
+class TestIsOpenAICompatible:
+    """Test the _is_openai_compatible helper."""
+
+    def test_exact_match(self) -> None:
+        assert _is_openai_compatible("openai-compatible") is True
+
+    def test_scoped_match(self) -> None:
+        assert _is_openai_compatible("openai-compatible/openrouter") is True
+
+    def test_none(self) -> None:
+        assert _is_openai_compatible(None) is False
+
+    def test_other_provider(self) -> None:
+        assert _is_openai_compatible("anthropic") is False
+
+    def test_partial_match(self) -> None:
+        assert _is_openai_compatible("openai") is False
+
+
+class TestOpenAICompatibleRouting:
+    """Test openai-compatible provider routing through factory."""
+
+    @pytest.fixture
+    def factory(self) -> ModelFactory:
+        config_manager = Mock(spec=ConfigurationManager)
+        credential_storage = Mock(spec=CredentialStorage)
+        credential_storage.get_auth_method.return_value = None
+        return ModelFactory(config_manager, credential_storage)
+
+    async def test_no_auth_openai_compatible(self, factory: ModelFactory) -> None:
+        """openai-compatible with no auth creates OpenAICompatibleModel."""
+        model = await factory.load_model(
+            "deepseek-coder-v2",
+            "openai-compatible",
+            base_url="http://localhost:8000/v1",
+        )
+
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model.model_name == "deepseek-coder-v2"
+        assert model.base_url == "http://localhost:8000/v1"
+        assert model.api_key is None
+
+    async def test_no_auth_openai_compatible_default_base_url(
+        self, factory: ModelFactory
+    ) -> None:
+        """openai-compatible with no base_url defaults to OpenAI."""
+        model = await factory.load_model("gpt-4o", "openai-compatible")
+
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model.base_url == "https://api.openai.com/v1"
+
+    async def test_api_key_openai_compatible(self, factory: ModelFactory) -> None:
+        """openai-compatible with API key creates authenticated model."""
+        storage = cast(Mock, factory._credential_storage)
+        storage.get_auth_method.return_value = "api_key"
+        storage.get_api_key.return_value = "sk-test-key"
+
+        model = await factory.load_model(
+            "gpt-4o",
+            "openai-compatible",
+            base_url="https://api.openai.com/v1",
+        )
+
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model.api_key == "sk-test-key"
+        assert model.base_url == "https://api.openai.com/v1"
+
+    async def test_openai_compatible_with_params(self, factory: ModelFactory) -> None:
+        """Temperature and max_tokens forwarded to OpenAICompatibleModel."""
+        model = await factory.load_model(
+            "deepseek-coder-v2",
+            "openai-compatible",
+            temperature=0.5,
+            max_tokens=1000,
+        )
+
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model.temperature == 0.5
+        assert model.max_tokens == 1000
+
+    async def test_scoped_provider_routes_to_openai_compatible(
+        self, factory: ModelFactory
+    ) -> None:
+        """Scoped provider like openai-compatible/openrouter routes correctly."""
+        model = await factory.load_model(
+            "meta-llama/llama-3.1-70b",
+            "openai-compatible/openrouter",
+            base_url="https://openrouter.ai/api/v1",
+        )
+
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model.base_url == "https://openrouter.ai/api/v1"
+
+    async def test_base_url_threaded_from_profile(self, factory: ModelFactory) -> None:
+        """base_url from profile config reaches the model."""
+        config_mock = cast(Mock, factory._config_manager)
+        config_mock.resolve_model_profile.return_value = (
+            "deepseek-coder-v2",
+            "openai-compatible",
+        )
+        config_mock.get_model_profile.return_value = {
+            "model": "deepseek-coder-v2",
+            "provider": "openai-compatible",
+            "base_url": "http://localhost:8000/v1",
+        }
+
+        agent_config = {"model_profile": "local-deepseek"}
+
+        model = await factory.load_model_from_agent_config(agent_config)
+
+        assert isinstance(model, OpenAICompatibleModel)
+        assert model.base_url == "http://localhost:8000/v1"
+
+    def test_handle_no_auth_openai_compatible(self) -> None:
+        """_handle_no_authentication creates OpenAICompatibleModel."""
+        result = _handle_no_authentication(
+            "gpt-4o",
+            "openai-compatible",
+            base_url="https://api.openai.com/v1",
+        )
+
+        assert isinstance(result, OpenAICompatibleModel)
+        assert result.api_key is None
+
+    def test_create_api_key_model_openai_compatible(self) -> None:
+        """_create_api_key_model creates OpenAICompatibleModel."""
+        result = _create_api_key_model(
+            "gpt-4o",
+            "sk-test-key",
+            "openai-compatible",
+            base_url="https://api.openai.com/v1",
+        )
+
+        assert isinstance(result, OpenAICompatibleModel)
+        assert result.api_key == "sk-test-key"
