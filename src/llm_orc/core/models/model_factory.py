@@ -13,6 +13,7 @@ from llm_orc.models.anthropic import (
 from llm_orc.models.base import ModelInterface
 from llm_orc.models.mock import MockModel
 from llm_orc.models.ollama import OllamaModel
+from llm_orc.models.openai_compat import OpenAICompatibleModel
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,7 @@ class ModelFactory:
             profile = self._config_manager.get_model_profile(profile_name)
             profile_options = (profile or {}).get("options")
             merged_options = _merge_options(profile_options, agent_options)
+            base_url: str | None = (profile or {}).get("base_url")
             return await self.load_model(
                 resolved_model,
                 resolved_provider,
@@ -74,6 +76,7 @@ class ModelFactory:
                 max_tokens=max_tokens,
                 options=merged_options,
                 ollama_format=ollama_format,
+                base_url=base_url,
             )
 
         # Fall back to explicit model+provider
@@ -103,6 +106,7 @@ class ModelFactory:
         max_tokens: int | None = None,
         options: dict[str, Any] | None = None,
         ollama_format: str | dict[str, Any] | None = None,
+        base_url: str | None = None,
     ) -> ModelInterface:
         """Load a model interface based on authentication configuration.
 
@@ -112,6 +116,8 @@ class ModelFactory:
             temperature: Optional temperature for generation
             max_tokens: Optional max tokens for generation
             options: Optional provider-specific options (e.g. Ollama options)
+            ollama_format: Optional Ollama response format
+            base_url: Optional base URL for OpenAI-compatible endpoints
 
         Returns:
             Configured model interface
@@ -136,6 +142,7 @@ class ModelFactory:
                 max_tokens=max_tokens,
                 options=options,
                 ollama_format=ollama_format,
+                base_url=base_url,
             )
 
         # Create authenticated model (cloud providers don't use options)
@@ -146,6 +153,7 @@ class ModelFactory:
             storage,
             temperature=temperature,
             max_tokens=max_tokens,
+            base_url=base_url,
         )
 
     async def get_fallback_model(
@@ -245,6 +253,13 @@ class ModelFactory:
             return OllamaModel(model_name=fallback_model)
 
 
+def _is_openai_compatible(provider: str | None) -> bool:
+    """Check if a provider is openai-compatible (exact or scoped)."""
+    if not provider:
+        return False
+    return provider == "openai-compatible" or provider.startswith("openai-compatible/")
+
+
 def _resolve_authentication_method(
     model_name: str,
     provider: str | None,
@@ -272,6 +287,7 @@ def _create_authenticated_model(
     *,
     temperature: float | None = None,
     max_tokens: int | None = None,
+    base_url: str | None = None,
 ) -> ModelInterface:
     """Create authenticated model based on authentication method.
 
@@ -282,6 +298,7 @@ def _create_authenticated_model(
         storage: Credential storage instance
         temperature: Optional temperature for generation
         max_tokens: Optional max tokens for generation
+        base_url: Optional base URL for OpenAI-compatible endpoints
 
     Returns:
         Configured model interface
@@ -301,6 +318,7 @@ def _create_authenticated_model(
             provider,
             temperature=temperature,
             max_tokens=max_tokens,
+            base_url=base_url,
         )
 
     elif auth_method == "oauth":
@@ -327,6 +345,7 @@ def _handle_no_authentication(
     max_tokens: int | None = None,
     options: dict[str, Any] | None = None,
     ollama_format: str | dict[str, Any] | None = None,
+    base_url: str | None = None,
 ) -> ModelInterface:
     """Handle cases when no authentication is configured.
 
@@ -336,6 +355,8 @@ def _handle_no_authentication(
         temperature: Optional temperature for generation
         max_tokens: Optional max tokens for generation
         options: Optional provider-specific options forwarded to OllamaModel
+        ollama_format: Optional Ollama response format
+        base_url: Optional base URL for OpenAI-compatible endpoints
 
     Returns:
         Model interface for providers that don't require auth
@@ -350,6 +371,13 @@ def _handle_no_authentication(
             max_tokens=max_tokens,
             options=options,
             ollama_format=ollama_format,
+        )
+    elif _is_openai_compatible(provider):
+        return OpenAICompatibleModel(
+            model_name=model_name,
+            base_url=base_url or "https://api.openai.com/v1",
+            temperature=temperature,
+            max_tokens=max_tokens,
         )
     elif provider:
         raise ValueError(
@@ -379,6 +407,7 @@ def _create_api_key_model(
     *,
     temperature: float | None = None,
     max_tokens: int | None = None,
+    base_url: str | None = None,
 ) -> ModelInterface:
     """Create model using API key authentication.
 
@@ -388,6 +417,7 @@ def _create_api_key_model(
         provider: Optional provider name
         temperature: Optional temperature for generation
         max_tokens: Optional max tokens for generation
+        base_url: Optional base URL for OpenAI-compatible endpoints
 
     Returns:
         Configured model interface
@@ -404,6 +434,14 @@ def _create_api_key_model(
         return GeminiModel(
             api_key=api_key,
             model=model_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    elif _is_openai_compatible(provider):
+        return OpenAICompatibleModel(
+            model_name=model_name,
+            base_url=base_url or "https://api.openai.com/v1",
+            api_key=api_key,
             temperature=temperature,
             max_tokens=max_tokens,
         )

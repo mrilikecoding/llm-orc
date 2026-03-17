@@ -8,6 +8,7 @@ from llm_orc.models.anthropic import ClaudeCLIModel, ClaudeModel, OAuthClaudeMod
 from llm_orc.models.base import ModelInterface
 from llm_orc.models.google import GeminiModel
 from llm_orc.models.ollama import OllamaModel
+from llm_orc.models.openai_compat import OpenAICompatibleModel
 
 
 class TestModelInterface:
@@ -83,6 +84,22 @@ class TestModelParameterDefaults:
         )
         assert model.temperature == 0.8
         assert model.max_tokens == 1500
+
+    def test_openai_compat_model_defaults_to_none(self) -> None:
+        """OpenAICompatibleModel should have None temperature and max_tokens."""
+        model = OpenAICompatibleModel(model_name="gpt-4o")
+        assert model.temperature is None
+        assert model.max_tokens is None
+
+    def test_openai_compat_model_accepts_params(self) -> None:
+        """OpenAICompatibleModel should accept temperature and max_tokens."""
+        model = OpenAICompatibleModel(
+            model_name="gpt-4o",
+            temperature=0.5,
+            max_tokens=2000,
+        )
+        assert model.temperature == 0.5
+        assert model.max_tokens == 2000
 
 
 class TestClaudeModel:
