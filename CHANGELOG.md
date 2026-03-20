@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **OpenAI-compatible provider** — new provider (`openai-compatible`) supports any server implementing the OpenAI `/v1/chat/completions` API (vLLM, LM Studio, OpenRouter, Ollama's `/v1`, etc.); profiles accept a `base_url` field to target specific endpoints; API key is optional for local endpoints
+- **Endpoint probing for openai-compatible** — `get_provider_status` probes `GET {base_url}/models` at each unique endpoint found in openai-compatible profiles, returning available model lists; `check_ensemble_runnable` validates agent models against these lists and suggests alternatives
+- **Typed provider status** — all provider status and ensemble runnability returns are now built from Pydantic models (`OllamaProviderStatus`, `CloudProviderStatus`, `OpenAICompatibleStatus`, `AgentRunnability`, `EnsembleRunnability`) with `.model_dump()` at the return boundary
+
 ## [0.15.11] - 2026-02-27
 
 ### Added

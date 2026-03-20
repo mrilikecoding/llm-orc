@@ -521,6 +521,7 @@ tools:
         ollama:
           available: boolean
           models: string[]  # From Ollama API /api/tags
+          model_count: integer
         anthropic-api:
           available: boolean
           reason: string  # "configured" or "not configured"
@@ -530,6 +531,16 @@ tools:
         google-gemini:
           available: boolean
           reason: string
+        openai-compatible:
+          available: boolean
+          endpoints:            # One per unique base_url
+            - base_url: string
+              available: boolean
+              models: string[]  # From GET {base_url}/models
+              profiles: string[]
+              reason: string
+          models: string[]      # Aggregate across all endpoints
+          model_count: integer
 
   - name: check_ensemble_runnable
     description: Check if ensemble can run with current providers, suggest alternatives
@@ -542,16 +553,17 @@ tools:
         - name: string
           profile: string
           provider: string
-          status: "available" | "missing_profile" | "provider_unavailable"
-          alternatives: string[]  # Local profile suggestions
+          status: "available" | "missing_profile" | "provider_unavailable" | "model_unavailable"
+          alternatives: string[]  # Local profile or model suggestions
 ```
 
 ### Implementation Notes
 
 - Query Ollama API (`http://localhost:11434/api/tags`) for available models
+- Probe OpenAI-compatible endpoints (`GET {base_url}/models`) for model discovery
 - Check auth configuration for cloud providers (without exposing credentials)
-- Cross-reference ensemble profiles against available providers
-- Suggest local alternatives based on model capability matching
+- Cross-reference ensemble profiles against available providers and endpoint model lists
+- Suggest local alternatives from Ollama and available OpenAI-compatible profiles
 
 ## Claude Code MCP Validation Runbook
 

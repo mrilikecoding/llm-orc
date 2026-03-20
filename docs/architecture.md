@@ -152,14 +152,14 @@ Fan-out is woven into the existing phase-based execution pipeline in `EnsembleEx
 
 #### Model Abstractions (`llm_orc/models/`)
 - **Base interface**: Common API across all model providers
-- **Provider-specific implementations**: Anthropic, Google, Ollama support
+- **Provider-specific implementations**: Anthropic, Google, Ollama, OpenAI-compatible support
 - **Authentication handling**: OAuth flows and API key management
 - **Response streaming**: Real-time progress updates during execution
 
 #### ModelFactory (`llm_orc/core/models/model_factory.py`)
 - **Dynamic instantiation**: Creates model instances based on configurations
-- **Parameter forwarding**: Passes `temperature`, `max_tokens`, and `options` from merged config to model constructors; profile and agent `options` are deep-merged (agent keys win)
-- **Provider routing**: Determines appropriate provider for model requests
+- **Parameter forwarding**: Passes `temperature`, `max_tokens`, `base_url`, and `options` from merged config to model constructors; profile and agent `options` are deep-merged (agent keys win)
+- **Provider routing**: Determines appropriate provider for model requests; supports scoped provider names (`openai-compatible/<scope>`)
 - **Connection management**: Handles HTTP clients and connection pooling
 - **Error recovery**: Fallback strategies for provider failures
 

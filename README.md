@@ -92,6 +92,7 @@ llm-orc auth setup
 # Or add providers individually
 llm-orc auth add anthropic --api-key YOUR_ANTHROPIC_KEY
 llm-orc auth add google --api-key YOUR_GOOGLE_KEY
+llm-orc auth add openai-compatible --api-key YOUR_KEY  # or leave blank for local
 
 # OAuth for Claude Pro/Max users
 llm-orc auth add anthropic-claude-pro-max
@@ -474,8 +475,9 @@ Systematic literature review, methodology evaluation, or multi-dimensional analy
 ## Model Support
 
 - **Claude** (Anthropic) - Strategic analysis and synthesis
-- **Gemini** (Google) - Multi-modal and reasoning tasks  
+- **Gemini** (Google) - Multi-modal and reasoning tasks
 - **Ollama** - Local deployment of open-source models (Llama3, etc.)
+- **OpenAI-compatible** - Any server implementing the OpenAI API (vLLM, LM Studio, OpenRouter, Ollama `/v1`, etc.)
 - **Custom models** - Extensible interface for additional providers
 
 ## Configuration
@@ -519,6 +521,13 @@ model_profiles:
     provider: anthropic-api
     cost_per_token: 1.0e-06
     system_prompt: "You are a quick, efficient assistant that provides concise and accurate responses."
+    timeout_seconds: 30
+
+  openai-local:
+    model: llama3:latest
+    provider: openai-compatible       # Any OpenAI-compatible server
+    base_url: http://localhost:11434/v1  # Ollama, vLLM, LM Studio, etc.
+    cost_per_token: 0.0
     timeout_seconds: 30
 ```
 

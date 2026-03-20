@@ -10,7 +10,7 @@
 | **LLM Agent** | An agent that sends input to a language model and returns its response. Identified by presence of `model_profile` or `model` key. | "model agent" |
 | **Script Agent** | An agent that executes a script as a subprocess and returns its output. Identified by presence of `script` key. | "command agent" |
 | **Ensemble Agent** | An agent that recursively executes another ensemble and returns its result. Identified by presence of `ensemble` key. The mechanism for ensemble composition. | "meta-agent", "sub-ensemble", "nested ensemble" |
-| **Model Profile** | A named configuration combining model identifier, provider, and defaults (system prompt, timeout, temperature, provider-specific options). Stored in config YAML, referenced by name from LLM agents. | "model config" |
+| **Model Profile** | A named configuration combining model identifier, provider, and defaults (system prompt, timeout, temperature, `base_url`, provider-specific options). Stored in config YAML, referenced by name from LLM agents. `base_url` directs OpenAI-compatible profiles to a specific endpoint. | "model config" |
 | **Inline Model** | An LLM agent specification using `model` + `provider` directly, bypassing the profile system. For experimentation. | "anonymous model", "direct model" |
 | **Dependency** | A declared ordering relationship between agents (`depends_on`). Upstream agents must complete before downstream agents execute. | "prerequisite", "requirement" |
 | **Phase** | A group of agents with no unresolved dependencies between them, eligible for parallel execution. Produced by topological sort of the dependency graph. | "stage", "level", "tier" |
