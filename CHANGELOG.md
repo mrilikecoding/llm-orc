@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-03-20
+
 ### Added
 - **OpenAI-compatible provider** — new provider (`openai-compatible`) supports any server implementing the OpenAI `/v1/chat/completions` API (vLLM, LM Studio, OpenRouter, Ollama's `/v1`, etc.); profiles accept a `base_url` field to target specific endpoints; API key is optional for local endpoints
 - **Endpoint probing for openai-compatible** — `get_provider_status` probes `GET {base_url}/models` at each unique endpoint found in openai-compatible profiles, returning available model lists; `check_ensemble_runnable` validates agent models against these lists and suggests alternatives
