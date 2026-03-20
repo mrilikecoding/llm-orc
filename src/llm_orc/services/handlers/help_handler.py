@@ -80,8 +80,19 @@ class HelpHandler:
                 },
                 "providers": [
                     "ollama",
-                    "anthropic",
+                    "anthropic-api",
                     "anthropic-claude-pro-max",
+                    "google-gemini",
+                    "openai-compatible",
+                ],
+                "optional_fields": [
+                    "system_prompt",
+                    "timeout_seconds",
+                    "temperature",
+                    "max_tokens",
+                    "cost_per_token",
+                    "options",
+                    "base_url",
                 ],
             },
             "agent": {
