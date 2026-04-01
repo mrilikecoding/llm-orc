@@ -6,7 +6,9 @@ Agentic serving extends llm-orc (a declarative DAG-based LLM orchestration engin
 
 ## Who it serves
 
-*To be populated after DISCOVER phase.*
+- **Tool user** — developer using an agentic coding tool pointed at llm-orc. Cares about quality, speed, cost. Reading path: `ORIENTATION.md` → `product-discovery.md` (Jobs and Mental Models) → essay abstract
+- **Ensemble author / operator** — creates ensembles, profiles, scripts; runs the server. Often the same person as the tool user. Cares about visibility as tinkering, organic stabilization, cost control. Reading path: `ORIENTATION.md` → `product-discovery.md` → essay (full) → domain model
+- **Orchestrator LLM** — the agent behind the endpoint. Needs the full composition palette, knowledge graph access, and budget constraints. Reading path: system design → domain model → essay (Orchestrator Agent, Context Management sections)
 
 ## Key constraints
 
@@ -21,7 +23,7 @@ Agentic serving extends llm-orc (a declarative DAG-based LLM orchestration engin
 **Tier 1 -- Entry point:**
 - `ORIENTATION.md` (this document) -- what this is, who it serves, where to look next
 
-**Tier 2 -- Primary readables:** *(to be produced in later phases)*
+**Tier 2 -- Primary readables:**
 - `product-discovery.md` -- stakeholder needs, value tensions, assumption inversions
 - `system-design.md` -- module boundaries, responsibility allocation, dependency directions
 - `roadmap.md` -- sequenced implementation plan
@@ -36,4 +38,4 @@ Agentic serving extends llm-orc (a declarative DAG-based LLM orchestration engin
 
 ## Current state
 
-**RESEARCH phase complete.** The essay investigates six questions across two research cycles and concludes with a four-layer architecture (API surface, orchestrator agent, ensemble engine, knowledge graph). Citation and argument audits have been run; all P1 issues remediated. The next phase is DISCOVER (product discovery).
+**RESEARCH and DISCOVER phases complete.** The essay investigates six questions across two research cycles and concludes with a four-layer architecture (API surface, orchestrator agent, ensemble engine, knowledge graph). Product discovery surfaced seven value tensions and six assumption inversions. Key insights: Plexus operates as a push-model lib (client drives ingestion of file content, enrichments extract signal); tool user and ensemble author are often the same person (visibility is tinkering, not just debugging); the knowledge-compensated model selection hypothesis remains unvalidated. The next phase is MODEL (domain vocabulary extraction).
