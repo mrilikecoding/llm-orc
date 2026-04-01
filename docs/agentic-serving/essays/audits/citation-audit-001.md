@@ -1,7 +1,7 @@
 # Citation Audit Report
 
-**Audited document:** `docs/agentic-serving/essays/001-agentic-serving-architecture.md`
-**Evidence trail:** `docs/agentic-serving/essays/research-logs/research-log.md`
+**Audited document:** `essays/001-agentic-serving-architecture.md`
+**Evidence trail:** `essays/research-logs/001-agentic-serving-architecture.md`, `essays/research-logs/001b-agentic-serving-architecture.md`
 **Date:** 2026-03-20
 
 ---
