@@ -102,16 +102,12 @@ class TestAuthCommandsAdvanced:
 
                 # Then
                 assert result.exit_code != 0
-                # The error should be wrapped by the exception handler
-                assert (
-                    "Failed to test token refresh: No OAuth token found for"
-                    in result.output
-                )
+                assert f"No OAuth token found for {provider}" in result.output
 
-    def test_auth_test_refresh_no_refresh_token(
+    def test_auth_test_refresh_token_status_display(
         self, runner: CliRunner, temp_config_dir: Path
     ) -> None:
-        """Test token refresh when no refresh token available."""
+        """Test token status display with no refresh token."""
         # Given
         provider = "test-provider"
         oauth_token = {
@@ -153,20 +149,19 @@ class TestAuthCommandsAdvanced:
                 assert "Has refresh token: ❌" in result.output
                 assert "Has client ID: ✅" in result.output
                 assert "Has expiration: ✅" in result.output
-                assert (
-                    "Cannot test refresh: no refresh token available" in result.output
-                )
 
-    def test_auth_test_refresh_no_client_id_non_anthropic(
+    def test_auth_test_refresh_expired_token(
         self, runner: CliRunner, temp_config_dir: Path
     ) -> None:
-        """Test token refresh when no client ID for non-Anthropic provider."""
+        """Test token status display for expired token."""
         # Given
         provider = "test-provider"
+        expired_time = time.time() - 3600  # Expired 1 hour ago
         oauth_token = {
             "access_token": "test_access_token",
             "refresh_token": "test_refresh_token",
-            "expires_at": time.time() + 3600,
+            "client_id": "existing_client_id",
+            "expires_at": expired_time,
         }
 
         config_manager_path = (
@@ -175,6 +170,7 @@ class TestAuthCommandsAdvanced:
         credential_storage_path = (
             "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
         )
+
         with patch(config_manager_path) as mock_config_manager:
             mock_instance = mock_config_manager.return_value
             mock_instance._global_config_dir = temp_config_dir
@@ -198,232 +194,7 @@ class TestAuthCommandsAdvanced:
 
                 # Then
                 assert result.exit_code == 0
-                assert "Cannot test refresh: no client ID available" in result.output
-
-    def test_auth_test_refresh_anthropic_claude_pro_max_success(
-        self, runner: CliRunner, temp_config_dir: Path
-    ) -> None:
-        """Test successful token refresh for anthropic-claude-pro-max."""
-        # Given
-        provider = "anthropic-claude-pro-max"
-        oauth_token = {
-            "access_token": "test_access_token",
-            "refresh_token": "test_refresh_token",
-            "expires_at": time.time() + 3600,
-        }
-
-        config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
-        )
-        credential_storage_path = (
-            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
-        )
-        oauth_client_path = "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
-
-        with patch(config_manager_path) as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
-            mock_instance.get_credentials_file.return_value = (
-                temp_config_dir / "credentials.yaml"
-            )
-            mock_instance.get_encryption_key_file.return_value = (
-                temp_config_dir / ".encryption_key"
-            )
-            mock_instance.needs_migration.return_value = False
-
-            with patch(credential_storage_path) as mock_storage_class:
-                with patch(oauth_client_path) as mock_oauth_client_class:
-                    mock_storage = Mock()
-                    mock_storage_class.return_value = mock_storage
-                    mock_storage.list_providers.return_value = [provider]
-                    mock_storage.get_oauth_token.return_value = oauth_token
-
-                    # Mock OAuth client
-                    mock_oauth_client = Mock()
-                    mock_oauth_client_class.return_value = mock_oauth_client
-                    mock_oauth_client.refresh_access_token.return_value = True
-                    mock_oauth_client.access_token = "new_access_token"
-                    mock_oauth_client.refresh_token = "new_refresh_token"
-
-                    # When
-                    result = runner.invoke(cli, ["auth", "test-refresh", provider])
-
-                    # Then
-                    assert result.exit_code == 0
-                    assert f"Token info for {provider}:" in result.output
-                    assert f"Testing token refresh for {provider}..." in result.output
-                    assert "Token refresh successful!" in result.output
-                    assert "Updated stored credentials" in result.output
-
-                    # Verify basic functionality works
-                    mock_oauth_client.refresh_access_token.assert_called_once()
-                    mock_storage.store_oauth_token.assert_called_once()
-
-    def test_auth_test_refresh_with_client_id_success(
-        self, runner: CliRunner, temp_config_dir: Path
-    ) -> None:
-        """Test successful token refresh with existing client ID."""
-        # Given
-        provider = "test-provider"
-        oauth_token = {
-            "access_token": "test_access_token",
-            "refresh_token": "test_refresh_token",
-            "client_id": "existing_client_id",
-            "expires_at": time.time() + 3600,
-        }
-
-        config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
-        )
-        credential_storage_path = (
-            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
-        )
-        oauth_client_path = "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
-
-        with patch(config_manager_path) as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
-            mock_instance.get_credentials_file.return_value = (
-                temp_config_dir / "credentials.yaml"
-            )
-            mock_instance.get_encryption_key_file.return_value = (
-                temp_config_dir / ".encryption_key"
-            )
-            mock_instance.needs_migration.return_value = False
-
-            with patch(credential_storage_path) as mock_storage_class:
-                with patch(oauth_client_path) as mock_oauth_client_class:
-                    mock_storage = Mock()
-                    mock_storage_class.return_value = mock_storage
-                    mock_storage.list_providers.return_value = [provider]
-                    mock_storage.get_oauth_token.return_value = oauth_token
-
-                    # Mock OAuth client
-                    mock_oauth_client = Mock()
-                    mock_oauth_client_class.return_value = mock_oauth_client
-                    mock_oauth_client.refresh_access_token.return_value = True
-                    mock_oauth_client.access_token = "new_access_token"
-                    mock_oauth_client.refresh_token = "new_refresh_token"
-
-                    # When
-                    result = runner.invoke(cli, ["auth", "test-refresh", provider])
-
-                    # Then
-                    assert result.exit_code == 0
-                    assert "Token refresh successful!" in result.output
-                    mock_oauth_client.refresh_access_token.assert_called_once_with(
-                        "existing_client_id"
-                    )
-
-    def test_auth_test_refresh_failed(
-        self, runner: CliRunner, temp_config_dir: Path
-    ) -> None:
-        """Test failed token refresh."""
-        # Given
-        provider = "test-provider"
-        oauth_token = {
-            "access_token": "test_access_token",
-            "refresh_token": "test_refresh_token",
-            "client_id": "existing_client_id",
-            "expires_at": time.time() + 3600,
-        }
-
-        config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
-        )
-        credential_storage_path = (
-            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
-        )
-        oauth_client_path = "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
-
-        with patch(config_manager_path) as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
-            mock_instance.get_credentials_file.return_value = (
-                temp_config_dir / "credentials.yaml"
-            )
-            mock_instance.get_encryption_key_file.return_value = (
-                temp_config_dir / ".encryption_key"
-            )
-            mock_instance.needs_migration.return_value = False
-
-            with patch(credential_storage_path) as mock_storage_class:
-                with patch(oauth_client_path) as mock_oauth_client_class:
-                    mock_storage = Mock()
-                    mock_storage_class.return_value = mock_storage
-                    mock_storage.list_providers.return_value = [provider]
-                    mock_storage.get_oauth_token.return_value = oauth_token
-
-                    # Mock OAuth client failure
-                    mock_oauth_client = Mock()
-                    mock_oauth_client_class.return_value = mock_oauth_client
-                    mock_oauth_client.refresh_access_token.return_value = False
-
-                    # When
-                    result = runner.invoke(cli, ["auth", "test-refresh", provider])
-
-                    # Then
-                    assert result.exit_code == 0
-                    assert "Token refresh failed!" in result.output
-                    assert (
-                        "Check the error messages above for details." in result.output
-                    )
-
-    def test_auth_test_refresh_expired_token(
-        self, runner: CliRunner, temp_config_dir: Path
-    ) -> None:
-        """Test token refresh display for expired token."""
-        # Given
-        provider = "test-provider"
-        expired_time = time.time() - 3600  # Expired 1 hour ago
-        oauth_token = {
-            "access_token": "test_access_token",
-            "refresh_token": "test_refresh_token",
-            "client_id": "existing_client_id",
-            "expires_at": expired_time,
-        }
-
-        config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
-        )
-        credential_storage_path = (
-            "llm_orc.cli_modules.commands.auth_commands.CredentialStorage"
-        )
-        oauth_client_path = "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
-
-        with patch(config_manager_path) as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
-            mock_instance.get_credentials_file.return_value = (
-                temp_config_dir / "credentials.yaml"
-            )
-            mock_instance.get_encryption_key_file.return_value = (
-                temp_config_dir / ".encryption_key"
-            )
-            mock_instance.needs_migration.return_value = False
-
-            with patch(credential_storage_path) as mock_storage_class:
-                with patch(oauth_client_path) as mock_oauth_client_class:
-                    mock_storage = Mock()
-                    mock_storage_class.return_value = mock_storage
-                    mock_storage.list_providers.return_value = [provider]
-                    mock_storage.get_oauth_token.return_value = oauth_token
-
-                    # Mock OAuth client
-                    mock_oauth_client = Mock()
-                    mock_oauth_client_class.return_value = mock_oauth_client
-                    mock_oauth_client.refresh_access_token.return_value = True
-
-                    # When
-                    result = runner.invoke(cli, ["auth", "test-refresh", provider])
-
-                    # Then
-                    assert result.exit_code == 0
-                    assert "Token expired 3600 seconds ago" in result.output
+                assert "Token expired" in result.output
 
     def test_auth_test_refresh_exception(
         self, runner: CliRunner, temp_config_dir: Path
@@ -460,7 +231,7 @@ class TestAuthCommandsAdvanced:
 
                 # Then
                 assert result.exit_code != 0
-                assert "Failed to test token refresh: Storage error" in result.output
+                assert "Failed to check token status: Storage error" in result.output
 
     def test_auth_add_claude_cli_success(
         self, runner: CliRunner, temp_config_dir: Path
@@ -506,45 +277,6 @@ class TestAuthCommandsAdvanced:
                         # Then - test succeeds when Claude CLI is available
                         assert result.exit_code == 0
                         assert "Claude CLI authentication configured" in result.output
-
-    def test_auth_add_anthropic_claude_pro_max_success(
-        self, runner: CliRunner, temp_config_dir: Path
-    ) -> None:
-        """Test successful anthropic-claude-pro-max OAuth setup."""
-        # Given
-        provider = "anthropic-claude-pro-max"
-
-        config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
-        )
-        oauth_handler_path = (
-            "llm_orc.cli_modules.commands.auth_commands.handle_claude_pro_max_oauth"
-        )
-        credential_storage_path = "llm_orc.core.auth.authentication.CredentialStorage"
-        with patch(config_manager_path) as mock_config_manager:
-            mock_instance = mock_config_manager.return_value
-            mock_instance._global_config_dir = temp_config_dir
-            mock_instance.ensure_global_config_dir.return_value = None
-            mock_instance.get_credentials_file.return_value = (
-                temp_config_dir / "credentials.yaml"
-            )
-            mock_instance.get_encryption_key_file.return_value = (
-                temp_config_dir / ".encryption_key"
-            )
-            mock_instance.needs_migration.return_value = False
-
-            with patch(credential_storage_path) as mock_storage_class:
-                mock_storage = Mock()
-                mock_storage_class.return_value = mock_storage
-
-                with patch(oauth_handler_path) as mock_oauth_handler:
-                    mock_oauth_handler.return_value = None  # Mock successful OAuth
-
-                    # When
-                    result = runner.invoke(cli, ["auth", "add", provider])
-
-                    # Then - test succeeds when OAuth setup is successful
-                    assert result.exit_code == 0
 
     def test_auth_add_anthropic_interactive_success(
         self, runner: CliRunner, temp_config_dir: Path

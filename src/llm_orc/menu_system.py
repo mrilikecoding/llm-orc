@@ -82,9 +82,6 @@ class AuthMenus:
         result = menu.show(default=1)
         return str(result)
 
-    # Note: anthropic_auth_method removed - now handled by specific provider keys
-    # (anthropic-api and anthropic-claude-pro-max)
-
     @staticmethod
     def get_auth_method_for_provider(provider_key: str) -> str:
         """Show authentication method selection for any provider."""

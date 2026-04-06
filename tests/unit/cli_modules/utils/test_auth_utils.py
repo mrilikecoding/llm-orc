@@ -51,10 +51,10 @@ class TestHandleAnthropicInteractiveAuth:
     """Test interactive Anthropic authentication setup."""
 
     @patch("click.prompt")
-    def test_api_key_only_choice(self, mock_prompt: Mock) -> None:
-        """Test choosing API key only."""
+    def test_prompts_for_api_key_and_stores_it(self, mock_prompt: Mock) -> None:
+        """Test that the function prompts for an API key and stores it."""
         # Given
-        mock_prompt.side_effect = ["1", "test_api_key"]
+        mock_prompt.return_value = "test_api_key"
         mock_auth_manager = Mock()
         mock_storage = Mock()
 
@@ -65,31 +65,6 @@ class TestHandleAnthropicInteractiveAuth:
         mock_storage.store_api_key.assert_called_once_with(
             "anthropic-api", "test_api_key"
         )
-
-    def test_oauth_choices_not_tested(self) -> None:
-        """OAuth choices (2 and 3) not tested to avoid real OAuth flows."""
-        # NOTE: We do not test choices "2" (OAuth only) or "3" (both methods)
-        # because they call setup_anthropic_oauth() which triggers real OAuth flows
-        # through AnthropicOAuthFlow.create_with_guidance()
-        #
-        # This is an acceptable trade-off for test safety - we maintain high coverage
-        # on all other authentication utilities while avoiding triggering actual
-        # OAuth authentication flows during testing.
-        pass
-
-
-# NOTE: Tests for setup_anthropic_oauth() are intentionally omitted
-# because they would trigger actual OAuth flows through
-# AnthropicOAuthFlow.create_with_guidance()
-# We maintain 97% coverage by testing all other auth utilities comprehensively
-
-
-# NOTE: All tests for handle_claude_pro_max_oauth() are intentionally omitted
-# because this function opens browsers and makes real HTTP requests to OAuth endpoints
-# Even with mocking, the browser opening cannot be reliably prevented in all
-# test environments
-# We avoid testing this function entirely to prevent triggering actual
-# authentication flows
 
 
 class TestShowAuthMethodHelp:

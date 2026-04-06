@@ -94,9 +94,6 @@ llm-orc auth add anthropic --api-key YOUR_ANTHROPIC_KEY
 llm-orc auth add google --api-key YOUR_GOOGLE_KEY
 llm-orc auth add openai-compatible --api-key YOUR_KEY  # or leave blank for local
 
-# OAuth for Claude Pro/Max users
-llm-orc auth add anthropic-claude-pro-max
-
 # List configured providers
 llm-orc auth list
 
@@ -503,7 +500,7 @@ model_profiles:
 
   default-claude:
     model: claude-sonnet-4-20250514
-    provider: anthropic-claude-pro-max
+    provider: anthropic-api
     system_prompt: "You are an expert assistant that provides high-quality, detailed analysis and solutions."
     timeout_seconds: 60
     temperature: 0.5
@@ -759,15 +756,15 @@ Configuration Status Legend:
 === Global Configuration Status ===
 📁 Model Profiles:
 🟢 local-free (llama3 via ollama)
-🟢 quality (claude-sonnet-4 via anthropic-claude-pro-max)  
+🟢 quality (claude-sonnet-4 via anthropic-api)  
 🟥 high-context (claude-3-5-sonnet via anthropic-api)
 
-🌐 Available Providers: anthropic-claude-pro-max, ollama
+🌐 Available Providers: anthropic-api, ollama
 
 === Local Configuration Status: My Project ===
 📁 Model Profiles:
 🟢 security-auditor (llama3 via ollama)
-🟢 senior-reviewer (claude-sonnet-4 via anthropic-claude-pro-max)
+🟢 senior-reviewer (claude-sonnet-4 via anthropic-api)
 ```
 
 ### Configuration Reset Commands

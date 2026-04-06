@@ -7,7 +7,6 @@ from unittest.mock import Mock, patch
 import pytest
 
 from llm_orc.core.auth.authentication import CredentialStorage
-from llm_orc.models.anthropic import OAuthClaudeModel
 
 
 @pytest.fixture(autouse=True)
@@ -53,21 +52,21 @@ class TestOAuthTokenStorage:
         """Test that OAuth tokens can be stored with client_id."""
         # Store OAuth token with all parameters including client_id
         credential_storage.store_oauth_token(
-            provider="anthropic-claude-pro-max",
+            provider="google-oauth",
             access_token="test_access_token",
             refresh_token="test_refresh_token",
             expires_at=1234567890,
-            client_id="9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+            client_id="test-client-id-12345",
         )
 
         # Retrieve and verify all fields are stored
-        oauth_token = credential_storage.get_oauth_token("anthropic-claude-pro-max")
+        oauth_token = credential_storage.get_oauth_token("google-oauth")
 
         assert oauth_token is not None
         assert oauth_token["access_token"] == "test_access_token"
         assert oauth_token["refresh_token"] == "test_refresh_token"
         assert oauth_token["expires_at"] == 1234567890
-        assert oauth_token["client_id"] == "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+        assert oauth_token["client_id"] == "test-client-id-12345"
 
     def test_store_oauth_token_without_client_id_backward_compatibility(
         self, credential_storage: CredentialStorage
@@ -125,87 +124,6 @@ class TestOAuthTokenStorage:
         oauth_token = credential_storage.get_oauth_token("nonexistent-provider")
         assert oauth_token is None
 
-    @pytest.mark.asyncio
-    async def test_ensemble_execution_client_id_fallback(
-        self, mock_ensemble_executor: Any
-    ) -> None:
-        """
-        Test ensemble execution uses client_id fallback for anthropic-claude-pro-max.
-        """
-        executor = mock_ensemble_executor
-
-        # Mock the credential storage to return OAuth token without client_id
-        mock_storage = Mock()
-        mock_storage.get_auth_method.return_value = "oauth"
-        mock_storage.get_oauth_token.return_value = {
-            "access_token": "test_access_token",
-            "refresh_token": "test_refresh_token",
-            # No client_id in stored token (simulating legacy storage)
-        }
-
-        # Replace the model factory's credential storage with mock
-        executor._model_factory._credential_storage = mock_storage
-
-        # Mock the OAuthClaudeModel constructor to verify client_id is passed
-        oauth_model_calls = []
-
-        def mock_oauth_claude_model(*args: Any, **kwargs: Any) -> Mock:
-            oauth_model_calls.append(kwargs)
-            mock_model = Mock(spec=OAuthClaudeModel)
-            return mock_model
-
-        with patch(
-            "llm_orc.core.models.model_factory.OAuthClaudeModel",
-            side_effect=mock_oauth_claude_model,
-        ):
-            # Load the model
-            await executor._model_factory.load_model("anthropic-claude-pro-max")
-
-            # Verify that the hardcoded client_id was used as fallback
-            assert len(oauth_model_calls) == 1
-            expected_client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-            assert oauth_model_calls[0]["client_id"] == expected_client_id
-            assert oauth_model_calls[0]["access_token"] == "test_access_token"
-            assert oauth_model_calls[0]["refresh_token"] == "test_refresh_token"
-
-    @pytest.mark.asyncio
-    async def test_ensemble_execution_uses_stored_client_id_when_available(
-        self, mock_ensemble_executor: Any
-    ) -> None:
-        """Test that ensemble execution uses stored client_id when available."""
-        executor = mock_ensemble_executor
-
-        # Mock the credential storage to return OAuth token WITH client_id
-        mock_storage = Mock()
-        mock_storage.get_auth_method.return_value = "oauth"
-        mock_storage.get_oauth_token.return_value = {
-            "access_token": "test_access_token",
-            "refresh_token": "test_refresh_token",
-            "client_id": "custom_client_id_from_storage",  # Custom client_id stored
-        }
-
-        # Replace the model factory's credential storage with mock
-        executor._model_factory._credential_storage = mock_storage
-
-        # Mock the OAuthClaudeModel constructor to verify client_id is passed
-        oauth_model_calls = []
-
-        def mock_oauth_claude_model(*args: Any, **kwargs: Any) -> Mock:
-            oauth_model_calls.append(kwargs)
-            mock_model = Mock(spec=OAuthClaudeModel)
-            return mock_model
-
-        with patch(
-            "llm_orc.core.models.model_factory.OAuthClaudeModel",
-            side_effect=mock_oauth_claude_model,
-        ):
-            # Load the model
-            await executor._model_factory.load_model("anthropic-claude-pro-max")
-
-            # Verify that the stored client_id was used (not the fallback)
-            assert len(oauth_model_calls) == 1
-            assert oauth_model_calls[0]["client_id"] == "custom_client_id_from_storage"
-
     def test_oauth_token_update_preserves_client_id(
         self, credential_storage: CredentialStorage
     ) -> None:
@@ -242,24 +160,24 @@ class TestOAuthTokenStorage:
         """Test storing multiple OAuth providers with different client_ids."""
         # Store multiple OAuth providers
         credential_storage.store_oauth_token(
-            provider="anthropic-claude-pro-max",
-            access_token="anthropic_token",
-            client_id="9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+            provider="provider-one",
+            access_token="provider_one_token",
+            client_id="client_id_one",
         )
 
         credential_storage.store_oauth_token(
-            provider="google-gemini-oauth",
-            access_token="google_token",
-            client_id="google_client_id_123",
+            provider="provider-two",
+            access_token="provider_two_token",
+            client_id="client_id_two",
         )
 
         # Verify both are stored with correct client_ids
-        anthropic_token = credential_storage.get_oauth_token("anthropic-claude-pro-max")
-        google_token = credential_storage.get_oauth_token("google-gemini-oauth")
+        token_one = credential_storage.get_oauth_token("provider-one")
+        token_two = credential_storage.get_oauth_token("provider-two")
 
-        assert anthropic_token is not None
-        assert google_token is not None
-        assert anthropic_token["client_id"] == "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-        assert google_token["client_id"] == "google_client_id_123"
-        assert anthropic_token["access_token"] == "anthropic_token"
-        assert google_token["access_token"] == "google_token"
+        assert token_one is not None
+        assert token_two is not None
+        assert token_one["client_id"] == "client_id_one"
+        assert token_two["client_id"] == "client_id_two"
+        assert token_one["access_token"] == "provider_one_token"
+        assert token_two["access_token"] == "provider_two_token"

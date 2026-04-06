@@ -40,11 +40,11 @@ model_profiles:
     provider: ollama
     cost_per_token: 0.0
 
-  # High-quality cloud models (subscription-based)
+  # High-quality cloud models
   default-claude:
     model: claude-sonnet-4-20250514
-    provider: anthropic-claude-pro-max
-    # No cost_per_token: subscription-based pricing
+    provider: anthropic-api
+    cost_per_token: 3.0e-06
 
   # Alternative cloud models
   default-gemini:
@@ -78,7 +78,7 @@ Model profiles are named shortcuts that combine a model + provider + cost inform
 
 **Profile Benefits:**
 
-- **Simplified Configuration**: Use `model_profile: production` instead of `model: claude-3-5-sonnet-20241022` + `provider: anthropic-claude-pro-max`
+- **Simplified Configuration**: Use `model_profile: production` instead of `model: claude-3-5-sonnet-20241022` + `provider: anthropic-api`
 - **Consistency**: Same profile name works across all ensembles
 - **Flexibility**: Override global profiles with local project-specific ones
 - **Cost Tracking**: Built-in cost information for budgeting
@@ -92,26 +92,25 @@ Model profiles are named shortcuts that combine a model + provider + cost inform
 **Profile Types:**
 
 - **Free Local**: `free-local` - fast, free local models via Ollama
-- **Cloud Subscription**: `default-claude`, `default-gemini` - OAuth models using existing subscriptions ($0 cost)  
-- **API Pay-per-use**: `high-context`, `small` - API models with token costs for specific capabilities
+- **Cloud API**: `default-claude`, `default-gemini` - Cloud models via API key
+- **Specialized API**: `high-context`, `small` - API models with specific capabilities
 
-**Note:** `cost_per_token` is purely for documentation/budgeting purposes. Actual cost calculations use hardcoded values in the model implementations. For OAuth models (subscription-based), omit `cost_per_token` entirely.
+**Note:** `cost_per_token` is purely for documentation/budgeting purposes. Actual cost calculations use hardcoded values in the model implementations.
 
 ## Ensemble Examples
 
 This directory contains diverse ensemble examples showcasing different model combinations and use cases:
 
-### OAuth Examples (Claude Pro/Max Subscription)
+### Cloud Examples (Anthropic API)
 
 #### Startup Advisory Board
 
 **File:** `startup-advisory-board.yaml`  
-**Models:** All Claude Pro/Max via OAuth  
+**Models:** All Claude via Anthropic API  
 **Use Case:** Business strategy analysis with three expert agents (VC, Tech Architect, Growth Strategist)
 
 **Features Demonstrated:**
 
-- ✅ OAuth authentication with automatic token refresh
 - ✅ Role injection for specialized expertise
 - ✅ Configurable coordinator with its own role
 - ✅ Complex multi-agent coordination
@@ -119,7 +118,7 @@ This directory contains diverse ensemble examples showcasing different model com
 #### Product Strategy Analysis
 
 **File:** `product-strategy.yaml`  
-**Models:** All Claude Pro/Max via OAuth  
+**Models:** All Claude via Anthropic API  
 **Use Case:** Product decision making with market, financial, competitive, and UX analysis
 
 ### Mixed Model Examples (Local + Cloud)
@@ -127,30 +126,30 @@ This directory contains diverse ensemble examples showcasing different model com
 #### Interdisciplinary Research
 
 **File:** `interdisciplinary-research.yaml`  
-**Models:** 3x Ollama (llama3) + 1x Claude Pro/Max + Claude Pro/Max coordinator  
+**Models:** 3x Ollama (llama3) + 1x Claude API + Claude API coordinator  
 **Use Case:** Broad research analysis through anthropological, systems, philosophical, and futurist perspectives
 
 **Model Distribution:**
 
 - **Local (Ollama):** Anthropologist, Systems Theorist, Philosopher-Ethicist
-- **Cloud (OAuth):** Futurist Analyst, Coordinator
+- **Cloud (API):** Futurist Analyst, Coordinator
 
 #### Mycology Meets Technology
 
 **File:** `mycology-meets-technology.yaml`  
-**Models:** 2x Ollama + 1x Claude Pro/Max + Claude Pro/Max coordinator  
+**Models:** 2x Ollama + 1x Claude API + Claude API coordinator  
 **Use Case:** Biomimicry research exploring fungal networks for technology innovation
 
 #### Sleep and Civilization
 
 **File:** `sleep-and-civilization.yaml`  
-**Models:** 2x Ollama + 1x Claude Pro/Max + Ollama coordinator  
+**Models:** 2x Ollama + 1x Claude API + Ollama coordinator  
 **Use Case:** Historical and sociological analysis of sleep's role in human development
 
 #### Code Review
 
 **File:** `code-review.yaml`  
-**Models:** 2x Ollama + 1x Claude Pro/Max + Claude Pro/Max coordinator  
+**Models:** 2x Ollama + 1x Claude API + Claude API coordinator  
 **Use Case:** Comprehensive code review with security, performance, and quality analysis
 
 **CLI Override Examples:**
@@ -179,19 +178,6 @@ llm-orc invoke code-review "This is legacy code for a financial system. Focus on
 - Same expert perspectives, different scope
 
 ## Authentication Setup
-
-### OAuth Authentication (Claude Pro/Max)
-
-```bash
-# Set up OAuth for Claude Pro/Max subscription
-llm-orc auth add anthropic-claude-pro-max
-
-# Verify authentication
-llm-orc auth test anthropic-claude-pro-max
-
-# Check all configured providers
-llm-orc auth list
-```
 
 ### API Key Authentication
 
@@ -326,8 +312,8 @@ Available model profiles:
 🌐 Global (~/.config/llm-orc/config.yaml):
   default-claude:
     Model: claude-sonnet-4-20250514
-    Provider: anthropic-claude-pro-max
-    Cost per token: Not specified
+    Provider: anthropic-api
+    Cost per token: 3.0e-06
 
   high-context:
     Model: claude-3-5-sonnet-20241022
@@ -361,7 +347,7 @@ agents:
     system_prompt: "Experimental role for creative exploration..."
 
   - name: practical-evaluator  
-    model: anthropic-claude-pro-max  # Can use OAuth for personal testing
+    model_profile: default-claude  # Cloud model for higher quality
     system_prompt: "Personal evaluation approach..."
 
 coordinator:
@@ -378,7 +364,7 @@ coordinator:
 - 🔒 **Sensitive configurations** with private data
 - 🚧 **Work-in-progress** before sharing with team
 - ⚙️ **Personal productivity** ensembles
-- 🔑 **OAuth testing** without exposing credentials
+- 🔑 **API testing** without exposing credentials
 
 ## Model Profile Selection Guidelines
 
@@ -393,13 +379,12 @@ coordinator:
 - **Offline environments**
 - **Quick experimentation**
 
-#### Cloud Subscription Profiles (`default-claude`, `default-gemini`)
+#### Cloud API Profiles (`default-claude`, `default-gemini`)
 **Best for:**
 - **High-stakes decisions**
 - **Complex reasoning tasks**
 - **Final synthesis and coordination**
 - **Professional/business analysis**
-- **When you have existing subscriptions**
 
 #### Specialized API Profiles (`high-context`, `small`)
 **Best for:**
@@ -453,7 +438,7 @@ coordinator:
 ### Cost Optimization with Profiles
 
 - **Start with free-local profiles** for iteration and experimentation
-- **Use default-claude/gemini profiles** for subscription-based models (no additional cost)
+- **Use default-claude/gemini profiles** for cloud API models
 - **Reserve specialized API profiles** for tasks requiring specific capabilities
 - **Monitor usage** through ensemble reports and profile cost tracking
 
@@ -500,7 +485,7 @@ All models support role injection through `system_prompt`, allowing specialized 
 ```yaml
 agents:
   - name: specialist
-    model: anthropic-claude-pro-max
+    model_profile: default-claude
     system_prompt: "You are a domain expert in X with Y years of experience..."
 ```
 
@@ -510,7 +495,7 @@ Coordinators can use any model and specialized roles:
 
 ```yaml
 coordinator:
-  model: anthropic-claude-pro-max
+  model_profile: default-claude
   system_prompt: "You are a senior executive..."
   synthesis_prompt: "Synthesize insights into actionable strategy..."
 ```
@@ -567,12 +552,6 @@ project:
 
 ### Common Issues
 
-**OAuth token expired:**
-
-```bash
-llm-orc auth refresh anthropic-claude-pro-max
-```
-
 **Local model not found:**
 
 ```bash
@@ -612,7 +591,7 @@ cat ~/.config/llm-orc/config.yaml
 
 ```bash
 # Test specific provider
-llm-orc auth test anthropic-claude-pro-max
+llm-orc auth test anthropic-api
 
 # Check all configured providers
 llm-orc auth list

@@ -81,7 +81,6 @@ class HelpHandler:
                 "providers": [
                     "ollama",
                     "anthropic-api",
-                    "anthropic-claude-pro-max",
                     "google-gemini",
                     "openai-compatible",
                 ],

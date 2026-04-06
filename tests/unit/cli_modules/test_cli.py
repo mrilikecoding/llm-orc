@@ -272,7 +272,6 @@ class TestCLI:
 
         # Should include the specific provider keys
         assert "anthropic-api" in provider_keys
-        assert "anthropic-claude-pro-max" in provider_keys
         assert "google-gemini" in provider_keys
         assert "ollama" in provider_keys
 
@@ -355,7 +354,7 @@ class TestCLI:
                 "llm_orc.cli_modules.utils.config_utils.CredentialStorage"
             ) as mock_storage_class:
                 mock_storage = Mock()
-                mock_storage.list_providers.return_value = ["anthropic-claude-pro-max"]
+                mock_storage.list_providers.return_value = ["anthropic-api"]
                 mock_storage_class.return_value = mock_storage
 
                 # Mock ollama not available
@@ -366,7 +365,7 @@ class TestCLI:
                     providers = get_available_providers(mock_config_manager)
 
                     # Should only include authenticated provider
-                    assert "anthropic-claude-pro-max" in providers
+                    assert "anthropic-api" in providers
                     assert "ollama" not in providers
                     assert len(providers) == 1
 

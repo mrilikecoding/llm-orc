@@ -1,5 +1,5 @@
 name: startup-advisory-board
-description: Multi-expert advisory board simulation using OAuth Claude Pro/Max agents with role injection
+description: Multi-expert advisory board simulation using Claude agents with role injection
 
 agents:
   - name: venture-capitalist

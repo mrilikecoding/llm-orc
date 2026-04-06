@@ -32,13 +32,13 @@ model_profiles:
     
   default:
     model: claude-sonnet-4-20250514
-    provider: anthropic-claude-pro-max
+    provider: anthropic-api
     system_prompt: You are an expert analyst with strong reasoning capabilities.
     timeout_seconds: 60
     
   high-context:
     model: claude-sonnet-4-20250514
-    provider: anthropic-claude-pro-max
+    provider: anthropic-api
     system_prompt: You are an expert analyst capable of processing large, complex documents.
     timeout_seconds: 120
     
@@ -54,12 +54,6 @@ model_profiles:
     model: claude-3-5-sonnet-20241022
     provider: anthropic-api
     cost_per_token: 3.0e-06
-    system_prompt: Respond with 'Authentication working' to confirm API access.
-    timeout_seconds: 30
-    
-  validate-claude-pro-max:
-    model: claude-sonnet-4-20250514
-    provider: anthropic-claude-pro-max
     system_prompt: Respond with 'Authentication working' to confirm API access.
     timeout_seconds: 30
     

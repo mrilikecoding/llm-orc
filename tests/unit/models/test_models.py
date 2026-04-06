@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from llm_orc.models.anthropic import ClaudeCLIModel, ClaudeModel, OAuthClaudeModel
+from llm_orc.models.anthropic import ClaudeCLIModel, ClaudeModel
 from llm_orc.models.base import ModelInterface
 from llm_orc.models.google import GeminiModel
 from llm_orc.models.ollama import OllamaModel
@@ -68,22 +68,6 @@ class TestModelParameterDefaults:
         model = ClaudeCLIModel(claude_path="/usr/bin/claude")
         assert model.temperature is None
         assert model.max_tokens is None
-
-    def test_oauth_claude_model_defaults_to_none(self) -> None:
-        """OAuthClaudeModel should have None temperature and max_tokens."""
-        model = OAuthClaudeModel(access_token="test-token")
-        assert model.temperature is None
-        assert model.max_tokens is None
-
-    def test_oauth_claude_model_accepts_params(self) -> None:
-        """OAuthClaudeModel should accept temperature and max_tokens."""
-        model = OAuthClaudeModel(
-            access_token="test-token",
-            temperature=0.8,
-            max_tokens=1500,
-        )
-        assert model.temperature == 0.8
-        assert model.max_tokens == 1500
 
     def test_openai_compat_model_defaults_to_none(self) -> None:
         """OpenAICompatibleModel should have None temperature and max_tokens."""

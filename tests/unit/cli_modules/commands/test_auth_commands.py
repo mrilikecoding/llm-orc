@@ -1,7 +1,6 @@
 """Comprehensive tests for auth commands module."""
 
 import time
-from typing import Any
 from unittest.mock import Mock, call, patch
 
 import click
@@ -911,24 +910,20 @@ class TestTokenRefresh:
         ):
             run_token_refresh("test-provider")
 
-    @patch("llm_orc.core.auth.oauth_client.OAuthClaudeClient")
     @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
     @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
     def test_refresh_token_info_display(
         self,
         mock_storage_class: Mock,
         mock_config_class: Mock,
-        mock_oauth_client_class: Mock,
     ) -> None:
         """Test token info display for OAuth provider."""
         # Given
         mock_config = Mock()
         mock_storage = Mock()
-        mock_oauth_client = Mock()
 
         mock_config_class.return_value = mock_config
         mock_storage_class.return_value = mock_storage
-        mock_oauth_client_class.return_value = mock_oauth_client
 
         mock_storage.list_providers.return_value = ["test-provider"]
         oauth_token = {
@@ -938,9 +933,6 @@ class TestTokenRefresh:
             "expires_at": time.time() + 3600,  # Expires in 1 hour
         }
         mock_storage.get_oauth_token.return_value = oauth_token
-
-        # Mock successful token refresh
-        mock_oauth_client.refresh_access_token.return_value = True
 
         # When
         with patch("click.echo") as mock_echo:
@@ -953,7 +945,6 @@ class TestTokenRefresh:
         )
         assert token_info_found
 
-    @patch("llm_orc.core.auth.oauth_client.OAuthClaudeClient")
     @patch("time.time")
     @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
     @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
@@ -962,20 +953,14 @@ class TestTokenRefresh:
         mock_storage_class: Mock,
         mock_config_class: Mock,
         mock_time: Mock,
-        mock_oauth_client_class: Mock,
     ) -> None:
-        """Test token refresh with expired token."""
+        """Test token status display with expired token."""
         # Given
         mock_config = Mock()
         mock_storage = Mock()
 
         mock_config_class.return_value = mock_config
         mock_storage_class.return_value = mock_storage
-
-        # Mock the OAuth client to prevent actual HTTP requests
-        mock_oauth_client = Mock()
-        mock_oauth_client.refresh_access_token.return_value = False  # Simulate failure
-        mock_oauth_client_class.return_value = mock_oauth_client
 
         import time
 
@@ -1029,79 +1014,6 @@ class TestSpecialProviderHandling:
         ):
             add_auth_provider(
                 provider="claude-cli",
-                api_key=None,
-                client_id=None,
-                client_secret=None,
-            )
-
-    @patch("llm_orc.cli_modules.commands.auth_commands.handle_claude_pro_max_oauth")
-    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
-    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
-    @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
-    def test_claude_pro_max_oauth_with_existing(
-        self,
-        mock_auth_manager_class: Mock,
-        mock_storage_class: Mock,
-        mock_config_class: Mock,
-        mock_handle_oauth: Mock,
-    ) -> None:
-        """Test Claude Pro/Max OAuth with existing provider."""
-        # Given
-        mock_config = Mock()
-        mock_storage = Mock()
-        mock_auth_manager = Mock()
-
-        mock_config_class.return_value = mock_config
-        mock_storage_class.return_value = mock_storage
-        mock_auth_manager_class.return_value = mock_auth_manager
-
-        mock_storage.list_providers.return_value = ["anthropic-claude-pro-max"]
-
-        # When
-        with patch("click.echo"):
-            add_auth_provider(
-                provider="anthropic-claude-pro-max",
-                api_key=None,
-                client_id=None,
-                client_secret=None,
-            )
-
-        # Then
-        mock_storage.remove_provider.assert_called_once_with("anthropic-claude-pro-max")
-        mock_handle_oauth.assert_called_once_with(mock_auth_manager, mock_storage)
-
-    @patch("llm_orc.cli_modules.commands.auth_commands.handle_claude_pro_max_oauth")
-    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
-    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
-    @patch("llm_orc.cli_modules.commands.auth_commands.AuthenticationManager")
-    def test_claude_pro_max_oauth_error(
-        self,
-        mock_auth_manager_class: Mock,
-        mock_storage_class: Mock,
-        mock_config_class: Mock,
-        mock_handle_oauth: Mock,
-    ) -> None:
-        """Test Claude Pro/Max OAuth error handling."""
-        # Given
-        mock_config = Mock()
-        mock_storage = Mock()
-        mock_auth_manager = Mock()
-
-        mock_config_class.return_value = mock_config
-        mock_storage_class.return_value = mock_storage
-        mock_auth_manager_class.return_value = mock_auth_manager
-
-        mock_storage.list_providers.return_value = []
-        mock_handle_oauth.side_effect = Exception("OAuth error")
-
-        # When/Then
-        with pytest.raises(
-            click.ClickException,
-            match="Failed to set up anthropic-claude-pro-max"
-            " authentication: OAuth error",
-        ):
-            add_auth_provider(
-                provider="anthropic-claude-pro-max",
                 api_key=None,
                 client_id=None,
                 client_secret=None,
@@ -1182,210 +1094,6 @@ class TestSpecialProviderHandling:
                 client_id=None,
                 client_secret=None,
             )
-
-
-class TestTokenRefreshAdvanced:
-    """Test advanced token refresh functionality."""
-
-    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
-    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
-    def test_refresh_no_refresh_token(
-        self,
-        mock_storage_class: Mock,
-        mock_config_class: Mock,
-    ) -> None:
-        """Test token refresh when no refresh token available."""
-        # Given
-        mock_config = Mock()
-        mock_storage = Mock()
-
-        mock_config_class.return_value = mock_config
-        mock_storage_class.return_value = mock_storage
-
-        mock_storage.list_providers.return_value = ["test-provider"]
-        oauth_token = {
-            "access_token": "test_token",
-            "client_id": "test_client",
-            "expires_at": time.time() + 3600,
-        }
-        mock_storage.get_oauth_token.return_value = oauth_token
-
-        # When
-        with patch("click.echo") as mock_echo:
-            run_token_refresh("test-provider")
-
-        # Then
-        echo_calls = [call[0][0] for call in mock_echo.call_args_list]
-        no_refresh_found = any(
-            "Cannot test refresh: no refresh token available" in call
-            for call in echo_calls
-        )
-        assert no_refresh_found
-
-    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
-    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
-    def test_refresh_no_client_id_non_anthropic(
-        self,
-        mock_storage_class: Mock,
-        mock_config_class: Mock,
-    ) -> None:
-        """Test token refresh when no client ID for non-anthropic provider."""
-        # Given
-        mock_config = Mock()
-        mock_storage = Mock()
-
-        mock_config_class.return_value = mock_config
-        mock_storage_class.return_value = mock_storage
-
-        mock_storage.list_providers.return_value = ["test-provider"]
-        oauth_token = {
-            "access_token": "test_token",
-            "refresh_token": "test_refresh",
-            "expires_at": time.time() + 3600,
-        }
-        mock_storage.get_oauth_token.return_value = oauth_token
-
-        # When
-        with patch("click.echo") as mock_echo:
-            run_token_refresh("test-provider")
-
-        # Then
-        echo_calls = [call[0][0] for call in mock_echo.call_args_list]
-        no_client_id_found = any(
-            "Cannot test refresh: no client ID available" in call for call in echo_calls
-        )
-        assert no_client_id_found
-
-    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
-    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
-    def test_refresh_default_client_id_anthropic_claude_pro_max(
-        self,
-        mock_storage_class: Mock,
-        mock_config_class: Mock,
-    ) -> None:
-        """
-        Test token refresh using default client ID for anthropic-claude-pro-max.
-        (lines 275-276)
-        """
-        # Given
-        mock_config = Mock()
-        mock_storage = Mock()
-
-        mock_config_class.return_value = mock_config
-        mock_storage_class.return_value = mock_storage
-
-        mock_storage.list_providers.return_value = ["anthropic-claude-pro-max"]
-        oauth_token = {
-            "access_token": "test_token",
-            "refresh_token": "test_refresh",
-            "expires_at": time.time() + 3600,
-            # No client_id in the token - should use default
-        }
-        mock_storage.get_oauth_token.return_value = oauth_token
-
-        # Mock OAuthClaudeClient to return successful refresh
-        with patch(
-            "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
-        ) as mock_client_class:
-            mock_client = Mock()
-            mock_client.refresh_access_token.return_value = True
-            mock_client.access_token = "new_access_token"
-            mock_client.refresh_token = "new_refresh_token"
-            mock_client_class.return_value = mock_client
-
-            with (
-                patch("click.echo") as mock_echo,
-                patch("time.time", return_value=1000),
-            ):
-                # When
-                run_token_refresh("anthropic-claude-pro-max")
-
-                # Then
-                echo_calls = [call[0][0] for call in mock_echo.call_args_list]
-                default_client_id_found = any(
-                    "Using default client ID: 9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-                    in call
-                    for call in echo_calls
-                )
-                assert default_client_id_found
-
-                # Verify client was created with correct tokens
-                mock_client_class.assert_called_once_with(
-                    access_token="test_token",
-                    refresh_token="test_refresh",
-                )
-
-                # Verify refresh was called with default client ID
-                mock_client.refresh_access_token.assert_called_once_with(
-                    "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-                )
-
-    @patch("llm_orc.cli_modules.commands.auth_commands.ConfigurationManager")
-    @patch("llm_orc.cli_modules.commands.auth_commands.CredentialStorage")
-    def test_refresh_successful_token_update(
-        self,
-        mock_storage_class: Mock,
-        mock_config_class: Mock,
-    ) -> None:
-        """Test successful token refresh and credential update (lines 294-304)."""
-        # Given
-        mock_config = Mock()
-        mock_storage = Mock()
-
-        mock_config_class.return_value = mock_config
-        mock_storage_class.return_value = mock_storage
-
-        mock_storage.list_providers.return_value = ["test-provider"]
-        oauth_token = {
-            "access_token": "old_token",
-            "refresh_token": "old_refresh",
-            "client_id": "test_client_id",
-            "expires_at": time.time() + 3600,
-        }
-        mock_storage.get_oauth_token.return_value = oauth_token
-
-        # Mock OAuthClaudeClient to return successful refresh
-        with patch(
-            "llm_orc.core.auth.oauth_client.OAuthClaudeClient"
-        ) as mock_client_class:
-            mock_client = Mock()
-            mock_client.refresh_access_token.return_value = True
-            mock_client.access_token = "new_access_token"
-            mock_client.refresh_token = "new_refresh_token"
-            mock_client_class.return_value = mock_client
-
-            with (
-                patch("click.echo") as mock_echo,
-                patch("time.time", return_value=1000),
-            ):
-                # When
-                run_token_refresh("test-provider")
-
-                # Then
-                echo_calls = [call[0][0] for call in mock_echo.call_args_list]
-                success_messages = [
-                    "Token refresh successful!",
-                    "Updated stored credentials",
-                ]
-                for message in success_messages:
-                    found = any(message in call for call in echo_calls)
-                    assert found, (
-                        f"Expected message '{message}' not found in {echo_calls}"
-                    )
-
-                # Verify credentials were updated
-                mock_storage.store_oauth_token.assert_called_once_with(
-                    "test-provider",
-                    "new_access_token",
-                    "new_refresh_token",
-                    expires_at=1000 + 3600,  # time.time() + 3600
-                    client_id="test_client_id",
-                )
-
-    # NOTE: Advanced token refresh tests with OAuthClaudeClient are
-    # intentionally omitted
-    # because they would trigger real OAuth HTTP requests even with mocking
-    # The token info display tests above provide sufficient coverage for safe testing
 
 
 class TestLogoutOAuthProviders:
@@ -1595,12 +1303,6 @@ class TestAuthSetupHelperMethods:
         # Then
         assert result is None  # Should exit setup entirely
         mock_storage.remove_provider.assert_not_called()
-
-    def test_determine_auth_method_anthropic_claude_pro_max(self) -> None:
-        """Test auth method determination for Claude Pro/Max."""
-        # When/Then
-        result = _determine_auth_method("anthropic-claude-pro-max")
-        assert result == "oauth"
 
     def test_determine_auth_method_anthropic_api(self) -> None:
         """Test auth method determination for Anthropic API."""
@@ -2299,7 +2001,7 @@ class TestAddAuthProviderHelperMethods:
     def test_handle_token_refresh_oauth_success(self) -> None:
         """Test _handle_token_refresh helper method for OAuth provider."""
         # Given
-        selected_provider = "anthropic-claude-pro-max"
+        selected_provider = "google-oauth"
         storage = Mock()
         storage.get_auth_method.return_value = "oauth"
 
@@ -2313,9 +2015,7 @@ class TestAddAuthProviderHelperMethods:
 
         # Then
         assert result is False  # Refresh action returns False
-        mock_working.assert_called_once_with(
-            "Refreshing tokens for anthropic-claude-pro-max..."
-        )
+        mock_working.assert_called_once_with("Refreshing tokens for google-oauth...")
         mock_info.assert_called_once_with(
             "Re-authentication required for OAuth token refresh"
         )
@@ -2428,57 +2128,6 @@ class TestTokenRefreshHelperMethods:
         actual_calls = [call.args[0] for call in mock_echo.call_args_list]
         for expected in expected_calls:
             assert expected in actual_calls
-
-    def test_resolve_client_id_with_existing(self) -> None:
-        """Test client ID resolution when already present."""
-        # Given
-        oauth_token = {"client_id": "existing_client_id"}
-        provider = "test-provider"
-        token_analysis = {"has_client_id": True}
-
-        # When
-        from llm_orc.cli_modules.commands.auth_commands import _resolve_client_id
-
-        client_id = _resolve_client_id(provider, token_analysis, oauth_token)
-
-        # Then
-        assert client_id == "existing_client_id"
-
-    @patch("click.echo")
-    def test_resolve_client_id_anthropic_default(self, mock_echo: Mock) -> None:
-        """Test client ID resolution for anthropic with default."""
-        # Given
-        oauth_token: dict[str, Any] = {}
-        provider = "anthropic-claude-pro-max"
-        token_analysis = {"has_client_id": False}
-
-        # When
-        from llm_orc.cli_modules.commands.auth_commands import _resolve_client_id
-
-        client_id = _resolve_client_id(provider, token_analysis, oauth_token)
-
-        # Then
-        assert client_id == "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-        mock_echo.assert_any_call(
-            "\n🔧 Using default client ID: 9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-        )
-
-    @patch("click.echo")
-    def test_resolve_client_id_missing_other_provider(self, mock_echo: Mock) -> None:
-        """Test client ID resolution for other provider without client ID."""
-        # Given
-        oauth_token: dict[str, Any] = {}
-        provider = "other-provider"
-        token_analysis = {"has_client_id": False}
-
-        # When
-        from llm_orc.cli_modules.commands.auth_commands import _resolve_client_id
-
-        client_id = _resolve_client_id(provider, token_analysis, oauth_token)
-
-        # Then
-        assert client_id is None
-        mock_echo.assert_any_call("\n❌ Cannot test refresh: no client ID available")
 
 
 class TestLogoutOAuthProvidersHelperMethods:

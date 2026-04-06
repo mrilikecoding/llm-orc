@@ -84,7 +84,6 @@ class TestProviderRegistry:
         assert len(providers) >= 4
         provider_keys = [p.key for p in providers]
         assert "anthropic-api" in provider_keys
-        assert "anthropic-claude-pro-max" in provider_keys
         assert "google-gemini" in provider_keys
         assert "ollama" in provider_keys
 
@@ -121,10 +120,6 @@ class TestProviderRegistry:
         """Test filtering providers that support OAuth."""
         registry = ProviderRegistry()
         oauth_providers = registry.get_oauth_providers()
-
-        # Should include anthropic-claude-pro-max
-        oauth_keys = [p.key for p in oauth_providers]
-        assert "anthropic-claude-pro-max" in oauth_keys
 
         # All returned providers should support OAuth
         for provider in oauth_providers:

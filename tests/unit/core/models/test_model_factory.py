@@ -11,7 +11,6 @@ from llm_orc.core.models.model_factory import (
     ModelFactory,
     _create_api_key_model,
     _create_authenticated_model,
-    _create_oauth_model,
     _handle_no_authentication,
     _is_openai_compatible,
     _merge_options,
@@ -20,7 +19,6 @@ from llm_orc.core.models.model_factory import (
 from llm_orc.models.anthropic import (
     ClaudeCLIModel,
     ClaudeModel,
-    OAuthClaudeModel,
 )
 from llm_orc.models.mock import MockModel
 from llm_orc.models.ollama import OllamaModel
@@ -355,55 +353,6 @@ class TestModelFactory:
         with pytest.raises(ValueError, match=r"No API key found"):
             await model_factory.load_model("claude-3-sonnet", "anthropic")
 
-    async def test_load_model_oauth_auth_with_client_id(
-        self,
-        model_factory: ModelFactory,
-        mock_credential_storage: Mock,
-    ) -> None:
-        """Test loading model with OAuth and client_id."""
-        mock_credential_storage.get_auth_method.return_value = "oauth"
-        mock_credential_storage.get_oauth_token.return_value = {
-            "access_token": "access-token",
-            "refresh_token": "refresh-token",
-            "client_id": "test-client-id",
-            "expires_at": 1234567890,
-        }
-
-        model = await model_factory.load_model("claude-pro", "anthropic")
-
-        assert isinstance(model, OAuthClaudeModel)
-        assert model.access_token == "access-token"
-        assert model.client_id == "test-client-id"
-
-    async def test_load_model_oauth_auth_anthropic_claude_pro_max(
-        self,
-        model_factory: ModelFactory,
-        mock_credential_storage: Mock,
-    ) -> None:
-        """Test OAuth for anthropic-claude-pro-max fallback."""
-        mock_credential_storage.get_auth_method.return_value = "oauth"
-        mock_credential_storage.get_oauth_token.return_value = {
-            "access_token": "access-token",
-            "refresh_token": "refresh-token",
-        }
-
-        model = await model_factory.load_model("anthropic-claude-pro-max")
-
-        assert isinstance(model, OAuthClaudeModel)
-        assert model.client_id == "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-
-    async def test_load_model_oauth_auth_missing_token(
-        self,
-        model_factory: ModelFactory,
-        mock_credential_storage: Mock,
-    ) -> None:
-        """Test exception when OAuth configured but no token."""
-        mock_credential_storage.get_auth_method.return_value = "oauth"
-        mock_credential_storage.get_oauth_token.return_value = None
-
-        with pytest.raises(ValueError, match=r"No OAuth token found"):
-            await model_factory.load_model("claude-pro", "anthropic")
-
     async def test_load_model_unknown_auth_method(
         self,
         model_factory: ModelFactory,
@@ -558,7 +507,7 @@ class TestModelFactory:
         """Test fallback using configurable fallback_model_profile."""
         mock_config_manager.get_model_profile.return_value = {
             "model": "claude-sonnet-4",
-            "provider": "anthropic-claude-pro-max",
+            "provider": "anthropic-api",
             "fallback_model_profile": "micro-local",
         }
 
@@ -574,10 +523,10 @@ class TestModelFactory:
         ) as mock_load:
             model = await model_factory.get_fallback_model(
                 context="agent_test",
-                original_profile="claude-pro-max",
+                original_profile="premium-claude",
             )
 
-            mock_config_manager.get_model_profile.assert_called_with("claude-pro-max")
+            mock_config_manager.get_model_profile.assert_called_with("premium-claude")
             mock_config_manager.resolve_model_profile.assert_called_with("micro-local")
             mock_load.assert_called_with("qwen3:0.6b", "ollama")
             assert isinstance(model, OllamaModel)
@@ -589,9 +538,9 @@ class TestModelFactory:
     ) -> None:
         """Test cascading fallbacks: A -> B -> C -> default."""
         profile_configs = {
-            "claude-pro-max": {
+            "premium-claude": {
                 "model": "claude-sonnet-4",
-                "provider": "anthropic-claude-pro-max",
+                "provider": "anthropic-api",
                 "fallback_model_profile": "micro-local",
             },
             "micro-local": {
@@ -641,7 +590,7 @@ class TestModelFactory:
         ):
             model = await model_factory.get_fallback_model(
                 context="agent_test",
-                original_profile="claude-pro-max",
+                original_profile="premium-claude",
             )
 
             assert len(model_load_calls) == 3
@@ -754,20 +703,6 @@ class TestLoadModelHelperMethods:
         assert isinstance(result, ClaudeCLIModel)
         assert result.claude_path == "/path/to/claude"
 
-    def test_create_oauth_model(self) -> None:
-        """Test OAuth model creation."""
-        oauth_token = {
-            "access_token": "test-token",
-            "refresh_token": "refresh-token",
-            "expires_at": 1234567890,
-        }
-        storage = Mock()
-
-        result = _create_oauth_model(oauth_token, storage, "claude-pro")
-
-        assert isinstance(result, OAuthClaudeModel)
-        assert result.access_token == "test-token"
-
     def test_resolve_authentication_method_with_provider(
         self,
     ) -> None:
@@ -830,34 +765,6 @@ class TestLoadModelHelperMethods:
             temperature=None,
             max_tokens=None,
             base_url=None,
-        )
-
-    def test_create_authenticated_model_oauth(self) -> None:
-        """Test authenticated model creation with OAuth."""
-        storage = Mock()
-        oauth_token = {"access_token": "test-token"}
-        storage.get_oauth_token.return_value = oauth_token
-
-        with patch(
-            "llm_orc.core.models.model_factory._create_oauth_model"
-        ) as mock_create:
-            mock_model = Mock()
-            mock_create.return_value = mock_model
-
-            result = _create_authenticated_model(
-                "claude-pro",
-                "anthropic",
-                "oauth",
-                storage,
-            )
-
-        assert result == mock_model
-        mock_create.assert_called_once_with(
-            oauth_token,
-            storage,
-            "anthropic",
-            temperature=None,
-            max_tokens=None,
         )
 
     def test_create_authenticated_model_no_api_key(
