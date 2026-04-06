@@ -10,7 +10,7 @@ import pytest
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 from llm_orc.core.config.roles import RoleDefinition
 from llm_orc.core.execution.result_types import ExecutionMetadata, ExecutionResult
-from llm_orc.models.anthropic import ClaudeCLIModel, ClaudeModel, OAuthClaudeModel
+from llm_orc.models.anthropic import ClaudeCLIModel, ClaudeModel
 from llm_orc.models.base import ModelInterface
 from llm_orc.schemas.agent_config import LlmAgentConfig, ScriptAgentConfig
 
@@ -580,23 +580,7 @@ class TestEnsembleExecutor:
             assert isinstance(model, ClaudeModel)
             assert model.api_key == "sk-ant-test123"
 
-            # Test 2: Load model for "anthropic-claude-pro-max" OAuth configuration
-            mock_storage.get_auth_method.return_value = "oauth"
-            mock_storage.get_oauth_token.return_value = {
-                "access_token": "oauth_access_token",
-                "refresh_token": "oauth_refresh_token",
-                "client_id": "oauth_client_id",
-            }
-
-            model = await executor._model_factory.load_model("anthropic-claude-pro-max")
-
-            # Should create OAuthClaudeModel
-            assert isinstance(model, OAuthClaudeModel)
-            assert model.access_token == "oauth_access_token"
-            assert model.refresh_token == "oauth_refresh_token"
-            assert model.client_id == "oauth_client_id"
-
-            # Test 3: Load model for "claude-cli" configuration
+            # Test 2: Load model for "claude-cli" configuration
             # claude-cli stores path as "api_key"
             mock_storage.get_auth_method.return_value = "api_key"
             mock_storage.get_api_key.return_value = "/usr/local/bin/claude"
@@ -630,7 +614,7 @@ class TestEnsembleExecutor:
                 "model_profiles": {
                     "test-profile": {
                         "model": "claude-3-5-sonnet-20241022",
-                        "provider": "anthropic-claude-pro-max",
+                        "provider": "anthropic-api",
                     }
                 }
             }
@@ -646,24 +630,18 @@ class TestEnsembleExecutor:
             ) as mock_resolve_model_profile:
                 mock_resolve_model_profile.return_value = (
                     "claude-3-5-sonnet-20241022",
-                    "anthropic-claude-pro-max",
+                    "anthropic-api",
                 )
 
                 with patch.object(
                     executor._model_factory, "_credential_storage"
                 ) as mock_credential_storage:
-                    # Mock auth method to prevent fallback logic
-                    mock_credential_storage.get_auth_method.return_value = "oauth"
-                    mock_credential_storage.get_oauth_token.return_value = {
-                        "access_token": "test_token",
-                        "refresh_token": "test_refresh",
-                        "client_id": "test_client_id",
-                    }
+                    # Mock auth method using api_key (oauth no longer supported)
+                    mock_credential_storage.get_auth_method.return_value = "api_key"
+                    mock_credential_storage.get_api_key.return_value = "test-api-key"
 
                     # This should call resolve_model_profile and use the resolved
                     # model+provider
-                    # Note: The method may not raise an error due to fallback logic,
-                    # but should call resolve_model_profile
                     await executor._model_factory.load_model_from_agent_config(
                         {"name": "agent1", "model_profile": "test-profile"}
                     )
@@ -696,7 +674,7 @@ class TestEnsembleExecutor:
                     {
                         "name": "agent1",
                         "model": "claude-3-5-sonnet-20241022",
-                        "provider": "anthropic-claude-pro-max",
+                        "provider": "anthropic-api",
                     }
                 )
 
@@ -861,7 +839,7 @@ class TestEnsembleExecutor:
         mock_profiles = {
             "test-profile": {
                 "model": "claude-3-5-sonnet",
-                "provider": "anthropic-claude-pro-max",
+                "provider": "anthropic-api",
                 "temperature": 0.7,
             }
         }
@@ -886,7 +864,7 @@ class TestEnsembleExecutor:
 
             # Should merge profile with agent config (agent takes precedence)
             assert enhanced["model"] == "claude-3-5-sonnet"
-            assert enhanced["provider"] == "anthropic-claude-pro-max"
+            assert enhanced["provider"] == "anthropic-api"
             assert enhanced["temperature"] == 0.9  # Agent override
             assert enhanced["name"] == "test_agent"
 
@@ -1085,7 +1063,6 @@ class TestEnsembleExecutor:
         from unittest.mock import AsyncMock, Mock, patch
 
         from llm_orc.core.config.ensemble_config import EnsembleConfig
-        from llm_orc.models.anthropic import OAuthClaudeModel
 
         executor = mock_ensemble_executor
         config = EnsembleConfig(
@@ -1100,7 +1077,7 @@ class TestEnsembleExecutor:
             ],
         )
 
-        mock_oauth_model = Mock(spec=OAuthClaudeModel)
+        mock_oauth_model = Mock()
         mock_oauth_model.generate_response = AsyncMock()
         mock_oauth_model.generate_response.side_effect = Exception(
             "OAuth token refresh failed with status 400: "
@@ -1172,7 +1149,6 @@ class TestEnsembleExecutor:
         from unittest.mock import AsyncMock, Mock, patch
 
         from llm_orc.core.config.ensemble_config import EnsembleConfig
-        from llm_orc.models.anthropic import OAuthClaudeModel
 
         executor = mock_ensemble_executor
         config = EnsembleConfig(
@@ -1187,7 +1163,7 @@ class TestEnsembleExecutor:
             ],
         )
 
-        mock_oauth_model = Mock(spec=OAuthClaudeModel)
+        mock_oauth_model = Mock()
         mock_oauth_model.generate_response = AsyncMock()
         mock_oauth_model.generate_response.side_effect = Exception(
             "OAuth token refresh failed with status 400: "

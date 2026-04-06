@@ -8,7 +8,6 @@ from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.models.anthropic import (
     ClaudeCLIModel,
     ClaudeModel,
-    OAuthClaudeModel,
 )
 from llm_orc.models.base import ModelInterface
 from llm_orc.models.mock import MockModel
@@ -321,18 +320,6 @@ def _create_authenticated_model(
             base_url=base_url,
         )
 
-    elif auth_method == "oauth":
-        oauth_token = storage.get_oauth_token(lookup_key)
-        if not oauth_token:
-            raise ValueError(f"No OAuth token found for {lookup_key}")
-        return _create_oauth_model(
-            oauth_token,
-            storage,
-            lookup_key,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-
     else:
         raise ValueError(f"Unknown authentication method: {auth_method}")
 
@@ -452,42 +439,6 @@ def _create_api_key_model(
             temperature=temperature,
             max_tokens=max_tokens,
         )
-
-
-def _create_oauth_model(
-    oauth_token: dict[str, Any],
-    storage: CredentialStorage,
-    model_name: str,
-    *,
-    temperature: float | None = None,
-    max_tokens: int | None = None,
-) -> ModelInterface:
-    """Create model using OAuth authentication.
-
-    Args:
-        oauth_token: OAuth token dictionary
-        storage: Credential storage instance
-        model_name: Name of the model
-        temperature: Optional temperature for generation
-        max_tokens: Optional max tokens for generation
-
-    Returns:
-        Configured OAuth model interface
-    """
-    client_id = oauth_token.get("client_id")
-    if not client_id and model_name == "anthropic-claude-pro-max":
-        client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-
-    return OAuthClaudeModel(
-        access_token=oauth_token["access_token"],
-        refresh_token=oauth_token.get("refresh_token"),
-        client_id=client_id,
-        credential_storage=storage,
-        provider_key=model_name,
-        expires_at=oauth_token.get("expires_at"),
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
 
 
 def _merge_options(

@@ -8,7 +8,6 @@ import click
 from llm_orc.cli_modules.utils.auth_utils import (
     handle_anthropic_interactive_auth,
     handle_claude_cli_auth,
-    handle_claude_pro_max_oauth,
 )
 from llm_orc.core.auth.authentication import AuthenticationManager, CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
@@ -30,11 +29,6 @@ def _handle_special_provider(
 
     if provider_lower == "claude-cli":
         handle_claude_cli_auth(storage)
-        return True
-
-    if provider_lower == "anthropic-claude-pro-max":
-        _remove_existing_provider(storage, provider)
-        handle_claude_pro_max_oauth(auth_manager, storage)
         return True
 
     is_anthropic_interactive = (
@@ -159,7 +153,7 @@ def remove_auth_provider(provider: str) -> None:
 
 
 def test_token_refresh(provider: str) -> None:
-    """Test OAuth token refresh for a specific provider."""
+    """Display OAuth token status for a specific provider."""
     config_manager = ConfigurationManager()
     storage = CredentialStorage(config_manager)
 
@@ -177,44 +171,10 @@ def test_token_refresh(provider: str) -> None:
         token_analysis = _analyze_token_info(oauth_token)
         _display_token_status(provider, token_analysis)
 
-        # Check if refresh is possible
-        if not token_analysis["has_refresh_token"]:
-            click.echo("\n❌ Cannot test refresh: no refresh token available")
-            return
-
-        # Resolve client ID (with provider-specific defaults)
-        client_id = _resolve_client_id(provider, token_analysis, oauth_token)
-        if not client_id:
-            return
-
-        # Test the refresh
-        click.echo(f"\n🔄 Testing token refresh for {provider}...")
-
-        from llm_orc.core.auth.oauth_client import OAuthClaudeClient
-
-        client = OAuthClaudeClient(
-            access_token=oauth_token["access_token"],
-            refresh_token=oauth_token["refresh_token"],
-        )
-
-        if client.refresh_access_token(client_id):
-            click.echo("✅ Token refresh successful!")
-
-            # Update stored credentials
-            storage.store_oauth_token(
-                provider,
-                client.access_token,
-                client.refresh_token,
-                expires_at=int(time.time()) + 3600,
-                client_id=client_id,
-            )
-            click.echo("✅ Updated stored credentials")
-        else:
-            click.echo("❌ Token refresh failed!")
-            click.echo("Check the error messages above for details.")
-
+    except click.ClickException:
+        raise
     except Exception as e:
-        raise click.ClickException(f"Failed to test token refresh: {str(e)}") from e
+        raise click.ClickException(f"Failed to check token status: {str(e)}") from e
 
 
 def auth_setup() -> None:
@@ -285,9 +245,7 @@ def _determine_auth_method(provider_key: str) -> str:
     from llm_orc.menu_system import AuthMenus
 
     # Hard-coded auth methods for specific providers
-    if provider_key == "anthropic-claude-pro-max":
-        return "oauth"  # Claude Pro/Max only supports OAuth
-    elif provider_key == "anthropic-api":
+    if provider_key == "anthropic-api":
         return "api_key"  # Anthropic API only supports API key
     elif provider_key == "google-gemini":
         return "api_key"  # Google Gemini only supports API key
@@ -344,20 +302,13 @@ def _handle_authentication_setup(
         bool: True to continue with next iteration (help case),
               False to continue with next provider (normal case)
     """
-    from llm_orc.cli_modules.utils.auth_utils import (
-        handle_claude_pro_max_oauth,
-    )
-    from llm_orc.menu_system import show_error, show_success, show_working
+    from llm_orc.menu_system import show_error, show_success
 
     if auth_method == "help":
         from llm_orc.cli_modules.utils.auth_utils import show_auth_method_help
 
         show_auth_method_help()
         return True  # Continue with next iteration
-    elif auth_method == "oauth" and provider_key == "anthropic-claude-pro-max":
-        show_working("Setting up Claude Pro/Max OAuth...")
-        handle_claude_pro_max_oauth(auth_manager, storage)
-        show_success("Claude Pro/Max OAuth configured!")
     elif auth_method in ("api_key", "api-key"):
         _handle_api_key_setup(provider_key, provider, storage)
     elif auth_method == "oauth":
@@ -638,32 +589,6 @@ def _display_token_status(provider: str, token_analysis: dict[str, Any]) -> None
         elif "expired_for_seconds" in token_analysis:
             expired_for = token_analysis["expired_for_seconds"]
             click.echo(f"  ⚠️ Token expired {expired_for} seconds ago")
-
-
-def _resolve_client_id(
-    provider: str, token_analysis: dict[str, Any], oauth_token: dict[str, Any]
-) -> str | None:
-    """Resolve client ID for token refresh, using defaults when needed.
-
-    Args:
-        provider: Provider name
-        token_analysis: Token analysis results
-        oauth_token: OAuth token dictionary
-
-    Returns:
-        Client ID string if available, None if cannot be resolved
-    """
-    if token_analysis["has_client_id"]:
-        return str(oauth_token["client_id"])
-
-    # Use default client ID for anthropic-claude-pro-max
-    if provider == "anthropic-claude-pro-max":
-        default_client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-        click.echo(f"\n🔧 Using default client ID: {default_client_id}")
-        return default_client_id
-
-    click.echo("\n❌ Cannot test refresh: no client ID available")
-    return None
 
 
 def _initialize_auth_setup_managers() -> tuple[

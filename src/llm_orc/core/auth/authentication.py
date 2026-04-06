@@ -10,7 +10,6 @@ import yaml
 from cryptography.fernet import Fernet, InvalidToken
 
 from llm_orc.core.auth.oauth_flows import (
-    AnthropicOAuthFlow,
     GoogleGeminiOAuthFlow,
     OAuthCallbackHandler,
     OAuthFlow,
@@ -26,7 +25,6 @@ __all__ = [
     "OAuthCallbackHandler",
     "OAuthFlow",
     "GoogleGeminiOAuthFlow",
-    "AnthropicOAuthFlow",
     "create_oauth_flow",
 ]
 
@@ -66,8 +64,8 @@ def _get_authorization_url_and_open_browser(oauth_flow: OAuthFlow) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    # We're using Anthropic's callback endpoint, so no local server needed
-    print("🔧 Using Anthropic's OAuth callback endpoint...")
+    # Using provider's callback endpoint, so no local server needed
+    print("🔧 Using OAuth callback endpoint...")
 
     # Get authorization URL and open browser
     try:
@@ -512,7 +510,7 @@ class AuthenticationManager:
         return self._authenticated_clients.get(provider)
 
     def logout_oauth_provider(self, provider: str) -> bool:
-        """Logout an OAuth provider by revoking tokens and removing credentials.
+        """Logout an OAuth provider by removing credentials.
 
         Args:
             provider: Provider name to logout
@@ -526,41 +524,7 @@ class AuthenticationManager:
             if not auth_method or auth_method != "oauth":
                 return False
 
-            # Get OAuth token information
-            oauth_info = self.credential_storage.get_oauth_token(provider)
-            if not oauth_info:
-                return False
-
-            # Get client_id from stored credentials
-            credentials = self.credential_storage._load_credentials()
-            provider_data = credentials.get(provider, {})
-            client_id = provider_data.get("client_id")
-
-            if not client_id:
-                # If no client_id, we can't revoke tokens via API
-                # but we can still remove local credentials
-                self.credential_storage.remove_provider(provider)
-                if provider in self._authenticated_clients:
-                    del self._authenticated_clients[provider]
-                return True
-
-            # Create OAuth client to revoke tokens
-            from llm_orc.core.auth.oauth_client import OAuthClaudeClient
-
-            oauth_client = OAuthClaudeClient(
-                access_token=oauth_info["access_token"],
-                refresh_token=oauth_info.get("refresh_token"),
-            )
-
-            try:
-                # Attempt to revoke tokens
-                oauth_client.revoke_all_tokens(client_id)
-            except (OSError, ConnectionError):
-                # Continue even if token revocation fails
-                # (tokens may already be expired or network issues)
-                pass
-
-            # Remove local credentials regardless of revocation success
+            # Remove local credentials
             self.credential_storage.remove_provider(provider)
 
             # Remove from authenticated clients

@@ -341,13 +341,7 @@ class TestAuthCommandsNew:
     def test_auth_add_anthropic_interactive_api_key(
         self, runner: CliRunner, temp_config_dir: Path
     ) -> None:
-        """Test interactive Anthropic auth setup choosing API key."""
-        # Given - user chooses API key option
-        inputs = [
-            "1",  # Choose API key option
-            "sk-ant-test123",  # API key input
-        ]
-
+        """Test interactive Anthropic auth setup prompts for API key."""
         # When
         config_manager_path = (
             "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
@@ -380,112 +374,19 @@ class TestAuthCommandsNew:
 
                     # Mock CredentialStorage
                     mock_storage = Mock()
-                    mock_storage.list_providers.return_value = []  # Empty list
+                    mock_storage.list_providers.return_value = []
                     mock_storage.store_api_key.return_value = None
                     mock_storage_class.return_value = mock_storage
 
                     result = runner.invoke(
                         cli,
                         ["auth", "add", "anthropic"],
-                        input="\n".join(inputs),
+                        input="sk-ant-test123\n",
                     )
 
         # Then
         assert result.exit_code == 0
-        assert "How would you like to authenticate with Anthropic?" in result.output
-        assert "1. API Key (for Anthropic API access)" in result.output
-        assert (
-            "2. Claude Pro/Max OAuth (for your existing Claude subscription)"
-            in result.output
-        )
         assert "✅ API key configured as 'anthropic-api'" in result.output
-
-    def test_auth_add_anthropic_interactive_oauth(
-        self, runner: CliRunner, temp_config_dir: Path
-    ) -> None:
-        """Test interactive Anthropic auth setup choosing OAuth."""
-        # Given - user chooses OAuth option
-        inputs = [
-            "2",  # Choose OAuth option
-            # OAuth flow would be mocked in real implementation
-        ]
-
-        # When
-        config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
-        )
-        setup_oauth_path = "llm_orc.cli_modules.utils.auth_utils.setup_anthropic_oauth"
-        with patch(config_manager_path) as mock_config_manager:
-            with patch(setup_oauth_path) as mock_setup_oauth:
-                mock_instance = mock_config_manager.return_value
-                mock_instance._global_config_dir = temp_config_dir
-                mock_instance.ensure_global_config_dir.return_value = None
-                mock_instance.get_credentials_file.return_value = (
-                    temp_config_dir / "credentials.yaml"
-                )
-                mock_instance.get_encryption_key_file.return_value = (
-                    temp_config_dir / ".encryption_key"
-                )
-                mock_instance.needs_migration.return_value = False
-
-                # Mock successful OAuth flow - just return successfully
-                mock_setup_oauth.return_value = None
-
-                result = runner.invoke(
-                    cli,
-                    ["auth", "add", "anthropic"],
-                    input="\n".join(inputs),
-                )
-
-        # Then
-        assert result.exit_code == 0
-        assert "How would you like to authenticate with Anthropic?" in result.output
-        assert "2. Claude Pro/Max OAuth" in result.output
-        assert "✅ OAuth configured as 'anthropic-claude-pro-max'" in result.output
-
-    def test_auth_add_anthropic_interactive_both(
-        self, runner: CliRunner, temp_config_dir: Path
-    ) -> None:
-        """Test interactive Anthropic auth setup choosing both methods."""
-        # Given - user chooses both options
-        inputs = [
-            "3",  # Choose both option
-            "sk-ant-test123",  # API key input
-        ]
-
-        # When
-        config_manager_path = (
-            "llm_orc.cli_modules.commands.auth_commands.ConfigurationManager"
-        )
-        setup_oauth_path = "llm_orc.cli_modules.utils.auth_utils.setup_anthropic_oauth"
-        with patch(config_manager_path) as mock_config_manager:
-            with patch(setup_oauth_path) as mock_setup_oauth:
-                mock_instance = mock_config_manager.return_value
-                mock_instance._global_config_dir = temp_config_dir
-                mock_instance.ensure_global_config_dir.return_value = None
-                mock_instance.get_credentials_file.return_value = (
-                    temp_config_dir / "credentials.yaml"
-                )
-                mock_instance.get_encryption_key_file.return_value = (
-                    temp_config_dir / ".encryption_key"
-                )
-                mock_instance.needs_migration.return_value = False
-
-                # Mock successful OAuth flow - just return successfully
-                mock_setup_oauth.return_value = None
-
-                result = runner.invoke(
-                    cli,
-                    ["auth", "add", "anthropic"],
-                    input="\n".join(inputs),
-                )
-
-        # Then
-        assert result.exit_code == 0
-        assert "How would you like to authenticate with Anthropic?" in result.output
-        assert "3. Both (set up multiple authentication methods)" in result.output
-        assert "✅ API key configured as 'anthropic-api'" in result.output
-        assert "✅ OAuth configured as 'anthropic-claude-pro-max'" in result.output
 
     def test_auth_add_claude_cli_when_available(
         self, runner: CliRunner, temp_config_dir: Path
@@ -593,15 +494,13 @@ class TestAuthCommandsNew:
                 mock_auth_manager.logout_oauth_provider.return_value = True
 
                 # When
-                result = runner.invoke(
-                    cli, ["auth", "logout", "anthropic-claude-pro-max"]
-                )
+                result = runner.invoke(cli, ["auth", "logout", "google-oauth"])
 
                 # Then
                 assert result.exit_code == 0
-                assert "Logged out from anthropic-claude-pro-max" in result.output
+                assert "Logged out from google-oauth" in result.output
                 mock_auth_manager.logout_oauth_provider.assert_called_once_with(
-                    "anthropic-claude-pro-max"
+                    "google-oauth"
                 )
 
     def test_auth_logout_nonexistent_provider(
@@ -717,8 +616,8 @@ class TestAuthCommandsNew:
             with patch(auth_manager_path) as mock_auth:
                 mock_auth_manager = mock_auth.return_value
                 mock_auth_manager.logout_all_oauth_providers.return_value = {
-                    "anthropic-claude-pro-max": True,
                     "google-oauth": True,
+                    "custom-oauth": True,
                 }
 
                 # When
@@ -727,8 +626,8 @@ class TestAuthCommandsNew:
                 # Then
                 assert result.exit_code == 0
                 assert "Logged out from 2 OAuth providers" in result.output
-                assert "anthropic-claude-pro-max: ✅" in result.output
                 assert "google-oauth: ✅" in result.output
+                assert "custom-oauth: ✅" in result.output
                 mock_auth_manager.logout_all_oauth_providers.assert_called_once()
 
     def test_auth_logout_all_no_oauth_providers(
@@ -794,7 +693,7 @@ class TestAuthCommandsNew:
             with patch(auth_manager_path) as mock_auth:
                 mock_auth_manager = mock_auth.return_value
                 mock_auth_manager.logout_all_oauth_providers.return_value = {
-                    "anthropic-claude-pro-max": True,
+                    "google-oauth": True,
                     "failed-provider": False,
                 }
 
@@ -804,7 +703,7 @@ class TestAuthCommandsNew:
                 # Then
                 assert result.exit_code == 0
                 assert "Logged out from 1 OAuth providers" in result.output
-                assert "anthropic-claude-pro-max: ✅" in result.output
+                assert "google-oauth: ✅" in result.output
                 assert "failed-provider: ❌" in result.output
 
     def test_auth_logout_no_provider_no_all_flag(

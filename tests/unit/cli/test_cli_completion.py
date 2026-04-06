@@ -145,7 +145,6 @@ class TestProviderCompletion:
         # Mock the available providers
         mock_get_providers.return_value = [
             "anthropic-api",
-            "anthropic-claude-pro-max",
             "google-gemini",
             "ollama",
         ]
@@ -156,12 +155,11 @@ class TestProviderCompletion:
         # Test completion with partial input
         result = complete_providers(ctx, param, "anthropic")
 
-        # Should return both anthropic providers
+        # Should return only anthropic-api
         assert "anthropic-api" in result
-        assert "anthropic-claude-pro-max" in result
         assert "google-gemini" not in result
         assert "ollama" not in result
-        assert len(result) == 2
+        assert len(result) == 1
 
     @patch("llm_orc.cli_completion.get_available_providers")
     def test_complete_providers_returns_empty_on_error(

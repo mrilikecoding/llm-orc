@@ -42,9 +42,6 @@ class ProviderHandler:
         providers["ollama"] = await self._get_ollama_status()
 
         providers["anthropic-api"] = self._get_cloud_provider_status("anthropic-api")
-        providers["anthropic-claude-pro-max"] = self._get_cloud_provider_status(
-            "anthropic-claude-pro-max"
-        )
         providers["google-gemini"] = self._get_cloud_provider_status("google-gemini")
 
         oai_status = await self._get_openai_compatible_status()

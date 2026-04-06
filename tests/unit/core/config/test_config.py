@@ -116,7 +116,6 @@ class TestConfigurationManager:
                 # Check that template files were copied
                 expected_files = [
                     "validate-anthropic-api.yaml",
-                    "validate-anthropic-claude-pro-max.yaml",
                     "validate-google-gemini.yaml",
                     "validate-ollama.yaml",
                 ]

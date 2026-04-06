@@ -60,18 +60,6 @@ class ProviderRegistry:
             )
         )
 
-        # Anthropic Claude Pro/Max - OAuth only
-        self.register(
-            ProviderInfo(
-                key="anthropic-claude-pro-max",
-                display_name="Claude Pro/Max",
-                description="Use existing Claude Pro/Max subscription",
-                auth_methods=[AuthMethod.OAUTH],
-                emoji="🔐",
-                requires_subscription=True,
-            )
-        )
-
         # Google Gemini - API key only
         self.register(
             ProviderInfo(

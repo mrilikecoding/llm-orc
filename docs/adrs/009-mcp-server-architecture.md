@@ -525,9 +525,6 @@ tools:
         anthropic-api:
           available: boolean
           reason: string  # "configured" or "not configured"
-        anthropic-claude-pro-max:
-          available: boolean
-          reason: string  # "oauth configured" or "no oauth tokens"
         google-gemini:
           available: boolean
           reason: string
