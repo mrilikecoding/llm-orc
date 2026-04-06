@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-04-06
+
+### Removed
+- **Claude Pro/Max OAuth provider** — the `anthropic-claude-pro-max` provider, `OAuthClaudeModel`, `OAuthClaudeClient`, and `AnthropicOAuthFlow` have been removed following Anthropic's terms changes; all Anthropic access now uses the `anthropic-api` provider with API keys
+- **Anthropic OAuth client module** — `oauth_client.py` deleted; generic OAuth infrastructure (used by Gemini) is preserved
+- **Validation ensemble** — `validate-anthropic-claude-pro-max` template removed
+
+### Changed
+- **All model profiles** using `provider: anthropic-claude-pro-max` now use `provider: anthropic-api`
+- **`test_token_refresh` command** simplified to display token status only (no longer attempts refresh via removed OAuth client)
+- **`handle_anthropic_interactive_auth`** simplified to API key prompt only (no longer offers OAuth/both choices)
+
+### Migration
+- Users with `anthropic-claude-pro-max` credentials must reconfigure: `llm-orc auth add anthropic-api --api-key YOUR_KEY`
+- Update any custom profiles or ensembles referencing `provider: anthropic-claude-pro-max` to `provider: anthropic-api`
+
 ## [0.16.0] - 2026-03-20
 
 ### Added
