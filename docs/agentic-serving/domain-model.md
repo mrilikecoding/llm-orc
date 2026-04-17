@@ -81,11 +81,11 @@
 
 **AS-5. Quality signals govern stabilization, not frequency.** *(Applies when Plexus is active.)* A pattern does not stabilize into a reliable library entry by being used often. Stabilization requires accumulated quality signals demonstrating effectiveness. Frequency without quality is noise.
 
-**AS-8. Plexus is optional.** The orchestrator agent, serving layer, budget enforcement, result summarization, conversation compaction, and ensemble composition all function without Plexus. When Plexus is absent, the orchestrator operates statelessly -- routing by reasoning rather than retrieval, with no cross-session memory, no stabilization, and no bootstrapping. Plexus transforms a stateless orchestrator into a learning one, but is not a prerequisite for agentic serving.
-
 **AS-6. The orchestrator composes from existing primitives only.** The orchestrator agent can compose new ensembles from model profiles, scripts, and other ensembles that exist in the library. It cannot author arbitrary scripts or create new model profiles. The composable surface is fixed; only the arrangement is dynamic.
 
 **AS-7. Result summarization is a correctness requirement.** Full ensemble result dictionaries must be summarized before entering the orchestrator's context. This is not an optimization -- unsummarized results cause context rot that degrades orchestrator quality over the course of a session.
+
+**AS-8. Plexus is optional.** The orchestrator agent, serving layer, budget enforcement, result summarization, conversation compaction, and ensemble composition all function without Plexus. When Plexus is absent, the orchestrator operates statelessly -- routing by reasoning rather than retrieval, with no cross-session memory, no stabilization, and no bootstrapping. Plexus transforms a stateless orchestrator into a learning one, but is not a prerequisite for agentic serving.
 
 ## Open Questions
 
