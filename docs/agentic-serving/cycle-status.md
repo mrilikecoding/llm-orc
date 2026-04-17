@@ -15,7 +15,6 @@
 | DECIDE | ☐ Pending | -- | -- |
 | ARCHITECT | ☐ Pending | -- | -- |
 | BUILD | ☐ Pending | -- | -- |
-| INTEGRATE | ☐ Pending | -- | -- |
 | PLAY | ☐ Optional | -- | -- |
 | SYNTHESIZE | ☐ Optional | -- | -- |
 
