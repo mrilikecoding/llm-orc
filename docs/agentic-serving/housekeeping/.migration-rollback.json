@@ -1,0 +1,45 @@
+{
+  "migration_version": "0.7.3",
+  "migrated_at": "2026-04-17",
+  "scope": "docs/agentic-serving/",
+  "files_moved": [
+    {
+      "from": "docs/agentic-serving/essays/audits/citation-audit-001.md",
+      "to": "docs/agentic-serving/housekeeping/audits/citation-audit-001.md"
+    },
+    {
+      "from": "docs/agentic-serving/essays/audits/argument-audit-001.md",
+      "to": "docs/agentic-serving/housekeeping/audits/argument-audit-001.md"
+    },
+    {
+      "from": "docs/agentic-serving/cycle-status.md",
+      "to": "docs/agentic-serving/housekeeping/cycle-status.md"
+    }
+  ],
+  "directories_removed": [
+    "docs/agentic-serving/essays/audits/"
+  ],
+  "directories_created": [
+    "docs/agentic-serving/housekeeping/",
+    "docs/agentic-serving/housekeeping/audits/",
+    "docs/agentic-serving/housekeeping/gates/"
+  ],
+  "reference_updates": [
+    {
+      "file": "docs/agentic-serving/housekeeping/cycle-status.md",
+      "changes": [
+        "essays/001-agentic-serving-architecture.md -> ../essays/001-agentic-serving-architecture.md (Essay header, 1 occurrence)",
+        "essays/001-agentic-serving-architecture.md -> ../essays/001-agentic-serving-architecture.md (Phase Status RESEARCH row, 1 occurrence)",
+        "product-discovery.md -> ../product-discovery.md (Phase Status DISCOVER row, 1 occurrence)",
+        "domain-model.md -> ../domain-model.md (Phase Status MODEL row, 1 occurrence)"
+      ]
+    },
+    {
+      "file": "docs/agentic-serving/ORIENTATION.md",
+      "changes": [
+        "essays/audits/ -> housekeeping/audits/ (Section 4 Tier 3, 2 occurrences)"
+      ]
+    }
+  ],
+  "note": "Automated reversal is not supported. To revert, use git checkout on the pre-migration HEAD."
+}
