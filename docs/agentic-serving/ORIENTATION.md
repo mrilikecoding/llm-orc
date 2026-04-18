@@ -12,11 +12,12 @@ Agentic serving extends llm-orc (a declarative DAG-based LLM orchestration engin
 
 ## Key constraints
 
-*To be populated after MODEL phase. Preliminary constraints from research:*
+Drawn from `domain-model.md`. The full set is AS-1 through AS-8 plus project-level Invariants 1-14; the constraints below most shape downstream decisions.
 
-- Invariant 7 (static ensemble references) governs the ensemble reference graph but not the orchestrator's tool-mediated invocations
-- Context management is a correctness requirement -- ensemble results must be summarized before entering the orchestrator's context
-- Budget enforcement (turn limits, token budgets) operates at the control plane level, not the model level
+- **Plexus is optional (AS-8).** The orchestrator works statelessly -- serving layer, ReAct loop, budget enforcement, result summarization, and ensemble composition all function without Plexus. Plexus is an upgrade to a learning system, not a prerequisite. Design for stateless baseline; benefit from Plexus when available.
+- **Dynamic invocations are outside the ensemble reference graph (AS-1).** Project Invariant 7 governs static YAML composition; it does not govern the orchestrator's runtime tool-mediated invocations. Orchestrator-composed ensembles must still satisfy Invariant 7 internally (AS-2).
+- **Result summarization is a correctness requirement (AS-7).** Full ensemble result dictionaries must be summarized before entering the orchestrator's context. Unsummarized results cause context rot that degrades orchestrator quality over a session.
+- **Budget enforcement is a control plane concern (AS-3).** Turn limits and token budgets are enforced at the session level, checked at each iteration of the ReAct loop, regardless of what the orchestrator LLM decides.
 
 ## How the artifacts fit together
 
@@ -25,10 +26,12 @@ Agentic serving extends llm-orc (a declarative DAG-based LLM orchestration engin
 
 **Tier 2 -- Primary readables:**
 - `product-discovery.md` -- stakeholder needs, value tensions, assumption inversions
-- `system-design.md` -- module boundaries, responsibility allocation, dependency directions
-- `roadmap.md` -- sequenced implementation plan
+- `system-design.md` -- *pending (ARCHITECT)*
+- `roadmap.md` -- *pending (ARCHITECT)*
 
 **Tier 3 -- Supporting material:**
+- `domain-model.md` -- scoped vocabulary (concepts, actions, invariants AS-1..AS-8, open questions); project-level vocabulary remains in force
+- `housekeeping/cycle-status.md` -- active cycle state, phase tracking, feed-forward signals
 - `essays/001-agentic-serving-architecture.md` -- research essay: API surface, orchestrator agent, self-building ensembles, Plexus integration
 - `essays/research-logs/001-agentic-serving-architecture.md` -- research log cycle 1 (Q1-Q4)
 - `essays/research-logs/001b-agentic-serving-architecture.md` -- research log cycle 2 (Q5-Q6: OpenHands, claw-code)
@@ -38,4 +41,4 @@ Agentic serving extends llm-orc (a declarative DAG-based LLM orchestration engin
 
 ## Current state
 
-**RESEARCH and DISCOVER phases complete.** The essay investigates six questions across two research cycles and concludes with a four-layer architecture (API surface, orchestrator agent, ensemble engine, knowledge graph). Product discovery surfaced seven value tensions and six assumption inversions. Key insights: Plexus operates as a push-model lib (client drives ingestion of file content, enrichments extract signal); tool user and ensemble author are often the same person (visibility is tinkering, not just debugging); the knowledge-compensated model selection hypothesis remains unvalidated. The next phase is MODEL (domain vocabulary extraction).
+**RESEARCH, DISCOVER, and MODEL phases complete.** The essay investigates six questions across two research cycles and concludes with a four-layer architecture (API surface, orchestrator agent, ensemble engine, knowledge graph). Product discovery surfaced seven value tensions and six assumption inversions. The domain model establishes 8 scoped invariants (AS-1 through AS-8), 17 concepts, 13 actions, and 7 open questions. Key architectural posture: design for stateless operation (AS-8); Plexus is an upgrade to a learning system, not a prerequisite. The next phase is DECIDE -- ADRs, interaction specifications, and behavior scenarios using the domain vocabulary.
