@@ -33,8 +33,8 @@ Agentic serving extends llm-orc (a declarative DAG-based LLM orchestration engin
 - `essays/research-logs/001-agentic-serving-architecture.md` -- research log cycle 1 (Q1-Q4)
 - `essays/research-logs/001b-agentic-serving-architecture.md` -- research log cycle 2 (Q5-Q6: OpenHands, claw-code)
 - `essays/reflections/001-agentic-serving-architecture.md` -- post-research reflections
-- `essays/audits/citation-audit-001.md` -- citation verification report
-- `essays/audits/argument-audit-001.md` -- argument chain audit report
+- `housekeeping/audits/citation-audit-001.md` -- citation verification report
+- `housekeeping/audits/argument-audit-001.md` -- argument chain audit report
 
 ## Current state
 
