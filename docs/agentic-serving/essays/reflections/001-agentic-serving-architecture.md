@@ -22,3 +22,15 @@ This question should appear in the domain model as an open question for future r
 ## The cost framing
 
 The user's framing of cost (comparing all-day local model usage against Claude Max subscription pricing) suggests the value proposition may be more about economics than capability. If llm-orc + Plexus can deliver 80% of a frontier model's agentic quality at 10% of the cost, that's a compelling pitch even if it never matches frontier quality on hard tasks. The question becomes: how much of agentic work is "hard" vs. "routine with good memory"?
+
+## Plexus as intra-session multi-agent substrate (DECIDE gate, 2026-04-19)
+
+Surfaced at the DECIDE reflection-time gate: Plexus's value is not only cross-session memory. Its query surface takes the shape of *lens grammars* — consumer-registered specifications that govern how content is encoded into the graph during enrichment, and how it is queried back. AS-4 is preserved under this framing: the lens is a schema applied during enrichment, not an LLM-summary ingestion path.
+
+The sharper observation: rather than llm-orc registering a *single* adapter/lens against Plexus, individual ensembles or agents within the orchestration could each register their *own* lenses over the same Plexus context. The orchestrator's access to the graph becomes polyglot — each subagent writes into the shared enrichment through its own grammar and queries the graph through its own lens. This makes Plexus a medium for intra-session cross-talk between subagents, not only a cross-session memory layer.
+
+If this pattern holds, the essay's framing of Plexus-as-memory undersells what Plexus enables. The value appears at the first session, not only after accumulation, because the orchestrator and its subagents can share structured intelligence through the graph within a single session. The OQ #7 dependency weakens: enrichment pipeline maturity still matters, but "wait for the graph to populate" is no longer the dominant constraint.
+
+An open hypothesis travels with this framing: does KG-mediated communication between subagents (via lens grammars) avoid the bias reinforcement documented in direct agent-to-agent communication? A counter: lens grammars could *amplify* bias if a lens privileges some signals over others — bias need not live in the message; it can live in the lens.
+
+The lens-grammar design is in-progress on the Plexus side; this reflection is forward-signal, not a change driver for current ADRs. Captured here and as domain model OQ #8. Folds back into a later cycle when Plexus's lens specification is more settled.

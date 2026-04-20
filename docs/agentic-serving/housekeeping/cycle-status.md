@@ -1,7 +1,7 @@
 # Active RDD Cycle: Agentic Serving
 
 **Started:** 2026-03-20
-**Current phase:** DECIDE (next)
+**Current phase:** ARCHITECT (next)
 **Artifact base:** `docs/agentic-serving/`
 **Essay:** `../essays/001-agentic-serving-architecture.md`
 
@@ -12,7 +12,7 @@
 | RESEARCH | ✅ Complete | `../essays/001-agentic-serving-architecture.md` | The DAG engine and ReAct loop are complementary, not competing. Plexus as knowledge graph doesn't just add memory -- it lowers the capability threshold for the orchestrator LLM, converting reasoning into retrieval. The cost framing may matter more than the capability framing. |
 | DISCOVER | ✅ Complete | `../product-discovery.md` | Plexus as lib (push model) means ingestion boundary is file content, not LLM output -- quality emerges from enrichment, not curation. Tool user and ensemble author often the same person -- visibility is tinkering, not just debugging. Conductor ceiling unknown; orchestration may require frontier models regardless of graph population. Bootstrapping pipeline has a shape but quality gate is the enrichment layer, not upstream curation. |
 | MODEL | ✅ Complete | `../domain-model.md` | Plexus should be optional (AS-8) -- design for stateless, benefit from Plexus when available. Enrichment pipeline maturity is an open question that determines whether the learning-system value proposition is real. Two-tier architecture: stateless orchestrator as baseline, Plexus as upgrade to learning system. |
-| DECIDE | ☐ Pending | -- | -- |
+| DECIDE | ✅ Complete | `../decisions/adr-001..011-*.md`, `../scenarios.md`, `../interaction-specs.md` | Plexus's more compelling frame is intra-session multi-agent substrate via consumer-registered lens grammars, not only cross-session memory. Per-ensemble lens registration would make the orchestrator's access polyglot. AS-4 preserved (lens is query-surface grammar applied during enrichment). Reframe is forward signal, not a current-cycle driver -- Plexus's lens design is in-progress. Captured as OQ #8 and essay reflection; folds back in a later cycle. |
 | ARCHITECT | ☐ Pending | -- | -- |
 | BUILD | ☐ Pending | -- | -- |
 | PLAY | ☐ Optional | -- | -- |
@@ -45,6 +45,21 @@
 16. Two-tier architecture: stateless orchestrator (serving layer + ReAct loop + ensemble engine) as baseline product; Plexus as upgrade to learning system
 17. Enrichment pipeline maturity (open question #7) determines whether the learning-system value proposition is real. Not a blocker but load-bearing for AS-4 and AS-5
 18. 8 invariants (AS-1 through AS-8), 17 concepts, 13 actions, 7 open questions in the scoped model
+
+### From DECIDE
+19. 11 ADRs accepted, cycle-scoped at `../decisions/`. All post-audit revisions applied; three argument-audit rounds closed clean
+20. Budget (ADR-005) sized for long agentic sessions — outer bound of "running an RDD phase within a session." Specific turn/token numbers deferred to build; enforcement mechanism fixed
+21. Full composition palette with validation (ADR-006) overrides the essay's "restrict to profile-and-script" fallback. Conformance debt: cross-ensemble cycle validator is currently private in `EnsembleLoader` — must be extracted to a public function before `compose_ensemble` is built. Captured as refactor scenarios 1-3 in `scenarios.md`
+22. Fixed orchestrator tool surface of exactly 5 tools (ADR-003). No dynamic tool extension
+23. Result summarization is mandatory and has a Plexus-active vs. stateless split (ADR-004). In stateless mode, lost summarization detail is unrecoverable by the orchestrator
+24. Calibration is session-scoped when Plexus is absent; persists across sessions when Plexus is active (ADR-007)
+25. Autonomy Level baseline is calibrated for the operator-as-tool-user persona from DISCOVER. Pure tool-user deployments (FF-2) may warrant a tighter default that surfaces composition events — add as architectural configuration surface
+26. Plexus integration phased (ADR-009): Phase 1 tool-first; Phase 2 context injection deferred. **Phase 2 hook point is structurally reserved** (post-gate reframe applied): ARCHITECT's session-start flow design must include a pre-orchestration stage where injection can be inserted without modifying the ReAct loop (ADR-001) or tool surface (ADR-003). Phase 1 leaves the stage empty; Phase 2 populates it. Technical rationale for Phase 1 sufficiency: linked to orchestrator profile capability (ADR-011) and OQ #1 (knowledge-compensated model selection)
+27. Orchestrator LLM is a Model Profile (ADR-011); no hard-coded tiered fallback. Tiered routing is expressible as a composed ensemble — but only once such an ensemble has been composed and promoted
+28. Client tool surface boundary is an open decision discovered while writing interaction specs. How the orchestrator handles client-declared tools (bash, file-edit, etc.) vs. its internal tool surface (ADR-003) needs resolution in ARCHITECT or a follow-up DECIDE mini-cycle
+
+### From DECIDE (reflection gate)
+29. Plexus's more compelling frame (per user, 2026-04-19) is intra-session multi-agent substrate via consumer-registered lens grammars. Per-ensemble lens registration would make orchestrator access polyglot — each subagent writes and queries through its own grammar over a shared enrichment. AS-4 is preserved under this reading (lens is enrichment-time query grammar, not LLM-summary ingestion). In-design on the Plexus side; captured as OQ #8 and essay reflection; folds back in a later cycle. Not a driver for current-cycle ADR changes
 
 ## Context for Resumption
 
