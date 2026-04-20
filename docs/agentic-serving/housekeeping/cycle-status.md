@@ -1,7 +1,7 @@
 # Active RDD Cycle: Agentic Serving
 
 **Started:** 2026-03-20
-**Current phase:** ARCHITECT (next)
+**Current phase:** BUILD (next)
 **Artifact base:** `docs/agentic-serving/`
 **Essay:** `../essays/001-agentic-serving-architecture.md`
 
@@ -13,7 +13,7 @@
 | DISCOVER | ✅ Complete | `../product-discovery.md` | Plexus as lib (push model) means ingestion boundary is file content, not LLM output -- quality emerges from enrichment, not curation. Tool user and ensemble author often the same person -- visibility is tinkering, not just debugging. Conductor ceiling unknown; orchestration may require frontier models regardless of graph population. Bootstrapping pipeline has a shape but quality gate is the enrichment layer, not upstream curation. |
 | MODEL | ✅ Complete | `../domain-model.md` | Plexus should be optional (AS-8) -- design for stateless, benefit from Plexus when available. Enrichment pipeline maturity is an open question that determines whether the learning-system value proposition is real. Two-tier architecture: stateless orchestrator as baseline, Plexus as upgrade to learning system. |
 | DECIDE | ✅ Complete | `../decisions/adr-001..011-*.md`, `../scenarios.md`, `../interaction-specs.md` | Plexus's more compelling frame is intra-session multi-agent substrate via consumer-registered lens grammars, not only cross-session memory. Per-ensemble lens registration would make the orchestrator's access polyglot. AS-4 preserved (lens is query-surface grammar applied during enrichment). Reframe is forward signal, not a current-cycle driver -- Plexus's lens design is in-progress. Captured as OQ #8 and essay reflection; folds back in a later cycle. |
-| ARCHITECT | ☐ Pending | -- | -- |
+| ARCHITECT | ✅ Complete | `../system-design.md`, `../roadmap.md`, `../ORIENTATION.md` (regenerated) | Retrofit mode: ensemble engine stays Layer 3 unchanged; 12 modules across 4 layers plus typed `resolve_session_start_context` function in Serving Layer; 13 fitness criteria. Client tool surface: Option C (turn-boundary delegation) is the commitment, scenario-gated — WP-F does not start until stress scenarios exercise the C/D distinction. Context Injection demoted from module to typed function (ADR-009 reservation is satisfied by signature + call site, not by a module). Consolidations of Orchestrator Configuration into Serving Layer and Calibration Gate into Runtime rejected: the former would invert layering; the latter would break FC-4. Roadmap has 10 WPs, 3 classified transition states; TS-1 (stateless orchestrator serving OpenCode) is the vision-named intermediate target. |
 | BUILD | ☐ Pending | -- | -- |
 | PLAY | ☐ Optional | -- | -- |
 | SYNTHESIZE | ☐ Optional | -- | -- |
@@ -60,6 +60,17 @@
 
 ### From DECIDE (reflection gate)
 29. Plexus's more compelling frame (per user, 2026-04-19) is intra-session multi-agent substrate via consumer-registered lens grammars. Per-ensemble lens registration would make orchestrator access polyglot — each subagent writes and queries through its own grammar over a shared enrichment. AS-4 is preserved under this reading (lens is enrichment-time query grammar, not LLM-summary ingestion). In-design on the Plexus side; captured as OQ #8 and essay reflection; folds back in a later cycle. Not a driver for current-cycle ADR changes
+
+### From ARCHITECT
+30. Retrofit mode — llm-orc has existing FastAPI server, MCP handlers (ExecutionHandler, ValidationHandler, ensemble_crud_handler, promotion_handler, validation_handler, script_handler), ensemble engine, config manager, auth, and artifact system. Agentic serving is additive; Layer 3 (Ensemble Engine) stays unchanged per ADR-001/002
+31. 12-module decomposition across 4 layers (L0 Core / L1 Domain Policy / L2 Runtime / L3 Entry) plus typed `resolve_session_start_context` function in Serving Layer. Originally 13 modules; Context Injection Stage demoted to function per ADR-066 gate-reflection amendment #1
+32. FC-4 is load-bearing: Orchestrator Runtime imports *only* Budget Controller, Tool Dispatch, and Summarizer Harness. No Plexus, Autonomy, or Calibration leak into the reasoning space. This preserves the orchestrator LLM's mental model ("I emit tool calls and observe results") and structurally enforces ADR-003's closed tool-set property
+33. Client tool surface commitment: Option C — turn-boundary delegation via `finish_reason: tool_calls`. Internal action space stays at 5 tools (ADR-003); client tools (bash, file_edit, etc. from OpenCode / Roo Code / Cline) flow through the response surface. Commitment is **scenario-gated** — WP-F does not start until stress scenarios (4 targets in roadmap Open Decision Point #1) test the C vs. D distinction. If any requires mid-execution callback, C is insufficient
+34. Phase 2 Plexus context injection is reserved via typed function signature `resolve_session_start_context(session: SessionContext) -> list[PromptFragment]` in Serving Layer — not a module. ADR-009's "structurally reserved" clause satisfied by signature + call site; Phase 1 returns `[]`; Phase 2 is a function-body change. This matches the single-agent paradigm practice (Claude Code, OpenCode, claw-code)
+35. Retrofit debt: WP-A extracts `_validate_cross_ensemble_cycles` + `_build_reference_graph` from `EnsembleLoader` private helpers to public `validate_ensemble_reference_graph` in `core/config/ensemble_config.py`. Both load-time and composition-time validation share the single routine (FC-6). Hard-blocks WP-G (composition)
+36. Vision-named transition state TS-1 (WP-A + WP-B + WP-C + WP-D + WP-E + WP-F) is the stateless orchestrator that serves OpenCode — the intermediate target for "I can use OpenCode and run a version of this RDD pipeline with it"
+37. Roadmap has 10 WPs; 9 hard deps, 4 implied; 3 transition states; 7 open decision points carried forward as build-time latitude
+38. Consolidations probed at gate: Orchestrator Configuration → Serving Layer rejected (inverts layering — L1/L3 config is read by L1 modules like Budget Controller and Autonomy Policy via Session Registry). Calibration Gate → Orchestrator Runtime rejected (breaks FC-4; calibration is ensemble-state not runtime-state, and requires Plexus Adapter which Runtime must not import)
 
 ## Context for Resumption
 
