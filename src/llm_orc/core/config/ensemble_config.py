@@ -202,7 +202,7 @@ class EnsembleLoader:
 
         # Cross-ensemble cycle detection (ADR-013, Invariant 5)
         if search_dirs:
-            self._validate_cross_ensemble_cycles(config.name, agents, search_dirs)
+            validate_ensemble_reference_graph(config.name, agents, search_dirs)
 
         return config
 
@@ -242,88 +242,17 @@ class EnsembleLoader:
         _validate_fan_out_dependencies(agents)
         assert_no_cycles(agents)
 
-    def _validate_cross_ensemble_cycles(
-        self,
-        root_name: str,
-        agents: list[AgentConfig],
-        search_dirs: list[str],
-    ) -> None:
-        """Detect cross-ensemble reference cycles (Invariant 5).
-
-        Builds the ensemble reference graph by following all
-        EnsembleAgentConfig references and runs DFS to find cycles.
-        """
-        # Build reference graph: ensemble_name -> [referenced ensembles]
-        graph: dict[str, list[str]] = {}
-        self._build_reference_graph(root_name, agents, search_dirs, graph)
-
-        # DFS cycle detection
-        visited: set[str] = set()
-        in_stack: set[str] = set()
-        path: list[str] = []
-
-        def dfs(name: str) -> None:
-            if name in in_stack:
-                cycle_start = path.index(name)
-                cycle = path[cycle_start:] + [name]
-                msg = "cross-ensemble cycle detected: " + " -> ".join(cycle)
-                raise ValueError(msg)
-            if name in visited:
-                return
-
-            visited.add(name)
-            in_stack.add(name)
-            path.append(name)
-
-            for ref in graph.get(name, []):
-                dfs(ref)
-
-            in_stack.remove(name)
-            path.pop()
-
-        dfs(root_name)
-
-    def _build_reference_graph(
-        self,
-        ensemble_name: str,
-        agents: list[AgentConfig],
-        search_dirs: list[str],
-        graph: dict[str, list[str]],
-    ) -> None:
-        """Recursively build ensemble reference graph."""
-        if ensemble_name in graph:
-            return
-
-        refs = [a.ensemble for a in agents if isinstance(a, EnsembleAgentConfig)]
-        graph[ensemble_name] = refs
-
-        # Follow each reference
-        for ref_name in refs:
-            if ref_name in graph:
-                continue
-            ref_config = self._find_ensemble_in_dirs(ref_name, search_dirs)
-            if ref_config:
-                self._build_reference_graph(
-                    ref_name,
-                    ref_config.agents,
-                    search_dirs,
-                    graph,
-                )
-
     def _find_ensemble_in_dirs(
         self,
         name: str,
         search_dirs: list[str],
     ) -> EnsembleConfig | None:
-        """Find an ensemble by name across search directories."""
-        for directory in search_dirs:
-            dir_path = Path(directory)
-            for ext in ("yaml", "yml"):
-                candidate = dir_path / f"{name}.{ext}"
-                if candidate.exists():
-                    # Load without cycle detection to avoid recursion
-                    return self.load_from_file(str(candidate))
-        return None
+        """Find an ensemble by name across search directories.
+
+        Delegates to the module-level helper shared with the cross-ensemble
+        cycle validator so both resolution paths stay identical.
+        """
+        return _find_ensemble_in_dirs(name, search_dirs)
 
     def find_ensemble(self, directory: str, name: str) -> EnsembleConfig | None:
         """Find an ensemble by name in a directory, supporting hierarchical names.
@@ -360,3 +289,99 @@ class EnsembleLoader:
                 return ensemble
 
         return None
+
+
+def validate_ensemble_reference_graph(
+    name: str,
+    agents: list[AgentConfig],
+    search_dirs: list[str],
+) -> None:
+    """Validate that the ensemble reference graph is acyclic (Invariant 5).
+
+    Public validator shared by the load path (``EnsembleLoader.load_from_file``)
+    and the MCP/web validate path (``ValidationHandler``). Composition-time
+    callers (``compose_ensemble``) share this same routine so their behavior
+    cannot diverge from the load path.
+
+    Args:
+        name: Root ensemble name.
+        agents: Agent configurations of the root ensemble.
+        search_dirs: Directories used to resolve ensemble-to-ensemble
+            references while walking the reference graph.
+
+    Raises:
+        ValueError: If a cycle is detected; the message names the cycle path.
+    """
+    graph: dict[str, list[str]] = {}
+    _build_reference_graph(name, agents, search_dirs, graph)
+
+    visited: set[str] = set()
+    in_stack: set[str] = set()
+    path: list[str] = []
+
+    def dfs(node: str) -> None:
+        if node in in_stack:
+            cycle_start = path.index(node)
+            cycle = path[cycle_start:] + [node]
+            msg = "cross-ensemble cycle detected: " + " -> ".join(cycle)
+            raise ValueError(msg)
+        if node in visited:
+            return
+
+        visited.add(node)
+        in_stack.add(node)
+        path.append(node)
+
+        for ref in graph.get(node, []):
+            dfs(ref)
+
+        in_stack.remove(node)
+        path.pop()
+
+    dfs(name)
+
+
+def _build_reference_graph(
+    ensemble_name: str,
+    agents: list[AgentConfig],
+    search_dirs: list[str],
+    graph: dict[str, list[str]],
+) -> None:
+    """Recursively build the ensemble reference graph for cycle detection."""
+    if ensemble_name in graph:
+        return
+
+    refs = [a.ensemble for a in agents if isinstance(a, EnsembleAgentConfig)]
+    graph[ensemble_name] = refs
+
+    for ref_name in refs:
+        if ref_name in graph:
+            continue
+        ref_config = _find_ensemble_in_dirs(ref_name, search_dirs)
+        if ref_config:
+            _build_reference_graph(
+                ref_name,
+                ref_config.agents,
+                search_dirs,
+                graph,
+            )
+
+
+def _find_ensemble_in_dirs(
+    name: str,
+    search_dirs: list[str],
+) -> EnsembleConfig | None:
+    """Find an ensemble by name across search directories.
+
+    Loads without cycle detection (no ``search_dirs`` is passed through) so
+    the validator does not recurse into itself while building the reference
+    graph.
+    """
+    loader = EnsembleLoader()
+    for directory in search_dirs:
+        dir_path = Path(directory)
+        for ext in ("yaml", "yml"):
+            candidate = dir_path / f"{name}.{ext}"
+            if candidate.exists():
+                return loader.load_from_file(str(candidate))
+    return None

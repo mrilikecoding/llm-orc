@@ -2,6 +2,7 @@
 
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -11,6 +12,7 @@ from llm_orc.core.config.ensemble_config import (
     EnsembleLoader,
     assert_no_cycles,
     detect_cycle,
+    validate_ensemble_reference_graph,
 )
 from llm_orc.schemas.agent_config import AgentConfig, LlmAgentConfig, ScriptAgentConfig
 
@@ -824,3 +826,171 @@ class TestCrossEnsembleCycleDetection:
             search_dirs=[str(tmp_path)],
         )
         assert config.name == "ens-a"
+
+
+class TestValidateEnsembleReferenceGraph:
+    """Public validator exposed for composition-time and load-time callers.
+
+    WP-A / scenarios.md §Structural Debt Remediation: the cross-ensemble
+    cycle validator must be a public function callable without loading, so
+    the MCP/web validate path and the future compose_ensemble path share a
+    single routine with the loader.
+    """
+
+    def _write(self, tmp_path: Path, specs: dict[str, dict[str, Any]]) -> None:
+        for spec_name, spec in specs.items():
+            (tmp_path / f"{spec_name}.yaml").write_text(yaml.dump(spec))
+
+    def test_raises_on_direct_cycle(self, tmp_path: Path) -> None:
+        """A -> B -> A is reported as a cross-ensemble cycle."""
+        self._write(
+            tmp_path,
+            {
+                "ens-a": {
+                    "name": "ens-a",
+                    "description": "A",
+                    "agents": [{"name": "step", "ensemble": "ens-b"}],
+                },
+                "ens-b": {
+                    "name": "ens-b",
+                    "description": "B",
+                    "agents": [{"name": "step", "ensemble": "ens-a"}],
+                },
+            },
+        )
+        agents = EnsembleLoader().load_from_file(str(tmp_path / "ens-a.yaml")).agents
+
+        with pytest.raises(ValueError, match="cross-ensemble cycle"):
+            validate_ensemble_reference_graph("ens-a", agents, [str(tmp_path)])
+
+    def test_raises_on_transitive_cycle(self, tmp_path: Path) -> None:
+        """A -> B -> C -> A is reported as a cross-ensemble cycle."""
+        self._write(
+            tmp_path,
+            {
+                "ens-a": {
+                    "name": "ens-a",
+                    "description": "A",
+                    "agents": [{"name": "step", "ensemble": "ens-b"}],
+                },
+                "ens-b": {
+                    "name": "ens-b",
+                    "description": "B",
+                    "agents": [{"name": "step", "ensemble": "ens-c"}],
+                },
+                "ens-c": {
+                    "name": "ens-c",
+                    "description": "C",
+                    "agents": [{"name": "step", "ensemble": "ens-a"}],
+                },
+            },
+        )
+        agents = EnsembleLoader().load_from_file(str(tmp_path / "ens-a.yaml")).agents
+
+        with pytest.raises(ValueError, match="cross-ensemble cycle"):
+            validate_ensemble_reference_graph("ens-a", agents, [str(tmp_path)])
+
+    def test_returns_none_on_acyclic_graph(self, tmp_path: Path) -> None:
+        """A -> B with B a leaf is acyclic — function returns None."""
+        self._write(
+            tmp_path,
+            {
+                "ens-a": {
+                    "name": "ens-a",
+                    "description": "A",
+                    "agents": [{"name": "step", "ensemble": "ens-b"}],
+                },
+                "ens-b": {
+                    "name": "ens-b",
+                    "description": "B",
+                    "agents": [{"name": "worker", "script": "echo ok"}],
+                },
+            },
+        )
+        agents = EnsembleLoader().load_from_file(str(tmp_path / "ens-a.yaml")).agents
+
+        # Does not raise — acyclic graph
+        validate_ensemble_reference_graph("ens-a", agents, [str(tmp_path)])
+
+    def test_returns_none_when_no_ensemble_references(self, tmp_path: Path) -> None:
+        """An ensemble with only script/llm agents has no references to check."""
+        self._write(
+            tmp_path,
+            {
+                "solo": {
+                    "name": "solo",
+                    "description": "standalone",
+                    "agents": [{"name": "worker", "script": "echo ok"}],
+                },
+            },
+        )
+        agents = EnsembleLoader().load_from_file(str(tmp_path / "solo.yaml")).agents
+
+        # Does not raise — no references means nothing to check
+        validate_ensemble_reference_graph("solo", agents, [str(tmp_path)])
+
+
+class TestSharedRoutineRegression:
+    """scenarios.md regression: composition-time and load-time validator
+    share a single routine. This test mechanically forbids split
+    implementations by exercising both paths on the same input and
+    asserting identical outcomes.
+    """
+
+    def test_load_path_and_public_function_agree_on_cycle(self, tmp_path: Path) -> None:
+        """Same cyclic input → same ValueError via either entry point."""
+        (tmp_path / "r-a.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "r-a",
+                    "description": "A",
+                    "agents": [{"name": "step", "ensemble": "r-b"}],
+                }
+            )
+        )
+        (tmp_path / "r-b.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "r-b",
+                    "description": "B",
+                    "agents": [{"name": "step", "ensemble": "r-a"}],
+                }
+            )
+        )
+
+        loader = EnsembleLoader()
+        agents = loader.load_from_file(str(tmp_path / "r-a.yaml")).agents
+
+        with pytest.raises(ValueError, match="cross-ensemble cycle") as load_exc:
+            loader.load_from_file(
+                str(tmp_path / "r-a.yaml"),
+                search_dirs=[str(tmp_path)],
+            )
+
+        with pytest.raises(ValueError, match="cross-ensemble cycle") as pub_exc:
+            validate_ensemble_reference_graph("r-a", agents, [str(tmp_path)])
+
+        assert str(load_exc.value) == str(pub_exc.value)
+
+    def test_load_path_and_public_function_agree_on_acyclic(
+        self, tmp_path: Path
+    ) -> None:
+        """Same acyclic input → both paths succeed (no divergence)."""
+        (tmp_path / "ok.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "ok",
+                    "description": "ok",
+                    "agents": [{"name": "worker", "script": "echo ok"}],
+                }
+            )
+        )
+
+        loader = EnsembleLoader()
+        agents = loader.load_from_file(str(tmp_path / "ok.yaml")).agents
+
+        loader.load_from_file(
+            str(tmp_path / "ok.yaml"),
+            search_dirs=[str(tmp_path)],
+        )
+        validate_ensemble_reference_graph("ok", agents, [str(tmp_path)])
