@@ -103,6 +103,8 @@
 
 7. **Enrichment pipeline maturity.** The model currently asks enrichment to carry two loads: quality gate for ingestion (AS-4) and signal source for stabilization (AS-5). Plexus's enrichment model is under active investigation. If enrichment is weak, both invariants are hollow -- the graph fills with undifferentiated content and stabilization degrades to frequency-counting. This is not a blocker (AS-8 means the system works without Plexus) but determines whether the learning-system value proposition is real. *(Source: MODEL reflection gate)*
 
+8. **Per-ensemble lens registration and intra-session cross-talk.** Plexus's query surface takes the shape of consumer-registered *lens grammars* — specifications that govern how content is encoded during enrichment and queried back. The prevailing assumption has been that llm-orc registers a single adapter/lens. If individual ensembles (or agents within an ensemble) can register their own lenses over the same Plexus context, the orchestrator's access becomes polyglot — each subagent writes into the shared enrichment through its own grammar and queries through its own lens. This shifts Plexus's value from cross-session memory alone to an intra-session multi-agent substrate. A sub-question travels with it: does KG-mediated communication via lens grammars avoid the bias-reinforcement effect documented in direct agent-to-agent communication, or do lens grammars themselves become a vector for bias? Depends on Plexus's lens specification work, which is in-progress. *(Source: DECIDE reflection gate, 2026-04-19)*
+
 ## Amendment Log
 
 | # | Date | Invariant | Change | Propagation |
