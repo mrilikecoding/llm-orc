@@ -207,7 +207,13 @@ class EnsembleLoader:
         return config
 
     def list_ensembles(self, directory: str) -> list[EnsembleConfig]:
-        """List all ensemble configurations in a directory and subdirectories."""
+        """List all ensemble configurations in a directory and subdirectories.
+
+        Each ensemble is loaded with ``search_dirs=[directory]`` so
+        cross-ensemble cycle detection fires during listing; cyclic
+        ensembles are logged-and-skipped by the existing invalid-ensemble
+        handling.
+        """
         dir_path = Path(directory)
         if not dir_path.exists():
             return []
@@ -215,7 +221,10 @@ class EnsembleLoader:
         ensembles = []
         for yaml_file in self._find_yaml_files(dir_path):
             try:
-                config = self.load_from_file(str(yaml_file))
+                config = self.load_from_file(
+                    str(yaml_file),
+                    search_dirs=[directory],
+                )
                 relative_path = yaml_file.relative_to(dir_path)
                 config.relative_path = (
                     str(relative_path.parent)
