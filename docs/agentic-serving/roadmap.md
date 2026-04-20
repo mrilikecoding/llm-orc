@@ -267,4 +267,18 @@ Full architecture live. `query_knowledge` and `record_outcome` flow to Plexus; l
 
 ## Completed Work Log
 
-*(No completed work packages yet. This section will be populated as cycles complete.)*
+### WP-A: Cycle-validator extraction (retrofit debt) — 2026-04-20
+
+**Commits:**
+- `8a0f5d6` refactor: extract validate_ensemble_reference_graph to public function
+- `0980323` fix: surface cross-ensemble cycles through list_ensembles and ValidationHandler
+
+**Outcome.** Public `validate_ensemble_reference_graph(name, agents, search_dirs)` now lives in `core/config/ensemble_config.py`. Three call sites share it: `EnsembleLoader.load_from_file`, `EnsembleLoader.list_ensembles` (via `search_dirs=[directory]`), and `ValidationHandler._collect_validation_errors` (via `config_manager.get_ensembles_dirs()`). `EnsembleLoader._find_ensemble_in_dirs` retained as a thin delegate to the module-level helper so `core/execution/ensemble_execution.py` continues to resolve through the single shared implementation.
+
+**Scenarios covered:** scenarios.md §Structural Debt Remediation refactor 1, refactor 2, and the regression scenario (shared single routine).
+
+**Fitness criteria status:** FC-6 satisfied — 1 definition, 3 call sites; load-time and MCP/web validate-time behavior cannot diverge.
+
+**Unblocks:** WP-G (compose_ensemble wires in as the fourth call site).
+
+**Debt surfaced (not addressed in WP-A scope):** `core/execution/ensemble_execution.py:808` reaches into `EnsembleLoader._find_ensemble_in_dirs` (still underscore-prefixed). The delegate preserves the call; a later cleanup can rewire the executor to the module-level helper directly if the underscore leak becomes a problem.
