@@ -930,6 +930,70 @@ class TestValidateEnsembleReferenceGraph:
         validate_ensemble_reference_graph("solo", agents, [str(tmp_path)])
 
 
+class TestListEnsemblesFiresCycleCheck:
+    """WP-A scenario refactor 2: list_ensembles passes search_dirs so the
+    cross-ensemble cycle check actually fires during directory listing.
+    """
+
+    def test_cyclic_pair_is_skipped_from_listing(self, tmp_path: Path) -> None:
+        """Two cyclic ensembles in a directory are excluded from list_ensembles.
+
+        Previously list_ensembles called load_from_file with no search_dirs,
+        silently skipping cross-ensemble cycle detection. After the fix,
+        the cycle is detected per-file and the invalid ensembles are
+        logged-and-skipped inside list_ensembles' existing try/except.
+        """
+        (tmp_path / "cyc-a.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "cyc-a",
+                    "description": "A",
+                    "agents": [{"name": "step", "ensemble": "cyc-b"}],
+                }
+            )
+        )
+        (tmp_path / "cyc-b.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "cyc-b",
+                    "description": "B",
+                    "agents": [{"name": "step", "ensemble": "cyc-a"}],
+                }
+            )
+        )
+
+        loader = EnsembleLoader()
+        result = loader.list_ensembles(str(tmp_path))
+
+        assert result == []
+
+    def test_acyclic_ensembles_still_listed(self, tmp_path: Path) -> None:
+        """Passing search_dirs to list_ensembles does not break acyclic cases."""
+        (tmp_path / "ok-a.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "ok-a",
+                    "description": "A",
+                    "agents": [{"name": "step", "ensemble": "ok-b"}],
+                }
+            )
+        )
+        (tmp_path / "ok-b.yaml").write_text(
+            yaml.dump(
+                {
+                    "name": "ok-b",
+                    "description": "B",
+                    "agents": [{"name": "worker", "script": "echo ok"}],
+                }
+            )
+        )
+
+        loader = EnsembleLoader()
+        names = sorted(cfg.name for cfg in loader.list_ensembles(str(tmp_path)))
+
+        assert names == ["ok-a", "ok-b"]
+
+
 class TestSharedRoutineRegression:
     """scenarios.md regression: composition-time and load-time validator
     share a single routine. This test mechanically forbids split
