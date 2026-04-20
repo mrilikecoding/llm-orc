@@ -1,0 +1,5 @@
+{"timestamp":"2026-04-18T06:47:16Z","session_id":"4cb398ba-0598-4d7a-b964-3aacb43e254b","mechanism":"argument-auditor","subagent_type":"rdd:argument-auditor","expected_path":null,"tool_use_id":"toolu_01DYJ3TAkmKhJzKorgKsfAEe"}
+{"timestamp":"2026-04-18T06:51:12Z","session_id":"4cb398ba-0598-4d7a-b964-3aacb43e254b","mechanism":"argument-auditor","subagent_type":"rdd:argument-auditor","expected_path":null,"tool_use_id":"toolu_01PVLT9wZhQzQXHCXUbN7x7E"}
+{"timestamp":"2026-04-18T06:52:28Z","session_id":"4cb398ba-0598-4d7a-b964-3aacb43e254b","mechanism":"argument-auditor","subagent_type":"rdd:argument-auditor","expected_path":null,"tool_use_id":"toolu_01JUFkDhhJgPWiPmxiVJ5pHv"}
+{"timestamp":"2026-04-19T07:39:28Z","session_id":"4cb398ba-0598-4d7a-b964-3aacb43e254b","mechanism":"susceptibility-snapshot-evaluator","subagent_type":"rdd:susceptibility-snapshot-evaluator","expected_path":null,"tool_use_id":"toolu_01Lp8HaVZSktJMeGZsB4gKmi"}
+{"timestamp":"2026-04-20T05:50:42Z","session_id":"4cb398ba-0598-4d7a-b964-3aacb43e254b","mechanism":"argument-auditor","subagent_type":"rdd:argument-auditor","expected_path":null,"tool_use_id":"toolu_01XsDKavFBAbMYKFBC3SoEdV"}
