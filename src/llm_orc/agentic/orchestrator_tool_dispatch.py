@@ -11,20 +11,21 @@ live in ``TOOL_NAMES`` and correspond to five async methods on this
 class. FC-5 checks the count of public async methods whose names are
 in ``TOOL_NAMES`` — exactly five.
 
-WP-C wires ``invoke_ensemble`` and ``list_ensembles`` to the Ensemble
-Engine. ``compose_ensemble`` (WP-G), ``query_knowledge`` (WP-I), and
+WP-C wires ``invoke_ensemble`` and ``list_ensembles`` by delegating to
+the project's existing ``OrchestraService`` (invoke + read_ensembles).
+This avoids a parallel find-and-execute code path — the orchestrator
+tool surface is a thin adapter on the existing ensemble-operations
+facade, not a re-implementation.
+
+``compose_ensemble`` (WP-G), ``query_knowledge`` (WP-I), and
 ``record_outcome`` (WP-I) return typed not-yet-wired errors so the
 closed-set property holds from WP-C onward.
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
-
-from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
 
 TOOL_NAMES: frozenset[str] = frozenset(
     {
@@ -86,40 +87,25 @@ class ToolCallError:
 ToolCallResult = ToolCallSuccess | ToolCallError
 
 
-class EnsembleRuntimeExecutor(Protocol):
-    """Minimum Ensemble Engine surface the Tool Dispatch calls at runtime.
+class EnsembleOperations(Protocol):
+    """Narrow facade over ensemble invocation and listing.
 
-    ``EnsembleExecutor`` satisfies this structurally; tests pass a
-    handwritten double for focused verification. Declared with
-    ``Awaitable`` rather than ``async def`` — mypy preserves the return
-    type through ``await`` this way where ``async def`` in a Protocol
-    degrades the inferred type to ``Any``.
+    ``OrchestraService`` satisfies this structurally; tests pass a
+    handwritten double. The Protocol names only the two operations
+    the orchestrator tool surface delegates to, so Tool Dispatch is
+    decoupled from the full service construction surface.
     """
 
-    def execute(
-        self, config: EnsembleConfig, input_data: str
-    ) -> Awaitable[dict[str, Any]]: ...
+    async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]: ...
 
-
-EnsembleExecutorProvider = Callable[[], EnsembleRuntimeExecutor]
-"""Factory for a fresh executor per invocation.
-
-Invariant 10: immutable infrastructure shared but mutable state is
-freshly created per invocation.
-"""
+    async def read_ensembles(self) -> list[dict[str, Any]]: ...
 
 
 class OrchestratorToolDispatch:
     """Closed five-tool dispatch surface (ADR-003, FC-5)."""
 
-    def __init__(
-        self,
-        *,
-        config_manager: ConfigurationManager,
-        executor_provider: EnsembleExecutorProvider,
-    ) -> None:
-        self._config_manager = config_manager
-        self._executor_provider = executor_provider
+    def __init__(self, *, operations: EnsembleOperations) -> None:
+        self._operations = operations
 
     async def dispatch(self, call: InternalToolCall) -> ToolCallResult:
         """Route a tool call by name through the closed set.
@@ -154,7 +140,7 @@ class OrchestratorToolDispatch:
     async def invoke_ensemble(
         self, id_: str, arguments: dict[str, Any]
     ) -> ToolCallResult:
-        """Resolve an ensemble by name and execute it via Ensemble Engine."""
+        """Resolve an ensemble by name and execute via ``OrchestraService.invoke``."""
         name = arguments.get("name")
         input_data = arguments.get("input", "")
         if not isinstance(name, str) or not name:
@@ -172,22 +158,17 @@ class OrchestratorToolDispatch:
                 reason="invoke_ensemble 'input' must be a string",
             )
 
-        loader = EnsembleLoader()
-        ensemble_config: EnsembleConfig | None = None
-        for directory in self._config_manager.get_ensembles_dirs():
-            ensemble_config = loader.find_ensemble(str(directory), name)
-            if ensemble_config is not None:
-                break
-        if ensemble_config is None:
+        try:
+            result = await self._operations.invoke(
+                {"ensemble_name": name, "input": input_data}
+            )
+        except ValueError as exc:
             return ToolCallError(
                 id=id_,
                 name="invoke_ensemble",
                 kind="invocation_failed",
-                reason=f"ensemble '{name}' not found in the library",
+                reason=str(exc),
             )
-
-        executor = self._executor_provider()
-        result: dict[str, Any] = await executor.execute(ensemble_config, input_data)
         return ToolCallSuccess(id=id_, name="invoke_ensemble", content=result)
 
     async def compose_ensemble(
@@ -205,19 +186,9 @@ class OrchestratorToolDispatch:
     async def list_ensembles(
         self, id_: str, arguments: dict[str, Any]
     ) -> ToolCallResult:
-        """Enumerate available ensembles across all configured tiers."""
+        """Enumerate library ensembles via ``OrchestraService.read_ensembles``."""
         del arguments
-        loader = EnsembleLoader()
-        entries: list[dict[str, Any]] = []
-        for directory in self._config_manager.get_ensembles_dirs():
-            for ensemble in loader.list_ensembles(str(directory)):
-                entries.append(
-                    {
-                        "name": ensemble.name,
-                        "description": ensemble.description,
-                        "path": ensemble.relative_path,
-                    }
-                )
+        entries = await self._operations.read_ensembles()
         return ToolCallSuccess(id=id_, name="list_ensembles", content=entries)
 
     async def query_knowledge(
