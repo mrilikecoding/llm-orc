@@ -19,6 +19,16 @@ from typing import Any
 
 from llm_orc.core.config.config_manager import ConfigurationManager
 
+
+class ModelProfileNotFoundError(LookupError):
+    """The configured orchestrator Model Profile is not in the library.
+
+    Raised by :meth:`OrchestratorConfigResolver.resolve_validated` so
+    session start fails loudly instead of the orchestrator booting with a
+    name that no Ensemble Engine profile resolution will accept (FF #40).
+    """
+
+
 DEFAULT_MODEL_PROFILE = "default"
 DEFAULT_TURN_LIMIT = 500
 DEFAULT_TOKEN_LIMIT = 10_000_000
@@ -64,6 +74,7 @@ class OrchestratorConfig:
     autonomy_level: str
     plexus_enabled: bool
     override_bounds: OverrideBounds
+    allowed_profiles: tuple[str, ...]
 
 
 class OrchestratorConfigResolver:
@@ -81,8 +92,13 @@ class OrchestratorConfigResolver:
         plexus = _as_mapping(raw.get("plexus"))
         overrides = _as_mapping(raw.get("overrides"))
 
+        model_profile = str(orchestrator.get("model_profile", DEFAULT_MODEL_PROFILE))
+        allowed_profiles = _resolve_allowed_profiles(
+            orchestrator.get("allowed_profiles"), model_profile
+        )
+
         return OrchestratorConfig(
-            model_profile=str(orchestrator.get("model_profile", DEFAULT_MODEL_PROFILE)),
+            model_profile=model_profile,
             budget=BudgetDefaults(
                 turn_limit=int(budget.get("turn_limit", DEFAULT_TURN_LIMIT)),
                 token_limit=int(budget.get("token_limit", DEFAULT_TOKEN_LIMIT)),
@@ -102,7 +118,37 @@ class OrchestratorConfigResolver:
                     overrides.get("max_token_limit", DEFAULT_MAX_TOKEN_LIMIT)
                 ),
             ),
+            allowed_profiles=allowed_profiles,
         )
+
+    def resolve_validated(self) -> OrchestratorConfig:
+        """Resolve and validate the orchestrator Model Profile exists.
+
+        Session start (WP-C) calls this so it fails fast when an operator
+        has misconfigured ``orchestrator.model_profile``. ``resolve`` stays
+        pure translation for the ``/v1/models`` shop-window path.
+        """
+        config = self.resolve()
+        library = self._config_manager.get_model_profiles()
+        if config.model_profile not in library:
+            raise ModelProfileNotFoundError(
+                f"Orchestrator model_profile '{config.model_profile}' is not "
+                "configured in ConfigurationManager.get_model_profiles()"
+            )
+        return config
+
+    def list_allowed_model_profile_ids(self) -> tuple[str, ...]:
+        """Return the allowlist intersected with the Model Profile library.
+
+        Consumer: the Serving Layer's ``/v1/models`` endpoint. Preserves the
+        operator-configured ordering; drops names that do not correspond to
+        a profile in ``ConfigurationManager.get_model_profiles()``. The
+        endpoint enumerates what is actually resolvable; proactive
+        validation (raising) is the responsibility of ``resolve_validated``.
+        """
+        config = self.resolve()
+        library = self._config_manager.get_model_profiles()
+        return tuple(name for name in config.allowed_profiles if name in library)
 
 
 def _as_mapping(value: Any) -> dict[str, Any]:
@@ -110,3 +156,14 @@ def _as_mapping(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
     return {}
+
+
+def _resolve_allowed_profiles(raw: Any, model_profile: str) -> tuple[str, ...]:
+    """Normalize the operator-configured allowlist.
+
+    An absent or malformed allowlist falls back to ``(model_profile,)`` so a
+    single-profile deployment works without additional configuration.
+    """
+    if isinstance(raw, list) and raw:
+        return tuple(str(item) for item in raw)
+    return (model_profile,)
