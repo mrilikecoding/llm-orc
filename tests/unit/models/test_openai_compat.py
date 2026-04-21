@@ -296,3 +296,198 @@ class TestOpenAICompatibleModelGenerate:
             ),
         ):
             await model.generate_response("Hello", role_prompt="You are helpful.")
+
+
+class TestOpenAICompatibleModelToolCalling:
+    """Test generate_with_tools behavior.
+
+    OpenAI-compat is the first provider to implement tool calling under
+    the extended ModelInterface — covers Ollama, OpenAI, OpenRouter,
+    LM Studio, etc. The request/response shape is OpenAI's standard
+    tool-calling format.
+    """
+
+    @pytest.fixture
+    def model(self) -> OpenAICompatibleModel:
+        return OpenAICompatibleModel(model_name="gpt-4o", api_key="sk-test-key")
+
+    def test_supports_tool_calling_is_true(self) -> None:
+        assert OpenAICompatibleModel.supports_tool_calling is True
+
+    def _tool_calling_response(
+        self,
+        *,
+        content: str | None = "Hello!",
+        tool_calls: list[dict[str, object]] | None = None,
+        finish_reason: str = "stop",
+        usage: dict[str, int] | None = None,
+    ) -> MagicMock:
+        mock = MagicMock()
+        mock.status_code = 200
+        message: dict[str, object] = {"content": content}
+        if tool_calls is not None:
+            message["tool_calls"] = tool_calls
+        mock.json.return_value = {
+            "choices": [{"message": message, "finish_reason": finish_reason}],
+            "usage": usage
+            or {"prompt_tokens": 15, "completion_tokens": 5, "total_tokens": 20},
+        }
+        return mock
+
+    @pytest.mark.asyncio
+    async def test_generate_with_tools_parses_content_only_response(
+        self, model: OpenAICompatibleModel
+    ) -> None:
+        """LLM emits text only — no tool_calls, finish_reason stop."""
+        mock_client = AsyncMock()
+        mock_client.post.return_value = self._tool_calling_response(
+            content="I don't need any tools."
+        )
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            result = await model.generate_with_tools(
+                messages=[{"role": "user", "content": "hi"}],
+                tools=[{"type": "function", "function": {"name": "x"}}],
+            )
+
+        assert result.content == "I don't need any tools."
+        assert result.tool_calls == []
+        assert result.finish_reason == "stop"
+        assert result.usage.prompt_tokens == 15
+        assert result.usage.completion_tokens == 5
+        assert result.usage.total_tokens == 20
+
+    @pytest.mark.asyncio
+    async def test_generate_with_tools_parses_tool_calls(
+        self, model: OpenAICompatibleModel
+    ) -> None:
+        """LLM emits tool calls — content may be null, tool_calls populated."""
+        mock_client = AsyncMock()
+        mock_client.post.return_value = self._tool_calling_response(
+            content=None,  # common when only tool calls emitted
+            tool_calls=[
+                {
+                    "id": "call_123",
+                    "type": "function",
+                    "function": {
+                        "name": "list_ensembles",
+                        "arguments": "{}",
+                    },
+                },
+                {
+                    "id": "call_456",
+                    "type": "function",
+                    "function": {
+                        "name": "invoke_ensemble",
+                        "arguments": '{"name":"analysis","input":"x"}',
+                    },
+                },
+            ],
+            finish_reason="tool_calls",
+        )
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            result = await model.generate_with_tools(
+                messages=[{"role": "user", "content": "check"}],
+                tools=[{"type": "function", "function": {"name": "list_ensembles"}}],
+            )
+
+        assert result.content == ""  # null content normalized to empty string
+        assert result.finish_reason == "tool_calls"
+        assert len(result.tool_calls) == 2
+        assert result.tool_calls[0].id == "call_123"
+        assert result.tool_calls[0].name == "list_ensembles"
+        assert result.tool_calls[0].arguments_json == "{}"
+        assert result.tool_calls[1].id == "call_456"
+        assert result.tool_calls[1].name == "invoke_ensemble"
+        assert result.tool_calls[1].arguments_json == '{"name":"analysis","input":"x"}'
+
+    @pytest.mark.asyncio
+    async def test_generate_with_tools_sends_messages_and_tools_in_body(
+        self, model: OpenAICompatibleModel
+    ) -> None:
+        mock_client = AsyncMock()
+        mock_client.post.return_value = self._tool_calling_response()
+
+        messages = [{"role": "user", "content": "hello"}]
+        tools = [{"type": "function", "function": {"name": "test_tool"}}]
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_with_tools(messages=messages, tools=tools)
+
+        call_args = mock_client.post.call_args
+        assert call_args[0][0] == "https://api.openai.com/v1/chat/completions"
+        body = call_args[1]["json"]
+        assert body["model"] == "gpt-4o"
+        assert body["messages"] == messages
+        assert body["tools"] == tools
+        # The tool-calling endpoint is non-streaming — streaming is a
+        # Serving-Layer concern, the LLM adapter returns a single response.
+        assert body.get("stream") is not True
+
+    @pytest.mark.asyncio
+    async def test_generate_with_tools_uses_bearer_token_when_provided(
+        self, model: OpenAICompatibleModel
+    ) -> None:
+        mock_client = AsyncMock()
+        mock_client.post.return_value = self._tool_calling_response()
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_with_tools(messages=[], tools=[])
+
+        headers = mock_client.post.call_args[1]["headers"]
+        assert headers["Authorization"] == "Bearer sk-test-key"
+
+    @pytest.mark.asyncio
+    async def test_generate_with_tools_omits_authorization_when_no_key(
+        self,
+    ) -> None:
+        """Ollama and local endpoints typically accept no API key."""
+        model = OpenAICompatibleModel(
+            model_name="llama3.1", base_url="http://localhost:11434/v1"
+        )
+        mock_client = AsyncMock()
+        mock_client.post.return_value = self._tool_calling_response()
+
+        with patch(
+            "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+            return_value=mock_client,
+        ):
+            await model.generate_with_tools(messages=[], tools=[])
+
+        headers = mock_client.post.call_args[1]["headers"]
+        assert "Authorization" not in headers
+
+    @pytest.mark.asyncio
+    async def test_generate_with_tools_raises_on_non_200(
+        self, model: OpenAICompatibleModel
+    ) -> None:
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.text = "server error"
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+
+        with (
+            patch(
+                "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+                return_value=mock_client,
+            ),
+            pytest.raises(
+                RuntimeError,
+                match="OpenAI-compatible tool-calling API error.*500",
+            ),
+        ):
+            await model.generate_with_tools(messages=[], tools=[])
