@@ -65,9 +65,15 @@ class HTTPConnectionPool:
                 keepalive_expiry=pool_config.get("keepalive_expiry", 30.0),
             )
 
+            # Default read is sized for local tool-calling models
+            # (Ollama with mistral-nemo / qwen2.5 / llama3.1-tools)
+            # where a single orchestrator iteration routinely takes
+            # 30-80s. Operators deploying against faster remote
+            # providers can tune down via
+            # ``performance.concurrency.request_timeout.read``.
             timeout = httpx.Timeout(
                 connect=timeout_config.get("connect", 10.0),
-                read=timeout_config.get("read", 30.0),
+                read=timeout_config.get("read", 180.0),
                 write=timeout_config.get("write", 10.0),
                 pool=timeout_config.get("pool", 5.0),
             )
