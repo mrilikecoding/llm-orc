@@ -1,0 +1,426 @@
+"""Tests for the Serving Layer ``/v1/chat/completions`` endpoint.
+
+Per ``docs/agentic-serving/system-design.md`` §Serving Layer (L3) and
+§Integration Contracts (Serving Layer → Session Registry; Serving Layer
+→ ``resolve_session_start_context``; Serving Layer → Orchestrator
+Runtime). Group 4 is the **non-streaming skeleton** — roadmap WP-B
+Group 4 (see ``docs/agentic-serving/roadmap.md``). The endpoint:
+
+- Parses the OpenAI-compatible request (messages, model, tools, user,
+  stream).
+- Resolves a ``SessionIdentity`` via Session Registry.
+- Calls ``resolve_session_start_context`` exactly once per session
+  start (FC-9); Phase 1 returns ``[]``.
+- Hands off to a stubbed Orchestrator Runtime. WP-C replaces the stub
+  with the real ReAct loop.
+- Returns a minimal OpenAI-shaped ``chat.completion`` body.
+"""
+
+from collections.abc import Callable
+
+import pytest
+from fastapi.testclient import TestClient
+
+from llm_orc.agentic.session_registry import SessionRegistry
+from llm_orc.agentic.session_start import (
+    PromptFragment,
+    SessionContext,
+    SessionStartCache,
+)
+from llm_orc.web.api import v1_chat_completions
+from llm_orc.web.server import create_app
+
+
+def _build_client(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    registry: SessionRegistry | None = None,
+    session_start_spy: (Callable[[SessionContext], list[PromptFragment]] | None) = None,
+) -> tuple[TestClient, SessionRegistry, SessionStartCache]:
+    """Wire a TestClient with an isolated Session Registry and session-start cache.
+
+    Follows the pattern in ``test_api_v1_models.py`` — override the
+    module-level factories so each test gets its own state. Returns the
+    client, registry, and cache so tests can inspect accumulated state.
+    """
+    shared_registry = registry or SessionRegistry()
+    monkeypatch.setattr(
+        v1_chat_completions, "get_session_registry", lambda: shared_registry
+    )
+    cache = (
+        SessionStartCache(resolver=session_start_spy)
+        if session_start_spy is not None
+        else SessionStartCache()
+    )
+    monkeypatch.setattr(v1_chat_completions, "get_session_start_cache", lambda: cache)
+    return TestClient(create_app()), shared_registry, cache
+
+
+class TestChatCompletionsResponseShape:
+    """``POST /v1/chat/completions`` returns an OpenAI-shaped body.
+
+    Group 4 skeleton: empty assistant content + ``finish_reason: "stop"``
+    + zero ``usage``. WP-C replaces this with real Runtime output.
+    """
+
+    def test_returns_openai_chat_completion_object(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        client, _, _ = _build_client(monkeypatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "refactor the parser"}],
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["object"] == "chat.completion"
+        assert isinstance(body["id"], str)
+        assert body["id"]
+        assert isinstance(body["created"], int)
+        assert body["model"] == "primary"
+
+    def test_returns_single_choice_with_stop_finish_reason(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        client, _, _ = _build_client(monkeypatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+
+        body = response.json()
+        assert len(body["choices"]) == 1
+        choice = body["choices"][0]
+        assert choice["index"] == 0
+        assert choice["finish_reason"] == "stop"
+        assert choice["message"]["role"] == "assistant"
+        assert choice["message"]["content"] == ""
+
+    def test_returns_zero_usage_in_skeleton(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The skeleton does no model calls, so usage is zero across the board.
+
+        WP-C wires real token accounting via Budget Controller →
+        Session Registry.
+        """
+        client, _, _ = _build_client(monkeypatch)
+
+        body = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        ).json()
+
+        assert body["usage"] == {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+
+
+class TestChatCompletionsRequestParsing:
+    """The endpoint accepts optional ``tools`` and ``user`` fields."""
+
+    def test_accepts_tools_array(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Client-declared tools are received but not yet routed (WP-F)."""
+        client, _, _ = _build_client(monkeypatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {"name": "bash", "description": "run shell"},
+                    }
+                ],
+            },
+        )
+
+        assert response.status_code == 200
+
+    def test_accepts_user_field(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The ``user`` field supplies Session identity correlation."""
+        client, _, _ = _build_client(monkeypatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+                "user": "client-abc",
+            },
+        )
+
+        assert response.status_code == 200
+
+
+class TestStreamingDeferred:
+    """``stream: true`` is WP-B Group 5 scope; Group 4 rejects it.
+
+    Silently returning a non-streaming body to a client that asked for
+    SSE would mis-frame the response. An explicit 400 with a clear
+    message lets clients feature-detect and lets operators see when
+    their deployment is ahead of Group 5.
+    """
+
+    def test_rejects_stream_true_with_400(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        client, _, _ = _build_client(monkeypatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": True,
+            },
+        )
+
+        assert response.status_code == 400
+        assert "stream" in response.json().get("error", "").lower()
+
+    def test_non_streaming_default_still_works(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Requests that omit ``stream`` default to non-streaming and succeed."""
+        client, _, _ = _build_client(monkeypatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+
+        assert response.status_code == 200
+
+    def test_stream_false_explicit_works(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``stream: false`` is the Group 4 happy path."""
+        client, _, _ = _build_client(monkeypatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": False,
+            },
+        )
+
+        assert response.status_code == 200
+
+
+class TestSessionStartIntegration:
+    """Verify the Serving Layer → ``resolve_session_start_context`` contract.
+
+    Covers the boundary integration test called out in the system
+    design: ``test_session_start_context_is_empty_in_phase_1`` — function
+    called once per session start, returns ``[]``, never touches Plexus
+    (FC-9, test architecture table).
+    """
+
+    def test_session_start_fires_on_first_request(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: list[SessionContext] = []
+
+        def spy(context: SessionContext) -> list[PromptFragment]:
+            calls.append(context)
+            return []
+
+        client, _, _ = _build_client(monkeypatch, session_start_spy=spy)
+
+        client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "start"}],
+                "user": "client-abc",
+            },
+        )
+
+        assert len(calls) == 1
+        assert calls[0].messages[0].content == "start"
+        assert calls[0].tools == []
+
+    def test_session_start_returns_empty_list_phase_1(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Phase 1 returns ``[]``; a spy that returns ``[]`` simulates Phase 1."""
+        calls: list[list[PromptFragment]] = []
+
+        def spy(context: SessionContext) -> list[PromptFragment]:
+            fragments: list[PromptFragment] = []
+            calls.append(fragments)
+            return fragments
+
+        client, _, _ = _build_client(monkeypatch, session_start_spy=spy)
+
+        client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "start"}],
+            },
+        )
+
+        assert calls == [[]]
+
+    def test_session_start_fires_exactly_once_per_session(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """FC-9: the function is called once per session, not per request.
+
+        Two requests that resolve to the same ``SessionIdentity`` (same
+        ``user`` field) must trigger exactly one session-start
+        resolution. The second request continues the established
+        session; Phase 2 re-injecting on every request would spam the
+        Plexus Adapter.
+        """
+        call_count = 0
+
+        def spy(context: SessionContext) -> list[PromptFragment]:
+            nonlocal call_count
+            call_count += 1
+            return []
+
+        client, _, _ = _build_client(monkeypatch, session_start_spy=spy)
+
+        for _ in range(2):
+            client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "primary",
+                    "messages": [{"role": "user", "content": "turn"}],
+                    "user": "client-abc",
+                },
+            )
+
+        assert call_count == 1
+
+    def test_session_start_fires_per_distinct_session(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Different ``SessionIdentity`` values each trigger their own start.
+
+        A new ``user`` field resolves to a distinct identity; the
+        previously-cached session does not suppress the new session's
+        start-time resolution.
+        """
+        call_count = 0
+
+        def spy(context: SessionContext) -> list[PromptFragment]:
+            nonlocal call_count
+            call_count += 1
+            return []
+
+        client, _, _ = _build_client(monkeypatch, session_start_spy=spy)
+
+        client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "turn"}],
+                "user": "client-abc",
+            },
+        )
+        client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "turn"}],
+                "user": "client-xyz",
+            },
+        )
+
+        assert call_count == 2
+
+    def test_session_start_context_is_empty_in_phase_1(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Named integration test from system-design.md Test Architecture table.
+
+        Verifies the Serving Layer → ``resolve_session_start_context``
+        contract with the **real** Phase 1 resolver (default cache; no
+        spy). A second request to the same session confirms the cache
+        suppresses re-resolution — both requests succeed without the
+        real resolver needing to do anything beyond returning ``[]``.
+        The "never touches Plexus Adapter" property is structural: the
+        resolver has no Plexus imports in Phase 1.
+        """
+        client, _, _ = _build_client(monkeypatch)
+
+        first = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+                "user": "client-abc",
+            },
+        )
+        second = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+                "user": "client-abc",
+            },
+        )
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+
+    def test_cache_retains_fragments_across_requests(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The cache retains fragments so Runtime (WP-C) can read them.
+
+        Group 4 stores the resolver's result in the cache on first
+        request. The test asserts the retained value is exactly what
+        the resolver returned — WP-C will read it from the same cache
+        each iteration.
+        """
+
+        def spy(context: SessionContext) -> list[PromptFragment]:
+            return [PromptFragment(content="sys-prime", source="spy")]
+
+        client, _, cache = _build_client(monkeypatch, session_start_spy=spy)
+
+        client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+                "user": "client-abc",
+            },
+        )
+
+        from llm_orc.agentic.session_registry import SessionIdentity, SessionState
+
+        identity = SessionIdentity(value="client-abc", method="user_field")
+        follow_up = SessionContext(
+            messages=[],
+            tools=[],
+            state=SessionState(identity=identity),
+        )
+
+        assert cache.resolve(follow_up) == [
+            PromptFragment(content="sys-prime", source="spy")
+        ]
