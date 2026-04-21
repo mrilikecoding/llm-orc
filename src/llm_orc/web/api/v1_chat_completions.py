@@ -1,58 +1,118 @@
-"""Serving Layer ``/v1/chat/completions`` endpoint (Group 4 skeleton).
+"""Serving Layer ``/v1/chat/completions`` endpoint.
 
 Per ``docs/agentic-serving/system-design.md`` §Serving Layer (L3),
-§Integration Contracts, and roadmap WP-B Group 4. The endpoint stands
-up the serving edge that later work packages fill in:
+§Integration Contracts, and roadmap WP-C. The endpoint:
 
-* WP-C replaces ``_orchestrator_handoff`` with the real Runtime.
-* WP-B Group 5 adds SSE streaming (``stream: true``).
+1. Parses the OpenAI-compatible request.
+2. Resolves a Session via :class:`SessionRegistry`.
+3. Runs :func:`resolve_session_start_context` exactly once per session
+   (FC-9); Phase 1 returns an empty list.
+4. Constructs an :class:`OrchestratorRuntime` from the resolved
+   Model Profile's LLM, a :class:`BudgetController` sized from the
+   session's configured Budget, and a shared Tool Dispatch wrapping
+   :class:`OrchestraService`.
+5. Drives the Runtime to produce either a non-streaming
+   ``chat.completion`` body or an SSE stream.
 
-This module owns three integration contracts for Group 4: Serving
-Layer → Session Registry (identity resolution), Serving Layer →
-``resolve_session_start_context`` (Phase 1 hook), and the placeholder
-Serving Layer → Orchestrator Runtime edge (stubbed).
+The Runtime is constructed per request. The Tool Dispatch facade
+and the LLM loader are process-scoped factories module-level tests
+override via ``monkeypatch.setattr``.
 """
 
 from __future__ import annotations
 
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from llm_orc.agentic.orchestrator_chunk import Completion, OrchestratorChunk
+from llm_orc.agentic.budget_controller import BudgetController
+from llm_orc.agentic.orchestrator_chunk import Completion, ContentDelta
+from llm_orc.agentic.orchestrator_runtime import (
+    OrchestratorLLM,
+    OrchestratorRuntime,
+)
+from llm_orc.agentic.orchestrator_tool_dispatch import OrchestratorToolDispatch
 from llm_orc.agentic.session_registry import ChatMessage, SessionRegistry
 from llm_orc.agentic.session_start import SessionContext, SessionStartCache
+from llm_orc.core.auth.authentication import CredentialStorage
+from llm_orc.core.models.model_factory import ModelFactory
+from llm_orc.models.base import ToolCallingNotSupportedError
+from llm_orc.web.api import get_orchestra_service
 from llm_orc.web.api.sse_format import OpenAiSseFormatter
+from llm_orc.web.api.v1_models import get_orchestrator_config_resolver
 
 router = APIRouter(prefix="/v1", tags=["openai-compat"])
 
 
 _SHARED_REGISTRY = SessionRegistry()
 _SHARED_SESSION_START_CACHE = SessionStartCache()
+_SHARED_TOOL_DISPATCH: OrchestratorToolDispatch | None = None
 
 
 def get_session_registry() -> SessionRegistry:
     """Return the process-scoped Session Registry.
 
-    Group 4 uses in-memory state (cycle-status FF #42). Tests override
-    this factory to inject an isolated registry per case, matching the
-    pattern used in ``v1_models.get_orchestrator_config_resolver``.
+    Tests override this factory to inject an isolated registry.
     """
     return _SHARED_REGISTRY
 
 
 def get_session_start_cache() -> SessionStartCache:
-    """Return the process-scoped session-start cache.
-
-    Tests override this factory to inject an isolated cache (often
-    wrapping a spy resolver) per case.
-    """
+    """Return the process-scoped session-start cache."""
     return _SHARED_SESSION_START_CACHE
+
+
+def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
+    """Return the process-scoped Tool Dispatch.
+
+    Wraps :class:`OrchestraService` so the orchestrator's tool surface
+    is a thin adapter on the existing ensemble-operations facade.
+    Tests override this factory to inject a stub dispatcher.
+    """
+    global _SHARED_TOOL_DISPATCH
+    if _SHARED_TOOL_DISPATCH is None:
+        _SHARED_TOOL_DISPATCH = OrchestratorToolDispatch(
+            operations=get_orchestra_service()
+        )
+    return _SHARED_TOOL_DISPATCH
+
+
+async def _default_orchestrator_llm_loader(model_profile: str) -> OrchestratorLLM:
+    """Load the orchestrator LLM from a Model Profile via existing ModelFactory.
+
+    Uses the project's multi-provider machinery so any provider whose
+    ``ModelInterface`` implementation overrides ``generate_with_tools``
+    (currently :class:`OpenAICompatibleModel`; others land in
+    follow-up WPs) works as the orchestrator. Fails fast if the
+    resolved model does not support tool calling so misconfiguration
+    surfaces at session start rather than mid-loop.
+    """
+    service = get_orchestra_service()
+    credential_storage = CredentialStorage(service.config_manager)
+    factory = ModelFactory(service.config_manager, credential_storage)
+    model = await factory.load_model_from_agent_config({"model_profile": model_profile})
+    if not model.supports_tool_calling:
+        raise ToolCallingNotSupportedError(
+            f"Orchestrator model_profile '{model_profile}' resolves to "
+            f"'{model.name}' which does not support tool calling. Configure "
+            "a profile with an OpenAI-compatible provider (Ollama, OpenAI, "
+            "OpenRouter, LM Studio, vLLM, etc.)."
+        )
+    return model
+
+
+def get_orchestrator_llm_loader() -> Callable[[str], Awaitable[OrchestratorLLM]]:
+    """Return the LLM loader callable.
+
+    Tests override this factory via ``monkeypatch.setattr`` to inject a
+    scripted :class:`OrchestratorLLM` double.
+    """
+    return _default_orchestrator_llm_loader
 
 
 class _ChatCompletionMessage(BaseModel):
@@ -63,12 +123,7 @@ class _ChatCompletionMessage(BaseModel):
 
 
 class _ChatCompletionsRequest(BaseModel):
-    """Minimal subset of the OpenAI ``/v1/chat/completions`` request body.
-
-    Group 4 accepts ``tools`` and ``user`` for forward compatibility but
-    does not yet route them. WP-C consumes ``messages``; WP-F consumes
-    ``tools``; WP-B Group 5 consumes ``stream``.
-    """
+    """Minimal subset of the OpenAI ``/v1/chat/completions`` request body."""
 
     model: str
     messages: list[_ChatCompletionMessage]
@@ -81,27 +136,21 @@ class _ChatCompletionsRequest(BaseModel):
 async def chat_completions(
     request: _ChatCompletionsRequest,
 ) -> dict[str, Any] | StreamingResponse:
-    """Resolve session, run session-start, then stream or return a body."""
+    """Resolve session, build Runtime, then stream or return a body."""
     context = _resolve_context(request)
+    runtime = await _build_runtime()
 
     if request.stream:
         return StreamingResponse(
-            _stream_completion(context, model=request.model),
+            _stream_completion(context, runtime, model=request.model),
             media_type="text/event-stream",
         )
 
-    _ = await _orchestrator_handoff(context)
-    return _build_completion_body(model=request.model)
+    return await _build_completion_body(context, runtime, model=request.model)
 
 
 def _resolve_context(request: _ChatCompletionsRequest) -> SessionContext:
-    """Run the pre-handoff work shared by streaming and non-streaming paths.
-
-    Session identity, state retrieval, and session-start cache resolution
-    all happen before the response is shaped so identity-resolution
-    errors surface as proper HTTP errors rather than as SSE errors
-    mid-stream.
-    """
+    """Run the pre-handoff work shared by streaming and non-streaming paths."""
     messages = [
         ChatMessage(role=message.role, content=message.content)
         for message in request.messages
@@ -124,57 +173,74 @@ def _resolve_context(request: _ChatCompletionsRequest) -> SessionContext:
     return context
 
 
-async def _orchestrator_handoff(context: SessionContext) -> str:
-    """Placeholder for the Orchestrator Runtime (WP-C wires the real one).
+async def _build_runtime() -> OrchestratorRuntime:
+    """Construct a per-session Runtime from the resolved orchestrator config.
 
-    Returns empty content so the skeleton response is an honest
-    OpenAI-shaped reply with nothing to say yet. WP-C replaces this
-    with the ReAct loop.
+    ``resolve_validated`` raises if the operator-configured Model
+    Profile is absent from the library, so session start fails loudly
+    rather than booting with a profile that cannot be loaded.
     """
-    del context
-    return ""
+    resolver = get_orchestrator_config_resolver()
+    config = resolver.resolve_validated()
+    loader = get_orchestrator_llm_loader()
+    llm = await loader(config.model_profile)
+    budget = BudgetController(
+        turn_limit=config.budget.turn_limit,
+        token_limit=config.budget.token_limit,
+    )
+    return OrchestratorRuntime(
+        llm=llm,
+        budget=budget,
+        tool_dispatch=get_orchestrator_tool_dispatch(),
+    )
 
 
-async def _orchestrator_stream_handoff(
-    context: SessionContext,
-) -> AsyncIterator[OrchestratorChunk]:
-    """Streaming placeholder for the Orchestrator Runtime.
-
-    Yields the minimum chunk sequence that satisfies the Serving Layer
-    → Orchestrator Runtime integration contract without actually
-    running a ReAct loop: one ``Completion(stop)``. WP-C replaces this
-    with the real Runtime, which will interleave content deltas,
-    internal tool-call observations, and optional client tool-call
-    final-turn chunks before completion.
-    """
-    del context
-    yield Completion(finish_reason="stop")
+async def _collect_non_streaming(
+    context: SessionContext, runtime: OrchestratorRuntime
+) -> tuple[str, str]:
+    """Drive the Runtime and flatten its chunks to content + finish_reason."""
+    content_parts: list[str] = []
+    finish_reason = "stop"
+    async for chunk in runtime.run(context):
+        if isinstance(chunk, ContentDelta):
+            content_parts.append(chunk.content)
+        elif isinstance(chunk, Completion):
+            finish_reason = chunk.finish_reason
+    return "".join(content_parts), finish_reason
 
 
 async def _stream_completion(
-    context: SessionContext, *, model: str
+    context: SessionContext, runtime: OrchestratorRuntime, *, model: str
 ) -> AsyncIterator[bytes]:
-    """Drive the Runtime's chunk stream through the OpenAI SSE formatter.
-
-    The opener (``delta.role``) and the ``[DONE]`` terminator are
-    OpenAI protocol conventions; the Runtime speaks only the neutral
-    chunk vocabulary defined in ``orchestrator_chunk``.
-    """
+    """Drive the Runtime's chunk stream through the OpenAI SSE formatter."""
     formatter = OpenAiSseFormatter(
         stream_id=f"chatcmpl-{uuid.uuid4().hex}",
         model=model,
         created=int(time.time()),
     )
     yield formatter.start_assistant_turn()
-    async for chunk in _orchestrator_stream_handoff(context):
+    async for chunk in runtime.run(context):
         framed = formatter.format(chunk)
         if framed:
             yield framed
     yield formatter.done()
 
 
-def _build_completion_body(*, model: str) -> dict[str, Any]:
-    """Shape the Group 4 skeleton response."""
+async def _build_completion_body(
+    context: SessionContext, runtime: OrchestratorRuntime, *, model: str
+) -> dict[str, Any]:
+    """Shape the non-streaming response body from the Runtime's chunks.
+
+    ``usage`` carries the Session's cumulative accounting ---
+    ``SessionState.token_spend`` is the sum over every LLM call in the
+    session, and ``turn_count`` is the number of ReAct iterations. Per-
+    request delta accounting can land in a follow-up when clients need
+    it; the cumulative shape is what agentic coding tools display
+    today.
+    """
+    pre_token_spend = context.state.token_spend
+    content, finish_reason = await _collect_non_streaming(context, runtime)
+    turn_tokens = max(0, context.state.token_spend - pre_token_spend)
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex}",
         "object": "chat.completion",
@@ -183,13 +249,13 @@ def _build_completion_body(*, model: str) -> dict[str, Any]:
         "choices": [
             {
                 "index": 0,
-                "message": {"role": "assistant", "content": ""},
-                "finish_reason": "stop",
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": finish_reason,
             }
         ],
         "usage": {
             "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
+            "completion_tokens": turn_tokens,
+            "total_tokens": turn_tokens,
         },
     }

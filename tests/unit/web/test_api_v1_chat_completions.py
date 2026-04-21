@@ -23,14 +23,133 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from llm_orc.agentic.orchestrator_config import (
+    BudgetDefaults,
+    OrchestratorConfig,
+    OverrideBounds,
+)
+from llm_orc.agentic.orchestrator_runtime import OrchestratorLLM
+from llm_orc.agentic.orchestrator_tool_dispatch import (
+    InternalToolCall,
+    ToolCallResult,
+)
 from llm_orc.agentic.session_registry import SessionIdentity, SessionRegistry
 from llm_orc.agentic.session_start import (
     PromptFragment,
     SessionContext,
     SessionStartCache,
 )
+from llm_orc.models.base import ToolCall, ToolCallingResponse, ToolCallUsage
 from llm_orc.web.api import v1_chat_completions
 from llm_orc.web.server import create_app
+
+
+class _ScriptedLLM:
+    """Plays back a prepared sequence of tool-calling responses.
+
+    Satisfies the ``OrchestratorLLM`` Protocol structurally. Records
+    each call so tests can assert on message state per iteration.
+    """
+
+    def __init__(self, responses: list[ToolCallingResponse]) -> None:
+        self._responses = list(responses)
+        self.calls: list[tuple[list[dict[str, Any]], list[dict[str, Any]]]] = []
+
+    async def generate_with_tools(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> ToolCallingResponse:
+        self.calls.append((list(messages), list(tools)))
+        if not self._responses:
+            raise AssertionError("_ScriptedLLM ran out of canned responses")
+        return self._responses.pop(0)
+
+
+class _AlwaysStopLLM:
+    """Default LLM for tests that do not exercise tool calling.
+
+    Returns ``finish_reason: stop`` with empty content for every
+    request — preserves the behavior the pre-WP-C stub produced so
+    tests that predate the Runtime wiring continue to pass.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[list[dict[str, Any]], list[dict[str, Any]]]] = []
+
+    async def generate_with_tools(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> ToolCallingResponse:
+        self.calls.append((list(messages), list(tools)))
+        return _stop_response()
+
+
+class _StubToolDispatch:
+    """Returns canned tool results keyed by tool-call id."""
+
+    def __init__(self, results: dict[str, ToolCallResult] | None = None) -> None:
+        self._results = dict(results or {})
+        self.calls: list[InternalToolCall] = []
+
+    async def dispatch(self, call: InternalToolCall) -> ToolCallResult:
+        self.calls.append(call)
+        if call.id not in self._results:
+            raise AssertionError(
+                f"_StubToolDispatch received unexpected call id={call.id!r}"
+            )
+        return self._results[call.id]
+
+
+def _stop_response(content: str = "", total_tokens: int = 0) -> ToolCallingResponse:
+    """Build a minimal stop-reason response for default-path tests."""
+    return ToolCallingResponse(
+        content=content,
+        tool_calls=[],
+        usage=ToolCallUsage(
+            prompt_tokens=0,
+            completion_tokens=total_tokens,
+            total_tokens=total_tokens,
+        ),
+        finish_reason="stop",
+    )
+
+
+def _default_orchestrator_config() -> OrchestratorConfig:
+    """A Runtime-compatible OrchestratorConfig used when tests don't care.
+
+    The model_profile name is arbitrary — tests inject a scripted LLM
+    loader that ignores the profile argument.
+    """
+    return OrchestratorConfig(
+        model_profile="test-profile",
+        budget=BudgetDefaults(turn_limit=10, token_limit=10_000),
+        autonomy_level="operator-as-tool-user",
+        plexus_enabled=False,
+        override_bounds=OverrideBounds(
+            allow_budget_override=True,
+            max_turn_limit=100,
+            max_token_limit=100_000,
+        ),
+        allowed_profiles=("test-profile",),
+    )
+
+
+class _FakeConfigResolver:
+    """Returns a canned ``OrchestratorConfig`` without touching the filesystem.
+
+    Satisfies the duck-typed surface of ``OrchestratorConfigResolver``
+    that ``_build_runtime`` calls — only ``resolve_validated`` is used.
+    """
+
+    def __init__(self, config: OrchestratorConfig) -> None:
+        self._config = config
+
+    def resolve_validated(self) -> OrchestratorConfig:
+        return self._config
 
 
 def _parse_sse_frames(body: bytes) -> list[dict[str, Any]]:
@@ -60,12 +179,18 @@ def _build_client(
     *,
     registry: SessionRegistry | None = None,
     session_start_spy: (Callable[[SessionContext], list[PromptFragment]] | None) = None,
+    llm: _ScriptedLLM | None = None,
+    tool_dispatch: _StubToolDispatch | None = None,
+    config: OrchestratorConfig | None = None,
 ) -> tuple[TestClient, SessionRegistry, SessionStartCache]:
-    """Wire a TestClient with an isolated Session Registry and session-start cache.
+    """Wire a TestClient with isolated Registry, cache, LLM, and dispatch.
 
-    Follows the pattern in ``test_api_v1_models.py`` — override the
-    module-level factories so each test gets its own state. Returns the
-    client, registry, and cache so tests can inspect accumulated state.
+    Overrides the module-level factories in ``v1_chat_completions`` so
+    each test runs the real Serving Layer → Runtime → Tool Dispatch
+    wiring but with scripted doubles in place of the real orchestrator
+    LLM and ensemble facade. Defaults keep the prior skeleton behavior
+    (empty-content stop) so tests that predate the wiring continue to
+    pass unchanged.
     """
     shared_registry = registry or SessionRegistry()
     monkeypatch.setattr(
@@ -77,6 +202,28 @@ def _build_client(
         else SessionStartCache()
     )
     monkeypatch.setattr(v1_chat_completions, "get_session_start_cache", lambda: cache)
+
+    scripted_llm: _ScriptedLLM | _AlwaysStopLLM = llm or _AlwaysStopLLM()
+
+    async def loader(_model_profile: str) -> OrchestratorLLM:
+        return scripted_llm
+
+    monkeypatch.setattr(
+        v1_chat_completions, "get_orchestrator_llm_loader", lambda: loader
+    )
+
+    dispatch = tool_dispatch or _StubToolDispatch()
+    monkeypatch.setattr(
+        v1_chat_completions, "get_orchestrator_tool_dispatch", lambda: dispatch
+    )
+
+    resolver = _FakeConfigResolver(config or _default_orchestrator_config())
+    monkeypatch.setattr(
+        v1_chat_completions,
+        "get_orchestrator_config_resolver",
+        lambda: resolver,
+    )
+
     return TestClient(create_app()), shared_registry, cache
 
 
@@ -676,7 +823,13 @@ class TestServingResolvesSessionIdentity:
 
         state_after = registry.get_or_create_state(identity)
         assert state_after is state_between
-        assert state_after.turn_count == 2
+        # The retained state includes both the manual between-requests
+        # increments and the two iterations the Runtime itself recorded
+        # (one per request under the default scripted stop LLM).
+        assert state_after.turn_count == 4
+        # The scripted stop LLM reports zero tokens so the Runtime's
+        # contribution to token_spend is zero — only the manual
+        # mutations between requests are reflected here.
         assert state_after.token_spend == 192
 
     def test_distinct_user_fields_resolve_to_distinct_states(
@@ -777,3 +930,158 @@ class TestServingResolvesSessionIdentity:
         cold_identities = [i for i in registry._states if i.method == "cold_start"]
         assert len(cold_identities) == 2
         assert cold_identities[0] != cold_identities[1]
+
+
+class TestOrchestratorEndToEnd:
+    """§Tool user completes a task against the stateless orchestrator.
+
+    Real Serving Layer → real Runtime → real Tool Dispatch facade (wrapping
+    a ``_StubToolDispatch`` at the operation boundary) → scripted LLM.
+    Proves the happy-path ReAct round trip surfaces correctly in the
+    OpenAI-compatible response body.
+    """
+
+    def test_non_streaming_tool_round_trip_returns_final_content(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        llm = _ScriptedLLM(
+            responses=[
+                # Iteration 1: LLM decides to call list_ensembles.
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_1",
+                            name="list_ensembles",
+                            arguments_json="{}",
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=20, completion_tokens=5, total_tokens=25
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                # Iteration 2: LLM sees the tool result and wraps up.
+                ToolCallingResponse(
+                    content="I found 2 ensembles.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=45, completion_tokens=8, total_tokens=53
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+        # The Tool Dispatch stub impersonates OrchestratorToolDispatch —
+        # its ``dispatch`` method matches the ToolDispatcher Protocol.
+        from llm_orc.agentic.orchestrator_tool_dispatch import ToolCallSuccess
+
+        tool_dispatch = _StubToolDispatch(
+            results={
+                "call_1": ToolCallSuccess(
+                    id="call_1",
+                    name="list_ensembles",
+                    content=[{"name": "a"}, {"name": "b"}],
+                )
+            }
+        )
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=tool_dispatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "list available ensembles"}],
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        # The assistant's final content is what the LLM produced after
+        # seeing the tool result.
+        assert body["choices"][0]["message"]["content"] == "I found 2 ensembles."
+        assert body["choices"][0]["finish_reason"] == "stop"
+        # Usage reflects the two iterations' token totals (25 + 53).
+        assert body["usage"]["total_tokens"] == 78
+        # Tool Dispatch saw the expected call.
+        assert len(tool_dispatch.calls) == 1
+        assert tool_dispatch.calls[0].name == "list_ensembles"
+        # LLM was called twice; the second call saw the tool result
+        # message.
+        assert len(llm.calls) == 2
+        second_messages = llm.calls[1][0]
+        tool_msgs = [m for m in second_messages if m.get("role") == "tool"]
+        assert len(tool_msgs) == 1
+        assert tool_msgs[0]["tool_call_id"] == "call_1"
+
+    def test_streaming_tool_round_trip_yields_expected_sse_sequence(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="Looking that up...",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_s",
+                            name="list_ensembles",
+                            arguments_json="{}",
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=10, completion_tokens=5, total_tokens=15
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                ToolCallingResponse(
+                    content="Done.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=30, completion_tokens=2, total_tokens=32
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+        from llm_orc.agentic.orchestrator_tool_dispatch import ToolCallSuccess
+
+        tool_dispatch = _StubToolDispatch(
+            results={
+                "call_s": ToolCallSuccess(
+                    id="call_s", name="list_ensembles", content=[]
+                )
+            }
+        )
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=tool_dispatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "list"}],
+                "stream": True,
+            },
+        )
+
+        assert response.status_code == 200
+        frames = _parse_sse_frames(response.content)
+        # Content chunks arrive inline with the loop — both iterations'
+        # content surface in the stream.
+        content_chunks = [
+            f
+            for f in frames
+            if f != {"__done__": True} and f["choices"][0]["delta"].get("content")
+        ]
+        assert [c["choices"][0]["delta"]["content"] for c in content_chunks] == [
+            "Looking that up...",
+            "Done.",
+        ]
+        # Terminated by a stop-reason completion then DONE.
+        completions = [
+            f
+            for f in frames
+            if f != {"__done__": True}
+            and f["choices"][0].get("finish_reason") == "stop"
+        ]
+        assert len(completions) == 1
+        assert frames[-1] == {"__done__": True}
