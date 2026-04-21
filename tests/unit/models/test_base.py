@@ -323,6 +323,13 @@ class TestHTTPTimeoutConfig:
         HTTPConnectionPool._performance_config = None
 
     def test_timeout_values_default_when_config_absent(self) -> None:
+        """The ``read`` default is sized for local tool-calling models.
+
+        Ollama with mistral-nemo / qwen2.5 / llama3.1-tools routinely
+        takes 30-80s per orchestrator iteration; 180s leaves headroom.
+        Faster remote providers tune down via
+        ``performance.concurrency.request_timeout.read``.
+        """
         with (
             patch("httpx.AsyncClient"),
             patch("httpx.Limits"),
@@ -331,7 +338,7 @@ class TestHTTPTimeoutConfig:
             HTTPConnectionPool.get_httpx_client()
 
         mock_timeout.assert_called_once_with(
-            connect=10.0, read=30.0, write=10.0, pool=5.0
+            connect=10.0, read=180.0, write=10.0, pool=5.0
         )
 
     def test_timeout_values_from_config_override_defaults(self) -> None:
