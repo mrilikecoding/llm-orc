@@ -23,7 +23,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from llm_orc.agentic.session_registry import SessionRegistry
+from llm_orc.agentic.session_registry import SessionIdentity, SessionRegistry
 from llm_orc.agentic.session_start import (
     PromptFragment,
     SessionContext,
@@ -595,3 +595,185 @@ class TestSessionStartIntegration:
         assert cache.resolve(follow_up) == [
             PromptFragment(content="sys-prime", source="spy")
         ]
+
+
+class TestServingResolvesSessionIdentity:
+    """Boundary integration: Serving Layer → Session Registry.
+
+    Per ``docs/agentic-serving/system-design.md`` Test Architecture
+    table, edge ``Serving Layer → Session Registry``: an HTTP request
+    with or without session continuity correlates to the correct
+    ``SessionState``. Each HTTP request goes through ``_resolve_context``
+    which calls ``SessionRegistry.resolve_identity`` and
+    ``SessionRegistry.get_or_create_state``; the integration contract
+    is that identity derivation and state lookup are coherent across
+    requests — the same derivation inputs yield the same ``SessionState``
+    instance, so Budget Controller, Autonomy Policy, and (later) the
+    Orchestrator Runtime all read a single coherent view.
+    """
+
+    def test_same_user_field_resolves_to_same_session_state(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two requests with the same ``user`` field share one ``SessionState``.
+
+        The Session Registry hands out the same instance so that turn
+        count and token spend accumulated by the first request are
+        observed by the second (cycle-status §FF 43: shared-reference
+        lifecycle pattern).
+        """
+        client, registry, _ = _build_client(monkeypatch)
+
+        for _ in range(2):
+            client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "primary",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "user": "client-abc",
+                },
+            )
+
+        identity = SessionIdentity(value="client-abc", method="user_field")
+        state = registry.get_or_create_state(identity)
+        assert state.identity == identity
+        assert list(registry._states.keys()).count(identity) == 1
+
+    def test_state_mutation_between_requests_carries_across(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Mutation through the retained state is visible on the next request.
+
+        Simulates what WP-C's Orchestrator Runtime will do — record a
+        ReAct iteration mid-session. The follow-up request must resolve
+        to the same ``SessionState`` so Budget Controller sees the
+        accumulated turn count and token spend.
+        """
+        client, registry, _ = _build_client(monkeypatch)
+
+        client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+                "user": "client-abc",
+            },
+        )
+
+        identity = SessionIdentity(value="client-abc", method="user_field")
+        state_between = registry.get_or_create_state(identity)
+        state_between.record_iteration(tokens=128)
+        state_between.record_iteration(tokens=64)
+
+        client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+                "user": "client-abc",
+            },
+        )
+
+        state_after = registry.get_or_create_state(identity)
+        assert state_after is state_between
+        assert state_after.turn_count == 2
+        assert state_after.token_spend == 192
+
+    def test_distinct_user_fields_resolve_to_distinct_states(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two requests with different ``user`` values get distinct Sessions."""
+        client, registry, _ = _build_client(monkeypatch)
+
+        client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "one"}],
+                "user": "client-abc",
+            },
+        )
+        client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "two"}],
+                "user": "client-xyz",
+            },
+        )
+
+        id_abc = SessionIdentity(value="client-abc", method="user_field")
+        id_xyz = SessionIdentity(value="client-xyz", method="user_field")
+        state_abc = registry.get_or_create_state(id_abc)
+        state_xyz = registry.get_or_create_state(id_xyz)
+        assert state_abc is not state_xyz
+
+    def test_message_prefix_derivation_when_user_field_absent(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Requests without ``user`` but with user messages derive by prefix hash.
+
+        Two requests whose first user message is identical resolve to
+        the same ``SessionState``; requests whose first user message
+        differs resolve to distinct ones. This is the fallback identity
+        path per Session Registry's integration contract.
+        """
+        client, registry, _ = _build_client(monkeypatch)
+
+        client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [
+                    {"role": "user", "content": "refactor the parser"},
+                    {"role": "assistant", "content": "ok"},
+                ],
+            },
+        )
+        client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [
+                    {"role": "user", "content": "refactor the parser"},
+                    {"role": "assistant", "content": "ok"},
+                    {"role": "user", "content": "now the lexer"},
+                ],
+            },
+        )
+        client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "unrelated task"}],
+            },
+        )
+
+        prefix_identities = [
+            i for i in registry._states if i.method == "message_prefix"
+        ]
+        assert len(prefix_identities) == 2
+
+    def test_cold_start_request_gets_fresh_state_each_time(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No ``user`` field and no user-role message → cold-start fresh identity.
+
+        Each cold-start request is its own Session so consumers don't
+        accidentally alias unrelated clients through a shared cold
+        bucket.
+        """
+        client, registry, _ = _build_client(monkeypatch)
+
+        for _ in range(2):
+            client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "primary",
+                    "messages": [{"role": "system", "content": "be helpful"}],
+                },
+            )
+
+        cold_identities = [i for i in registry._states if i.method == "cold_start"]
+        assert len(cold_identities) == 2
+        assert cold_identities[0] != cold_identities[1]
