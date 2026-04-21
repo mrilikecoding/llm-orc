@@ -16,7 +16,9 @@ Group 4 (see ``docs/agentic-serving/roadmap.md``). The endpoint:
 - Returns a minimal OpenAI-shaped ``chat.completion`` body.
 """
 
+import json
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -29,6 +31,28 @@ from llm_orc.agentic.session_start import (
 )
 from llm_orc.web.api import v1_chat_completions
 from llm_orc.web.server import create_app
+
+
+def _parse_sse_frames(body: bytes) -> list[dict[str, Any]]:
+    """Split an SSE body into parsed frames.
+
+    Each frame is either the JSON payload of a ``data:`` line or the
+    sentinel ``{"__done__": True}`` marking the literal ``[DONE]``
+    terminator. Blank lines between frames are preserved as separators
+    by SSE but don't produce frames here.
+    """
+    frames: list[dict[str, Any]] = []
+    for block in body.split(b"\n\n"):
+        stripped = block.strip()
+        if not stripped:
+            continue
+        assert stripped.startswith(b"data: "), f"unexpected SSE line: {block!r}"
+        payload = stripped[len(b"data: ") :]
+        if payload == b"[DONE]":
+            frames.append({"__done__": True})
+            continue
+        frames.append(json.loads(payload))
+    return frames
 
 
 def _build_client(
@@ -169,16 +193,17 @@ class TestChatCompletionsRequestParsing:
         assert response.status_code == 200
 
 
-class TestStreamingDeferred:
-    """``stream: true`` is WP-B Group 5 scope; Group 4 rejects it.
+class TestStreamingPath:
+    """``stream: true`` returns an SSE response (WP-B Group 5).
 
-    Silently returning a non-streaming body to a client that asked for
-    SSE would mis-frame the response. An explicit 400 with a clear
-    message lets clients feature-detect and lets operators see when
-    their deployment is ahead of Group 5.
+    The skeleton response emits the OpenAI-expected opener (role delta)
+    and a single ``finish_reason: stop`` completion, terminated by
+    ``data: [DONE]``. WP-C replaces the stub stream handoff with the
+    real Runtime, which will interleave content deltas and internal
+    tool-call observations.
     """
 
-    def test_rejects_stream_true_with_400(
+    def test_stream_true_returns_event_stream_content_type(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         client, _, _ = _build_client(monkeypatch)
@@ -192,8 +217,154 @@ class TestStreamingDeferred:
             },
         )
 
-        assert response.status_code == 400
-        assert "stream" in response.json().get("error", "").lower()
+        assert response.status_code == 200
+        content_type = response.headers["content-type"]
+        assert content_type.startswith("text/event-stream")
+
+    def test_stream_body_frames_role_delta_stop_and_done(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The skeleton stream yields opener → stop completion → DONE."""
+        client, _, _ = _build_client(monkeypatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": True,
+            },
+        )
+
+        frames = _parse_sse_frames(response.content)
+        assert len(frames) == 3
+        first, second, terminator = frames
+
+        assert first["choices"][0]["delta"] == {"role": "assistant"}
+        assert first["choices"][0]["finish_reason"] is None
+
+        assert second["choices"][0]["delta"] == {}
+        assert second["choices"][0]["finish_reason"] == "stop"
+
+        assert terminator == {"__done__": True}
+
+    def test_stream_chunks_carry_request_model_name(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Every chunk's ``model`` field mirrors the request's ``model``."""
+        client, _, _ = _build_client(monkeypatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "my-profile",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": True,
+            },
+        )
+
+        frames = _parse_sse_frames(response.content)
+        data_chunks = [f for f in frames if f != {"__done__": True}]
+        assert data_chunks
+        assert all(chunk["model"] == "my-profile" for chunk in data_chunks)
+
+    def test_stream_chunks_share_one_stream_id(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """All data chunks in a single stream share a stable ``id``.
+
+        OpenAI clients correlate chunks by id while reconstructing the
+        completion; the id must not vary mid-stream.
+        """
+        client, _, _ = _build_client(monkeypatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": True,
+            },
+        )
+
+        frames = _parse_sse_frames(response.content)
+        ids = {f["id"] for f in frames if f != {"__done__": True}}
+        assert len(ids) == 1
+
+
+class TestStreamingSessionStart:
+    """FC-9 holds under streaming: ``resolve_session_start_context`` runs
+    once per session regardless of whether the request is streaming or
+    not. The cache mediates this; the streaming branch must not bypass
+    ``_resolve_context``.
+    """
+
+    def test_streaming_request_fires_session_start_exactly_once_per_session(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        call_count = 0
+
+        def spy(context: SessionContext) -> list[PromptFragment]:
+            nonlocal call_count
+            call_count += 1
+            return []
+
+        client, _, _ = _build_client(monkeypatch, session_start_spy=spy)
+
+        for _ in range(2):
+            response = client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "primary",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "stream": True,
+                    "user": "client-abc",
+                },
+            )
+            # Consume body so the StreamingResponse actually runs.
+            response.content  # noqa: B018
+
+        assert call_count == 1
+
+    def test_streaming_and_non_streaming_share_session_start_cache(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """One streaming and one non-streaming request on the same identity
+        must resolve the session-start resolver exactly once between them.
+        """
+        call_count = 0
+
+        def spy(context: SessionContext) -> list[PromptFragment]:
+            nonlocal call_count
+            call_count += 1
+            return []
+
+        client, _, _ = _build_client(monkeypatch, session_start_spy=spy)
+
+        streaming = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": True,
+                "user": "client-abc",
+            },
+        )
+        streaming.content  # noqa: B018
+        client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+                "user": "client-abc",
+            },
+        )
+
+        assert call_count == 1
+
+
+class TestNonStreamingPath:
+    """The Group 4 non-streaming body is preserved under Group 5."""
 
     def test_non_streaming_default_still_works(
         self, monkeypatch: pytest.MonkeyPatch

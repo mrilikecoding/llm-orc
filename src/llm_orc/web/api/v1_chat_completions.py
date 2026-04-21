@@ -17,13 +17,17 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from llm_orc.agentic.orchestrator_chunk import Completion, OrchestratorChunk
 from llm_orc.agentic.session_registry import ChatMessage, SessionRegistry
 from llm_orc.agentic.session_start import SessionContext, SessionStartCache
+from llm_orc.web.api.sse_format import OpenAiSseFormatter
 
 router = APIRouter(prefix="/v1", tags=["openai-compat"])
 
@@ -73,17 +77,31 @@ class _ChatCompletionsRequest(BaseModel):
     user: str | None = None
 
 
-@router.post("/chat/completions")
-async def chat_completions(request: _ChatCompletionsRequest) -> dict[str, Any]:
-    """Group 4 skeleton: resolve session, run session-start, return placeholder."""
+@router.post("/chat/completions", response_model=None)
+async def chat_completions(
+    request: _ChatCompletionsRequest,
+) -> dict[str, Any] | StreamingResponse:
+    """Resolve session, run session-start, then stream or return a body."""
+    context = _resolve_context(request)
+
     if request.stream:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "stream=true is not implemented in WP-B Group 4. "
-                "SSE streaming lands in Group 5."
-            ),
+        return StreamingResponse(
+            _stream_completion(context, model=request.model),
+            media_type="text/event-stream",
         )
+
+    _ = await _orchestrator_handoff(context)
+    return _build_completion_body(model=request.model)
+
+
+def _resolve_context(request: _ChatCompletionsRequest) -> SessionContext:
+    """Run the pre-handoff work shared by streaming and non-streaming paths.
+
+    Session identity, state retrieval, and session-start cache resolution
+    all happen before the response is shaped so identity-resolution
+    errors surface as proper HTTP errors rather than as SSE errors
+    mid-stream.
+    """
     messages = [
         ChatMessage(role=message.role, content=message.content)
         for message in request.messages
@@ -103,10 +121,7 @@ async def chat_completions(request: _ChatCompletionsRequest) -> dict[str, Any]:
 
     cache = get_session_start_cache()
     cache.resolve(context)
-
-    _ = await _orchestrator_handoff(context)
-
-    return _build_completion_body(model=request.model)
+    return context
 
 
 async def _orchestrator_handoff(context: SessionContext) -> str:
@@ -118,6 +133,44 @@ async def _orchestrator_handoff(context: SessionContext) -> str:
     """
     del context
     return ""
+
+
+async def _orchestrator_stream_handoff(
+    context: SessionContext,
+) -> AsyncIterator[OrchestratorChunk]:
+    """Streaming placeholder for the Orchestrator Runtime.
+
+    Yields the minimum chunk sequence that satisfies the Serving Layer
+    → Orchestrator Runtime integration contract without actually
+    running a ReAct loop: one ``Completion(stop)``. WP-C replaces this
+    with the real Runtime, which will interleave content deltas,
+    internal tool-call observations, and optional client tool-call
+    final-turn chunks before completion.
+    """
+    del context
+    yield Completion(finish_reason="stop")
+
+
+async def _stream_completion(
+    context: SessionContext, *, model: str
+) -> AsyncIterator[bytes]:
+    """Drive the Runtime's chunk stream through the OpenAI SSE formatter.
+
+    The opener (``delta.role``) and the ``[DONE]`` terminator are
+    OpenAI protocol conventions; the Runtime speaks only the neutral
+    chunk vocabulary defined in ``orchestrator_chunk``.
+    """
+    formatter = OpenAiSseFormatter(
+        stream_id=f"chatcmpl-{uuid.uuid4().hex}",
+        model=model,
+        created=int(time.time()),
+    )
+    yield formatter.start_assistant_turn()
+    async for chunk in _orchestrator_stream_handoff(context):
+        framed = formatter.format(chunk)
+        if framed:
+            yield framed
+    yield formatter.done()
 
 
 def _build_completion_body(*, model: str) -> dict[str, Any]:
