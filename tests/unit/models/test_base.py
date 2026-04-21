@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from llm_orc.models.base import HTTPConnectionPool, ModelInterface
+from llm_orc.models.base import (
+    HTTPConnectionPool,
+    ModelInterface,
+    ToolCallingNotSupportedError,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -301,3 +305,23 @@ class TestModelInterface:
 
         # Then
         assert usage is None
+
+
+class TestToolCallingDefaultBehavior:
+    """Tool calling is opt-in per provider.
+
+    The base ``ModelInterface`` defaults ``supports_tool_calling`` to
+    False and ``generate_with_tools`` raises ``ToolCallingNotSupportedError``.
+    Providers that support it set the flag to True and override the
+    method.
+    """
+
+    def test_supports_tool_calling_defaults_to_false(self) -> None:
+        assert ConcreteModel.supports_tool_calling is False
+        assert ModelInterface.supports_tool_calling is False
+
+    @pytest.mark.asyncio
+    async def test_base_generate_with_tools_raises_not_supported(self) -> None:
+        model = ConcreteModel()
+        with pytest.raises(ToolCallingNotSupportedError, match="test-model"):
+            await model.generate_with_tools(messages=[], tools=[])
