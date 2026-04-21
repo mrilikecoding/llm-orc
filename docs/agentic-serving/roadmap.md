@@ -9,40 +9,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ## Work Packages
 
-### WP-A: Cycle-validator extraction (retrofit debt)
-
-**Objective:** Extract `EnsembleLoader._validate_cross_ensemble_cycles` and `_build_reference_graph` to a public function so composition-time and load-time validation share a single routine.
-
-**Changes:**
-- `core/config/ensemble_config.py` — add public `validate_ensemble_reference_graph(name, agents, search_dirs) -> None`; rewrite `EnsembleLoader.load_from_file` to call it; rewrite `EnsembleLoader.list_ensembles` to pass its directory as `search_dirs` so the check actually fires.
-- `services/handlers/validation_handler.py` — wire `_collect_validation_errors` through the public function with real `search_dirs` from the config manager.
-
-**Scenarios covered:** refactor scenarios 1, 2, and regression 3 (scenarios.md §Structural Debt Remediation).
-
-**Dependencies:** None.
-
-**Participating modules:** Ensemble Engine (existing). Consistent with WP scope.
-
----
-
-### WP-B: Serving foundation — endpoints, Session identity, configuration surface
-
-**Objective:** Stand up the OpenAI-compatible serving surface and the per-Session state that every downstream module reads. Not yet a ReAct loop — this is the plumbing the loop slots into.
-
-**Changes:**
-- New **Serving Layer** module: `/v1/chat/completions` (streaming and non-streaming), `/v1/models`, SSE chunking, tool-call formatting.
-- New **Session Registry** module: Session identity resolution from request features (Phase 1: message-history derivation with optional client-supplied correlation via OpenAI `user` field); cumulative turn and token accounting.
-- New **Orchestrator Configuration** module: per-session resolution of orchestrator Model Profile, Budget defaults, Autonomy default, Plexus enablement flag; operator-set bounds on per-request overrides.
-- Typed session-start function `resolve_session_start_context(session: SessionContext) -> list[PromptFragment]` in Serving Layer, called exactly once at session start (ADR-009 Phase 2 reservation; Phase 1 body returns `[]`). Replaces former WP-J.
-- Integrates with existing FastAPI app in `web/server.py` via router inclusion.
-
-**Scenarios covered:** foundation for everything; direct coverage of `/v1/models` listing (scenarios.md §Orchestrator tool set is exactly the committed set — the `/v1/models` side of it). FC-9 (`resolve_session_start_context` call-site check) satisfied on completion.
-
-**Dependencies:** None.
-
-**Participating modules:** Serving Layer, Session Registry, Orchestrator Configuration. Consistent with WP scope.
-
----
+> **WP-A and WP-B are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. The active section below lists only upcoming or in-progress work.
 
 ### WP-C: ReAct core — Runtime, Tool Dispatch, Budget Controller
 
