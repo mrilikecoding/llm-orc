@@ -348,21 +348,27 @@ class ConfigurationManager:
     def load_agentic_serving_config(self) -> dict[str, Any]:
         """Load agentic-serving configuration with sensible defaults.
 
-        Defaults reflect stateless-first operation (AS-8): Plexus is
-        disabled, autonomy is `operator-as-tool-user`, and Budget sizes
-        are sized for an extended agentic coding session. Global
-        ``config.yaml`` overlays defaults; local project ``config.yaml``
-        overlays global.
+        Defaults reflect stateless-first operation (AS-8) and llm-orc's
+        core value proposition that orchestration with local-hardware
+        compute trades tokens-for-quality against a single frontier-API
+        call. Plexus is disabled, autonomy is ``operator-as-tool-user``,
+        and Budget sizes are loose: the token ceiling is a pathology
+        circuit breaker for the local-orchestration-heavy case, not a
+        cost ceiling for frontier-API pricing. Frontier-mix deployments
+        tighten via ``config.yaml``.
+
+        Global ``config.yaml`` overlays defaults; local project
+        ``config.yaml`` overlays global.
         """
         defaults: dict[str, Any] = {
             "orchestrator": {"model_profile": "default"},
-            "budget": {"turn_limit": 200, "token_limit": 500_000},
+            "budget": {"turn_limit": 500, "token_limit": 10_000_000},
             "autonomy": {"default_level": "operator-as-tool-user"},
             "plexus": {"enabled": False},
             "overrides": {
                 "allow_budget_override": True,
-                "max_turn_limit": 500,
-                "max_token_limit": 2_000_000,
+                "max_turn_limit": 1_000,
+                "max_token_limit": 50_000_000,
             },
         }
 
