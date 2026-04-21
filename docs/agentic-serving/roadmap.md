@@ -306,3 +306,32 @@ Full architecture live. `query_knowledge` and `record_outcome` flow to Plexus; l
 **Test coverage delta.** +14 tests (9 new SSE formatter unit tests, 4 streaming endpoint tests, 2 FC-9-under-streaming integration tests, −1 Group 4 rejection test superseded). Full suite: 2141 passed, 91.21% coverage.
 
 **Unblocks:** WP-B Group 6 (integration verification — session identity across requests, full FC-9 static inspection pass); WP-C (`_orchestrator_stream_handoff` stub is the body swap point); WP-F (`ClientToolCall` + `ToolCallInvocation` types and their formatter case already exist).
+
+### WP-B Group 6: Integration verification — Serving Layer → Session Registry edge + FC-9 static inspection — 2026-04-21
+
+**Commits:** (this change)
+
+**Outcome.** WP-B closes out with verification-only work. No new production code — two test surfaces added:
+
+1. **`TestServingResolvesSessionIdentity`** (5 integration tests in `tests/unit/web/test_api_v1_chat_completions.py`). Covers the Test Architecture table's `Serving Layer → Session Registry` edge — `test_serving_resolves_session_identity`:
+   - Same `user` field across two requests resolves to a single `SessionState` in the registry.
+   - Mutation through the retained `SessionState` between requests is visible to the follow-up request (the lifecycle-sequence check at the HTTP boundary — mirrors the unit-level `test_caller_mutation_visible_through_subsequent_lookup` at the integration tier).
+   - Distinct `user` fields resolve to distinct `SessionState` instances.
+   - When `user` is absent, the message-prefix derivation path kicks in and groups requests by first user message.
+   - Cold-start requests (no user field, no user-role message) each get a fresh identity — they do not collapse into a shared cold bucket.
+
+2. **`test_fc9_session_start_contract.py`** (5 static inspection tests). Covers the structural half of FC-9:
+   - `resolve_session_start_context` has signature `(context: SessionContext) -> list[PromptFragment]` verified via `inspect.signature` + `typing.get_type_hints`.
+   - The function is defined at module level (not nested), consistent with ADR-009's reservation shape.
+   - AST scan over `src/llm_orc/` finds exactly one `FunctionDef` with that name (in `agentic/session_start.py`).
+   - AST scan over `src/llm_orc/` finds exactly one `ast.Name` reference outside the definition — the default-resolver binding in `SessionStartCache.__init__`. Every runtime invocation flows through `self._resolver(context)`, not through the bare name, so FC-9's "exactly 1 call" holds structurally, not only behaviorally.
+   - `SessionStartCache()` with no argument resolves to the module-level function by identity — confirms the counted reference is the default wiring, not a leftover.
+
+**Scenarios covered.** Group 6 does not claim scenarios; it closes FC-9 (both halves — behavioral via existing tests, structural via AST). WP-B's roadmap claim — "FC-9 satisfied on completion" — is now honored.
+
+**Fitness criteria status.**
+- FC-9 (`resolve_session_start_context` called exactly once; signature present): **fully satisfied** at WP-B close — behavioral tests (`test_session_start_fires_exactly_once_per_session`, `test_streaming_request_fires_session_start_exactly_once_per_session`, `test_streaming_and_non_streaming_share_session_start_cache`) plus new structural tests (signature match, single production reference).
+
+**Test coverage delta.** +10 tests (5 session-identity integration + 5 FC-9 static). Full suite: 2151 passed, 91.21% coverage, lint clean (mypy + ruff + bandit + vulture).
+
+**Unblocks:** **WP-B complete.** TS-1 advances to WP-C (Orchestrator Runtime — ReAct loop, Tool Dispatch, Budget Controller). The `_orchestrator_handoff` and `_orchestrator_stream_handoff` stubs in `v1_chat_completions.py` are the body-swap points for WP-C.
