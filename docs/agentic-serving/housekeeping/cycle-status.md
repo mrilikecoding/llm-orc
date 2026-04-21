@@ -1,7 +1,7 @@
 # Active RDD Cycle: Agentic Serving
 
 **Started:** 2026-03-20
-**Current phase:** BUILD (in progress — WP-A complete; WP-B Groups 1-4 complete)
+**Current phase:** BUILD (in progress — WP-A complete; WP-B Groups 1-5 complete)
 **Artifact base:** `docs/agentic-serving/`
 **Essay:** `../essays/001-agentic-serving-architecture.md`
 
@@ -14,7 +14,7 @@
 | MODEL | ✅ Complete | `../domain-model.md` | Plexus should be optional (AS-8) -- design for stateless, benefit from Plexus when available. Enrichment pipeline maturity is an open question that determines whether the learning-system value proposition is real. Two-tier architecture: stateless orchestrator as baseline, Plexus as upgrade to learning system. |
 | DECIDE | ✅ Complete | `../decisions/adr-001..011-*.md`, `../scenarios.md`, `../interaction-specs.md` | Plexus's more compelling frame is intra-session multi-agent substrate via consumer-registered lens grammars, not only cross-session memory. Per-ensemble lens registration would make the orchestrator's access polyglot. AS-4 preserved (lens is query-surface grammar applied during enrichment). Reframe is forward signal, not a current-cycle driver -- Plexus's lens design is in-progress. Captured as OQ #8 and essay reflection; folds back in a later cycle. |
 | ARCHITECT | ✅ Complete | `../system-design.md`, `../roadmap.md`, `../ORIENTATION.md` (regenerated) | Retrofit mode: ensemble engine stays Layer 3 unchanged; 12 modules across 4 layers plus typed `resolve_session_start_context` function in Serving Layer; 13 fitness criteria. Client tool surface: Option C (turn-boundary delegation) is the commitment, scenario-gated — WP-F does not start until stress scenarios exercise the C/D distinction. Context Injection demoted from module to typed function (ADR-009 reservation is satisfied by signature + call site, not by a module). Consolidations of Orchestrator Configuration into Serving Layer and Calibration Gate into Runtime rejected: the former would invert layering; the latter would break FC-4. Roadmap has 10 WPs, 3 classified transition states; TS-1 (stateless orchestrator serving OpenCode) is the vision-named intermediate target. |
-| BUILD | ▶ In Progress | WP-A complete (commits `8a0f5d6`, `0980323`); WP-B Groups 1-4 complete (Groups 1-3: commits `188b93f`, `111a026`, `59b9053`, `b1e3c54`, `86ed0be`; Group 4: this session) — see roadmap Completed Work Log | -- |
+| BUILD | ▶ In Progress | WP-A complete (commits `8a0f5d6`, `0980323`); WP-B Groups 1-5 complete (Groups 1-3: commits `188b93f`, `111a026`, `59b9053`, `b1e3c54`, `86ed0be`; Group 4: commit `1231874`; Group 5: commit `3db8eb3`) — see roadmap Completed Work Log | -- |
 | PLAY | ☐ Optional | -- | -- |
 | SYNTHESIZE | ☐ Optional | -- | -- |
 
@@ -81,6 +81,20 @@
 
 52. **Group 4 test coverage.** 19 new tests: `tests/unit/agentic/test_session_start.py` (12 — types, Phase 1 resolver behavior, `SessionStartCache` once-per-identity / per-identity resolution / empty-list caching invariant / default resolver wiring); `tests/unit/web/test_api_v1_chat_completions.py` (14 — response shape, request parsing, streaming rejection, session-start integration including the named `test_session_start_context_is_empty_in_phase_1` from the system-design Test Architecture table). Full suite 2127 passed, 91.14% coverage, lint clean
 
+53. **OrchestratorChunk is six variants, neutrally located** (Group 5). `src/llm_orc/agentic/orchestrator_chunk.py` defines `ContentDelta`, `Completion`, `ClientToolCall` (+ inner `ToolCallInvocation`), `InternalToolCallInFlight`, `InternalToolCallResult`, `ErrorChunk` as frozen dataclasses joined under a `OrchestratorChunk` union alias. Placement is neutral (under `agentic/`) rather than under `web/` because the Runtime — a future L2 module — also imports these types. The formatter lives in `web/api/` because OpenAI protocol translation is Serving-Layer-specific; keeping them split preserves FC-4's spirit (Runtime never imports SSE-specific code)
+
+54. **Internal tool-call chunks silent-drop in Phase 1** (Group 5, formatter). `InternalToolCallInFlight` and `InternalToolCallResult` exist in the Runtime's emission surface but the formatter returns `b""` for both — the Runtime yields them so the Serving Layer can choose what to surface, and Phase 1's choice is "nothing" pending OQ #2 (visibility form). Documented in `sse_format.py` source. WP-E can change the formatter case without touching the Runtime's emission contract
+
+55. **Stream opener is a Serving-Layer convention, not a Runtime chunk** (Group 5). `OpenAiSseFormatter.start_assistant_turn()` emits OpenAI's first-chunk `delta.role` convention. Rejecting the alternative of a `RoleDelta` chunk variant keeps OpenAI-protocol specifics out of the Runtime ↔ Serving Layer contract. If a future protocol needs a different opener (e.g., Anthropic-style), the formatter swaps; the chunk vocabulary is unchanged
+
+56. **Client tool-call emission is single-chunk for the skeleton** (Group 5). `ClientToolCall(tool_calls=(...))` emits one framed chunk carrying all tool calls with a synthetic `index` per call and `finish_reason: "tool_calls"`. Chunked argument streaming (OpenAI allows multi-chunk reconstruction by index) is deferred to WP-F — Group 5 gives WP-F the single-chunk baseline to extend from. `arguments` is stored as a pre-encoded JSON string, matching OpenAI's wire format and avoiding re-encoding inside the formatter
+
+57. **`_resolve_context` extracted so streaming and non-streaming share pre-handoff work** (Group 5). Identity resolution, state retrieval, and session-start cache resolution happen synchronously before the response is shaped — so errors in any of those steps surface as proper HTTP errors rather than as SSE errors mid-stream. FC-9 under streaming is covered by two new tests (`test_streaming_request_fires_session_start_exactly_once_per_session`, `test_streaming_and_non_streaming_share_session_start_cache`). Cache is the same singleton used by the non-streaming path
+
+58. **`response_model=None` is required when returning `dict | StreamingResponse`** (Group 5). Without it, FastAPI tries to build a Pydantic response model from the union and raises at import time. Documented inline at the decorator. Future streaming endpoints (e.g., a Phase 2 visibility-events stream) will need the same opt-out
+
+59. **Group 5 test coverage.** +14 tests net (9 SSE formatter unit tests, 4 streaming endpoint tests, 2 FC-9-under-streaming integration tests, −1 superseded Group 4 `stream=true` rejection test). Full suite 2141 passed, 91.21% coverage, lint clean
+
 ### From ARCHITECT
 30. Retrofit mode — llm-orc has existing FastAPI server, MCP handlers (ExecutionHandler, ValidationHandler, ensemble_crud_handler, promotion_handler, validation_handler, script_handler), ensemble engine, config manager, auth, and artifact system. Agentic serving is additive; Layer 3 (Ensemble Engine) stays unchanged per ADR-001/002
 31. 12-module decomposition across 4 layers (L0 Core / L1 Domain Policy / L2 Runtime / L3 Entry) plus typed `resolve_session_start_context` function in Serving Layer. Originally 13 modules; Context Injection Stage demoted to function per ADR-066 gate-reflection amendment #1
@@ -94,7 +108,7 @@
 
 ## Context for Resumption
 
-**WP-B resumption pointer (2026-04-20).** WP-B split across sessions. Groups 1-4 (Session Registry + Orchestrator Configuration + `/v1/models` + `/v1/chat/completions` non-streaming skeleton with `SessionStartCache`) are complete on branch `agentic-serving`. FC-9 satisfied as of Group 4. A fresh session should pick up at **Group 5: SSE streaming skeleton + tool-call formatting**. Group 5 introduces the streaming code path (`stream: true` currently returns HTTP 400) and extends the response surface to carry the `OrchestratorChunk` types from the Serving Layer → Orchestrator Runtime integration contract. Still skeleton-level — the Runtime lands in WP-C. Remaining WP-B groups: 5 (SSE streaming skeleton + tool-call formatting), 6 (integration verification — session identity across requests, full FC-9 static inspection pass). No downstream dependencies; pure plumbing ahead.
+**WP-B resumption pointer (2026-04-21, after Group 5).** WP-B split across sessions. Groups 1-5 complete on branch `agentic-serving`: Session Registry + Orchestrator Configuration + `/v1/models` + `/v1/chat/completions` skeleton (non-streaming + SSE streaming) + `OrchestratorChunk` contract types + OpenAI SSE formatter. FC-9 satisfied across both response paths. A fresh session should pick up at **Group 6: integration verification** — session identity across requests, full FC-9 static inspection pass, remaining boundary integration tests from the system-design Test Architecture table that can land without the Runtime (the Serving Layer → Session Registry edge specifically). Pure verification work — no new production code expected. After Group 6, WP-B is complete and TS-1 advances to WP-C (Orchestrator Runtime).
 
 This is a scoped RDD cycle for the agentic-serving feature of llm-orc, a declarative DAG-based LLM orchestration engine. The research phase investigated whether llm-orc can serve as the backend for agentic coding tools via OpenAI-compatible endpoints. Six questions were explored across two research cycles: API surface requirements, DAG-to-ReAct mapping, self-building ensembles, Plexus as memory layer, OpenHands architecture, and claw-code architecture.
 
