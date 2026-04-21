@@ -119,8 +119,32 @@ agentic_serving:
     token_limit: 100
 ```
 
-The next request terminates after one iteration with `finish_reason: "length"`
-and a content payload like `[Session budget exhausted: turn limit reached (1/1)]`.
+The next request terminates with `finish_reason: "length"` and a content
+payload like `[Session budget exhausted: turn limit reached (2/1)]`.
+
+The counter shows **cumulative session turn count**, not per-request.
+Sessions persist across HTTP requests that share identity — same
+`user` field, or (when `user` is absent) same first-user-message hash.
+If you re-run the previous curl verbatim after lowering the turn
+limit, the existing Session's turn_count is already > 1, so the first
+budget check on the next iteration terminates immediately and the
+counter reports the prior count.
+
+To exercise a fresh session, pass a unique `user` field:
+
+```bash
+curl -s -X POST http://localhost:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "orchestrator-local",
+    "user": "budget-test-'"$(date +%s)"'",
+    "messages": [{"role": "user", "content": "any request"}]
+  }' | jq
+```
+
+A fresh session yields `(1/1)` — the first iteration completes the
+LLM call (turn_count → 1), then the check at the top of iteration 2
+sees `turn_count >= turn_limit` and terminates.
 
 ### Point an agentic coding tool at it
 
@@ -152,10 +176,10 @@ WP-C's acceptance scenarios exercise in this setup:
   `agentic_serving.orchestrator.model_profile` name does not resolve
   to a Model Profile. Check `/v1/models` first.
 - **`ToolCallingNotSupportedError`** — the resolved profile's provider
-  is not `openai_compat`. Anthropic-native, Google/Gemini native, and
-  Ollama's legacy `/api/chat` endpoint are not yet supported; those
-  land in follow-up work. Use the `openai_compat` provider pointing at
-  Ollama's `/v1` or any OpenAI-compat endpoint.
+  is not `openai-compatible`. Anthropic-native, Google/Gemini native,
+  and Ollama's legacy `/api/chat` endpoint are not yet supported;
+  those land in follow-up work. Use the `openai-compatible` provider
+  pointing at Ollama's `/v1` or any OpenAI-compat endpoint.
 - **Model emits text but no tool calls** — the model isn't using the
   tool interface. Try a more capable tool-calling model (`qwen2.5:7b`,
   `llama3.1:8b` or larger). Smaller models sometimes ignore the tool
@@ -190,3 +214,45 @@ The run surfaced three gaps that were addressed in follow-up commits:
    the performance config and raising the default read timeout.
    Operators deploying against slower models can tune further via
    `performance.concurrency.request_timeout.read`.
+
+## Re-verification run — 2026-04-21 (post-fix)
+
+Followed this guide verbatim after the three gaps above were
+addressed. All four acceptance checks green against local Ollama with
+`mistral-nemo:12b`:
+
+| Check | Result | Wall clock |
+|---|---|---|
+| `uv run llm-orc serve --port 8000` starts | ✓ (new alias mounts same app) | — |
+| `GET /v1/models` → `orchestrator-local` | ✓ | <1s |
+| Non-streaming completion, `finish_reason: "stop"` | ✓ (65 ensembles rendered) | 2m49s |
+| Streaming SSE: role-delta → content → stop → `[DONE]` | ✓ | 22s |
+| `turn_limit: 1` → `finish_reason: "length"` + budget-exhausted content | ✓ | <1s |
+
+Notes on what changed since the first run:
+
+- `llm-orc serve` now has its own help text framing it for the
+  agentic-serving deployment context — no longer falls through to
+  "No such command."
+- `provider: openai-compatible` resolves via the factory
+  (`src/llm_orc/providers/registry.py:77`) as intended.
+- Default read timeout is now 180 s, wired through
+  `performance.concurrency.request_timeout.read`. First non-streaming
+  call no longer 500s out with `httpx.ReadTimeout`.
+- Stateless config resolution confirmed: lowering `turn_limit` to 1
+  took effect on the next request without a server restart.
+
+### Observation resolved — counter is cumulative per session
+
+The re-run's budget-exhausted payload read `(2/1)` rather than the
+`(1/1)` a naive reading of the example implied. This is not a bug:
+the counter reports cumulative session turn_count, and Sessions
+persist across HTTP requests that share identity (either a matching
+`user` field or, when `user` is absent, a matching hash of the first
+user message). The re-run reused the same first-user-message across
+requests, so the Session's turn_count had already incremented during
+earlier verification steps before the Budget-dropped request landed.
+
+The §Budget exhaustion section now documents this explicitly and
+provides a `"user": "budget-test-$(date +%s)"` recipe for exercising
+a fresh session when the `(1/1)` case is desired.
