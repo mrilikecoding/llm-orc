@@ -20,9 +20,20 @@ from llm_orc.agentic.orchestrator_config import (
     DEFAULT_PLEXUS_ENABLED,
     DEFAULT_TOKEN_LIMIT,
     DEFAULT_TURN_LIMIT,
+    ModelProfileNotFoundError,
     OrchestratorConfigResolver,
 )
 from llm_orc.core.config.config_manager import ConfigurationManager
+
+
+def _seed_model_profiles(global_yaml: dict[str, object], names: list[str]) -> None:
+    """Merge a model_profiles section with the given names into a global config dict."""
+    profiles = {name: {"model": "dummy-model", "provider": "dummy"} for name in names}
+    existing = global_yaml.get("model_profiles")
+    if isinstance(existing, dict):
+        existing.update(profiles)
+    else:
+        global_yaml["model_profiles"] = profiles
 
 
 def _make_config_manager(
@@ -177,3 +188,212 @@ class TestOrchestratorConfigResolver:
             pass
         else:
             raise AssertionError("OrchestratorConfig should be frozen")
+
+
+class TestOrchestratorAllowedProfiles:
+    """allowed_profiles shapes what /v1/models will expose.
+
+    When unset, it defaults to [model_profile] so single-profile deployments
+    work without extra configuration. Operators extend the allowlist to
+    expose additional orchestrator profiles.
+    """
+
+    def test_allowed_profiles_defaults_to_configured_model_profile(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cm = _make_config_manager(tmp_path, monkeypatch)
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        assert config.allowed_profiles == (DEFAULT_MODEL_PROFILE,)
+
+    def test_allowed_profiles_defaults_follow_overridden_model_profile(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            local_yaml={
+                "agentic_serving": {
+                    "orchestrator": {"model_profile": "custom-orchestrator"},
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        # Unspecified allowlist falls back to the configured model_profile only.
+        assert config.allowed_profiles == ("custom-orchestrator",)
+
+    def test_allowed_profiles_reads_operator_configured_list(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            local_yaml={
+                "agentic_serving": {
+                    "orchestrator": {
+                        "model_profile": "primary",
+                        "allowed_profiles": ["primary", "fast", "deep"],
+                    }
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        assert config.allowed_profiles == ("primary", "fast", "deep")
+
+    def test_local_allowed_profiles_override_global(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            global_yaml={
+                "agentic_serving": {
+                    "orchestrator": {
+                        "model_profile": "g",
+                        "allowed_profiles": ["g", "g-alt"],
+                    }
+                }
+            },
+            local_yaml={
+                "agentic_serving": {
+                    "orchestrator": {"allowed_profiles": ["only-local"]}
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        assert config.allowed_profiles == ("only-local",)
+        # model_profile is inherited from global; overlay did not replace it.
+        assert config.model_profile == "g"
+
+
+class TestListAllowedModelProfileIds:
+    """list_allowed_model_profile_ids intersects the allowlist with the library.
+
+    Consumer: the Serving Layer's /v1/models endpoint. Returns only profile
+    IDs that are both configured as allowed AND present in
+    ConfigurationManager.get_model_profiles() — absent names silently drop
+    out of the list (the endpoint is a shop window, not a validator).
+    """
+
+    def test_returns_intersection_with_configured_library(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        global_yaml: dict[str, object] = {
+            "agentic_serving": {
+                "orchestrator": {
+                    "model_profile": "primary",
+                    "allowed_profiles": ["primary", "fast", "missing"],
+                }
+            }
+        }
+        _seed_model_profiles(global_yaml, ["primary", "fast", "unrelated"])
+        cm = _make_config_manager(tmp_path, monkeypatch, global_yaml=global_yaml)
+        resolver = OrchestratorConfigResolver(cm)
+
+        ids = resolver.list_allowed_model_profile_ids()
+
+        assert ids == ("primary", "fast")
+
+    def test_preserves_allowlist_ordering(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        global_yaml: dict[str, object] = {
+            "agentic_serving": {
+                "orchestrator": {
+                    "model_profile": "a",
+                    "allowed_profiles": ["c", "a", "b"],
+                }
+            }
+        }
+        _seed_model_profiles(global_yaml, ["a", "b", "c"])
+        cm = _make_config_manager(tmp_path, monkeypatch, global_yaml=global_yaml)
+        resolver = OrchestratorConfigResolver(cm)
+
+        assert resolver.list_allowed_model_profile_ids() == ("c", "a", "b")
+
+    def test_returns_empty_when_no_library_profiles_match(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cm = _make_config_manager(tmp_path, monkeypatch)
+        resolver = OrchestratorConfigResolver(cm)
+
+        assert resolver.list_allowed_model_profile_ids() == ()
+
+    def test_default_allowlist_resolves_against_library(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Allowlist defaults to [model_profile]; when that profile exists,
+        the listing returns it.
+        """
+        global_yaml: dict[str, object] = {
+            "agentic_serving": {"orchestrator": {"model_profile": "resolved-default"}}
+        }
+        _seed_model_profiles(global_yaml, ["resolved-default", "extra"])
+        cm = _make_config_manager(tmp_path, monkeypatch, global_yaml=global_yaml)
+        resolver = OrchestratorConfigResolver(cm)
+
+        # Default allowlist is (model_profile,); "extra" is in the library
+        # but not allowed, so it is excluded.
+        assert resolver.list_allowed_model_profile_ids() == ("resolved-default",)
+
+
+class TestResolveValidated:
+    """resolve_validated raises when model_profile is absent from the library.
+
+    This is the session-start seam (FF #40): sessions cannot begin on a
+    profile that does not exist. ``resolve`` stays pure translation so
+    ``/v1/models`` can enumerate whatever is available without raising.
+    """
+
+    def test_raises_when_configured_model_profile_missing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cm = _make_config_manager(tmp_path, monkeypatch)
+        resolver = OrchestratorConfigResolver(cm)
+
+        with pytest.raises(ModelProfileNotFoundError):
+            resolver.resolve_validated()
+
+    def test_raises_names_missing_profile(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            local_yaml={
+                "agentic_serving": {
+                    "orchestrator": {"model_profile": "no-such-profile"}
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        with pytest.raises(ModelProfileNotFoundError, match="no-such-profile"):
+            resolver.resolve_validated()
+
+    def test_returns_config_when_model_profile_present(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        global_yaml: dict[str, object] = {
+            "agentic_serving": {"orchestrator": {"model_profile": "configured"}}
+        }
+        _seed_model_profiles(global_yaml, ["configured"])
+        cm = _make_config_manager(tmp_path, monkeypatch, global_yaml=global_yaml)
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve_validated()
+
+        assert config.model_profile == "configured"
+        # resolve_validated returns the same shape as resolve, just checked.
+        assert config == resolver.resolve()
