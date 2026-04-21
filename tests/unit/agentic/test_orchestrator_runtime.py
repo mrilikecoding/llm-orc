@@ -26,12 +26,7 @@ from llm_orc.agentic.orchestrator_chunk import (
     InternalToolCallResult,
     OrchestratorChunk,
 )
-from llm_orc.agentic.orchestrator_runtime import (
-    LLMResponse,
-    LLMToolCall,
-    LLMUsage,
-    OrchestratorRuntime,
-)
+from llm_orc.agentic.orchestrator_runtime import OrchestratorRuntime
 from llm_orc.agentic.orchestrator_tool_dispatch import (
     InternalToolCall,
     ToolCallError,
@@ -40,26 +35,28 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
 )
 from llm_orc.agentic.session_registry import ChatMessage, SessionIdentity, SessionState
 from llm_orc.agentic.session_start import SessionContext
+from llm_orc.models.base import ToolCall, ToolCallingResponse, ToolCallUsage
 
 
 class _ScriptedLLM:
-    """Plays back a prepared sequence of LLM responses.
+    """Plays back a prepared sequence of tool-calling responses.
 
-    Satisfies ``OrchestratorLLM`` structurally. Records each call so
-    tests can assert on the tool schemas and message state at each
-    iteration.
+    Satisfies ``OrchestratorLLM`` structurally — matches
+    ``ModelInterface.generate_with_tools``'s signature. Records each
+    call so tests can assert on the tool schemas and message state at
+    each iteration.
     """
 
-    def __init__(self, responses: list[LLMResponse]) -> None:
+    def __init__(self, responses: list[ToolCallingResponse]) -> None:
         self._responses = list(responses)
         self.calls: list[tuple[list[dict[str, Any]], list[dict[str, Any]]]] = []
 
-    async def generate(
+    async def generate_with_tools(
         self,
         *,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
-    ) -> LLMResponse:
+    ) -> ToolCallingResponse:
         self.calls.append((list(messages), list(tools)))
         if not self._responses:
             raise AssertionError("_ScriptedLLM ran out of canned responses")
@@ -111,10 +108,10 @@ class TestRuntimeStopsCleanly:
     async def test_runtime_yields_content_and_completion(self) -> None:
         llm = _ScriptedLLM(
             responses=[
-                LLMResponse(
+                ToolCallingResponse(
                     content="hello back",
                     tool_calls=[],
-                    usage=LLMUsage(
+                    usage=ToolCallUsage(
                         prompt_tokens=10, completion_tokens=5, total_tokens=15
                     ),
                     finish_reason="stop",
@@ -202,24 +199,24 @@ class TestReActLoop:
         # Iteration 2: LLM sees the tool result and emits a stop response.
         llm = _ScriptedLLM(
             responses=[
-                LLMResponse(
+                ToolCallingResponse(
                     content="",
                     tool_calls=[
-                        LLMToolCall(
+                        ToolCall(
                             id="call_t1",
                             name="list_ensembles",
                             arguments_json="{}",
                         )
                     ],
-                    usage=LLMUsage(
+                    usage=ToolCallUsage(
                         prompt_tokens=20, completion_tokens=5, total_tokens=25
                     ),
                     finish_reason="tool_calls",
                 ),
-                LLMResponse(
+                ToolCallingResponse(
                     content="I found 2 ensembles.",
                     tool_calls=[],
-                    usage=LLMUsage(
+                    usage=ToolCallUsage(
                         prompt_tokens=40, completion_tokens=6, total_tokens=46
                     ),
                     finish_reason="stop",
@@ -277,22 +274,22 @@ class TestReActLoop:
         next Budget check sees the accumulated spend."""
         llm = _ScriptedLLM(
             responses=[
-                LLMResponse(
+                ToolCallingResponse(
                     content="",
                     tool_calls=[
-                        LLMToolCall(
+                        ToolCall(
                             id="call_1", name="list_ensembles", arguments_json="{}"
                         )
                     ],
-                    usage=LLMUsage(
+                    usage=ToolCallUsage(
                         prompt_tokens=30, completion_tokens=10, total_tokens=40
                     ),
                     finish_reason="tool_calls",
                 ),
-                LLMResponse(
+                ToolCallingResponse(
                     content="done",
                     tool_calls=[],
-                    usage=LLMUsage(
+                    usage=ToolCallUsage(
                         prompt_tokens=50, completion_tokens=15, total_tokens=65
                     ),
                     finish_reason="stop",
@@ -330,22 +327,22 @@ class TestReActLoop:
         """
         llm = _ScriptedLLM(
             responses=[
-                LLMResponse(
+                ToolCallingResponse(
                     content="I'll call list_ensembles.",
                     tool_calls=[
-                        LLMToolCall(id="c1", name="list_ensembles", arguments_json="{}")
+                        ToolCall(id="c1", name="list_ensembles", arguments_json="{}")
                     ],
-                    usage=LLMUsage(
+                    usage=ToolCallUsage(
                         prompt_tokens=50, completion_tokens=50, total_tokens=100
                     ),
                     finish_reason="tool_calls",
                 ),
                 # This response would be returned if the LLM were called again,
                 # but budget check blocks iteration 2.
-                LLMResponse(
+                ToolCallingResponse(
                     content="should not appear",
                     tool_calls=[],
-                    usage=LLMUsage(
+                    usage=ToolCallUsage(
                         prompt_tokens=0, completion_tokens=0, total_tokens=0
                     ),
                     finish_reason="stop",
@@ -387,24 +384,24 @@ class TestReActLoop:
         """
         llm = _ScriptedLLM(
             responses=[
-                LLMResponse(
+                ToolCallingResponse(
                     content="",
                     tool_calls=[
-                        LLMToolCall(
+                        ToolCall(
                             id="bad_call",
                             name="hallucinated_tool",
                             arguments_json="{}",
                         )
                     ],
-                    usage=LLMUsage(
+                    usage=ToolCallUsage(
                         prompt_tokens=10, completion_tokens=5, total_tokens=15
                     ),
                     finish_reason="tool_calls",
                 ),
-                LLMResponse(
+                ToolCallingResponse(
                     content="I'll stop and report the error.",
                     tool_calls=[],
-                    usage=LLMUsage(
+                    usage=ToolCallUsage(
                         prompt_tokens=30, completion_tokens=10, total_tokens=40
                     ),
                     finish_reason="stop",

@@ -1,7 +1,8 @@
 """Base classes and shared infrastructure for LLM models."""
 
 from abc import ABC, abstractmethod
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
 _DEFAULT_PERFORMANCE_CONFIG: dict[str, Any] = {
     "concurrency": {
@@ -87,8 +88,63 @@ class HTTPConnectionPool:
             cls._httpx_client = None
 
 
+class ToolCallingNotSupportedError(NotImplementedError):
+    """Raised when a model that does not support tool calling is asked to.
+
+    Providers that support tool calling override ``generate_with_tools``
+    and set ``supports_tool_calling = True``. Providers that do not
+    inherit the default behavior from ``ModelInterface``.
+    """
+
+
+@dataclass(frozen=True)
+class ToolCallUsage:
+    """Token accounting returned with a tool-calling response."""
+
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    """A tool call emitted by the model.
+
+    ``arguments_json`` mirrors OpenAI's wire format — the arguments
+    are a JSON-encoded string. Downstream parsers (e.g., the
+    orchestrator Runtime) parse it before handing off.
+    """
+
+    id: str
+    name: str
+    arguments_json: str
+
+
+@dataclass(frozen=True)
+class ToolCallingResponse:
+    """One model turn's output when invoked with tools."""
+
+    content: str
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    usage: ToolCallUsage = field(
+        default_factory=lambda: ToolCallUsage(
+            prompt_tokens=0, completion_tokens=0, total_tokens=0
+        )
+    )
+    finish_reason: Literal["stop", "length", "tool_calls"] = "stop"
+
+
 class ModelInterface(ABC):
     """Abstract interface for LLM models."""
+
+    supports_tool_calling: bool = False
+    """Whether this provider implements ``generate_with_tools``.
+
+    Providers override to ``True`` alongside overriding the method.
+    Callers that need tool-calling (e.g., the orchestrator Runtime at
+    session start) check this flag to fail fast with a clear error
+    when a non-tool-calling profile is configured.
+    """
 
     def __init__(
         self,
@@ -111,6 +167,21 @@ class ModelInterface(ABC):
     async def generate_response(self, message: str, role_prompt: str) -> str:
         """Generate a response from the model."""
         pass
+
+    async def generate_with_tools(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> ToolCallingResponse:
+        """Generate a response with tool-calling enabled.
+
+        Default implementation raises ``ToolCallingNotSupportedError``.
+        Providers that support tool calling override this method and
+        set ``supports_tool_calling = True``.
+        """
+        del messages, tools
+        raise ToolCallingNotSupportedError(f"{self.name} does not support tool calling")
 
     def get_conversation_history(self) -> list[dict[str, str]]:
         """Get the conversation history."""

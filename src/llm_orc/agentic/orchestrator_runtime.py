@@ -29,8 +29,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
+from typing import Any, Protocol
 
 from llm_orc.agentic.budget_controller import (
     BudgetCheckExhausted,
@@ -50,61 +49,26 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     ToolCallSuccess,
 )
 from llm_orc.agentic.session_start import SessionContext
-
-
-@dataclass(frozen=True)
-class LLMUsage:
-    """Token accounting returned by the orchestrator LLM on each call."""
-
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-
-@dataclass(frozen=True)
-class LLMToolCall:
-    """A tool call as the orchestrator LLM emits it.
-
-    Mirrors OpenAI's wire format: ``arguments`` is a JSON string; the
-    Runtime parses it before handing off to Tool Dispatch so JSON
-    concerns live in one place.
-    """
-
-    id: str
-    name: str
-    arguments_json: str
-
-
-@dataclass(frozen=True)
-class LLMResponse:
-    """One orchestrator LLM turn's output."""
-
-    content: str
-    tool_calls: list[LLMToolCall] = field(default_factory=list)
-    usage: LLMUsage = field(
-        default_factory=lambda: LLMUsage(
-            prompt_tokens=0, completion_tokens=0, total_tokens=0
-        )
-    )
-    finish_reason: Literal["stop", "length", "tool_calls"] = "stop"
+from llm_orc.models.base import ToolCallingResponse
 
 
 class OrchestratorLLM(Protocol):
     """Tool-calling LLM interface the Runtime drives.
 
-    Separate from project-level ``ModelInterface`` (which is prompt →
-    string and does not support tool calling). Declared as a Protocol
-    so WP-C can land without touching every existing model provider —
-    the tool-calling adapter that satisfies this Protocol lives
-    alongside the Serving Layer wiring.
+    ``ModelInterface`` satisfies this Protocol structurally — any
+    provider that implements ``generate_with_tools`` (opt-in per the
+    ``supports_tool_calling`` flag) works here. The Protocol keeps
+    the Runtime decoupled from ``ModelInterface``'s abstract
+    ``name`` and ``generate_response`` surface so tests can pass
+    minimal doubles.
     """
 
-    async def generate(
+    async def generate_with_tools(
         self,
         *,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
-    ) -> LLMResponse: ...
+    ) -> ToolCallingResponse: ...
 
 
 class ToolDispatcher(Protocol):
@@ -203,7 +167,9 @@ class OrchestratorRuntime:
                 yield Completion(finish_reason="length")
                 return
 
-            response = await self._llm.generate(messages=messages, tools=tools)
+            response = await self._llm.generate_with_tools(
+                messages=messages, tools=tools
+            )
             state.record_iteration(response.usage.total_tokens)
 
             if response.content:
@@ -244,7 +210,7 @@ def _safe_parse_arguments(raw: str) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _assistant_message(response: LLMResponse) -> dict[str, Any]:
+def _assistant_message(response: ToolCallingResponse) -> dict[str, Any]:
     """Assistant-turn message containing tool calls for the next iteration."""
     return {
         "role": "assistant",
