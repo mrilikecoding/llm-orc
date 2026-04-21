@@ -35,7 +35,7 @@ Add to `~/.config/llm-orc/config.yaml` (or project-local
 model_profiles:
   orchestrator-local:
     model: llama3.1:8b-instruct-q4_K_M
-    provider: openai_compat
+    provider: openai-compatible
     base_url: http://localhost:11434/v1
     # No api_key needed — Ollama accepts anonymous requests.
 
@@ -47,11 +47,21 @@ agentic_serving:
     token_limit: 50000
 ```
 
+The canonical provider key is `openai-compatible` (hyphenated); see
+`src/llm_orc/providers/registry.py`. Other spellings silently fall
+through the factory.
+
 ### 3. Start the llm-orc server
 
 ```bash
 uv run llm-orc serve --port 8000
 ```
+
+`llm-orc serve` and `llm-orc web` mount the same FastAPI app — both
+expose the OpenAI-compatible `/v1/...` surface plus the ensemble
+management REST API. Use `serve` for agentic-client deployments and
+`web` when you also want the browser UI. (`llm-orc mcp serve` is
+unrelated — that one starts the MCP server for direct tool use.)
 
 ## Verify
 
@@ -154,3 +164,29 @@ WP-C's acceptance scenarios exercise in this setup:
   the allowlist filters them all out. See WP-B Group 3 behavior: the
   endpoint is a shop window; session-start is where missing profiles
   raise.
+
+## Verification run — 2026-04-21
+
+A live run against local Ollama with `mistral-nemo:12b` passed all
+four acceptance checks (models list, non-streaming completion,
+streaming SSE, budget exhaustion). Known-good models confirmed:
+
+- `mistral-nemo:12b` (verified 2026-04-21)
+- `llama3.1:8b-instruct-q4_K_M` (listed above)
+- `qwen2.5:7b-instruct` (listed above)
+
+The run surfaced three gaps that were addressed in follow-up commits:
+
+1. **`llm-orc serve` did not exist.** Added as a command alias for
+   `llm-orc web` — both start the same FastAPI app. The
+   agentic-serving framing is the natural name for the deployment
+   context; `web` remains for "I want the browser UI" use.
+2. **`openai_compat` provider key was wrong.** Corrected to
+   `openai-compatible` (the canonical registry key) throughout this
+   guide.
+3. **HTTP read timeout hardcoded at 30 s.** Local tool-calling models
+   (`mistral-nemo:12b`, `qwen2.5:7b`, etc.) take 30–80 s per iteration,
+   tripping `httpx.ReadTimeout`. Fixed by wiring the timeout through
+   the performance config and raising the default read timeout.
+   Operators deploying against slower models can tune further via
+   `performance.concurrency.request_timeout.read`.
