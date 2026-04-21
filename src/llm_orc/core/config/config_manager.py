@@ -345,6 +345,38 @@ class ConfigurationManager:
 
         return merged_config
 
+    def load_agentic_serving_config(self) -> dict[str, Any]:
+        """Load agentic-serving configuration with sensible defaults.
+
+        Defaults reflect stateless-first operation (AS-8): Plexus is
+        disabled, autonomy is `operator-as-tool-user`, and Budget sizes
+        are sized for an extended agentic coding session. Global
+        ``config.yaml`` overlays defaults; local project ``config.yaml``
+        overlays global.
+        """
+        defaults: dict[str, Any] = {
+            "orchestrator": {"model_profile": "default"},
+            "budget": {"turn_limit": 200, "token_limit": 500_000},
+            "autonomy": {"default_level": "operator-as-tool-user"},
+            "plexus": {"enabled": False},
+            "overrides": {
+                "allow_budget_override": True,
+                "max_turn_limit": 500,
+                "max_token_limit": 2_000_000,
+            },
+        }
+
+        global_config = self._load_global_config()
+        global_section = global_config.get("agentic_serving", {})
+
+        local_config = self.load_project_config()
+        local_section = local_config.get("agentic_serving", {})
+
+        self._deep_merge_dict(defaults, global_section)
+        self._deep_merge_dict(defaults, local_section)
+
+        return defaults
+
     def _deep_merge_dict(self, base: dict[str, Any], overlay: dict[str, Any]) -> None:
         """Deep merge overlay dict into base dict."""
         for key, value in overlay.items():
