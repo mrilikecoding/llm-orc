@@ -150,6 +150,27 @@ class TestSessionRegistryLookup:
         assert state_a.identity == id_a
         assert state_b.identity == id_b
 
+    def test_caller_mutation_visible_through_subsequent_lookup(self) -> None:
+        """The registry aliases its retained state with the returned reference.
+
+        Lifecycle-composition check: a caller that mutates the returned state
+        via `record_iteration` must see the mutation on the next lookup by
+        the same identity, because Budget Controller and Autonomy Policy
+        will both read session accounting through separate `get_or_create_state`
+        calls and need a coherent view.
+        """
+        registry = SessionRegistry()
+        identity = SessionIdentity(value="x", method="user_field")
+
+        first = registry.get_or_create_state(identity)
+        first.record_iteration(tokens=17)
+        first.record_iteration(tokens=23)
+
+        second = registry.get_or_create_state(identity)
+
+        assert second.turn_count == 2
+        assert second.token_spend == 40
+
     def test_missing_session_falls_back_to_cold_start_defaults(self) -> None:
         """Consumers that query state for an unresolved identity get
         cold-session defaults, not an exception.
