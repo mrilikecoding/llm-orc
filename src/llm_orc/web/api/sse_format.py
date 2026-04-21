@@ -70,8 +70,13 @@ class OpenAiSseFormatter:
                     )
                 )
             case InternalToolCallInFlight() | InternalToolCallResult():
-                # Visibility form is OQ #2; Phase 1 surfaces nothing to
-                # preserve the Tool User's "endpoint is a model" model.
+                # Phase 1 surfaces nothing — OQ #2 resolves in WP-E.
+                # Directional lean from the Group 5 gate (2026-04-21):
+                # emit SSE comment lines (``: {"event":...}\n\n``) for
+                # operator in-stream visibility of the llm-conductor /
+                # in-session ensemble-design pattern. OpenAI-compat
+                # clients ignore SSE comments per spec; llm-orc operator
+                # tooling parses them. Validation deferred to rdd-play.
                 return b""
             case ErrorChunk(message, type_):
                 return self._frame({"error": {"message": message, "type": type_}})
