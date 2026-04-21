@@ -38,10 +38,10 @@
 
 ## Feature: Orchestrator Tool Surface (ADR-003, ADR-004)
 
-### Scenario: Orchestrator tool set is exactly the committed set
-**Given** an Orchestrator Agent parameterized by a Model Profile
-**When** the `/v1/models` endpoint is queried for the orchestrator's available tools
-**Then** the response enumerates exactly five tools: `invoke_ensemble`, `compose_ensemble`, `list_ensembles`, `query_knowledge`, `record_outcome` — and no others
+### Scenario: Orchestrator tool surface is exactly the committed set
+**Given** an Orchestrator Agent running a ReAct iteration through the Orchestrator Tool Dispatch
+**When** the set of tools the Orchestrator Tool Dispatch exposes is enumerated
+**Then** it contains exactly five entries: `invoke_ensemble`, `compose_ensemble`, `list_ensembles`, `query_knowledge`, `record_outcome` — and no others
 
 ### Scenario: Ensemble result is summarized before entering orchestrator context
 **Given** an Orchestrator Agent executing a ReAct iteration
