@@ -54,7 +54,9 @@ class HTTPConnectionPool:
             )
 
             # Get connection pool settings from configuration
-            pool_config = config.get("concurrency", {}).get("connection_pool", {})
+            concurrency = config.get("concurrency", {})
+            pool_config = concurrency.get("connection_pool", {})
+            timeout_config = concurrency.get("request_timeout", {})
 
             # Configure connection pooling for better performance
             limits = httpx.Limits(
@@ -64,10 +66,10 @@ class HTTPConnectionPool:
             )
 
             timeout = httpx.Timeout(
-                connect=10.0,  # Connection timeout
-                read=30.0,  # Read timeout
-                write=10.0,  # Write timeout
-                pool=5.0,  # Pool timeout
+                connect=timeout_config.get("connect", 10.0),
+                read=timeout_config.get("read", 30.0),
+                write=timeout_config.get("write", 10.0),
+                pool=timeout_config.get("pool", 5.0),
             )
 
             cls._httpx_client = httpx.AsyncClient(
