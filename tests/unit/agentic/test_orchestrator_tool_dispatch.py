@@ -13,74 +13,68 @@ Covers scenarios:
 from __future__ import annotations
 
 import inspect
-from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 
 from llm_orc.agentic.orchestrator_tool_dispatch import (
     TOOL_NAMES,
-    EnsembleRuntimeExecutor,
     InternalToolCall,
     OrchestratorToolDispatch,
     ToolCallError,
     ToolCallSuccess,
 )
-from llm_orc.core.config.config_manager import ConfigurationManager
-from llm_orc.core.config.ensemble_config import EnsembleConfig
 
 
-class _RecordingExecutor:
-    """Records calls and returns a canned result dict.
+class _RaisingOperations:
+    """Defaults to raising on any call — vacuous-mock hazard prevention.
 
-    Satisfies ``EnsembleRuntimeExecutor`` structurally. Not an
-    ``EnsembleExecutor`` subclass — we are testing Tool Dispatch, not
-    Ensemble Engine.
+    Individual tests subclass or replace the specific method they
+    exercise.
     """
 
-    def __init__(self, result: dict[str, Any]) -> None:
-        self._result = result
-        self.calls: list[tuple[str, str]] = []
-
-    async def execute(self, config: EnsembleConfig, input_data: str) -> dict[str, Any]:
-        self.calls.append((config.name, input_data))
-        return self._result
-
-
-class _StubExecutorProvider:
-    """Raises if the Runtime accidentally calls through on a path
-    that shouldn't reach Ensemble Engine in the test under scrutiny."""
-
-    def __call__(self) -> EnsembleRuntimeExecutor:  # pragma: no cover
+    async def invoke(
+        self, arguments: dict[str, Any]
+    ) -> dict[str, Any]:  # pragma: no cover
         raise AssertionError(
-            "executor_provider should not be invoked for this test path"
+            f"operations.invoke should not be called in this test: {arguments!r}"
+        )
+
+    async def read_ensembles(self) -> list[dict[str, Any]]:  # pragma: no cover
+        raise AssertionError(
+            "operations.read_ensembles should not be called in this test"
         )
 
 
-def _make_config_manager_with_ensembles(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    ensembles: dict[str, dict[str, Any]] | None = None,
-) -> ConfigurationManager:
-    """Construct a ConfigurationManager whose local ensembles dir has YAML files."""
-    global_root = tmp_path / "xdg"
-    global_root.mkdir()
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(global_root))
-    monkeypatch.delenv("LLM_ORC_LIBRARY_PATH", raising=False)
+class _ScriptedOperations(_RaisingOperations):
+    """Programmable ``EnsembleOperations`` double.
 
-    project_dir = tmp_path / "project"
-    project_dir.mkdir()
-    monkeypatch.chdir(project_dir)
+    Feeds canned ``invoke`` results and ensemble listings, records
+    arguments for assertions, and optionally raises ``ValueError`` to
+    simulate the "ensemble not found" path that the real
+    ``ExecutionHandler.invoke`` surfaces.
+    """
 
-    local_ensembles_dir = project_dir / ".llm-orc" / "ensembles"
-    local_ensembles_dir.mkdir(parents=True)
+    def __init__(
+        self,
+        *,
+        invoke_result: dict[str, Any] | None = None,
+        invoke_raises: BaseException | None = None,
+        ensembles: list[dict[str, Any]] | None = None,
+    ) -> None:
+        self._invoke_result = invoke_result
+        self._invoke_raises = invoke_raises
+        self._ensembles = list(ensembles or [])
+        self.invoke_calls: list[dict[str, Any]] = []
 
-    for filename, body in (ensembles or {}).items():
-        (local_ensembles_dir / filename).write_text(yaml.safe_dump(body))
+    async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        self.invoke_calls.append(dict(arguments))
+        if self._invoke_raises is not None:
+            raise self._invoke_raises
+        return self._invoke_result or {}
 
-    return ConfigurationManager(project_dir=project_dir, provision=False)
+    async def read_ensembles(self) -> list[dict[str, Any]]:
+        return list(self._ensembles)
 
 
 class TestDispatchRejectsUnknownTool:
@@ -94,10 +88,7 @@ class TestDispatchRejectsUnknownTool:
 
     @pytest.mark.asyncio
     async def test_dispatch_rejects_unknown_tool_name(self) -> None:
-        dispatch = OrchestratorToolDispatch(
-            config_manager=None,  # type: ignore[arg-type]
-            executor_provider=_StubExecutorProvider(),
-        )
+        dispatch = OrchestratorToolDispatch(operations=_RaisingOperations())
 
         result = await dispatch.dispatch(
             InternalToolCall(
@@ -172,10 +163,7 @@ class TestNotYetWiredTools:
     async def test_not_yet_wired_tool_returns_typed_error(
         self, tool_name: str, landing_wp: str
     ) -> None:
-        dispatch = OrchestratorToolDispatch(
-            config_manager=None,  # type: ignore[arg-type]
-            executor_provider=_StubExecutorProvider(),
-        )
+        dispatch = OrchestratorToolDispatch(operations=_RaisingOperations())
 
         result = await dispatch.dispatch(
             InternalToolCall(id="call_1", name=tool_name, arguments={})
@@ -188,32 +176,22 @@ class TestNotYetWiredTools:
 
 
 class TestListEnsembles:
-    """list_ensembles wires to the Ensemble Engine's library."""
+    """list_ensembles delegates to ``EnsembleOperations.read_ensembles``."""
 
     @pytest.mark.asyncio
-    async def test_list_ensembles_returns_library_entries(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        cm = _make_config_manager_with_ensembles(
-            tmp_path,
-            monkeypatch,
-            ensembles={
-                "analysis.yaml": {
+    async def test_list_ensembles_returns_library_entries(self) -> None:
+        operations = _ScriptedOperations(
+            ensembles=[
+                {
                     "name": "analysis",
                     "description": "Analyzes code",
-                    "agents": [
-                        {
-                            "name": "analyst",
-                            "model_profile": "default",
-                            "system_prompt": "You analyze code.",
-                        }
-                    ],
-                },
-            },
+                    "source": "local",
+                    "relative_path": "analysis.yaml",
+                    "agent_count": 1,
+                }
+            ]
         )
-        dispatch = OrchestratorToolDispatch(
-            config_manager=cm, executor_provider=_StubExecutorProvider()
-        )
+        dispatch = OrchestratorToolDispatch(operations=operations)
 
         result = await dispatch.dispatch(
             InternalToolCall(id="call_1", name="list_ensembles", arguments={})
@@ -229,34 +207,24 @@ class TestListEnsembles:
 
 
 class TestInvokeEnsemble:
-    """invoke_ensemble resolves a library ensemble by name and executes it."""
+    """invoke_ensemble delegates to ``EnsembleOperations.invoke``.
+
+    ``OrchestraService.invoke`` returns a normalized
+    ``{results, synthesis, status}`` shape; that dict flows through as
+    the ``ToolCallSuccess.content``. Missing-ensemble errors surface
+    as ``ValueError`` from the handler and translate to a
+    ``ToolCallError(kind="invocation_failed")``.
+    """
 
     @pytest.mark.asyncio
-    async def test_invoke_ensemble_executes_named_ensemble(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        cm = _make_config_manager_with_ensembles(
-            tmp_path,
-            monkeypatch,
-            ensembles={
-                "analysis.yaml": {
-                    "name": "analysis",
-                    "description": "Analyzes code",
-                    "agents": [
-                        {
-                            "name": "analyst",
-                            "model_profile": "default",
-                            "system_prompt": "You analyze code.",
-                        }
-                    ],
-                },
-            },
-        )
-        recorded_result = {"agent_results": {"analyst": {"response": "ok"}}}
-        executor = _RecordingExecutor(recorded_result)
-        dispatch = OrchestratorToolDispatch(
-            config_manager=cm, executor_provider=lambda: executor
-        )
+    async def test_invoke_ensemble_delegates_to_operations(self) -> None:
+        normalized_result = {
+            "results": {"analyst": {"response": "ok"}},
+            "synthesis": "analysis complete",
+            "status": "success",
+        }
+        operations = _ScriptedOperations(invoke_result=normalized_result)
+        dispatch = OrchestratorToolDispatch(operations=operations)
 
         result = await dispatch.dispatch(
             InternalToolCall(
@@ -269,19 +237,25 @@ class TestInvokeEnsemble:
         assert isinstance(result, ToolCallSuccess)
         assert result.id == "call_7"
         assert result.name == "invoke_ensemble"
-        assert result.content == recorded_result
-        assert executor.calls == [("analysis", "refactor the parser")]
+        assert result.content == normalized_result
+        # Delegation uses the handler's field name (``ensemble_name``).
+        assert operations.invoke_calls == [
+            {"ensemble_name": "analysis", "input": "refactor the parser"}
+        ]
 
     @pytest.mark.asyncio
     async def test_invoke_ensemble_returns_error_when_name_not_in_library(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self,
     ) -> None:
-        """A hallucinated ensemble name becomes an observation, not a crash."""
-        cm = _make_config_manager_with_ensembles(tmp_path, monkeypatch)
+        """A hallucinated ensemble name becomes an observation, not a crash.
 
-        dispatch = OrchestratorToolDispatch(
-            config_manager=cm, executor_provider=_StubExecutorProvider()
+        The real handler raises ``ValueError("Ensemble does not exist: ...")``
+        — Tool Dispatch converts that to ``ToolCallError``.
+        """
+        operations = _ScriptedOperations(
+            invoke_raises=ValueError("Ensemble does not exist: does-not-exist")
         )
+        dispatch = OrchestratorToolDispatch(operations=operations)
 
         result = await dispatch.dispatch(
             InternalToolCall(
@@ -297,14 +271,11 @@ class TestInvokeEnsemble:
         assert "does-not-exist" in result.reason
 
     @pytest.mark.asyncio
-    async def test_invoke_ensemble_rejects_missing_name_argument(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Input validation — missing or empty ``name`` is a typed error."""
-        cm = _make_config_manager_with_ensembles(tmp_path, monkeypatch)
-        dispatch = OrchestratorToolDispatch(
-            config_manager=cm, executor_provider=_StubExecutorProvider()
-        )
+    async def test_invoke_ensemble_rejects_missing_name_argument(self) -> None:
+        """Input validation — missing or empty ``name`` is a typed error
+        surfaced without calling the handler."""
+        operations = _ScriptedOperations()  # invoke would return {} if called
+        dispatch = OrchestratorToolDispatch(operations=operations)
 
         result = await dispatch.dispatch(
             InternalToolCall(id="call_9", name="invoke_ensemble", arguments={})
@@ -312,3 +283,5 @@ class TestInvokeEnsemble:
 
         assert isinstance(result, ToolCallError)
         assert result.kind == "invalid_arguments"
+        # Handler must not have been called — validation is local.
+        assert operations.invoke_calls == []
