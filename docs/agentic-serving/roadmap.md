@@ -9,26 +9,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ## Work Packages
 
-> **WP-A and WP-B are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. The active section below lists only upcoming or in-progress work.
-
-### WP-C: ReAct core — Runtime, Tool Dispatch, Budget Controller
-
-**Objective:** Minimum viable orchestrator loop behind the serving surface. Wires in the `invoke_ensemble` and `list_ensembles` tools with Budget enforcement at the iteration boundary. Leaves `compose_ensemble`, `query_knowledge`, and `record_outcome` as named entry points that return typed "not-yet-wired" errors — enough to satisfy the closed-set property (ADR-003 and FC-5) from day one.
-
-**Changes:**
-- New **Orchestrator Runtime** module: ReAct loop, Conversation Compaction, Routing Decision generation.
-- New **Orchestrator Tool Dispatch** module: five-entry public surface, allowlist rejection, routing of `invoke_ensemble` and `list_ensembles` to Ensemble Engine; the other three entries return typed not-yet-wired errors.
-- New **Budget Controller** module: per-iteration check; turn-count and token-spend derivation via Session Registry; graceful termination signalling.
-- Serving Layer → Orchestrator Runtime handoff wired.
-
-**Scenarios covered:** scenarios.md §Session Lifecycle (Tool user completes a task against the stateless orchestrator; turn-limit graceful termination; token-limit graceful termination); §Orchestrator Tool Surface (Orchestrator tool set is exactly the committed set; Invocation outside the tool set is rejected).
-
-**Dependencies:**
-- WP-B (hard) — Runtime receives its Session from the Serving Layer handoff.
-
-**Participating modules:** Orchestrator Runtime, Orchestrator Tool Dispatch, Budget Controller. Session Registry (existing WP-B) is read-only here.
-
----
+> **WP-A, WP-B, and WP-C are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. The active section below lists only upcoming or in-progress work.
 
 ### WP-D: Result Summarizer Harness
 
@@ -302,3 +283,69 @@ Full architecture live. `query_knowledge` and `record_outcome` flow to Plexus; l
 **Test coverage delta.** +10 tests (5 session-identity integration + 5 FC-9 static). Full suite: 2151 passed, 91.21% coverage, lint clean (mypy + ruff + bandit + vulture).
 
 **Unblocks:** **WP-B complete.** TS-1 advances to WP-C (Orchestrator Runtime — ReAct loop, Tool Dispatch, Budget Controller). The `_orchestrator_handoff` and `_orchestrator_stream_handoff` stubs in `v1_chat_completions.py` are the body-swap points for WP-C.
+
+### WP-C: ReAct core + real LLM adapter — 2026-04-21
+
+**Commits (in order):**
+- `790f596` feat: add Budget Controller with per-iteration exhaustion check (Group 1)
+- `927f513` refactor: correct scenario wording — tool surface lives in Tool Dispatch, not /v1/models
+- `07032a9` feat: add Orchestrator Tool Dispatch with five-entry closed set (Group 2)
+- `b4e6f43` feat: add Orchestrator Runtime ReAct loop with Budget enforcement (Group 3)
+- `90df826` refactor: delegate Tool Dispatch to OrchestraService instead of reimplementing invoke/list
+- `061312e` feat: extend ModelInterface with tool-calling surface (Group 4a)
+- `e48c7b8` feat: implement generate_with_tools on OpenAICompatibleModel (Group 4b)
+- `7339eac` feat: wire Serving Layer to OrchestratorRuntime (Group 4c)
+- `8227dc0` docs: add WP-C manual verification guide for Ollama end-to-end (Group 4d)
+- `65b1334` feat: add llm-orc serve command for agentic-serving deployments
+- `bb7b466` refactor: wire HTTP request timeout through performance config
+- `22deeaf` fix: raise default HTTP read timeout to 180s for local tool-calling
+- `bab8e1d` docs: correct WP-C manual verification findings (serve command, provider key, timeout)
+- `12c19ac` docs: record re-verification pass and clarify session-cumulative Budget counter
+- (this change) test: add FC-4 static check and Tool Dispatch → Ensemble Engine boundary tests
+
+**Outcome.** The orchestrator runs end-to-end behind `/v1/chat/completions` against any OpenAI-compat backend (Ollama local, OpenAI proper, OpenRouter, LM Studio, vLLM, Anthropic-via-OpenAI-compat proxy). Verified against `mistral-nemo:12b` on local Ollama in two live runs — see `housekeeping/wp-c-manual-verification.md`.
+
+Three new modules landed in `src/llm_orc/agentic/`:
+
+- **`budget_controller.py`** — `BudgetController.check(turn_count, token_spend) -> BudgetCheckPass | BudgetCheckExhausted`. Return semantics (not raise). Deterministic turn-limit-first precedence. Zero agentic imports.
+- **`orchestrator_tool_dispatch.py`** — Five-method closed set (FC-5). `invoke_ensemble` / `list_ensembles` delegate to `OrchestraService` via the `EnsembleOperations` Protocol (collapsed the parallel find-and-execute path introduced in Group 2 before the refactor in `90df826`). `compose_ensemble` / `query_knowledge` / `record_outcome` return typed `not_yet_wired` tool errors so the closed-set property holds from day one.
+- **`orchestrator_runtime.py`** — ReAct loop. Budget check before every iteration (FC-10). `OrchestratorLLM` Protocol satisfied by any `ModelInterface` that overrides `generate_with_tools`. `ToolDispatcher` Protocol satisfied by `OrchestratorToolDispatch`. Tool results flow back as `role: tool` messages; LLM errors surface as observations, not exceptions.
+
+Type unification: the Runtime's tool-calling response types (`ToolCallingResponse`, `ToolCall`, `ToolCallUsage`) moved to `models/base.py` and are shared by `ModelInterface.generate_with_tools` and the Runtime's `OrchestratorLLM` Protocol. No parallel data model.
+
+Tool-calling surface added to the existing multi-provider infrastructure:
+
+- `ModelInterface.generate_with_tools` default raises `ToolCallingNotSupportedError`; providers opt in by overriding and setting `supports_tool_calling = True`.
+- `OpenAICompatibleModel` implements the default case for OpenAI-compat endpoints. Anthropic-native and Google-native wait for follow-up WPs that override on those provider classes.
+- Session start fails loudly if the resolved orchestrator Model Profile does not support tool calling.
+
+Serving Layer body-swap: `_orchestrator_handoff` and `_orchestrator_stream_handoff` in `v1_chat_completions.py` now construct and drive a real Runtime per request. `ModelFactory.load_model_from_agent_config({"model_profile": ...})` supplies the LLM; `BudgetController` is built from `OrchestratorConfig.budget`; Tool Dispatch is the shared process-scoped instance. Factories are `monkeypatch`-overridable from tests following the WP-B pattern.
+
+`llm-orc serve` command added as a sibling of `llm-orc web`. Both commands start the same FastAPI app; `serve` is the natural name for agentic-client deployments, `web` remains the framing for "I want the browser UI." `llm-orc mcp serve` is unrelated (MCP server, direct-tool surface).
+
+HTTP read timeout refactored: `HTTPConnectionPool` now reads `connect` / `read` / `write` / `pool` from `performance.concurrency.request_timeout` with per-field defaults. Default read raised from 30 to 180 seconds for local tool-calling models.
+
+**Scenarios covered:**
+
+- §Session Lifecycle: *Tool user completes a task against the stateless orchestrator* (end-to-end, verified in both automated tests and manual Ollama run); *Session terminates gracefully on turn limit exhaustion*; *Session terminates gracefully on token limit exhaustion*.
+- §Orchestrator Tool Surface (retitled *tool surface* in `927f513`): *Orchestrator tool surface is exactly the committed set* (FC-5 structurally enforced); *Invocation outside the tool set is rejected* (Runtime-level integration verified via `test_runtime_propagates_tool_error_as_observation`).
+
+**Fitness criteria status.**
+
+- FC-4 (Runtime import surface): satisfied. `test_fc4_runtime_import_surface.py` walks `orchestrator_runtime.py` imports and fails closed on any `llm_orc.agentic.*` import outside the explicit allow list or on any match to the forbidden set (`orchestrator_config`, `session_registry`, `plexus_adapter`, `autonomy_policy`, `calibration_gate`). The last three do not yet exist — fails closed when they land.
+- FC-5 (exactly five dispatch entry points): satisfied. `test_tool_dispatch_exposes_exactly_five_tool_methods` enumerates public async methods whose names are in `TOOL_NAMES`.
+- FC-10 (Budget check before every iteration): satisfied. `test_turn_limit_exhausted_before_first_iteration`, `test_token_limit_exhausted_before_first_iteration`, and `test_runtime_terminates_mid_loop_when_budget_exhausted_between_iterations` exercise the control-plane property at all iteration positions.
+- FC-8 (unsummarized result unreachable from Runtime context): **partial pending WP-D**. Current tool-result summarization is a trivial JSON-dump placeholder in `_tool_result_message`; WP-D's Result Summarizer Harness replaces it and closes the static no-bypass check.
+- FC-13 (orchestrator Model Profile swap touches only config + session start): satisfied by construction — Runtime takes an `OrchestratorLLM` at construction; profile swap routes through `OrchestratorConfigResolver` + `ModelFactory` in `_build_runtime`, never touching Runtime internals.
+
+**Test coverage delta.** +74 tests (Budget Controller 5, Tool Dispatch unit 10, Orchestrator Runtime 7, ModelInterface tool-calling base 2 + HTTP timeout config 3, OpenAICompatibleModel tool-calling 7, Serving Layer wiring 2 acceptance + 24 pre-existing still green after rewire, serve CLI 5, FC-4 static 2, boundary integration 3, timeout config tests 3; includes 5 tests that changed semantics during the refactor). Full suite: 2197 passing, 91.41% coverage.
+
+**Unblocks TS-1 (stateless orchestrator serving OpenCode).** The intermediate transition state in this roadmap is *"I can use OpenCode and run a version of this RDD pipeline with it."* The orchestrator is live end-to-end. WP-F (client-tool turn-boundary delegation) remains the final TS-1 item — until WP-F lands, the orchestrator can list and invoke ensembles but cannot delegate client-side tools (bash, file_edit) at turn boundaries.
+
+**Design Amendment candidate logged for WP-D start** (see `housekeeping/cycle-status.md` §Feed-Forward From BUILD). The system design has the Runtime depending on Result Summarizer Harness, but the module's own rationale states the Runtime is not aware of the summarizer — the harness is interposed by Tool Dispatch on the `invoke_ensemble` return path. WP-D should land the Design Amendment alongside RSH itself: remove `Runtime → RSH` from the dependency graph, add `Tool Dispatch → RSH`, update FC-4 to omit RSH from Runtime's import set.
+
+**Debt surfaced (not addressed in WP-C scope).**
+
+- Conversation Compaction is named in the Runtime's ownership list (system design §Orchestrator Runtime) but not implemented. The WP-C scenarios did not require it (turn/token exhaustion precedes compaction's utility). Can land in a follow-up mini-cycle or alongside another WP that touches the Runtime.
+- Per-request usage accounting: the `/v1/chat/completions` response's `usage.completion_tokens` reports the per-request delta in `SessionState.token_spend`; `prompt_tokens` is hardcoded to 0. Fine-grained prompt-vs-completion accounting requires accumulating each iteration's `LLMUsage.prompt_tokens` separately, which the Runtime currently collapses into `total_tokens` on Session state. A follow-up can split the accounting without architectural change.
+- Routing Decision generation (for `record_outcome` in WP-I) is named in the Runtime's ownership but only materializes when Plexus lands. WP-I generates the Routing Decision objects; Runtime emits them when `record_outcome` is no longer `not_yet_wired`.
