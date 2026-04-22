@@ -1,7 +1,7 @@
 # Field Guide: Agentic Serving
 
-**Generated:** 2026-04-21
-**Derived from:** `system-design.md` v1.0 + amendments #1–#3, current implementation at WP-D close.
+**Generated:** 2026-04-22
+**Derived from:** `system-design.md` v1.0 + amendments #1–#3, current implementation at WP-E close.
 
 ## How to use this guide
 
@@ -229,8 +229,12 @@ responses across Runtime and `ModelInterface.generate_with_tools`).
 | Allowlist rejection | `case _:` arm → `ToolCallError(kind="unknown_tool")` | `orchestrator_tool_dispatch.py:151` |
 | InternalToolCall | `InternalToolCall` dataclass | `orchestrator_tool_dispatch.py:66` |
 | ToolCallResult (union) | `ToolCallSuccess \| ToolCallError` | `orchestrator_tool_dispatch.py:80-103` |
-| ToolErrorKind | `Literal["unknown_tool", "not_yet_wired", "invocation_failed", "invalid_arguments", "summarization_failed"]` | `orchestrator_tool_dispatch.py:57` |
+| ToolErrorKind | `Literal["unknown_tool", "not_yet_wired", "invocation_failed", "invalid_arguments", "summarization_failed", "denied_by_autonomy"]` | `orchestrator_tool_dispatch.py:57` |
 | EnsembleOperations Protocol | narrow facade over `OrchestraService` | `orchestrator_tool_dispatch.py:106` |
+| AutonomyGate Protocol | narrow surface Tool Dispatch consults; AutonomyPolicy satisfies structurally | `orchestrator_tool_dispatch.py:124` |
+| Gate interposition | `decision = self._autonomy_policy.decide(tool_name=..., arguments=...)` + Deny short-circuit + event attachment | `orchestrator_tool_dispatch.py:149-174` |
+| Tool-routing indirection | `_route(call)` routes to the matched tool method — keeps the gate/route lexical ordering checkable by FC-11 | `orchestrator_tool_dispatch.py:181` |
+| Event attachment | `_with_events(result, events)` — returns the result untouched when events are empty, else rebuilds with events | `orchestrator_tool_dispatch.py:280` |
 | Dynamic Invocation (action) | `invoke_ensemble` delegates to `operations.invoke`, then interposes the Harness on the return | `orchestrator_tool_dispatch.py:162` |
 | Summarize interposition | `summarization = await self._harness.summarize(result, raw_output=...)` + match on `SummarizationSuccess` / `RawOutputPassthrough` / `SummarizationFailure` | `orchestrator_tool_dispatch.py:202-221` |
 
@@ -260,14 +264,26 @@ Harness itself. FC-8's static AST dominance check
 the method is nested inside the match on the summarize result, so a
 future bypass fails the test before merge.
 
+**Autonomy Policy gate (WP-E).** `dispatch` runs a three-step flow:
+(1) unknown-tool filter — AS-6 closure via `TOOL_NAMES`; (2) Autonomy
+gate — `self._autonomy_policy.decide(tool_name, arguments)` returns
+`Allow(events)` or `Deny(reason)`; Deny short-circuits as
+`ToolCallError(kind="denied_by_autonomy")` without routing; (3) route
+to the matched tool method via `_route`, then attach decision events
+via `_with_events`. FC-11's static AST dominance check
+(`test_fc11_autonomy_gate.py`) enforces that every `await self._route
+(...)` in `dispatch` is lexically after the first
+`self._autonomy_policy.decide` call; an adversarial self-test proves
+the detector catches a synthetic fast-path bypass.
+
 ### Key integration points
 
 - **← Orchestrator Runtime:** `dispatch(InternalToolCall)` per LLM tool emission.
 - **→ OrchestraService (via `EnsembleOperations`):** `invoke` for `invoke_ensemble`, `read_ensembles` for `list_ensembles`.
 - **→ Result Summarizer Harness:** `summarize(raw_result, raw_output=...)` on every `invoke_ensemble` return. The Harness in turn calls back through `EnsembleOperations` to invoke the configured summarizer ensemble.
+- **→ Autonomy Policy (via `AutonomyGate` Protocol):** `decide(tool_name, arguments)` on every dispatch for a committed tool name.
 - **WP-G will add:** composition validation path (shared `validate_ensemble_reference_graph`).
 - **WP-I will add:** `query_knowledge` + `record_outcome` via Plexus Adapter.
-- **WP-E will interpose:** Autonomy Policy gate on every dispatch call.
 - **WP-H will interpose:** Calibration Gate on in-calibration ensemble invocations.
 
 ---
@@ -360,22 +376,99 @@ proves the detector catches simulated regressions.
 
 ## Module: Autonomy Policy
 
-**Implementation state:** Planned (WP-E).
-**Code location:** Not yet created.
-**Stability:** Design-only.
+**Implementation state:** Complete for Phase 1 (WP-E). Two named levels ship: `operator-as-tool-user` (baseline, silent) and `pure-tool-user-visible` (surfaces composition events). `Deny` is a first-class decision variant reserved for WP-H tighter-level semantics; Phase 1 never returns it but the dispatch-side handling is tested.
+**Code location:** `src/llm_orc/agentic/autonomy_policy.py`.
+**Stability:** Settled on decision shape and interposition. Level set expands when WP-H lands approve-before-uncalibrated semantics.
 
-### Scenarios WP-E covers
+### Domain concepts in code
 
-- `scenarios.md` §Default Autonomy Level permits invocation, permits composition, gates promotion.
-- `scenarios.md` §Tool user without operator role observes composition events when configured.
-- `scenarios.md` §Pure tool-user session at default Autonomy Level experiences silent composition.
-- `scenarios.md` §Script authorship is never permitted at any Autonomy Level.
+| Concept | Code manifestation | Location |
+|---------|-------------------|----------|
+| Autonomy Level | module-level constants `BASELINE_LEVEL`, `PURE_TOOL_USER_VISIBLE_LEVEL` | `autonomy_policy.py:30` |
+| AutonomyPolicy | `AutonomyPolicy` class | `autonomy_policy.py:73` |
+| AutonomyDecision (union) | `Allow \| Deny` | `autonomy_policy.py:39-68` |
+| Allow (with events) | `Allow` frozen dataclass with `events: tuple[VisibilityEvent, ...]` | `autonomy_policy.py:44` |
+| Deny | `Deny` frozen dataclass with `reason: str` | `autonomy_policy.py:57` |
+| Level provider | `level_provider: Callable[[], str]` injected at construction | `autonomy_policy.py:76` |
+| Composition event builder | `_composition_event(arguments) -> VisibilityEvent` | `autonomy_policy.py:87` |
 
-### Architecture
+### Design rationale
 
-Interposed before every Tool Dispatch call. Session state read via
-plain args (not by importing Session Registry — same posture as
-Budget Controller).
+L1 Domain Policy. Takes plain values via `level_provider` so the module
+never imports `ConfigurationManager` or `SessionState` (same posture as
+Budget Controller, FF #64). The Serving Layer captures the operator-
+configured level in a closure so a `config.yaml` edit takes effect on
+the next request without a restart — and so a future WP with per-
+session overrides can widen the provider's signature without
+rewriting policy code.
+
+The policy's scope is *decision about in-surface tool calls*, not
+*closure of the surface*. AS-6 closure lives in `TOOL_NAMES` (FC-5);
+dispatch's unknown-tool filter short-circuits before consulting
+Autonomy. This means the gate never sees names outside the five
+committed tools and cannot be a source of AS-6 leakage regardless of
+level configuration.
+
+Unknown levels fall back to baseline-silent rather than raising —
+safer against future level names leaking into config ahead of policy
+code. The operator sees missing surfacing rather than a locked-out
+session.
+
+**Visibility form (OQ #2 resolution).** `pure-tool-user-visible`
+emits `VisibilityEvent(kind="composition", payload=...)` for
+`compose_ensemble`. The SSE formatter renders the event as
+`[composition: {json}]` narration on `delta.content`, and the non-
+streaming response-body collector renders it identically. Chosen over
+SSE comment lines because vanilla OpenAI-compat clients (OpenCode /
+Roo Code / Cline) ignore comments per spec — the tool user's
+conversation thread is the only place narration is actually
+observable. The `[kind: {json}]` shape is generic across future event
+kinds.
+
+### Key integration points
+
+- **← Orchestrator Tool Dispatch:** `decide(tool_name, arguments)` per dispatch for a committed tool name.
+- **→ Level provider (closure):** operator-configured Autonomy Level via `OrchestratorConfigResolver.resolve().autonomy_level`.
+- **→ `orchestrator_chunk.VisibilityEvent`:** the event type emitted when a tightened level surfaces a composition.
+
+### Scenarios covered
+
+- `scenarios.md` §Default Autonomy Level permits invocation, permits composition, gates promotion — acceptance in `test_api_v1_chat_completions.py::TestAutonomyAndPromotionAcceptance`; structural assertion that `"promote_ensemble" not in TOOL_NAMES`.
+- `scenarios.md` §Tool user without operator role observes composition events when configured — acceptance same class; narration appears in `choices[0].message.content` between assistant turn segments.
+- `scenarios.md` §Pure tool-user session at default Autonomy Level experiences silent composition — same class; no `[composition:` substring in response content.
+- `scenarios.md` §Script authorship is never permitted at any Autonomy Level — same class, parametrized over `[BASELINE, TIGHTENED, synthetic-future]`; AS-6 closure via `TOOL_NAMES` unknown-tool filter.
+
+### FC-11 enforcement
+
+`tests/unit/agentic/test_fc11_autonomy_gate.py` — strict AST dominance
+check. Three properties on `OrchestratorToolDispatch.dispatch`:
+
+1. At least one `self._autonomy_policy.decide` call exists.
+2. The `_route` indirection is used (routing goes through a single
+   call site whose lexical order is checkable).
+3. Every `await self._route(...)` call in `dispatch` is lexically
+   after the first `decide` call — a fast-path bypass (cached-result
+   early-return that skips the gate) trips the check.
+
+Adversarial self-test verifies the detector catches a synthetic
+bypass. Mirrors FC-8's template (`test_fc8_summarizer_bypass.py`).
+
+### Boundary integration
+
+`tests/integration/test_tool_dispatch_autonomy_policy.py` — real
+`AutonomyPolicy` behind a delegating spy that records calls. Covers
+(a) gate consulted for every tool in `TOOL_NAMES` at baseline;
+(b) unknown-tool short-circuits before the gate; (c) tightened level
+attaches the composition event to `compose_ensemble`'s result end-to-
+end while leaving `invoke_ensemble` silent.
+
+### Configured level
+
+Operators set the default via `agentic_serving.autonomy.default_level`
+in `config.yaml` (default: `operator-as-tool-user`). The Serving
+Layer's `get_orchestrator_tool_dispatch` factory reads this per
+decision so a `config.yaml` edit takes effect on the next request.
+Per-session overrides land in a future WP.
 
 ---
 

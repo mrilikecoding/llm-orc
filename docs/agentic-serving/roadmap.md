@@ -9,26 +9,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ## Work Packages
 
-> **WP-A, WP-B, WP-C, and WP-D are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. The active section below lists only upcoming or in-progress work.
-
-### WP-E: Autonomy Policy
-
-**Objective:** Interpose the Autonomy Policy gate before every Orchestrator Tool Dispatch. Enforces the baseline level, exposes tighter and looser configurations, and surfaces composition events when the configured level requires it.
-
-**Changes:**
-- New **Autonomy Policy** module.
-- Orchestrator Tool Dispatch edit: every dispatch call passes through Autonomy Policy.
-- Visibility surfacing hook (Phase 1 form: structured events in the SSE stream; OQ #2 leaves final form open).
-- AS-6 hard rule: no configuration level can enable script or profile authorship.
-
-**Scenarios covered:** scenarios.md §Autonomy and Promotion (Default Autonomy Level permits invocation, permits composition, gates promotion; Tool user without operator role observes composition events; Pure tool-user session at default Autonomy Level experiences silent composition; Script authorship is never permitted at any Autonomy Level).
-
-**Dependencies:**
-- WP-C (hard) — interposes on Tool Dispatch.
-
-**Participating modules:** Autonomy Policy, Orchestrator Tool Dispatch (edit). Consistent with WP scope.
-
----
+> **WP-A, WP-B, WP-C, WP-D, and WP-E are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. The active section below lists only upcoming or in-progress work.
 
 ### WP-F: Client-tool turn-boundary delegation
 
@@ -180,7 +161,7 @@ Full architecture live. `query_knowledge` and `record_outcome` flow to Plexus; l
 
 1. **Client-tool delegation scenarios in `scenarios.md`** *(Option C/D grounding — must resolve before WP-F)*. The Client Tool Surface Commitment in the system design resolves an open boundary from interaction-specs but is **scenario-gated**: WP-F does not start until stress scenarios are written into `scenarios.md` that exercise the turn-boundary vs. mid-execution distinction. Target scenarios include: (a) OpenCode sends `tools[bash, file_read, file_edit]` and the orchestrator emits a final-turn delegation; (b) Session turn count and token spend accumulate across a client-tool round trip; (c) an ensemble whose first agent needs a file from the client's filesystem before its second agent proceeds — does C handle this, or does mid-execution callback become necessary?; (d) a compose-then-invoke flow where the composed ensemble, mid-execution, needs a client-tool result the orchestrator didn't know to request in advance. If any scenario requires mid-execution callback, the Commitment is amended (C + hybrid, or Option D). Builder should request a short DECIDE mini-cycle or inline scenario-write before starting WP-F.
 
-2. **Visibility form (OQ #2).** WP-E's composition-event surfacing currently defaults to structured SSE events. If the operator audience decides visibility belongs in a dashboard or structured log instead (or in addition), WP-E's surface changes. Decision can land during build — surfacing the events structurally is the necessary condition; the presentation format is a swap.
+2. **Visibility form (OQ #2).** ~~WP-E's composition-event surfacing currently defaults to structured SSE events.~~ **Resolved during WP-E build (2026-04-22):** visibility renders as `[composition: {json}]` narration on `delta.content` so vanilla OpenAI-compat clients (OpenCode / Roo Code / Cline) surface the event inline in the assistant message. Chosen over SSE comment lines (invisible to spec-compliant clients) and structured non-standard `data:` fields (risks strict clients dropping the stream). Operator-only tooling surfaces can layer on later without changing WP-E's emission shape.
 
 3. **Budget specific numbers (ADR-005 defers to build).** WP-C defaults need concrete turn and token limits. The outer anchor is "comparable to running an RDD phase." Concrete numbers are a tuning decision informed by observed rollout, not an architecture decision.
 
@@ -330,6 +311,54 @@ HTTP read timeout refactored: `HTTPConnectionPool` now reads `connect` / `read` 
 - Conversation Compaction is named in the Runtime's ownership list (system design §Orchestrator Runtime) but not implemented. The WP-C scenarios did not require it (turn/token exhaustion precedes compaction's utility). Can land in a follow-up mini-cycle or alongside another WP that touches the Runtime.
 - Per-request usage accounting: the `/v1/chat/completions` response's `usage.completion_tokens` reports the per-request delta in `SessionState.token_spend`; `prompt_tokens` is hardcoded to 0. Fine-grained prompt-vs-completion accounting requires accumulating each iteration's `LLMUsage.prompt_tokens` separately, which the Runtime currently collapses into `total_tokens` on Session state. A follow-up can split the accounting without architectural change.
 - Routing Decision generation (for `record_outcome` in WP-I) is named in the Runtime's ownership but only materializes when Plexus lands. WP-I generates the Routing Decision objects; Runtime emits them when `record_outcome` is no longer `not_yet_wired`.
+
+### WP-E: Autonomy Policy — 2026-04-22
+
+**Commits (in order):**
+- `f07f64b` feat: add AutonomyPolicy module and VisibilityEvent chunk type (WP-E Group 1)
+- `b2a1c88` refactor: carry VisibilityEvent tuple on ToolCallSuccess and ToolCallError
+- `6c168da` feat: interpose Autonomy Policy gate before every Tool Dispatch (WP-E Group 2)
+- `536f952` feat: render VisibilityEvent as delta.content narration (WP-E Group 3)
+- `8ca482a` test: add autonomy and promotion acceptance scenarios (WP-E Group 5)
+- `29fb4c0` test: add FC-11 static gate check and boundary integration (WP-E Group 6)
+- (this change) docs: close WP-E in field guide, ORIENTATION, cycle-status, roadmap
+
+**Outcome.** ADR-008's per-session Autonomy Level gate is interposed before every Orchestrator Tool Dispatch (FC-11). Two Phase-1 levels ship: `operator-as-tool-user` (baseline, silent) and `pure-tool-user-visible` (surfaces composition events). The composition event renders as `[composition: {json}]` narration on `delta.content` — OQ #2's resolution favors tool-user-visible inline narration over operator-only SSE comments so the llm-conductor tinkering loop closes in the same conversation thread the tool user interacts with.
+
+**New module.** `src/llm_orc/agentic/autonomy_policy.py` — `AutonomyPolicy.decide(tool_name, arguments)` returns `Allow(events)` or `Deny(reason)`. Deny is first-class for WP-H's future approve-before-uncalibrated semantics; Phase 1 never returns it. `VisibilityEvent(kind, payload)` is a neutral chunk variant in `orchestrator_chunk.py` — future event kinds (routing, calibration) reuse the same shape without changing the chunk contract. The SSE formatter's `render_visibility_narration` helper is shared between the streaming path and the non-streaming response-body collector so transport does not change what the tool user sees.
+
+**Edits.**
+- `OrchestratorToolDispatch.__init__` takes `autonomy_policy: AutonomyGate`; `dispatch()` runs a three-step flow (unknown-tool filter, gate, route) and attaches decision events to the result via `_with_events`. `_route` factored from the old dispatch match-case body so FC-11's lexical ordering check has one call site to reason about.
+- `ToolErrorKind` gains `denied_by_autonomy`.
+- `OrchestratorRuntime.run` iterates `result.events` and yields each as a `VisibilityEvent` chunk between `InternalToolCallInFlight` and `InternalToolCallResult`.
+- `v1_chat_completions.get_orchestrator_tool_dispatch` constructs `AutonomyPolicy` with `level_provider=lambda: resolver.resolve().autonomy_level` so `config.yaml` edits take effect on the next request.
+- SSE formatter renders `VisibilityEvent` as `delta.content`; non-streaming `_collect_non_streaming` does the same via the shared helper.
+
+**Scenarios covered.**
+- `scenarios.md` §Default Autonomy Level permits invocation, permits composition, gates promotion — acceptance at the Serving Layer via `tests/unit/web/test_api_v1_chat_completions.py::TestAutonomyAndPromotionAcceptance`. Structural check: `"promote_ensemble" not in TOOL_NAMES`.
+- `scenarios.md` §Tool user without operator role observes composition events when configured — acceptance same class; `[composition:` narration appears in `choices[0].message.content` between turn segments at the tightened level.
+- `scenarios.md` §Pure tool-user session at default Autonomy Level experiences silent composition — acceptance same class; no narration substring at baseline.
+- `scenarios.md` §Script authorship is never permitted at any Autonomy Level — acceptance same class, parametrized over `[BASELINE, TIGHTENED, synthetic-future]`; AS-6 closure via the `TOOL_NAMES` unknown-tool filter.
+
+**Fitness criteria status.**
+- FC-11 (Autonomy Policy check executes before every Tool Dispatch): **fully satisfied**. `test_fc11_autonomy_gate.py` proves three AST properties on `dispatch`: decide is called at least once; every `await self._route(...)` is lexically after the first decide call; an adversarial synthetic bypass (route-before-gate) trips the detector. Boundary integration at `tests/integration/test_tool_dispatch_autonomy_policy.py` verifies the real `AutonomyPolicy` fires for every committed tool and stays silent on unknown names.
+
+**Test coverage delta.** +36 tests (AutonomyPolicy unit 14; dispatch gate unit 7; SSE formatter visibility 2; acceptance scenarios 6; FC-11 static 4; boundary integration 3). Full suite: **2257 passing, 91.48% coverage, lint clean** (mypy strict + ruff + format + bandit + vulture).
+
+**Decisions made during build.**
+- **Events-on-result over DispatchOutcome wrapper.** Adding `events: tuple[VisibilityEvent, ...] = ()` to `ToolCallSuccess` and `ToolCallError` kept the `ToolDispatcher` Protocol signature unchanged and let existing tests pass without modification; a `DispatchOutcome(result, events)` wrapper would have rippled across ~15 call sites for the same semantic payload.
+- **`_route` factoring.** Split from the old match-case body in `dispatch` so FC-11's lexical ordering check has a single callable to reason about. A future regression that inlined `_route` back into `dispatch` would trip `test_dispatch_routes_exactly_via_self_route`.
+- **Visibility narration form (OQ #2).** `[kind: {json}]` is generic across event kinds, greppable by operators, and survives JSON's newline escaping so the narration stays single-line. Chosen for tool-user-visible observability (vanilla clients show `delta.content` inline); operator-parseable SSE comments can be a future additive surface without changing the emission shape.
+- **Unknown-level fallback to baseline-silent.** An operator typo or a future level name leaking into config ahead of policy code falls back to baseline rather than locking sessions out; the missing surfacing is a visible hint.
+
+**Unblocks.** TS-1 remaining work: WP-F (client-tool turn-boundary delegation, scenario-gated) is the only TS-1 item left. WP-G (composition) and WP-I (Plexus Adapter tool-first) both depend only on WP-C and can land in parallel.
+
+**Forward-carrying concerns** (not addressed in WP-E scope).
+- **Summarizer-quality echo-back risk → WP-H calibration scope.** Carried forward from WP-D FF #81; WP-E did not address it because summarizer quality is a calibration property, not an autonomy property.
+- **Per-session Autonomy Level overrides.** Phase 1 operates at operator-configured level; a future WP with per-session overrides can widen `level_provider`'s signature without rewriting policy code.
+- **Operator-tooling visibility surface.** SSE comment lines or a structured events endpoint can be added as a second audience-specific surface without changing WP-E's `delta.content` emission.
+
+---
 
 ### WP-D: Result Summarizer Harness — 2026-04-21
 

@@ -1,7 +1,7 @@
 # Active RDD Cycle: Agentic Serving
 
 **Started:** 2026-03-20
-**Current phase:** BUILD (in progress — WP-A, WP-B, WP-C, WP-D complete; next: WP-E / WP-G / WP-I in parallel; WP-F scenario-gated on client-tool stress scenarios)
+**Current phase:** BUILD (in progress — WP-A, WP-B, WP-C, WP-D, WP-E complete; next: WP-G / WP-I in parallel; WP-F scenario-gated on client-tool stress scenarios)
 **Artifact base:** `docs/agentic-serving/`
 **Essay:** `../essays/001-agentic-serving-architecture.md`
 
@@ -14,7 +14,7 @@
 | MODEL | ✅ Complete | `../domain-model.md` | Plexus should be optional (AS-8) -- design for stateless, benefit from Plexus when available. Enrichment pipeline maturity is an open question that determines whether the learning-system value proposition is real. Two-tier architecture: stateless orchestrator as baseline, Plexus as upgrade to learning system. |
 | DECIDE | ✅ Complete | `../decisions/adr-001..011-*.md`, `../scenarios.md`, `../interaction-specs.md` | Plexus's more compelling frame is intra-session multi-agent substrate via consumer-registered lens grammars, not only cross-session memory. Per-ensemble lens registration would make the orchestrator's access polyglot. AS-4 preserved (lens is query-surface grammar applied during enrichment). Reframe is forward signal, not a current-cycle driver -- Plexus's lens design is in-progress. Captured as OQ #8 and essay reflection; folds back in a later cycle. |
 | ARCHITECT | ✅ Complete | `../system-design.md`, `../roadmap.md`, `../ORIENTATION.md` (regenerated) | Retrofit mode: ensemble engine stays Layer 3 unchanged; 12 modules across 4 layers plus typed `resolve_session_start_context` function in Serving Layer; 13 fitness criteria. Client tool surface: Option C (turn-boundary delegation) is the commitment, scenario-gated — WP-F does not start until stress scenarios exercise the C/D distinction. Context Injection demoted from module to typed function (ADR-009 reservation is satisfied by signature + call site, not by a module). Consolidations of Orchestrator Configuration into Serving Layer and Calibration Gate into Runtime rejected: the former would invert layering; the latter would break FC-4. Roadmap has 10 WPs, 3 classified transition states; TS-1 (stateless orchestrator serving OpenCode) is the vision-named intermediate target. |
-| BUILD | ▶ In Progress | WP-A complete; WP-B complete — Groups 1-6; WP-C complete — end-to-end against Ollama; **WP-D complete** — Groups 0-4 structural change (`a15aa30`, `326a36f`, `188f65f`, `9a0fea2`, `3e7c897`) + Groups 5-6 verification and closeout (`4261238`, `903833e`, `03885f8`, `2f0f660`, this commit) — see roadmap Completed Work Log. Next: WP-E (Autonomy Policy) / WP-G (Composition) / WP-I (Plexus Adapter) — all depend only on WP-C and can land in parallel | WP-D closed. AS-7 structurally enforced (FC-8 via strict AST dominance + adversarial self-test; FC-4 explicitly forbids RSH from Runtime). Raw-output escape-hatch acceptance and Tool Dispatch → Harness boundary integration both cover production wiring. Test suite: 2221 passing, 91.44% coverage, lint clean. TS-1 remaining: WP-F only. |
+| BUILD | ▶ In Progress | WP-A, WP-B, WP-C, WP-D complete — see roadmap Completed Work Log. **WP-E complete** — Groups 1-3 + 5-6 across 6 commits (`f07f64b`, `b2a1c88`, `6c168da`, `536f952`, `8ca482a`, `29fb4c0`, this commit). Next: WP-G (Composition) / WP-I (Plexus Adapter) in parallel; WP-F scenario-gated. | WP-E closed. FC-11 structurally enforced (strict AST dominance + adversarial self-test; `decide` call lexically precedes every `self._route` call). Two Phase-1 Autonomy Levels ship: `operator-as-tool-user` (silent) and `pure-tool-user-visible` (composition events narrate as `[composition: {json}]` on `delta.content`). OQ #2 resolved in favor of tool-user-visible inline narration. Test suite: 2257 passing, 91.48% coverage, lint clean. TS-1 remaining: WP-F only. |
 | PLAY | ☐ Optional | -- | -- |
 | SYNTHESIZE | ☐ Optional | -- | -- |
 
@@ -147,6 +147,22 @@
 
 82. **`test_runtime_never_sees_unsummarized_result` row in the Test Architecture table is now covered end-to-end.** The system-design Test Architecture table names this test for the Orchestrator Tool Dispatch → Result Summarizer Harness edge. Post-WP-D, three complementary tests share the coverage: (a) FC-8 static dominance (`test_fc8_summarizer_bypass.py`); (b) raw-output acceptance scenario at the Serving Layer; (c) summarize-branch boundary integration at Tool Dispatch → Ensemble Engine. No single test renaming; the table row's intent is distributed across the three. Consider tightening the Test Architecture table row in a future edit to point at the three tests explicitly.
 
+### From BUILD (WP-E)
+
+83. **OQ #2 resolved in favor of tool-user-visible `delta.content` narration** (2026-04-22, WP-E planning). The llm-conductor tinkering loop — user observing composition, editing YAML, re-running — only closes when composition is observable in the same conversation thread the tool user converses through. SSE comment lines (FF #60's earlier directional lean) would serve operator tooling but vanilla OpenAI-compat clients (OpenCode / Roo Code / Cline) ignore comments per spec. Structured non-standard `data:` fields risk strict clients dropping the stream. `delta.content` narration in the shape `[kind: {json}]` reaches every compliant client inline. Operator-parseable surfaces (SSE comments, dedicated events endpoint) can layer on as a second surface later without changing the `delta.content` emission.
+
+84. **Events-on-result over DispatchOutcome wrapper** (WP-E Group 2 design choice). Adding `events: tuple[VisibilityEvent, ...] = ()` to both `ToolCallSuccess` and `ToolCallError` kept the `ToolDispatcher` Protocol signature unchanged; a `DispatchOutcome(result, events)` wrapper would have rippled across ~15 existing call sites for the same semantic payload. The events tuple defaults to empty — the common Allow-no-events path has no allocation overhead.
+
+85. **`_route` factoring to make FC-11 lexically checkable** (WP-E Group 2). The match-case in `dispatch` was split into a private `_route` method so FC-11's AST dominance check has a single `await self._route(...)` call site whose lexical order vs. `self._autonomy_policy.decide` is trivial to verify. Regression protection: `test_dispatch_routes_exactly_via_self_route` asserts `_route` is the only routing hop; an inlined regression trips the test.
+
+86. **AS-6 closure stays in `TOOL_NAMES`, not Autonomy.** The unknown-tool filter in `dispatch` short-circuits before the gate is consulted. Rationale: AutonomyPolicy would need `TOOL_NAMES` imported from Tool Dispatch (L2) to validate membership — an L1 → L2 dependency that violates layering. Delegating closure to the closed set keeps the layering clean and makes AS-6 a structural property of the tool surface, not a policy-code property.
+
+87. **Unknown-level fallback to baseline-silent** (WP-E Group 1). An operator typo or a future level name leaking into config ahead of policy code falls back to baseline rather than raising or locking sessions out. The missing surfacing is a visible hint to the operator that the configured level isn't recognized. Alternative (raise at session start via `resolve_validated`) was considered but rejected — the gate fires per dispatch, not per session, and a hard raise would be disproportionate to "tightening didn't take effect."
+
+88. **Per-session Autonomy Level overrides deferred.** Phase 1 `level_provider: Callable[[], str]` reads config on every `decide` call. Future per-session overrides land by widening the signature to `Callable[[SessionState], str]` without touching policy-code internals. No current scenario requires per-session tightening.
+
+89. **Summarizer-quality echo-back risk carried to WP-H.** WP-D FF #81 flagged this; WP-E did not address it because summarizer quality is a calibration property (ADR-007) not an autonomy property. When WP-H lands alongside WP-E (or after), the Calibration Gate's check mechanism is the natural place to detect echo-back. WP-E's event-on-result shape accommodates future visibility events tied to calibration outcomes.
+
 ### From ARCHITECT
 30. Retrofit mode — llm-orc has existing FastAPI server, MCP handlers (ExecutionHandler, ValidationHandler, ensemble_crud_handler, promotion_handler, validation_handler, script_handler), ensemble engine, config manager, auth, and artifact system. Agentic serving is additive; Layer 3 (Ensemble Engine) stays unchanged per ADR-001/002
 31. 12-module decomposition across 4 layers (L0 Core / L1 Domain Policy / L2 Runtime / L3 Entry) plus typed `resolve_session_start_context` function in Serving Layer. Originally 13 modules; Context Injection Stage demoted to function per ADR-066 gate-reflection amendment #1
@@ -159,6 +175,32 @@
 38. Consolidations probed at gate: Orchestrator Configuration → Serving Layer rejected (inverts layering — L1/L3 config is read by L1 modules like Budget Controller and Autonomy Policy via Session Registry). Calibration Gate → Orchestrator Runtime rejected (breaks FC-4; calibration is ensemble-state not runtime-state, and requires Plexus Adapter which Runtime must not import)
 
 ## Context for Resumption
+
+**Post-WP-E resumption pointer (2026-04-22).** WP-E is complete on branch `agentic-serving` across seven commits:
+
+- `f07f64b` feat: add AutonomyPolicy module and VisibilityEvent chunk type (WP-E Group 1)
+- `b2a1c88` refactor: carry VisibilityEvent tuple on ToolCallSuccess and ToolCallError
+- `6c168da` feat: interpose Autonomy Policy gate before every Tool Dispatch (WP-E Group 2)
+- `536f952` feat: render VisibilityEvent as delta.content narration (WP-E Group 3)
+- `8ca482a` test: add autonomy and promotion acceptance scenarios (WP-E Group 5)
+- `29fb4c0` test: add FC-11 static gate check and boundary integration (WP-E Group 6)
+- (this commit) docs: close WP-E in field guide, ORIENTATION, cycle-status, roadmap
+
+**State at WP-E close: 2257 tests passing, 91.48% coverage, lint clean.** Tier 1 stewardship clean. FC-11 structurally enforced via strict AST dominance + adversarial self-test. OQ #2 resolved to `delta.content` narration. Two Phase-1 levels ship; `Deny` is first-class for WP-H expansion.
+
+**Next WPs — two parallel candidates, both depend only on WP-C:**
+
+1. **WP-G: Composition + Composition Validator.** Seven scenarios in `scenarios.md` §Ensemble Composition with Validation. Prerequisite (shared `validate_ensemble_reference_graph`) already in place from WP-A.
+2. **WP-I: Plexus Adapter (tool-first).** Five scenarios across §Plexus Integration and §Session Lifecycle. Open decision: `record_outcome` payload schema.
+
+**TS-1 gap:** WP-F (client-tool turn-boundary delegation). Scenario-gated — Open Decision Point #1 in `roadmap.md` lists four stress scenarios that must be written before WP-F starts. If any requires mid-execution callback, the Option C commitment is amended.
+
+**Forward-carrying concerns from WP-E:**
+- Summarizer-quality echo-back risk → WP-H calibration scope (carried from WP-D FF #81, not addressed in WP-E).
+- Per-session Autonomy Level overrides deferred (FF #88).
+- Operator-tooling visibility surface (SSE comments or dedicated endpoint) deferable as a second audience-specific surface.
+
+---
 
 **Post-WP-D resumption pointer (2026-04-21).** WP-D is complete on branch `agentic-serving` across nine commits:
 
