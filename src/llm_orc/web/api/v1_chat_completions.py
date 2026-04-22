@@ -32,7 +32,11 @@ from pydantic import BaseModel, Field
 
 from llm_orc.agentic.autonomy_policy import AutonomyPolicy
 from llm_orc.agentic.budget_controller import BudgetController
-from llm_orc.agentic.orchestrator_chunk import Completion, ContentDelta
+from llm_orc.agentic.orchestrator_chunk import (
+    Completion,
+    ContentDelta,
+    VisibilityEvent,
+)
 from llm_orc.agentic.orchestrator_runtime import (
     OrchestratorLLM,
     OrchestratorRuntime,
@@ -45,7 +49,7 @@ from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.models.base import ToolCallingNotSupportedError
 from llm_orc.web.api import get_orchestra_service
-from llm_orc.web.api.sse_format import OpenAiSseFormatter
+from llm_orc.web.api.sse_format import OpenAiSseFormatter, render_visibility_narration
 from llm_orc.web.api.v1_models import get_orchestrator_config_resolver
 
 router = APIRouter(prefix="/v1", tags=["openai-compat"])
@@ -217,12 +221,20 @@ async def _build_runtime() -> OrchestratorRuntime:
 async def _collect_non_streaming(
     context: SessionContext, runtime: OrchestratorRuntime
 ) -> tuple[str, str]:
-    """Drive the Runtime and flatten its chunks to content + finish_reason."""
+    """Drive the Runtime and flatten its chunks to content + finish_reason.
+
+    VisibilityEvent chunks render as inline narration using the same
+    helper the SSE formatter uses, so non-streaming response bodies
+    carry the same Autonomy Policy visibility the streaming path emits —
+    tool-user observability does not depend on transport.
+    """
     content_parts: list[str] = []
     finish_reason = "stop"
     async for chunk in runtime.run(context):
         if isinstance(chunk, ContentDelta):
             content_parts.append(chunk.content)
+        elif isinstance(chunk, VisibilityEvent):
+            content_parts.append(render_visibility_narration(chunk.kind, chunk.payload))
         elif isinstance(chunk, Completion):
             finish_reason = chunk.finish_reason
     return "".join(content_parts), finish_reason
