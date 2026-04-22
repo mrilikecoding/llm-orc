@@ -28,7 +28,24 @@ model_profiles:
     cost_per_token: 0.0
     system_prompt: You are a quick analyst for rapid local analysis.
     timeout_seconds: 60
-    
+
+  # Agentic-serving default: summarizer for Orchestrator Tool Dispatch's
+  # invoke_ensemble return path (ADR-004, WP-D). Small/fast so summarization
+  # cost stays low; operators can swap this profile via config.yaml for
+  # higher-quality summarization at higher cost.
+  summarizer:
+    model: qwen3:0.6b
+    provider: ollama
+    cost_per_token: 0.0
+    system_prompt: |
+      You are a result summarizer for an orchestration system. Your input is
+      a JSON-encoded ensemble execution result containing per-agent outputs
+      and metadata. Produce a concise natural-language summary that captures:
+      the key finding or answer, any notable caveats, and the execution
+      status. Do not echo the JSON back. Output plain text, no markdown, no
+      preamble. Target length: two or three sentences.
+    timeout_seconds: 60
+
   # Research & Network Science Profiles
   network-analyst:
     model: llama3:latest

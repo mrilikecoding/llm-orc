@@ -103,12 +103,43 @@ class ResultSummarizerHarness:
             )
         except ValueError as exc:
             return SummarizationFailure(reason=str(exc))
-        synthesis = invocation.get("synthesis")
-        if not isinstance(synthesis, str) or not synthesis:
+        summary = _extract_summary(invocation)
+        if summary is None:
             return SummarizationFailure(
                 reason=(
                     f"summarizer ensemble '{self._summarizer_name}' "
-                    "returned no synthesis text"
+                    "returned no summary text (checked synthesis and "
+                    "single-agent response)"
                 )
             )
-        return SummarizationSuccess(summary=synthesis)
+        return SummarizationSuccess(summary=summary)
+
+
+def _extract_summary(invocation: dict[str, Any]) -> str | None:
+    """Pull the summary text from a summarizer ensemble's output.
+
+    The contract is forgiving so the operator can shape the summarizer
+    ensemble naturally:
+
+    1. If the ensemble populated ``synthesis`` with a non-empty string,
+       that is the summary. This is the preferred shape.
+    2. Otherwise, if the ensemble has exactly one agent result with a
+       non-empty ``response`` field, use that response. This matches
+       the default single-agent summarizer shape — llm-orc's dependency
+       based execution model leaves ``synthesis`` unpopulated for
+       single-agent ensembles (see ``core/execution/results_processor``
+       ``finalize_result``).
+    3. Otherwise, return ``None`` — caller raises ``SummarizationFailure``.
+    """
+    synthesis = invocation.get("synthesis")
+    if isinstance(synthesis, str) and synthesis:
+        return synthesis
+
+    results = invocation.get("results")
+    if isinstance(results, dict) and len(results) == 1:
+        only_result = next(iter(results.values()))
+        if isinstance(only_result, dict):
+            response = only_result.get("response")
+            if isinstance(response, str) and response:
+                return response
+    return None
