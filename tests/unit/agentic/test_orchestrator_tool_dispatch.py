@@ -2,12 +2,14 @@
 
 Per `docs/agentic-serving/system-design.md` §Orchestrator Tool Dispatch
 (L2) and §Integration Contracts (Orchestrator Runtime → Orchestrator
-Tool Dispatch).
+Tool Dispatch, Orchestrator Tool Dispatch → Autonomy Policy).
 
 Covers scenarios:
 
 * §Orchestrator tool surface is exactly the committed set (FC-5)
 * §Invocation outside the tool set is rejected
+* §Default Autonomy Level permits invocation, permits composition
+* §Tool user without operator role observes composition events when configured
 """
 
 from __future__ import annotations
@@ -17,6 +19,15 @@ from typing import Any
 
 import pytest
 
+from llm_orc.agentic.autonomy_policy import (
+    BASELINE_LEVEL,
+    PURE_TOOL_USER_VISIBLE_LEVEL,
+    Allow,
+    AutonomyDecision,
+    AutonomyPolicy,
+    Deny,
+)
+from llm_orc.agentic.orchestrator_chunk import VisibilityEvent
 from llm_orc.agentic.orchestrator_tool_dispatch import (
     TOOL_NAMES,
     InternalToolCall,
@@ -117,6 +128,28 @@ def _build_harness(
     return ResultSummarizerHarness(invoker=invoker, summarizer_name=summarizer_name)
 
 
+def _permissive_policy(level: str = BASELINE_LEVEL) -> AutonomyPolicy:
+    """Real AutonomyPolicy at the given level — default baseline silent."""
+    return AutonomyPolicy(level_provider=lambda: level)
+
+
+class _RecordingPolicy:
+    """AutonomyPolicy double that records calls and returns a canned decision.
+
+    Satisfies the AutonomyGate Protocol structurally. Used by tests that
+    need to assert the gate was consulted (with what arguments) or that
+    need to script a Deny that the real Phase 1 policy never produces.
+    """
+
+    def __init__(self, decision: AutonomyDecision | None = None) -> None:
+        self._decision: AutonomyDecision = decision if decision is not None else Allow()
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    def decide(self, *, tool_name: str, arguments: dict[str, Any]) -> AutonomyDecision:
+        self.calls.append((tool_name, dict(arguments)))
+        return self._decision
+
+
 class TestDispatchRejectsUnknownTool:
     """Scenario: Invocation outside the tool set is rejected.
 
@@ -129,7 +162,9 @@ class TestDispatchRejectsUnknownTool:
     @pytest.mark.asyncio
     async def test_dispatch_rejects_unknown_tool_name(self) -> None:
         dispatch = OrchestratorToolDispatch(
-            operations=_RaisingOperations(), harness=_build_harness()
+            operations=_RaisingOperations(),
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
         )
 
         result = await dispatch.dispatch(
@@ -206,7 +241,9 @@ class TestNotYetWiredTools:
         self, tool_name: str, landing_wp: str
     ) -> None:
         dispatch = OrchestratorToolDispatch(
-            operations=_RaisingOperations(), harness=_build_harness()
+            operations=_RaisingOperations(),
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
         )
 
         result = await dispatch.dispatch(
@@ -236,7 +273,9 @@ class TestListEnsembles:
             ]
         )
         dispatch = OrchestratorToolDispatch(
-            operations=operations, harness=_build_harness()
+            operations=operations,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
         )
 
         result = await dispatch.dispatch(
@@ -281,6 +320,7 @@ class TestInvokeEnsemble:
         dispatch = OrchestratorToolDispatch(
             operations=operations,
             harness=_build_harness(returns={"synthesis": "distilled summary"}),
+            autonomy_policy=_permissive_policy(),
         )
 
         result = await dispatch.dispatch(
@@ -318,7 +358,11 @@ class TestInvokeEnsemble:
         }
         operations = _ScriptedOperations(invoke_result=raw_result)
         harness = _build_harness(returns={"synthesis": "WOULD-SUMMARIZE-BUT-SHOULDNT"})
-        dispatch = OrchestratorToolDispatch(operations=operations, harness=harness)
+        dispatch = OrchestratorToolDispatch(
+            operations=operations,
+            harness=harness,
+            autonomy_policy=_permissive_policy(),
+        )
 
         result = await dispatch.dispatch(
             InternalToolCall(
@@ -355,6 +399,7 @@ class TestInvokeEnsemble:
         dispatch = OrchestratorToolDispatch(
             operations=operations,
             harness=_build_harness(raises=ValueError("summarizer missing")),
+            autonomy_policy=_permissive_policy(),
         )
 
         result = await dispatch.dispatch(
@@ -382,7 +427,9 @@ class TestInvokeEnsemble:
             invoke_raises=ValueError("Ensemble does not exist: does-not-exist")
         )
         dispatch = OrchestratorToolDispatch(
-            operations=operations, harness=_build_harness()
+            operations=operations,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
         )
 
         result = await dispatch.dispatch(
@@ -404,7 +451,9 @@ class TestInvokeEnsemble:
         surfaced without calling the handler."""
         operations = _ScriptedOperations()  # invoke would return {} if called
         dispatch = OrchestratorToolDispatch(
-            operations=operations, harness=_build_harness()
+            operations=operations,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
         )
 
         result = await dispatch.dispatch(
@@ -415,3 +464,203 @@ class TestInvokeEnsemble:
         assert result.kind == "invalid_arguments"
         # Handler must not have been called — validation is local.
         assert operations.invoke_calls == []
+
+
+class TestAutonomyGate:
+    """Autonomy Policy gates every dispatch (FC-11).
+
+    The gate sits between the unknown-tool filter and the tool method
+    routing:
+
+    * Unknown tool names short-circuit before the gate — the gate never
+      sees names outside ``TOOL_NAMES`` and cannot be a source of AS-6
+      leakage.
+    * Allow → tool runs, decision events attach to the result.
+    * Deny → tool does NOT run; a typed ``denied_by_autonomy`` error
+      returns with the decision's reason.
+
+    Covers scenarios §Default Autonomy Level permits invocation
+    (unit-level) and §Tool user without operator role observes
+    composition events (unit-level; full acceptance lands in Group 5).
+    """
+
+    @pytest.mark.asyncio
+    async def test_gate_consulted_for_every_committed_tool(self) -> None:
+        policy = _RecordingPolicy(decision=Allow())
+        operations = _ScriptedOperations(
+            invoke_result={
+                "results": {"a": "x"},
+                "synthesis": "ok",
+                "status": "success",
+                "raw_output": True,  # bypass summarizer so invoke path stays simple
+            },
+            ensembles=[],
+        )
+        dispatch = OrchestratorToolDispatch(
+            operations=operations,
+            harness=_build_harness(),
+            autonomy_policy=policy,
+        )
+
+        for tool_name in [
+            "invoke_ensemble",
+            "compose_ensemble",
+            "list_ensembles",
+            "query_knowledge",
+            "record_outcome",
+        ]:
+            await dispatch.dispatch(
+                InternalToolCall(
+                    id=f"call_{tool_name}",
+                    name=tool_name,
+                    arguments={"name": "anything", "input": "x"},
+                )
+            )
+
+        seen_tool_names = [call[0] for call in policy.calls]
+        assert seen_tool_names == [
+            "invoke_ensemble",
+            "compose_ensemble",
+            "list_ensembles",
+            "query_knowledge",
+            "record_outcome",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_gate_not_consulted_for_unknown_tool(self) -> None:
+        """AS-6 closure lives in ``TOOL_NAMES`` — unknown names never reach Autonomy."""
+        policy = _RecordingPolicy()
+        dispatch = OrchestratorToolDispatch(
+            operations=_RaisingOperations(),
+            harness=_build_harness(),
+            autonomy_policy=policy,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(id="x", name="hallucinated_tool", arguments={})
+        )
+
+        assert policy.calls == []
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "unknown_tool"
+
+    @pytest.mark.asyncio
+    async def test_allow_with_events_attaches_events_to_success_result(self) -> None:
+        composition_event = VisibilityEvent(
+            kind="composition",
+            payload={"tool": "compose_ensemble", "arguments": {}},
+        )
+        policy = _RecordingPolicy(decision=Allow(events=(composition_event,)))
+        operations = _ScriptedOperations()
+        dispatch = OrchestratorToolDispatch(
+            operations=operations,
+            harness=_build_harness(),
+            autonomy_policy=policy,
+        )
+
+        # list_ensembles returns a ToolCallSuccess so we can exercise the
+        # success-result branch of event attachment.
+        result = await dispatch.dispatch(
+            InternalToolCall(id="c1", name="list_ensembles", arguments={})
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.events == (composition_event,)
+
+    @pytest.mark.asyncio
+    async def test_allow_with_events_attaches_events_to_error_result(self) -> None:
+        """Events surface regardless of whether the tool succeeded or errored.
+
+        Phase 1's ``compose_ensemble`` returns ``not_yet_wired`` but the
+        composition attempt still happened from the user's perspective —
+        the event fires, the tool-side error is what the orchestrator
+        observes.
+        """
+        composition_event = VisibilityEvent(
+            kind="composition",
+            payload={"tool": "compose_ensemble", "arguments": {"name": "x"}},
+        )
+        policy = _RecordingPolicy(decision=Allow(events=(composition_event,)))
+        dispatch = OrchestratorToolDispatch(
+            operations=_RaisingOperations(),
+            harness=_build_harness(),
+            autonomy_policy=policy,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(id="c2", name="compose_ensemble", arguments={"name": "x"})
+        )
+
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "not_yet_wired"
+        assert result.events == (composition_event,)
+
+    @pytest.mark.asyncio
+    async def test_deny_short_circuits_with_typed_error(self) -> None:
+        policy = _RecordingPolicy(
+            decision=Deny(reason="tightened level requires approval")
+        )
+        operations = _ScriptedOperations()
+        dispatch = OrchestratorToolDispatch(
+            operations=operations,
+            harness=_build_harness(),
+            autonomy_policy=policy,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="d1",
+                name="invoke_ensemble",
+                arguments={"name": "analysis", "input": "x"},
+            )
+        )
+
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "denied_by_autonomy"
+        assert "tightened level requires approval" in result.reason
+        # The tool method must not have been called.
+        assert operations.invoke_calls == []
+
+    @pytest.mark.asyncio
+    async def test_pure_tool_user_visible_level_emits_composition_event(self) -> None:
+        """End-to-end at the dispatch boundary with the real policy.
+
+        The tightened level is ``pure-tool-user-visible``. Only
+        ``compose_ensemble`` surfaces an event; other tools stay silent.
+        """
+        dispatch = OrchestratorToolDispatch(
+            operations=_RaisingOperations(),
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(level=PURE_TOOL_USER_VISIBLE_LEVEL),
+        )
+
+        compose_result = await dispatch.dispatch(
+            InternalToolCall(
+                id="c1", name="compose_ensemble", arguments={"name": "new"}
+            )
+        )
+
+        assert len(compose_result.events) == 1
+        event = compose_result.events[0]
+        assert event.kind == "composition"
+        assert event.payload == {
+            "tool": "compose_ensemble",
+            "arguments": {"name": "new"},
+        }
+
+    @pytest.mark.asyncio
+    async def test_baseline_level_emits_no_events_on_compose(self) -> None:
+        """Default level is silent on composition per ADR-008 baseline."""
+        dispatch = OrchestratorToolDispatch(
+            operations=_RaisingOperations(),
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(level=BASELINE_LEVEL),
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="c1", name="compose_ensemble", arguments={"name": "new"}
+            )
+        )
+
+        assert result.events == ()
