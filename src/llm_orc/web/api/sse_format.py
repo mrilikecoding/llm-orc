@@ -79,12 +79,18 @@ class OpenAiSseFormatter:
                 # clients ignore SSE comments per spec; llm-orc operator
                 # tooling parses them. Validation deferred to rdd-play.
                 return b""
-            case VisibilityEvent():
-                # WP-E Group 3 replaces the silent drop with delta.content
-                # narration. Group 1 adds the variant to the union so the
-                # type is wired end-to-end; the Runtime has no path to
-                # yield VisibilityEvent until Group 3 either.
-                return b""
+            case VisibilityEvent(kind, payload):
+                # Render as ``delta.content`` so vanilla OpenAI-compat
+                # clients show the narration inline in the assistant
+                # message — chosen over SSE comment lines because the
+                # tinkering loop needs the tool user (not just operator
+                # tooling) to observe composition. Format is single-line
+                # ``[{kind}: {json}]``, greppable across event kinds.
+                return self._frame(
+                    self._chunk_envelope(
+                        delta={"content": render_visibility_narration(kind, payload)}
+                    )
+                )
             case ErrorChunk(message, type_):
                 return self._frame({"error": {"message": message, "type": type_}})
 
@@ -102,6 +108,22 @@ class OpenAiSseFormatter:
     @staticmethod
     def _frame(payload: dict[str, Any]) -> bytes:
         return b"data: " + json.dumps(payload).encode("utf-8") + b"\n\n"
+
+
+def render_visibility_narration(kind: str, payload: dict[str, Any]) -> str:
+    """Render a :class:`VisibilityEvent` as a single inline narration line.
+
+    The shape ``[kind: {json}]`` is deliberately generic — future event
+    kinds (routing, calibration) reuse the same rendering, so downstream
+    clients parsing the narration can pivot on the kind prefix without
+    special-casing per event type. JSON escapes any newlines in payload
+    strings, so the output fits on one line of ``delta.content``.
+
+    Shared between the SSE formatter's streaming path and the
+    non-streaming response-body collector so narration reaches the tool
+    user identically regardless of transport.
+    """
+    return f"[{kind}: {json.dumps(payload)}]"
 
 
 def _encode_tool_calls(

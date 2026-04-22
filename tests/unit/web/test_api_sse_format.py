@@ -20,6 +20,7 @@ from llm_orc.agentic.orchestrator_chunk import (
     InternalToolCallInFlight,
     InternalToolCallResult,
     ToolCallInvocation,
+    VisibilityEvent,
 )
 from llm_orc.web.api.sse_format import OpenAiSseFormatter
 
@@ -213,6 +214,71 @@ class TestInternalToolCallVisibility:
         )
 
         assert raw == b""
+
+
+class TestVisibilityEventFormatting:
+    """Visibility events surface as ``delta.content`` narration (ADR-008, OQ #2).
+
+    Chose ``delta.content`` over SSE comment lines so a vanilla OpenAI-
+    compat client (OpenCode, Roo Code, Cline) shows the tool user what
+    llm-orc is composing in the same stream they converse in — the
+    llm-conductor tinkering loop only closes when composition is
+    observable to the tool user, not only to operator tooling.
+    """
+
+    def test_visibility_event_formats_as_delta_content_narration(self) -> None:
+        formatter = OpenAiSseFormatter(
+            stream_id="chatcmpl-abc",
+            model="primary",
+            created=1234567890,
+        )
+
+        event = VisibilityEvent(
+            kind="composition",
+            payload={"tool": "compose_ensemble", "arguments": {"name": "new"}},
+        )
+        raw = formatter.format(event)
+
+        payload = _parse_sse_data(raw)
+        assert payload["object"] == "chat.completion.chunk"
+        content = payload["choices"][0]["delta"]["content"]
+        assert content.startswith("[composition:")
+        assert content.endswith("]")
+        # The payload's key/value pairs are visible so the tool user can
+        # see what was composed — not just that *some* composition fired.
+        assert "compose_ensemble" in content
+        assert '"name": "new"' in content
+        # finish_reason stays null — visibility events don't end turns.
+        assert payload["choices"][0]["finish_reason"] is None
+
+    def test_visibility_event_content_is_single_line(self) -> None:
+        """Narration is one line so it sits adjacent to other deltas.
+
+        Multi-line content would interleave awkwardly with assistant text
+        in the visible conversation. The event's kind + JSON payload fits
+        on one line.
+        """
+        formatter = OpenAiSseFormatter(
+            stream_id="chatcmpl-abc",
+            model="primary",
+            created=1234567890,
+        )
+
+        raw = formatter.format(
+            VisibilityEvent(
+                kind="composition",
+                payload={
+                    "tool": "compose_ensemble",
+                    "arguments": {"name": "multi\nline\nthreat"},
+                },
+            )
+        )
+
+        payload = _parse_sse_data(raw)
+        content = payload["choices"][0]["delta"]["content"]
+        # JSON-encoded strings escape newlines — the narration line
+        # itself carries no raw ``\n`` that would split the content.
+        assert "\n" not in content
 
 
 class TestErrorChunkFormatting:
