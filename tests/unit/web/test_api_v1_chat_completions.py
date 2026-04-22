@@ -23,7 +23,11 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from llm_orc.agentic.autonomy_policy import BASELINE_LEVEL, AutonomyPolicy
+from llm_orc.agentic.autonomy_policy import (
+    BASELINE_LEVEL,
+    PURE_TOOL_USER_VISIBLE_LEVEL,
+    AutonomyPolicy,
+)
 from llm_orc.agentic.orchestrator_config import (
     BudgetDefaults,
     OrchestratorConfig,
@@ -31,6 +35,7 @@ from llm_orc.agentic.orchestrator_config import (
 )
 from llm_orc.agentic.orchestrator_runtime import OrchestratorLLM, ToolDispatcher
 from llm_orc.agentic.orchestrator_tool_dispatch import (
+    TOOL_NAMES,
     InternalToolCall,
     OrchestratorToolDispatch,
     ToolCallResult,
@@ -1302,3 +1307,343 @@ class TestRawOutputEscapeHatchAcceptance:
             f"Orchestrator observation is not a summary payload. "
             f"Expected summary; got {observed!r}."
         )
+
+
+class TestAutonomyAndPromotionAcceptance:
+    """Acceptance tests for ``scenarios.md`` §Autonomy and Promotion.
+
+    Wires the real :class:`OrchestratorToolDispatch`, real
+    :class:`AutonomyPolicy`, and real :class:`ResultSummarizerHarness`
+    over a stub ``EnsembleOperations`` and drives
+    ``/v1/chat/completions`` end-to-end. Four scenarios:
+
+    * Default Autonomy Level permits invocation, permits composition,
+      gates promotion — structural (``TOOL_NAMES`` closed) + behavioral
+      (gate allows the five committed tools).
+    * Tool user without operator role observes composition events when
+      configured — tightened level narrates on ``delta.content``.
+    * Pure tool-user session at default Autonomy Level experiences
+      silent composition — baseline level emits zero narration.
+    * Script authorship is never permitted at any Autonomy Level —
+      AS-6 closure via the unknown-tool filter; parametrized over
+      multiple levels (including a synthetic future level).
+    """
+
+    def _assistant_content(self, response_json: dict[str, Any]) -> str:
+        choices = response_json["choices"]
+        assert isinstance(choices, list)
+        assert choices
+        content = choices[0]["message"]["content"]
+        assert isinstance(content, str)
+        return content
+
+    def _build_dispatch(
+        self, operations: _StubEnsembleOperations, level: str
+    ) -> OrchestratorToolDispatch:
+        harness = ResultSummarizerHarness(
+            invoker=operations, summarizer_name="test-summarizer"
+        )
+        policy = AutonomyPolicy(level_provider=lambda: level)
+        return OrchestratorToolDispatch(
+            operations=operations, harness=harness, autonomy_policy=policy
+        )
+
+    def test_default_level_permits_invoke_and_compose_no_promotion_in_surface(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Scenario: Default Autonomy Level permits invocation, permits
+        composition, gates promotion.
+
+        Structural: promotion is not an orchestrator tool — ``TOOL_NAMES``
+        has no entry for it, so self-promotion is mechanically impossible.
+        Behavioral: at baseline, the gate allows ``invoke_ensemble`` and
+        ``compose_ensemble`` (the latter returns ``not_yet_wired`` pending
+        WP-G; the point is the gate does not block the attempt).
+        """
+        assert "promote_ensemble" not in TOOL_NAMES
+        assert "promote" not in TOOL_NAMES
+        assert TOOL_NAMES == frozenset(
+            {
+                "invoke_ensemble",
+                "compose_ensemble",
+                "list_ensembles",
+                "query_knowledge",
+                "record_outcome",
+            }
+        )
+
+        analysis_result = {
+            "results": {"a": {"response": "done"}},
+            "synthesis": None,
+            "status": "success",
+            "raw_output": True,  # bypass summarizer to keep the test focused
+        }
+        operations = _StubEnsembleOperations({"analysis": analysis_result})
+        dispatch = self._build_dispatch(operations, BASELINE_LEVEL)
+
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_inv",
+                            name="invoke_ensemble",
+                            arguments_json=('{"name": "analysis", "input": "x"}'),
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=10, completion_tokens=1, total_tokens=11
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_com",
+                            name="compose_ensemble",
+                            arguments_json='{"name": "new"}',
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=20, completion_tokens=1, total_tokens=21
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                ToolCallingResponse(
+                    content="both calls completed",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=30, completion_tokens=3, total_tokens=33
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=dispatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "do both"}],
+            },
+        )
+
+        assert response.status_code == 200
+        assert operations.calls == [{"ensemble_name": "analysis", "input": "x"}]
+
+        # Second LLM turn saw invoke_ensemble's raw-output pass-through.
+        # Third LLM turn saw compose_ensemble's not_yet_wired observation.
+        third_messages = llm.calls[2][0]
+        compose_tool_msgs = [
+            m
+            for m in third_messages
+            if m.get("role") == "tool" and m.get("tool_call_id") == "call_com"
+        ]
+        assert len(compose_tool_msgs) == 1
+        observed = json.loads(compose_tool_msgs[0]["content"])
+        assert observed.get("error") == "not_yet_wired"
+
+        # Baseline emits no composition narration.
+        content = self._assistant_content(response.json())
+        assert "[composition:" not in content
+
+    def test_tool_user_observes_composition_events_at_tightened_level(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Scenario: Tool user without operator role observes composition
+        events when configured.
+
+        At ``pure-tool-user-visible``, ``compose_ensemble`` produces a
+        :class:`VisibilityEvent` that renders on ``delta.content`` — the
+        tool user sees ``[composition: {...}]`` inline in their client's
+        assistant message text.
+        """
+        operations = _StubEnsembleOperations({})
+        dispatch = self._build_dispatch(operations, PURE_TOOL_USER_VISIBLE_LEVEL)
+
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="Composing a specialist.",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_com",
+                            name="compose_ensemble",
+                            arguments_json=(
+                                '{"name": "pricing-analyst", "profiles": ["default"]}'
+                            ),
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=10, completion_tokens=1, total_tokens=11
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                ToolCallingResponse(
+                    content="That composer is not wired yet.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=20, completion_tokens=2, total_tokens=22
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=dispatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "find a specialist"}],
+            },
+        )
+
+        assert response.status_code == 200
+        content = self._assistant_content(response.json())
+        # Narration sits between the two assistant content segments.
+        assert "[composition:" in content
+        # The rendered payload includes the composed ensemble's name so
+        # the tool user sees *what* was composed — not only *that*
+        # composition happened.
+        assert "pricing-analyst" in content
+        assert content.index("Composing a specialist.") < content.index("[composition:")
+        assert content.index("[composition:") < content.index(
+            "That composer is not wired yet."
+        )
+
+    def test_default_level_silent_composition_no_narration(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Scenario: Pure tool-user session at default Autonomy Level
+        experiences silent composition.
+
+        Same flow as the tightened-level scenario, but at
+        ``operator-as-tool-user``. No narration appears — the tool user
+        sees only the LLM's own content and the error observation flow.
+        """
+        operations = _StubEnsembleOperations({})
+        dispatch = self._build_dispatch(operations, BASELINE_LEVEL)
+
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_com",
+                            name="compose_ensemble",
+                            arguments_json='{"name": "silent-specialist"}',
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=10, completion_tokens=1, total_tokens=11
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                ToolCallingResponse(
+                    content="Nothing to show you.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=20, completion_tokens=2, total_tokens=22
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=dispatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "find a specialist"}],
+            },
+        )
+
+        assert response.status_code == 200
+        content = self._assistant_content(response.json())
+        assert content == "Nothing to show you."
+        assert "[composition:" not in content
+        assert "silent-specialist" not in content
+
+    @pytest.mark.parametrize(
+        "level",
+        [
+            BASELINE_LEVEL,
+            PURE_TOOL_USER_VISIBLE_LEVEL,
+            "some-future-loosest-level",
+        ],
+    )
+    def test_script_authorship_never_permitted_at_any_level(
+        self, monkeypatch: pytest.MonkeyPatch, level: str
+    ) -> None:
+        """Scenario: Script authorship is never permitted at any Autonomy
+        Level.
+
+        AS-6 closure lives in ``TOOL_NAMES``: any tool name outside the
+        five committed operations returns ``unknown_tool`` before the
+        gate is consulted. Parametrized over baseline, the current
+        tightened level, and a synthetic future level to demonstrate
+        that no configuration opens a path to primitive authorship.
+        """
+        operations = _StubEnsembleOperations({})
+        dispatch = self._build_dispatch(operations, level)
+
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_bad",
+                            name="author_script",
+                            arguments_json=('{"name": "evil.py", "content": "..."}'),
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=10, completion_tokens=1, total_tokens=11
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                ToolCallingResponse(
+                    content="I cannot author scripts.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=20, completion_tokens=2, total_tokens=22
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=dispatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "write a script"}],
+            },
+        )
+
+        assert response.status_code == 200
+
+        # Ensemble operations were never touched — no script authorship
+        # reached any library surface.
+        assert operations.calls == []
+
+        # The second LLM call saw an unknown_tool observation — not an
+        # allowed authorship, not a denied_by_autonomy. AS-6 closure is
+        # structural; the gate doesn't need to weigh in.
+        second_messages = llm.calls[1][0]
+        tool_msgs = [m for m in second_messages if m.get("role") == "tool"]
+        assert len(tool_msgs) == 1
+        observed = json.loads(tool_msgs[0]["content"])
+        assert observed.get("error") == "unknown_tool"
