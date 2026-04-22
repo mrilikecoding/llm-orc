@@ -32,9 +32,10 @@ closed-set property holds from WP-C onward.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
+from llm_orc.agentic.orchestrator_chunk import VisibilityEvent
 from llm_orc.agentic.result_summarizer_harness import (
     RawOutputPassthrough,
     ResultSummarizerHarness,
@@ -79,11 +80,19 @@ class InternalToolCall:
 
 @dataclass(frozen=True)
 class ToolCallSuccess:
-    """A successful tool result surfaced to the orchestrator's context."""
+    """A successful tool result surfaced to the orchestrator's context.
+
+    ``events`` carries visibility events produced by the dispatch-time
+    Autonomy Policy decision. The Runtime forwards them as
+    :class:`VisibilityEvent` chunks so the Serving Layer can surface
+    composition-related narration to the tool user (ADR-008 tightened
+    levels). An empty tuple is the baseline — silent operation.
+    """
 
     id: str
     name: str
     content: Any
+    events: tuple[VisibilityEvent, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -92,12 +101,17 @@ class ToolCallError:
 
     The ReAct loop continues with this result — the LLM sees the
     error, may adjust its plan, and emits the next tool call.
+
+    ``events`` mirrors the ``ToolCallSuccess`` field so visibility is
+    surfaced consistently regardless of the dispatch outcome — an
+    Autonomy Policy decision may attach events to either path.
     """
 
     id: str
     name: str
     kind: ToolErrorKind
     reason: str
+    events: tuple[VisibilityEvent, ...] = field(default_factory=tuple)
 
 
 ToolCallResult = ToolCallSuccess | ToolCallError
