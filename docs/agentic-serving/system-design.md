@@ -81,16 +81,16 @@ Twelve modules plus one typed extension-point function. Existing modules are mar
 **Purpose:** Runs the ReAct loop that delegates to llm-orc operations via a fixed tool surface.
 **Provenance:** ADR-001; domain concepts Orchestrator Agent, Routing Decision, Conversation Compaction.
 **Owns:** Orchestrator Agent (concept); Routing Decision (generation); Conversation Compaction (concept and action); Route, Invoke (Dynamic), Query, Record, Calibrate (as actor).
-**Depends on:** Budget Controller, Orchestrator Tool Dispatch, Result Summarizer Harness.
+**Depends on:** Budget Controller, Orchestrator Tool Dispatch.
 **Depended on by:** Serving Layer.
-**Inversion note:** The Orchestrator LLM's mental model is "I reason, I emit tool calls, I observe results." The Runtime boundary aligns with that mental model — it does not expose Session bookkeeping, Plexus awareness, or Autonomy gating to the LLM's reasoning context.
+**Inversion note:** The Orchestrator LLM's mental model is "I reason, I emit tool calls, I observe results." The Runtime boundary aligns with that mental model — it does not expose Session bookkeeping, Plexus awareness, Autonomy gating, or summarization to the LLM's reasoning context. Result summarization is interposed by Orchestrator Tool Dispatch on the `invoke_ensemble` return path; the Runtime is unaware of the Harness (per Amendment #3).
 
 ### Module: Orchestrator Tool Dispatch
 
 **Purpose:** Defines the fixed five-tool surface and dispatches each orchestrator tool call to its downstream service.
 **Provenance:** ADR-003; AS-6; domain concepts Orchestrator Tool, Dynamic Invocation.
-**Owns:** Orchestrator Tool (concept); tool-name allowlist enforcement; routing of `invoke_ensemble`, `compose_ensemble`, `list_ensembles`, `query_knowledge`, `record_outcome` to their downstream services; rejection of any other tool name as a tool error.
-**Depends on:** Ensemble Engine, Composition Validator, Plexus Adapter, Autonomy Policy, Calibration Gate.
+**Owns:** Orchestrator Tool (concept); tool-name allowlist enforcement; routing of `invoke_ensemble`, `compose_ensemble`, `list_ensembles`, `query_knowledge`, `record_outcome` to their downstream services; rejection of any other tool name as a tool error; interposition of Result Summarizer Harness on the `invoke_ensemble` return path.
+**Depends on:** Ensemble Engine, Composition Validator, Plexus Adapter, Autonomy Policy, Calibration Gate, Result Summarizer Harness.
 **Depended on by:** Orchestrator Runtime.
 **Rationale for separate module:** Keeping dispatch separate from the Runtime's reasoning loop makes the closed-set property of ADR-003 structurally enforceable — a code path that bypasses the dispatch to do something tool-like is mechanically excluded, not merely proscribed.
 
@@ -221,13 +221,13 @@ Serving Layer ───── (Phase 2 only) ───────────�
 Session Registry ───────────────────────────────▶ Ensemble Engine (profile lookup)
 Orchestrator Runtime ───────────────────────────▶ Budget Controller
 Orchestrator Runtime ───────────────────────────▶ Orchestrator Tool Dispatch
-Orchestrator Runtime ───────────────────────────▶ Result Summarizer Harness
 Budget Controller ──────────────────────────────▶ Session Registry
 Orchestrator Tool Dispatch ─────────────────────▶ Ensemble Engine
 Orchestrator Tool Dispatch ─────────────────────▶ Composition Validator
 Orchestrator Tool Dispatch ─────────────────────▶ Plexus Adapter
 Orchestrator Tool Dispatch ─────────────────────▶ Autonomy Policy
 Orchestrator Tool Dispatch ─────────────────────▶ Calibration Gate
+Orchestrator Tool Dispatch ─────────────────────▶ Result Summarizer Harness
 Result Summarizer Harness ──────────────────────▶ Ensemble Engine
 Composition Validator ──────────────────────────▶ Ensemble Engine (shared public validator)
 Autonomy Policy ────────────────────────────────▶ Session Registry
@@ -249,7 +249,7 @@ Plexus Adapter ─────────────────────�
 
 **No cycles.** Verified by static inspection: every edge points from a higher layer to a same-or-lower layer. The only intra-layer dependencies are within L3 (Serving Layer → Session Registry; Serving Layer → Orchestrator Configuration) and do not form cycles.
 
-**Fan-out warnings.** Orchestrator Tool Dispatch has five outbound edges (one per tool call class) — intentional per ADR-003; the fan-out *is* the closed tool set. Ensemble Engine is the highest-fan-in module (five agentic-serving modules depend on it), consistent with Layer 3 being the single shared execution substrate.
+**Fan-out warnings.** Orchestrator Tool Dispatch has six outbound edges: five correspond to the closed tool set (Ensemble Engine, Composition Validator, Plexus Adapter, Autonomy Policy, Calibration Gate) — intentional per ADR-003; the fan-out *is* the closed tool set. The sixth edge (Result Summarizer Harness) is a cross-cutting interposition on the `invoke_ensemble` return path — orthogonal to the closed set, structurally placed on the Tool Dispatch side rather than the Runtime side so the Runtime stays unaware of summarization (per Amendment #3). Ensemble Engine remains the highest-fan-in module (five agentic-serving modules depend on it), consistent with Layer 3 being the single shared execution substrate.
 
 ---
 
@@ -362,7 +362,7 @@ Plexus Adapter ─────────────────────�
 | FC-1 | No module owns more than 5 scoped glossary entries as primary owner | Count rows per module in the Responsibility Matrix | ≤ 5 | God-class prevention (Essay §Guardrails; ARCHITECT principle) |
 | FC-2 | Dependency edges point from higher layer to same-or-lower layer only | Static inspection of module imports against L0-L3 assignment | 0 violations | Layering rule (Dependency Graph) |
 | FC-3 | No cycles in the dependency graph | Static cycle detection over the dependency edge list | 0 cycles | ARCHITECT principle |
-| FC-4 | Orchestrator Runtime imports only Budget Controller, Orchestrator Tool Dispatch, and Result Summarizer Harness — no Plexus, no config, no Autonomy, no Calibration | Static import check | Exact match | Orchestrator LLM's mental model alignment; structural ADR-003 enforcement |
+| FC-4 | Orchestrator Runtime imports only Budget Controller and Orchestrator Tool Dispatch — no Result Summarizer Harness, no Plexus, no config, no Autonomy, no Calibration. Result Summarizer Harness is interposed on the `invoke_ensemble` return path by Orchestrator Tool Dispatch (Amendment #3). | Static import check | Exact match | Orchestrator LLM's mental model alignment; structural ADR-003 enforcement |
 | FC-5 | Orchestrator Tool Dispatch has exactly five public entry points — one per committed tool | Static count of public dispatch methods | = 5 | ADR-003 (closed tool set) |
 | FC-6 | Composition Validator and Ensemble Engine's load path call the same public validator function | Static check: single definition, two call sites | 1 definition, 2+ call sites | Scenarios refactor 1-3; ADR-006 negative consequence |
 | FC-7 | Every Plexus-facing code path has a no-op fallback exercised by a stateless-mode test | Per-edge coverage of the stateless branch | 100% | AS-8 |
@@ -389,7 +389,7 @@ Every dependency edge must have at least one integration test that exercises rea
 | Serving Layer → Orchestrator Runtime | `test_serving_streams_runtime_output` | SSE chunks flow end-to-end; client-tool round trip resumes same Session |
 | Orchestrator Runtime → Budget Controller | `test_runtime_honors_budget_at_iteration_boundary` | Turn-limit and token-limit exhaustion both terminate at an iteration boundary |
 | Orchestrator Runtime → Orchestrator Tool Dispatch | `test_runtime_dispatches_internal_tools_only` | Any tool name outside the five returns a tool error observation, not an exception |
-| Orchestrator Runtime → Result Summarizer Harness | `test_runtime_never_sees_unsummarized_result` | `invoke_ensemble` returning a large dict reaches the Runtime as a summary; escape-hatch flag bypasses |
+| Orchestrator Tool Dispatch → Result Summarizer Harness | `test_runtime_never_sees_unsummarized_result` | `invoke_ensemble` returning a large dict reaches the Runtime as a summary via the Harness; escape-hatch flag bypasses. Interposition lives on Tool Dispatch per Amendment #3 — the Runtime is unaware of the Harness |
 | Orchestrator Tool Dispatch → Ensemble Engine | `test_invoke_ensemble_executes_real_ensemble` | End-to-end ensemble execution with real `EnsembleExecutor` |
 | Orchestrator Tool Dispatch → Composition Validator | `test_compose_ensemble_rejects_cycle` | Cyclic reference graph rejected at composition time |
 | Orchestrator Tool Dispatch → Plexus Adapter | `test_query_knowledge_and_record_outcome_round_trip` | Real Plexus-active path; also run in stateless mode to verify no-op returns |
@@ -442,3 +442,4 @@ See [`./roadmap.md`](./roadmap.md) for the current roadmap — work packages, cl
 | — | 2026-04-20 | Initial system design | ARCHITECT phase | All inputs | Current |
 | 1 | 2026-04-20 | Demote Context Injection Stage from module to typed function `resolve_session_start_context` owned by Serving Layer | ARCHITECT reflection-time Grounding Reframe (susceptibility-snapshot-agentic-serving-architect.md Item 1) | ADR-009; single-agent-paradigm survey (Claude Code, OpenCode, claw-code, OpenHands) | Current |
 | 2 | 2026-04-20 | Mark Client Tool Surface Commitment (Option C) as scenario-gated — WP-F does not start until stress scenarios are written and C is shown to handle them | ARCHITECT reflection-time Grounding Reframe (Item 2) | Interaction specs open boundary; user direction "a step that direction" of OpenCode support | Current |
+| 3 | 2026-04-21 | Move the Result Summarizer Harness dependency edge from Orchestrator Runtime to Orchestrator Tool Dispatch. FC-4 amended to exclude RSH from Runtime's allow list. Dependency Graph, module Depends-on lists, fan-out note, and Test Architecture boundary label updated in sync | WP-C close detected the inconsistency: the RSH module's own rationale states the Runtime is unaware of the Harness, but the Dependency Graph had `Runtime → RSH`. `orchestrator_runtime.py` never imported RSH (FC-4 static test already enforced the corrected reading at WP-C close). Cycle-status §Feed-Forward #73 captured the amendment as a WP-D first commit | §Module: Orchestrator Runtime (Depends on), §Module: Orchestrator Tool Dispatch (Depends on + Owns), §Module: Result Summarizer Harness (already consistent), §Dependency Graph, §Fitness Criteria FC-4, §Test Architecture (`Orchestrator Runtime → Result Summarizer Harness` relabeled to `Orchestrator Tool Dispatch → Result Summarizer Harness`) | Current |
