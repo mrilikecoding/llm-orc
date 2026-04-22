@@ -23,6 +23,7 @@ from llm_orc.agentic.orchestrator_chunk import (
     InternalToolCallResult,
     OrchestratorChunk,
     ToolCallInvocation,
+    VisibilityEvent,
 )
 
 _CHUNK_OBJECT = "chat.completion.chunk"
@@ -77,6 +78,12 @@ class OpenAiSseFormatter:
                 # in-session ensemble-design pattern. OpenAI-compat
                 # clients ignore SSE comments per spec; llm-orc operator
                 # tooling parses them. Validation deferred to rdd-play.
+                return b""
+            case VisibilityEvent():
+                # WP-E Group 3 replaces the silent drop with delta.content
+                # narration. Group 1 adds the variant to the union so the
+                # type is wired end-to-end; the Runtime has no path to
+                # yield VisibilityEvent until Group 3 either.
                 return b""
             case ErrorChunk(message, type_):
                 return self._frame({"error": {"message": message, "type": type_}})

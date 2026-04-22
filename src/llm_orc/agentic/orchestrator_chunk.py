@@ -26,7 +26,7 @@ Variants enumerated by the system design:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 
 @dataclass(frozen=True)
@@ -105,6 +105,25 @@ class ClientToolCall:
 
 
 @dataclass(frozen=True)
+class VisibilityEvent:
+    """Operator / tool-user visibility surface per ADR-008 and OQ #2.
+
+    Emitted by Autonomy Policy when the configured level calls for surfacing
+    an event (Phase 1: composition events at ``pure-tool-user-visible``). The
+    SSE formatter translates the event into inline narration on
+    ``delta.content`` so a vanilla OpenAI-compat client surfaces it in the
+    assistant message text — the tool user observes what llm-orc is doing
+    under the hood in the same stream they converse through.
+
+    Shape kept neutral (``kind`` + ``payload``) so later levels can surface
+    additional event types without changing the chunk contract.
+    """
+
+    kind: str
+    payload: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class ErrorChunk:
     """Runtime exception surfaced as an SSE error payload.
 
@@ -126,6 +145,7 @@ OrchestratorChunk = (
     | ClientToolCall
     | InternalToolCallInFlight
     | InternalToolCallResult
+    | VisibilityEvent
     | ErrorChunk
 )
 """Union of all chunk variants the Runtime can yield.
