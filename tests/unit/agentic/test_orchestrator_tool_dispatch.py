@@ -24,6 +24,7 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     ToolCallError,
     ToolCallSuccess,
 )
+from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
 
 
 class _RaisingOperations:
@@ -77,6 +78,45 @@ class _ScriptedOperations(_RaisingOperations):
         return list(self._ensembles)
 
 
+class _StubSummarizerInvoker:
+    """Handwritten double for ``SummarizerInvoker``.
+
+    Default behavior is "summarizer returns a synthesis string so the
+    Harness produces a ``SummarizationSuccess``". Tests that exercise
+    the raw-output escape hatch or summarization failure override the
+    returns/raises parameters.
+    """
+
+    def __init__(
+        self,
+        *,
+        returns: dict[str, Any] | None = None,
+        raises: Exception | None = None,
+    ) -> None:
+        self._returns: dict[str, Any] = (
+            returns if returns is not None else {"synthesis": "summary text"}
+        )
+        self._raises = raises
+        self.calls: list[dict[str, Any]] = []
+
+    async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append(arguments)
+        if self._raises is not None:
+            raise self._raises
+        return self._returns
+
+
+def _build_harness(
+    *,
+    returns: dict[str, Any] | None = None,
+    raises: Exception | None = None,
+    summarizer_name: str = "agentic-result-summarizer",
+) -> ResultSummarizerHarness:
+    """Construct a Harness with a stub invoker for dispatch-side tests."""
+    invoker = _StubSummarizerInvoker(returns=returns, raises=raises)
+    return ResultSummarizerHarness(invoker=invoker, summarizer_name=summarizer_name)
+
+
 class TestDispatchRejectsUnknownTool:
     """Scenario: Invocation outside the tool set is rejected.
 
@@ -88,7 +128,9 @@ class TestDispatchRejectsUnknownTool:
 
     @pytest.mark.asyncio
     async def test_dispatch_rejects_unknown_tool_name(self) -> None:
-        dispatch = OrchestratorToolDispatch(operations=_RaisingOperations())
+        dispatch = OrchestratorToolDispatch(
+            operations=_RaisingOperations(), harness=_build_harness()
+        )
 
         result = await dispatch.dispatch(
             InternalToolCall(
@@ -163,7 +205,9 @@ class TestNotYetWiredTools:
     async def test_not_yet_wired_tool_returns_typed_error(
         self, tool_name: str, landing_wp: str
     ) -> None:
-        dispatch = OrchestratorToolDispatch(operations=_RaisingOperations())
+        dispatch = OrchestratorToolDispatch(
+            operations=_RaisingOperations(), harness=_build_harness()
+        )
 
         result = await dispatch.dispatch(
             InternalToolCall(id="call_1", name=tool_name, arguments={})
@@ -191,7 +235,9 @@ class TestListEnsembles:
                 }
             ]
         )
-        dispatch = OrchestratorToolDispatch(operations=operations)
+        dispatch = OrchestratorToolDispatch(
+            operations=operations, harness=_build_harness()
+        )
 
         result = await dispatch.dispatch(
             InternalToolCall(id="call_1", name="list_ensembles", arguments={})
@@ -217,14 +263,25 @@ class TestInvokeEnsemble:
     """
 
     @pytest.mark.asyncio
-    async def test_invoke_ensemble_delegates_to_operations(self) -> None:
+    async def test_invoke_ensemble_delegates_and_interposes_summarizer(self) -> None:
+        """Scenario: Ensemble result is summarized before entering context.
+
+        Per ADR-004 and system design Amendment #3, Tool Dispatch calls
+        the Result Summarizer Harness on every successful invocation.
+        The Runtime receives ``{"summary": ...}`` — never the raw
+        result dict — unless the ensemble's ``raw_output`` flag is set.
+        """
         normalized_result = {
             "results": {"analyst": {"response": "ok"}},
-            "synthesis": "analysis complete",
+            "synthesis": "ensemble's own synthesis",
             "status": "success",
+            "raw_output": False,
         }
         operations = _ScriptedOperations(invoke_result=normalized_result)
-        dispatch = OrchestratorToolDispatch(operations=operations)
+        dispatch = OrchestratorToolDispatch(
+            operations=operations,
+            harness=_build_harness(returns={"synthesis": "distilled summary"}),
+        )
 
         result = await dispatch.dispatch(
             InternalToolCall(
@@ -237,11 +294,80 @@ class TestInvokeEnsemble:
         assert isinstance(result, ToolCallSuccess)
         assert result.id == "call_7"
         assert result.name == "invoke_ensemble"
-        assert result.content == normalized_result
-        # Delegation uses the handler's field name (``ensemble_name``).
+        # The summary — produced by the Harness, not the raw ensemble result —
+        # is what enters the orchestrator's context.
+        assert result.content == {"summary": "distilled summary"}
+        # Delegation still uses the handler's field name.
         assert operations.invoke_calls == [
             {"ensemble_name": "analysis", "input": "refactor the parser"}
         ]
+
+    @pytest.mark.asyncio
+    async def test_invoke_ensemble_passes_raw_when_ensemble_flagged(self) -> None:
+        """Scenario: Raw-output escape hatch is explicit (ADR-004).
+
+        An ensemble declaring ``raw_output: true`` bypasses the Harness
+        — the raw result dict enters the orchestrator's context without
+        passing through the summarizer.
+        """
+        raw_result = {
+            "results": {"classifier": {"intent": "refactor"}},
+            "synthesis": None,
+            "status": "success",
+            "raw_output": True,
+        }
+        operations = _ScriptedOperations(invoke_result=raw_result)
+        harness = _build_harness(returns={"synthesis": "WOULD-SUMMARIZE-BUT-SHOULDNT"})
+        dispatch = OrchestratorToolDispatch(operations=operations, harness=harness)
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call_raw",
+                name="invoke_ensemble",
+                arguments={"name": "intent_classifier", "input": "refactor this"},
+            )
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.content == raw_result, (
+            "raw_output=True must pass the ensemble result through untouched"
+        )
+
+    @pytest.mark.asyncio
+    async def test_invoke_ensemble_surfaces_summarization_failure_as_tool_error(
+        self,
+    ) -> None:
+        """AS-7: the orchestrator never sees unsummarized results.
+
+        If the summarizer ensemble fails, Tool Dispatch returns a typed
+        ``ToolCallError(kind="summarization_failed")`` rather than
+        exposing the raw dict as a fallback. The raw result still lives
+        in the ensemble's execution artifact (Invariant 9) — only the
+        orchestrator's context is gated.
+        """
+        normalized_result = {
+            "results": {"a": "x"},
+            "synthesis": "raw",
+            "status": "success",
+            "raw_output": False,
+        }
+        operations = _ScriptedOperations(invoke_result=normalized_result)
+        dispatch = OrchestratorToolDispatch(
+            operations=operations,
+            harness=_build_harness(raises=ValueError("summarizer missing")),
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call_fail",
+                name="invoke_ensemble",
+                arguments={"name": "anything", "input": "x"},
+            )
+        )
+
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "summarization_failed"
+        assert "summarizer missing" in result.reason
 
     @pytest.mark.asyncio
     async def test_invoke_ensemble_returns_error_when_name_not_in_library(
@@ -255,7 +381,9 @@ class TestInvokeEnsemble:
         operations = _ScriptedOperations(
             invoke_raises=ValueError("Ensemble does not exist: does-not-exist")
         )
-        dispatch = OrchestratorToolDispatch(operations=operations)
+        dispatch = OrchestratorToolDispatch(
+            operations=operations, harness=_build_harness()
+        )
 
         result = await dispatch.dispatch(
             InternalToolCall(
@@ -275,7 +403,9 @@ class TestInvokeEnsemble:
         """Input validation — missing or empty ``name`` is a typed error
         surfaced without calling the handler."""
         operations = _ScriptedOperations()  # invoke would return {} if called
-        dispatch = OrchestratorToolDispatch(operations=operations)
+        dispatch = OrchestratorToolDispatch(
+            operations=operations, harness=_build_harness()
+        )
 
         result = await dispatch.dispatch(
             InternalToolCall(id="call_9", name="invoke_ensemble", arguments={})

@@ -28,8 +28,23 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     OrchestratorToolDispatch,
     ToolCallSuccess,
 )
+from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.services.orchestra_service import OrchestraService
+
+
+def _make_dispatch(service: OrchestraService) -> OrchestratorToolDispatch:
+    """Construct Tool Dispatch with a real Harness pointed at the test library.
+
+    The ``analysis`` fixture ensemble is flagged ``raw_output: true`` so the
+    Harness takes the pass-through branch without requiring a summarizer
+    ensemble in the library. The Tool Dispatch → Harness → Ensemble Engine
+    summarization path is covered separately by the Group 5 boundary test.
+    """
+    harness = ResultSummarizerHarness(
+        invoker=service, summarizer_name="agentic-result-summarizer"
+    )
+    return OrchestratorToolDispatch(operations=service, harness=harness)
 
 
 def _write_local_library(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -69,6 +84,7 @@ def _write_local_library(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Pat
             {
                 "name": "analysis",
                 "description": "Analyze input with a mock model.",
+                "raw_output": True,
                 "agents": [
                     {
                         "name": "analyst",
@@ -92,7 +108,7 @@ class TestInvokeEnsembleReachesEnsembleEngine:
         project_dir = _write_local_library(tmp_path, monkeypatch)
         config_manager = ConfigurationManager(project_dir=project_dir, provision=False)
         service = OrchestraService(config_manager=config_manager)
-        dispatch = OrchestratorToolDispatch(operations=service)
+        dispatch = _make_dispatch(service)
 
         result = await dispatch.dispatch(
             InternalToolCall(
@@ -132,7 +148,7 @@ class TestInvokeEnsembleReachesEnsembleEngine:
         project_dir = _write_local_library(tmp_path, monkeypatch)
         config_manager = ConfigurationManager(project_dir=project_dir, provision=False)
         service = OrchestraService(config_manager=config_manager)
-        dispatch = OrchestratorToolDispatch(operations=service)
+        dispatch = _make_dispatch(service)
 
         result = await dispatch.dispatch(
             InternalToolCall(
@@ -157,7 +173,7 @@ class TestListEnsemblesReachesLibrary:
         project_dir = _write_local_library(tmp_path, monkeypatch)
         config_manager = ConfigurationManager(project_dir=project_dir, provision=False)
         service = OrchestraService(config_manager=config_manager)
-        dispatch = OrchestratorToolDispatch(operations=service)
+        dispatch = _make_dispatch(service)
 
         result = await dispatch.dispatch(
             InternalToolCall(id="call_list", name="list_ensembles", arguments={})

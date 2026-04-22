@@ -37,6 +37,7 @@ DEFAULT_PLEXUS_ENABLED = False
 DEFAULT_ALLOW_BUDGET_OVERRIDE = True
 DEFAULT_MAX_TURN_LIMIT = 1_000
 DEFAULT_MAX_TOKEN_LIMIT = 50_000_000
+DEFAULT_SUMMARIZER_ENSEMBLE = "agentic-result-summarizer"
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,7 @@ class OrchestratorConfig:
     plexus_enabled: bool
     override_bounds: OverrideBounds
     allowed_profiles: tuple[str, ...]
+    summarizer_ensemble: str
 
 
 class OrchestratorConfigResolver:
@@ -91,6 +93,7 @@ class OrchestratorConfigResolver:
         autonomy = _as_mapping(raw.get("autonomy"))
         plexus = _as_mapping(raw.get("plexus"))
         overrides = _as_mapping(raw.get("overrides"))
+        summarizer = _as_mapping(raw.get("summarizer"))
 
         model_profile = str(orchestrator.get("model_profile", DEFAULT_MODEL_PROFILE))
         allowed_profiles = _resolve_allowed_profiles(
@@ -119,6 +122,9 @@ class OrchestratorConfigResolver:
                 ),
             ),
             allowed_profiles=allowed_profiles,
+            summarizer_ensemble=str(
+                summarizer.get("ensemble", DEFAULT_SUMMARIZER_ENSEMBLE)
+            ),
         )
 
     def resolve_validated(self) -> OrchestratorConfig:
