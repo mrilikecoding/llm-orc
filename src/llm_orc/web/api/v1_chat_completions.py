@@ -37,6 +37,7 @@ from llm_orc.agentic.orchestrator_runtime import (
     OrchestratorRuntime,
 )
 from llm_orc.agentic.orchestrator_tool_dispatch import OrchestratorToolDispatch
+from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
 from llm_orc.agentic.session_registry import ChatMessage, SessionRegistry
 from llm_orc.agentic.session_start import SessionContext, SessionStartCache
 from llm_orc.core.auth.authentication import CredentialStorage
@@ -71,13 +72,21 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
     """Return the process-scoped Tool Dispatch.
 
     Wraps :class:`OrchestraService` so the orchestrator's tool surface
-    is a thin adapter on the existing ensemble-operations facade.
+    is a thin adapter on the existing ensemble-operations facade. The
+    Result Summarizer Harness is constructed with the configured
+    summarizer ensemble name and the same ``OrchestraService`` (which
+    satisfies the ``SummarizerInvoker`` Protocol structurally).
     Tests override this factory to inject a stub dispatcher.
     """
     global _SHARED_TOOL_DISPATCH
     if _SHARED_TOOL_DISPATCH is None:
+        service = get_orchestra_service()
+        config = get_orchestrator_config_resolver().resolve()
+        harness = ResultSummarizerHarness(
+            invoker=service, summarizer_name=config.summarizer_ensemble
+        )
         _SHARED_TOOL_DISPATCH = OrchestratorToolDispatch(
-            operations=get_orchestra_service()
+            operations=service, harness=harness
         )
     return _SHARED_TOOL_DISPATCH
 

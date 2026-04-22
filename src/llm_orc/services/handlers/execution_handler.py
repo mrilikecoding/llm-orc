@@ -98,6 +98,7 @@ class ExecutionHandler:
             "results": result.get("results", {}),
             "synthesis": result.get("synthesis"),
             "status": status,
+            "raw_output": config.raw_output,
         }
 
     async def execute_streaming(

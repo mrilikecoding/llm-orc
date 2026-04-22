@@ -135,6 +135,7 @@ def _default_orchestrator_config() -> OrchestratorConfig:
             max_token_limit=100_000,
         ),
         allowed_profiles=("test-profile",),
+        summarizer_ensemble="agentic-result-summarizer",
     )
 
 

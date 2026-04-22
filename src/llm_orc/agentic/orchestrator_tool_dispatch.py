@@ -2,14 +2,22 @@
 
 Per ``docs/agentic-serving/system-design.md`` §Orchestrator Tool
 Dispatch (L2) and §Integration Contracts (Orchestrator Runtime →
-Orchestrator Tool Dispatch). The Runtime calls ``dispatch(call)`` with
-an ``InternalToolCall``; this module routes by name through the closed
+Orchestrator Tool Dispatch, Orchestrator Tool Dispatch → Result
+Summarizer Harness). The Runtime calls ``dispatch(call)`` with an
+``InternalToolCall``; this module routes by name through the closed
 set or returns a typed tool error for names outside the set.
 
 The closed-set property is structurally enforced: the five tool names
 live in ``TOOL_NAMES`` and correspond to five async methods on this
 class. FC-5 checks the count of public async methods whose names are
 in ``TOOL_NAMES`` — exactly five.
+
+Per system design Amendment #3, Tool Dispatch also interposes the
+Result Summarizer Harness on ``invoke_ensemble``'s return path.
+Unsummarized ensemble results never reach the Orchestrator Runtime
+unless the invoked ensemble's ``raw_output`` flag is set (ADR-004
+escape hatch). The Runtime is unaware of the Harness — summarization
+is a Tool-Dispatch-side concern (FC-4, FC-8).
 
 WP-C wires ``invoke_ensemble`` and ``list_ensembles`` by delegating to
 the project's existing ``OrchestraService`` (invoke + read_ensembles).
@@ -26,6 +34,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
+
+from llm_orc.agentic.result_summarizer_harness import (
+    RawOutputPassthrough,
+    ResultSummarizerHarness,
+    SummarizationFailure,
+    SummarizationSuccess,
+)
 
 TOOL_NAMES: frozenset[str] = frozenset(
     {
@@ -44,6 +59,7 @@ ToolErrorKind = Literal[
     "not_yet_wired",
     "invocation_failed",
     "invalid_arguments",
+    "summarization_failed",
 ]
 
 
@@ -104,8 +120,14 @@ class EnsembleOperations(Protocol):
 class OrchestratorToolDispatch:
     """Closed five-tool dispatch surface (ADR-003, FC-5)."""
 
-    def __init__(self, *, operations: EnsembleOperations) -> None:
+    def __init__(
+        self,
+        *,
+        operations: EnsembleOperations,
+        harness: ResultSummarizerHarness,
+    ) -> None:
         self._operations = operations
+        self._harness = harness
 
     async def dispatch(self, call: InternalToolCall) -> ToolCallResult:
         """Route a tool call by name through the closed set.
@@ -140,7 +162,14 @@ class OrchestratorToolDispatch:
     async def invoke_ensemble(
         self, id_: str, arguments: dict[str, Any]
     ) -> ToolCallResult:
-        """Resolve an ensemble by name and execute via ``OrchestraService.invoke``."""
+        """Resolve an ensemble by name, execute, then interpose the Harness.
+
+        Per Amendment #3: on every successful invocation, Tool Dispatch
+        calls :class:`ResultSummarizerHarness` with the raw result and
+        the invoked ensemble's ``raw_output`` flag. The Runtime never
+        sees unsummarized output unless the ensemble explicitly opts
+        into the ADR-004 escape hatch.
+        """
         name = arguments.get("name")
         input_data = arguments.get("input", "")
         if not isinstance(name, str) or not name:
@@ -169,7 +198,27 @@ class OrchestratorToolDispatch:
                 kind="invocation_failed",
                 reason=str(exc),
             )
-        return ToolCallSuccess(id=id_, name="invoke_ensemble", content=result)
+
+        raw_output = bool(result.get("raw_output", False))
+        summarization = await self._harness.summarize(result, raw_output=raw_output)
+        match summarization:
+            case SummarizationSuccess(summary=summary):
+                return ToolCallSuccess(
+                    id=id_,
+                    name="invoke_ensemble",
+                    content={"summary": summary},
+                )
+            case RawOutputPassthrough(content=passthrough):
+                return ToolCallSuccess(
+                    id=id_, name="invoke_ensemble", content=passthrough
+                )
+            case SummarizationFailure(reason=reason):
+                return ToolCallError(
+                    id=id_,
+                    name="invoke_ensemble",
+                    kind="summarization_failed",
+                    reason=reason,
+                )
 
     async def compose_ensemble(
         self, id_: str, arguments: dict[str, Any]
