@@ -28,11 +28,13 @@ from llm_orc.agentic.orchestrator_config import (
     OrchestratorConfig,
     OverrideBounds,
 )
-from llm_orc.agentic.orchestrator_runtime import OrchestratorLLM
+from llm_orc.agentic.orchestrator_runtime import OrchestratorLLM, ToolDispatcher
 from llm_orc.agentic.orchestrator_tool_dispatch import (
     InternalToolCall,
+    OrchestratorToolDispatch,
     ToolCallResult,
 )
+from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
 from llm_orc.agentic.session_registry import SessionIdentity, SessionRegistry
 from llm_orc.agentic.session_start import (
     PromptFragment,
@@ -181,7 +183,7 @@ def _build_client(
     registry: SessionRegistry | None = None,
     session_start_spy: (Callable[[SessionContext], list[PromptFragment]] | None) = None,
     llm: _ScriptedLLM | None = None,
-    tool_dispatch: _StubToolDispatch | None = None,
+    tool_dispatch: ToolDispatcher | None = None,
     config: OrchestratorConfig | None = None,
 ) -> tuple[TestClient, SessionRegistry, SessionStartCache]:
     """Wire a TestClient with isolated Registry, cache, LLM, and dispatch.
@@ -1086,3 +1088,208 @@ class TestOrchestratorEndToEnd:
         ]
         assert len(completions) == 1
         assert frames[-1] == {"__done__": True}
+
+
+class _StubEnsembleOperations:
+    """Stub ``EnsembleOperations`` + ``SummarizerInvoker``.
+
+    Both Protocols share the ``async def invoke(arguments) -> dict`` shape.
+    A single stub satisfies both so the real Tool Dispatch and Harness wire
+    up against the same object — tests inspect ``calls`` to assert whether
+    the summarizer ran or was skipped.
+    """
+
+    def __init__(self, results_by_ensemble: dict[str, dict[str, Any]]) -> None:
+        self._results = dict(results_by_ensemble)
+        self.calls: list[dict[str, Any]] = []
+
+    async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append(arguments)
+        name = arguments.get("ensemble_name")
+        if not isinstance(name, str) or name not in self._results:
+            raise ValueError(f"ensemble '{name}' not in stub library")
+        return self._results[name]
+
+    async def read_ensembles(self) -> list[dict[str, Any]]:
+        return []
+
+
+class TestRawOutputEscapeHatchAcceptance:
+    """Acceptance test for ``scenarios.md`` §Raw-output escape hatch.
+
+    Wires a real :class:`OrchestratorToolDispatch` + real
+    :class:`ResultSummarizerHarness` over a stub ``EnsembleOperations``,
+    then exercises the scenario through ``/v1/chat/completions``:
+
+        Given an ensemble configured with the raw-output escape-hatch
+        flag (per ADR-004)
+        When the Orchestrator Agent calls ``invoke_ensemble`` on that
+        ensemble
+        Then the raw result is passed directly into the orchestrator's
+        context without invoking the summarizer, and the behavior is
+        opt-in — not a default.
+
+    The test sits at the Serving Layer boundary (real request → real
+    Runtime → real Tool Dispatch → real Harness → stubbed ensemble
+    operations). It proves the escape hatch is observable end-to-end,
+    not just inside the Harness's unit tests. Complement to the FC-8
+    static check: FC-8 proves the summarize path can't be bypassed
+    structurally; this test proves the documented opt-in path is wired
+    through the real Serving Layer.
+    """
+
+    def test_raw_output_flag_passes_raw_dict_to_orchestrator_context(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        raw_result = {
+            "results": {"analyst": {"response": "traffic spiked at 03:14 UTC"}},
+            "synthesis": None,
+            "status": "success",
+            "raw_output": True,
+        }
+        operations = _StubEnsembleOperations({"analysis": raw_result})
+        harness = ResultSummarizerHarness(
+            invoker=operations, summarizer_name="test-summarizer"
+        )
+        dispatch = OrchestratorToolDispatch(operations=operations, harness=harness)
+
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_raw",
+                            name="invoke_ensemble",
+                            arguments_json=(
+                                '{"name": "analysis", "input": "summarize traffic"}'
+                            ),
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=10, completion_tokens=2, total_tokens=12
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                ToolCallingResponse(
+                    content="Spike acknowledged.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=40, completion_tokens=3, total_tokens=43
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=dispatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "watch the log"}],
+            },
+        )
+
+        assert response.status_code == 200
+        # The summarizer ensemble must NOT appear in operations.calls —
+        # raw_output is an opt-in bypass per ADR-004.
+        invoked_ensembles = [c["ensemble_name"] for c in operations.calls]
+        assert invoked_ensembles == ["analysis"], (
+            "Summarizer ensemble was invoked despite raw_output=True — "
+            "ADR-004's escape hatch is not being honored by the wiring."
+        )
+
+        # The second LLM call must see the raw dict as a role: tool
+        # observation — not a {"summary": ...} dict.
+        assert len(llm.calls) == 2
+        second_messages = llm.calls[1][0]
+        tool_msgs = [m for m in second_messages if m.get("role") == "tool"]
+        assert len(tool_msgs) == 1
+        observed = json.loads(tool_msgs[0]["content"])
+        assert observed == raw_result, (
+            f"Orchestrator observation is not the raw ensemble dict. "
+            f"Expected raw pass-through; got {observed!r}."
+        )
+
+    def test_raw_output_false_default_routes_through_summarizer(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The opt-in flag's negation: without raw_output, summarize runs.
+
+        Closes the "is this behavior actually opt-in?" question — the
+        scenario says "the behavior is opt-in — not a default". Same
+        wiring, same raw dict shape minus the flag, different path.
+        """
+        raw_result = {
+            "results": {"analyst": {"response": "traffic spiked at 03:14 UTC"}},
+            "synthesis": None,
+            "status": "success",
+        }
+        summary_result = {
+            "results": {"summarizer": {"response": "Traffic spike at 03:14."}},
+            "synthesis": None,
+            "status": "success",
+        }
+        operations = _StubEnsembleOperations(
+            {"analysis": raw_result, "test-summarizer": summary_result}
+        )
+        harness = ResultSummarizerHarness(
+            invoker=operations, summarizer_name="test-summarizer"
+        )
+        dispatch = OrchestratorToolDispatch(operations=operations, harness=harness)
+
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_sum",
+                            name="invoke_ensemble",
+                            arguments_json=(
+                                '{"name": "analysis", "input": "summarize traffic"}'
+                            ),
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=10, completion_tokens=2, total_tokens=12
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                ToolCallingResponse(
+                    content="ok",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=20, completion_tokens=1, total_tokens=21
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=dispatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "watch the log"}],
+            },
+        )
+
+        assert response.status_code == 200
+        invoked_ensembles = [c["ensemble_name"] for c in operations.calls]
+        assert invoked_ensembles == ["analysis", "test-summarizer"], (
+            "Summarizer did not run for a raw_output=False ensemble — "
+            "AS-7's default must be summarize-always."
+        )
+
+        second_messages = llm.calls[1][0]
+        tool_msgs = [m for m in second_messages if m.get("role") == "tool"]
+        observed = json.loads(tool_msgs[0]["content"])
+        assert observed == {"summary": "Traffic spike at 03:14."}, (
+            f"Orchestrator observation is not a summary payload. "
+            f"Expected summary; got {observed!r}."
+        )
