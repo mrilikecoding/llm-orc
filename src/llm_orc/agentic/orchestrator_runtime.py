@@ -188,6 +188,8 @@ class OrchestratorRuntime:
                     arguments=_safe_parse_arguments(tool_call.arguments_json),
                 )
                 result = await self._tool_dispatch.dispatch(parsed)
+                for event in result.events:
+                    yield event
                 yield InternalToolCallResult(
                     id=result.id, summary=_tool_result_summary(result)
                 )
