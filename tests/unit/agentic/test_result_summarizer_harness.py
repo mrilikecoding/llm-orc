@@ -121,7 +121,7 @@ async def test_summarize_returns_failure_when_synthesis_field_missing() -> None:
 
     assert isinstance(result, SummarizationFailure)
     assert "agentic-result-summarizer" in result.reason
-    assert "no synthesis text" in result.reason
+    assert "no summary text" in result.reason
 
 
 @pytest.mark.asyncio
@@ -139,6 +139,75 @@ async def test_summarize_returns_failure_when_synthesis_is_empty_string() -> Non
 @pytest.mark.asyncio
 async def test_summarize_returns_failure_when_synthesis_is_not_string() -> None:
     invoker = _StubInvoker(returns={"synthesis": {"nested": "dict"}, "results": {}})
+    harness = ResultSummarizerHarness(
+        invoker=invoker, summarizer_name="agentic-result-summarizer"
+    )
+
+    result = await harness.summarize({"results": {}}, raw_output=False)
+
+    assert isinstance(result, SummarizationFailure)
+
+
+@pytest.mark.asyncio
+async def test_summarize_uses_single_agent_response_when_synthesis_absent() -> None:
+    """Default summarizer is a single-agent ensemble; synthesis is None.
+
+    llm-orc's dependency-based execution model never populates synthesis
+    (see core/execution/results_processor.finalize_result). A single-agent
+    summarizer ensemble puts its output in results[agent_name]["response"].
+    """
+    invoker = _StubInvoker(
+        returns={
+            "synthesis": None,
+            "results": {"summarizer": {"response": "A short summary."}},
+        }
+    )
+    harness = ResultSummarizerHarness(
+        invoker=invoker, summarizer_name="agentic-result-summarizer"
+    )
+
+    result = await harness.summarize({"results": {}}, raw_output=False)
+
+    assert isinstance(result, SummarizationSuccess)
+    assert result.summary == "A short summary."
+
+
+@pytest.mark.asyncio
+async def test_summarize_prefers_synthesis_over_single_agent_response() -> None:
+    """When synthesis is populated, it wins over the results fallback."""
+    invoker = _StubInvoker(
+        returns={
+            "synthesis": "synthesized",
+            "results": {"summarizer": {"response": "agent response"}},
+        }
+    )
+    harness = ResultSummarizerHarness(
+        invoker=invoker, summarizer_name="agentic-result-summarizer"
+    )
+
+    result = await harness.summarize({"results": {}}, raw_output=False)
+
+    assert isinstance(result, SummarizationSuccess)
+    assert result.summary == "synthesized"
+
+
+@pytest.mark.asyncio
+async def test_summarize_fallback_requires_exactly_one_agent() -> None:
+    """Multi-agent results without synthesis → SummarizationFailure.
+
+    The fallback is deliberately narrow: exactly one agent. Multi-agent
+    ensembles must populate synthesis to disambiguate which agent's
+    response carries the summary.
+    """
+    invoker = _StubInvoker(
+        returns={
+            "synthesis": None,
+            "results": {
+                "agent_a": {"response": "first"},
+                "agent_b": {"response": "second"},
+            },
+        }
+    )
     harness = ResultSummarizerHarness(
         invoker=invoker, summarizer_name="agentic-result-summarizer"
     )
