@@ -1,22 +1,21 @@
 """Static inspection tests for Fitness Criterion FC-4.
 
-Per ``docs/agentic-serving/system-design.md`` §Fitness Criteria, FC-4:
+Per ``docs/agentic-serving/system-design.md`` §Fitness Criteria, FC-4
+(as amended by Design Amendment #3):
 
-    Orchestrator Runtime imports only Budget Controller, Orchestrator
-    Tool Dispatch, and Result Summarizer Harness — no Plexus, no
-    config, no Autonomy, no Calibration | Static import check | Exact
-    match.
+    Orchestrator Runtime imports only Budget Controller and
+    Orchestrator Tool Dispatch — no Result Summarizer Harness, no
+    Plexus, no config, no Autonomy, no Calibration. Result Summarizer
+    Harness is interposed on the ``invoke_ensemble`` return path by
+    Orchestrator Tool Dispatch (Amendment #3) | Static import check |
+    Exact match.
 
 The Runtime's import surface is the structural enforcement of
 ADR-003's closed-set property at the reasoning layer: if the Runtime
-can only reach Budget, Tool Dispatch, and (later) the Summarizer
-Harness, no Plexus / Autonomy / Calibration code can leak into the
-orchestrator LLM's mental model.
-
-Result Summarizer Harness does not yet exist (WP-D). This test
-verifies the negative invariant that matters today: the Runtime does
-not import modules that would violate FC-4 if they existed in its
-import graph.
+can only reach Budget and Tool Dispatch, no summarizer, Plexus,
+Autonomy, or Calibration code can leak into the orchestrator LLM's
+mental model. Summarization is a Tool-Dispatch-side concern — the
+Runtime remains unaware that results are summarized at all.
 
 Accepted (read: contract types only, no behavioral dependencies):
 
@@ -30,6 +29,11 @@ Accepted (read: contract types only, no behavioral dependencies):
 
 Forbidden:
 
+- result_summarizer_harness — per Amendment #3 the Harness is
+  interposed by Tool Dispatch on ``invoke_ensemble``'s return path.
+  The Runtime is unaware of summarization; importing the Harness from
+  Runtime would re-couple the two and defeat AS-7's structural
+  enforcement.
 - orchestrator_config — L3 config; Session state resolution belongs
   in Serving Layer, not Runtime.
 - session_registry — L3 registry; Runtime gets state through
@@ -60,6 +64,8 @@ _ALLOWED_AGENTIC_IMPORTS = frozenset(
 
 _FORBIDDEN_AGENTIC_IMPORTS = frozenset(
     {
+        # Summarization is a Tool-Dispatch-side concern per Amendment #3.
+        "llm_orc.agentic.result_summarizer_harness",
         "llm_orc.agentic.orchestrator_config",
         "llm_orc.agentic.session_registry",
         # The three modules below do not exist yet; naming them here
