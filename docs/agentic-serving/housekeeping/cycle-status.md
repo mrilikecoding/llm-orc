@@ -1,7 +1,7 @@
 # Active RDD Cycle: Agentic Serving
 
 **Started:** 2026-03-20
-**Current phase:** BUILD (in progress — WP-A, WP-B, WP-C complete; WP-D / WP-E / WP-I next)
+**Current phase:** BUILD (in progress — WP-A, WP-B, WP-C complete; WP-D Groups 0-4 complete; WP-D Groups 5-6 next)
 **Artifact base:** `docs/agentic-serving/`
 **Essay:** `../essays/001-agentic-serving-architecture.md`
 
@@ -14,7 +14,7 @@
 | MODEL | ✅ Complete | `../domain-model.md` | Plexus should be optional (AS-8) -- design for stateless, benefit from Plexus when available. Enrichment pipeline maturity is an open question that determines whether the learning-system value proposition is real. Two-tier architecture: stateless orchestrator as baseline, Plexus as upgrade to learning system. |
 | DECIDE | ✅ Complete | `../decisions/adr-001..011-*.md`, `../scenarios.md`, `../interaction-specs.md` | Plexus's more compelling frame is intra-session multi-agent substrate via consumer-registered lens grammars, not only cross-session memory. Per-ensemble lens registration would make the orchestrator's access polyglot. AS-4 preserved (lens is query-surface grammar applied during enrichment). Reframe is forward signal, not a current-cycle driver -- Plexus's lens design is in-progress. Captured as OQ #8 and essay reflection; folds back in a later cycle. |
 | ARCHITECT | ✅ Complete | `../system-design.md`, `../roadmap.md`, `../ORIENTATION.md` (regenerated) | Retrofit mode: ensemble engine stays Layer 3 unchanged; 12 modules across 4 layers plus typed `resolve_session_start_context` function in Serving Layer; 13 fitness criteria. Client tool surface: Option C (turn-boundary delegation) is the commitment, scenario-gated — WP-F does not start until stress scenarios exercise the C/D distinction. Context Injection demoted from module to typed function (ADR-009 reservation is satisfied by signature + call site, not by a module). Consolidations of Orchestrator Configuration into Serving Layer and Calibration Gate into Runtime rejected: the former would invert layering; the latter would break FC-4. Roadmap has 10 WPs, 3 classified transition states; TS-1 (stateless orchestrator serving OpenCode) is the vision-named intermediate target. |
-| BUILD | ▶ In Progress | WP-A complete (`8a0f5d6`, `0980323`); WP-B complete — Groups 1-6 (`188b93f`, `111a026`, `59b9053`, `b1e3c54`, `86ed0be`, `1231874`, `3db8eb3`, WP-B Group 6); WP-C complete — Groups 1-5 end-to-end against Ollama (`790f596`, `927f513`, `07032a9`, `b4e6f43`, `90df826`, `061312e`, `e48c7b8`, `7339eac`, `8227dc0`, `65b1334`, `bb7b466`, `22deeaf`, `bab8e1d`, `12c19ac`, FC-4+boundary this change) — see roadmap Completed Work Log | WP-C closed against real Ollama: ReAct loop over tool-calling LLM; Budget enforcement is control-plane per AS-3; Tool Dispatch closed-set is structurally enforced via match-case + FC-4 static test; multi-provider support reuses ModelInterface instead of parallel adapter; HTTP read timeout tuned for local tool-calling. |
+| BUILD | ▶ In Progress | WP-A complete (`8a0f5d6`, `0980323`); WP-B complete — Groups 1-6 (`188b93f`, `111a026`, `59b9053`, `b1e3c54`, `86ed0be`, `1231874`, `3db8eb3`, WP-B Group 6); WP-C complete — Groups 1-5 end-to-end against Ollama (`790f596`, `927f513`, `07032a9`, `b4e6f43`, `90df826`, `061312e`, `e48c7b8`, `7339eac`, `8227dc0`, `65b1334`, `bb7b466`, `22deeaf`, `bab8e1d`, `12c19ac`, FC-4+boundary) — see roadmap Completed Work Log; WP-D Groups 0-4 complete (`a15aa30`, `326a36f`, `188f65f`, `9a0fea2`, `3e7c897`) — structural change done; Groups 5-6 next | WP-C closed against real Ollama. WP-D's structural change (Design Amendment 3 + RSH module + raw_output flag + Tool Dispatch interposition + default summarizer primitive) is complete across five commits on `agentic-serving`. Remaining: Group 5 (FC-4 test amendment, FC-8 static check, raw-output acceptance scenario, Tool Dispatch → RSH boundary integration, Tier 1 stewardship) and Group 6 (field guide + ORIENTATION + cycle-status close + roadmap archival). |
 | PLAY | ☐ Optional | -- | -- |
 | SYNTHESIZE | ☐ Optional | -- | -- |
 
@@ -146,7 +146,27 @@
 
 ## Context for Resumption
 
-**WP-D resumption pointer (2026-04-21, after WP-C close).** WP-C is complete on branch `agentic-serving`: three new modules (Budget Controller, Orchestrator Tool Dispatch, Orchestrator Runtime) + Serving Layer body-swap + extended `ModelInterface.generate_with_tools` + `OpenAICompatibleModel` tool-calling implementation + `llm-orc serve` command + HTTP timeout config wiring + FC-4 static test + Tool Dispatch → Ensemble Engine boundary integration. 2197 tests passing, 91.41% coverage, lint clean. Verified end-to-end against local Ollama with `mistral-nemo:12b` in two live runs.
+**WP-D Groups 5-6 resumption pointer (2026-04-21, after WP-D Groups 0-4).** WP-D's structural change is complete on `agentic-serving` across five commits:
+
+- `a15aa30` — docs: Design Amendment #3 to `system-design.md` (Runtime → RSH edge moved to Tool Dispatch → RSH; FC-4 amended; Dependency Graph + Responsibility + Test Architecture rows updated).
+- `326a36f` — feat: `src/llm_orc/agentic/result_summarizer_harness.py` with `SummarizerInvoker` Protocol, typed `SummarizationSuccess | RawOutputPassthrough | SummarizationFailure` result variants, and seven unit tests.
+- `188f65f` — feat: `EnsembleConfig.raw_output: bool = False` field + YAML loader wiring. ADR-004 escape hatch.
+- `9a0fea2` — feat: Tool Dispatch interposes the Harness on `invoke_ensemble`'s return. New `ToolErrorKind` "summarization_failed". `OrchestratorConfig.summarizer_ensemble` field. Serving Layer builds the Harness. Three new unit scenarios (summarize path, raw-output pass-through, failure → typed tool error).
+- `3e7c897` — feat: default `agentic-result-summarizer` ensemble YAML + `summarizer` model profile. Harness extraction gains a single-agent `results[agent][response]` fallback (synthesis is unpopulated in llm-orc's dependency-based execution model).
+
+State at pause: **2213 tests passing, 91.44% coverage, lint clean.** Tier 1 stewardship scan clean — no drift, no module responsibility violations, dependency graph conforms to Amendment #3, FC-4 holds by construction.
+
+**Groups 5-6 remain:**
+
+- **Group 5** — (a) update `test_fc4_runtime_import_surface.py` docstring/allow list to reflect Amendment #3 (RSH moved off the Runtime allow list; still on the positive-import allow list of Tool Dispatch, not Runtime; RSH should be explicitly named forbidden-for-Runtime); (b) new FC-8 static test asserting no path from `EnsembleExecutor` to the Runtime's `_tool_result_message` bypasses the Harness; (c) acceptance scenario test for "Raw-output escape hatch is explicit" at the Serving Layer (end-to-end through real Tool Dispatch with a stubbed runtime); (d) Tool Dispatch → RSH boundary integration test that invokes a real `agentic-result-summarizer`-like ensemble via a `mock` model profile so the summarize path is covered end-to-end (the existing `test_tool_dispatch_ensemble_engine.py` tests `raw_output=True` pass-through only); (e) Tier 1 stewardship re-check at Group 5 close before Group 6.
+
+- **Group 6** — (a) regenerate `docs/agentic-serving/field-guide.md` to include the RSH module mapping; (b) regenerate `docs/agentic-serving/ORIENTATION.md` reflecting WP-D at BUILD milestone; (c) close out WP-D in this cycle-status file and archive WP-D feed-forward signals; (d) move WP-D to `roadmap.md`'s Completed Work Log; (e) commit reference check and any final Tier 1 pass.
+
+A fresh session picking this up should read this file (§Phase Status + this resumption pointer), skim the five commit messages (`git log a15aa30^..3e7c897`), and note that `orchestrator_tool_dispatch.py` and `result_summarizer_harness.py` are the two modules that changed most heavily in Groups 0-4. System design is current at Amendment #3; the roadmap's active section still shows WP-D as current until Group 6 archives it.
+
+---
+
+**WP-D resumption pointer (2026-04-21, after WP-C close — HISTORICAL).** WP-C is complete on branch `agentic-serving`: three new modules (Budget Controller, Orchestrator Tool Dispatch, Orchestrator Runtime) + Serving Layer body-swap + extended `ModelInterface.generate_with_tools` + `OpenAICompatibleModel` tool-calling implementation + `llm-orc serve` command + HTTP timeout config wiring + FC-4 static test + Tool Dispatch → Ensemble Engine boundary integration. 2197 tests passing, 91.41% coverage, lint clean. Verified end-to-end against local Ollama with `mistral-nemo:12b` in two live runs.
 
 A fresh session should pick up at **WP-D: Result Summarizer Harness** — interpose a summarizer on `OrchestratorToolDispatch.invoke_ensemble`'s return path so unsummarized ensemble results can never reach the Runtime's context. The current `_tool_result_message` in `orchestrator_runtime.py` JSON-dumps the tool content — a trivial placeholder. WP-D replaces the summarization path with a dedicated Harness (owned by Tool Dispatch, not Runtime; see FF #73) interposed transparently on the `invoke_ensemble` return leg. Closes FC-8 fully (the static no-bypass check can only pass once the Harness exists). Honors AS-7's correctness posture.
 
