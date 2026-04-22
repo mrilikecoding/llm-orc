@@ -53,6 +53,18 @@ class TestEnsembleConfig:
         assert isinstance(synthesizer, LlmAgentConfig)
         assert synthesizer.output_format == "json"
 
+    def test_raw_output_defaults_to_false(self) -> None:
+        """ADR-004 contract: summarization is the default; raw_output is opt-in."""
+        config = EnsembleConfig(name="any", description="any")
+
+        assert config.raw_output is False
+
+    def test_raw_output_is_explicitly_settable(self) -> None:
+        """Escape hatch is honored when the author flags it on construction."""
+        config = EnsembleConfig(name="classifier", description="any", raw_output=True)
+
+        assert config.raw_output is True
+
 
 class TestEnsembleLoader:
     """Test ensemble configuration loading."""
@@ -102,6 +114,48 @@ class TestEnsembleLoader:
             )
             assert isinstance(synthesizer, LlmAgentConfig)
             assert synthesizer.output_format == "structured"
+        finally:
+            Path(yaml_path).unlink()
+
+    def test_load_ensemble_reads_raw_output_flag_when_present(self) -> None:
+        """ADR-004: a classifier ensemble that declares raw_output: true is loaded
+        with the flag set, so Tool Dispatch can skip the Result Summarizer."""
+        ensemble_yaml = {
+            "name": "intent_classifier",
+            "description": "Returns a structured intent label",
+            "raw_output": True,
+            "agents": [
+                {"name": "classifier", "model": "haiku", "provider": "anthropic"},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            config = EnsembleLoader().load_from_file(yaml_path)
+            assert config.raw_output is True
+        finally:
+            Path(yaml_path).unlink()
+
+    def test_load_ensemble_defaults_raw_output_to_false_when_absent(self) -> None:
+        """Backward compat: existing ensembles without raw_output keep summarization."""
+        ensemble_yaml = {
+            "name": "existing_ensemble",
+            "description": "Pre-WP-D ensemble without the raw_output key",
+            "agents": [
+                {"name": "agent", "model": "sonnet", "provider": "anthropic"},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            config = EnsembleLoader().load_from_file(yaml_path)
+            assert config.raw_output is False
         finally:
             Path(yaml_path).unlink()
 

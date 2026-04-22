@@ -163,6 +163,11 @@ class EnsembleConfig:
     relative_path: str | None = None  # For hierarchical display
     validation: dict[str, Any] | None = None  # Validation configuration
     test_mode: dict[str, Any] | None = None  # Test mode configuration
+    raw_output: bool = False
+    """ADR-004 escape hatch. When true, the Result Summarizer Harness passes
+    invoke_ensemble results through untouched. Reserved for ensembles whose
+    output is already small and structured (classifiers, single-field lookups).
+    Default is false — summarization is the operator's default contract."""
 
 
 class EnsembleLoader:
@@ -195,6 +200,7 @@ class EnsembleLoader:
             task=data.get("task"),
             validation=data.get("validation"),
             test_mode=data.get("test_mode"),
+            raw_output=bool(data.get("raw_output", False)),
         )
 
         # Validate agent dependencies
