@@ -30,6 +30,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from llm_orc.agentic.autonomy_policy import AutonomyPolicy
 from llm_orc.agentic.budget_controller import BudgetController
 from llm_orc.agentic.orchestrator_chunk import Completion, ContentDelta
 from llm_orc.agentic.orchestrator_runtime import (
@@ -75,18 +76,27 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
     is a thin adapter on the existing ensemble-operations facade. The
     Result Summarizer Harness is constructed with the configured
     summarizer ensemble name and the same ``OrchestraService`` (which
-    satisfies the ``SummarizerInvoker`` Protocol structurally).
-    Tests override this factory to inject a stub dispatcher.
+    satisfies the ``SummarizerInvoker`` Protocol structurally). The
+    AutonomyPolicy reads the operator-configured default Autonomy Level
+    on every decision, so a ``config.yaml`` edit takes effect on the
+    next request without a server restart. Tests override this factory
+    to inject a stub dispatcher.
     """
     global _SHARED_TOOL_DISPATCH
     if _SHARED_TOOL_DISPATCH is None:
         service = get_orchestra_service()
-        config = get_orchestrator_config_resolver().resolve()
+        resolver = get_orchestrator_config_resolver()
+        config = resolver.resolve()
         harness = ResultSummarizerHarness(
             invoker=service, summarizer_name=config.summarizer_ensemble
         )
+        autonomy_policy = AutonomyPolicy(
+            level_provider=lambda: resolver.resolve().autonomy_level
+        )
         _SHARED_TOOL_DISPATCH = OrchestratorToolDispatch(
-            operations=service, harness=harness
+            operations=service,
+            harness=harness,
+            autonomy_policy=autonomy_policy,
         )
     return _SHARED_TOOL_DISPATCH
 

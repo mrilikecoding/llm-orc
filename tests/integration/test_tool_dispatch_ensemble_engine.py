@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from llm_orc.agentic.autonomy_policy import BASELINE_LEVEL, AutonomyPolicy
 from llm_orc.agentic.orchestrator_tool_dispatch import (
     InternalToolCall,
     OrchestratorToolDispatch,
@@ -44,7 +45,10 @@ def _make_dispatch(service: OrchestraService) -> OrchestratorToolDispatch:
     harness = ResultSummarizerHarness(
         invoker=service, summarizer_name="agentic-result-summarizer"
     )
-    return OrchestratorToolDispatch(operations=service, harness=harness)
+    policy = AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL)
+    return OrchestratorToolDispatch(
+        operations=service, harness=harness, autonomy_policy=policy
+    )
 
 
 def _write_local_library(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:

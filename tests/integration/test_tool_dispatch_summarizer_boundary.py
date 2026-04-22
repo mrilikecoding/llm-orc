@@ -33,6 +33,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from llm_orc.agentic.autonomy_policy import BASELINE_LEVEL, AutonomyPolicy
 from llm_orc.agentic.orchestrator_tool_dispatch import (
     InternalToolCall,
     OrchestratorToolDispatch,
@@ -118,7 +119,10 @@ def _write_library_with_summarizer(
 def _make_dispatch(service: OrchestraService) -> OrchestratorToolDispatch:
     """Wire Tool Dispatch with a real Harness pointed at ``test-summarizer``."""
     harness = ResultSummarizerHarness(invoker=service, summarizer_name=_SUMMARIZER_NAME)
-    return OrchestratorToolDispatch(operations=service, harness=harness)
+    policy = AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL)
+    return OrchestratorToolDispatch(
+        operations=service, harness=harness, autonomy_policy=policy
+    )
 
 
 class TestInvokeEnsembleRoutesThroughSummarizer:
@@ -194,7 +198,10 @@ class TestInvokeEnsembleRoutesThroughSummarizer:
         harness = ResultSummarizerHarness(
             invoker=service, summarizer_name="does-not-exist"
         )
-        dispatch = OrchestratorToolDispatch(operations=service, harness=harness)
+        policy = AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL)
+        dispatch = OrchestratorToolDispatch(
+            operations=service, harness=harness, autonomy_policy=policy
+        )
 
         result = await dispatch.dispatch(
             InternalToolCall(

@@ -3,9 +3,10 @@
 Per ``docs/agentic-serving/system-design.md`` §Orchestrator Tool
 Dispatch (L2) and §Integration Contracts (Orchestrator Runtime →
 Orchestrator Tool Dispatch, Orchestrator Tool Dispatch → Result
-Summarizer Harness). The Runtime calls ``dispatch(call)`` with an
-``InternalToolCall``; this module routes by name through the closed
-set or returns a typed tool error for names outside the set.
+Summarizer Harness, Orchestrator Tool Dispatch → Autonomy Policy). The
+Runtime calls ``dispatch(call)`` with an ``InternalToolCall``; this
+module routes by name through the closed set or returns a typed tool
+error for names outside the set.
 
 The closed-set property is structurally enforced: the five tool names
 live in ``TOOL_NAMES`` and correspond to five async methods on this
@@ -18,6 +19,13 @@ Unsummarized ensemble results never reach the Orchestrator Runtime
 unless the invoked ensemble's ``raw_output`` flag is set (ADR-004
 escape hatch). The Runtime is unaware of the Harness — summarization
 is a Tool-Dispatch-side concern (FC-4, FC-8).
+
+WP-E interposes the Autonomy Policy gate between the unknown-tool
+filter and tool routing (FC-11). Unknown tool names short-circuit
+before Autonomy is consulted, so AS-6 closure stays structural. For
+valid tool names the gate decides Allow (optionally with visibility
+events) or Deny (returning a typed ``denied_by_autonomy`` error).
+Decision events ride back on the result via the ``events`` tuple.
 
 WP-C wires ``invoke_ensemble`` and ``list_ensembles`` by delegating to
 the project's existing ``OrchestraService`` (invoke + read_ensembles).
@@ -35,6 +43,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
+from llm_orc.agentic.autonomy_policy import Allow, AutonomyDecision, Deny
 from llm_orc.agentic.orchestrator_chunk import VisibilityEvent
 from llm_orc.agentic.result_summarizer_harness import (
     RawOutputPassthrough,
@@ -61,6 +70,7 @@ ToolErrorKind = Literal[
     "invocation_failed",
     "invalid_arguments",
     "summarization_failed",
+    "denied_by_autonomy",
 ]
 
 
@@ -131,6 +141,20 @@ class EnsembleOperations(Protocol):
     async def read_ensembles(self) -> list[dict[str, Any]]: ...
 
 
+class AutonomyGate(Protocol):
+    """Minimum Autonomy Policy surface Tool Dispatch consults.
+
+    :class:`~llm_orc.agentic.autonomy_policy.AutonomyPolicy` satisfies
+    this structurally. The Protocol lets tests substitute a recording
+    double that scripts a Deny decision — Phase 1 policy code never
+    produces Deny, but the dispatch-side Deny handling must be covered.
+    """
+
+    def decide(
+        self, *, tool_name: str, arguments: dict[str, Any]
+    ) -> AutonomyDecision: ...
+
+
 class OrchestratorToolDispatch:
     """Closed five-tool dispatch surface (ADR-003, FC-5)."""
 
@@ -139,17 +163,59 @@ class OrchestratorToolDispatch:
         *,
         operations: EnsembleOperations,
         harness: ResultSummarizerHarness,
+        autonomy_policy: AutonomyGate,
     ) -> None:
         self._operations = operations
         self._harness = harness
+        self._autonomy_policy = autonomy_policy
 
     async def dispatch(self, call: InternalToolCall) -> ToolCallResult:
-        """Route a tool call by name through the closed set.
+        """Route a tool call through the unknown-tool filter, gate, then routing.
 
-        Match-case makes the five committed tools visible at the
-        dispatch site. A name outside the set falls through to the
-        ``_`` arm and becomes a typed ``unknown_tool`` error — the
-        ReAct loop continues with the error as an observation.
+        Three steps, in order:
+
+        1. **Unknown-tool filter.** Names outside ``TOOL_NAMES`` return a typed
+           ``unknown_tool`` error without consulting the gate — AS-6 closure
+           lives here, not in Autonomy.
+        2. **Autonomy gate.** The policy decides Allow (optionally with
+           visibility events) or Deny. A Deny short-circuits with a typed
+           ``denied_by_autonomy`` error; the tool method is not called.
+        3. **Tool routing.** Match-case dispatches to the five committed
+           methods; decision events attach to the returned result.
+        """
+        if call.name not in TOOL_NAMES:
+            return ToolCallError(
+                id=call.id,
+                name=call.name,
+                kind="unknown_tool",
+                reason=(
+                    f"tool '{call.name}' is not in the orchestrator's "
+                    "committed tool set"
+                ),
+            )
+
+        decision = self._autonomy_policy.decide(
+            tool_name=call.name, arguments=call.arguments
+        )
+        if isinstance(decision, Deny):
+            return ToolCallError(
+                id=call.id,
+                name=call.name,
+                kind="denied_by_autonomy",
+                reason=decision.reason,
+            )
+
+        events = decision.events if isinstance(decision, Allow) else ()
+        return _with_events(await self._route(call), events)
+
+    async def _route(self, call: InternalToolCall) -> ToolCallResult:
+        """Dispatch a committed tool name to its method.
+
+        Match-case makes the five committed tools visible at the dispatch
+        site (FF #66 — chosen over ``getattr`` to keep return-type tracking
+        through mypy). The ``case _`` arm is unreachable because
+        ``dispatch`` filters unknown names above; the assertion guards
+        against a future edit that bypasses the filter.
         """
         match call.name:
             case "invoke_ensemble":
@@ -162,15 +228,9 @@ class OrchestratorToolDispatch:
                 return await self.query_knowledge(call.id, call.arguments)
             case "record_outcome":
                 return await self.record_outcome(call.id, call.arguments)
-            case _:
-                return ToolCallError(
-                    id=call.id,
-                    name=call.name,
-                    kind="unknown_tool",
-                    reason=(
-                        f"tool '{call.name}' is not in the orchestrator's "
-                        "committed tool set"
-                    ),
+            case _:  # pragma: no cover — TOOL_NAMES filter makes this unreachable
+                raise AssertionError(
+                    f"_route received unfiltered tool name: {call.name!r}"
                 )
 
     async def invoke_ensemble(
@@ -277,3 +337,31 @@ class OrchestratorToolDispatch:
             kind="not_yet_wired",
             reason="record_outcome lands in WP-I (Plexus Adapter)",
         )
+
+
+def _with_events(
+    result: ToolCallResult, events: tuple[VisibilityEvent, ...]
+) -> ToolCallResult:
+    """Return a copy of ``result`` carrying ``events``.
+
+    Branches explicitly on the two result variants rather than using
+    :func:`dataclasses.replace` so the union stays type-narrowed through
+    mypy strict. No-op when ``events`` is empty (the Allow-without-events
+    path on every dispatch), keeping the common case allocation-free.
+    """
+    if not events:
+        return result
+    if isinstance(result, ToolCallSuccess):
+        return ToolCallSuccess(
+            id=result.id,
+            name=result.name,
+            content=result.content,
+            events=events,
+        )
+    return ToolCallError(
+        id=result.id,
+        name=result.name,
+        kind=result.kind,
+        reason=result.reason,
+        events=events,
+    )

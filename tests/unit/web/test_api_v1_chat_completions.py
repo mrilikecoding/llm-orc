@@ -23,6 +23,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from llm_orc.agentic.autonomy_policy import BASELINE_LEVEL, AutonomyPolicy
 from llm_orc.agentic.orchestrator_config import (
     BudgetDefaults,
     OrchestratorConfig,
@@ -1151,7 +1152,11 @@ class TestRawOutputEscapeHatchAcceptance:
         harness = ResultSummarizerHarness(
             invoker=operations, summarizer_name="test-summarizer"
         )
-        dispatch = OrchestratorToolDispatch(operations=operations, harness=harness)
+        dispatch = OrchestratorToolDispatch(
+            operations=operations,
+            harness=harness,
+            autonomy_policy=AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL),
+        )
 
         llm = _ScriptedLLM(
             responses=[
@@ -1238,7 +1243,11 @@ class TestRawOutputEscapeHatchAcceptance:
         harness = ResultSummarizerHarness(
             invoker=operations, summarizer_name="test-summarizer"
         )
-        dispatch = OrchestratorToolDispatch(operations=operations, harness=harness)
+        dispatch = OrchestratorToolDispatch(
+            operations=operations,
+            harness=harness,
+            autonomy_policy=AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL),
+        )
 
         llm = _ScriptedLLM(
             responses=[
