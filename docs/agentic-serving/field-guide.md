@@ -1,7 +1,7 @@
 # Field Guide: Agentic Serving
 
 **Generated:** 2026-04-21
-**Derived from:** `system-design.md` v1.0 + amendment #1, current implementation at WP-C close.
+**Derived from:** `system-design.md` v1.0 + amendments #1–#3, current implementation at WP-D close.
 
 ## How to use this guide
 
@@ -170,9 +170,9 @@ exposes Budget state to the LLM.
 
 ## Module: Orchestrator Runtime
 
-**Implementation state:** Complete for WP-C scope. Conversation Compaction named but not implemented (no WP-C scenario required it). Routing Decision generation materializes at WP-I.
+**Implementation state:** Complete for WP-C / WP-D scope. Conversation Compaction named but not implemented (no WP-C/WP-D scenario required it). Routing Decision generation materializes at WP-I.
 **Code location:** `src/llm_orc/agentic/orchestrator_runtime.py`.
-**Stability:** Settled on the loop shape. `_tool_result_message` is a placeholder until WP-D's Summarizer Harness replaces it.
+**Stability:** Settled. Runtime receives already-summarized `ToolCallResult` values from Tool Dispatch (Amendment #3); summarization is a Tool-Dispatch-side concern the Runtime stays unaware of.
 
 ### Domain concepts in code
 
@@ -191,11 +191,13 @@ exposes Budget state to the LLM.
 
 The Runtime imports only Budget Controller, Tool Dispatch (via
 `ToolDispatcher` Protocol), and neutral contract types — FC-4
-structurally enforced by `test_fc4_runtime_import_surface.py`. This
-preserves the orchestrator LLM's mental model ("I reason, I emit
-tool calls, I observe results"): Session bookkeeping, Plexus
-awareness, Autonomy gating, and Calibration state live on the other
-side of Tool Dispatch.
+structurally enforced by `test_fc4_runtime_import_surface.py`, which
+post-Amendment #3 explicitly forbids `result_summarizer_harness`
+alongside Plexus / Autonomy / Calibration / config / Session
+Registry. This preserves the orchestrator LLM's mental model ("I
+reason, I emit tool calls, I observe results"): Session bookkeeping,
+Plexus awareness, Autonomy gating, Calibration state, and result
+summarization all live on the other side of Tool Dispatch.
 
 Scripted LLM fakes (in tests) satisfy `OrchestratorLLM` structurally
 without subclassing `ModelInterface`; production wiring passes the
@@ -213,23 +215,24 @@ responses across Runtime and `ModelInterface.generate_with_tools`).
 
 ## Module: Orchestrator Tool Dispatch
 
-**Implementation state:** Complete for WP-C wiring (`invoke_ensemble`, `list_ensembles`). Three tools return typed `not_yet_wired` errors pending WP-G / WP-I.
+**Implementation state:** Complete for WP-C + WP-D wiring. `invoke_ensemble` interposes the Result Summarizer Harness on every return (Amendment #3). `list_ensembles` delegates to `OrchestraService.read_ensembles`. `compose_ensemble` / `query_knowledge` / `record_outcome` return typed `not_yet_wired` errors pending WP-G / WP-I.
 **Code location:** `src/llm_orc/agentic/orchestrator_tool_dispatch.py`.
-**Stability:** Settled on the closed-set structure. Three handler bodies change when WP-G / WP-I wires them.
+**Stability:** Settled on the closed-set structure and the Harness interposition. Three handler bodies change when WP-G / WP-I wires them.
 
 ### Domain concepts in code
 
 | Concept | Code manifestation | Location |
 |---------|-------------------|----------|
-| Orchestrator Tool | Five methods named after `TOOL_NAMES` | `orchestrator_tool_dispatch.py:137-199` |
-| TOOL_NAMES (closed set) | `frozenset` | `orchestrator_tool_dispatch.py:28` |
-| Dispatch-by-name | `dispatch` method with `match-case` over the five names | `orchestrator_tool_dispatch.py:106` |
-| Allowlist rejection | `case _:` arm → `ToolCallError(kind="unknown_tool")` | `orchestrator_tool_dispatch.py:125` |
-| InternalToolCall | `InternalToolCall` dataclass | `orchestrator_tool_dispatch.py:53` |
-| ToolCallResult (union) | `ToolCallSuccess \| ToolCallError` | `orchestrator_tool_dispatch.py:64-86` |
-| ToolErrorKind | `Literal["unknown_tool", "not_yet_wired", "invocation_failed", "invalid_arguments"]` | `orchestrator_tool_dispatch.py:39` |
-| EnsembleOperations Protocol | narrow facade over `OrchestraService` | `orchestrator_tool_dispatch.py:89` |
-| Dynamic Invocation (action) | `invoke_ensemble` delegates to `operations.invoke` | `orchestrator_tool_dispatch.py:142` |
+| Orchestrator Tool | Five methods named after `TOOL_NAMES` | `orchestrator_tool_dispatch.py:162-265` |
+| TOOL_NAMES (closed set) | `frozenset` | `orchestrator_tool_dispatch.py:45` |
+| Dispatch-by-name | `dispatch` method with `match-case` over the five names | `orchestrator_tool_dispatch.py:132` |
+| Allowlist rejection | `case _:` arm → `ToolCallError(kind="unknown_tool")` | `orchestrator_tool_dispatch.py:151` |
+| InternalToolCall | `InternalToolCall` dataclass | `orchestrator_tool_dispatch.py:66` |
+| ToolCallResult (union) | `ToolCallSuccess \| ToolCallError` | `orchestrator_tool_dispatch.py:80-103` |
+| ToolErrorKind | `Literal["unknown_tool", "not_yet_wired", "invocation_failed", "invalid_arguments", "summarization_failed"]` | `orchestrator_tool_dispatch.py:57` |
+| EnsembleOperations Protocol | narrow facade over `OrchestraService` | `orchestrator_tool_dispatch.py:106` |
+| Dynamic Invocation (action) | `invoke_ensemble` delegates to `operations.invoke`, then interposes the Harness on the return | `orchestrator_tool_dispatch.py:162` |
+| Summarize interposition | `summarization = await self._harness.summarize(result, raw_output=...)` + match on `SummarizationSuccess` / `RawOutputPassthrough` / `SummarizationFailure` | `orchestrator_tool_dispatch.py:202-221` |
 
 ### Design rationale
 
@@ -245,10 +248,23 @@ Delegation to `OrchestraService` via the `EnsembleOperations` Protocol
 changes to ensemble name resolution, tier discovery, or status
 normalization propagate through one code path.
 
+**Result Summarizer Harness interposition (Amendment #3).**
+`invoke_ensemble` hands the raw ensemble result to the Harness before
+constructing a `ToolCallSuccess`. The Harness decides between three
+outcomes — summarize, raw-output pass-through (ADR-004 escape hatch
+keyed on the ensemble's `raw_output` flag), or typed failure. The
+Runtime receives only the post-Harness result; it never imports the
+Harness itself. FC-8's static AST dominance check
+(`test_fc8_summarizer_bypass.py`) enforces this mechanically — every
+`ToolCallSuccess(..., name="invoke_ensemble", ...)` construction in
+the method is nested inside the match on the summarize result, so a
+future bypass fails the test before merge.
+
 ### Key integration points
 
 - **← Orchestrator Runtime:** `dispatch(InternalToolCall)` per LLM tool emission.
 - **→ OrchestraService (via `EnsembleOperations`):** `invoke` for `invoke_ensemble`, `read_ensembles` for `list_ensembles`.
+- **→ Result Summarizer Harness:** `summarize(raw_result, raw_output=...)` on every `invoke_ensemble` return. The Harness in turn calls back through `EnsembleOperations` to invoke the configured summarizer ensemble.
 - **WP-G will add:** composition validation path (shared `validate_ensemble_reference_graph`).
 - **WP-I will add:** `query_knowledge` + `record_outcome` via Plexus Adapter.
 - **WP-E will interpose:** Autonomy Policy gate on every dispatch call.
@@ -277,22 +293,68 @@ Dispatch.
 
 ## Module: Result Summarizer Harness
 
-**Implementation state:** Planned (WP-D).
-**Code location:** Not yet created.
-**Stability:** Design-only. The system design's `Runtime → RSH` dependency graph edge is incorrect (see Design Amendment candidate in cycle-status FF #73) — WP-D lands the Harness as `Tool Dispatch → RSH`.
+**Implementation state:** Complete (WP-D).
+**Code location:** `src/llm_orc/agentic/result_summarizer_harness.py`.
+**Stability:** Settled. The `_extract_summary` fallback order (synthesis → single-agent `response`) is the stable contract; the quality-of-summarizer concern defers to Calibration Gate (WP-E / WP-H).
 
-### Placeholder in current code
+### Domain concepts in code
 
-`_tool_result_message` in `orchestrator_runtime.py` JSON-dumps the
-`ToolCallResult.content` as a trivial summarization. WP-D replaces
-this with the Harness interposition on Tool Dispatch's
-`invoke_ensemble` return leg. FC-8 (unsummarized result unreachable
-from Runtime) is partial until WP-D.
+| Concept | Code manifestation | Location |
+|---------|-------------------|----------|
+| Result Summarization (concept) | `ResultSummarizerHarness` class | `result_summarizer_harness.py:81` |
+| Summarize (action) | `summarize(raw_result, *, raw_output)` async method | `result_summarizer_harness.py:88` |
+| Summarizer invocation facade | `SummarizerInvoker` Protocol (shape: `async def invoke(arguments) -> dict`) | `result_summarizer_harness.py:34` |
+| Summarization result variants | `SummarizationSuccess \| RawOutputPassthrough \| SummarizationFailure` | `result_summarizer_harness.py:46-78` |
+| Raw-output escape hatch (ADR-004) | `raw_output: bool` keyword on `summarize`; set on `EnsembleConfig.raw_output` | `result_summarizer_harness.py:95`; `core/config/ensemble_config.py` |
+| Summary extraction (synthesis + single-agent fallback) | `_extract_summary` module function | `result_summarizer_harness.py:118` |
 
-### Scenarios WP-D covers
+### Design rationale
 
-- `scenarios.md` §Ensemble result is summarized before entering orchestrator context.
-- `scenarios.md` §Raw-output escape hatch is explicit.
+**Amendment #3 places the Harness on the Tool Dispatch side, not the
+Runtime side.** The Runtime stays unaware of summarization; the
+orchestrator LLM's reasoning surface remains "I emit tool calls and
+observe results." Tool Dispatch invokes the Harness on every
+`invoke_ensemble` return path; the Harness invokes one ensemble (the
+configured summarizer) and translates the outcome into a typed
+result variant.
+
+The three-variant return is the contract Tool Dispatch pattern-matches
+on: `SummarizationSuccess.summary` becomes the orchestrator's tool-
+result content (wrapped as `{"summary": <str>}`); `RawOutputPassthrough
+.content` is the raw dict pass-through (ADR-004 escape hatch for
+ensembles whose operator has opted in via `raw_output: true`);
+`SummarizationFailure.reason` becomes a typed `ToolCallError(kind=
+"summarization_failed")` — never a raw-dict leak.
+
+The `_extract_summary` fallback is deliberately forgiving: prefer
+`synthesis` when non-empty, otherwise accept a single-agent ensemble's
+`results[agent]["response"]`. llm-orc's dependency-based execution
+model leaves `synthesis` unpopulated for single-agent ensembles, and
+the default summarizer (`.llm-orc/ensembles/agentic-result-summarizer
+.yaml`) is single-agent — the fallback keeps the default working
+without requiring a synthesis pass.
+
+**FC-8 enforcement is three-sided.** FC-4 isolates the Runtime from
+ensemble-execution surfaces; the Harness is the only producer of
+summarized content on the `invoke_ensemble` path; FC-8's strict AST
+dominance check proves Tool Dispatch cannot construct a successful
+`invoke_ensemble` result without routing through the Harness. An
+adversarial self-test (`test_detection_logic_rejects_synthetic_bypass`)
+proves the detector catches simulated regressions.
+
+### Key integration points
+
+- **← Orchestrator Tool Dispatch:** `harness.summarize(raw_result, raw_output=...)` per `invoke_ensemble` return.
+- **→ EnsembleOperations (satisfied by `OrchestraService`):** `invoke({ensemble_name, input})` to run the configured summarizer ensemble. The Harness does not import `OrchestraService` directly — it takes a `SummarizerInvoker` whose shape matches `EnsembleOperations.invoke`.
+
+### Scenarios covered
+
+- `scenarios.md` §Ensemble result is summarized before entering orchestrator context — boundary integration via `tests/integration/test_tool_dispatch_summarizer_boundary.py`.
+- `scenarios.md` §Raw-output escape hatch is explicit — acceptance via `tests/unit/web/test_api_v1_chat_completions.py::TestRawOutputEscapeHatchAcceptance`.
+
+### Configured summarizer
+
+**Ensemble:** `.llm-orc/ensembles/agentic-result-summarizer.yaml` — single-agent, configurable. Operators override via `agentic_serving.orchestrator.summarizer_ensemble` in `config.yaml`; the serving layer's Tool Dispatch factory reads this into `OrchestratorConfig.summarizer_ensemble` and passes it to the Harness at construction.
 
 ---
 

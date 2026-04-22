@@ -9,26 +9,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ## Work Packages
 
-> **WP-A, WP-B, and WP-C are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. The active section below lists only upcoming or in-progress work.
-
-### WP-D: Result Summarizer Harness
-
-**Objective:** Structurally interpose the summarizer on the `invoke_ensemble` return path so unsummarized ensemble results can never reach the Orchestrator Runtime's context.
-
-**Changes:**
-- New **Result Summarizer Harness** module.
-- Orchestrator Tool Dispatch's `invoke_ensemble` path wrapped by the Harness on the return leg.
-- Raw-output escape-hatch flag honored on the ensemble config (ADR-004).
-- A default summarizer ensemble configured and promoted to the library tier (primitive, not code).
-
-**Scenarios covered:** scenarios.md §Orchestrator Tool Surface (Ensemble result is summarized before entering orchestrator context; Raw-output escape hatch is explicit).
-
-**Dependencies:**
-- WP-C (hard) — interposes on Tool Dispatch.
-
-**Participating modules:** Result Summarizer Harness, Orchestrator Tool Dispatch (edit). Consistent with WP scope.
-
----
+> **WP-A, WP-B, WP-C, and WP-D are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. The active section below lists only upcoming or in-progress work.
 
 ### WP-E: Autonomy Policy
 
@@ -349,3 +330,52 @@ HTTP read timeout refactored: `HTTPConnectionPool` now reads `connect` / `read` 
 - Conversation Compaction is named in the Runtime's ownership list (system design §Orchestrator Runtime) but not implemented. The WP-C scenarios did not require it (turn/token exhaustion precedes compaction's utility). Can land in a follow-up mini-cycle or alongside another WP that touches the Runtime.
 - Per-request usage accounting: the `/v1/chat/completions` response's `usage.completion_tokens` reports the per-request delta in `SessionState.token_spend`; `prompt_tokens` is hardcoded to 0. Fine-grained prompt-vs-completion accounting requires accumulating each iteration's `LLMUsage.prompt_tokens` separately, which the Runtime currently collapses into `total_tokens` on Session state. A follow-up can split the accounting without architectural change.
 - Routing Decision generation (for `record_outcome` in WP-I) is named in the Runtime's ownership but only materializes when Plexus lands. WP-I generates the Routing Decision objects; Runtime emits them when `record_outcome` is no longer `not_yet_wired`.
+
+### WP-D: Result Summarizer Harness — 2026-04-21
+
+**Commits (in order):**
+
+*Groups 0-4 (structural change):*
+- `a15aa30` docs: Design Amendment #3 — move RSH dependency from Runtime to Tool Dispatch
+- `326a36f` feat: add Result Summarizer Harness module with typed result variants
+- `188f65f` feat: add raw_output flag to EnsembleConfig for ADR-004 escape hatch
+- `9a0fea2` feat: interpose Result Summarizer Harness on invoke_ensemble return path
+- `3e7c897` feat: ship default agentic-result-summarizer ensemble and profile
+
+*Groups 5-6 (verification and closeout):*
+- `4261238` refactor: tighten FC-4 forbidden list for Amendment #3
+- `903833e` test: add strict FC-8 static no-bypass check for invoke_ensemble
+- `03885f8` test: add raw-output escape-hatch acceptance scenario at Serving Layer
+- `2f0f660` test: add Tool Dispatch → Harness → Ensemble Engine summarize boundary
+- (this change) docs: close WP-D in field-guide, ORIENTATION, cycle-status, roadmap
+
+**Outcome.** AS-7 ("Result summarization is a correctness requirement") is now structurally enforced. The Runtime never sees raw ensemble output: FC-4 forbids RSH from Runtime's import set; FC-8's strict AST dominance check proves Tool Dispatch cannot construct a successful `invoke_ensemble` result without routing through the Harness; boundary integration proves the real wiring produces summaries end-to-end. ADR-004's raw-output escape hatch is honored and opt-in, not a default.
+
+**New module.** `src/llm_orc/agentic/result_summarizer_harness.py` — `ResultSummarizerHarness` class with `summarize(raw_result, *, raw_output) -> SummarizationSuccess | RawOutputPassthrough | SummarizationFailure`. Takes a `SummarizerInvoker` Protocol (shape: `async def invoke(arguments) -> dict`) so it is decoupled from `OrchestraService`; the Serving Layer wires them together in `get_orchestrator_tool_dispatch`. `_extract_summary` uses a synthesis → single-agent `response` fallback so the default single-agent summarizer ensemble works without requiring a synthesis pass (llm-orc's dependency-based execution model leaves `synthesis` unpopulated for single-agent ensembles).
+
+**New primitive (library content, not code).** `.llm-orc/ensembles/agentic-result-summarizer.yaml` — single-agent default summarizer ensemble. `.llm-orc/config.yaml` gains a `summarizer` model profile. Operators override via `agentic_serving.orchestrator.summarizer_ensemble` in `config.yaml`.
+
+**Edits.**
+- `EnsembleConfig` gains a `raw_output: bool = False` field; YAML loader threads the flag through to `invoke_ensemble`'s return path.
+- `OrchestratorConfig` gains `summarizer_ensemble: str` so the Harness's configured target is operator-visible.
+- `OrchestratorToolDispatch.invoke_ensemble` calls `await self._harness.summarize(result, raw_output=...)` on every return, pattern-matches the three outcome variants, and emits either `ToolCallSuccess({"summary": <str>})`, `ToolCallSuccess(<raw dict>)`, or `ToolCallError(kind="summarization_failed")`. New `ToolErrorKind` literal: `summarization_failed`.
+- `system-design.md` Amendment #3: Dependency Graph `Orchestrator Runtime → Result Summarizer Harness` moved to `Orchestrator Tool Dispatch → Result Summarizer Harness`; FC-4 wording amended to exclude RSH from Runtime's allow list; Responsibility Matrix and Test Architecture rows updated in sync.
+
+**Scenarios covered.**
+- `scenarios.md` §Ensemble result is summarized before entering orchestrator context — boundary integration via `tests/integration/test_tool_dispatch_summarizer_boundary.py`.
+- `scenarios.md` §Raw-output escape hatch is explicit — Serving Layer acceptance via `tests/unit/web/test_api_v1_chat_completions.py::TestRawOutputEscapeHatchAcceptance`.
+
+**Fitness criteria status.**
+- FC-4 (Runtime import surface): **strengthened**. `result_summarizer_harness` now explicitly forbidden from Runtime imports.
+- FC-8 (unsummarized result unreachable): **fully satisfied**. `test_fc8_summarizer_bypass.py` parses `orchestrator_tool_dispatch.py` and proves three properties on `invoke_ensemble`: the Harness is called; every `ToolCallSuccess` constructor is dominated by the match on the summarize result; lexical ordering is consistent. An adversarial self-test parses a synthetic bypass fixture and verifies the detector catches it.
+
+**Test coverage delta.** +15 tests (Harness unit 10 pre-closeout + FC-8 static 3 + adversarial self-test 1 + raw-output acceptance 2 + summarize boundary 2; baseline at WP-C close was 2197, close at WP-D Group 4 was 2213, close at WP-D Group 6 is 2221 as some pre-existing tests adapted to the Amendment #3 wiring). Full suite: **2221 passing, 91.44% coverage, lint clean** (mypy + ruff check + ruff format).
+
+**Decisions made during build.**
+- **Strict-over-loose FC-8 formulation** (Group 5). The strict AST dominance check carries a legibility cost but catches the class of regressions (early-return fast paths, short-circuit branches) a "harness is mentioned somewhere" check would miss. Adversarial self-test in the same file makes the detection logic itself load-bearing. Chosen deliberately: robustness traded for legibility, with the expectation that future agentic work on this code benefits from the stronger convention.
+- **Three-test coverage for the `test_runtime_never_sees_unsummarized_result` Test Architecture row** (Groups 5-6). The table row names a single test; post-WP-D the coverage is distributed across FC-8 static dominance, raw-output acceptance, and summarize-boundary integration. Worth a future system-design edit to point the table row at all three; deferred.
+
+**Forward-carrying concerns** (not addressed in WP-D scope).
+- **Summarizer-quality echo-back risk → WP-E / WP-H calibration scope.** FC-8 proves the Harness is always interposed; it does not prove the Harness's output is substantively a summary. A weak or compromised summarizer ensemble could return a JSON-encoded raw dict in its `response` field, and the Harness would return it as-is — the raw-dict leak would arrive through the summarizer's legitimate output channel rather than by bypassing. This is a quality property of the configured summarizer, not a structural bypass; Calibration Gate (ADR-007) is designed exactly for this class of problem. Failure mode is visible (weird summaries in the orchestrator's context, observable via SSE and artifacts) and recoverable (swap `summarizer_ensemble` via `config.yaml`). Deliberately deferred to WP-E / WP-H rather than adding a mechanism now. See `housekeeping/cycle-status.md` FF #81.
+
+**Unblocks.** WP-E (Autonomy Policy), WP-G (Composition), and WP-I (Plexus Adapter) all depend only on WP-C and can land in parallel. WP-F (client-tool delegation) remains scenario-gated. TS-1's remaining gap is WP-F.
