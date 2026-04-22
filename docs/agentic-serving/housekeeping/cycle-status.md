@@ -163,6 +163,19 @@
 
 89. **Summarizer-quality echo-back risk carried to WP-H.** WP-D FF #81 flagged this; WP-E did not address it because summarizer quality is a calibration property (ADR-007) not an autonomy property. When WP-H lands alongside WP-E (or after), the Calibration Gate's check mechanism is the natural place to detect echo-back. WP-E's event-on-result shape accommodates future visibility events tied to calibration outcomes.
 
+### From BUILD (WP-E close / WP-F handoff)
+
+90. **WP-F is a DECIDE mini-cycle, not BUILD — mode shift required.** Per Open Decision Point #1, WP-F does not start until four stress scenarios are written into `scenarios.md` that exercise the turn-boundary vs. mid-execution distinction. Writing these is adversarial scenario exploration ("what case would break Option C?"), not implementation flow. A BUILD-mode session carrying TDD/commit-loop attention is the wrong frame for this work — start a fresh session and state the mode explicitly. If any written scenario requires mid-execution callback, the Client Tool Surface Commitment is amended (C + hybrid, or Option D) before WP-F code begins.
+
+91. **Scenarios (c) and (d) require DAG engine semantics as context.** The two load-bearing stress scenarios probe agent-to-agent state flow within a multi-agent ensemble — (c) first agent needs a client-filesystem file before the second agent proceeds; (d) composed ensemble mid-execution needs a client-tool result the orchestrator didn't know to request. Writing these faithfully requires reading `src/llm_orc/core/execution/ensemble_execution.py` for how agents sequence and how their inputs are resolved. No WP touching the DAG engine's internals has landed in the agentic-serving cycle yet — the existing field guide's Ensemble Engine section describes the access surface, not the sequencing semantics. The fresh WP-F session should load this explicitly during orientation, not rely on system-design summaries.
+
+92. **Opportunistic conformance tidying available.** Three deferred v0.7.3 items from this corpus's migration notes can be picked up in any future session without blocking WP-F:
+    - Framing audit on `essays/001-agentic-serving-architecture.md` — `housekeeping/audits/argument-audit-001.md` has argument-audit only; v0.7.3 dispatch format adds framing audit. Pick up if framing tension surfaces.
+    - `domain-model.md` §Concepts column header "Avoid (synonyms)" → "Related Terms" per v0.7.3 template. Fix when the table is next edited.
+    - First-person plural in `essays/research-logs/001b-agentic-serving-architecture.md:3,47` — "we" in question titles. Cross-cutting third-person rule.
+    - `product-discovery.md` §Value Tensions phrased as declarative prose rather than open questions per v0.7.3 discover template.
+    None of these are WP-F prerequisites; noted here so they can be bundled into a cleanup commit at any natural boundary.
+
 ### From ARCHITECT
 30. Retrofit mode — llm-orc has existing FastAPI server, MCP handlers (ExecutionHandler, ValidationHandler, ensemble_crud_handler, promotion_handler, validation_handler, script_handler), ensemble engine, config manager, auth, and artifact system. Agentic serving is additive; Layer 3 (Ensemble Engine) stays unchanged per ADR-001/002
 31. 12-module decomposition across 4 layers (L0 Core / L1 Domain Policy / L2 Runtime / L3 Entry) plus typed `resolve_session_start_context` function in Serving Layer. Originally 13 modules; Context Injection Stage demoted to function per ADR-066 gate-reflection amendment #1
@@ -194,6 +207,14 @@
 2. **WP-I: Plexus Adapter (tool-first).** Five scenarios across §Plexus Integration and §Session Lifecycle. Open decision: `record_outcome` payload schema.
 
 **TS-1 gap:** WP-F (client-tool turn-boundary delegation). Scenario-gated — Open Decision Point #1 in `roadmap.md` lists four stress scenarios that must be written before WP-F starts. If any requires mid-execution callback, the Option C commitment is amended.
+
+**WP-F handoff guidance (fresh session recommended):**
+
+WP-F is a DECIDE mini-cycle, not BUILD — a different attentional mode than the one that drove WP-A through WP-E. Start a fresh session and state the mode explicitly in the opening prompt. See FF #90–#92 for the mode shift rationale, the DAG engine reading directive (scenarios c and d probe agent-to-agent state flow in `src/llm_orc/core/execution/ensemble_execution.py`), and opportunistic conformance tidying that can be bundled at any natural boundary.
+
+Suggested fresh-session handoff prompt:
+
+> Continue the agentic-serving scoped cycle. WP-E closed (commit `368384f`). Resume on WP-F scenario writing per Open Decision Point #1 in `docs/agentic-serving/roadmap.md`. This is a DECIDE mini-cycle, not BUILD — write four stress scenarios into `scenarios.md` that exercise the Client Tool Surface Commitment's turn-boundary-vs-mid-execution distinction. If any requires mid-execution callback, Option C is insufficient and the Commitment is amended. Read `src/llm_orc/core/execution/ensemble_execution.py` for DAG semantics; agent-to-agent state flow determines scenarios (c) and (d).
 
 **Forward-carrying concerns from WP-E:**
 - Summarizer-quality echo-back risk → WP-H calibration scope (carried from WP-D FF #81, not addressed in WP-E).
