@@ -86,6 +86,28 @@ class _StubEnsembleOperations:
         return []
 
 
+class _RejectingValidator:
+    """Default validator for integration tests that dispatch compose incidentally.
+
+    Rejects every request — the test is about the autonomy gate, not
+    the composition outcome. Dispatch returns ``ToolCallError`` and
+    the gate-firing assertion remains intact.
+    """
+
+    def validate(self, request: Any) -> Any:
+        from llm_orc.agentic.composition_validator import CompositionRejected
+
+        return CompositionRejected(
+            kind="missing_primitive",
+            reason="rejecting validator for autonomy-gate integration test",
+        )
+
+
+class _UnusedWriter:
+    def write(self, config: Any) -> str:  # pragma: no cover
+        raise AssertionError("local_ensemble_writer unused in this test")
+
+
 def _build_dispatch(
     *, policy: _SpyAutonomyPolicy, operations: _StubEnsembleOperations
 ) -> OrchestratorToolDispatch:
@@ -93,7 +115,11 @@ def _build_dispatch(
         invoker=operations, summarizer_name="unused-in-this-test"
     )
     return OrchestratorToolDispatch(
-        operations=operations, harness=harness, autonomy_policy=policy
+        operations=operations,
+        harness=harness,
+        autonomy_policy=policy,
+        composition_validator=_RejectingValidator(),
+        local_ensemble_writer=_UnusedWriter(),
     )
 
 

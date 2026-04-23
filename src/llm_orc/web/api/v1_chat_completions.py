@@ -33,6 +33,11 @@ from pydantic import BaseModel, Field
 
 from llm_orc.agentic.autonomy_policy import AutonomyPolicy
 from llm_orc.agentic.budget_controller import BudgetController
+from llm_orc.agentic.composition_validator import (
+    CompositionValidator,
+    ConfigManagerEnsembleWriter,
+    ConfigManagerPrimitiveRegistry,
+)
 from llm_orc.agentic.orchestrator_chunk import (
     ClientToolCall,
     Completion,
@@ -106,10 +111,15 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
         autonomy_policy = AutonomyPolicy(
             level_provider=lambda: resolver.resolve().autonomy_level
         )
+        primitive_registry = ConfigManagerPrimitiveRegistry(service.config_manager)
+        composition_validator = CompositionValidator(primitives=primitive_registry)
+        local_ensemble_writer = ConfigManagerEnsembleWriter(service.config_manager)
         _SHARED_TOOL_DISPATCH = OrchestratorToolDispatch(
             operations=service,
             harness=harness,
             autonomy_policy=autonomy_policy,
+            composition_validator=composition_validator,
+            local_ensemble_writer=local_ensemble_writer,
         )
     return _SHARED_TOOL_DISPATCH
 

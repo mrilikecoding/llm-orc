@@ -118,10 +118,23 @@ def _write_library_with_summarizer(
 
 def _make_dispatch(service: OrchestraService) -> OrchestratorToolDispatch:
     """Wire Tool Dispatch with a real Harness pointed at ``test-summarizer``."""
+    from llm_orc.agentic.composition_validator import (
+        CompositionValidator,
+        ConfigManagerEnsembleWriter,
+        ConfigManagerPrimitiveRegistry,
+    )
+
     harness = ResultSummarizerHarness(invoker=service, summarizer_name=_SUMMARIZER_NAME)
     policy = AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL)
+    registry = ConfigManagerPrimitiveRegistry(service.config_manager)
+    validator = CompositionValidator(primitives=registry)
+    writer = ConfigManagerEnsembleWriter(service.config_manager)
     return OrchestratorToolDispatch(
-        operations=service, harness=harness, autonomy_policy=policy
+        operations=service,
+        harness=harness,
+        autonomy_policy=policy,
+        composition_validator=validator,
+        local_ensemble_writer=writer,
     )
 
 
@@ -198,9 +211,22 @@ class TestInvokeEnsembleRoutesThroughSummarizer:
         harness = ResultSummarizerHarness(
             invoker=service, summarizer_name="does-not-exist"
         )
+        from llm_orc.agentic.composition_validator import (
+            CompositionValidator,
+            ConfigManagerEnsembleWriter,
+            ConfigManagerPrimitiveRegistry,
+        )
+
         policy = AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL)
+        registry = ConfigManagerPrimitiveRegistry(service.config_manager)
+        validator = CompositionValidator(primitives=registry)
+        writer = ConfigManagerEnsembleWriter(service.config_manager)
         dispatch = OrchestratorToolDispatch(
-            operations=service, harness=harness, autonomy_policy=policy
+            operations=service,
+            harness=harness,
+            autonomy_policy=policy,
+            composition_validator=validator,
+            local_ensemble_writer=writer,
         )
 
         result = await dispatch.dispatch(

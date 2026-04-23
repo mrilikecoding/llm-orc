@@ -18,9 +18,11 @@ Group 4 (see ``docs/agentic-serving/roadmap.md``). The endpoint:
 
 import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from llm_orc.agentic.autonomy_policy import (
@@ -50,6 +52,47 @@ from llm_orc.agentic.session_start import (
 from llm_orc.models.base import ToolCall, ToolCallingResponse, ToolCallUsage
 from llm_orc.web.api import v1_chat_completions
 from llm_orc.web.server import create_app
+
+
+class _RejectingValidator:
+    """Composition validator stub that rejects every request.
+
+    Tests at the Serving Layer that dispatch ``compose_ensemble``
+    incidentally (e.g., autonomy-and-promotion acceptance) do not care
+    about the composition outcome — the orchestrator LLM observes a
+    ``ToolCallError`` and the gate narration, tests assert on the
+    narration. Tests that care about accept-path behavior pass a real
+    validator wired through ``v1_chat_completions.get_orchestrator_tool_dispatch``.
+    """
+
+    def validate(self, request: Any) -> Any:
+        from llm_orc.agentic.composition_validator import CompositionRejected
+
+        return CompositionRejected(
+            kind="missing_primitive",
+            reason="rejecting validator for non-compose serving-layer tests",
+        )
+
+
+class _UnusedWriter:
+    """Local ensemble writer stub paired with :class:`_RejectingValidator`."""
+
+    def write(self, config: Any) -> str:  # pragma: no cover
+        raise AssertionError(
+            f"local_ensemble_writer unused in this test: {config.name!r}"
+        )
+
+
+def _dispatch_kwargs_without_composition() -> dict[str, Any]:
+    """Returns composition dependency kwargs for tests not exercising compose.
+
+    The validator rejects every request so compose dispatches produce
+    a typed ``ToolCallError``; the writer fails loudly if reached.
+    """
+    return {
+        "composition_validator": _RejectingValidator(),
+        "local_ensemble_writer": _UnusedWriter(),
+    }
 
 
 class _ScriptedLLM:
@@ -1174,6 +1217,7 @@ class TestRawOutputEscapeHatchAcceptance:
             operations=operations,
             harness=harness,
             autonomy_policy=AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL),
+            **_dispatch_kwargs_without_composition(),
         )
 
         llm = _ScriptedLLM(
@@ -1265,6 +1309,7 @@ class TestRawOutputEscapeHatchAcceptance:
             operations=operations,
             harness=harness,
             autonomy_policy=AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL),
+            **_dispatch_kwargs_without_composition(),
         )
 
         llm = _ScriptedLLM(
@@ -1358,7 +1403,10 @@ class TestAutonomyAndPromotionAcceptance:
         )
         policy = AutonomyPolicy(level_provider=lambda: level)
         return OrchestratorToolDispatch(
-            operations=operations, harness=harness, autonomy_policy=policy
+            operations=operations,
+            harness=harness,
+            autonomy_policy=policy,
+            **_dispatch_kwargs_without_composition(),
         )
 
     def test_default_level_permits_invoke_and_compose_no_promotion_in_surface(
@@ -1449,7 +1497,9 @@ class TestAutonomyAndPromotionAcceptance:
         assert operations.calls == [{"ensemble_name": "analysis", "input": "x"}]
 
         # Second LLM turn saw invoke_ensemble's raw-output pass-through.
-        # Third LLM turn saw compose_ensemble's not_yet_wired observation.
+        # Third LLM turn saw compose_ensemble's invocation_failed observation —
+        # WP-G wires the validator; the test-scope ``_RejectingValidator``
+        # rejects any request, which maps to ``invocation_failed``.
         third_messages = llm.calls[2][0]
         compose_tool_msgs = [
             m
@@ -1458,7 +1508,7 @@ class TestAutonomyAndPromotionAcceptance:
         ]
         assert len(compose_tool_msgs) == 1
         observed = json.loads(compose_tool_msgs[0]["content"])
-        assert observed.get("error") == "not_yet_wired"
+        assert observed.get("error") == "invocation_failed"
 
         # Baseline emits no composition narration.
         content = self._assistant_content(response.json())
@@ -1660,6 +1710,226 @@ class TestAutonomyAndPromotionAcceptance:
         assert len(tool_msgs) == 1
         observed = json.loads(tool_msgs[0]["content"])
         assert observed.get("error") == "unknown_tool"
+
+
+class TestEnsembleCompositionWithValidationAcceptance:
+    """Acceptance for ``scenarios.md`` §Ensemble Composition with Validation.
+
+    Exercises the full HTTP path — ``/v1/chat/completions`` → scripted
+    Orchestrator LLM → real :class:`OrchestratorToolDispatch` with real
+    :class:`CompositionValidator` and real
+    :class:`ConfigManagerEnsembleWriter` — so a regression anywhere on
+    the Serving Layer → Runtime → Tool Dispatch → Validator → Writer
+    path fails here. The unit validator tests and the boundary
+    integration in ``test_tool_dispatch_composition.py`` cover the six
+    rejection branches in isolation; this class asserts the end-to-end
+    observability from the orchestrator's perspective: what the LLM
+    sees on the turn after the compose tool call returns.
+    """
+
+    def _build_real_dispatch(
+        self, project_dir: Path
+    ) -> tuple[OrchestratorToolDispatch, Any]:
+        from llm_orc.agentic.composition_validator import (
+            CompositionValidator,
+            ConfigManagerEnsembleWriter,
+            ConfigManagerPrimitiveRegistry,
+        )
+        from llm_orc.core.config.config_manager import ConfigurationManager
+        from llm_orc.services.orchestra_service import OrchestraService
+
+        config_manager = ConfigurationManager(project_dir=project_dir, provision=False)
+        service = OrchestraService(config_manager=config_manager)
+        harness = ResultSummarizerHarness(
+            invoker=service, summarizer_name="unused-no-invoke-in-compose-tests"
+        )
+        policy = AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL)
+        registry = ConfigManagerPrimitiveRegistry(config_manager)
+        validator = CompositionValidator(primitives=registry)
+        writer = ConfigManagerEnsembleWriter(config_manager)
+        dispatch = OrchestratorToolDispatch(
+            operations=service,
+            harness=harness,
+            autonomy_policy=policy,
+            composition_validator=validator,
+            local_ensemble_writer=writer,
+        )
+        return dispatch, service
+
+    def _prepare_library(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        *,
+        existing_ensembles: dict[str, dict[str, Any]] | None = None,
+    ) -> Path:
+        import yaml as _yaml
+
+        global_root = tmp_path / "xdg"
+        global_root.mkdir()
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(global_root))
+        monkeypatch.delenv("LLM_ORC_LIBRARY_PATH", raising=False)
+
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        monkeypatch.chdir(project_dir)
+        local = project_dir / ".llm-orc"
+        local.mkdir()
+        (local / "config.yaml").write_text(
+            _yaml.safe_dump(
+                {"model_profiles": {"default": {"model": "mock", "provider": "mock"}}}
+            )
+        )
+        ensembles_dir = local / "ensembles"
+        ensembles_dir.mkdir()
+        for name, body in (existing_ensembles or {}).items():
+            (ensembles_dir / f"{name}.yaml").write_text(_yaml.safe_dump(body))
+        return project_dir
+
+    def test_compose_happy_path_writes_new_ensemble_and_reports_to_llm(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Scenario: Composition with only profiles and scripts succeeds."""
+        project_dir = self._prepare_library(tmp_path, monkeypatch)
+        dispatch, _service = self._build_real_dispatch(project_dir)
+
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_com",
+                            name="compose_ensemble",
+                            arguments_json=(
+                                '{"name": "combo", "description": "combine",'
+                                ' "agents": [{"name": "think",'
+                                ' "model_profile": "default"}]}'
+                            ),
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=5, completion_tokens=1, total_tokens=6
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                ToolCallingResponse(
+                    content="Composed combo.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=10, completion_tokens=2, total_tokens=12
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=dispatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "compose a combo"}],
+            },
+        )
+
+        assert response.status_code == 200
+
+        # File persisted to local tier.
+        target = project_dir / ".llm-orc" / "ensembles" / "combo.yaml"
+        assert target.exists()
+        written = yaml.safe_load(target.read_text())
+        assert written["name"] == "combo"
+        assert written["agents"][0]["model_profile"] == "default"
+
+        # Second LLM call saw the ToolCallSuccess content.
+        second_messages = llm.calls[1][0]
+        tool_msgs = [m for m in second_messages if m.get("role") == "tool"]
+        assert len(tool_msgs) == 1
+        observed = json.loads(tool_msgs[0]["content"])
+        assert observed["name"] == "combo"
+        assert observed["path"].endswith(".llm-orc/ensembles/combo.yaml")
+
+    def test_compose_rejects_cycle_and_leaves_local_tier_untouched(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Scenario: Composition that would introduce a reference-graph cycle fails.
+
+        Full HTTP path. Dispatch's ``invocation_failed`` flows back as
+        a ``role: tool`` observation the LLM's second iteration sees.
+        """
+        project_dir = self._prepare_library(
+            tmp_path,
+            monkeypatch,
+            existing_ensembles={
+                "a": {
+                    "name": "a",
+                    "description": "a",
+                    "agents": [{"name": "ref_b", "ensemble": "b"}],
+                },
+                "b": {
+                    "name": "b",
+                    "description": "b",
+                    "agents": [{"name": "ref_c", "ensemble": "c"}],
+                },
+            },
+        )
+        dispatch, _service = self._build_real_dispatch(project_dir)
+
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_c",
+                            name="compose_ensemble",
+                            arguments_json=(
+                                '{"name": "c", "description": "closes cycle",'
+                                ' "agents": [{"name": "ref_a", "ensemble": "a"}]}'
+                            ),
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=5, completion_tokens=1, total_tokens=6
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                ToolCallingResponse(
+                    content="Composition rejected — cycle detected.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=10, completion_tokens=2, total_tokens=12
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=dispatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "attempt cycle"}],
+            },
+        )
+
+        assert response.status_code == 200
+
+        # AS-2: no partial state on validation failure.
+        target = project_dir / ".llm-orc" / "ensembles" / "c.yaml"
+        assert not target.exists()
+
+        # Second LLM call saw the invocation_failed observation naming the cycle.
+        second_messages = llm.calls[1][0]
+        tool_msgs = [m for m in second_messages if m.get("role") == "tool"]
+        assert len(tool_msgs) == 1
+        observed = json.loads(tool_msgs[0]["content"])
+        assert observed.get("error") == "invocation_failed"
+        assert "cycle" in observed.get("reason", "").lower()
 
 
 class TestClientToolSurfaceCommitment:
@@ -2271,6 +2541,7 @@ class TestClientToolSurfaceCommitment:
             operations=operations,
             harness=harness,
             autonomy_policy=AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL),
+            **_dispatch_kwargs_without_composition(),
         )
 
         file_content = "def authenticate(user):\n    return True\n"
@@ -2595,6 +2866,7 @@ class TestClientToolSurfaceCommitment:
             operations=operations,
             harness=harness,
             autonomy_policy=AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL),
+            **_dispatch_kwargs_without_composition(),
         )
 
         grep_output = (
@@ -2839,6 +3111,7 @@ class TestClientToolSurfaceCommitment:
             operations=operations,
             harness=harness,
             autonomy_policy=AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL),
+            **_dispatch_kwargs_without_composition(),
         )
 
         llm = _ScriptedLLM(
