@@ -1,7 +1,7 @@
 # Field Guide: Agentic Serving
 
 **Generated:** 2026-04-22
-**Derived from:** `system-design.md` v1.0 + amendments #1–#3, current implementation at WP-E close.
+**Derived from:** `system-design.md` v1.0 + amendments #1–#4, current implementation at WP-F close (TS-1 reached).
 
 ## How to use this guide
 
@@ -31,7 +31,7 @@ Stability vocabulary:
 
 ## Module: Serving Layer
 
-**Implementation state:** Complete for Phase 1 (Plexus injection reserved but not populated).
+**Implementation state:** Complete for Phase 1 (Plexus injection reserved but not populated). Client Tool Surface Commitment (Option C) wired end-to-end at WP-F — client-declared tools flow through `message.tool_calls` / `delta.tool_calls` with `finish_reason: tool_calls`; `role: tool` + `tool_call_id` messages are accepted on subsequent requests.
 **Code location:** `src/llm_orc/web/api/v1_chat_completions.py`, `src/llm_orc/web/api/v1_models.py`, `src/llm_orc/web/api/sse_format.py`, `src/llm_orc/agentic/session_start.py`.
 **Stability:** Settled on structure; body of `resolve_session_start_context` changes at Phase 2 (ADR-009).
 
@@ -40,12 +40,17 @@ Stability vocabulary:
 | Concept | Code manifestation | Location |
 |---------|-------------------|----------|
 | Serving Layer | `chat_completions` endpoint + `list_models` endpoint | `v1_chat_completions.py`, `v1_models.py` |
-| SessionContext | `SessionContext` dataclass | `agentic/session_start.py:42` |
-| PromptFragment | `PromptFragment` dataclass (Phase 2) | `agentic/session_start.py:29` |
-| SSE streaming | `_stream_completion` + `OpenAiSseFormatter` | `v1_chat_completions.py:207`, `web/api/sse_format.py` |
-| Context Injection (action) | `resolve_session_start_context` | `agentic/session_start.py:56` |
-| Session-start cache (FC-9 single call) | `SessionStartCache` | `agentic/session_start.py:68` |
-| Runtime construction per session | `_build_runtime` | `v1_chat_completions.py:176` |
+| SessionContext | `SessionContext` dataclass | `agentic/session_start.py` |
+| ChatMessage (contract type) | `ChatMessage` dataclass — role, content, tool_call_id, tool_calls | `agentic/session_start.py` |
+| PromptFragment | `PromptFragment` dataclass (Phase 2) | `agentic/session_start.py` |
+| SSE streaming | `_stream_completion` + `OpenAiSseFormatter` | `v1_chat_completions.py`, `web/api/sse_format.py` |
+| Client-tool delegation (non-streaming) | `_NonStreamingResult` + `_build_completion_body` | `v1_chat_completions.py` |
+| Client-tool delegation (streaming) | `ClientToolCall` case in `OpenAiSseFormatter.format` | `web/api/sse_format.py` |
+| Tool-call wire encoder (shared) | `encode_tool_call_for_message` | `web/api/sse_format.py` |
+| Reserved-name guard | `_reject_reserved_tool_names` | `v1_chat_completions.py` |
+| Context Injection (action) | `resolve_session_start_context` | `agentic/session_start.py` |
+| Session-start cache (FC-9 single call) | `SessionStartCache` | `agentic/session_start.py` |
+| Runtime construction per session | `_build_runtime` | `v1_chat_completions.py` |
 
 ### Design rationale
 
@@ -54,6 +59,25 @@ happens here before the Runtime is constructed so the Runtime sees a
 clean `SessionContext`. Streaming and non-streaming share
 `_resolve_context` so session-start cache semantics hold under both
 paths (FC-9 boundary-integration tested).
+
+**Client Tool Surface Commitment (WP-F).** Client-declared `tools[]`
+ride through the response surface under Option C. When the Runtime
+yields a `ClientToolCall` chunk (pure client-declared tool batch), the
+streaming formatter emits `delta.tool_calls` + `finish_reason:
+tool_calls`; the non-streaming body path shapes
+`message.tool_calls` + `finish_reason: tool_calls`. Both use the
+shared `encode_tool_call_for_message` helper so the OpenAI entry
+format stays in sync. `_resolve_context` rejects requests that
+declare client tools colliding with `TOOL_NAMES` via HTTP 400
+(`_reject_reserved_tool_names`) — silent misrouting would be worse
+than an immediate operator-visible error.
+
+**ChatMessage lives in `session_start`, not `session_registry`.** It
+is a contract type on the Serving Layer → Runtime edge (it rides
+inside `SessionContext`), not Session Registry internals. Locating it
+in this module keeps FC-4 intact: the Runtime imports ChatMessage
+from `session_start` (allow-listed) rather than reaching into
+`session_registry` (forbidden).
 
 Phase 2 Plexus injection is structurally reserved via the typed
 function `resolve_session_start_context(context) -> list[PromptFragment]`
@@ -64,8 +88,8 @@ return is a body-only change.
 ### Key integration points
 
 - **→ Session Registry:** `SessionRegistry.resolve_identity` + `get_or_create_state` via `_resolve_context`.
-- **→ Orchestrator Configuration:** `get_orchestrator_config_resolver().resolve_validated()` via `_build_runtime`.
-- **→ Orchestrator Runtime:** `runtime.run(context)` via `_collect_non_streaming` / `_stream_completion`.
+- **→ Orchestrator Configuration:** `get_orchestrator_config_resolver().resolve_validated()` via `_build_runtime`. Reads Budget, Model Profile, autonomy default, summarizer ensemble, and `orchestrator_system_prompt` (WP-F).
+- **→ Orchestrator Runtime:** `runtime.run(context)` via `_collect_non_streaming` / `_stream_completion`. `_build_runtime` passes `config.orchestrator_system_prompt` into Runtime construction.
 - **→ Orchestrator Tool Dispatch:** indirect — Runtime holds the dispatch; Serving Layer wires the shared instance via `get_orchestrator_tool_dispatch`.
 
 ---
@@ -112,12 +136,14 @@ retained references are shared by design (lifecycle-sequence test in
 
 | Concept | Code manifestation | Location |
 |---------|-------------------|----------|
-| OrchestratorConfig (immutable per-session) | `OrchestratorConfig` dataclass | `orchestrator_config.py:63` |
-| BudgetDefaults | `BudgetDefaults` dataclass | `orchestrator_config.py:42` |
-| OverrideBounds (expressible) | `OverrideBounds` dataclass | `orchestrator_config.py:50` |
-| Fail-fast Model Profile validation | `resolve_validated` | `orchestrator_config.py:124` |
-| Allowlist for `/v1/models` | `list_allowed_model_profile_ids` | `orchestrator_config.py:140` |
-| `ModelProfileNotFoundError` | `ModelProfileNotFoundError` | `orchestrator_config.py:23` |
+| OrchestratorConfig (immutable per-session) | `OrchestratorConfig` dataclass | `orchestrator_config.py` |
+| BudgetDefaults | `BudgetDefaults` dataclass | `orchestrator_config.py` |
+| OverrideBounds (expressible) | `OverrideBounds` dataclass | `orchestrator_config.py` |
+| Orchestrator system prompt | `OrchestratorConfig.orchestrator_system_prompt` field | `orchestrator_config.py` |
+| Default prompt content | `DEFAULT_ORCHESTRATOR_SYSTEM_PROMPT` module constant | `orchestrator_config.py` |
+| Fail-fast Model Profile validation | `resolve_validated` | `orchestrator_config.py` |
+| Allowlist for `/v1/models` | `list_allowed_model_profile_ids` | `orchestrator_config.py` |
+| `ModelProfileNotFoundError` | `ModelProfileNotFoundError` | `orchestrator_config.py` |
 
 ### Design rationale
 
@@ -126,6 +152,18 @@ orchestrator profile is absent from the library — `/v1/models` shop
 window is silent-drop (ADR-011 posture). Immutable config matches the
 session-boundary discipline in ADR-011: changes apply to new
 sessions, not active ones.
+
+**Orchestrator system prompt (WP-F Group 3).**
+`orchestrator_system_prompt` is a required config field with a
+`DEFAULT_ORCHESTRATOR_SYSTEM_PROMPT` default that teaches the
+five internal tools (ADR-003), Option C's one-kind-per-turn
+discipline (system-design §Client Tool Surface Commitment), and the
+`needs_client_tool` retry convention (roadmap ODP #8 mechanism i).
+Operators override via `agentic_serving.orchestrator.system_prompt`
+in `config.yaml`. The Serving Layer passes the resolved prompt into
+Runtime construction at `_build_runtime`; Runtime always prepends it
+as a leading `role: system` message so orchestrator discipline sits
+ahead of any client-supplied system guidance.
 
 ### Key integration points
 
@@ -170,22 +208,27 @@ exposes Budget state to the LLM.
 
 ## Module: Orchestrator Runtime
 
-**Implementation state:** Complete for WP-C / WP-D scope. Conversation Compaction named but not implemented (no WP-C/WP-D scenario required it). Routing Decision generation materializes at WP-I.
+**Implementation state:** Complete for WP-C / WP-D / WP-F scope. Conversation Compaction named but not implemented (no scenario has required it). Routing Decision generation materializes at WP-I.
 **Code location:** `src/llm_orc/agentic/orchestrator_runtime.py`.
-**Stability:** Settled. Runtime receives already-summarized `ToolCallResult` values from Tool Dispatch (Amendment #3); summarization is a Tool-Dispatch-side concern the Runtime stays unaware of.
+**Stability:** Settled. Runtime receives already-summarized `ToolCallResult` values from Tool Dispatch (Amendment #3); summarization is a Tool-Dispatch-side concern the Runtime stays unaware of. Client Tool Surface Commitment (Option C) wired at WP-F — `run` splits each tool-calls batch by `TOOL_NAMES` membership and routes accordingly.
 
 ### Domain concepts in code
 
 | Concept | Code manifestation | Location |
 |---------|-------------------|----------|
-| Orchestrator Agent | `OrchestratorRuntime` class | `orchestrator_runtime.py:134` |
-| ReAct loop | `run` async generator | `orchestrator_runtime.py:151` |
-| Route (action) | LLM emits tool calls; Runtime dispatches | `orchestrator_runtime.py:182-194` |
-| Invoke (Dynamic) (action) | `invoke_ensemble` tool call dispatched through Tool Dispatch | same |
-| OrchestratorLLM Protocol | `OrchestratorLLM` | `orchestrator_runtime.py:50` |
-| ToolDispatcher Protocol | `ToolDispatcher` | `orchestrator_runtime.py:66` |
-| Tool schemas | `_build_tool_schemas` (five schemas, assertion-verified) | `orchestrator_runtime.py:73` |
-| Exhaustion formatting | `_format_exhaustion_message` | `orchestrator_runtime.py:130` |
+| Orchestrator Agent | `OrchestratorRuntime` class | `orchestrator_runtime.py` |
+| ReAct loop | `run` async generator | `orchestrator_runtime.py` |
+| System prompt injection | `OrchestratorRuntime.__init__(..., system_prompt=...)` + prepend in `run` | `orchestrator_runtime.py` |
+| Internal dispatch sub-generator | `_dispatch_internal_calls` | `orchestrator_runtime.py` |
+| Batch classifier | `_split_tool_calls(tool_calls, client_tool_names)` | `orchestrator_runtime.py` |
+| Client-tool names extractor | `_client_tool_names(context.tools)` | `orchestrator_runtime.py` |
+| Mixed-batch rejection | `_record_mixed_batch_rejection` + `_mixed_batch_error_observation` | `orchestrator_runtime.py` |
+| Client delegation chunk builder | `_client_delegation_chunk` | `orchestrator_runtime.py` |
+| ChatMessage → LLM dict | `_session_message_to_llm` | `orchestrator_runtime.py` |
+| OrchestratorLLM Protocol | `OrchestratorLLM` | `orchestrator_runtime.py` |
+| ToolDispatcher Protocol | `ToolDispatcher` | `orchestrator_runtime.py` |
+| Internal tool schemas | `_build_tool_schemas` (five schemas, assertion-verified) | `orchestrator_runtime.py` |
+| Exhaustion formatting | `_format_exhaustion_message` | `orchestrator_runtime.py` |
 
 ### Design rationale
 
@@ -199,6 +242,29 @@ reason, I emit tool calls, I observe results"): Session bookkeeping,
 Plexus awareness, Autonomy gating, Calibration state, and result
 summarization all live on the other side of Tool Dispatch.
 
+**Client Tool Surface Commitment — Option C (WP-F).** `run` advertises
+the union of the five internal schemas and the request's
+client-declared `tools[]` to the LLM. On each iteration, the tool-calls
+batch is split by `TOOL_NAMES` membership via `_split_tool_calls`.
+Mixed batches (internal + client in one response) are rejected with
+per-call `mixed_batch` error observations and the LLM retries on the
+next iteration — no silent data loss. Pure-client batches yield a
+`ClientToolCall` chunk (built via `_client_delegation_chunk`) and the
+generator returns, closing the turn with `finish_reason: tool_calls`.
+Pure-internal batches flow through `_dispatch_internal_calls` as
+before. Names outside both sets route through Tool Dispatch, which
+surfaces `unknown_tool` — keeping AS-6 closure structural regardless
+of client-declared tools.
+
+**System prompt injection (WP-F Group 3).** `OrchestratorRuntime` takes
+a `system_prompt: str = ""` construction kwarg. When non-empty, `run`
+always prepends it as a leading `role: system` message on every LLM
+iteration — ahead of any client-supplied system message so the
+orchestrator's discipline (five internal tools, turn-boundary
+discipline, `needs_client_tool` retry convention) survives competing
+client guidance. Empty string is a no-op. Tests and deployments that
+want no orchestrator-side prompt pass `""`.
+
 Scripted LLM fakes (in tests) satisfy `OrchestratorLLM` structurally
 without subclassing `ModelInterface`; production wiring passes the
 loaded `ModelInterface` directly (one shared type for tool-calling
@@ -209,7 +275,7 @@ responses across Runtime and `ModelInterface.generate_with_tools`).
 - **→ Budget Controller:** `check(turn_count, token_spend)` per iteration.
 - **→ Tool Dispatch (via `ToolDispatcher` Protocol):** `dispatch(InternalToolCall)` per tool emission.
 - **→ LLM (via `OrchestratorLLM` Protocol):** `generate_with_tools(messages, tools)` per iteration.
-- **→ orchestrator_chunk:** yields `ContentDelta` / `Completion` / `InternalToolCallInFlight` / `InternalToolCallResult` to the Serving Layer.
+- **→ orchestrator_chunk:** yields `ContentDelta` / `Completion` / `InternalToolCallInFlight` / `InternalToolCallResult` / `ClientToolCall` to the Serving Layer.
 
 ---
 

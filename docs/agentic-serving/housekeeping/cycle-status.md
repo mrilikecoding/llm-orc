@@ -1,7 +1,7 @@
 # Active RDD Cycle: Agentic Serving
 
 **Started:** 2026-03-20
-**Current phase:** BUILD (in progress — WP-A, WP-B, WP-C, WP-D, WP-E complete; WP-F Group 1 complete 2026-04-22 (scenarios a + b + mixed-batch + name-collision); WP-F Groups 2-3 pending; WP-G / WP-I available in parallel)
+**Current phase:** BUILD (in progress — WP-A, WP-B, WP-C, WP-D, WP-E, WP-F complete 2026-04-22. **TS-1 reached: stateless orchestrator serving OpenCode.** WP-G (Composition) / WP-I (Plexus Adapter) available in parallel as TS-2 path)
 **Artifact base:** `docs/agentic-serving/`
 **Essay:** `../essays/001-agentic-serving-architecture.md`
 
@@ -190,6 +190,24 @@
     - **Still deferred:** Framing audit on `essays/001-agentic-serving-architecture.md` — `housekeeping/audits/argument-audit-001.md` has argument-audit only; v0.7.3 dispatch format adds framing audit. Pick up if framing tension surfaces.
     - **Still deferred:** `product-discovery.md` §Value Tensions phrased as declarative prose rather than open questions per v0.7.3 discover template. Editorial work, not mechanical tidy — defer to a session that has the attentional mode for it.
 
+### From BUILD (WP-F Groups 2-3 / close, 2026-04-22)
+
+102. **WP-F closed — TS-1 reached.** Eight tests in `TestClientToolSurfaceCommitment` cover all five scenarios of §Client Tool Surface Commitment plus the two refinement guards (mixed-batch reject-and-retry, TOOL_NAMES collision). Five commits on branch `agentic-serving` from Group 1 close through Group 3 close:
+    - Group 1: `93e1229`, `61a6c40`, `b29a3b3`, `5d13e50` (see FF #97)
+    - Group 2: `813bf60` (scenario c — pre-invoke delegation)
+    - Group 3: `f3b9253` (retry pattern + orchestrator system prompt + summarizer YAML), plus this closeout docs commit.
+    **State at WP-F close: 2270 tests passing, 91.52% coverage, lint clean** (mypy strict + ruff + format + bandit + vulture + complexipy). FC-4 / FC-5 / FC-8 / FC-9 / FC-11 static checks all pass; no fitness regression, no architectural drift. TS-1 (stateless orchestrator serving OpenCode) is now end-to-end reachable.
+
+103. **Scenario (c) needed no schema change to `list_ensembles`.** `ResourceHandler.read_ensembles` already surfaces `description` on each entry (resource_handler.py:90). The WP-F build-time decision on schema enrichment turned out to be "not needed — the existing schema is already rich enough." `_StubEnsembleOperations` gained an optional `library_entries` kwarg so tests can verify orchestrator inference from description without reaching into the project's live config.
+
+104. **Orchestrator system prompt — always-prepend strategy (Group 3).** Runtime accepts `system_prompt: str = ""` at construction; when non-empty, prepends as leading `role: system` on every LLM iteration. Sits ahead of any client-supplied system message so the orchestrator's discipline (ADR-003 internal tools, Option C turn-boundary, `needs_client_tool` retry convention) survives competing client guidance. Empty string is a no-op for tests and for deployments that want no orchestrator-side prompt. Default content lives in `DEFAULT_ORCHESTRATOR_SYSTEM_PROMPT` at `orchestrator_config.py`; operators override via `agentic_serving.orchestrator.system_prompt` in `config.yaml`.
+
+105. **Summarizer transparency — YAML prompt, not code (Group 3).** Chose Path A (update `.llm-orc/ensembles/agentic-result-summarizer.yaml`'s `default_task` to instruct the agent to echo `needs_client_tool` JSON verbatim) over Path B (code-level signal preservation in the Harness). Keeps the Harness generic — it does not know about retry-pattern vocabulary. Production verification awaits `/rdd-play` stakeholder inhabitation; if prose LLMs don't honor the convention in practice, Path B (structural detection) can land as a follow-up without an ADR amendment.
+
+106. **Retry-pattern acceptance verified structurally via stubbed summarizers (Group 3).** Scenarios (d) and (negative) use a stubbed `SummarizerInvoker` that returns either a JSON-shaped `needs_client_tool` signal or prose. The test proves the *plumbing* — does the orchestrator observe the signal when the summarizer preserves it? Does the orchestrator correctly not-retry when the signal is absent? It does not prove the production summarizer LLM honors the convention under real load — that's a quality-of-summarizer concern for WP-H Calibration Gate or post-TS-1 `/rdd-play`.
+
+107. **Scenario (negative)'s failure mode is quality-class, not correctness-class.** When a composed ensemble skips the `needs_client_tool` convention, the orchestrator receives a normal prose summary, accepts it as final, and emits stop with (possibly hallucinated) content. Session's structural behavior is correct: no crash, Budget enforces, no spurious ClientToolCall, `turn_count` and `token_spend` advance normally. The answer is wrong; the Session dynamics are right. WP-H Calibration Gate is the designed backstop (ADR-007) — catching drift when a weak summarizer starts producing echo-back or a composed ensemble regresses on the convention.
+
 ### From BUILD (WP-F Group 1, 2026-04-22)
 
 97. **WP-F Group 1 landed — Option C turn-boundary delegation for scenarios (a) and (b).** Three commits on branch `agentic-serving`:
@@ -219,17 +237,38 @@
 
 ## Context for Resumption
 
-**Post-WP-F-mini-cycle resumption pointer (2026-04-22, end of day).** The WP-F scenario gate is resolved via in-session DECIDE mini-cycle. All three next-WP candidates are now fully unblocked for BUILD:
+**Post-WP-F resumption pointer (2026-04-22, TS-1 reached).** WP-F is complete on branch `agentic-serving` across six commits:
 
-- **WP-F — Client-tool turn-boundary delegation.** Five acceptance scenarios in `scenarios.md` §Client Tool Surface Commitment. Minimum enforcement stack: orchestrator system prompt + composed-ensemble prompt convention. Retry-pattern commitment is conditional — revisit criterion is capability improvement. Build-time decisions during implementation: `list_ensembles` output schema, summarizer transparency configuration, orchestrator system prompt text for convention recognition.
-- **WP-G — Composition + Validator.** Seven scenarios in `scenarios.md` §Ensemble Composition with Validation. Prerequisite (shared `validate_ensemble_reference_graph`) already in place from WP-A. Before starting: resolve Responsibility Matrix gap for "emit retry signal" allocation (ODP #8 item iii is the natural fit here if enforcement lives in composition).
-- **WP-I — Plexus Adapter (tool-first).** Five scenarios across §Plexus Integration / §Session Lifecycle. Open decision: `record_outcome` payload schema.
+- `93e1229` refactor: relocate ChatMessage to session_start and extract tool-call encoder
+- `61a6c40` feat: route client-declared tools through turn-boundary delegation (WP-F Group 1)
+- `b29a3b3` feat: tighten mixed-batch discipline and reserve TOOL_NAMES (WP-F Group 1)
+- `5d13e50` docs: record WP-F Group 1 feed-forward signals in cycle-status
+- `813bf60` test: add scenario (c) pre-invoke delegation acceptance (WP-F Group 2)
+- `f3b9253` feat: land retry pattern and orchestrator system prompt (WP-F Group 3)
+- (this commit) docs: close WP-F in roadmap, cycle-status, field guide, ORIENTATION
 
-All three depend only on WP-C (already complete). Pick based on highest-value sequencing — no hard dependencies among them, though WP-G resolving the Responsibility Matrix gap would tighten WP-F acceptance.
+**State at WP-F close: 2270 tests passing, 91.52% coverage, lint clean.** FC-4 / FC-5 / FC-8 / FC-9 / FC-11 static checks all pass. TS-1's vision — *"I can use OpenCode and run a version of this RDD pipeline with it"* — is end-to-end reachable: an operator deploys llm-orc with the Serving Layer, points OpenCode (or any OpenAI-compat agentic coding tool) at `/v1/chat/completions`, and the orchestrator routes tasks to library ensembles, summarizes results, enforces Budget, delegates client-side actions at turn boundaries, and retries composed ensembles whose mid-execution needs are un-predicted.
 
-**Suggested fresh-session handoff prompt for WP-F BUILD:**
+**Next WPs — two parallel candidates, both depend only on WP-C:**
 
-> Continue the agentic-serving scoped cycle. WP-F DECIDE mini-cycle closed 2026-04-22. Resume on WP-F BUILD per the five acceptance scenarios in `docs/agentic-serving/scenarios.md` §Client Tool Surface Commitment. Read the gate reflection at `docs/agentic-serving/housekeeping/gates/wpf-decide-gate.md` for settled premises, open questions, and the conditional retry-pattern commitment. Build-time decisions include `list_ensembles` output schema, summarizer transparency configuration, and orchestrator system prompt text for `needs_client_tool` recognition. See roadmap ODP #8 for the retry-enforcement mechanism layering options; the default (mechanisms i + ii) is overridable without a new ADR.
+1. **WP-G: Composition + Composition Validator.** Seven scenarios in `scenarios.md` §Ensemble Composition with Validation. Prerequisite (shared `validate_ensemble_reference_graph`) already in place from WP-A. Before starting: resolve the Responsibility Matrix gap for "emit retry signal" allocation (roadmap ODP #8 item iii — Composition Validator is the natural owner if enforcement lives in composition).
+
+2. **WP-I: Plexus Adapter (tool-first).** Five scenarios across §Plexus Integration and §Session Lifecycle. Open decision: `record_outcome` payload schema (build-time).
+
+Picking between them is a value-sequencing judgment; both lead toward TS-2 (stateless baseline complete after WP-G + WP-H) and TS-3 (four-layer Plexus stack after WP-I + WP-J).
+
+**Forward-carrying concerns from WP-F:**
+- **Silent quality failures when retry convention not honored** → WP-H calibration scope. Scenario (negative) documents the failure mode structurally; the Calibration Gate is the designed backstop.
+- **AS-6 authorship open question** — the orchestrator currently cannot author scripts or model profiles (safety-conservative). User flagged this as eventually desirable. Revisit as a standalone DECIDE mini-cycle post-TS-1. See FF #100.
+- **`list_ensembles` description richness.** The existing schema (name, source, relative_path, agent_count, description) works for scenario (c). Production deployments with many composed ensembles may need richer metadata (agent input expectations, tier, freshness). Defer until a real use case surfaces.
+
+**Suggested fresh-session handoff prompt for WP-G or WP-I:**
+
+> Continue the agentic-serving scoped cycle. WP-F closed 2026-04-22; TS-1 reached. Pick WP-G (Composition + Validator) or WP-I (Plexus Adapter, tool-first) — both depend only on WP-C. Read `docs/agentic-serving/cycle-status.md` §Context for Resumption and the chosen WP's entry in `docs/agentic-serving/roadmap.md`. For WP-G, resolve the Responsibility Matrix gap for "emit retry signal" (roadmap ODP #8 item iii) before implementing. For WP-I, the `record_outcome` payload schema is a build-time decision.
+
+---
+
+**Post-WP-F-mini-cycle resumption pointer (2026-04-22, superseded by WP-F close).** The WP-F scenario gate was resolved via in-session DECIDE mini-cycle; all five acceptance scenarios now pass. See the post-WP-F pointer above.
 
 ---
 
