@@ -197,36 +197,61 @@ class OrchestratorRuntime:
                 yield Completion(finish_reason="stop")
                 return
 
-            client_calls = [
-                tc for tc in response.tool_calls if tc.name in client_tool_names
-            ]
+            client_calls, internal_calls = _split_tool_calls(
+                response.tool_calls, client_tool_names
+            )
+            if client_calls and internal_calls:
+                # Mixed batch: Option C's one-kind-per-turn discipline is
+                # violated. Reject all; the LLM retries with a pure batch
+                # on the next iteration. See ``_record_mixed_batch_rejection``.
+                _record_mixed_batch_rejection(messages, response)
+                continue
+
             if client_calls:
-                # Option C: any client-declared tool call in the batch
-                # closes the turn. Internal calls in the same batch are
-                # dropped — the orchestrator LLM will re-emit them next
-                # turn after seeing the client-tool results. This keeps
-                # the turn-boundary discipline (ADR-001/002: DAG engine
-                # runs atomically; no mid-turn callback).
-                yield ClientToolCall(
-                    tool_calls=tuple(_client_invocation(tc) for tc in client_calls)
-                )
+                # Option C: pure client-declared batch closes the turn.
+                # DAG engine runs atomically (ADR-001/002); no mid-turn
+                # callback. The client executes the tools and resumes the
+                # Session on the next ``/v1/chat/completions`` request.
+                yield _client_delegation_chunk(client_calls)
                 return
 
             messages.append(_assistant_message(response))
-            for tool_call in response.tool_calls:
-                yield InternalToolCallInFlight(id=tool_call.id, name=tool_call.name)
-                parsed = InternalToolCall(
-                    id=tool_call.id,
-                    name=tool_call.name,
-                    arguments=_safe_parse_arguments(tool_call.arguments_json),
-                )
-                result = await self._tool_dispatch.dispatch(parsed)
-                for event in result.events:
-                    yield event
-                yield InternalToolCallResult(
-                    id=result.id, summary=_tool_result_summary(result)
-                )
-                messages.append(_tool_result_message(result))
+            async for chunk in self._dispatch_internal_calls(
+                response.tool_calls, messages
+            ):
+                yield chunk
+
+    async def _dispatch_internal_calls(
+        self,
+        tool_calls: list[ToolCall],
+        messages: list[dict[str, Any]],
+    ) -> AsyncIterator[OrchestratorChunk]:
+        """Dispatch a pure-internal batch and yield observation chunks.
+
+        Each call flows through Tool Dispatch, which interposes Autonomy
+        Policy (WP-E) and the Result Summarizer Harness (WP-D) on the
+        ``invoke_ensemble`` return path. The ``messages`` list is
+        mutated in place: a ``role: tool`` observation is appended per
+        result so the next ReAct iteration's LLM call sees the outcome.
+
+        Extracting this loop out of :meth:`run` keeps that method's
+        complexity under the project's cyclomatic ceiling while
+        preserving the ReAct loop's readability at the outer level.
+        """
+        for tool_call in tool_calls:
+            yield InternalToolCallInFlight(id=tool_call.id, name=tool_call.name)
+            parsed = InternalToolCall(
+                id=tool_call.id,
+                name=tool_call.name,
+                arguments=_safe_parse_arguments(tool_call.arguments_json),
+            )
+            result = await self._tool_dispatch.dispatch(parsed)
+            for event in result.events:
+                yield event
+            yield InternalToolCallResult(
+                id=result.id, summary=_tool_result_summary(result)
+            )
+            messages.append(_tool_result_message(result))
 
 
 def _session_message_to_llm(message: ChatMessage) -> dict[str, Any]:
@@ -264,6 +289,80 @@ def _client_tool_names(tools: list[dict[str, Any]]) -> frozenset[str]:
             if isinstance(name, str) and name:
                 names.add(name)
     return frozenset(names)
+
+
+def _split_tool_calls(
+    tool_calls: list[ToolCall], client_tool_names: frozenset[str]
+) -> tuple[list[ToolCall], list[ToolCall]]:
+    """Partition a tool-calls batch into ``(client_calls, internal_calls)``.
+
+    Membership in ``client_tool_names`` (derived from the request's
+    ``tools[]``) is the classifier. Names in neither set — e.g., an LLM
+    hallucination like ``create_script`` that matches no internal tool
+    and no client-declared tool — route as internal and get rejected by
+    Tool Dispatch's unknown-tool path, which keeps AS-6 closure
+    structural.
+    """
+    client = [tc for tc in tool_calls if tc.name in client_tool_names]
+    internal = [tc for tc in tool_calls if tc.name not in client_tool_names]
+    return client, internal
+
+
+def _record_mixed_batch_rejection(
+    messages: list[dict[str, Any]], response: ToolCallingResponse
+) -> None:
+    """Append the LLM's mixed-batch response + per-call rejections to history.
+
+    Records the assistant turn that violated the one-kind-per-turn
+    discipline, then a ``role: tool`` error observation for every tool
+    call in that turn so the LLM's next iteration sees a complete,
+    correctly-correlated history and can retry with a pure batch.
+    """
+    messages.append(_assistant_message(response))
+    for tool_call in response.tool_calls:
+        messages.append(_mixed_batch_error_observation(tool_call))
+
+
+def _client_delegation_chunk(client_calls: list[ToolCall]) -> ClientToolCall:
+    """Build the :class:`ClientToolCall` chunk that closes the turn per Option C.
+
+    The Serving Layer translates this into
+    ``finish_reason: tool_calls`` on the wire (streaming or non-
+    streaming). ``arguments`` stays in OpenAI's pre-encoded JSON-string
+    form — :class:`ToolCallInvocation` carries it through unchanged.
+    """
+    return ClientToolCall(
+        tool_calls=tuple(_client_invocation(tc) for tc in client_calls)
+    )
+
+
+def _mixed_batch_error_observation(tool_call: ToolCall) -> dict[str, Any]:
+    """``role: tool`` error observation for a call in a rejected mixed batch.
+
+    When the orchestrator LLM emits a batch that mixes internal
+    (``TOOL_NAMES``) with client-declared tool calls, Option C's one-
+    kind-per-turn discipline is violated. The Runtime feeds this
+    observation back per call so the LLM can reason about how to retry
+    without losing data — the ``mixed_batch`` error kind and the inline
+    reason teach the model to re-emit either internal tools only or
+    client-declared tools only on the next iteration.
+    """
+    payload = {
+        "error": "mixed_batch",
+        "reason": (
+            "This turn mixed an internal ensemble tool "
+            "(invoke_ensemble, compose_ensemble, list_ensembles, "
+            "query_knowledge, record_outcome) with a client-declared "
+            "tool. Retry with one kind per turn: internal tools run "
+            "in-process; client-declared tools close the turn and are "
+            "executed by the client."
+        ),
+    }
+    return {
+        "role": "tool",
+        "tool_call_id": tool_call.id,
+        "content": json.dumps(payload),
+    }
 
 
 def _client_invocation(tool_call: ToolCall) -> ToolCallInvocation:

@@ -1933,6 +1933,178 @@ class TestClientToolSurfaceCommitment:
         assert tool_messages[0]["tool_call_id"] == "call_fr_1"
         assert "authenticate" in tool_messages[0]["content"]
 
+    def test_mixed_batch_rejected_and_retried_without_silent_loss(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Mixed-batch discipline — reject, feed tool errors, let the LLM retry.
+
+        When the orchestrator LLM emits a single batch containing both
+        internal (TOOL_NAMES) and client-declared tool calls, Option C's
+        one-kind-per-turn property is violated (internal dispatches
+        synchronously in-process; client delegations close the turn). The
+        Runtime rejects the batch by feeding a ``mixed_batch`` error
+        observation per call, then continues the loop so the LLM can retry
+        with a pure batch — no silent data loss, no mis-routing.
+
+        Three LLM iterations verify the full round trip:
+          1. LLM emits mixed ``[list_ensembles, file_read]``. Runtime
+             rejects both; neither Tool Dispatch nor ClientToolCall fires.
+          2. LLM observes the errors, retries with internal only; dispatch
+             runs, observation flows back.
+          3. LLM emits client-only ``file_read``; Runtime closes the turn.
+        """
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_mixed_a",
+                            name="list_ensembles",
+                            arguments_json="{}",
+                        ),
+                        ToolCall(
+                            id="call_mixed_b",
+                            name="file_read",
+                            arguments_json='{"path": "src/auth.py"}',
+                        ),
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=20, completion_tokens=10, total_tokens=30
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_retry_internal",
+                            name="list_ensembles",
+                            arguments_json="{}",
+                        ),
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=50, completion_tokens=5, total_tokens=55
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_retry_client",
+                            name="file_read",
+                            arguments_json='{"path": "src/auth.py"}',
+                        ),
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=70, completion_tokens=8, total_tokens=78
+                    ),
+                    finish_reason="tool_calls",
+                ),
+            ]
+        )
+        from llm_orc.agentic.orchestrator_tool_dispatch import ToolCallSuccess
+
+        tool_dispatch = _StubToolDispatch(
+            results={
+                "call_retry_internal": ToolCallSuccess(
+                    id="call_retry_internal",
+                    name="list_ensembles",
+                    content=[{"name": "auth-analyzer"}],
+                )
+            }
+        )
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=tool_dispatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "look up and then read"}],
+                "tools": [self._file_read_tool_schema()],
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        # Final turn emits the file_read ClientToolCall from iteration 3.
+        assert body["choices"][0]["finish_reason"] == "tool_calls"
+        final_tool_calls = body["choices"][0]["message"]["tool_calls"]
+        assert len(final_tool_calls) == 1
+        assert final_tool_calls[0]["function"]["name"] == "file_read"
+        # Tool Dispatch saw only the retry's internal call — not the
+        # mixed-batch call_mixed_a (which was rejected).
+        assert [call.name for call in tool_dispatch.calls] == ["list_ensembles"]
+        assert tool_dispatch.calls[0].id == "call_retry_internal"
+        # LLM was called 3 times. Iteration 2 must have seen a mixed_batch
+        # error observation for BOTH rejected calls — no silent loss.
+        assert len(llm.calls) == 3
+        iter2_messages = llm.calls[1][0]
+        rejection_messages = [m for m in iter2_messages if m.get("role") == "tool"]
+        assert len(rejection_messages) == 2, (
+            "Both mixed-batch calls must surface as role:tool error "
+            "observations on the LLM's retry — otherwise the LLM has no "
+            "signal to correct its batch discipline."
+        )
+        observed_ids = {m["tool_call_id"] for m in rejection_messages}
+        assert observed_ids == {"call_mixed_a", "call_mixed_b"}
+        for message in rejection_messages:
+            payload = json.loads(message["content"])
+            assert payload["error"] == "mixed_batch", (
+                "Rejection payload must name the discipline violated so "
+                "the LLM can reason about how to retry."
+            )
+
+    def test_client_tool_shadowing_internal_name_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Name-collision guard — TOOL_NAMES are reserved.
+
+        The five internal tool names (ADR-003) are llm-orc's action
+        surface. A client-declared tool whose name shadows any of them
+        would silently misroute — the Runtime would treat the internal
+        call as a client delegation. Reject at the Serving Layer with
+        HTTP 400 so operators learn about the conflict immediately rather
+        than through a mysterious stream of ``finish_reason: tool_calls``
+        when they expected ``list_ensembles`` to run.
+        """
+        llm = _ScriptedLLM(responses=[])  # never called
+        tool_dispatch = _StubToolDispatch()  # never called
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=tool_dispatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hi"}],
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": "invoke_ensemble",
+                            "description": (
+                                "Client attempting to shadow an internal tool."
+                            ),
+                            "parameters": {"type": "object", "properties": {}},
+                        },
+                    }
+                ],
+            },
+        )
+
+        assert response.status_code == 400
+        body = response.json()
+        # The app's custom HTTPException handler wraps ``detail`` under an
+        # ``"error"`` key (see ``web/server.py``). The inner payload is
+        # the dict this test actually cares about.
+        payload = body["error"] if isinstance(body.get("error"), dict) else body
+        assert payload["error"] == "reserved_tool_name"
+        assert "invoke_ensemble" in payload["message"]
+        # Collision rejected before Runtime — LLM never invoked, dispatch
+        # never consulted.
+        assert llm.calls == []
+
     def test_streaming_client_tool_delegation_yields_tool_calls_chunk(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
