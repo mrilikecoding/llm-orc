@@ -9,26 +9,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ## Work Packages
 
-> **WP-A, WP-B, WP-C, WP-D, WP-E, and WP-F are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. **TS-1 (stateless orchestrator serving OpenCode) is reached at WP-F close.** The active section below lists only upcoming or in-progress work.
-
-### WP-G: Composition — compose_ensemble, Composition Validator
-
-**Objective:** Wire the `compose_ensemble` tool through the Composition Validator to the shared cycle-validator routine and the Ensemble Engine's local-tier write path.
-
-**Changes:**
-- New **Composition Validator** module.
-- Orchestrator Tool Dispatch edit: `compose_ensemble` entry point is now wired (previously returned not-yet-wired error).
-- Local-tier write path for composed ensembles (Ensemble Engine local tier, via existing config manager).
-
-**Scenarios covered:** scenarios.md §Ensemble Composition with Validation (six scenarios) plus the integration scenario (composed ensemble validates using the same logic as the load path — closes FC-6 as a regression test).
-
-**Dependencies:**
-- WP-A (hard) — needs `validate_ensemble_reference_graph` to exist as a public function.
-- WP-C (hard) — needs the dispatch entry point to exist.
-
-**Participating modules:** Composition Validator, Orchestrator Tool Dispatch (edit), Ensemble Engine (existing, called through). Consistent with WP scope.
-
----
+> **WP-A, WP-B, WP-C, WP-D, WP-E, WP-F, and WP-G are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. **TS-1 (stateless orchestrator serving OpenCode) was reached at WP-F close.** The active section below lists only upcoming or in-progress work.
 
 ### WP-H: Calibration Gate
 
@@ -130,7 +111,7 @@ At TS-1, the fitness criteria satisfied are: FC-1 through FC-5, FC-8, FC-10, FC-
 
 ### TS-2: Stateless baseline complete (after TS-1 + WP-G + WP-H)
 
-The orchestrator can now compose new ensembles from existing library primitives, validate them, and calibrate them within the session. Still no Plexus — calibration is session-scoped; cross-session trust does not persist. This is the complete **baseline product** as defined by ADR-002 Layer 1-3 and AS-8. Fitness criteria FC-6 and FC-12 now satisfied.
+The orchestrator can now compose new ensembles from existing library primitives, validate them, and calibrate them within the session. Still no Plexus — calibration is session-scoped; cross-session trust does not persist. This is the complete **baseline product** as defined by ADR-002 Layer 1-3 and AS-8. Fitness criteria FC-6 and FC-12 satisfied at TS-2; **FC-6 landed at WP-G close (2026-04-22)**.
 
 ### TS-3: Four-layer stack with Phase 1 Plexus integration (after TS-2 + WP-I + WP-J)
 
@@ -159,6 +140,71 @@ Full architecture live. `query_knowledge` and `record_outcome` flow to Plexus; l
 ---
 
 ## Completed Work Log
+
+### WP-G: Composition + Composition Validator — 2026-04-22
+
+**Commits (in order):**
+
+- `32d2dd3` refactor: add compute_reference_graph_depth helper for composition-time depth check
+- `9972ed3` feat: add Composition Validator module (WP-G Group 1)
+- `e5f8ea0` feat: wire compose_ensemble through Composition Validator (WP-G Group 2)
+- `804aeb7` test: add composition boundary integration + acceptance coverage (WP-G Group 3)
+- (this change) docs: close WP-G in roadmap, cycle-status, field guide, ORIENTATION
+
+**Outcome.** `compose_ensemble` is fully wired. The orchestrator can now assemble a new ensemble from existing primitives, have it validated against AS-2, AS-6, Invariant 5 (cross-ensemble acyclicity), Invariant 7 (static reference resolution), and Invariant 8 (depth limit), and — on accept — persist the ensemble to the local tier at `.llm-orc/ensembles/{name}.yaml`. Composition-time validation is stricter than load-time: AS-6 existence checks (profile, script, ensemble) reject dangling references that the load path tolerates silently, and Invariant 8 is enforced before disk write instead of deferring to the runtime. AS-2 is structurally enforced — the writer is only reached after `CompositionAccepted`.
+
+**New module.** `src/llm_orc/agentic/composition_validator.py` (L1) — `CompositionValidator.validate(request)` returns `CompositionAccepted(config)` or `CompositionRejected(kind, reason)` across seven outcomes:
+
+- `invalid_agent_schema` — Pydantic rejects the agent dict
+- `missing_dependency` — sibling `depends_on` not present
+- `internal_dependency_cycle` — intra-ensemble dep cycle
+- `invalid_fan_out` — `fan_out: true` without `depends_on`
+- `missing_primitive` — profile/script/ensemble does not exist in the library (AS-6)
+- `cross_ensemble_cycle` — delegates to `validate_ensemble_reference_graph` (FC-6)
+- `depth_limit_exceeded` — `compute_reference_graph_depth` > configured limit (Invariant 8)
+
+Production adapters live in the same module: `ConfigManagerPrimitiveRegistry` wraps `ConfigurationManager` + `ScriptResolver` + ensemble directory discovery; `ConfigManagerEnsembleWriter` persists an accepted config to the local tier with collision rejection (mirrors `EnsembleCrudHandler.get_local_ensembles_dir`). `EnsembleWriteError` inherits `ValueError` so Tool Dispatch narrows on a single exception type for the whole validation-plus-write surface.
+
+**Edits.**
+
+- `OrchestratorToolDispatch.__init__` takes two new kwargs: `composition_validator: CompositionGate` and `local_ensemble_writer: LocalEnsembleWriter` (both Protocols — tests substitute scripted doubles without constructing the production validator's registry dependency). `compose_ensemble` parses arguments, delegates to the validator, and hands the accepted config to the writer; validation rejection and write failure both surface as `ToolCallError(kind="invocation_failed", reason=...)` so the ReAct loop continues with a typed observation. Malformed arguments (missing name, wrong description type, non-list agents) surface as `ToolCallError(kind="invalid_arguments", reason=...)` without touching the validator.
+- `v1_chat_completions.get_orchestrator_tool_dispatch` constructs the real registry + validator + writer from the shared `ConfigurationManager` so a `config.yaml` edit takes effect on the next request without restart.
+- `core/config/ensemble_config.py` gains `compute_reference_graph_depth(name, agents, search_dirs)` — sibling of `validate_ensemble_reference_graph`, reusing the existing `_build_reference_graph` helper. Depth 0 is a leaf; an N-edge chain returns N, matching the runtime depth counter in `EnsembleAgentRunner`.
+
+**Scenarios covered.** `scenarios.md` §Ensemble Composition with Validation — all seven scenarios have explicit coverage:
+
+- §Composition with only profiles and scripts succeeds → `TestAcceptance::test_accept_with_only_profiles_and_scripts` (unit) + `TestEnsembleCompositionWithValidationAcceptance::test_compose_happy_path_writes_new_ensemble_and_reports_to_llm` (Serving Layer)
+- §Composition with ensemble-to-ensemble reference passes → `TestAcceptance::test_accept_with_existing_ensemble_reference` (unit)
+- §Composition that would introduce a cycle fails → `TestCrossEnsembleCycle::test_reject_cycle_through_existing_ensembles` (unit) + `TestComposeEnsembleRejectsCycle::test_compose_ensemble_rejects_cycle` (boundary) + `TestEnsembleCompositionWithValidationAcceptance::test_compose_rejects_cycle_and_leaves_local_tier_untouched` (Serving Layer)
+- §Composition referencing a non-existent primitive fails → `TestPrimitiveExistence` class (unit — profile, script, ensemble)
+- §Composition exceeds depth limit → `TestDepthLimit::test_reject_when_proposed_graph_exceeds_depth_limit` + boundary accept at limit
+- §Composition never authors scripts or profiles → `TestComposeEnsembleNeverAuthorsPrimitives` (boundary, structural) + existing `TestAutonomyAndPromotionAcceptance::test_script_authorship_never_permitted_at_any_level`
+- §(integration) shared single routine → `TestSharedValidatorSameBothPaths::test_shared_validator_same_result_both_paths` (boundary FC-6 regression)
+
+**Fitness criteria status.**
+
+- FC-5 (exactly five public dispatch entry points): unchanged.
+- FC-6 (Composition Validator and Ensemble Engine's load path call the same public validator function): **fully satisfied**. One definition at `core/config/ensemble_config.py:309`; four call sites (load path, `list_ensembles`, `ValidationHandler`, Composition Validator). The regression test verifies both paths return identical outcomes on the same input and that the composition validator imports the routine from its canonical module.
+- FC-4 (Runtime import surface): unchanged — no new imports into `orchestrator_runtime.py`.
+- FC-11 (Autonomy gate fires before every dispatch): unchanged.
+
+**Decisions made during build.**
+
+- **Shared helper in `ensemble_config.py`, not inline in the validator.** `compute_reference_graph_depth` lives alongside `validate_ensemble_reference_graph` so both graph-walking routines stay in one module. Depth detection reuses `_build_reference_graph` — the private helper already walks search dirs. Composition-time is the only caller today, but the placement keeps the option open for a future load-time depth check without another extraction pass.
+- **Primitive existence is composition-time strict, not load-time strict.** Load-time's tolerance of dangling ensemble references (Invariant 7 is enforced at execution via `child_executor`, not at load) preserves test fixture flexibility in the existing suite. Composition-time follows AS-6's literal reading — "compose from existing primitives only" — so the orchestrator cannot create an ensemble that names a missing profile/script/ensemble.
+- **Depth check is composition-time only.** Moving `EnsembleAgentRunner`'s runtime depth enforcement into load-time would be scope creep and a behavior change on existing ensembles. Composition-time depth check is an additive composition-level discipline that does not alter load-path behavior.
+- **`CompositionGate` Protocol on Tool Dispatch.** Concrete `CompositionValidator` has a deeper dependency surface (primitive registry + depth limit); dispatch-level tests would either construct the full stack or duck-type. The Protocol formalizes the duck-typed surface (one `validate` method) so test doubles pass mypy strict without pulling the registry.
+- **Test-default `_rejecting_validator`, not `_UnusedValidator`.** Many existing dispatch-scope tests dispatch `compose_ensemble` incidentally (autonomy-gate coverage, visibility-event routing). A default that raises on consult (`_UnusedValidator`) would break those tests; a default that rejects cheaply (`_rejecting_validator`) keeps them passing while preserving loud failure on the write path if a test reaches it by mistake. Tests that assert on composition behavior pass scripted validators explicitly.
+
+**Test coverage delta.** +20 tests (13 unit validator + 5 boundary integration + 2 Serving Layer acceptance). Full suite: **2297 passing, 91.51% coverage, lint clean** (mypy strict + ruff + format + bandit + vulture + complexipy).
+
+**Unblocks.** WP-H (Calibration Gate) now has a composed-ensemble code path to calibrate against — scenarios under §Calibration of Composed Ensembles can be exercised end-to-end once the Calibration Gate is wired.
+
+**Forward-carrying concerns** (not addressed in WP-G scope).
+
+- **Overwrite semantics.** `ConfigManagerEnsembleWriter.write` rejects collision with the existing-file message. A future workflow where the orchestrator wants to update an existing composition (e.g., after calibration-driven refinement) would need an explicit `compose_ensemble(overwrite=True)` argument or a separate tool — not the default behavior.
+- **Hierarchical ensemble names.** `EnsembleLoader.find_ensemble` supports `examples/neon-shadows/neon-shadows` style names, but the writer always targets a flat `{name}.yaml` in the local tier. If composition-time names collide with a hierarchical library entry, the writer's collision check will not see it. Low priority — composed ensembles use simple names today.
+- **Raw-output escape hatch via composition.** `CompositionRequest.raw_output` is plumbed through the writer, but no scenario exercises the orchestrator composing a raw-output ensemble. If WP-H/WP-I work surfaces the need, add a scenario; otherwise the `raw_output: false` default is structurally fine.
 
 ### WP-A: Cycle-validator extraction (retrofit debt) — 2026-04-20
 
