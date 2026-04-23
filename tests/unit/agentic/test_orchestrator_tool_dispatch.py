@@ -27,6 +27,12 @@ from llm_orc.agentic.autonomy_policy import (
     AutonomyPolicy,
     Deny,
 )
+from llm_orc.agentic.composition_validator import (
+    CompositionAccepted,
+    CompositionOutcome,
+    CompositionRejected,
+    CompositionRequest,
+)
 from llm_orc.agentic.orchestrator_chunk import VisibilityEvent
 from llm_orc.agentic.orchestrator_tool_dispatch import (
     TOOL_NAMES,
@@ -36,6 +42,7 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     ToolCallSuccess,
 )
 from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
+from llm_orc.core.config.ensemble_config import EnsembleConfig
 
 
 class _RaisingOperations:
@@ -133,6 +140,110 @@ def _permissive_policy(level: str = BASELINE_LEVEL) -> AutonomyPolicy:
     return AutonomyPolicy(level_provider=lambda: level)
 
 
+class _UnusedValidator:
+    """Validator stub that fails loudly if consulted.
+
+    Used exclusively by the malformed-arguments test to prove the
+    dispatch short-circuits before reaching the validator.
+    """
+
+    def validate(
+        self, request: CompositionRequest
+    ) -> CompositionOutcome:  # pragma: no cover
+        raise AssertionError(
+            f"composition_validator should not be called in this test: {request.name!r}"
+        )
+
+
+class _UnusedWriter:
+    """Writer stub for tests that never accept a composition.
+
+    Raises if the writer is consulted. Paired with the default
+    rejecting validator in :func:`_build_dispatch` so tests that
+    dispatch ``compose_ensemble`` without scripting a real acceptance
+    never reach the write path.
+    """
+
+    def write(self, config: EnsembleConfig) -> str:  # pragma: no cover
+        raise AssertionError(
+            f"local_ensemble_writer should not be called in this test: {config.name!r}"
+        )
+
+
+def _rejecting_validator() -> _ScriptedValidator:
+    """Default validator for tests that dispatch compose but do not test it.
+
+    Rejects with a neutral reason; the dispatch produces a
+    ``ToolCallError(kind="invocation_failed")`` that tests at
+    autonomy/routing scope can ignore. Tests that assert on
+    composition behavior pass a scripted validator explicitly.
+    """
+    return _ScriptedValidator(
+        CompositionRejected(
+            kind="missing_primitive",
+            reason="default rejecting validator for non-compose tests",
+        )
+    )
+
+
+def _build_dispatch(
+    *,
+    operations: Any,
+    harness: ResultSummarizerHarness | None = None,
+    autonomy_policy: Any = None,
+    composition_validator: Any = None,
+    local_ensemble_writer: Any = None,
+) -> OrchestratorToolDispatch:
+    """Construct a dispatch with sensible test defaults.
+
+    Default validator rejects any request so tests that dispatch
+    ``compose_ensemble`` incidentally (e.g., autonomy-gate tests)
+    never reach the writer. Tests that exercise the accept path pass
+    a scripted validator explicitly.
+    """
+    return OrchestratorToolDispatch(
+        operations=operations,
+        harness=harness if harness is not None else _build_harness(),
+        autonomy_policy=(
+            autonomy_policy if autonomy_policy is not None else _permissive_policy()
+        ),
+        composition_validator=(
+            composition_validator
+            if composition_validator is not None
+            else _rejecting_validator()
+        ),
+        local_ensemble_writer=(
+            local_ensemble_writer
+            if local_ensemble_writer is not None
+            else _UnusedWriter()
+        ),
+    )
+
+
+class _ScriptedValidator:
+    """Returns a scripted :class:`CompositionOutcome` and records calls."""
+
+    def __init__(self, outcome: CompositionOutcome) -> None:
+        self._outcome = outcome
+        self.calls: list[CompositionRequest] = []
+
+    def validate(self, request: CompositionRequest) -> CompositionOutcome:
+        self.calls.append(request)
+        return self._outcome
+
+
+class _RecordingWriter:
+    """Records the configs it receives and returns a canned path."""
+
+    def __init__(self, path: str = "/tmp/composed.yaml") -> None:
+        self._path = path
+        self.written: list[EnsembleConfig] = []
+
+    def write(self, config: EnsembleConfig) -> str:
+        self.written.append(config)
+        return self._path
+
+
 class _RecordingPolicy:
     """AutonomyPolicy double that records calls and returns a canned decision.
 
@@ -161,7 +272,7 @@ class TestDispatchRejectsUnknownTool:
 
     @pytest.mark.asyncio
     async def test_dispatch_rejects_unknown_tool_name(self) -> None:
-        dispatch = OrchestratorToolDispatch(
+        dispatch = _build_dispatch(
             operations=_RaisingOperations(),
             harness=_build_harness(),
             autonomy_policy=_permissive_policy(),
@@ -220,9 +331,9 @@ class TestClosedToolSet:
 
 
 class TestNotYetWiredTools:
-    """WP-C wires only invoke_ensemble and list_ensembles.
+    """WP-G leaves only ``query_knowledge`` and ``record_outcome`` pending.
 
-    The other three tools exist (to honor the closed-set property) but
+    Those two tools exist (to honor the closed-set property) but
     return a typed ``not_yet_wired`` tool error. The Runtime surfaces
     these to the orchestrator LLM as an observation — the LLM is free
     to plan around them.
@@ -232,7 +343,6 @@ class TestNotYetWiredTools:
     @pytest.mark.parametrize(
         ("tool_name", "landing_wp"),
         [
-            ("compose_ensemble", "WP-G"),
             ("query_knowledge", "WP-I"),
             ("record_outcome", "WP-I"),
         ],
@@ -240,7 +350,7 @@ class TestNotYetWiredTools:
     async def test_not_yet_wired_tool_returns_typed_error(
         self, tool_name: str, landing_wp: str
     ) -> None:
-        dispatch = OrchestratorToolDispatch(
+        dispatch = _build_dispatch(
             operations=_RaisingOperations(),
             harness=_build_harness(),
             autonomy_policy=_permissive_policy(),
@@ -254,6 +364,147 @@ class TestNotYetWiredTools:
         assert result.name == tool_name
         assert result.kind == "not_yet_wired"
         assert landing_wp in result.reason
+
+
+class TestComposeEnsemble:
+    """compose_ensemble delegates to CompositionValidator + writer (WP-G).
+
+    Unit tests cover four branches: validator accept → writer writes
+    and the ToolCallSuccess names the path; validator reject →
+    invocation_failed surfaces the reason; writer failure →
+    invocation_failed surfaces the write error; malformed arguments →
+    invalid_arguments without touching the validator.
+    """
+
+    @pytest.mark.asyncio
+    async def test_compose_writes_when_validator_accepts(self) -> None:
+        accepted_config = EnsembleConfig(
+            name="combo",
+            description="x",
+            agents=[],
+        )
+        validator = _ScriptedValidator(CompositionAccepted(config=accepted_config))
+        writer = _RecordingWriter(path="/tmp/combo.yaml")
+        dispatch = _build_dispatch(
+            operations=_RaisingOperations(),
+            composition_validator=validator,
+            local_ensemble_writer=writer,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="c1",
+                name="compose_ensemble",
+                arguments={
+                    "name": "combo",
+                    "description": "x",
+                    "agents": [],
+                },
+            )
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.content == {"name": "combo", "path": "/tmp/combo.yaml"}
+        assert writer.written == [accepted_config]
+        assert [req.name for req in validator.calls] == ["combo"]
+
+    @pytest.mark.asyncio
+    async def test_compose_surfaces_validator_rejection_as_invocation_failed(
+        self,
+    ) -> None:
+        rejection = CompositionRejected(
+            kind="cross_ensemble_cycle",
+            reason="cross-ensemble cycle detected: combo -> a -> combo",
+        )
+        validator = _ScriptedValidator(rejection)
+        writer = _RecordingWriter()
+        dispatch = _build_dispatch(
+            operations=_RaisingOperations(),
+            composition_validator=validator,
+            local_ensemble_writer=writer,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="c1",
+                name="compose_ensemble",
+                arguments={
+                    "name": "combo",
+                    "description": "x",
+                    "agents": [{"name": "a", "ensemble": "combo"}],
+                },
+            )
+        )
+
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "invocation_failed"
+        assert "cycle" in result.reason.lower()
+        assert writer.written == [], "writer must not run on validator rejection"
+
+    @pytest.mark.asyncio
+    async def test_compose_surfaces_write_failure_as_invocation_failed(self) -> None:
+        from llm_orc.agentic.composition_validator import EnsembleWriteError
+
+        accepted_config = EnsembleConfig(name="combo", description="x", agents=[])
+        validator = _ScriptedValidator(CompositionAccepted(config=accepted_config))
+
+        class _FailingWriter:
+            def write(self, config: EnsembleConfig) -> str:
+                raise EnsembleWriteError(f"ensemble '{config.name}' already exists")
+
+        dispatch = _build_dispatch(
+            operations=_RaisingOperations(),
+            composition_validator=validator,
+            local_ensemble_writer=_FailingWriter(),
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="c1",
+                name="compose_ensemble",
+                arguments={
+                    "name": "combo",
+                    "description": "x",
+                    "agents": [],
+                },
+            )
+        )
+
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "invocation_failed"
+        assert "already exists" in result.reason
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("arguments", "reason_contains"),
+        [
+            ({}, "name"),
+            ({"name": "", "description": "x", "agents": []}, "name"),
+            ({"name": "combo", "description": 42, "agents": []}, "description"),
+            ({"name": "combo", "description": "x", "agents": "not-a-list"}, "agents"),
+            ({"name": "combo", "description": "x", "agents": ["not-a-dict"]}, "agents"),
+        ],
+    )
+    async def test_compose_rejects_malformed_arguments_without_calling_validator(
+        self,
+        arguments: dict[str, Any],
+        reason_contains: str,
+    ) -> None:
+        validator = _UnusedValidator()
+        writer = _UnusedWriter()
+        dispatch = _build_dispatch(
+            operations=_RaisingOperations(),
+            composition_validator=validator,
+            local_ensemble_writer=writer,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(id="c1", name="compose_ensemble", arguments=arguments)
+        )
+
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "invalid_arguments"
+        assert reason_contains in result.reason
 
 
 class TestListEnsembles:
@@ -272,7 +523,7 @@ class TestListEnsembles:
                 }
             ]
         )
-        dispatch = OrchestratorToolDispatch(
+        dispatch = _build_dispatch(
             operations=operations,
             harness=_build_harness(),
             autonomy_policy=_permissive_policy(),
@@ -317,7 +568,7 @@ class TestInvokeEnsemble:
             "raw_output": False,
         }
         operations = _ScriptedOperations(invoke_result=normalized_result)
-        dispatch = OrchestratorToolDispatch(
+        dispatch = _build_dispatch(
             operations=operations,
             harness=_build_harness(returns={"synthesis": "distilled summary"}),
             autonomy_policy=_permissive_policy(),
@@ -358,7 +609,7 @@ class TestInvokeEnsemble:
         }
         operations = _ScriptedOperations(invoke_result=raw_result)
         harness = _build_harness(returns={"synthesis": "WOULD-SUMMARIZE-BUT-SHOULDNT"})
-        dispatch = OrchestratorToolDispatch(
+        dispatch = _build_dispatch(
             operations=operations,
             harness=harness,
             autonomy_policy=_permissive_policy(),
@@ -396,7 +647,7 @@ class TestInvokeEnsemble:
             "raw_output": False,
         }
         operations = _ScriptedOperations(invoke_result=normalized_result)
-        dispatch = OrchestratorToolDispatch(
+        dispatch = _build_dispatch(
             operations=operations,
             harness=_build_harness(raises=ValueError("summarizer missing")),
             autonomy_policy=_permissive_policy(),
@@ -426,7 +677,7 @@ class TestInvokeEnsemble:
         operations = _ScriptedOperations(
             invoke_raises=ValueError("Ensemble does not exist: does-not-exist")
         )
-        dispatch = OrchestratorToolDispatch(
+        dispatch = _build_dispatch(
             operations=operations,
             harness=_build_harness(),
             autonomy_policy=_permissive_policy(),
@@ -450,7 +701,7 @@ class TestInvokeEnsemble:
         """Input validation — missing or empty ``name`` is a typed error
         surfaced without calling the handler."""
         operations = _ScriptedOperations()  # invoke would return {} if called
-        dispatch = OrchestratorToolDispatch(
+        dispatch = _build_dispatch(
             operations=operations,
             harness=_build_harness(),
             autonomy_policy=_permissive_policy(),
@@ -496,7 +747,7 @@ class TestAutonomyGate:
             },
             ensembles=[],
         )
-        dispatch = OrchestratorToolDispatch(
+        dispatch = _build_dispatch(
             operations=operations,
             harness=_build_harness(),
             autonomy_policy=policy,
@@ -530,7 +781,7 @@ class TestAutonomyGate:
     async def test_gate_not_consulted_for_unknown_tool(self) -> None:
         """AS-6 closure lives in ``TOOL_NAMES`` — unknown names never reach Autonomy."""
         policy = _RecordingPolicy()
-        dispatch = OrchestratorToolDispatch(
+        dispatch = _build_dispatch(
             operations=_RaisingOperations(),
             harness=_build_harness(),
             autonomy_policy=policy,
@@ -552,7 +803,7 @@ class TestAutonomyGate:
         )
         policy = _RecordingPolicy(decision=Allow(events=(composition_event,)))
         operations = _ScriptedOperations()
-        dispatch = OrchestratorToolDispatch(
+        dispatch = _build_dispatch(
             operations=operations,
             harness=_build_harness(),
             autonomy_policy=policy,
@@ -571,28 +822,38 @@ class TestAutonomyGate:
     async def test_allow_with_events_attaches_events_to_error_result(self) -> None:
         """Events surface regardless of whether the tool succeeded or errored.
 
-        Phase 1's ``compose_ensemble`` returns ``not_yet_wired`` but the
-        composition attempt still happened from the user's perspective —
-        the event fires, the tool-side error is what the orchestrator
-        observes.
+        A validator rejection on ``compose_ensemble`` still counts as a
+        composition attempt from the user's perspective — the event
+        fires, the tool-side error is what the orchestrator observes.
         """
         composition_event = VisibilityEvent(
             kind="composition",
             payload={"tool": "compose_ensemble", "arguments": {"name": "x"}},
         )
         policy = _RecordingPolicy(decision=Allow(events=(composition_event,)))
-        dispatch = OrchestratorToolDispatch(
+        rejecting_validator = _ScriptedValidator(
+            CompositionRejected(
+                kind="missing_primitive",
+                reason="profile 'ghost' not in library",
+            )
+        )
+        dispatch = _build_dispatch(
             operations=_RaisingOperations(),
             harness=_build_harness(),
             autonomy_policy=policy,
+            composition_validator=rejecting_validator,
         )
 
         result = await dispatch.dispatch(
-            InternalToolCall(id="c2", name="compose_ensemble", arguments={"name": "x"})
+            InternalToolCall(
+                id="c2",
+                name="compose_ensemble",
+                arguments={"name": "x", "description": "y", "agents": []},
+            )
         )
 
         assert isinstance(result, ToolCallError)
-        assert result.kind == "not_yet_wired"
+        assert result.kind == "invocation_failed"
         assert result.events == (composition_event,)
 
     @pytest.mark.asyncio
@@ -601,7 +862,7 @@ class TestAutonomyGate:
             decision=Deny(reason="tightened level requires approval")
         )
         operations = _ScriptedOperations()
-        dispatch = OrchestratorToolDispatch(
+        dispatch = _build_dispatch(
             operations=operations,
             harness=_build_harness(),
             autonomy_policy=policy,
@@ -628,7 +889,7 @@ class TestAutonomyGate:
         The tightened level is ``pure-tool-user-visible``. Only
         ``compose_ensemble`` surfaces an event; other tools stay silent.
         """
-        dispatch = OrchestratorToolDispatch(
+        dispatch = _build_dispatch(
             operations=_RaisingOperations(),
             harness=_build_harness(),
             autonomy_policy=_permissive_policy(level=PURE_TOOL_USER_VISIBLE_LEVEL),
@@ -651,7 +912,7 @@ class TestAutonomyGate:
     @pytest.mark.asyncio
     async def test_baseline_level_emits_no_events_on_compose(self) -> None:
         """Default level is silent on composition per ADR-008 baseline."""
-        dispatch = OrchestratorToolDispatch(
+        dispatch = _build_dispatch(
             operations=_RaisingOperations(),
             harness=_build_harness(),
             autonomy_policy=_permissive_policy(level=BASELINE_LEVEL),

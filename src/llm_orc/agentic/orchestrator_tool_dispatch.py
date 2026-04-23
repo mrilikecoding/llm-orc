@@ -44,6 +44,14 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 from llm_orc.agentic.autonomy_policy import Allow, AutonomyDecision, Deny
+from llm_orc.agentic.composition_validator import (
+    CompositionAccepted,
+    CompositionOutcome,
+    CompositionRejected,
+    CompositionRequest,
+    EnsembleWriteError,
+    LocalEnsembleWriter,
+)
 from llm_orc.agentic.orchestrator_chunk import VisibilityEvent
 from llm_orc.agentic.result_summarizer_harness import (
     RawOutputPassthrough,
@@ -141,6 +149,19 @@ class EnsembleOperations(Protocol):
     async def read_ensembles(self) -> list[dict[str, Any]]: ...
 
 
+class CompositionGate(Protocol):
+    """Minimum Composition Validator surface Tool Dispatch consults.
+
+    :class:`~llm_orc.agentic.composition_validator.CompositionValidator`
+    satisfies this structurally. The Protocol lets tests substitute a
+    scripted double that returns a canned :class:`CompositionOutcome`
+    — the production validator's deeper dependency graph (primitive
+    registry, depth limit) stays out of the dispatch-level tests.
+    """
+
+    def validate(self, request: CompositionRequest) -> CompositionOutcome: ...
+
+
 class AutonomyGate(Protocol):
     """Minimum Autonomy Policy surface Tool Dispatch consults.
 
@@ -164,10 +185,14 @@ class OrchestratorToolDispatch:
         operations: EnsembleOperations,
         harness: ResultSummarizerHarness,
         autonomy_policy: AutonomyGate,
+        composition_validator: CompositionGate,
+        local_ensemble_writer: LocalEnsembleWriter,
     ) -> None:
         self._operations = operations
         self._harness = harness
         self._autonomy_policy = autonomy_policy
+        self._composition_validator = composition_validator
+        self._local_ensemble_writer = local_ensemble_writer
 
     async def dispatch(self, call: InternalToolCall) -> ToolCallResult:
         """Route a tool call through the unknown-tool filter, gate, then routing.
@@ -297,13 +322,72 @@ class OrchestratorToolDispatch:
     async def compose_ensemble(
         self, id_: str, arguments: dict[str, Any]
     ) -> ToolCallResult:
-        """Compose a new ensemble (WP-G)."""
-        del arguments
-        return ToolCallError(
+        """Compose a new ensemble via the Composition Validator (WP-G).
+
+        Parses the LLM-emitted arguments into a
+        :class:`CompositionRequest`, delegates validation to
+        :class:`CompositionValidator`, and on accept hands the
+        validated :class:`EnsembleConfig` to the local-tier writer.
+        Validation failure and write failure both surface as
+        ``ToolCallError(kind="invocation_failed")`` so the ReAct loop
+        continues with the error as an observation. AS-2 (no partial
+        state on validation failure) is structurally enforced — the
+        writer is only reached after :class:`CompositionAccepted`.
+        """
+        name = arguments.get("name")
+        description = arguments.get("description", "")
+        agents = arguments.get("agents", [])
+        raw_output = bool(arguments.get("raw_output", False))
+        if not isinstance(name, str) or not name:
+            return ToolCallError(
+                id=id_,
+                name="compose_ensemble",
+                kind="invalid_arguments",
+                reason="compose_ensemble requires 'name' (non-empty string)",
+            )
+        if not isinstance(description, str):
+            return ToolCallError(
+                id=id_,
+                name="compose_ensemble",
+                kind="invalid_arguments",
+                reason="compose_ensemble 'description' must be a string",
+            )
+        if not isinstance(agents, list) or not all(isinstance(a, dict) for a in agents):
+            return ToolCallError(
+                id=id_,
+                name="compose_ensemble",
+                kind="invalid_arguments",
+                reason="compose_ensemble 'agents' must be a list of objects",
+            )
+
+        request = CompositionRequest(
+            name=name,
+            description=description,
+            agents=agents,
+            raw_output=raw_output,
+        )
+        outcome = self._composition_validator.validate(request)
+        if isinstance(outcome, CompositionRejected):
+            return ToolCallError(
+                id=id_,
+                name="compose_ensemble",
+                kind="invocation_failed",
+                reason=outcome.reason,
+            )
+        accepted: CompositionAccepted = outcome
+        try:
+            path = self._local_ensemble_writer.write(accepted.config)
+        except EnsembleWriteError as exc:
+            return ToolCallError(
+                id=id_,
+                name="compose_ensemble",
+                kind="invocation_failed",
+                reason=str(exc),
+            )
+        return ToolCallSuccess(
             id=id_,
             name="compose_ensemble",
-            kind="not_yet_wired",
-            reason="compose_ensemble lands in WP-G (Composition Validator)",
+            content={"name": accepted.config.name, "path": path},
         )
 
     async def list_ensembles(

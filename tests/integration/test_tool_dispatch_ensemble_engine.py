@@ -24,6 +24,11 @@ import pytest
 import yaml
 
 from llm_orc.agentic.autonomy_policy import BASELINE_LEVEL, AutonomyPolicy
+from llm_orc.agentic.composition_validator import (
+    CompositionValidator,
+    ConfigManagerEnsembleWriter,
+    ConfigManagerPrimitiveRegistry,
+)
 from llm_orc.agentic.orchestrator_tool_dispatch import (
     InternalToolCall,
     OrchestratorToolDispatch,
@@ -46,8 +51,15 @@ def _make_dispatch(service: OrchestraService) -> OrchestratorToolDispatch:
         invoker=service, summarizer_name="agentic-result-summarizer"
     )
     policy = AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL)
+    registry = ConfigManagerPrimitiveRegistry(service.config_manager)
+    validator = CompositionValidator(primitives=registry)
+    writer = ConfigManagerEnsembleWriter(service.config_manager)
     return OrchestratorToolDispatch(
-        operations=service, harness=harness, autonomy_policy=policy
+        operations=service,
+        harness=harness,
+        autonomy_policy=policy,
+        composition_validator=validator,
+        local_ensemble_writer=writer,
     )
 
 
