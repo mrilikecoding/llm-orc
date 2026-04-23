@@ -1,7 +1,7 @@
 # Active RDD Cycle: Agentic Serving
 
 **Started:** 2026-03-20
-**Current phase:** BUILD (in progress — WP-A, WP-B, WP-C, WP-D, WP-E complete; WP-F scenario gate resolved 2026-04-22 via DECIDE mini-cycle; WP-F unblocked for BUILD; WP-G / WP-I available in parallel)
+**Current phase:** BUILD (in progress — WP-A, WP-B, WP-C, WP-D, WP-E complete; WP-F Group 1 complete 2026-04-22 (scenarios a + b + mixed-batch + name-collision); WP-F Groups 2-3 pending; WP-G / WP-I available in parallel)
 **Artifact base:** `docs/agentic-serving/`
 **Essay:** `../essays/001-agentic-serving-architecture.md`
 
@@ -189,6 +189,22 @@
     - ~~First-person plural in `essays/research-logs/001b-agentic-serving-architecture.md:3,47` — "we" in question titles.~~ **Fixed 2026-04-22** in the WP-F tidy commit (question headings recast to third-person "What lessons does X's architecture offer?").
     - **Still deferred:** Framing audit on `essays/001-agentic-serving-architecture.md` — `housekeeping/audits/argument-audit-001.md` has argument-audit only; v0.7.3 dispatch format adds framing audit. Pick up if framing tension surfaces.
     - **Still deferred:** `product-discovery.md` §Value Tensions phrased as declarative prose rather than open questions per v0.7.3 discover template. Editorial work, not mechanical tidy — defer to a session that has the attentional mode for it.
+
+### From BUILD (WP-F Group 1, 2026-04-22)
+
+97. **WP-F Group 1 landed — Option C turn-boundary delegation for scenarios (a) and (b).** Three commits on branch `agentic-serving`:
+    - `93e1229` refactor: relocate ChatMessage to session_start and extract tool-call encoder
+    - `61a6c40` feat: route client-declared tools through turn-boundary delegation (WP-F Group 1)
+    - `b29a3b3` feat: tighten mixed-batch discipline and reserve TOOL_NAMES (WP-F Group 1)
+    Five acceptance tests at the serving-layer boundary cover scenario (a) non-streaming + streaming, scenario (b) session continuity, mixed-batch rejection, and name-collision rejection. Test suite: 2262 passing, 91.53% coverage, lint clean. FC-4 / FC-5 / FC-8 / FC-9 / FC-11 static checks all pass. Groups 2 (pre-invoke delegation) and 3 (retry pattern + system prompt + summarizer transparency) remain.
+
+98. **Mixed-batch policy: reject-and-retry.** When the orchestrator LLM emits a single batch mixing internal (`TOOL_NAMES`) and client-declared tool calls, the Runtime rejects the entire batch with a per-call `mixed_batch` tool error and the LLM retries on the next iteration. Option C's one-kind-per-turn discipline is preserved without silent data loss. The orchestrator system prompt (Group 3) will teach the LLM to avoid mixing in the first place; this runtime rejection is the fallback for LLMs that ignore the guidance.
+
+99. **Name collision: `TOOL_NAMES` reserved.** Client-declared tools whose `function.name` matches any of the five internal tool names are rejected at the Serving Layer with HTTP 400 and a `reserved_tool_name` error. Chosen over drop-with-warning because silent misrouting on a name collision is worse than an immediate actionable error for operators. The five names — `invoke_ensemble`, `compose_ensemble`, `list_ensembles`, `query_knowledge`, `record_outcome` — are llm-orc's contract per ADR-003.
+
+100. **Domain-model open question — AS-6 and authorship.** The user surfaced (2026-04-22) that "eventually I'd want the orchestrator to create executable scripts as well as model profiles." AS-6 currently prohibits orchestrator authorship of scripts and model profiles on conservative grounds: (a) scripts are an RCE vector; (b) operator curation is deliberate; (c) Calibration Gate checks output plausibility, not code safety. Relaxing AS-6 would require a sandboxed execution model, an autonomy-level approval gate, and a calibration extension for code-quality signals. **Not load-bearing for WP-F or TS-1.** Revisit post-TS-1 as a standalone DECIDE mini-cycle.
+
+101. **ChatMessage relocated to `session_start.py`.** ChatMessage is a *contract type* on the Serving Layer → Orchestrator Runtime edge, not Session Registry internals. Moving it into `session_start.py` (alongside `SessionContext`) keeps FC-4 intact when the Runtime imports ChatMessage directly — `session_start` is on the allow list, `session_registry` is forbidden. Circular import at the type level is guarded with `TYPE_CHECKING`.
 
 ### From ARCHITECT
 30. Retrofit mode — llm-orc has existing FastAPI server, MCP handlers (ExecutionHandler, ValidationHandler, ensemble_crud_handler, promotion_handler, validation_handler, script_handler), ensemble engine, config manager, auth, and artifact system. Agentic serving is additive; Layer 3 (Ensemble Engine) stays unchanged per ADR-001/002
