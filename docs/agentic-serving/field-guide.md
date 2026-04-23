@@ -281,9 +281,9 @@ responses across Runtime and `ModelInterface.generate_with_tools`).
 
 ## Module: Orchestrator Tool Dispatch
 
-**Implementation state:** Complete for WP-C + WP-D wiring. `invoke_ensemble` interposes the Result Summarizer Harness on every return (Amendment #3). `list_ensembles` delegates to `OrchestraService.read_ensembles`. `compose_ensemble` / `query_knowledge` / `record_outcome` return typed `not_yet_wired` errors pending WP-G / WP-I.
+**Implementation state:** Complete for WP-C + WP-D + WP-E + WP-G wiring. `invoke_ensemble` interposes the Result Summarizer Harness on every return (Amendment #3). `list_ensembles` delegates to `OrchestraService.read_ensembles`. `compose_ensemble` delegates to `CompositionValidator` then writes via `LocalEnsembleWriter` on accept (WP-G). `query_knowledge` / `record_outcome` return typed `not_yet_wired` errors pending WP-I.
 **Code location:** `src/llm_orc/agentic/orchestrator_tool_dispatch.py`.
-**Stability:** Settled on the closed-set structure and the Harness interposition. Three handler bodies change when WP-G / WP-I wires them.
+**Stability:** Settled on the closed-set structure and the Harness/Autonomy/Composition interpositions. Two handler bodies change when WP-I wires them.
 
 ### Domain concepts in code
 
@@ -348,7 +348,8 @@ the detector catches a synthetic fast-path bypass.
 - **→ OrchestraService (via `EnsembleOperations`):** `invoke` for `invoke_ensemble`, `read_ensembles` for `list_ensembles`.
 - **→ Result Summarizer Harness:** `summarize(raw_result, raw_output=...)` on every `invoke_ensemble` return. The Harness in turn calls back through `EnsembleOperations` to invoke the configured summarizer ensemble.
 - **→ Autonomy Policy (via `AutonomyGate` Protocol):** `decide(tool_name, arguments)` on every dispatch for a committed tool name.
-- **WP-G will add:** composition validation path (shared `validate_ensemble_reference_graph`).
+- **→ Composition Validator (via `CompositionGate` Protocol):** `validate(CompositionRequest)` on every `compose_ensemble` dispatch. Rejection → `ToolCallError(kind="invocation_failed")`; acceptance → hand the config to the writer.
+- **→ Local ensemble writer (via `LocalEnsembleWriter` Protocol):** `write(EnsembleConfig)` on composition accept. Write failure (`EnsembleWriteError`) → `ToolCallError(kind="invocation_failed")`; success → `ToolCallSuccess({"name", "path"})`.
 - **WP-I will add:** `query_knowledge` + `record_outcome` via Plexus Adapter.
 - **WP-H will interpose:** Calibration Gate on in-calibration ensemble invocations.
 
@@ -540,9 +541,54 @@ Per-session overrides land in a future WP.
 
 ## Module: Composition Validator
 
-**Implementation state:** Planned (WP-G).
-**Code location:** Not yet created. WP-A landed the prerequisite: `validate_ensemble_reference_graph` is now a public function in `core/config/ensemble_config.py`.
-**Stability:** Design-only; prerequisite unblocked.
+**Implementation state:** Complete (WP-G, 2026-04-22).
+**Code location:** `src/llm_orc/agentic/composition_validator.py`. Depth helper at `src/llm_orc/core/config/ensemble_config.py:compute_reference_graph_depth`.
+**Stability:** Settled. Six rejection branches + accept path exercised by 13 unit tests; boundary integration at `tests/integration/test_tool_dispatch_composition.py` covers the real wiring through `ConfigurationManager` + `OrchestraService` + file system.
+
+### Domain Concepts in Code
+
+| Concept | Code Manifestation | Location |
+|---------|-------------------|----------|
+| Composition | `CompositionValidator` class; `CompositionRequest`, `CompositionAccepted`, `CompositionRejected` result variants | `composition_validator.py` |
+| Validation routine (shared) | `validate_ensemble_reference_graph` — public function, one definition, four call sites | `core/config/ensemble_config.py:309` |
+| Depth check (shared graph walk) | `compute_reference_graph_depth` — sibling of the cycle validator, reuses `_build_reference_graph` | `core/config/ensemble_config.py:compute_reference_graph_depth` |
+| Primitive Registry (production) | `ConfigManagerPrimitiveRegistry` — wraps `ConfigurationManager` + `ScriptResolver` + ensemble directory discovery | `composition_validator.py` |
+| Primitive Registry (test surface) | `PrimitiveRegistry` Protocol — handwritten doubles in `tests/unit/agentic/test_composition_validator.py::_StubRegistry` | `composition_validator.py` |
+| Local-tier write (action) | `ConfigManagerEnsembleWriter.write` — persists accepted config to `.llm-orc/ensembles/{name}.yaml` with collision rejection | `composition_validator.py` |
+| Write failure | `EnsembleWriteError(ValueError)` — single-exception narrowing for dispatch | `composition_validator.py` |
+
+### Rejection kinds in code
+
+| Kind | Trigger | Dispatch surface |
+|------|---------|-----------------|
+| `invalid_agent_schema` | Pydantic rejects the agent dict | `ToolCallError(kind="invocation_failed")` |
+| `missing_dependency` | agent `depends_on` a sibling not in the ensemble | same |
+| `internal_dependency_cycle` | intra-ensemble dep cycle | same |
+| `invalid_fan_out` | `fan_out: true` without `depends_on` | same |
+| `missing_primitive` | model_profile / script / ensemble reference does not exist (AS-6) | same |
+| `cross_ensemble_cycle` | proposed ensemble closes a cycle with existing ensembles (Invariant 5) | same |
+| `depth_limit_exceeded` | proposed reference graph walks deeper than `depth_limit` (Invariant 8) | same |
+
+Malformed LLM-emitted arguments (missing `name`, wrong `description` type, non-list `agents`) short-circuit before the validator and surface as `ToolCallError(kind="invalid_arguments")`.
+
+### Design Rationale
+
+- **L1 placement.** System design assigns Composition Validator to L1 (Domain Policy). The module imports from L0 (`core/config/ensemble_config.py`, `core/execution/scripting/resolver.py`, `schemas/agent_config.py`) only. Tool Dispatch (L2) depends on this module through the `CompositionGate` Protocol.
+- **Shared validator routine (FC-6).** `validate_ensemble_reference_graph` lives in `ensemble_config.py` as a public function and is called from the load path (`EnsembleLoader.load_from_file` via `search_dirs`), the list path (`list_ensembles` via `search_dirs=[directory]`), the MCP validate path (`ValidationHandler._collect_validation_errors`), and composition (`CompositionValidator.validate`). Any regression would affect all paths identically.
+- **Composition-time strictness (AS-6).** Load-time tolerates dangling ensemble references silently (they are caught at execution by `EnsembleAgentRunner` when the parent tries to resolve). Composition-time enforces existence strictly because the orchestrator must not be able to create an ensemble that names a missing primitive. The stricter check lives only on the composition path; load-time behavior is unchanged.
+- **Depth-left shift (Invariant 8).** `EnsembleAgentRunner` enforces depth at runtime by comparing `child_depth` to `depth_limit` before creating a child executor. Composition-time depth check uses the same arithmetic (depth 0 = leaf, N-edge chain = depth N) so a composed ensemble cannot sneak past runtime enforcement. Load-time is not changed — depth remains a runtime concern for existing library content.
+- **Write collision discipline (AS-2).** The writer rejects if `.llm-orc/ensembles/{name}.yaml` already exists. This mirrors `EnsembleCrudHandler.create_ensemble`'s contract and prevents a composition from silently overwriting operator-authored content. No partial state on failure: the writer is only reached after `CompositionAccepted`.
+
+### Key Integration Points
+
+- **Orchestrator Tool Dispatch** — holds a `CompositionGate` (validator) and a `LocalEnsembleWriter` (writer). `compose_ensemble` parses arguments → validates → writes on accept. Dispatch-level tests pass scripted doubles; boundary integration passes the real classes.
+- **Ensemble Engine** — via `validate_ensemble_reference_graph` and `compute_reference_graph_depth`. Composition Validator is the fourth call site of the shared validator (FC-6 regression test asserts the identity).
+- **Configuration Manager** — `ConfigManagerPrimitiveRegistry` reads `get_model_profiles()` and `get_ensembles_dirs()`; `ConfigManagerEnsembleWriter` reads `get_ensembles_dirs()` to locate the local tier. A `config.yaml` edit takes effect on the next request.
+- **ScriptResolver** — `ConfigManagerPrimitiveRegistry.script_exists` delegates to `resolve_script_path`, catching `ScriptNotFoundError` / `FileNotFoundError` as "does not exist."
+
+### Wiring site
+
+`src/llm_orc/web/api/v1_chat_completions.py:get_orchestrator_tool_dispatch` constructs `ConfigManagerPrimitiveRegistry(service.config_manager)` → `CompositionValidator(primitives=registry)` → `ConfigManagerEnsembleWriter(service.config_manager)` and hands them to `OrchestratorToolDispatch`. Tests override the factory via `monkeypatch.setattr` to inject a scripted dispatch.
 
 ---
 

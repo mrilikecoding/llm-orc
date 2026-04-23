@@ -1,7 +1,7 @@
 # Active RDD Cycle: Agentic Serving
 
 **Started:** 2026-03-20
-**Current phase:** BUILD (in progress — WP-A, WP-B, WP-C, WP-D, WP-E, WP-F complete 2026-04-22. **TS-1 reached: stateless orchestrator serving OpenCode.** WP-G (Composition) / WP-I (Plexus Adapter) available in parallel as TS-2 path)
+**Current phase:** BUILD (in progress — WP-A, WP-B, WP-C, WP-D, WP-E, WP-F, WP-G complete 2026-04-22. **TS-1 reached at WP-F close.** WP-H (Calibration Gate) / WP-I (Plexus Adapter) remain on the TS-2 / TS-3 path)
 **Artifact base:** `docs/agentic-serving/`
 **Essay:** `../essays/001-agentic-serving-architecture.md`
 
@@ -14,7 +14,7 @@
 | MODEL | ✅ Complete | `../domain-model.md` | Plexus should be optional (AS-8) -- design for stateless, benefit from Plexus when available. Enrichment pipeline maturity is an open question that determines whether the learning-system value proposition is real. Two-tier architecture: stateless orchestrator as baseline, Plexus as upgrade to learning system. |
 | DECIDE | ✅ Complete | `../decisions/adr-001..011-*.md`, `../scenarios.md`, `../interaction-specs.md` | Plexus's more compelling frame is intra-session multi-agent substrate via consumer-registered lens grammars, not only cross-session memory. Per-ensemble lens registration would make the orchestrator's access polyglot. AS-4 preserved (lens is query-surface grammar applied during enrichment). Reframe is forward signal, not a current-cycle driver -- Plexus's lens design is in-progress. Captured as OQ #8 and essay reflection; folds back in a later cycle. |
 | ARCHITECT | ✅ Complete | `../system-design.md`, `../roadmap.md`, `../ORIENTATION.md` (regenerated) | Retrofit mode: ensemble engine stays Layer 3 unchanged; 12 modules across 4 layers plus typed `resolve_session_start_context` function in Serving Layer; 13 fitness criteria. Client tool surface: Option C (turn-boundary delegation) is the commitment, scenario-gated — WP-F does not start until stress scenarios exercise the C/D distinction. Context Injection demoted from module to typed function (ADR-009 reservation is satisfied by signature + call site, not by a module). Consolidations of Orchestrator Configuration into Serving Layer and Calibration Gate into Runtime rejected: the former would invert layering; the latter would break FC-4. Roadmap has 10 WPs, 3 classified transition states; TS-1 (stateless orchestrator serving OpenCode) is the vision-named intermediate target. |
-| BUILD | ▶ In Progress | WP-A, WP-B, WP-C, WP-D complete — see roadmap Completed Work Log. **WP-E complete** — Groups 1-3 + 5-6 across 6 commits (`f07f64b`, `b2a1c88`, `6c168da`, `536f952`, `8ca482a`, `29fb4c0`, this commit). Next: WP-G (Composition) / WP-I (Plexus Adapter) in parallel; WP-F scenario-gated. | WP-E closed. FC-11 structurally enforced (strict AST dominance + adversarial self-test; `decide` call lexically precedes every `self._route` call). Two Phase-1 Autonomy Levels ship: `operator-as-tool-user` (silent) and `pure-tool-user-visible` (composition events narrate as `[composition: {json}]` on `delta.content`). OQ #2 resolved in favor of tool-user-visible inline narration. Test suite: 2257 passing, 91.48% coverage, lint clean. TS-1 remaining: WP-F only. |
+| BUILD | ▶ In Progress | WP-A..WP-G complete — see roadmap Completed Work Log. **WP-G complete** — 4 commits (`32d2dd3`, `9972ed3`, `e5f8ea0`, `804aeb7`, this commit). Next: WP-H (Calibration Gate) / WP-I (Plexus Adapter). | WP-G closed. `compose_ensemble` is fully wired. FC-6 structurally satisfied — one public definition of `validate_ensemble_reference_graph`; four call sites (load path, `list_ensembles`, `ValidationHandler`, Composition Validator). Composition-time validation enforces AS-6 primitive existence strictly (load-time tolerates dangling refs silently) and moves Invariant 8 depth enforcement left of the runtime check. Test suite: 2297 passing, 91.51% coverage, lint clean. TS-2 remaining: WP-H only. |
 | DECIDE (mini-cycle from BUILD) | ✅ Complete 2026-04-22 | `../scenarios.md` §Client Tool Surface Commitment (5 scenarios), `../system-design.md` §Client Tool Surface Commitment Amendment #4, `../roadmap.md` ODP #1 closed + ODP #8 added, gate reflection at `gates/wpf-decide-gate.md`, audits at `audits/argument-audit-decide-005-wpf.md` (4 rounds: 5, 5b, 5c, 5d — all closed clean) + `audits/susceptibility-snapshot-wpf-decide.md` | WP-F scenario gate resolved — Option C confirmed, retry pattern is the mechanism for scenario (d) with a negative-path scenario covering silent quality degradation. Commitment to retry pattern is **conditional** — committed-to insofar as it delivers more capable agentic serving; revisitable if WP-F or post-WP-F reveals capability benefit is not borne out. Option D out of scope (requires ADR-001/002 amendment). Five scenarios are WP-F acceptance criteria. |
 | PLAY | ☐ Optional | -- | -- |
 | SYNTHESIZE | ☐ Optional | -- | -- |
@@ -235,7 +235,41 @@
 37. Roadmap has 10 WPs; 9 hard deps, 4 implied; 3 transition states; 7 open decision points carried forward as build-time latitude
 38. Consolidations probed at gate: Orchestrator Configuration → Serving Layer rejected (inverts layering — L1/L3 config is read by L1 modules like Budget Controller and Autonomy Policy via Session Registry). Calibration Gate → Orchestrator Runtime rejected (breaks FC-4; calibration is ensemble-state not runtime-state, and requires Plexus Adapter which Runtime must not import)
 
+### From BUILD (WP-G, 2026-04-22)
+101. **WP-G closed.** `compose_ensemble` is fully wired through the Composition Validator to the local-tier writer. Seven scenarios in `scenarios.md` §Ensemble Composition with Validation have explicit coverage across unit, boundary integration, and Serving Layer acceptance layers. Commits in order: `32d2dd3` (depth helper), `9972ed3` (Group 1 validator), `e5f8ea0` (Group 2 dispatch wiring), `804aeb7` (Group 3 integration + acceptance tests), this commit (Group 4 docs).
+
+102. **FC-6 structurally satisfied** (this commit). `validate_ensemble_reference_graph` has exactly one public definition at `core/config/ensemble_config.py:309` and four call sites: `EnsembleLoader.load_from_file`, `EnsembleLoader.list_ensembles` (via `search_dirs=[directory]`), `ValidationHandler._collect_validation_errors`, and `CompositionValidator.validate` (new). Regression test in `test_tool_dispatch_composition.py::TestSharedValidatorSameBothPaths` verifies both load path and composition path surface identical cycle errors on the same input and confirms the composition validator imports the routine from its canonical module (not from a re-export).
+
+103. **Composition-time validation is stricter than load-time by design.** Load path tolerates dangling ensemble references silently; composition path enforces AS-6 "compose from existing primitives only" by checking `model_profile_exists`, `script_exists`, `ensemble_exists` against the real registries. Moving Invariant 8 depth enforcement from the runtime (`EnsembleAgentRunner`) to composition-time follows the same principle: shrink time-to-error, keep load-time behavior unchanged. Captured in `composition_validator.py` docstring.
+
+104. **`CompositionGate` and `LocalEnsembleWriter` are Protocols on Tool Dispatch's surface.** The concrete `CompositionValidator` pulls in a primitive registry (config manager + script resolver + ensemble directory discovery) which would bloat dispatch-level tests. The Protocol lets scripted doubles assert on dispatch behavior without constructing the production validator's dependency graph. Tests that exercise the full stack use the real classes (`test_tool_dispatch_composition.py`, `TestEnsembleCompositionWithValidationAcceptance`).
+
+105. **Test-scope default validator rejects, does not fail loudly.** Many existing dispatch tests dispatch `compose_ensemble` incidentally (autonomy-gate coverage, visibility-event routing). The default helper in test files wires a `_RejectingValidator` so those tests continue passing; the writer is `_UnusedWriter`-equivalent and fails loudly if a non-compose test path reaches it. Tests that assert on composition behavior pass scripted validators explicitly. Single exception: `test_compose_rejects_malformed_arguments_without_calling_validator` uses `_UnusedValidator` to prove short-circuit on bad input.
+
+106. **Overwrite semantics.** `ConfigManagerEnsembleWriter.write` rejects on file collision. If a future workflow wants composition-driven refinement (e.g., calibration-driven replacement), an explicit `overwrite=True` argument or a separate tool is needed. No scenario exercises this today.
+
+107. **Hierarchical name collision edge case.** `EnsembleLoader.find_ensemble` supports hierarchical names (`examples/foo/foo`), but `ConfigManagerEnsembleWriter` always targets a flat `{name}.yaml` in the local tier. A composed ensemble whose name collides with a hierarchical library entry will not be caught by the writer's collision check. Low priority — composed ensembles use simple names.
+
+108. **Raw-output composition is plumbed but unexercised.** `CompositionRequest.raw_output` flows through the writer's YAML serialization. No scenario drives the orchestrator to compose a raw-output ensemble today. If WP-H surfaces the need (e.g., calibration-scope composed ensembles that emit structured signals), add a scenario; otherwise the `False` default is structurally fine.
+
+109. **TS-2 remaining work.** With WP-G closed, TS-2 (stateless baseline complete per ADR-002 Layer 1-3 and AS-8) needs only WP-H (Calibration Gate). WP-I (Plexus Adapter) begins the TS-3 path and can land in parallel since its hard deps are only WP-C.
+
 ## Context for Resumption
+
+**Post-WP-G resumption pointer (2026-04-22, TS-2 one WP away).** WP-G is complete on branch `agentic-serving` across four commits:
+
+- `32d2dd3` refactor: add compute_reference_graph_depth helper for composition-time depth check
+- `9972ed3` feat: add Composition Validator module (WP-G Group 1)
+- `e5f8ea0` feat: wire compose_ensemble through Composition Validator (WP-G Group 2)
+- `804aeb7` test: add composition boundary integration + acceptance coverage (WP-G Group 3)
+- (this commit) docs: close WP-G in roadmap, cycle-status, field guide, ORIENTATION
+
+**State at WP-G close: 2297 tests passing, 91.51% coverage, lint clean.** Tier 1 stewardship clean. FC-6 structurally satisfied — one public definition of the shared cycle validator, four call sites, composition path and load path surface identical cycle errors on the same input.
+
+**Next WP candidates:**
+
+1. **WP-H: Calibration Gate.** Completes TS-2 (stateless baseline). Interpose Calibration Gate on `invoke_ensemble` for composed ensembles in their first N invocations. Four scenarios in `scenarios.md` §Calibration of Composed Ensembles. Depends on WP-G (now complete — composed-ensemble code path is live). Open decisions: default N, check mechanism (may itself be an ensemble).
+2. **WP-I: Plexus Adapter (tool-first).** Begins TS-3. `query_knowledge` and `record_outcome` wiring with graceful no-op fallbacks. Five scenarios across §Plexus Integration and §Session Lifecycle. Depends only on WP-C.
 
 **Post-WP-F resumption pointer (2026-04-22, TS-1 reached).** WP-F is complete on branch `agentic-serving` across six commits:
 
