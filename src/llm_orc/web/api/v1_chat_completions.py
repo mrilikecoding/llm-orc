@@ -27,7 +27,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -43,7 +43,10 @@ from llm_orc.agentic.orchestrator_runtime import (
     OrchestratorLLM,
     OrchestratorRuntime,
 )
-from llm_orc.agentic.orchestrator_tool_dispatch import OrchestratorToolDispatch
+from llm_orc.agentic.orchestrator_tool_dispatch import (
+    TOOL_NAMES,
+    OrchestratorToolDispatch,
+)
 from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
 from llm_orc.agentic.session_registry import SessionRegistry
 from llm_orc.agentic.session_start import ChatMessage, SessionContext, SessionStartCache
@@ -190,8 +193,47 @@ async def chat_completions(
     return await _build_completion_body(context, runtime, model=request.model)
 
 
+def _reject_reserved_tool_names(tools: list[dict[str, Any]]) -> None:
+    """Reject client-declared tools that shadow llm-orc's internal surface.
+
+    The five ``TOOL_NAMES`` (ADR-003) are the orchestrator's closed action
+    set. A request that declares a client tool sharing one of those names
+    would silently misroute: the Runtime classifies by ``context.tools``
+    membership, so a shadowed internal call would be emitted as a
+    :class:`ClientToolCall` delegation instead of running in-process.
+    Rejecting at the Serving Layer with HTTP 400 surfaces the conflict
+    immediately rather than as a mysterious stream of
+    ``finish_reason: tool_calls``.
+    """
+    collisions: list[str] = []
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        function = tool.get("function")
+        if not isinstance(function, dict):
+            continue
+        name = function.get("name")
+        if isinstance(name, str) and name in TOOL_NAMES:
+            collisions.append(name)
+    if collisions:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "reserved_tool_name",
+                "message": (
+                    "Client-declared tool names collide with the "
+                    "orchestrator's reserved internal tool surface "
+                    f"(ADR-003): {sorted(set(collisions))}. Rename or "
+                    "remove these tools from the request's 'tools' array."
+                ),
+                "reserved_names": sorted(TOOL_NAMES),
+            },
+        )
+
+
 def _resolve_context(request: _ChatCompletionsRequest) -> SessionContext:
     """Run the pre-handoff work shared by streaming and non-streaming paths."""
+    _reject_reserved_tool_names(request.tools)
     messages = [
         ChatMessage(
             role=message.role,
