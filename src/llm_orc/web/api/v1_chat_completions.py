@@ -280,6 +280,7 @@ async def _build_runtime() -> OrchestratorRuntime:
         llm=llm,
         budget=budget,
         tool_dispatch=get_orchestrator_tool_dispatch(),
+        system_prompt=config.orchestrator_system_prompt,
     )
 
 
