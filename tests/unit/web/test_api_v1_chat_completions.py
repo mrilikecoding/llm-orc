@@ -1647,3 +1647,357 @@ class TestAutonomyAndPromotionAcceptance:
         assert len(tool_msgs) == 1
         observed = json.loads(tool_msgs[0]["content"])
         assert observed.get("error") == "unknown_tool"
+
+
+class TestClientToolSurfaceCommitment:
+    """Acceptance tests for ``scenarios.md`` §Client Tool Surface Commitment.
+
+    Option C per system-design §Client Tool Surface Commitment: the
+    orchestrator's internal tool surface stays at the five ADR-003 tools;
+    client-declared tools (the ``tools[]`` array on ``/v1/chat/completions``)
+    flow through as a **response surface** — when a turn needs a client-side
+    action, the Runtime closes with ``finish_reason: tool_calls`` and the
+    next request resumes the same Session with the client's ``role: tool``
+    messages as observations.
+
+    Scenario (a) — turn-boundary delegation.
+    Scenario (b) — Session continuity across a client-tool round trip.
+    Scenario (c) — pre-invoke delegation when an ensemble's first agent
+        needs a client-filesystem file.
+    Scenario (d) — retry pattern for an un-predicted mid-execution need.
+    Scenario (negative) — composed ensemble without the structured
+        ``needs_client_tool`` signal silently degrades to a quality failure.
+
+    The tests wire a real :class:`OrchestratorRuntime` over a
+    :class:`_StubToolDispatch` constructed with no results — any internal
+    dispatch call trips ``AssertionError``, which proves Option C's
+    "no internal tool dispatched for a client-declared tool" property
+    structurally, not only by counting.
+    """
+
+    def _file_read_tool_schema(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": "file_read",
+                "description": "Read a file from the client's filesystem.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "Path to the file to read.",
+                        }
+                    },
+                    "required": ["path"],
+                },
+            },
+        }
+
+    def _bash_tool_schema(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "description": "Run a shell command in the client environment.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string"},
+                    },
+                    "required": ["command"],
+                },
+            },
+        }
+
+    def test_orchestrator_delegates_client_tool_at_turn_boundary(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§Orchestrator delegates a client-declared tool at the turn boundary.
+
+        Given a Session whose initial request carries ``tools: [file_read,
+        bash]``; when the Runtime's ReAct iteration produces a ``file_read``
+        tool call; then the turn closes with ``finish_reason: tool_calls``
+        carrying the client-tool delegation on ``message.tool_calls`` and no
+        Orchestrator Tool from the closed five is dispatched during that
+        turn.
+        """
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_fr_1",
+                            name="file_read",
+                            arguments_json='{"path": "src/auth.py"}',
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=15, completion_tokens=8, total_tokens=23
+                    ),
+                    finish_reason="tool_calls",
+                ),
+            ]
+        )
+        # Empty-results stub: any dispatch call raises AssertionError.
+        tool_dispatch = _StubToolDispatch()
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=tool_dispatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [
+                    {"role": "user", "content": "read src/auth.py"},
+                ],
+                "tools": [
+                    self._file_read_tool_schema(),
+                    self._bash_tool_schema(),
+                ],
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        choice = body["choices"][0]
+        # Option C's wire signal: finish_reason is tool_calls, not stop.
+        assert choice["finish_reason"] == "tool_calls", (
+            f"Expected finish_reason='tool_calls' for client-tool delegation; "
+            f"got {choice['finish_reason']!r}."
+        )
+        # No internal tool was dispatched — the stub's `calls` list is empty
+        # because the name 'file_read' is not in TOOL_NAMES and the Runtime
+        # must route it as a ClientToolCall instead.
+        assert tool_dispatch.calls == [], (
+            "A client-declared tool was routed through Tool Dispatch. Option "
+            "C requires client-tool names (outside TOOL_NAMES) to emit a "
+            "ClientToolCall chunk without any internal dispatch."
+        )
+        message = choice["message"]
+        # OpenAI shape: delegated tool calls live on message.tool_calls; the
+        # assistant content is empty / absent for a pure tool_calls turn.
+        assert message.get("content") in (None, "")
+        tool_calls = message["tool_calls"]
+        assert isinstance(tool_calls, list)
+        assert len(tool_calls) == 1
+        assert tool_calls[0]["type"] == "function"
+        assert tool_calls[0]["function"]["name"] == "file_read"
+        assert tool_calls[0]["function"]["arguments"] == '{"path": "src/auth.py"}'
+        # LLM saw the client tools alongside the five internal tools on
+        # iteration 1 — the Runtime must advertise the union of both surfaces.
+        assert len(llm.calls) == 1
+        _, tools_seen = llm.calls[0]
+        advertised_names = {t["function"]["name"] for t in tools_seen}
+        assert "file_read" in advertised_names
+        assert "bash" in advertised_names
+        assert TOOL_NAMES.issubset(advertised_names), (
+            f"Internal tool surface missing from LLM prompt; saw "
+            f"{advertised_names - TOOL_NAMES} only."
+        )
+
+    def test_session_continuity_across_client_tool_round_trip(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§Session turn count and token spend accumulate across a client-tool
+        round trip.
+
+        Given a SessionState at ``turn_count=5`` and ``token_spend=12000``;
+        when the client sends the next request carrying the accumulated
+        history plus a ``role: tool`` message with the file-read result;
+        then the same ``SessionState`` is resolved, the Runtime resumes its
+        ReAct loop with the tool result as an observation, ``turn_count``
+        continues accumulating from 5 (not reset to 0), and ``token_spend``
+        continues accumulating on the same Budget.
+        """
+        registry = SessionRegistry()
+        seeded_identity = SessionIdentity(value="agent-client-42", method="user_field")
+        seeded_state = registry.get_or_create_state(seeded_identity)
+        seeded_state.turn_count = 5
+        seeded_state.token_spend = 12000
+
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="I read src/auth.py and found the authenticate helper.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=50, completion_tokens=12, total_tokens=62
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+        # Empty-results stub proves no internal dispatch fires on the
+        # resumption turn — the orchestrator reasons from the tool result
+        # alone.
+        tool_dispatch = _StubToolDispatch()
+        # Scenario framing: Budget is sized for an extended agentic coding
+        # session, so a mid-session token_spend of 12000 is well within
+        # the configured ceiling.
+        config = OrchestratorConfig(
+            model_profile="test-profile",
+            budget=BudgetDefaults(turn_limit=500, token_limit=10_000_000),
+            autonomy_level="operator-as-tool-user",
+            plexus_enabled=False,
+            override_bounds=OverrideBounds(
+                allow_budget_override=True,
+                max_turn_limit=1_000,
+                max_token_limit=20_000_000,
+            ),
+            allowed_profiles=("test-profile",),
+            summarizer_ensemble="agentic-result-summarizer",
+        )
+        client, shared_registry, _ = _build_client(
+            monkeypatch,
+            registry=registry,
+            llm=llm,
+            tool_dispatch=tool_dispatch,
+            config=config,
+        )
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "user": "agent-client-42",
+                "messages": [
+                    {"role": "user", "content": "read src/auth.py"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_fr_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "file_read",
+                                    "arguments": '{"path": "src/auth.py"}',
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_fr_1",
+                        "content": "def authenticate(user):\n    return True\n",
+                    },
+                ],
+                "tools": [self._file_read_tool_schema()],
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        choice = body["choices"][0]
+        # Turn closes normally — the orchestrator has the tool result and
+        # completes its reasoning.
+        assert choice["finish_reason"] == "stop"
+        assert (
+            choice["message"]["content"]
+            == "I read src/auth.py and found the authenticate helper."
+        )
+
+        # Session continuity: same SessionState resolved; accounting accumulates.
+        state_after = shared_registry.get_or_create_state(seeded_identity)
+        assert state_after is seeded_state, (
+            "The second request resolved a different SessionState — Session "
+            "continuity across a client-tool round trip is broken."
+        )
+        assert state_after.turn_count == 6, (
+            f"turn_count did not carry the prior session's accumulation. "
+            f"Expected 5 + 1 = 6; got {state_after.turn_count}."
+        )
+        assert state_after.token_spend == 12062, (
+            f"token_spend did not carry the prior session's accumulation. "
+            f"Expected 12000 + 62 = 12062; got {state_after.token_spend}."
+        )
+
+        # The orchestrator LLM saw the tool-round-trip observation on its
+        # first (and only) iteration of this turn.
+        assert len(llm.calls) == 1
+        messages_seen, _ = llm.calls[0]
+        assistant_with_tool_calls = [
+            m
+            for m in messages_seen
+            if m.get("role") == "assistant" and m.get("tool_calls")
+        ]
+        assert len(assistant_with_tool_calls) == 1, (
+            "The LLM did not see its own prior turn's tool_calls on replay. "
+            "OpenAI tool-round-trip coherence requires the assistant message "
+            "with tool_calls to ride alongside the tool result."
+        )
+        assert assistant_with_tool_calls[0]["tool_calls"][0]["id"] == "call_fr_1"
+        tool_messages = [m for m in messages_seen if m.get("role") == "tool"]
+        assert len(tool_messages) == 1
+        assert tool_messages[0]["tool_call_id"] == "call_fr_1"
+        assert "authenticate" in tool_messages[0]["content"]
+
+    def test_streaming_client_tool_delegation_yields_tool_calls_chunk(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Scenario (a) under streaming — SSE framing carries the delegation.
+
+        Proves the full wire path: real Runtime → OpenAiSseFormatter → SSE
+        bytes. The last content-bearing chunk is a ``chat.completion.chunk``
+        with ``delta.tool_calls`` and ``finish_reason: tool_calls``, then
+        ``[DONE]`` — matching what an OpenAI-compat client (OpenCode, Roo
+        Code, Cline) parses to surface a tool call to the user.
+        """
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_fr_s",
+                            name="file_read",
+                            arguments_json='{"path": "src/auth.py"}',
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=15, completion_tokens=8, total_tokens=23
+                    ),
+                    finish_reason="tool_calls",
+                ),
+            ]
+        )
+        tool_dispatch = _StubToolDispatch()
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=tool_dispatch)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "stream": True,
+                "messages": [{"role": "user", "content": "read src/auth.py"}],
+                "tools": [self._file_read_tool_schema()],
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        frames = _parse_sse_frames(response.content)
+        # Stream opener + ClientToolCall chunk + [DONE] terminator.
+        assert any(frame.get("__done__") for frame in frames), (
+            "Stream did not terminate with [DONE] — formatter contract broken."
+        )
+        tool_call_frames = [
+            frame
+            for frame in frames
+            if not frame.get("__done__")
+            and frame.get("choices", [{}])[0].get("delta", {}).get("tool_calls")
+        ]
+        assert len(tool_call_frames) == 1, (
+            f"Expected exactly one chunk carrying delta.tool_calls for the "
+            f"client-tool delegation; got {len(tool_call_frames)}."
+        )
+        framed = tool_call_frames[0]
+        choice = framed["choices"][0]
+        assert choice["finish_reason"] == "tool_calls"
+        tool_calls = choice["delta"]["tool_calls"]
+        assert len(tool_calls) == 1
+        assert tool_calls[0]["function"]["name"] == "file_read"
+        assert tool_calls[0]["function"]["arguments"] == '{"path": "src/auth.py"}'
+        # No internal dispatch fired.
+        assert tool_dispatch.calls == []

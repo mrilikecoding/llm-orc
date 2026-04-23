@@ -24,6 +24,7 @@ from __future__ import annotations
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 from fastapi import APIRouter
@@ -33,6 +34,7 @@ from pydantic import BaseModel, Field
 from llm_orc.agentic.autonomy_policy import AutonomyPolicy
 from llm_orc.agentic.budget_controller import BudgetController
 from llm_orc.agentic.orchestrator_chunk import (
+    ClientToolCall,
     Completion,
     ContentDelta,
     VisibilityEvent,
@@ -49,7 +51,11 @@ from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.models.base import ToolCallingNotSupportedError
 from llm_orc.web.api import get_orchestra_service
-from llm_orc.web.api.sse_format import OpenAiSseFormatter, render_visibility_narration
+from llm_orc.web.api.sse_format import (
+    OpenAiSseFormatter,
+    encode_tool_call_for_message,
+    render_visibility_narration,
+)
 from llm_orc.web.api.v1_models import get_orchestrator_config_resolver
 
 router = APIRouter(prefix="/v1", tags=["openai-compat"])
@@ -139,10 +145,22 @@ def get_orchestrator_llm_loader() -> Callable[[str], Awaitable[OrchestratorLLM]]
 
 
 class _ChatCompletionMessage(BaseModel):
-    """One message in the OpenAI chat-completions request."""
+    """One message in the OpenAI chat-completions request.
+
+    ``tool_call_id`` and ``tool_calls`` carry the OpenAI tool-round-trip
+    shape: ``role: assistant`` messages whose prior turn closed with
+    ``finish_reason: tool_calls`` echo their ``tool_calls[]`` back, and
+    ``role: tool`` messages carry a ``tool_call_id`` plus the tool
+    result as ``content``. Both are optional so the common case
+    (``role: user``, ``role: system``) parses without change.
+    ``content`` is nullable because OpenAI accepts ``content: null`` on
+    an assistant message whose turn carried only tool calls.
+    """
 
     role: str
-    content: str
+    content: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: list[dict[str, Any]] | None = None
 
 
 class _ChatCompletionsRequest(BaseModel):
@@ -175,7 +193,12 @@ async def chat_completions(
 def _resolve_context(request: _ChatCompletionsRequest) -> SessionContext:
     """Run the pre-handoff work shared by streaming and non-streaming paths."""
     messages = [
-        ChatMessage(role=message.role, content=message.content)
+        ChatMessage(
+            role=message.role,
+            content=message.content,
+            tool_call_id=message.tool_call_id,
+            tool_calls=tuple(message.tool_calls) if message.tool_calls else (),
+        )
         for message in request.messages
     ]
 
@@ -218,26 +241,53 @@ async def _build_runtime() -> OrchestratorRuntime:
     )
 
 
+@dataclass(frozen=True)
+class _NonStreamingResult:
+    """Collected chunk output shaped for the non-streaming response body.
+
+    ``tool_calls`` is non-None when the Runtime closed the turn with a
+    :class:`ClientToolCall` (Option C) — the client-declared tool
+    delegations are carried on the response's ``message.tool_calls``
+    field, and ``finish_reason`` is ``"tool_calls"`` per OpenAI shape.
+    """
+
+    content: str
+    finish_reason: str
+    tool_calls: list[dict[str, Any]] | None = field(default=None)
+
+
 async def _collect_non_streaming(
     context: SessionContext, runtime: OrchestratorRuntime
-) -> tuple[str, str]:
-    """Drive the Runtime and flatten its chunks to content + finish_reason.
+) -> _NonStreamingResult:
+    """Drive the Runtime and flatten its chunks to the non-streaming shape.
 
     VisibilityEvent chunks render as inline narration using the same
     helper the SSE formatter uses, so non-streaming response bodies
     carry the same Autonomy Policy visibility the streaming path emits —
     tool-user observability does not depend on transport.
+
+    A :class:`ClientToolCall` chunk terminates the Runtime's generator
+    and is shaped into ``message.tool_calls`` per OpenAI's chat-
+    completion schema (Option C, Client Tool Surface Commitment).
     """
     content_parts: list[str] = []
     finish_reason = "stop"
+    tool_calls: list[dict[str, Any]] | None = None
     async for chunk in runtime.run(context):
         if isinstance(chunk, ContentDelta):
             content_parts.append(chunk.content)
         elif isinstance(chunk, VisibilityEvent):
             content_parts.append(render_visibility_narration(chunk.kind, chunk.payload))
+        elif isinstance(chunk, ClientToolCall):
+            tool_calls = [encode_tool_call_for_message(tc) for tc in chunk.tool_calls]
+            finish_reason = "tool_calls"
         elif isinstance(chunk, Completion):
             finish_reason = chunk.finish_reason
-    return "".join(content_parts), finish_reason
+    return _NonStreamingResult(
+        content="".join(content_parts),
+        finish_reason=finish_reason,
+        tool_calls=tool_calls,
+    )
 
 
 async def _stream_completion(
@@ -270,8 +320,15 @@ async def _build_completion_body(
     today.
     """
     pre_token_spend = context.state.token_spend
-    content, finish_reason = await _collect_non_streaming(context, runtime)
+    result = await _collect_non_streaming(context, runtime)
     turn_tokens = max(0, context.state.token_spend - pre_token_spend)
+    message: dict[str, Any] = {"role": "assistant"}
+    if result.tool_calls is not None:
+        # OpenAI convention: content is null on a pure tool_calls turn.
+        message["content"] = None
+        message["tool_calls"] = result.tool_calls
+    else:
+        message["content"] = result.content
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex}",
         "object": "chat.completion",
@@ -280,8 +337,8 @@ async def _build_completion_body(
         "choices": [
             {
                 "index": 0,
-                "message": {"role": "assistant", "content": content},
-                "finish_reason": finish_reason,
+                "message": message,
+                "finish_reason": result.finish_reason,
             }
         ],
         "usage": {

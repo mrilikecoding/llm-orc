@@ -85,7 +85,10 @@ class SessionRegistry:
         if first_user is None:
             return SessionIdentity(value=uuid.uuid4().hex, method="cold_start")
 
-        digest = hashlib.sha256(first_user.content.encode("utf-8")).hexdigest()
+        # Tolerate None content (e.g., malformed user message) so
+        # identity derivation never raises on the request path.
+        content = first_user.content or ""
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
         return SessionIdentity(value=digest, method="message_prefix")
 
     def get_or_create_state(self, identity: SessionIdentity) -> SessionState:

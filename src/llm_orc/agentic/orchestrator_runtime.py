@@ -36,11 +36,13 @@ from llm_orc.agentic.budget_controller import (
     BudgetController,
 )
 from llm_orc.agentic.orchestrator_chunk import (
+    ClientToolCall,
     Completion,
     ContentDelta,
     InternalToolCallInFlight,
     InternalToolCallResult,
     OrchestratorChunk,
+    ToolCallInvocation,
 )
 from llm_orc.agentic.orchestrator_tool_dispatch import (
     TOOL_NAMES,
@@ -48,8 +50,8 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     ToolCallResult,
     ToolCallSuccess,
 )
-from llm_orc.agentic.session_start import SessionContext
-from llm_orc.models.base import ToolCallingResponse
+from llm_orc.agentic.session_start import ChatMessage, SessionContext
+from llm_orc.models.base import ToolCall, ToolCallingResponse
 
 
 class OrchestratorLLM(Protocol):
@@ -150,12 +152,28 @@ class OrchestratorRuntime:
         self._tool_dispatch = tool_dispatch
 
     async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
-        """Run the ReAct loop for this session turn."""
+        """Run the ReAct loop for this session turn.
+
+        Tool surface advertised to the LLM is the union of the closed
+        internal five (ADR-003) and the client-declared ``tools[]`` from
+        ``SessionContext`` (Option C, Client Tool Surface Commitment). On
+        each iteration the Runtime routes by ``TOOL_NAMES`` membership:
+        names inside dispatch internally; names outside close the turn
+        with :class:`ClientToolCall` (``finish_reason: tool_calls`` on the
+        wire), so the client executes the tool and resumes the Session on
+        the next request.
+        """
         state = context.state
         messages: list[dict[str, Any]] = [
-            {"role": m.role, "content": m.content} for m in context.messages
+            _session_message_to_llm(m) for m in context.messages
         ]
-        tools = _build_tool_schemas()
+        tools = _build_tool_schemas() + list(context.tools)
+        # Client-declared tool names — only these route to ClientToolCall.
+        # Names that appear in neither ``TOOL_NAMES`` nor ``client_tool_names``
+        # fall through to Tool Dispatch, which returns ``unknown_tool`` — so
+        # AS-6 closure (no script authorship) stays enforced regardless of
+        # what the LLM hallucinates.
+        client_tool_names = _client_tool_names(context.tools)
 
         while True:
             check = self._budget.check(
@@ -179,6 +197,21 @@ class OrchestratorRuntime:
                 yield Completion(finish_reason="stop")
                 return
 
+            client_calls = [
+                tc for tc in response.tool_calls if tc.name in client_tool_names
+            ]
+            if client_calls:
+                # Option C: any client-declared tool call in the batch
+                # closes the turn. Internal calls in the same batch are
+                # dropped — the orchestrator LLM will re-emit them next
+                # turn after seeing the client-tool results. This keeps
+                # the turn-boundary discipline (ADR-001/002: DAG engine
+                # runs atomically; no mid-turn callback).
+                yield ClientToolCall(
+                    tool_calls=tuple(_client_invocation(tc) for tc in client_calls)
+                )
+                return
+
             messages.append(_assistant_message(response))
             for tool_call in response.tool_calls:
                 yield InternalToolCallInFlight(id=tool_call.id, name=tool_call.name)
@@ -194,6 +227,57 @@ class OrchestratorRuntime:
                     id=result.id, summary=_tool_result_summary(result)
                 )
                 messages.append(_tool_result_message(result))
+
+
+def _session_message_to_llm(message: ChatMessage) -> dict[str, Any]:
+    """Translate a :class:`ChatMessage` to the dict shape LLM clients expect.
+
+    Tool-round-trip fields (``tool_call_id``, ``tool_calls``) ride through
+    when present so the orchestrator LLM sees its prior delegation and the
+    client's ``role: tool`` result on the subsequent turn (Option C, Client
+    Tool Surface Commitment). ``content`` is emitted as-is — OpenAI-compat
+    providers accept ``None`` on assistant messages whose prior turn
+    carried only tool calls.
+    """
+    result: dict[str, Any] = {"role": message.role, "content": message.content}
+    if message.tool_call_id is not None:
+        result["tool_call_id"] = message.tool_call_id
+    if message.tool_calls:
+        result["tool_calls"] = list(message.tool_calls)
+    return result
+
+
+def _client_tool_names(tools: list[dict[str, Any]]) -> frozenset[str]:
+    """Extract the client-declared function names from the request's ``tools[]``.
+
+    Tolerant of malformed entries: missing ``function`` key or missing
+    ``name`` is skipped rather than raised so a hostile or truncated
+    ``tools[]`` cannot break the Runtime. The Serving Layer already
+    trusts client input at this stage; additional validation lives
+    outside Runtime's concerns.
+    """
+    names: set[str] = set()
+    for tool in tools:
+        function = tool.get("function") if isinstance(tool, dict) else None
+        if isinstance(function, dict):
+            name = function.get("name")
+            if isinstance(name, str) and name:
+                names.add(name)
+    return frozenset(names)
+
+
+def _client_invocation(tool_call: ToolCall) -> ToolCallInvocation:
+    """Translate the LLM's client-declared ``ToolCall`` to a chunk invocation.
+
+    ``arguments_json`` is the OpenAI-compatible pre-encoded string the LLM
+    emitted; keeping it in wire form matches :class:`ToolCallInvocation`'s
+    contract so the formatter avoids re-encoding.
+    """
+    return ToolCallInvocation(
+        id=tool_call.id,
+        name=tool_call.name,
+        arguments=tool_call.arguments_json,
+    )
 
 
 def _safe_parse_arguments(raw: str) -> dict[str, Any]:

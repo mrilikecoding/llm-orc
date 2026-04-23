@@ -129,10 +129,11 @@ def render_visibility_narration(kind: str, payload: dict[str, Any]) -> str:
 def encode_tool_call_for_message(call: ToolCallInvocation) -> dict[str, Any]:
     """Encode one tool call as an OpenAI ``chat.completion.message.tool_calls`` entry.
 
-    The non-streaming response shape — no ``index`` field. Exposed so the
-    ``_build_completion_body`` path in ``v1_chat_completions`` can reuse
-    the same inner payload the streaming encoder uses. The streaming
-    variant adds an ``index`` field on top of this shape.
+    The non-streaming response shape — no ``index`` field. Used by the
+    ``_build_completion_body`` path in ``v1_chat_completions`` when the
+    Runtime closes a turn with :class:`ClientToolCall` (Option C, Client
+    Tool Surface Commitment). The streaming encoder :func:`_encode_tool_calls`
+    reuses this payload and adds an ``index`` field on top.
     """
     return {
         "id": call.id,
