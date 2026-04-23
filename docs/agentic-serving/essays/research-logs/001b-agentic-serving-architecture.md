@@ -1,6 +1,6 @@
 # Research Log: Agentic Serving for llm-orc (Cycle 2)
 
-## Question 5: What can we learn from OpenHands' architecture?
+## Question 5: What lessons does OpenHands' architecture offer?
 
 **Method:** Web search + documentation analysis
 
@@ -44,7 +44,7 @@ Their thesis: small agents can run without orchestration, but production systems
 4. The agentic-vs-orchestration distinction maps to the essay's Layer 2 (orchestrator agent) vs Layer 1 (API surface + lifecycle management). llm-orc needs both.
 5. Delegation as a typed action (not graph wiring) aligns with the essay's model: ensembles as tools, not as nodes in a fixed graph.
 
-## Question 6: What can we learn from claw-code's architecture?
+## Question 6: What lessons does claw-code's architecture offer?
 
 **Method:** Web search + documentation analysis
 

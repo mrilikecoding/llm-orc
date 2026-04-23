@@ -184,12 +184,11 @@
 
 91. **Scenarios (c) and (d) require DAG engine semantics as context.** The two load-bearing stress scenarios probe agent-to-agent state flow within a multi-agent ensemble — (c) first agent needs a client-filesystem file before the second agent proceeds; (d) composed ensemble mid-execution needs a client-tool result the orchestrator didn't know to request. Writing these faithfully requires reading `src/llm_orc/core/execution/ensemble_execution.py` for how agents sequence and how their inputs are resolved. No WP touching the DAG engine's internals has landed in the agentic-serving cycle yet — the existing field guide's Ensemble Engine section describes the access surface, not the sequencing semantics. The fresh WP-F session should load this explicitly during orientation, not rely on system-design summaries.
 
-92. **Opportunistic conformance tidying available.** Three deferred v0.7.3 items from this corpus's migration notes can be picked up in any future session without blocking WP-F:
-    - Framing audit on `essays/001-agentic-serving-architecture.md` — `housekeeping/audits/argument-audit-001.md` has argument-audit only; v0.7.3 dispatch format adds framing audit. Pick up if framing tension surfaces.
-    - `domain-model.md` §Concepts column header "Avoid (synonyms)" → "Related Terms" per v0.7.3 template. Fix when the table is next edited.
-    - First-person plural in `essays/research-logs/001b-agentic-serving-architecture.md:3,47` — "we" in question titles. Cross-cutting third-person rule.
-    - `product-discovery.md` §Value Tensions phrased as declarative prose rather than open questions per v0.7.3 discover template.
-    None of these are WP-F prerequisites; noted here so they can be bundled into a cleanup commit at any natural boundary.
+92. **Opportunistic conformance tidying.** Four deferred v0.7.3 items from this corpus's migration notes were flagged as cleanup-bundleable at any natural boundary. Status after WP-F mini-cycle close (2026-04-22):
+    - ~~`domain-model.md` §Concepts column header "Avoid (synonyms)" → "Related Terms" per v0.7.3 template.~~ **Fixed 2026-04-22** in the WP-F tidy commit.
+    - ~~First-person plural in `essays/research-logs/001b-agentic-serving-architecture.md:3,47` — "we" in question titles.~~ **Fixed 2026-04-22** in the WP-F tidy commit (question headings recast to third-person "What lessons does X's architecture offer?").
+    - **Still deferred:** Framing audit on `essays/001-agentic-serving-architecture.md` — `housekeeping/audits/argument-audit-001.md` has argument-audit only; v0.7.3 dispatch format adds framing audit. Pick up if framing tension surfaces.
+    - **Still deferred:** `product-discovery.md` §Value Tensions phrased as declarative prose rather than open questions per v0.7.3 discover template. Editorial work, not mechanical tidy — defer to a session that has the attentional mode for it.
 
 ### From ARCHITECT
 30. Retrofit mode — llm-orc has existing FastAPI server, MCP handlers (ExecutionHandler, ValidationHandler, ensemble_crud_handler, promotion_handler, validation_handler, script_handler), ensemble engine, config manager, auth, and artifact system. Agentic serving is additive; Layer 3 (Ensemble Engine) stays unchanged per ADR-001/002
@@ -298,6 +297,6 @@ Citation and argument audits have been run. All P1 issues were remediated in the
 
 **Deferred conformance items** (to be picked up opportunistically):
 - **Framing audit on essay.** v0.7.3 argument-audit dispatches include a framing-audit section; `housekeeping/audits/argument-audit-001.md` has argument-audit only. Pick up in continued work if framing tension surfaces.
-- **Concepts table column header.** `domain-model.md` §Concepts column 4 is labeled "Avoid (synonyms)"; v0.7.3 template says "Related Terms". Fix when the table is next edited.
-- **First-person plural in research log.** `essays/research-logs/001b-agentic-serving-architecture.md:3,47` uses "we" in question titles. Cross-cutting third-person rule applies.
-- **Value tensions phrasing.** `product-discovery.md` §Value Tensions stated as declarative prose rather than open questions per v0.7.3 discover template.
+- ~~**Concepts table column header.**~~ **Fixed 2026-04-22** — `domain-model.md` §Concepts column 4 renamed from "Avoid (synonyms)" to "Related Terms" per v0.7.3 template.
+- ~~**First-person plural in research log.**~~ **Fixed 2026-04-22** — question titles in `essays/research-logs/001b-agentic-serving-architecture.md` lines 3 and 47 recast to third-person.
+- **Value tensions phrasing.** `product-discovery.md` §Value Tensions stated as declarative prose rather than open questions per v0.7.3 discover template. Editorial conversion; defer to a session with the attentional mode for it.
