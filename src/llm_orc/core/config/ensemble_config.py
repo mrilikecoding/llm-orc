@@ -356,6 +356,41 @@ def validate_ensemble_reference_graph(
     dfs(name)
 
 
+def compute_reference_graph_depth(
+    name: str,
+    agents: list[AgentConfig],
+    search_dirs: list[str],
+) -> int:
+    """Return the maximum depth of the reference graph rooted at ``name``.
+
+    Depth 0 is a leaf (no ensemble references). Depth N is a node whose
+    deepest descendant is N edges away. Mirrors the runtime depth
+    counter in :class:`EnsembleAgentRunner` — an N-edge chain would
+    execute with child_depth == N, so callers compare the returned
+    value against the configured depth limit and reject if
+    ``depth > depth_limit``.
+
+    Assumes the graph is acyclic; callers that need cycle rejection
+    must invoke :func:`validate_ensemble_reference_graph` first.
+    """
+    graph: dict[str, list[str]] = {}
+    _build_reference_graph(name, agents, search_dirs, graph)
+
+    memo: dict[str, int] = {}
+
+    def depth_of(node: str) -> int:
+        if node in memo:
+            return memo[node]
+        refs = graph.get(node, [])
+        if not refs:
+            memo[node] = 0
+            return 0
+        memo[node] = 1 + max(depth_of(ref) for ref in refs)
+        return memo[node]
+
+    return depth_of(name)
+
+
 def _build_reference_graph(
     ensemble_name: str,
     agents: list[AgentConfig],
