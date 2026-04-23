@@ -99,6 +99,43 @@
 
 ---
 
+## Feature: Client Tool Surface Commitment (system-design §Client Tool Surface Commitment)
+
+*The Commitment is Option C: client-declared tools flow through turn-boundary delegation via `finish_reason: tool_calls`. The orchestrator's internal action space stays at the five ADR-003 tools. These four scenarios exercise the turn-boundary-vs-mid-execution distinction that the scenario gate was established to test. Scenarios (a) and (b) are the intended Option C cases. Scenarios (c) and (d) probe whether un-predicted client-side needs inside an ensemble force mid-execution callback; the resolution is that re-invocation of the ensemble with the client-tool result folded into `input_data` carries the case without any change to Layer 3 (ADR-001, ADR-002). Mid-execution callback (Option D) is out of scope for this cycle — it would require amending ADR-001 and ADR-002 and adding suspend/resume to the DAG engine's `_execute_core` phase loop (currently synchronous and atomic).*
+
+*"Client-declared tool" and "client tool" in these scenarios refer to entries in the `tools[]` array on a `/v1/chat/completions` request (per the Commitment). The orchestrator's internal Orchestrator Tools (the fixed five per ADR-003) are distinct.*
+
+### Scenario: Orchestrator delegates a client-declared tool at the turn boundary
+**Given** an operator has deployed llm-orc with the Serving Layer and no Plexus
+**And** a Session whose initial `/v1/chat/completions` request carries `tools: [bash, file_read, file_edit]`
+**When** the Orchestrator Agent's ReAct iteration determines that task progress requires reading a file from the client's filesystem
+**Then** the Orchestrator Runtime closes the current turn with `finish_reason: tool_calls`, the completion response carries a `tool_calls[]` entry for the client-declared `file_read` tool with the requested path as arguments, and no Orchestrator Tool from the fixed five is dispatched during that turn (the Runtime's tool surface is not invoked; the turn closes by emitting a `ClientToolCall` on the response surface instead)
+
+### Scenario: Session turn count and token spend accumulate across a client-tool round trip
+**Given** an active Session whose Budget state is `turn_count=5` and `token_spend=12000` at the moment the Orchestrator Runtime closes a turn with a `file_read` client-tool delegation
+**When** the client executes the file read and sends the next `/v1/chat/completions` carrying the accumulated message history plus a `role: tool` message with the file content
+**Then** the Serving Layer resolves the request to the same `SessionState` the prior request used, the Orchestrator Runtime resumes its ReAct loop with the `role: tool` message as the next observation, the Session's turn count continues accumulating from 5 (not reset to 0), and the Session's token spend continues accumulating on the same Budget toward the same turn and token limits
+
+### Scenario: Ensemble whose first agent needs a client-filesystem file is handled via pre-invoke delegation
+**Given** an existing ensemble `auth-analyzer` whose first phase consumes source file content as its `input_data`
+**And** a Session whose client declared `tools: [file_read]`
+**When** the Orchestrator Agent, having read `auth-analyzer`'s description via `list_ensembles` and inferring from that description (or from prior task context) that the ensemble consumes file content rather than a file path as `input_data` (note: the `list_ensembles` output schema must be sufficiently rich to support this inference — the schema is a WP-F build-time decision), determines it should invoke `auth-analyzer` on `src/auth.py`
+**Then** the Orchestrator Agent first emits a `file_read` client-tool delegation at the turn boundary to obtain the contents of `src/auth.py`, the Session resumes on the subsequent request with the file content carried as a `role: tool` observation, the Orchestrator Agent then emits `invoke_ensemble(name="auth-analyzer", input=<task description with file content folded in>)`, the Ensemble Engine executes the ensemble atomically with the content already present in `input_data`, and no change to the DAG engine's phase loop is required
+
+### Scenario: Composed ensemble's un-predicted mid-execution client-tool need is resolved via re-invocation
+**Given** a Session in which the Orchestrator Agent has just composed `repo-scanner` — a two-phase ensemble whose second-phase agent's analysis depends on the output of a `bash: grep -r "TODO" /client/repo` that the Orchestrator Agent did not predict at `invoke_ensemble` time
+**And** the composed ensemble follows the build-time convention that an agent emits a structured `{"needs_client_tool": {"tool": "<name>", "args": {...}}}` response when it lacks a required input (convention source: roadmap Open Decision Point #8 — the specific enforcement mechanism is a build-time decision; the scenario assumes *some* mechanism is in place)
+**When** the Orchestrator Agent calls `invoke_ensemble(name="repo-scanner", input=<task description>)` and the Ensemble Engine runs the ensemble's phase loop to completion with no external callback (Layer 3 is unchanged; ADR-001, ADR-002)
+**Then** the ensemble's Result Summarization preserves the structured `needs_client_tool` signal from the agent that could not proceed (conditional: the summarizer must be configured or constrained to not collapse structured JSON signals into unstructured prose; this is a build-time configuration constraint, not guaranteed by ADR-004 alone), the Orchestrator Agent observes the signal in its tool-call result, the Orchestrator Runtime closes the next turn with a `bash` client-tool delegation at the turn boundary, the Session resumes on the subsequent request with the grep output as a `role: tool` observation, the Orchestrator Agent re-invokes `invoke_ensemble(name="repo-scanner", input=<original task + grep output>)` and the re-invocation runs to completion using the client-tool result folded into `input_data` — the DAG engine never suspends, mid-execution client-tool needs are resolved at turn boundaries via ensemble re-invocation (the retry pattern), and the total Budget impact of the retry is bounded by the Session's turn and token limits
+
+### Scenario: Composed ensemble without the structured signal silently degrades to a quality failure
+**Given** a composed ensemble `repo-scanner` whose second-phase agent depends on a client-tool result the Orchestrator Agent did not predict at `invoke_ensemble` time
+**And** the ensemble's agents do not emit the structured `{"needs_client_tool": ...}` convention — the ensemble was authored (or composed) without convention compliance, no script-agent precondition guard exists at phase 0, and Orchestrator Tool Dispatch has no structural detection for the schema (this scenario exercises the case where both of Open Decision Point #8's soft mechanisms (i) and (ii) fail to produce a recognized signal)
+**When** the Orchestrator Agent calls `invoke_ensemble(name="repo-scanner", input=<task description>)` and the Ensemble Engine runs the ensemble's phase loop to completion
+**Then** the ensemble completes with a Result Summarization that has the normal shape (prose output, no `needs_client_tool` key), the Orchestrator Agent receives a normal-shaped tool-call result, no retry is triggered within the ReAct iteration that processes the ensemble result (the orchestrator has no signal that would motivate one), no `ClientToolCall` is emitted on the response surface for this ensemble result, the Session continues within its Budget with turn count and token spend accumulating normally, and the orchestrator's final completion is returned to the client with the ensemble's result as the final answer — the failure is quality-class (structural Session dynamics are correct; the answer is not) rather than correctness-class (no Session crash, no Budget exception, no tool-surface error); catching this failure is the target of the Calibration Gate under ADR-007 when composed ensembles are in their first N invocations, and in stateless deployments where Calibration is session-scoped (Plexus absent, quality signals do not persist across sessions), the quality failure propagates to the client unflagged — this scenario's acceptance is that the Session's structural behavior is correct, not that the result is correct
+
+---
+
 ## Feature: Calibration of Composed Ensembles (ADR-007)
 
 ### Scenario: First N invocations of a composed ensemble are result-checked
