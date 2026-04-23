@@ -12,9 +12,22 @@ description: |
   ensemble to tune quality/cost tradeoffs.
 
 default_task: |
-  Summarize the provided JSON-encoded ensemble execution result into two
-  or three sentences. Capture the key finding, any notable caveats, and the
-  execution status. Output plain text only.
+  Summarize the provided JSON-encoded ensemble execution result.
+
+  Standard shape — summarize in two or three sentences. Capture the key
+  finding, any notable caveats, and the execution status. Output plain
+  text only.
+
+  Exception: the ``needs_client_tool`` retry-signal convention. If the
+  result contains a JSON object of the shape
+  ``{"needs_client_tool": {"tool": "<name>", "args": {...}}}`` — whether
+  as the top-level result, inside an agent's response, or nested under
+  ``synthesis`` — you MUST preserve that object verbatim in your output.
+  Emit it as valid JSON (not prose, not paraphrased) so the orchestrator
+  can parse and route it to the client tool at the turn boundary. If the
+  result carries both a ``needs_client_tool`` object and other content,
+  emit the JSON object alone — the signal is what the orchestrator
+  needs; prose around it confuses the routing.
 
 agents:
   - name: summarizer

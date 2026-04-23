@@ -169,6 +169,54 @@ class TestOrchestratorConfigResolver:
         assert config.override_bounds.max_turn_limit == 1000
         assert config.override_bounds.max_token_limit == 5_000_000
 
+    def test_default_orchestrator_system_prompt_teaches_retry_convention(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The default system prompt mentions all load-bearing disciplines.
+
+        Phase 1 orchestrators operate behind a prompt that teaches (a) the
+        five internal tools, (b) Option C's one-kind-per-turn discipline,
+        and (c) the ``needs_client_tool`` retry convention for composed
+        ensembles (roadmap ODP #8 mechanism i). The exact wording is an
+        operator-tunable default; this test verifies all three topics
+        appear in the default so an operator override that misses a
+        topic is a visible regression rather than a silent one.
+        """
+        cm = _make_config_manager(tmp_path, monkeypatch)
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        prompt = config.orchestrator_system_prompt
+        assert "invoke_ensemble" in prompt
+        assert "compose_ensemble" in prompt
+        assert "list_ensembles" in prompt
+        assert "query_knowledge" in prompt
+        assert "record_outcome" in prompt
+        assert "client-declared" in prompt or "client tool" in prompt.lower()
+        assert "needs_client_tool" in prompt
+
+    def test_operator_override_replaces_default_system_prompt(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``orchestrator.system_prompt`` in config.yaml wins over the default."""
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            local_yaml={
+                "agentic_serving": {
+                    "orchestrator": {
+                        "system_prompt": "Operator override.",
+                    }
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        assert config.orchestrator_system_prompt == "Operator override."
+
     def test_resolved_config_is_frozen(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

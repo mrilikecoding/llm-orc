@@ -144,6 +144,7 @@ def _default_orchestrator_config() -> OrchestratorConfig:
         ),
         allowed_profiles=("test-profile",),
         summarizer_ensemble="agentic-result-summarizer",
+        orchestrator_system_prompt="",
     )
 
 
@@ -1859,6 +1860,7 @@ class TestClientToolSurfaceCommitment:
             ),
             allowed_profiles=("test-profile",),
             summarizer_ensemble="agentic-result-summarizer",
+            orchestrator_system_prompt="",
         )
         client, shared_registry, _ = _build_client(
             monkeypatch,
@@ -2462,3 +2464,475 @@ class TestClientToolSurfaceCommitment:
             f"ensemble sees the content, not a path. Got: {folded_input!r}"
         )
         assert "src/auth.py" in folded_input
+
+    def _bash_client_tool_schema(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "description": "Run a shell command in the client environment.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string"},
+                    },
+                    "required": ["command"],
+                },
+            },
+        }
+
+    def test_retry_pattern_resolves_mid_execution_client_tool_need(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§Scenario (d): retry pattern for un-predicted mid-execution needs.
+
+        A composed ensemble whose second-phase agent depends on a client-
+        tool result the orchestrator did NOT predict at invoke-time emits
+        a structured ``{"needs_client_tool": {"tool": ..., "args": ...}}``
+        signal. The Result Summarizer Harness preserves that signal
+        through to the orchestrator's tool-call result (build-time
+        convention: see updated summarizer ensemble's prompt). The
+        orchestrator observes the signal, closes the next turn with a
+        ``bash`` client-tool delegation, and re-invokes the ensemble on
+        the subsequent request with the grep output folded into
+        ``input_data`` alongside the original task — the retry pattern.
+        The DAG engine never suspends (ADR-001/002: Layer 3 unchanged).
+
+        Two HTTP requests, four LLM iterations:
+
+          Request 1 — ``tools: [bash]``, user asks for TODO scan:
+            * Iter 1: invoke_ensemble(repo-scanner, <task>).
+              The stub summarizer returns a ``needs_client_tool`` JSON
+              string (the preservation is verified through the real
+              Harness + real Tool Dispatch path).
+            * Iter 2: LLM reads the signal, emits bash ClientToolCall.
+              Turn closes.
+
+          Request 2 — client returns grep output as role:tool:
+            * Iter 1: LLM re-invokes repo-scanner with the grep output
+              folded into input alongside the original task. Stub
+              summarizer returns a normal prose summary this time.
+            * Iter 2: LLM emits stop with the final answer.
+        """
+        # First invoke-ensemble: the composed ensemble emits the
+        # ``needs_client_tool`` retry signal (phase-2 agent cannot
+        # proceed). The stubbed summarizer preserves the JSON structure
+        # verbatim per the updated convention.
+        needs_signal_json = json.dumps(
+            {
+                "needs_client_tool": {
+                    "tool": "bash",
+                    "args": {"command": 'grep -r "TODO" /client/repo'},
+                }
+            }
+        )
+        first_ensemble_raw = {
+            "results": {
+                "scanner-phase-1": {"response": "list ready"},
+                "scanner-phase-2": {"response": needs_signal_json},
+            },
+            "synthesis": None,
+            "status": "success",
+        }
+        first_summarizer_result = {
+            "results": {"summarizer": {"response": needs_signal_json}},
+            "synthesis": None,
+            "status": "success",
+        }
+        # Second invoke-ensemble (the retry): ensemble runs to completion
+        # with the grep output folded into input_data. Summarizer produces
+        # a normal prose summary this time.
+        second_ensemble_raw = {
+            "results": {
+                "scanner-phase-1": {"response": "list ready"},
+                "scanner-phase-2": {
+                    "response": "Found 3 TODOs: auth.py:12, db.py:47, ui.py:3."
+                },
+            },
+            "synthesis": None,
+            "status": "success",
+        }
+        second_summarizer_result = {
+            "results": {
+                "summarizer": {
+                    "response": "Scanned repo — 3 TODOs in auth.py, db.py, ui.py.",
+                }
+            },
+            "synthesis": None,
+            "status": "success",
+        }
+
+        # One stub handles both invocations of repo-scanner by returning
+        # different results per call — the list is popped in order so the
+        # first invoke returns the needs_signal result, the second returns
+        # the normal one.
+        class _SequencedOperations:
+            def __init__(self) -> None:
+                self._repo_results = [first_ensemble_raw, second_ensemble_raw]
+                self._summarizer_results = [
+                    first_summarizer_result,
+                    second_summarizer_result,
+                ]
+                self.calls: list[dict[str, Any]] = []
+
+            async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
+                self.calls.append(arguments)
+                name = arguments.get("ensemble_name")
+                if name == "repo-scanner":
+                    return self._repo_results.pop(0)
+                if name == "test-summarizer":
+                    return self._summarizer_results.pop(0)
+                raise ValueError(f"unexpected ensemble '{name}'")
+
+            async def read_ensembles(self) -> list[dict[str, Any]]:
+                return []
+
+        operations = _SequencedOperations()
+        harness = ResultSummarizerHarness(
+            invoker=operations, summarizer_name="test-summarizer"
+        )
+        dispatch = OrchestratorToolDispatch(
+            operations=operations,
+            harness=harness,
+            autonomy_policy=AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL),
+        )
+
+        grep_output = (
+            "/client/repo/auth.py:12: # TODO: validate credentials\n"
+            "/client/repo/db.py:47: # TODO: connection pool\n"
+            "/client/repo/ui.py:3: # TODO: accessibility\n"
+        )
+        llm = _ScriptedLLM(
+            responses=[
+                # Request 1, iter 1: initial invoke_ensemble.
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_invoke_first",
+                            name="invoke_ensemble",
+                            arguments_json=json.dumps(
+                                {
+                                    "name": "repo-scanner",
+                                    "input": "Scan /client/repo for TODOs.",
+                                }
+                            ),
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=20, completion_tokens=10, total_tokens=30
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                # Request 1, iter 2: LLM sees needs_client_tool signal,
+                # emits bash ClientToolCall (turn closes).
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_bash",
+                            name="bash",
+                            arguments_json=(
+                                '{"command": "grep -r \\"TODO\\" /client/repo"}'
+                            ),
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=60, completion_tokens=8, total_tokens=68
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                # Request 2, iter 1: re-invoke with grep output folded in.
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_invoke_retry",
+                            name="invoke_ensemble",
+                            arguments_json=json.dumps(
+                                {
+                                    "name": "repo-scanner",
+                                    "input": (
+                                        "Scan /client/repo for TODOs.\n"
+                                        "Grep output:\n" + grep_output
+                                    ),
+                                }
+                            ),
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=120, completion_tokens=15, total_tokens=135
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                # Request 2, iter 2: final answer.
+                ToolCallingResponse(
+                    content="Found 3 TODOs across auth.py, db.py, ui.py.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=160, completion_tokens=12, total_tokens=172
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=dispatch)
+
+        # ---- Request 1: orchestrator runs the ensemble, observes the
+        #      retry signal in the summary, delegates bash.
+        first_response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "user": "retry-pattern-client",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Scan /client/repo for TODOs.",
+                    }
+                ],
+                "tools": [self._bash_client_tool_schema()],
+            },
+        )
+
+        assert first_response.status_code == 200
+        first_body = first_response.json()
+        first_choice = first_body["choices"][0]
+        assert first_choice["finish_reason"] == "tool_calls"
+        bash_delegation = first_choice["message"]["tool_calls"]
+        assert len(bash_delegation) == 1
+        assert bash_delegation[0]["function"]["name"] == "bash"
+        bash_call_id = bash_delegation[0]["id"]
+
+        # Verify the retry signal reached the LLM's iter 2 context.
+        iter2_messages = llm.calls[1][0]
+        iter2_tool_msgs = [m for m in iter2_messages if m.get("role") == "tool"]
+        assert len(iter2_tool_msgs) == 1
+        summary_payload = json.loads(iter2_tool_msgs[0]["content"])
+        # Harness wraps summary in {"summary": <str>}; the summary string
+        # IS the needs_client_tool JSON preserved verbatim.
+        summary_str = summary_payload.get("summary", "")
+        assert "needs_client_tool" in summary_str, (
+            "Summarizer Harness did not preserve the needs_client_tool "
+            f"signal through to the orchestrator. Got: {summary_payload!r}"
+        )
+        parsed_signal = json.loads(summary_str)
+        assert parsed_signal["needs_client_tool"]["tool"] == "bash"
+
+        # ---- Request 2: client returns grep output; orchestrator
+        #      re-invokes the ensemble with the result folded in.
+        second_response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "user": "retry-pattern-client",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Scan /client/repo for TODOs.",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": bash_call_id,
+                                "type": "function",
+                                "function": {
+                                    "name": "bash",
+                                    "arguments": (
+                                        '{"command": "grep -r \\"TODO\\" /client/repo"}'
+                                    ),
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": bash_call_id,
+                        "content": grep_output,
+                    },
+                ],
+                "tools": [self._bash_client_tool_schema()],
+            },
+        )
+
+        assert second_response.status_code == 200
+        second_body = second_response.json()
+        second_choice = second_body["choices"][0]
+        assert second_choice["finish_reason"] == "stop"
+        assert "Found 3 TODOs" in second_choice["message"]["content"]
+
+        # Load-bearing assertion: the re-invocation carried the grep
+        # output folded into its input. This is the retry pattern's
+        # defining property.
+        repo_scanner_invocations = [
+            c for c in operations.calls if c.get("ensemble_name") == "repo-scanner"
+        ]
+        assert len(repo_scanner_invocations) == 2, (
+            "Expected exactly two repo-scanner invocations — the initial "
+            "invoke and the retry with grep output folded in."
+        )
+        retry_input = repo_scanner_invocations[1].get("input", "")
+        assert "Grep output:" in retry_input
+        assert "/client/repo/auth.py:12" in retry_input, (
+            "Retry invocation did not carry the grep output in input — "
+            "the retry pattern's defining property is the client-tool "
+            f"result folded into input_data. Got: {retry_input!r}"
+        )
+
+    def test_composed_ensemble_without_retry_signal_silently_degrades(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§Scenario (negative): silent quality failure when convention fails.
+
+        A composed ensemble whose second-phase agent depends on a
+        client-tool result but does NOT emit the ``needs_client_tool``
+        convention produces a normal-shaped prose summary. The
+        orchestrator has no signal to motivate a retry, accepts the
+        (hallucinated) result, and returns a final completion. The
+        Session's *structural* behavior is correct — no crash, Budget
+        enforces, turn_count and token_spend advance normally, no
+        spurious ClientToolCall — even though the answer is wrong.
+
+        Acceptance is structural correctness, not result correctness.
+        Catching the quality failure belongs to WP-H's Calibration
+        Gate (ADR-007) — documented here as carried-forward WP-H scope.
+        """
+        # Prose-only summary — no needs_client_tool signal. This models
+        # what happens when the ensemble was authored or composed
+        # without convention compliance.
+        prose_ensemble_raw = {
+            "results": {
+                "scanner-phase-1": {"response": "list ready"},
+                "scanner-phase-2": {
+                    "response": (
+                        "Repo contains 3 Python files: auth.py, db.py, ui.py. "
+                        "No obvious TODOs found in skim review."
+                    )
+                },
+            },
+            "synthesis": None,
+            "status": "success",
+        }
+        prose_summary_result = {
+            "results": {
+                "summarizer": {
+                    "response": (
+                        "Scanned repo — no TODOs found in auth.py, db.py, ui.py."
+                    )
+                }
+            },
+            "synthesis": None,
+            "status": "success",
+        }
+        operations = _StubEnsembleOperations(
+            {
+                "repo-scanner": prose_ensemble_raw,
+                "test-summarizer": prose_summary_result,
+            }
+        )
+        harness = ResultSummarizerHarness(
+            invoker=operations, summarizer_name="test-summarizer"
+        )
+        dispatch = OrchestratorToolDispatch(
+            operations=operations,
+            harness=harness,
+            autonomy_policy=AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL),
+        )
+
+        llm = _ScriptedLLM(
+            responses=[
+                # Iter 1: invoke the ensemble.
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_invoke_prose",
+                            name="invoke_ensemble",
+                            arguments_json=json.dumps(
+                                {
+                                    "name": "repo-scanner",
+                                    "input": "Scan /client/repo for TODOs.",
+                                }
+                            ),
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=20, completion_tokens=10, total_tokens=30
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                # Iter 2: no retry signal visible — orchestrator accepts
+                # the summary as final and emits stop with the
+                # (hallucinated) content.
+                ToolCallingResponse(
+                    content="No TODOs found in the repo.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=60, completion_tokens=8, total_tokens=68
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+
+        registry = SessionRegistry()
+        client, shared_registry, _ = _build_client(
+            monkeypatch, registry=registry, llm=llm, tool_dispatch=dispatch
+        )
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "user": "negative-path-client",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Scan /client/repo for TODOs.",
+                    }
+                ],
+                "tools": [self._bash_client_tool_schema()],
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        choice = body["choices"][0]
+        # Structural assertion A: turn closed with stop, not tool_calls.
+        assert choice["finish_reason"] == "stop"
+        # Structural assertion B: no tool_calls emitted on the response
+        # surface — no retry triggered because no signal was visible.
+        message = choice["message"]
+        assert message.get("tool_calls") in (None, []), (
+            f"Negative scenario emitted a ClientToolCall despite no "
+            f"signal in the summary. Message: {message!r}"
+        )
+        # Structural assertion C: bash was never dispatched on the
+        # client side. The only ensemble invocations were the single
+        # repo-scanner call and its summarizer.
+        invoked_ensembles = [c["ensemble_name"] for c in operations.calls]
+        # (bash isn't an ensemble; this assertion guards against a
+        # future typo misrouting bash through the ensemble facade.)
+        assert "bash" not in invoked_ensembles
+        assert invoked_ensembles.count("repo-scanner") == 1, (
+            "Expected one repo-scanner invocation — no retry path under "
+            "the negative scenario."
+        )
+
+        # Structural assertion D: Session Budget state advances normally
+        # — two iterations' worth of tokens accumulated, turn_count == 2.
+        seeded_identity = SessionIdentity(
+            value="negative-path-client", method="user_field"
+        )
+        state = shared_registry.get_or_create_state(seeded_identity)
+        assert state.turn_count == 2, (
+            f"Expected turn_count=2 (invoke + stop); got {state.turn_count}."
+        )
+        # tokens: 30 + 68 from the two scripted responses.
+        assert state.token_spend == 98
+
+        # Commentary: the orchestrator's content ("No TODOs found") is
+        # factually wrong but the Session executed correctly. Catching
+        # this quality failure is WP-H's Calibration Gate scope.

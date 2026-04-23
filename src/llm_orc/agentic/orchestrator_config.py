@@ -39,6 +39,53 @@ DEFAULT_MAX_TURN_LIMIT = 1_000
 DEFAULT_MAX_TOKEN_LIMIT = 50_000_000
 DEFAULT_SUMMARIZER_ENSEMBLE = "agentic-result-summarizer"
 
+DEFAULT_ORCHESTRATOR_SYSTEM_PROMPT = """\
+You are the llm-orc orchestrator. You route tool-user tasks by invoking \
+ensembles, composing new ones from library primitives, and (when Plexus is \
+active) querying or recording against a knowledge graph.
+
+Your internal tool surface is exactly five functions:
+- invoke_ensemble(name, input) — run a library ensemble on a task input.
+- compose_ensemble(...) — create a new ensemble from existing primitives.
+- list_ensembles() — list ensembles in the library with descriptions.
+- query_knowledge(...) — query the knowledge graph (Plexus, when active).
+- record_outcome(...) — record a routing decision or outcome.
+
+Every tool call the tool user's client declares (e.g. file_read, bash, \
+file_edit) is a *client-declared* tool. When you need a client-declared \
+tool, emit it alone in a single assistant turn — the turn will close and \
+the client will execute it; you resume on the next request with the result \
+as a role:tool observation. Never mix internal tools and client-declared \
+tools in the same assistant turn — emit one kind per turn.
+
+Retry convention for composed ensembles. A composed ensemble's agent may \
+report that it cannot proceed without a client-side tool result by \
+returning a JSON object shaped like \
+{"needs_client_tool": {"tool": "<name>", "args": {...}}}. When you see \
+that signal in an invoke_ensemble summary, emit the named client-declared \
+tool with those args; on the next request, re-invoke the same ensemble \
+with the client-tool result folded into your input string. The Ensemble \
+Engine never suspends mid-execution — re-invocation with augmented input \
+is the retry path.
+"""
+"""Default orchestrator system prompt (Phase 1, WP-F Group 3).
+
+Teaches the orchestrator LLM:
+
+* the closed five-tool internal surface (ADR-003);
+* Option C's one-kind-per-turn discipline — internal tools dispatch
+  in-process; client-declared tools close the turn (system-design
+  §Client Tool Surface Commitment);
+* the ``needs_client_tool`` retry convention for composed ensembles
+  whose mid-execution dependencies were not predicted at invoke-time
+  (roadmap Open Decision Point #8, mechanism i).
+
+Operators override via ``agentic_serving.orchestrator.system_prompt``
+in ``config.yaml`` when a deployment wants tighter or more specific
+guidance. Always prepended ahead of any client-supplied system message
+so the orchestrator discipline survives competing instructions.
+"""
+
 
 @dataclass(frozen=True)
 class BudgetDefaults:
@@ -77,6 +124,7 @@ class OrchestratorConfig:
     override_bounds: OverrideBounds
     allowed_profiles: tuple[str, ...]
     summarizer_ensemble: str
+    orchestrator_system_prompt: str
 
 
 class OrchestratorConfigResolver:
@@ -124,6 +172,9 @@ class OrchestratorConfigResolver:
             allowed_profiles=allowed_profiles,
             summarizer_ensemble=str(
                 summarizer.get("ensemble", DEFAULT_SUMMARIZER_ENSEMBLE)
+            ),
+            orchestrator_system_prompt=str(
+                orchestrator.get("system_prompt", DEFAULT_ORCHESTRATOR_SYSTEM_PROMPT)
             ),
         )
 

@@ -146,10 +146,25 @@ class OrchestratorRuntime:
         llm: OrchestratorLLM,
         budget: BudgetController,
         tool_dispatch: ToolDispatcher,
+        system_prompt: str = "",
     ) -> None:
+        """Construct a Runtime for one session turn.
+
+        ``system_prompt`` is prepended as a leading ``role: system``
+        message on every LLM iteration when non-empty. Teaches the
+        orchestrator LLM the five-internal-tool surface (ADR-003),
+        Option C's one-kind-per-turn discipline, and the
+        ``needs_client_tool`` retry convention (roadmap ODP #8
+        mechanism i). Prepends *ahead* of any client-supplied
+        ``role: system`` message so the orchestrator's discipline
+        survives competing client guidance. Empty string is a no-op —
+        used by tests and by deployments that want no orchestrator-
+        side prompt.
+        """
         self._llm = llm
         self._budget = budget
         self._tool_dispatch = tool_dispatch
+        self._system_prompt = system_prompt
 
     async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
         """Run the ReAct loop for this session turn.
@@ -167,6 +182,8 @@ class OrchestratorRuntime:
         messages: list[dict[str, Any]] = [
             _session_message_to_llm(m) for m in context.messages
         ]
+        if self._system_prompt:
+            messages.insert(0, {"role": "system", "content": self._system_prompt})
         tools = _build_tool_schemas() + list(context.tools)
         # Client-declared tool names — only these route to ClientToolCall.
         # Names that appear in neither ``TOOL_NAMES`` nor ``client_tool_names``

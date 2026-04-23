@@ -437,3 +437,123 @@ class TestReActLoop:
         assert tool_messages[0]["tool_call_id"] == "bad_call"
         # The content payload names the error kind.
         assert "unknown_tool" in tool_messages[0]["content"]
+
+
+class TestOrchestratorSystemPrompt:
+    """The orchestrator's system prompt always prepends the LLM's message list.
+
+    WP-F Group 3 introduces ``system_prompt`` as a Runtime construction
+    parameter. It teaches the LLM about the five internal tools, Option
+    C's one-kind-per-turn discipline, and the ``needs_client_tool``
+    retry convention (roadmap ODP #8 mechanism i). The prompt is
+    *always* prepended — agentic coding clients (OpenCode, Cursor,
+    Roo Code) typically supply their own system message with tool-user
+    guidance; the orchestrator's guidance sits ahead of the client's so
+    the discipline survives competing instructions.
+    """
+
+    @pytest.mark.asyncio
+    async def test_system_prompt_prepends_as_role_system(self) -> None:
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="done",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=10, completion_tokens=2, total_tokens=12
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+        budget = BudgetController(turn_limit=10, token_limit=1000)
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=budget,
+            tool_dispatch=_StubToolDispatch(results={}),
+            system_prompt="Orchestrator discipline text.",
+        )
+
+        await _collect(runtime.run(_make_session_context()))
+
+        messages = llm.calls[0][0]
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == "Orchestrator discipline text."
+
+    @pytest.mark.asyncio
+    async def test_system_prompt_sits_ahead_of_client_system_message(
+        self,
+    ) -> None:
+        """Client's system prompt (if any) follows the orchestrator's.
+
+        When a client (e.g. OpenCode) sends its own ``role: system``
+        message, the orchestrator's prompt prepends ahead of it so the
+        orchestrator's discipline wins over competing client guidance.
+        """
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="ok",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=8, completion_tokens=2, total_tokens=10
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+        budget = BudgetController(turn_limit=10, token_limit=1000)
+        context = _make_session_context(
+            messages=[
+                ChatMessage(role="system", content="Client's guidance."),
+                ChatMessage(role="user", content="task"),
+            ]
+        )
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=budget,
+            tool_dispatch=_StubToolDispatch(results={}),
+            system_prompt="Orchestrator guidance.",
+        )
+
+        await _collect(runtime.run(context))
+
+        messages = llm.calls[0][0]
+        assert [m["role"] for m in messages[:3]] == ["system", "system", "user"]
+        assert messages[0]["content"] == "Orchestrator guidance."
+        assert messages[1]["content"] == "Client's guidance."
+
+    @pytest.mark.asyncio
+    async def test_empty_system_prompt_does_not_prepend(self) -> None:
+        """An empty system_prompt is a no-op — the LLM sees client messages unchanged.
+
+        Tests that use a minimal default constructor should not observe a
+        blank ``role: system`` at position 0. Operators who explicitly
+        configure an empty prompt get the same — no silent synthetic
+        message inserted.
+        """
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="ok",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=5, completion_tokens=1, total_tokens=6
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+        budget = BudgetController(turn_limit=10, token_limit=1000)
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=budget,
+            tool_dispatch=_StubToolDispatch(results={}),
+            system_prompt="",
+        )
+
+        await _collect(runtime.run(_make_session_context()))
+
+        messages = llm.calls[0][0]
+        assert messages[0]["role"] != "system"
+        assert [m["role"] for m in messages] == ["user"]
