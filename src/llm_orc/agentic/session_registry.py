@@ -12,21 +12,17 @@ from __future__ import annotations
 import hashlib
 import uuid
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    # ChatMessage lives in session_start so the Orchestrator Runtime (and
+    # any other FC-4-constrained consumer) can import it without reaching
+    # into this module. TYPE_CHECKING guards the otherwise-circular
+    # import: session_start imports SessionIdentity and SessionState
+    # from here for its SessionContext definition.
+    from llm_orc.agentic.session_start import ChatMessage
 
 IdentityMethod = Literal["user_field", "message_prefix", "cold_start"]
-
-
-@dataclass(frozen=True)
-class ChatMessage:
-    """A single OpenAI-compatible chat message.
-
-    Kept minimal for Phase 1. The Serving Layer translates request
-    bodies into these; downstream modules read them.
-    """
-
-    role: str
-    content: str
 
 
 @dataclass(frozen=True)

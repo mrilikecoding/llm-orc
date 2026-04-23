@@ -126,6 +126,21 @@ def render_visibility_narration(kind: str, payload: dict[str, Any]) -> str:
     return f"[{kind}: {json.dumps(payload)}]"
 
 
+def encode_tool_call_for_message(call: ToolCallInvocation) -> dict[str, Any]:
+    """Encode one tool call as an OpenAI ``chat.completion.message.tool_calls`` entry.
+
+    The non-streaming response shape — no ``index`` field. Exposed so the
+    ``_build_completion_body`` path in ``v1_chat_completions`` can reuse
+    the same inner payload the streaming encoder uses. The streaming
+    variant adds an ``index`` field on top of this shape.
+    """
+    return {
+        "id": call.id,
+        "type": "function",
+        "function": {"name": call.name, "arguments": call.arguments},
+    }
+
+
 def _encode_tool_calls(
     tool_calls: tuple[ToolCallInvocation, ...],
 ) -> list[dict[str, Any]]:
@@ -138,11 +153,6 @@ def _encode_tool_calls(
     chunks that share an ``index`` per tool call.
     """
     return [
-        {
-            "index": index,
-            "id": call.id,
-            "type": "function",
-            "function": {"name": call.name, "arguments": call.arguments},
-        }
+        {"index": index, **encode_tool_call_for_message(call)}
         for index, call in enumerate(tool_calls)
     ]

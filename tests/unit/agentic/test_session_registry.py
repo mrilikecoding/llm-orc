@@ -6,11 +6,11 @@ Session Registry).
 """
 
 from llm_orc.agentic.session_registry import (
-    ChatMessage,
     SessionIdentity,
     SessionRegistry,
     SessionState,
 )
+from llm_orc.agentic.session_start import ChatMessage
 
 
 class TestSessionIdentityDerivation:
