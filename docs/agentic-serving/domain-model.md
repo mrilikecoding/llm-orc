@@ -4,8 +4,8 @@
 
 ## Concepts (Nouns)
 
-| Term | Definition | Product Origin | Avoid (synonyms) |
-|------|-----------|----------------|-------------------|
+| Term | Definition | Product Origin | Related Terms |
+|------|-----------|----------------|---------------|
 | **Orchestrator Agent** | A ReAct-loop agent that sits behind the serving layer, receives requests from clients, and delegates to llm-orc operations as tool calls. Powered by a configurable LLM via model profile. | "orchestrator" (operator) | "controller", "router" (too narrow -- it also composes and reasons) |
 | **Session** | A stateful conversation between a client and the orchestrator agent, bounded by budget constraints. Begins when a client connects; ends when the client disconnects or the budget is exhausted. | -- | "conversation" (ambiguous with LLM conversation), "connection" |
 | **Serving Layer** | The OpenAI-compatible endpoint surface (`/v1/chat/completions`, `/v1/models`) added to the existing FastAPI server. Handles protocol translation: SSE streaming, tool-call formatting, model listing. | -- | "API", "server" (the server already exists; this is the new surface) |
