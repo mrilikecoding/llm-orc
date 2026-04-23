@@ -1103,10 +1103,22 @@ class _StubEnsembleOperations:
     A single stub satisfies both so the real Tool Dispatch and Harness wire
     up against the same object — tests inspect ``calls`` to assert whether
     the summarizer ran or was skipped.
+
+    ``library_entries`` optionally surfaces ensemble metadata through
+    :meth:`read_ensembles` — the shape that ``ResourceHandler.read_ensembles``
+    produces in production (name, source, relative_path, agent_count,
+    description). Scenario (c) uses it to verify the orchestrator can infer
+    a file-content dependency from the ensemble's description.
     """
 
-    def __init__(self, results_by_ensemble: dict[str, dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        results_by_ensemble: dict[str, dict[str, Any]],
+        *,
+        library_entries: list[dict[str, Any]] | None = None,
+    ) -> None:
         self._results = dict(results_by_ensemble)
+        self._library_entries = list(library_entries or [])
         self.calls: list[dict[str, Any]] = []
 
     async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1117,7 +1129,7 @@ class _StubEnsembleOperations:
         return self._results[name]
 
     async def read_ensembles(self) -> list[dict[str, Any]]:
-        return []
+        return list(self._library_entries)
 
 
 class TestRawOutputEscapeHatchAcceptance:
@@ -2173,3 +2185,280 @@ class TestClientToolSurfaceCommitment:
         assert tool_calls[0]["function"]["arguments"] == '{"path": "src/auth.py"}'
         # No internal dispatch fired.
         assert tool_dispatch.calls == []
+
+    def test_pre_invoke_delegation_reads_file_before_invoking_ensemble(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§Scenario (c): pre-invoke delegation for a file-content ensemble.
+
+        An ensemble whose first agent consumes file content (not a file
+        path) is invoked by the orchestrator via the retry-free happy
+        path: read the file at the prior turn boundary, fold the content
+        into ``input_data``, then invoke the ensemble atomically. The
+        Ensemble Engine never suspends; Layer 3 (ADR-001/002) is
+        unchanged.
+
+        Exercises two HTTP requests with session continuity in between:
+
+          Request 1 — ``tools: [file_read]``, user asks for analysis:
+            * Iteration 1: LLM calls ``list_ensembles``; Tool Dispatch
+              returns ``auth-analyzer`` with its description (the WP-F
+              build-time decision — ``description`` is on the schema).
+            * Iteration 2: LLM reasons from the description that
+              ``auth-analyzer`` consumes file content, emits ``file_read``.
+              Turn closes with ``finish_reason: tool_calls``.
+
+          Request 2 — client returns the file content as ``role: tool``:
+            * Iteration 1: LLM emits ``invoke_ensemble`` with the file
+              content folded into ``input`` alongside the task description.
+            * Iteration 2: LLM observes the ensemble's summary and
+              emits a stop response.
+
+        The test runs the real :class:`OrchestratorToolDispatch` + real
+        :class:`ResultSummarizerHarness` over a stub
+        :class:`_StubEnsembleOperations` so the invariant that
+        ``list_ensembles`` surfaces ``description`` is verified through
+        the production dispatch path — not only inside the stub.
+        """
+        ensemble_run_result = {
+            "results": {
+                "auth-analyzer-agent": {
+                    "response": (
+                        "authenticate uses a hardcoded True — replace with "
+                        "real credential validation."
+                    )
+                }
+            },
+            "synthesis": None,
+            "status": "success",
+        }
+        summary_result = {
+            "results": {
+                "summarizer": {
+                    "response": (
+                        "auth-analyzer flagged a hardcoded True in authenticate."
+                    )
+                }
+            },
+            "synthesis": None,
+            "status": "success",
+        }
+        operations = _StubEnsembleOperations(
+            {
+                "auth-analyzer": ensemble_run_result,
+                "test-summarizer": summary_result,
+            },
+            library_entries=[
+                {
+                    "name": "auth-analyzer",
+                    "source": "local",
+                    "relative_path": "auth-analyzer.yaml",
+                    "agent_count": 1,
+                    "description": (
+                        "Analyzes Python source file contents for "
+                        "authentication weaknesses. Pass the file's "
+                        "source code as input."
+                    ),
+                },
+            ],
+        )
+        harness = ResultSummarizerHarness(
+            invoker=operations, summarizer_name="test-summarizer"
+        )
+        dispatch = OrchestratorToolDispatch(
+            operations=operations,
+            harness=harness,
+            autonomy_policy=AutonomyPolicy(level_provider=lambda: BASELINE_LEVEL),
+        )
+
+        file_content = "def authenticate(user):\n    return True\n"
+        llm = _ScriptedLLM(
+            responses=[
+                # Request 1, iteration 1: list the library.
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_list",
+                            name="list_ensembles",
+                            arguments_json="{}",
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=15, completion_tokens=4, total_tokens=19
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                # Request 1, iteration 2: ensemble description says
+                # "pass the file's source code" — delegate file_read.
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_fr_precall",
+                            name="file_read",
+                            arguments_json='{"path": "src/auth.py"}',
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=60, completion_tokens=8, total_tokens=68
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                # Request 2, iteration 1: fold the file content into the
+                # ensemble's input_data and invoke atomically.
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_invoke",
+                            name="invoke_ensemble",
+                            arguments_json=json.dumps(
+                                {
+                                    "name": "auth-analyzer",
+                                    "input": (
+                                        "Analyze authentication in "
+                                        "src/auth.py. Source:\n" + file_content
+                                    ),
+                                }
+                            ),
+                        )
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=120, completion_tokens=15, total_tokens=135
+                    ),
+                    finish_reason="tool_calls",
+                ),
+                # Request 2, iteration 2: summarize and stop.
+                ToolCallingResponse(
+                    content=("auth-analyzer found a hardcoded True in authenticate."),
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=160, completion_tokens=12, total_tokens=172
+                    ),
+                    finish_reason="stop",
+                ),
+            ]
+        )
+        client, _, _ = _build_client(monkeypatch, llm=llm, tool_dispatch=dispatch)
+
+        # ---- Request 1: orchestrator learns the ensemble exists and
+        #      delegates file_read at the turn boundary.
+        first_response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "user": "pre-invoke-client",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Check src/auth.py for auth issues.",
+                    }
+                ],
+                "tools": [self._file_read_tool_schema()],
+            },
+        )
+
+        assert first_response.status_code == 200
+        first_body = first_response.json()
+        first_choice = first_body["choices"][0]
+        assert first_choice["finish_reason"] == "tool_calls"
+        delegated = first_choice["message"]["tool_calls"]
+        assert len(delegated) == 1
+        assert delegated[0]["function"]["name"] == "file_read"
+        assert delegated[0]["function"]["arguments"] == '{"path": "src/auth.py"}'
+        delegated_tool_call_id = delegated[0]["id"]
+
+        # Iteration 1 fired list_ensembles through the real dispatch.
+        invoked_ensemble_names = [c["ensemble_name"] for c in operations.calls]
+        assert invoked_ensemble_names == [], (
+            "Expected zero ensemble invocations on request 1 — only "
+            "list_ensembles (metadata read) should have run."
+        )
+        # The LLM's iteration-2 context must include the list_ensembles
+        # result with the auth-analyzer description visible. Otherwise
+        # the scenario's "inference from description" premise has no
+        # evidence for the test's claims.
+        iter2_messages = llm.calls[1][0]
+        iter2_tool_msgs = [m for m in iter2_messages if m.get("role") == "tool"]
+        assert len(iter2_tool_msgs) == 1
+        observed_library = json.loads(iter2_tool_msgs[0]["content"])
+        # ``list_ensembles`` returns the library metadata list directly —
+        # no summarization interposes on this tool (Harness runs only on
+        # ``invoke_ensemble``). The description field is the load-bearing
+        # evidence the orchestrator uses to infer a file-content
+        # dependency; verify it reaches the LLM context untouched.
+        assert isinstance(observed_library, list)
+        assert len(observed_library) == 1
+        auth_entry = observed_library[0]
+        assert auth_entry["name"] == "auth-analyzer"
+        assert "authentication weaknesses" in auth_entry["description"], (
+            "Ensemble description missing or altered in the list_ensembles "
+            "tool result — the orchestrator needs it to decide on pre-invoke "
+            f"delegation. Got entry: {auth_entry!r}"
+        )
+
+        # ---- Request 2: client returns file_read result; orchestrator
+        #      invokes auth-analyzer with content folded into input_data.
+        second_response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "user": "pre-invoke-client",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Check src/auth.py for auth issues.",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": delegated_tool_call_id,
+                                "type": "function",
+                                "function": {
+                                    "name": "file_read",
+                                    "arguments": '{"path": "src/auth.py"}',
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": delegated_tool_call_id,
+                        "content": file_content,
+                    },
+                ],
+                "tools": [self._file_read_tool_schema()],
+            },
+        )
+
+        assert second_response.status_code == 200
+        second_body = second_response.json()
+        second_choice = second_body["choices"][0]
+        assert second_choice["finish_reason"] == "stop"
+        assert (
+            second_choice["message"]["content"]
+            == "auth-analyzer found a hardcoded True in authenticate."
+        )
+
+        # invoke_ensemble ran with the file content folded into input_data
+        # — the load-bearing assertion for scenario (c).
+        ensemble_invocations = [
+            c for c in operations.calls if c.get("ensemble_name") == "auth-analyzer"
+        ]
+        assert len(ensemble_invocations) == 1, (
+            "Expected a single auth-analyzer invocation on request 2."
+        )
+        # OrchestratorToolDispatch.invoke_ensemble translates the LLM's
+        # ``arguments.input`` into ``{"ensemble_name": ..., "input": ...}``
+        # before calling the EnsembleOperations facade — so the stub sees
+        # it under the ``input`` key.
+        folded_input = ensemble_invocations[0].get("input", "")
+        assert "def authenticate" in folded_input, (
+            "The file content was not folded into invoke_ensemble's "
+            "input — pre-invoke delegation's whole point is that the "
+            f"ensemble sees the content, not a path. Got: {folded_input!r}"
+        )
+        assert "src/auth.py" in folded_input
