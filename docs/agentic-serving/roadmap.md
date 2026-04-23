@@ -9,26 +9,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ## Work Packages
 
-> **WP-A, WP-B, WP-C, WP-D, and WP-E are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. The active section below lists only upcoming or in-progress work.
-
-### WP-F: Client-tool turn-boundary delegation
-
-**Objective:** Implement the Client Tool Surface Commitment — the orchestrator closes turns with `finish_reason: tool_calls` when a task step needs a client-side action, and the next `/v1/chat/completions` resumes the same Session with the client's `tool`-role messages as observations.
-
-**Changes:**
-- Serving Layer edit: translate client-declared `tools[]` into a response-surface set that the Orchestrator Runtime can emit against; emit `finish_reason: tool_calls` with `tool_calls[]` for client tools; accept `role: tool` messages in subsequent requests and feed them into Session Registry's continuation logic.
-- Session Registry edit: Session continuity across client-tool round trips (budget continues to accumulate; Autonomy state persists).
-- Orchestrator Runtime edit: recognize when its turn produces a client-tool request (distinct from an internal tool call) and emit the final-turn signal.
-
-**Scenarios covered:** this work package *generates new BDD scenarios* that must be added to scenarios.md before implementation (see Open Decision Points §1). Target behaviors: OpenCode sends `tools[bash, file_read, file_edit]`; orchestrator routes a task, needs a file read, emits final turn with tool_calls for file_read; client executes; next request resumes the same Session; turn count and token spend carry across.
-
-**Dependencies:**
-- WP-B (hard) — Serving Layer and Session Registry own the boundaries.
-- WP-C (hard) — Orchestrator Runtime owns the final-turn emission decision.
-
-**Participating modules:** Serving Layer (edit), Session Registry (edit), Orchestrator Runtime (edit). Consistent with WP scope.
-
----
+> **WP-A, WP-B, WP-C, WP-D, WP-E, and WP-F are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. **TS-1 (stateless orchestrator serving OpenCode) is reached at WP-F close.** The active section below lists only upcoming or in-progress work.
 
 ### WP-G: Composition — compose_ensemble, Composition Validator
 
@@ -313,6 +294,68 @@ HTTP read timeout refactored: `HTTPConnectionPool` now reads `connect` / `read` 
 - Conversation Compaction is named in the Runtime's ownership list (system design §Orchestrator Runtime) but not implemented. The WP-C scenarios did not require it (turn/token exhaustion precedes compaction's utility). Can land in a follow-up mini-cycle or alongside another WP that touches the Runtime.
 - Per-request usage accounting: the `/v1/chat/completions` response's `usage.completion_tokens` reports the per-request delta in `SessionState.token_spend`; `prompt_tokens` is hardcoded to 0. Fine-grained prompt-vs-completion accounting requires accumulating each iteration's `LLMUsage.prompt_tokens` separately, which the Runtime currently collapses into `total_tokens` on Session state. A follow-up can split the accounting without architectural change.
 - Routing Decision generation (for `record_outcome` in WP-I) is named in the Runtime's ownership but only materializes when Plexus lands. WP-I generates the Routing Decision objects; Runtime emits them when `record_outcome` is no longer `not_yet_wired`.
+
+### WP-F: Client-tool turn-boundary delegation — 2026-04-22
+
+**Objective delivered.** The Client Tool Surface Commitment (Option C) is implemented end-to-end. The orchestrator closes turns with `finish_reason: tool_calls` when a task step needs a client-side action, and the next `/v1/chat/completions` resumes the same Session with the client's `role: tool` messages as observations. TS-1 (stateless orchestrator serving OpenCode) is reached.
+
+**Commits (in order):**
+
+*Group 1 — Turn-boundary mechanics (scenarios a + b):*
+- `93e1229` refactor: relocate ChatMessage to session_start and extract tool-call encoder
+- `61a6c40` feat: route client-declared tools through turn-boundary delegation (WP-F Group 1)
+- `b29a3b3` feat: tighten mixed-batch discipline and reserve TOOL_NAMES (WP-F Group 1)
+- `5d13e50` docs: record WP-F Group 1 feed-forward signals in cycle-status
+
+*Group 2 — Pre-invoke delegation (scenario c):*
+- `813bf60` test: add scenario (c) pre-invoke delegation acceptance (WP-F Group 2)
+
+*Group 3 — Retry pattern + system prompt (scenarios d + negative):*
+- `f3b9253` feat: land retry pattern and orchestrator system prompt (WP-F Group 3)
+- (this change) docs: close WP-F in roadmap, cycle-status, field guide, ORIENTATION
+
+**Outcome.** The orchestrator Runtime accepts the union of the closed internal five tools (ADR-003) and client-declared `tools[]` in each session, classifies each LLM-emitted tool call by `TOOL_NAMES` membership, and routes accordingly: internal calls dispatch in-process through Tool Dispatch; client-declared calls yield a `ClientToolCall` chunk and terminate the generator. The Serving Layer shapes `ClientToolCall` into `finish_reason: tool_calls` on both the streaming and non-streaming paths and accepts `role: tool` + `tool_call_id` on subsequent requests so Session continuity survives the round trip. The orchestrator system prompt (roadmap ODP #8 mechanism i) teaches the LLM the turn-boundary discipline, the one-kind-per-turn rule, and the `needs_client_tool` retry convention; the default summarizer YAML (ODP #8 mechanism ii) preserves structured signals verbatim.
+
+**New modules/fields.**
+- `ChatMessage` relocated to `agentic/session_start.py` with optional `tool_call_id` and `tool_calls` fields so `role: tool` messages and echoed `role: assistant` with `tool_calls` parse through the request schema.
+- `OrchestratorRuntime` gains a `system_prompt` constructor kwarg — always prepended as `role: system` on every LLM iteration when non-empty.
+- `OrchestratorConfig.orchestrator_system_prompt` field with `DEFAULT_ORCHESTRATOR_SYSTEM_PROMPT`; operators override via `agentic_serving.orchestrator.system_prompt` in config.yaml.
+- `_NonStreamingResult` dataclass in `v1_chat_completions.py` collects content + finish_reason + optional tool_calls for the non-streaming response body.
+- `encode_tool_call_for_message` helper in `sse_format.py` shared between streaming (`_encode_tool_calls` adds `index`) and non-streaming paths.
+- `_reject_reserved_tool_names` guard in the Serving Layer — HTTP 400 if client declares a tool whose name is in `TOOL_NAMES`.
+
+**Edits.**
+- `OrchestratorRuntime.run` splits the LLM's tool-calls batch by `TOOL_NAMES` membership. Mixed batches (internal + client in one response) feed a `mixed_batch` error observation per call and the LLM retries on the next iteration — no silent data loss. Pure-client batches yield `ClientToolCall` and terminate. Pure-internal batches dispatch as before. `_dispatch_internal_calls` was extracted from `run` for complexity-ceiling compliance.
+- `session_registry.ChatMessage` moved to `session_start` (contract type on the Serving Layer → Runtime edge, not Session Registry internals). Session Registry uses TYPE_CHECKING forward ref to avoid circular import. Keeps FC-4 intact when Runtime imports ChatMessage.
+- `_ChatCompletionMessage` Pydantic model gains optional `tool_call_id` and `tool_calls` fields; `content` is now nullable. `_resolve_context` threads these into the `ChatMessage` dataclass.
+- `.llm-orc/ensembles/agentic-result-summarizer.yaml` `default_task` teaches the summarizer to echo `needs_client_tool` JSON verbatim when present; production deployments inherit the correct default.
+
+**Scenarios covered.** `scenarios.md` §Client Tool Surface Commitment — all five scenarios pass via eight tests in `TestClientToolSurfaceCommitment`:
+- `test_orchestrator_delegates_client_tool_at_turn_boundary` — scenario (a), non-streaming
+- `test_session_continuity_across_client_tool_round_trip` — scenario (b)
+- `test_streaming_client_tool_delegation_yields_tool_calls_chunk` — scenario (a), streaming
+- `test_mixed_batch_rejected_and_retried_without_silent_loss` — mixed-batch discipline
+- `test_client_tool_shadowing_internal_name_is_rejected` — collision guard
+- `test_pre_invoke_delegation_reads_file_before_invoking_ensemble` — scenario (c)
+- `test_retry_pattern_resolves_mid_execution_client_tool_need` — scenario (d)
+- `test_composed_ensemble_without_retry_signal_silently_degrades` — scenario (negative)
+
+**Fitness criteria status.** No new FCs introduced by WP-F. Existing FC-4, FC-5, FC-8, FC-9, FC-11 all continue to pass (verified via static-inspection tests).
+
+**Decisions made during build.**
+- **Mixed-batch reject-and-retry** (Group 1 refinement). When the LLM emits internal + client in one batch, feed a typed `mixed_batch` error per call and loop — never silent drop. Recorded in cycle-status FF #98.
+- **Name-collision guard** (Group 1 refinement). Client tools whose names match `TOOL_NAMES` are rejected with HTTP 400. Alternative (drop-with-warning) was considered and rejected because silent misrouting on collision is worse than immediate actionable error. Recorded in cycle-status FF #99.
+- **System prompt always prepends** (Group 3). Chosen over skip-when-client-has-system because the orchestrator's discipline is load-bearing exactly for deployments that send their own system message (agentic coding clients). Two `role: system` messages in sequence is awkward but the orchestrator's guidance wins.
+- **Summarizer transparency via YAML prompt, not code** (Group 3). Keeps the Harness generic — it does not know about the `needs_client_tool` vocabulary. Tests drive the production path with stubbed summarizers. Recorded at cycle-status FF (Group 3).
+
+**Test coverage delta.** +13 tests net (5 WP-F acceptance from Group 1 + 1 from Group 2 + 2 from Group 3 — all in `TestClientToolSurfaceCommitment`; 3 Runtime system-prompt unit tests; 2 OrchestratorConfig tests). Full suite: **2270 passing, 91.52% coverage**, lint clean (mypy strict + ruff + format + bandit + vulture + complexipy).
+
+**Unblocks.** **TS-1 reached.** The stateless orchestrator can serve OpenCode: list ensembles, invoke them, summarize results, enforce Budget, delegate client-side actions (file_read, bash, file_edit) at turn boundaries, and retry composed ensembles with client-tool results folded into input_data. Next parallel candidates: WP-G (Composition + Validator) and WP-I (Plexus Adapter).
+
+**Forward-carrying concerns** (not addressed in WP-F scope).
+- **Silent quality failures when retry convention not honored.** Scenario (negative) documents the failure mode structurally; catching it belongs to WP-H's Calibration Gate quality-signal check at first N invocations. Cycle-status FF #81 carries this from WP-D.
+- **AS-6 authorship open question.** The user flagged that the orchestrator should eventually be able to create scripts and model profiles. AS-6 currently prohibits both on conservative safety grounds. Revisit as a standalone DECIDE mini-cycle post-TS-1. Cycle-status FF #100.
+- **`list_ensembles` description richness.** Scenario (c) works with the current description field, but production deployments may need richer metadata (agent input expectations, tier, freshness) as composed ensembles proliferate. Not blocking; defer until a real use case surfaces.
 
 ### WP-E: Autonomy Policy — 2026-04-22
 
