@@ -11,11 +11,11 @@ in ``tests/unit/web/test_api_v1_chat_completions.py``.
 """
 
 from llm_orc.agentic.session_registry import (
-    ChatMessage,
     SessionIdentity,
     SessionState,
 )
 from llm_orc.agentic.session_start import (
+    ChatMessage,
     PromptFragment,
     SessionContext,
     SessionStartCache,

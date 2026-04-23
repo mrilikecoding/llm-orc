@@ -20,10 +20,25 @@ from dataclasses import dataclass
 from typing import Any
 
 from llm_orc.agentic.session_registry import (
-    ChatMessage,
     SessionIdentity,
     SessionState,
 )
+
+
+@dataclass(frozen=True)
+class ChatMessage:
+    """An OpenAI-compatible chat message flowing through the Serving Layer.
+
+    Defined here because ChatMessage is a *contract type* on the Serving
+    Layer → Orchestrator Runtime edge (it rides inside ``SessionContext``
+    below) — it is not Session Registry's internal concern. Locating it
+    in this module keeps FC-4 intact: downstream consumers like the
+    Runtime can import ChatMessage from ``session_start`` (allow-listed)
+    rather than reaching into ``session_registry`` (forbidden).
+    """
+
+    role: str
+    content: str
 
 
 @dataclass(frozen=True)
