@@ -24,15 +24,18 @@ is deferred to WP-I (Plexus Adapter).
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
 
 from llm_orc.agentic.calibration_gate import (
+    DEFAULT_CALIBRATION_CHECKER_ENSEMBLE,
     DEFAULT_CALIBRATION_N,
     CalibrationGate,
     CalibrationRecord,
     CalibrationStatus,
+    EnsembleBackedChecker,
     QualitySignal,
 )
 
@@ -355,3 +358,120 @@ class TestRecordDataclass:
     ) -> None:
         record = CalibrationRecord(ensemble_name="any", status=status)
         assert record.status == status
+
+
+class _RecordingInvoker:
+    """Records checker-ensemble invocations and returns canned outputs."""
+
+    def __init__(
+        self,
+        *,
+        returns: dict[str, Any] | None = None,
+        raises: Exception | None = None,
+    ) -> None:
+        self._returns: dict[str, Any] = (
+            returns if returns is not None else {"synthesis": "signal: positive"}
+        )
+        self._raises = raises
+        self.calls: list[dict[str, Any]] = []
+
+    async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        self.calls.append(arguments)
+        if self._raises is not None:
+            raise self._raises
+        return self._returns
+
+
+class TestDefaultCheckerEnsembleName:
+    def test_default_is_shipped_checker(self) -> None:
+        assert DEFAULT_CALIBRATION_CHECKER_ENSEMBLE == "agentic-calibration-checker"
+
+
+class TestEnsembleBackedChecker:
+    """Production :class:`CalibrationChecker` that invokes a checker ensemble."""
+
+    @pytest.mark.asyncio
+    async def test_synthesis_positive_is_parsed(self) -> None:
+        invoker = _RecordingInvoker(
+            returns={"synthesis": "signal: positive\nreason: clear on-task response"}
+        )
+        checker = EnsembleBackedChecker(invoker=invoker)
+        signal = await checker.check(
+            ensemble_name="composed-a", raw_result={"results": {"a": "x"}}
+        )
+        assert signal == "positive"
+
+    @pytest.mark.asyncio
+    async def test_synthesis_negative_is_parsed(self) -> None:
+        invoker = _RecordingInvoker(
+            returns={"synthesis": "signal: negative\nreason: hallucinated content"}
+        )
+        checker = EnsembleBackedChecker(invoker=invoker)
+        signal = await checker.check(ensemble_name="composed-a", raw_result={})
+        assert signal == "negative"
+
+    @pytest.mark.asyncio
+    async def test_synthesis_absent_is_parsed(self) -> None:
+        invoker = _RecordingInvoker(
+            returns={"synthesis": "signal: absent\nreason: empty output"}
+        )
+        checker = EnsembleBackedChecker(invoker=invoker)
+        assert await checker.check(ensemble_name="x", raw_result={}) == "absent"
+
+    @pytest.mark.asyncio
+    async def test_single_agent_response_shape(self) -> None:
+        """When ``synthesis`` is missing the checker reads the agent response.
+
+        Dependency-free single-agent ensembles leave ``synthesis``
+        unpopulated; the Summarizer Harness handles the same shape,
+        the checker should too.
+        """
+        invoker = _RecordingInvoker(
+            returns={
+                "results": {"only": {"response": "signal: positive"}},
+                "synthesis": None,
+            }
+        )
+        checker = EnsembleBackedChecker(invoker=invoker)
+        signal = await checker.check(ensemble_name="composed-b", raw_result={})
+        assert signal == "positive"
+
+    @pytest.mark.asyncio
+    async def test_unparseable_response_yields_absent(self) -> None:
+        invoker = _RecordingInvoker(
+            returns={"synthesis": "the ensemble looked fine but I am not sure"}
+        )
+        checker = EnsembleBackedChecker(invoker=invoker)
+        assert await checker.check(ensemble_name="x", raw_result={}) == "absent"
+
+    @pytest.mark.asyncio
+    async def test_invoker_exception_yields_absent(self) -> None:
+        """ADR-007 clause 2: checker crash does not surface as tool error."""
+        invoker = _RecordingInvoker(raises=RuntimeError("checker ensemble missing"))
+        checker = EnsembleBackedChecker(invoker=invoker)
+        assert await checker.check(ensemble_name="x", raw_result={}) == "absent"
+
+    @pytest.mark.asyncio
+    async def test_payload_carries_target_ensemble_and_output(self) -> None:
+        invoker = _RecordingInvoker()
+        checker = EnsembleBackedChecker(
+            invoker=invoker, checker_ensemble_name="custom-checker"
+        )
+        raw_result = {"results": {"a": {"response": "hi"}}}
+        await checker.check(ensemble_name="composed-c", raw_result=raw_result)
+
+        assert len(invoker.calls) == 1
+        call = invoker.calls[0]
+        assert call["ensemble_name"] == "custom-checker"
+        payload = json.loads(call["input"])
+        assert payload["target_ensemble"] == "composed-c"
+        assert payload["output"] == raw_result
+
+    @pytest.mark.asyncio
+    async def test_signal_tokens_tolerate_case(self) -> None:
+        """Operators phrasing ``SIGNAL: Positive`` should still parse."""
+        invoker = _RecordingInvoker(
+            returns={"synthesis": "SIGNAL: Positive (ensemble answered on-task)"}
+        )
+        checker = EnsembleBackedChecker(invoker=invoker)
+        assert await checker.check(ensemble_name="x", raw_result={}) == "positive"

@@ -17,6 +17,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from llm_orc.agentic.calibration_gate import (
+    DEFAULT_CALIBRATION_CHECKER_ENSEMBLE,
+    DEFAULT_CALIBRATION_N,
+)
 from llm_orc.core.config.config_manager import ConfigurationManager
 
 
@@ -109,6 +113,14 @@ class OverrideBounds:
 
 
 @dataclass(frozen=True)
+class CalibrationDefaults:
+    """Calibration Gate configuration (ADR-007, WP-H)."""
+
+    default_n: int
+    checker_ensemble: str
+
+
+@dataclass(frozen=True)
 class OrchestratorConfig:
     """Immutable per-session configuration surface.
 
@@ -125,6 +137,7 @@ class OrchestratorConfig:
     allowed_profiles: tuple[str, ...]
     summarizer_ensemble: str
     orchestrator_system_prompt: str
+    calibration: CalibrationDefaults
 
 
 class OrchestratorConfigResolver:
@@ -142,6 +155,7 @@ class OrchestratorConfigResolver:
         plexus = _as_mapping(raw.get("plexus"))
         overrides = _as_mapping(raw.get("overrides"))
         summarizer = _as_mapping(raw.get("summarizer"))
+        calibration = _as_mapping(orchestrator.get("calibration"))
 
         model_profile = str(orchestrator.get("model_profile", DEFAULT_MODEL_PROFILE))
         allowed_profiles = _resolve_allowed_profiles(
@@ -175,6 +189,16 @@ class OrchestratorConfigResolver:
             ),
             orchestrator_system_prompt=str(
                 orchestrator.get("system_prompt", DEFAULT_ORCHESTRATOR_SYSTEM_PROMPT)
+            ),
+            calibration=CalibrationDefaults(
+                default_n=_positive_int(
+                    calibration.get("default_n"), DEFAULT_CALIBRATION_N
+                ),
+                checker_ensemble=str(
+                    calibration.get(
+                        "checker_ensemble", DEFAULT_CALIBRATION_CHECKER_ENSEMBLE
+                    )
+                ),
             ),
         )
 
@@ -213,6 +237,20 @@ def _as_mapping(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
     return {}
+
+
+def _positive_int(raw: Any, fallback: int) -> int:
+    """Coerce ``raw`` to an int >= 1, falling back to ``fallback`` otherwise.
+
+    ADR-007 requires ``default_n >= 1``; an operator typo that produces
+    ``0`` or a string should not crash session start — fall back to the
+    shipped default so calibration still runs.
+    """
+    try:
+        candidate = int(raw)
+    except (TypeError, ValueError):
+        return fallback
+    return candidate if candidate >= 1 else fallback
 
 
 def _resolve_allowed_profiles(raw: Any, model_profile: str) -> tuple[str, ...]:

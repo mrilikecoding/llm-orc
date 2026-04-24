@@ -32,6 +32,7 @@ from llm_orc.agentic.autonomy_policy import (
 )
 from llm_orc.agentic.orchestrator_config import (
     BudgetDefaults,
+    CalibrationDefaults,
     OrchestratorConfig,
     OverrideBounds,
 )
@@ -145,9 +146,13 @@ class _StubToolDispatch:
     def __init__(self, results: dict[str, ToolCallResult] | None = None) -> None:
         self._results = dict(results or {})
         self.calls: list[InternalToolCall] = []
+        self.session_ids: list[str] = []
 
-    async def dispatch(self, call: InternalToolCall) -> ToolCallResult:
+    async def dispatch(
+        self, call: InternalToolCall, *, session_id: str = ""
+    ) -> ToolCallResult:
         self.calls.append(call)
+        self.session_ids.append(session_id)
         if call.id not in self._results:
             raise AssertionError(
                 f"_StubToolDispatch received unexpected call id={call.id!r}"
@@ -188,6 +193,9 @@ def _default_orchestrator_config() -> OrchestratorConfig:
         allowed_profiles=("test-profile",),
         summarizer_ensemble="agentic-result-summarizer",
         orchestrator_system_prompt="",
+        calibration=CalibrationDefaults(
+            default_n=3, checker_ensemble="agentic-calibration-checker"
+        ),
     )
 
 
@@ -2131,6 +2139,9 @@ class TestClientToolSurfaceCommitment:
             allowed_profiles=("test-profile",),
             summarizer_ensemble="agentic-result-summarizer",
             orchestrator_system_prompt="",
+            calibration=CalibrationDefaults(
+                default_n=3, checker_ensemble="agentic-calibration-checker"
+            ),
         )
         client, shared_registry, _ = _build_client(
             monkeypatch,

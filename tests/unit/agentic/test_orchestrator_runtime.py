@@ -74,9 +74,13 @@ class _StubToolDispatch:
     def __init__(self, results: dict[str, ToolCallResult]) -> None:
         self._results = dict(results)
         self.calls: list[InternalToolCall] = []
+        self.session_ids: list[str] = []
 
-    async def dispatch(self, call: InternalToolCall) -> ToolCallResult:
+    async def dispatch(
+        self, call: InternalToolCall, *, session_id: str = ""
+    ) -> ToolCallResult:
         self.calls.append(call)
+        self.session_ids.append(session_id)
         if call.id not in self._results:
             raise AssertionError(
                 f"_StubToolDispatch received unexpected call id={call.id!r}"
@@ -242,6 +246,10 @@ class TestReActLoop:
         assert dispatched.id == "call_t1"
         assert dispatched.name == "list_ensembles"
         assert dispatched.arguments == {}
+        # Session identity plumbed from SessionContext.state through
+        # dispatch (WP-H) so per-session Calibration Gate state keys on
+        # the orchestrator LLM's actual Session.
+        assert tool_dispatch.session_ids == ["test-session"]
 
         # Chunk order: InFlight → Result → ContentDelta (from iter 2) → Completion
         in_flight = [c for c in chunks if isinstance(c, InternalToolCallInFlight)]
