@@ -9,27 +9,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ## Work Packages
 
-> **WP-A, WP-B, WP-C, WP-D, WP-E, WP-F, and WP-G are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. **TS-1 (stateless orchestrator serving OpenCode) was reached at WP-F close.** The active section below lists only upcoming or in-progress work.
-
-### WP-H: Calibration Gate
-
-**Objective:** Interpose the Calibration Gate on `invoke_ensemble` for composed ensembles in their first N invocations. Generate Quality Signals; attach to Routing Decisions; transition to trusted on clear.
-
-**Changes:**
-- New **Calibration Gate** module.
-- Orchestrator Tool Dispatch edit: `invoke_ensemble` wrapped by Calibration Gate for in-calibration ensembles.
-- Session-scoped state in stateless mode (lives in Session Registry's Session state).
-- Default check mechanism (configurable; default implementation deferred to build — may itself be an ensemble).
-
-**Scenarios covered:** scenarios.md §Calibration of Composed Ensembles (first N invocations result-checked; transition to trusted on positive signals; fails-to-clear on negative signals; session-scoped when Plexus absent; persists across sessions when Plexus active).
-
-**Dependencies:**
-- WP-G (implied) — calibration is only meaningful for composed ensembles; a pre-composed test fixture ensemble could unblock parallel work.
-- WP-I (implied) — cross-session persistence requires Plexus; stateless calibration works without it.
-
-**Participating modules:** Calibration Gate, Orchestrator Tool Dispatch (edit), Session Registry (edit for session-scoped state). Consistent with WP scope.
-
----
+> **WP-A, WP-B, WP-C, WP-D, WP-E, WP-F, WP-G, and WP-H are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. **TS-1 (stateless orchestrator serving OpenCode) was reached at WP-F close; TS-2 (stateless baseline complete) was reached at WP-H close 2026-04-24.** The active section below lists only upcoming or in-progress work.
 
 ### WP-I: Plexus Adapter (tool-first)
 
@@ -109,9 +89,9 @@ A complete, useful intermediate. An operator points OpenCode at the llm-orc endp
 
 At TS-1, the fitness criteria satisfied are: FC-1 through FC-5, FC-8, FC-10, FC-11, FC-13. FC-6 (shared validator), FC-7 (Plexus no-op coverage), FC-9 (injection stage exists), and FC-12 (calibration interposition) are satisfied later.
 
-### TS-2: Stateless baseline complete (after TS-1 + WP-G + WP-H)
+### TS-2: Stateless baseline complete (after TS-1 + WP-G + WP-H) — **reached 2026-04-24**
 
-The orchestrator can now compose new ensembles from existing library primitives, validate them, and calibrate them within the session. Still no Plexus — calibration is session-scoped; cross-session trust does not persist. This is the complete **baseline product** as defined by ADR-002 Layer 1-3 and AS-8. Fitness criteria FC-6 and FC-12 satisfied at TS-2; **FC-6 landed at WP-G close (2026-04-22)**.
+The orchestrator can now compose new ensembles from existing library primitives, validate them, and calibrate them within the session. Still no Plexus — calibration is session-scoped; cross-session trust does not persist. This is the complete **baseline product** as defined by ADR-002 Layer 1-3 and AS-8. Fitness criteria FC-6 and FC-12 satisfied at TS-2 — **FC-6 landed at WP-G close (2026-04-22), FC-12 landed at WP-H close (2026-04-24)**.
 
 ### TS-3: Four-layer stack with Phase 1 Plexus integration (after TS-2 + WP-I + WP-J)
 
@@ -127,7 +107,7 @@ Full architecture live. `query_knowledge` and `record_outcome` flow to Plexus; l
 
 3. **Budget specific numbers (ADR-005 defers to build).** WP-C defaults need concrete turn and token limits. The outer anchor is "comparable to running an RDD phase." Concrete numbers are a tuning decision informed by observed rollout, not an architecture decision.
 
-4. **Calibration N (ADR-007 defers to build).** WP-H needs a default N. The check mechanism's cost and value drive the number; no architectural constraint.
+4. **Calibration N (ADR-007 defers to build)** *(resolved 2026-04-24 at WP-H close)*. Default `N = 3` — balances check cost against single-invocation noise tolerance. Operators tune via `agentic_serving.orchestrator.calibration.default_n`. Check mechanism is an LLM-based ensemble (`agentic-calibration-checker`, shipped) that parses `signal: positive|negative|absent` from the agent's response; operators point at a domain-specific checker via `agentic_serving.orchestrator.calibration.checker_ensemble`. No architectural constraint — both numbers and mechanism are runtime-configurable.
 
 5. **Session identity mechanism.** WP-B defaults to message-history-derivation with optional client-supplied correlation via the OpenAI `user` field. If Autonomy tightening or multi-client deployments make this insufficient, a custom header or session-id cookie becomes necessary. Build-time decision; the Session Registry contract accommodates either.
 
@@ -140,6 +120,49 @@ Full architecture live. `query_knowledge` and `record_outcome` flow to Plexus; l
 ---
 
 ## Completed Work Log
+
+### WP-H: Calibration Gate — 2026-04-24
+
+**Commits (in order):**
+
+- `3ab6f27` feat: add Calibration Gate module (WP-H Group 1)
+- `9caa4b4` feat: interpose Calibration Gate on compose/invoke (WP-H Group 2)
+- `d3da9d8` test: add Tool Dispatch → Calibration Gate boundary integration (WP-H Group 3)
+- (this change) docs: close WP-H in roadmap, cycle-status, field guide, ORIENTATION
+
+**Outcome.** Every composed ensemble enters calibration at compose time and the first `N = 3` invocations run a result-checker ensemble that produces a Quality Signal (`positive` / `negative` / `absent`). Three positives in the most-recent-N window transition the ensemble to `trusted`; a negative or absent signal keeps it in calibration indefinitely. **TS-2 reached — stateless baseline complete** per ADR-002 Layer 1-3 and AS-8. Calibration is session-scoped while Plexus is absent; cross-session persistence lands with WP-I via `Calibration Gate → Plexus Adapter`.
+
+**New module.** `src/llm_orc/agentic/calibration_gate.py` (L1) — `CalibrationGate.{mark_composed, status, check_and_record, record_for}` with per-session records indexed by `(session_id, ensemble_name)`. `QualitySignal = Literal["positive", "negative", "absent"]` per system-design §Integration Contracts. `DEFAULT_CALIBRATION_N = 3` (ODP #4 resolution). A `CalibrationChecker` Protocol narrows the checker surface so tests pass scripted doubles; `EnsembleBackedChecker` is the production implementation that invokes a configured checker ensemble and parses `signal: <value>` from the response. The gate is stateful per-process — L3 callers pass plain session-id strings so the L1 module stays free of L3 imports (layering-clean, same pattern as Budget Controller).
+
+**Interposition on Tool Dispatch.** `OrchestratorToolDispatch` accepts an optional `CalibrationGate` and a new `session_id` kwarg on `dispatch()`. On successful `compose_ensemble` the gate is notified via `mark_composed`; on `invoke_ensemble` the raw result is handed to the gate via `check_and_record` before summarization. Calibration failures are swallowed (`_calibration_check_safe`) — ADR-007 clause 2: the check never prevents invocation. The `ToolDispatcher` Protocol in the Runtime widened with `session_id: str = ""` so the Runtime threads `state.identity.value` to dispatch; test doubles and existing call sites carry the default and need no churn.
+
+**Default checker ensemble.** `.llm-orc/ensembles/agentic-calibration-checker.yaml` ships as the default — a single-agent ensemble that asks the LLM "Does this output look like a plausible, on-task response?" and returns `signal: positive|negative|absent`. Uses the same `summarizer` model profile as the Result Summarizer Harness (small, fast; operators swap via `config.yaml` when domain-specific checking is needed). The parser tolerates case variation and surrounding prose; unparseable responses yield `absent`, never raise.
+
+**Config surface.** `OrchestratorConfig.calibration: CalibrationDefaults(default_n, checker_ensemble)`. Operators override via `agentic_serving.orchestrator.calibration.{default_n, checker_ensemble}` in `config.yaml`. Invalid `default_n` (zero, negative, non-integer) falls back to the shipped default rather than failing session start.
+
+**Fitness Criteria touched.**
+- **FC-12** (integration — "composed ensembles enter Calibration Gate transparently on invoke_ensemble during calibration") — satisfied by `tests/integration/test_tool_dispatch_calibration_boundary.py::TestCalibrationInterposesOnInCalibrationEnsembles::test_calibration_interposes_on_in_calibration_ensembles`. Real Tool Dispatch + real Calibration Gate + scripted checker + real `OrchestraService` → `ExecutionHandler` → `EnsembleExecutor` → `MockModel`.
+- **FC-4** unchanged — `calibration_gate` was already on the Runtime's forbidden-import list (WP-D); the new module's arrival did not require a code change to the static check.
+- **AS-5** (quality signals govern stabilization, not frequency) enforced by `test_frequency_without_quality_does_not_trust` — ten invocations with mixed signals never transition the ensemble to trusted.
+
+**Scenarios covered (scenarios.md §Calibration of Composed Ensembles):**
+- First N invocations result-checked — unit + integration layers
+- Transition to trusted with sufficient positive signals — unit + integration
+- Fails to clear with negative signals — unit (period extends after a negative; a clean run of positives later transitions)
+- Session-scoped when Plexus absent — unit + integration
+
+Scenario §Calibration persists across sessions when Plexus is active is deferred to WP-I.
+
+**Feed-forward to WP-I.**
+- Calibration Gate persistence layer lands alongside the Plexus Adapter. The gate's `mark_composed` / `status` / `check_and_record` surface is the contract WP-I preserves; a Plexus-backed store is injected behind it without changing Tool Dispatch's call sites.
+- `CalibrationRecord.signals` is currently `tuple[QualitySignal, ...]`. Plexus persistence may introduce richer structure (timestamps, evidence) — the record is a `@dataclass`, so additive fields are non-breaking for existing callers.
+- The checker currently runs synchronously and blocks `invoke_ensemble`. A future optimization (async/background) is possible but out of scope for TS-2. Calibration adds ~one LLM-call's worth of latency per in-calibration invocation.
+
+**Test count and quality.** 18 unit tests in `test_calibration_gate.py`, 6 Tool Dispatch interposition tests in `test_orchestrator_tool_dispatch.py`, 4 boundary integration tests in `test_tool_dispatch_calibration_boundary.py`, 2 config tests in `test_orchestrator_config.py`, 1 Runtime plumbing assertion in `test_orchestrator_runtime.py`. Full suite **2336 passing, 91.56% coverage, lint clean** (mypy strict + ruff + format + complexipy + bandit + vulture).
+
+**Summarizer-quality echo-back (WP-D FF #81) carried forward.** A weak summarizer that echoes a JSON-encoded raw dict in its `response` field remains a quality risk the structural Harness cannot detect. The Calibration Gate is the designed backstop and now runs end-to-end for composed ensembles. A richer checker ensemble that specifically detects echo-back — rather than just plausibility — is a follow-up left to operator tuning (swap `checker_ensemble` via config.yaml) or a future WP if empirical observation warrants.
+
+---
 
 ### WP-G: Composition + Composition Validator — 2026-04-22
 

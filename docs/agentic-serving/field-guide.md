@@ -1,7 +1,7 @@
 # Field Guide: Agentic Serving
 
-**Generated:** 2026-04-22
-**Derived from:** `system-design.md` v1.0 + amendments #1–#4, current implementation at WP-F close (TS-1 reached).
+**Generated:** 2026-04-24
+**Derived from:** `system-design.md` v1.0 + amendments #1–#4, current implementation at WP-H close (TS-2 reached).
 
 ## How to use this guide
 
@@ -594,9 +594,37 @@ Malformed LLM-emitted arguments (missing `name`, wrong `description` type, non-l
 
 ## Module: Calibration Gate
 
-**Implementation state:** Planned (WP-H).
-**Code location:** Not yet created.
-**Stability:** Design-only.
+**Implementation state:** Complete at TS-2 (WP-H, 2026-04-24). Cross-session persistence via Plexus is the WP-I extension.
+**Code location:** `src/llm_orc/agentic/calibration_gate.py`. Default checker ensemble at `.llm-orc/ensembles/agentic-calibration-checker.yaml`.
+**Stability:** Settled for the stateless baseline; the Plexus-backed store for cross-session trust lands behind the same public surface in WP-I.
+
+### Domain Concepts in Code
+
+| Concept | Code Manifestation | Location |
+|---------|-------------------|----------|
+| Calibration | `CalibrationRecord` (per-(session, ensemble) state — status, signals, invocations_seen) | `calibration_gate.py:49` |
+| Quality Signal | `QualitySignal = Literal["positive", "negative", "absent"]` | `calibration_gate.py:41` |
+| Calibration Status | `CalibrationStatus = Literal["in_calibration", "trusted"]` | `calibration_gate.py:47` |
+| Calibrate (action) | `CalibrationGate.check_and_record` | `calibration_gate.py:169` |
+| Checker Protocol | `CalibrationChecker.check` | `calibration_gate.py:67` |
+| Production Checker | `EnsembleBackedChecker` — invokes a checker ensemble, parses `signal:` from response | `calibration_gate.py:232` |
+| Composition-time registration | `CalibrationGate.mark_composed` | `calibration_gate.py:124` |
+
+### Design Rationale
+
+- **L1 without reaching into L3.** The gate takes a plain `session_id: str` on every call rather than importing `SessionIdentity` from Session Registry. Same pattern as Budget Controller (plain integers for cumulative accounting) — L1 policy modules stay layering-clean.
+- **Per-session store inside the gate.** Unlike calibration state living on `SessionState`, the records live in `CalibrationGate._sessions` keyed by session-id string. Session Registry stays agnostic of calibration vocabulary; WP-I swaps an in-memory store for a Plexus-backed one behind the same surface without touching the Session Registry contract.
+- **ADR-007 clause 2 enforced at the dispatch call site.** The Tool Dispatch helper `_calibration_check_safe` swallows any exception the gate or checker raises; `invoke_ensemble` continues to the summarizer and returns the success path. A crashed checker never becomes a tool error.
+- **Trust transition uses a sliding last-N window of positives.** Scenario 3 ("calibration period extends") is satisfied structurally — a negative or absent signal in the last-N window keeps the ensemble `in_calibration` even past `invocations_seen >= N`. Recovery requires a clean run of N positives in a row.
+- **Unparseable checker responses yield `absent`, never raise.** Honest about evaluability rather than silently assuming positive. An `absent` signal keeps the ensemble in calibration, which matches the "not evaluable → not yet earning trust" semantics.
+- **Config-driven tuning.** `default_n` and `checker_ensemble` both live in `OrchestratorConfig.calibration` and are resolved from `config.yaml` per session start. Default of `N = 3` balances check cost against single-reading noise; default checker is `agentic-calibration-checker` (shipped YAML). Operators point at a stricter, hallucination-detecting, or rubric-based checker without code changes.
+
+### Key Integration Points
+
+- **Orchestrator Tool Dispatch** (L2). Dispatch's `invoke_ensemble` calls `_calibration_check_safe(session_id, name, raw_result)` after `operations.invoke` and before `harness.summarize`. Dispatch's `compose_ensemble` calls `gate.mark_composed(session_id, name)` after a successful local-tier write — validation failure and write failure do not register.
+- **Session Registry** (L3) — indirectly. Tool Dispatch threads `state.identity.value` through `dispatch(call, *, session_id)`, and the Runtime reads the identity from `SessionContext.state`. The gate never imports Session Registry.
+- **Ensemble Engine** (L0) — via the `EnsembleBackedChecker`'s `CheckerInvoker` Protocol (structurally satisfied by `OrchestraService`). The checker invokes the configured checker ensemble through the same invocation path `invoke_ensemble` uses for library ensembles.
+- **Plexus Adapter** (L1) — reserved for WP-I. Cross-session trust persistence (scenario §Calibration persists across sessions when Plexus is active) layers behind the current public API without changing Tool Dispatch or Session Registry call sites.
 
 ---
 
