@@ -193,6 +193,7 @@ def _build_dispatch(
     autonomy_policy: Any = None,
     composition_validator: Any = None,
     local_ensemble_writer: Any = None,
+    calibration_gate: Any = None,
 ) -> OrchestratorToolDispatch:
     """Construct a dispatch with sensible test defaults.
 
@@ -200,6 +201,11 @@ def _build_dispatch(
     ``compose_ensemble`` incidentally (e.g., autonomy-gate tests)
     never reach the writer. Tests that exercise the accept path pass
     a scripted validator explicitly.
+
+    ``calibration_gate`` defaults to ``None`` — tests that do not
+    exercise calibration get the no-op path (invoke skips the gate;
+    compose does not register). Tests that assert on gate interposition
+    pass a ``_RecordingCalibrationGate`` (or the real gate) explicitly.
     """
     return OrchestratorToolDispatch(
         operations=operations,
@@ -217,6 +223,7 @@ def _build_dispatch(
             if local_ensemble_writer is not None
             else _UnusedWriter()
         ),
+        calibration_gate=calibration_gate,
     )
 
 
@@ -925,3 +932,256 @@ class TestAutonomyGate:
         )
 
         assert result.events == ()
+
+
+class _RecordingCalibrationGate:
+    """Recording double for the CalibrationGate Protocol surface.
+
+    Structurally satisfies ``CalibrationGate`` — ``mark_composed`` and
+    ``check_and_record`` are the two methods Tool Dispatch calls. Records
+    every call so tests assert interposition fires on the expected paths
+    and skips paths where it should not.
+    """
+
+    def __init__(
+        self,
+        *,
+        check_raises: Exception | None = None,
+    ) -> None:
+        self.mark_calls: list[tuple[str, str]] = []
+        self.check_calls: list[tuple[str, str, dict[str, Any]]] = []
+        self._check_raises = check_raises
+
+    def mark_composed(self, *, session_id: str, ensemble_name: str) -> None:
+        self.mark_calls.append((session_id, ensemble_name))
+
+    async def check_and_record(
+        self,
+        *,
+        session_id: str,
+        ensemble_name: str,
+        raw_result: dict[str, Any],
+    ) -> str | None:
+        self.check_calls.append((session_id, ensemble_name, raw_result))
+        if self._check_raises is not None:
+            raise self._check_raises
+        return "positive"
+
+
+class TestCalibrationGateInterposition:
+    """ADR-007, WP-H: Calibration Gate interposes on compose_ensemble and
+    invoke_ensemble.
+
+    On successful ``compose_ensemble``, the newly written ensemble is
+    registered with the Calibration Gate so subsequent
+    ``invoke_ensemble`` calls run the Quality Signal check until the
+    ensemble clears calibration. On every ``invoke_ensemble``, the raw
+    result is handed to the gate before summarization — the gate's
+    signal is recorded but does not affect the tool result. Calibration
+    failures never block invocation (clause 2).
+    """
+
+    @pytest.mark.asyncio
+    async def test_compose_success_registers_ensemble_for_calibration(
+        self,
+    ) -> None:
+        config = EnsembleConfig(
+            name="composed-x",
+            description="",
+            agents=[],
+        )
+        validator = _ScriptedValidator(CompositionAccepted(config=config))
+        writer = _RecordingWriter()
+        gate = _RecordingCalibrationGate()
+        dispatch = _build_dispatch(
+            operations=_RaisingOperations(),
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            composition_validator=validator,
+            local_ensemble_writer=writer,
+            calibration_gate=gate,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="c-register",
+                name="compose_ensemble",
+                arguments={
+                    "name": "composed-x",
+                    "description": "",
+                    "agents": [{"name": "only", "model_profile": "default"}],
+                },
+            ),
+            session_id="session-a",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert gate.mark_calls == [("session-a", "composed-x")]
+
+    @pytest.mark.asyncio
+    async def test_compose_validation_reject_does_not_register(self) -> None:
+        validator = _ScriptedValidator(
+            CompositionRejected(kind="missing_primitive", reason="missing profile")
+        )
+        gate = _RecordingCalibrationGate()
+        dispatch = _build_dispatch(
+            operations=_RaisingOperations(),
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            composition_validator=validator,
+            calibration_gate=gate,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="c-reject",
+                name="compose_ensemble",
+                arguments={"name": "bogus"},
+            ),
+            session_id="session-a",
+        )
+
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "invocation_failed"
+        assert gate.mark_calls == []
+
+    @pytest.mark.asyncio
+    async def test_compose_write_failure_does_not_register(self) -> None:
+        from llm_orc.agentic.composition_validator import EnsembleWriteError
+
+        config = EnsembleConfig(
+            name="composed-y",
+            description="",
+            agents=[],
+        )
+        validator = _ScriptedValidator(CompositionAccepted(config=config))
+
+        class _RaisingWriter:
+            def write(self, config: EnsembleConfig) -> str:
+                raise EnsembleWriteError("disk full")
+
+        gate = _RecordingCalibrationGate()
+        dispatch = _build_dispatch(
+            operations=_RaisingOperations(),
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            composition_validator=validator,
+            local_ensemble_writer=_RaisingWriter(),
+            calibration_gate=gate,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="c-write-fail",
+                name="compose_ensemble",
+                arguments={
+                    "name": "composed-y",
+                    "description": "",
+                    "agents": [{"name": "only", "model_profile": "default"}],
+                },
+            ),
+            session_id="session-a",
+        )
+
+        assert isinstance(result, ToolCallError)
+        assert gate.mark_calls == []
+
+    @pytest.mark.asyncio
+    async def test_invoke_calls_gate_with_session_id_and_raw_result(self) -> None:
+        raw_result = {
+            "results": {"a": {"response": "hi"}},
+            "synthesis": "syn",
+            "status": "success",
+            "raw_output": False,
+        }
+        operations = _ScriptedOperations(invoke_result=raw_result)
+        gate = _RecordingCalibrationGate()
+        dispatch = _build_dispatch(
+            operations=operations,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="i-1",
+                name="invoke_ensemble",
+                arguments={"name": "analysis", "input": "x"},
+            ),
+            session_id="session-b",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert gate.check_calls == [("session-b", "analysis", raw_result)]
+
+    @pytest.mark.asyncio
+    async def test_invoke_robust_to_gate_exception(self) -> None:
+        """ADR-007 clause 2: a checker failure never blocks invocation.
+
+        A checker that raises must not cause ``invoke_ensemble`` to fail
+        — the signal is simply not recorded and the summarized result
+        still flows back to the orchestrator.
+        """
+        raw_result = {
+            "results": {"a": {"response": "ok"}},
+            "synthesis": "syn",
+            "status": "success",
+            "raw_output": False,
+        }
+        operations = _ScriptedOperations(invoke_result=raw_result)
+        gate = _RecordingCalibrationGate(check_raises=RuntimeError("checker crashed"))
+        dispatch = _build_dispatch(
+            operations=operations,
+            harness=_build_harness(returns={"synthesis": "distilled"}),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="i-robust",
+                name="invoke_ensemble",
+                arguments={"name": "analysis", "input": "x"},
+            ),
+            session_id="session-c",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.content == {"summary": "distilled"}
+        # The gate was consulted but its exception was swallowed.
+        assert len(gate.check_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_invoke_with_no_gate_configured_is_noop(self) -> None:
+        """Calibration is optional infrastructure; omission is well-defined.
+
+        Dispatch construction without a ``calibration_gate`` skips the
+        check entirely — used by tests that don't care about calibration
+        and by deployments that opt out. The summarizer flow is unaffected.
+        """
+        raw_result = {
+            "results": {"a": {"response": "ok"}},
+            "synthesis": "syn",
+            "status": "success",
+            "raw_output": False,
+        }
+        operations = _ScriptedOperations(invoke_result=raw_result)
+        dispatch = _build_dispatch(
+            operations=operations,
+            harness=_build_harness(returns={"synthesis": "distilled"}),
+            autonomy_policy=_permissive_policy(),
+            # No calibration_gate — default helper omits it.
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="i-no-gate",
+                name="invoke_ensemble",
+                arguments={"name": "analysis", "input": "x"},
+            ),
+            session_id="session-d",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.content == {"summary": "distilled"}

@@ -33,6 +33,10 @@ from pydantic import BaseModel, Field
 
 from llm_orc.agentic.autonomy_policy import AutonomyPolicy
 from llm_orc.agentic.budget_controller import BudgetController
+from llm_orc.agentic.calibration_gate import (
+    CalibrationGate,
+    EnsembleBackedChecker,
+)
 from llm_orc.agentic.composition_validator import (
     CompositionValidator,
     ConfigManagerEnsembleWriter,
@@ -114,12 +118,21 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
         primitive_registry = ConfigManagerPrimitiveRegistry(service.config_manager)
         composition_validator = CompositionValidator(primitives=primitive_registry)
         local_ensemble_writer = ConfigManagerEnsembleWriter(service.config_manager)
+        calibration_checker = EnsembleBackedChecker(
+            invoker=service,
+            checker_ensemble_name=config.calibration.checker_ensemble,
+        )
+        calibration_gate = CalibrationGate(
+            default_n=config.calibration.default_n,
+            checker=calibration_checker,
+        )
         _SHARED_TOOL_DISPATCH = OrchestratorToolDispatch(
             operations=service,
             harness=harness,
             autonomy_policy=autonomy_policy,
             composition_validator=composition_validator,
             local_ensemble_writer=local_ensemble_writer,
+            calibration_gate=calibration_gate,
         )
     return _SHARED_TOOL_DISPATCH
 

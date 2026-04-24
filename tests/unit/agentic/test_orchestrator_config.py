@@ -85,6 +85,9 @@ class TestOrchestratorConfigResolver:
         assert config.plexus_enabled is DEFAULT_PLEXUS_ENABLED
         assert config.override_bounds.max_turn_limit == DEFAULT_MAX_TURN_LIMIT
         assert config.override_bounds.max_token_limit == DEFAULT_MAX_TOKEN_LIMIT
+        # WP-H: Calibration defaults come from the Calibration Gate module.
+        assert config.calibration.default_n == 3
+        assert config.calibration.checker_ensemble == "agentic-calibration-checker"
 
     def test_global_config_overlays_defaults(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -168,6 +171,50 @@ class TestOrchestratorConfigResolver:
         assert config.override_bounds.allow_budget_override is False
         assert config.override_bounds.max_turn_limit == 1000
         assert config.override_bounds.max_token_limit == 5_000_000
+
+    def test_calibration_overrides_land_under_orchestrator_calibration_key(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Operators can tighten N and swap the checker via config.yaml."""
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            local_yaml={
+                "agentic_serving": {
+                    "orchestrator": {
+                        "calibration": {
+                            "default_n": 7,
+                            "checker_ensemble": "strict-checker",
+                        }
+                    },
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        assert config.calibration.default_n == 7
+        assert config.calibration.checker_ensemble == "strict-checker"
+
+    def test_invalid_calibration_default_n_falls_back(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Zero, negative, or non-integer values fall back to the shipped default."""
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            local_yaml={
+                "agentic_serving": {
+                    "orchestrator": {"calibration": {"default_n": 0}},
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        assert config.calibration.default_n == 3
 
     def test_default_orchestrator_system_prompt_teaches_retry_convention(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

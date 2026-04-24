@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 from llm_orc.agentic.autonomy_policy import Allow, AutonomyDecision, Deny
+from llm_orc.agentic.calibration_gate import CalibrationGate, QualitySignal
 from llm_orc.agentic.composition_validator import (
     CompositionAccepted,
     CompositionOutcome,
@@ -187,14 +188,18 @@ class OrchestratorToolDispatch:
         autonomy_policy: AutonomyGate,
         composition_validator: CompositionGate,
         local_ensemble_writer: LocalEnsembleWriter,
+        calibration_gate: CalibrationGate | None = None,
     ) -> None:
         self._operations = operations
         self._harness = harness
         self._autonomy_policy = autonomy_policy
         self._composition_validator = composition_validator
         self._local_ensemble_writer = local_ensemble_writer
+        self._calibration_gate = calibration_gate
 
-    async def dispatch(self, call: InternalToolCall) -> ToolCallResult:
+    async def dispatch(
+        self, call: InternalToolCall, *, session_id: str = ""
+    ) -> ToolCallResult:
         """Route a tool call through the unknown-tool filter, gate, then routing.
 
         Three steps, in order:
@@ -207,6 +212,13 @@ class OrchestratorToolDispatch:
            ``denied_by_autonomy`` error; the tool method is not called.
         3. **Tool routing.** Match-case dispatches to the five committed
            methods; decision events attach to the returned result.
+
+        ``session_id`` identifies the Session for per-session state the
+        dispatch consults (Calibration Gate in WP-H). Defaults to the
+        empty string so existing call sites without session context (or
+        tests that do not exercise calibration) continue to work — the
+        Calibration Gate stores records under whatever string it is
+        handed.
         """
         if call.name not in TOOL_NAMES:
             return ToolCallError(
@@ -231,9 +243,9 @@ class OrchestratorToolDispatch:
             )
 
         events = decision.events if isinstance(decision, Allow) else ()
-        return _with_events(await self._route(call), events)
+        return _with_events(await self._route(call, session_id), events)
 
-    async def _route(self, call: InternalToolCall) -> ToolCallResult:
+    async def _route(self, call: InternalToolCall, session_id: str) -> ToolCallResult:
         """Dispatch a committed tool name to its method.
 
         Match-case makes the five committed tools visible at the dispatch
@@ -244,9 +256,9 @@ class OrchestratorToolDispatch:
         """
         match call.name:
             case "invoke_ensemble":
-                return await self.invoke_ensemble(call.id, call.arguments)
+                return await self.invoke_ensemble(call.id, call.arguments, session_id)
             case "compose_ensemble":
-                return await self.compose_ensemble(call.id, call.arguments)
+                return await self.compose_ensemble(call.id, call.arguments, session_id)
             case "list_ensembles":
                 return await self.list_ensembles(call.id, call.arguments)
             case "query_knowledge":
@@ -259,7 +271,7 @@ class OrchestratorToolDispatch:
                 )
 
     async def invoke_ensemble(
-        self, id_: str, arguments: dict[str, Any]
+        self, id_: str, arguments: dict[str, Any], session_id: str = ""
     ) -> ToolCallResult:
         """Resolve an ensemble by name, execute, then interpose the Harness.
 
@@ -268,6 +280,14 @@ class OrchestratorToolDispatch:
         the invoked ensemble's ``raw_output`` flag. The Runtime never
         sees unsummarized output unless the ensemble explicitly opts
         into the ADR-004 escape hatch.
+
+        Per ADR-007 (WP-H): before summarization, the raw result is
+        handed to the Calibration Gate when one is configured. The gate
+        is consulted for every ``invoke_ensemble`` — it is a no-op for
+        trusted or untracked ensembles, and runs the checker for
+        composed ensembles still in calibration. Calibration failures
+        **do not** fail invocation (ADR-007 clause 2) — exceptions are
+        swallowed so the orchestrator's loop continues unimpeded.
         """
         name = arguments.get("name")
         input_data = arguments.get("input", "")
@@ -298,6 +318,10 @@ class OrchestratorToolDispatch:
                 reason=str(exc),
             )
 
+        await self._calibration_check_safe(
+            session_id=session_id, ensemble_name=name, raw_result=result
+        )
+
         raw_output = bool(result.get("raw_output", False))
         summarization = await self._harness.summarize(result, raw_output=raw_output)
         match summarization:
@@ -320,7 +344,7 @@ class OrchestratorToolDispatch:
                 )
 
     async def compose_ensemble(
-        self, id_: str, arguments: dict[str, Any]
+        self, id_: str, arguments: dict[str, Any], session_id: str = ""
     ) -> ToolCallResult:
         """Compose a new ensemble via the Composition Validator (WP-G).
 
@@ -333,6 +357,13 @@ class OrchestratorToolDispatch:
         continues with the error as an observation. AS-2 (no partial
         state on validation failure) is structurally enforced — the
         writer is only reached after :class:`CompositionAccepted`.
+
+        Per ADR-007 (WP-H): on successful write, the newly composed
+        ensemble is registered with the Calibration Gate (when
+        configured) so subsequent ``invoke_ensemble`` calls on the same
+        name run the Quality Signal check until the ensemble clears
+        calibration. Registration happens only after the writer
+        succeeds — a rejected composition never enters calibration.
         """
         name = arguments.get("name")
         description = arguments.get("description", "")
@@ -384,6 +415,10 @@ class OrchestratorToolDispatch:
                 kind="invocation_failed",
                 reason=str(exc),
             )
+        if self._calibration_gate is not None:
+            self._calibration_gate.mark_composed(
+                session_id=session_id, ensemble_name=accepted.config.name
+            )
         return ToolCallSuccess(
             id=id_,
             name="compose_ensemble",
@@ -421,6 +456,28 @@ class OrchestratorToolDispatch:
             kind="not_yet_wired",
             reason="record_outcome lands in WP-I (Plexus Adapter)",
         )
+
+    async def _calibration_check_safe(
+        self, *, session_id: str, ensemble_name: str, raw_result: dict[str, Any]
+    ) -> QualitySignal | None:
+        """Consult the Calibration Gate, swallowing any error.
+
+        ADR-007 clause 2: the calibration check does not prevent
+        invocation. A checker-ensemble crash, summarizer backoff, or
+        any other raise from the gate surfaces here as ``None`` rather
+        than as a tool error. The invocation's raw result still flows
+        to the Summarizer Harness and back to the orchestrator.
+        """
+        if self._calibration_gate is None:
+            return None
+        try:
+            return await self._calibration_gate.check_and_record(
+                session_id=session_id,
+                ensemble_name=ensemble_name,
+                raw_result=raw_result,
+            )
+        except Exception:  # noqa: BLE001 — ADR-007 clause 2: never block invocation
+            return None
 
 
 def _with_events(

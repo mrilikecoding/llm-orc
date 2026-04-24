@@ -76,7 +76,9 @@ class OrchestratorLLM(Protocol):
 class ToolDispatcher(Protocol):
     """Minimum Tool Dispatch surface the Runtime calls."""
 
-    async def dispatch(self, call: InternalToolCall) -> ToolCallResult: ...
+    async def dispatch(
+        self, call: InternalToolCall, *, session_id: str = ""
+    ) -> ToolCallResult: ...
 
 
 def _build_tool_schemas() -> list[dict[str, Any]]:
@@ -234,7 +236,7 @@ class OrchestratorRuntime:
 
             messages.append(_assistant_message(response))
             async for chunk in self._dispatch_internal_calls(
-                response.tool_calls, messages
+                response.tool_calls, messages, state.identity.value
             ):
                 yield chunk
 
@@ -242,14 +244,20 @@ class OrchestratorRuntime:
         self,
         tool_calls: list[ToolCall],
         messages: list[dict[str, Any]],
+        session_id: str,
     ) -> AsyncIterator[OrchestratorChunk]:
         """Dispatch a pure-internal batch and yield observation chunks.
 
         Each call flows through Tool Dispatch, which interposes Autonomy
-        Policy (WP-E) and the Result Summarizer Harness (WP-D) on the
-        ``invoke_ensemble`` return path. The ``messages`` list is
-        mutated in place: a ``role: tool`` observation is appended per
-        result so the next ReAct iteration's LLM call sees the outcome.
+        Policy (WP-E), the Calibration Gate (WP-H), and the Result
+        Summarizer Harness (WP-D) on the ``invoke_ensemble`` return
+        path. The ``messages`` list is mutated in place: a ``role: tool``
+        observation is appended per result so the next ReAct iteration's
+        LLM call sees the outcome.
+
+        ``session_id`` is the Session identity threaded through so
+        dispatch-side per-session state (Calibration Gate records for
+        composed ensembles under calibration) keys correctly.
 
         Extracting this loop out of :meth:`run` keeps that method's
         complexity under the project's cyclomatic ceiling while
@@ -262,7 +270,7 @@ class OrchestratorRuntime:
                 name=tool_call.name,
                 arguments=_safe_parse_arguments(tool_call.arguments_json),
             )
-            result = await self._tool_dispatch.dispatch(parsed)
+            result = await self._tool_dispatch.dispatch(parsed, session_id=session_id)
             for event in result.events:
                 yield event
             yield InternalToolCallResult(
