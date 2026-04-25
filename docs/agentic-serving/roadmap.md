@@ -11,21 +11,56 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 > **WP-A, WP-B, WP-C, WP-D, WP-E, WP-F, WP-G, and WP-H are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. **TS-1 (stateless orchestrator serving OpenCode) was reached at WP-F close; TS-2 (stateless baseline complete) was reached at WP-H close 2026-04-24.** The active section below lists only upcoming or in-progress work.
 
-### WP-I: Plexus Adapter (tool-first)
+### WP-I: Plexus Adapter skeleton (no-op fallbacks)
 
-**Objective:** Wire `query_knowledge` and `record_outcome` through the Plexus Adapter with graceful no-op fallbacks when Plexus is absent. Every Plexus-facing path tested in stateless mode (FC-7).
+**Objective:** Land the Plexus Adapter module and wire Tool Dispatch's `query_knowledge` and `record_outcome` to it — with the Plexus-absent (no-op) branches only. The Plexus-active integration is split off to WP-K so it can sit until `/rdd-play` validates what Plexus actually needs to do, or until a dedicated cycle.
 
 **Changes:**
-- New **Plexus Adapter** module.
-- Orchestrator Tool Dispatch edit: `query_knowledge` and `record_outcome` entry points are now wired.
-- Integration with Plexus lib via MCP (plexus MCP server is available — schemas are deferred).
+- New **Plexus Adapter** module (L1) with no-op `query` and `record` methods that return well-formed empty / ack values.
+- Orchestrator Tool Dispatch edit: `query_knowledge` and `record_outcome` switch from `not_yet_wired` errors to delegating through the Adapter. The Adapter is constructed at the Serving Layer (process-scoped, like the other dispatch dependencies).
+- `record_outcome` payload schema decision (build-time): minimal `{ensemble_name, quality_signal, context}` — composes with WP-H's `QualitySignal` vocabulary; WP-K extends if needed.
 
-**Scenarios covered:** scenarios.md §Plexus Integration (query_knowledge returns empty gracefully; query_knowledge returns enriched content; record_outcome writes asynchronously; Ingestion accepts source material; ReAct loop remains responsive while enrichment lags); §Session Lifecycle (Four-layer stack operates with Plexus present).
+**Scenarios covered (Plexus-absent branches only):**
+- §query_knowledge returns empty gracefully when Plexus is absent
+- §record_outcome writes asynchronously without blocking the ReAct loop *(no-op ack branch — completes synchronously and returns the ack)*
+- §Orchestrator's ReAct loop remains responsive while enrichment lags *(vacuous when no enrichment runs; the no-op branch passes by construction)*
+
+**Out of scope (deferred to WP-K):**
+- Real plexus MCP client integration
+- §query_knowledge returns enriched content when Plexus is populated
+- §Calibration persists across sessions when Plexus is active
 
 **Dependencies:**
 - WP-C (hard) — needs the dispatch entry points to exist.
 
-**Participating modules:** Plexus Adapter, Orchestrator Tool Dispatch (edit). Consistent with WP scope.
+**Participating modules:** Plexus Adapter (new), Orchestrator Tool Dispatch (edit). Consistent with WP scope.
+
+**Outcome.** Tool Dispatch's `query_knowledge` / `record_outcome` paths are structurally wired through the Adapter, all FC-7 stateless-mode tests pass, and WP-K is body-swap territory — switching the Adapter from no-op to Plexus-active does not require changes to Tool Dispatch, the Runtime, or any tool-call shape.
+
+---
+
+### WP-K: Plexus Integration (Plexus-active paths)
+
+**Objective:** Replace the Adapter's no-op bodies with real plexus MCP client calls; land the cross-session calibration persistence edge so composed ensembles' trust survives Session boundaries when Plexus is active.
+
+**Status:** **Deferred.** Candidate triggers for un-deferring: (a) `/rdd-play` surfaces a concrete need that integration would address, (b) production deployments accumulate enough composition activity that cross-session trust matters, or (c) the Plexus enrichment pipeline matures enough to make AS-4 / AS-5 substantively load-bearing (cycle-status OQ #7).
+
+**Changes:**
+- Replace `PlexusAdapter` no-op method bodies with real plexus MCP client calls.
+- New `Calibration Gate → Plexus Adapter` edge: extract a `CalibrationStore` Protocol behind the gate's per-session record store, with an `InProcessCalibrationStore` default and a `PlexusBackedCalibrationStore` for Plexus-active deployments.
+- Plexus-active branch of `record_outcome` writes asynchronously; the Adapter's read of recent outcomes returns enriched content.
+
+**Scenarios covered:**
+- §query_knowledge returns enriched content when Plexus is populated
+- §record_outcome writes asynchronously without blocking the ReAct loop *(Plexus-active branch — write-through plus eventual consistency)*
+- §Calibration persists across sessions when Plexus is active *(the scenario WP-H deferred)*
+- §Session Lifecycle: Four-layer stack operates with Plexus present
+- §Cost and Quality Experimentation: Same task runs with and without Plexus context across Model Profiles *(testable OQ #1)*
+
+**Dependencies:**
+- WP-I (hard) — Adapter surface and Tool Dispatch wiring already in place.
+
+**Participating modules:** Plexus Adapter (replace bodies), Calibration Gate (extract `CalibrationStore` Protocol), Plexus lib (external).
 
 ---
 
@@ -41,7 +76,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 **Scenarios covered:** scenarios.md §Cost and Quality Experimentation (Bootstrapped graph shortens time-to-first-useful-query — testable OQ #4).
 
 **Dependencies:**
-- WP-I (hard) — needs Plexus Adapter.
+- WP-K (hard) — needs Plexus-active Adapter paths (was WP-I; updated 2026-04-24 when WP-I split to skeleton + WP-K).
 
 **Participating modules:** Bootstrapping Pipeline, Plexus Adapter (called through), Ensemble Engine (reads library via existing config manager). Consistent with WP scope.
 
@@ -69,8 +104,9 @@ WP-C (ReAct core)
    └─ hard ─▶ WP-I
 
 WP-G (composition) ─ implied ─▶ WP-H
-WP-I (Plexus adapter) ─ implied ─▶ WP-H (for cross-session calibration persistence)
-WP-I ─ hard ─▶ WP-J
+WP-I (Adapter skeleton) ─ hard ─▶ WP-K (replaces no-op bodies with real Plexus client)
+WP-K (Plexus integration) ─ implied ─▶ WP-H (delivers cross-session calibration persistence)
+WP-K ─ hard ─▶ WP-J
 ```
 
 **Classification key:**
@@ -93,9 +129,11 @@ At TS-1, the fitness criteria satisfied are: FC-1 through FC-5, FC-8, FC-10, FC-
 
 The orchestrator can now compose new ensembles from existing library primitives, validate them, and calibrate them within the session. Still no Plexus — calibration is session-scoped; cross-session trust does not persist. This is the complete **baseline product** as defined by ADR-002 Layer 1-3 and AS-8. Fitness criteria FC-6 and FC-12 satisfied at TS-2 — **FC-6 landed at WP-G close (2026-04-22), FC-12 landed at WP-H close (2026-04-24)**.
 
-### TS-3: Four-layer stack with Phase 1 Plexus integration (after TS-2 + WP-I + WP-J)
+### TS-3: Four-layer stack with Phase 1 Plexus integration (after TS-2 + WP-I + WP-K + WP-J)
 
 Full architecture live. `query_knowledge` and `record_outcome` flow to Plexus; library bootstrapping is available. Calibration now persists across sessions. Fitness criterion FC-7 satisfied (FC-9 was satisfied at WP-B via `resolve_session_start_context`). Phase 2 injection remains deferred per ADR-009 — when it lands, the change is a function body, not a structural addition.
+
+**Reaching TS-3 in two ships.** WP-I lands the Plexus Adapter skeleton with no-op fallbacks (FC-7 satisfied for the Plexus-absent branches; surface wired through Tool Dispatch). WP-K replaces the no-op method bodies with real plexus MCP client calls and lands the cross-session calibration persistence edge. WP-K is deferred — it un-defers when `/rdd-play` surfaces a concrete need, when production deployments accumulate enough composition activity that cross-session trust matters, or when the Plexus enrichment pipeline matures sufficiently. Splitting the Plexus integration across WP-I (now) and WP-K (later) lets the stateless baseline observe production use before committing to integration shape.
 
 ---
 
@@ -111,7 +149,7 @@ Full architecture live. `query_knowledge` and `record_outcome` flow to Plexus; l
 
 5. **Session identity mechanism.** WP-B defaults to message-history-derivation with optional client-supplied correlation via the OpenAI `user` field. If Autonomy tightening or multi-client deployments make this insufficient, a custom header or session-id cookie becomes necessary. Build-time decision; the Session Registry contract accommodates either.
 
-6. **`record_outcome` payload schema.** WP-I writes outcomes to Plexus but ADR-009 defers the tool's argument schema. Builder should pick a minimum payload (routing decision + quality signal + free-form context) that Phase 2 injection can later read without breaking.
+6. **`record_outcome` payload schema.** ADR-009 defers the tool's argument schema. Decision deferred to WP-I close (the WP that lands the dispatch wiring) — minimum payload should be `{ensemble_name, quality_signal, context}`, composing with WP-H's `QualitySignal` vocabulary. WP-K extends if Plexus enrichment requires richer fields.
 
 7. **Visibility surface for conductor-ceiling observations (OQ #6).** Not a decision point for any WP directly, but an observability requirement that WP-E and WP-I should consider together — the orchestrator's routing-decision stream is a window into whether orchestration depth is reachable by smaller models.
 
