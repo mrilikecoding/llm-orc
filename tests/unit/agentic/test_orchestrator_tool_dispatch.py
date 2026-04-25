@@ -194,6 +194,7 @@ def _build_dispatch(
     composition_validator: Any = None,
     local_ensemble_writer: Any = None,
     calibration_gate: Any = None,
+    plexus_adapter: Any = None,
 ) -> OrchestratorToolDispatch:
     """Construct a dispatch with sensible test defaults.
 
@@ -224,6 +225,7 @@ def _build_dispatch(
             else _UnusedWriter()
         ),
         calibration_gate=calibration_gate,
+        plexus_adapter=plexus_adapter,
     )
 
 
@@ -337,26 +339,29 @@ class TestClosedToolSet:
         )
 
 
-class TestNotYetWiredTools:
-    """WP-G leaves only ``query_knowledge`` and ``record_outcome`` pending.
+class TestPlexusToolsRequireAdapter:
+    """Plexus-facing tools degrade gracefully when no Adapter is configured.
 
-    Those two tools exist (to honor the closed-set property) but
-    return a typed ``not_yet_wired`` tool error. The Runtime surfaces
-    these to the orchestrator LLM as an observation — the LLM is free
-    to plan around them.
+    Production deployments wire a :class:`PlexusAdapter` (no-op in WP-I,
+    Plexus-active in WP-K). The absent-adapter path is a defensive
+    fallback for tests and misconfigured deployments — the tool returns
+    a typed ``not_yet_wired`` error rather than crashing or silently
+    producing nonsense.
     """
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        ("tool_name", "landing_wp"),
+        "tool_name",
         [
-            ("query_knowledge", "WP-I"),
-            ("record_outcome", "WP-I"),
+            "query_knowledge",
+            "record_outcome",
         ],
     )
-    async def test_not_yet_wired_tool_returns_typed_error(
-        self, tool_name: str, landing_wp: str
+    async def test_plexus_tool_without_adapter_returns_typed_error(
+        self, tool_name: str
     ) -> None:
+        # Default ``_build_dispatch`` omits the Plexus Adapter, so this
+        # exercises the absent-adapter fallback path.
         dispatch = _build_dispatch(
             operations=_RaisingOperations(),
             harness=_build_harness(),
@@ -370,7 +375,7 @@ class TestNotYetWiredTools:
         assert isinstance(result, ToolCallError)
         assert result.name == tool_name
         assert result.kind == "not_yet_wired"
-        assert landing_wp in result.reason
+        assert "Plexus Adapter" in result.reason
 
 
 class TestComposeEnsemble:
@@ -1185,3 +1190,153 @@ class TestCalibrationGateInterposition:
 
         assert isinstance(result, ToolCallSuccess)
         assert result.content == {"summary": "distilled"}
+
+
+class _RecordingPlexusAdapter:
+    """Recording double for the PlexusAccess Protocol surface.
+
+    Records every call so tests assert delegation fires with the
+    arguments the orchestrator LLM emitted. Returns scripted dicts
+    so the test asserts the value flows through to ``ToolCallSuccess``.
+    """
+
+    def __init__(
+        self,
+        *,
+        query_returns: dict[str, Any] | None = None,
+        record_returns: dict[str, Any] | None = None,
+    ) -> None:
+        self._query_returns: dict[str, Any] = (
+            query_returns if query_returns is not None else {"results": []}
+        )
+        self._record_returns: dict[str, Any] = (
+            record_returns if record_returns is not None else {"acknowledged": True}
+        )
+        self.query_calls: list[dict[str, Any]] = []
+        self.record_calls: list[dict[str, Any]] = []
+
+    async def query(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        self.query_calls.append(arguments)
+        return self._query_returns
+
+    async def record(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        self.record_calls.append(arguments)
+        return self._record_returns
+
+
+class TestPlexusToolWiring:
+    """ADR-009 / WP-I: ``query_knowledge`` and ``record_outcome`` delegate
+    to the Adapter when one is configured.
+
+    These tests cover the in-product path. ``TestPlexusToolsRequireAdapter``
+    above covers the absent-adapter fallback. Together they pin down the
+    full surface a deployment will hit.
+    """
+
+    @pytest.mark.asyncio
+    async def test_query_knowledge_delegates_to_adapter(self) -> None:
+        adapter = _RecordingPlexusAdapter(
+            query_returns={"results": [{"id": "r1"}], "context": "ctx"}
+        )
+        dispatch = _build_dispatch(
+            operations=_RaisingOperations(),
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            plexus_adapter=adapter,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="qk-1",
+                name="query_knowledge",
+                arguments={"topic": "ensembles for refactoring"},
+            )
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.name == "query_knowledge"
+        assert result.content == {"results": [{"id": "r1"}], "context": "ctx"}
+        assert adapter.query_calls == [{"topic": "ensembles for refactoring"}]
+        assert adapter.record_calls == []
+
+    @pytest.mark.asyncio
+    async def test_record_outcome_delegates_to_adapter(self) -> None:
+        adapter = _RecordingPlexusAdapter(record_returns={"acknowledged": True})
+        dispatch = _build_dispatch(
+            operations=_RaisingOperations(),
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            plexus_adapter=adapter,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="ro-1",
+                name="record_outcome",
+                arguments={
+                    "ensemble_name": "composed-x",
+                    "quality_signal": "positive",
+                    "context": "refactor task succeeded",
+                },
+            )
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.name == "record_outcome"
+        assert result.content == {"acknowledged": True}
+        assert adapter.record_calls == [
+            {
+                "ensemble_name": "composed-x",
+                "quality_signal": "positive",
+                "context": "refactor task succeeded",
+            }
+        ]
+        assert adapter.query_calls == []
+
+    @pytest.mark.asyncio
+    async def test_query_knowledge_with_real_adapter_returns_no_op(self) -> None:
+        """With the real :class:`PlexusAdapter` (Plexus-absent), the
+        orchestrator sees the well-formed empty result the no-op
+        fallback ships."""
+        from llm_orc.agentic.plexus_adapter import PlexusAdapter
+
+        dispatch = _build_dispatch(
+            operations=_RaisingOperations(),
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            plexus_adapter=PlexusAdapter(),
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="qk-real",
+                name="query_knowledge",
+                arguments={"topic": "anything"},
+            )
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.content == {"results": [], "context": ""}
+
+    @pytest.mark.asyncio
+    async def test_record_outcome_with_real_adapter_returns_ack(self) -> None:
+        """The no-op Adapter acknowledges promptly per ADR-009."""
+        from llm_orc.agentic.plexus_adapter import PlexusAdapter
+
+        dispatch = _build_dispatch(
+            operations=_RaisingOperations(),
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            plexus_adapter=PlexusAdapter(),
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="ro-real",
+                name="record_outcome",
+                arguments={"ensemble_name": "x", "quality_signal": "positive"},
+            )
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.content == {"acknowledged": True}

@@ -9,35 +9,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ## Work Packages
 
-> **WP-A, WP-B, WP-C, WP-D, WP-E, WP-F, WP-G, and WP-H are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. **TS-1 (stateless orchestrator serving OpenCode) was reached at WP-F close; TS-2 (stateless baseline complete) was reached at WP-H close 2026-04-24.** The active section below lists only upcoming or in-progress work.
-
-### WP-I: Plexus Adapter skeleton (no-op fallbacks)
-
-**Objective:** Land the Plexus Adapter module and wire Tool Dispatch's `query_knowledge` and `record_outcome` to it — with the Plexus-absent (no-op) branches only. The Plexus-active integration is split off to WP-K so it can sit until `/rdd-play` validates what Plexus actually needs to do, or until a dedicated cycle.
-
-**Changes:**
-- New **Plexus Adapter** module (L1) with no-op `query` and `record` methods that return well-formed empty / ack values.
-- Orchestrator Tool Dispatch edit: `query_knowledge` and `record_outcome` switch from `not_yet_wired` errors to delegating through the Adapter. The Adapter is constructed at the Serving Layer (process-scoped, like the other dispatch dependencies).
-- `record_outcome` payload schema decision (build-time): minimal `{ensemble_name, quality_signal, context}` — composes with WP-H's `QualitySignal` vocabulary; WP-K extends if needed.
-
-**Scenarios covered (Plexus-absent branches only):**
-- §query_knowledge returns empty gracefully when Plexus is absent
-- §record_outcome writes asynchronously without blocking the ReAct loop *(no-op ack branch — completes synchronously and returns the ack)*
-- §Orchestrator's ReAct loop remains responsive while enrichment lags *(vacuous when no enrichment runs; the no-op branch passes by construction)*
-
-**Out of scope (deferred to WP-K):**
-- Real plexus MCP client integration
-- §query_knowledge returns enriched content when Plexus is populated
-- §Calibration persists across sessions when Plexus is active
-
-**Dependencies:**
-- WP-C (hard) — needs the dispatch entry points to exist.
-
-**Participating modules:** Plexus Adapter (new), Orchestrator Tool Dispatch (edit). Consistent with WP scope.
-
-**Outcome.** Tool Dispatch's `query_knowledge` / `record_outcome` paths are structurally wired through the Adapter, all FC-7 stateless-mode tests pass, and WP-K is body-swap territory — switching the Adapter from no-op to Plexus-active does not require changes to Tool Dispatch, the Runtime, or any tool-call shape.
-
----
+> **WP-A through WP-I are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. **TS-1 (stateless orchestrator serving OpenCode) was reached at WP-F close; TS-2 (stateless baseline complete) was reached at WP-H close 2026-04-24; the Plexus Adapter skeleton landed at WP-I close 2026-04-24 — all FC-7 stateless paths covered, WP-K is body-swap territory.** The active section below lists only upcoming or in-progress work.
 
 ### WP-K: Plexus Integration (Plexus-active paths)
 
@@ -149,7 +121,7 @@ Full architecture live. `query_knowledge` and `record_outcome` flow to Plexus; l
 
 5. **Session identity mechanism.** WP-B defaults to message-history-derivation with optional client-supplied correlation via the OpenAI `user` field. If Autonomy tightening or multi-client deployments make this insufficient, a custom header or session-id cookie becomes necessary. Build-time decision; the Session Registry contract accommodates either.
 
-6. **`record_outcome` payload schema.** ADR-009 defers the tool's argument schema. Decision deferred to WP-I close (the WP that lands the dispatch wiring) — minimum payload should be `{ensemble_name, quality_signal, context}`, composing with WP-H's `QualitySignal` vocabulary. WP-K extends if Plexus enrichment requires richer fields.
+6. **`record_outcome` payload schema** *(resolved 2026-04-24 at WP-I close)*. Minimum payload `{ensemble_name: str, quality_signal: "positive"|"negative"|"absent", context: str}`, composing with WP-H's `QualitySignal` vocabulary. The Plexus Adapter passes the dict through unchanged today; WP-K extends if Plexus enrichment requires richer fields. The orchestrator LLM is not bound to this schema in WP-I — Tool Dispatch forwards arguments verbatim — but the orchestrator system prompt's `record_outcome` description recommends this shape.
 
 7. **Visibility surface for conductor-ceiling observations (OQ #6).** Not a decision point for any WP directly, but an observability requirement that WP-E and WP-I should consider together — the orchestrator's routing-decision stream is a window into whether orchestration depth is reachable by smaller models.
 
@@ -158,6 +130,31 @@ Full architecture live. `query_knowledge` and `record_outcome` flow to Plexus; l
 ---
 
 ## Completed Work Log
+
+### WP-I: Plexus Adapter skeleton (no-op fallbacks) — 2026-04-24
+
+**Commits (in order):**
+
+- `<TBD>` docs: split Plexus integration into WP-I (skeleton) + WP-K (deferred)
+- `<TBD>` feat: add Plexus Adapter skeleton with no-op fallbacks (WP-I Group 1)
+- `<TBD>` feat: wire Plexus Adapter into Tool Dispatch (WP-I Group 2)
+
+**Outcome.** Tool Dispatch's `query_knowledge` and `record_outcome` switch from `not_yet_wired` errors to delegating through the Plexus Adapter. With Plexus absent (the WP-I shipping configuration), `query_knowledge` returns `{"results": [], "context": ""}` and `record_outcome` returns `{"acknowledged": True}` — both flow through the dispatch's match-case routing as `ToolCallSuccess`. FC-7 stateless coverage complete; WP-K is body-swap territory — replacing the Adapter's method bodies with real plexus MCP client calls does not require changes to Tool Dispatch, Runtime, or any tool-call shape.
+
+**New module.** `src/llm_orc/agentic/plexus_adapter.py` (L1) — `PlexusAdapter` class with two async methods (`query`, `record`) holding no-op fallback bodies. Class-shaped (rather than module-level functions) so WP-K injects the plexus MCP client through `__init__` without touching call sites. Constructor takes no parameters in WP-I; WP-K extends the signature when the client surface is committed.
+
+**Tool Dispatch.** New `PlexusAccess` Protocol (narrow surface — `query` and `record` only) lets tests substitute recording doubles. `OrchestratorToolDispatch.__init__` gains an optional `plexus_adapter: PlexusAccess | None = None` parameter; production wiring always passes one, the absent-adapter path returns the existing `not_yet_wired` typed error as a defensive fallback. The Adapter is constructed in `v1_chat_completions.get_orchestrator_tool_dispatch` alongside the other process-scoped dispatch dependencies.
+
+**`record_outcome` payload schema decision (Open Decision Point #6 resolved).** Minimum payload is `{ensemble_name, quality_signal, context}` composing with WP-H's `QualitySignal` vocabulary. Tool Dispatch forwards arguments verbatim to the Adapter — no schema validation in dispatch, no rejection of richer payloads. The orchestrator LLM gets the recommendation through the system prompt; WP-K extends if Plexus enrichment requires richer fields.
+
+**Test coverage.** 4 unit tests in `test_plexus_adapter.py` (no-op contract for query and record + argument-insensitivity); 4 wiring tests in `test_orchestrator_tool_dispatch.py::TestPlexusToolWiring` (dispatch delegates with recording double + dispatch delegates with real Adapter); 3 boundary integration tests in `test_tool_dispatch_plexus_boundary.py::TestQueryKnowledgeAndRecordOutcomeRoundTrip` (production-shaped wiring with real PlexusAdapter, covering scenarios.md §query_knowledge returns empty gracefully + §record_outcome writes asynchronously + §Orchestrator's ReAct loop remains responsive while enrichment lags). Existing `TestNotYetWiredTools` renamed to `TestPlexusToolsRequireAdapter` and asserts the absent-adapter fallback. Full suite **2347 passing, 91.56% coverage, lint clean**.
+
+**Forward-carrying to WP-K.**
+- The `PlexusAccess` Protocol is the seam — WP-K replaces `PlexusAdapter`'s method bodies and any consumer that holds a `PlexusAccess` reference (Tool Dispatch, future Calibration store) keeps working.
+- `record` exception handling in Tool Dispatch is intentionally bare (no try/except) — the no-op never raises. WP-K decides whether real-Plexus failures should degrade to empty or surface as `ToolCallError`; the right answer there is contextual to the actual plexus MCP client behavior, so committing to either now would be premature.
+- The `not_yet_wired` `ToolErrorKind` is retained for the absent-adapter fallback. After WP-I, no production code path produces it; it remains a defensive shape for misconfigured deployments and for tests that don't bother passing an Adapter.
+
+---
 
 ### WP-H: Calibration Gate — 2026-04-24
 

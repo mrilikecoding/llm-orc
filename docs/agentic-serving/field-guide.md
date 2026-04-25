@@ -1,7 +1,7 @@
 # Field Guide: Agentic Serving
 
 **Generated:** 2026-04-24
-**Derived from:** `system-design.md` v1.0 + amendments #1–#4, current implementation at WP-H close (TS-2 reached).
+**Derived from:** `system-design.md` v1.0 + amendments #1–#4, current implementation at WP-I close (TS-2 reached + Plexus Adapter skeleton wired).
 
 ## How to use this guide
 
@@ -630,9 +630,32 @@ Malformed LLM-emitted arguments (missing `name`, wrong `description` type, non-l
 
 ## Module: Plexus Adapter
 
-**Implementation state:** Planned (WP-I).
-**Code location:** Not yet created.
-**Stability:** Design-only. `query_knowledge` and `record_outcome` currently return `ToolCallError(kind="not_yet_wired")`.
+**Implementation state:** Skeleton complete at WP-I (2026-04-24) — class wired through Tool Dispatch with no-op method bodies. Plexus-active integration is WP-K (deferred).
+**Code location:** `src/llm_orc/agentic/plexus_adapter.py`.
+**Stability:** Settled at the public surface — WP-K replaces method bodies, not signatures. `query_knowledge` and `record_outcome` route through `PlexusAdapter.query` / `PlexusAdapter.record` rather than returning `not_yet_wired` errors.
+
+### Domain concepts in code
+
+| Concept | Code Manifestation | Location |
+|---------|-------------------|----------|
+| Plexus Adapter | `PlexusAdapter` class | `plexus_adapter.py:36` |
+| Query (action — facade for `query_knowledge`) | `PlexusAdapter.query` | `plexus_adapter.py:43` |
+| Record (action — facade for `record_outcome`) | `PlexusAdapter.record` | `plexus_adapter.py:55` |
+| Plexus access surface seen by Tool Dispatch | `PlexusAccess` Protocol | `orchestrator_tool_dispatch.py` |
+
+### Design Rationale
+
+- **Single place Plexus-aware code lives (ADR-009).** AS-8 (Plexus is optional) is structurally enforceable because the rest of the system sees a uniform surface — `PlexusAccess.query` / `PlexusAccess.record` — regardless of whether Plexus is present. Tool Dispatch and (WP-K) the cross-session Calibration store don't import any plexus client; they consume the Adapter.
+- **Class-shaped, not module-level functions.** The Adapter is a class with no constructor parameters in WP-I so WP-K can inject the plexus MCP client through `__init__` without touching any call site. Tool Dispatch holds a `PlexusAccess`-typed reference; the swap is a body change in the Adapter and a constructor argument in the Serving Layer.
+- **No-op fallback returns well-formed values, not None or empty dicts.** `query` returns `{"results": [], "context": ""}` and `record` returns `{"acknowledged": True}`. The orchestrator LLM sees these as valid tool results and adapts its plan — empty results from `query_knowledge` are just "the knowledge graph has nothing on this topic." This matches AS-8's "stateless mode is a real mode, not a degraded one."
+- **No defensive try/except in Tool Dispatch around the Adapter call.** The WP-I no-op cannot raise. WP-K commits to either degrade-to-empty or surface-as-ToolCallError when the real plexus client raises; that is contextual to plexus MCP client behavior, so committing to either shape now would be premature.
+- **`record_outcome` payload schema is conventional, not enforced.** Tool Dispatch forwards arguments verbatim. The orchestrator LLM is recommended (via the system prompt) to send `{ensemble_name, quality_signal, context}` but no validation rejects richer payloads — WP-K may want to read more fields, and forcing schema validation in Tool Dispatch would couple it to the Plexus enrichment shape.
+
+### Key Integration Points
+
+- **Orchestrator Tool Dispatch** (L2) — depends on the `PlexusAccess` Protocol surface. Calls `adapter.query(arguments)` for `query_knowledge` and `adapter.record(arguments)` for `record_outcome`. Returns the Adapter's dict directly as `ToolCallSuccess.content`.
+- **Plexus lib** (external — WP-K) — the Adapter's `__init__` will take a plexus MCP client and the method bodies will issue real plexus calls.
+- **Calibration Gate** (L1 — WP-K) — the `Calibration Gate → Plexus Adapter` edge lands when WP-K extracts a `CalibrationStore` Protocol behind the gate's per-session record store; a Plexus-backed store calls through the Adapter's `query` / `record` paths to persist Quality Signals across Sessions. Scenario §Calibration persists across sessions when Plexus is active becomes the WP-K acceptance test for that edge.
 
 ---
 

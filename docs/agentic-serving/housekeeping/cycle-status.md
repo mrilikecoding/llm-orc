@@ -1,7 +1,7 @@
 # Active RDD Cycle: Agentic Serving
 
 **Started:** 2026-03-20
-**Current phase:** BUILD (in progress — WP-A through WP-H complete; WP-H closed 2026-04-24. **TS-1 reached at WP-F close; TS-2 (stateless baseline complete) reached at WP-H close.** WP-I (Plexus Adapter) and WP-J (Bootstrapping Pipeline) remain on the TS-3 path)
+**Current phase:** BUILD (in progress — WP-A through WP-I complete; WP-I closed 2026-04-24. **TS-1 reached at WP-F close; TS-2 (stateless baseline complete) reached at WP-H close; Plexus Adapter skeleton with no-op fallbacks landed at WP-I close.** WP-K (Plexus Integration — Plexus-active paths) is deferred; WP-J (Bootstrapping Pipeline) follows WP-K. Remaining work for TS-3 is body-swap territory.)
 **Artifact base:** `docs/agentic-serving/`
 **Essay:** `../essays/001-agentic-serving-architecture.md`
 
@@ -14,7 +14,7 @@
 | MODEL | ✅ Complete | `../domain-model.md` | Plexus should be optional (AS-8) -- design for stateless, benefit from Plexus when available. Enrichment pipeline maturity is an open question that determines whether the learning-system value proposition is real. Two-tier architecture: stateless orchestrator as baseline, Plexus as upgrade to learning system. |
 | DECIDE | ✅ Complete | `../decisions/adr-001..011-*.md`, `../scenarios.md`, `../interaction-specs.md` | Plexus's more compelling frame is intra-session multi-agent substrate via consumer-registered lens grammars, not only cross-session memory. Per-ensemble lens registration would make the orchestrator's access polyglot. AS-4 preserved (lens is query-surface grammar applied during enrichment). Reframe is forward signal, not a current-cycle driver -- Plexus's lens design is in-progress. Captured as OQ #8 and essay reflection; folds back in a later cycle. |
 | ARCHITECT | ✅ Complete | `../system-design.md`, `../roadmap.md`, `../ORIENTATION.md` (regenerated) | Retrofit mode: ensemble engine stays Layer 3 unchanged; 12 modules across 4 layers plus typed `resolve_session_start_context` function in Serving Layer; 13 fitness criteria. Client tool surface: Option C (turn-boundary delegation) is the commitment, scenario-gated — WP-F does not start until stress scenarios exercise the C/D distinction. Context Injection demoted from module to typed function (ADR-009 reservation is satisfied by signature + call site, not by a module). Consolidations of Orchestrator Configuration into Serving Layer and Calibration Gate into Runtime rejected: the former would invert layering; the latter would break FC-4. Roadmap has 10 WPs, 3 classified transition states; TS-1 (stateless orchestrator serving OpenCode) is the vision-named intermediate target. |
-| BUILD | ▶ In Progress | WP-A..WP-H complete — see roadmap Completed Work Log. **WP-H complete** — 4 commits (`3ab6f27`, `9caa4b4`, `d3da9d8`, this commit). Next: WP-I (Plexus Adapter), WP-J (Bootstrapping Pipeline). | WP-H closed. **TS-2 reached — stateless baseline complete per ADR-002 Layer 1-3 and AS-8.** Calibration Gate is a new L1 module; `CalibrationGate` holds per-session records indexed by `(session_id, ensemble_name)`. `DEFAULT_CALIBRATION_N = 3` (ODP #4 resolved). `EnsembleBackedChecker` invokes the shipped `agentic-calibration-checker.yaml` ensemble and parses `signal: positive\|negative\|absent`. Tool Dispatch interposes `mark_composed` on compose success and `check_and_record` on invoke before summarization; ADR-007 clause 2 preserved (checker failure swallowed). `ToolDispatcher` Protocol widened with `session_id` kwarg; Runtime threads `state.identity.value` through. FC-12 satisfied via boundary integration test. Test suite: 2336 passing, 91.56% coverage, lint clean. TS-3 remaining: WP-I + WP-J. |
+| BUILD | ▶ In Progress | WP-A..WP-I complete — see roadmap Completed Work Log. **WP-I complete** — Plexus Adapter skeleton wired through Tool Dispatch with no-op fallbacks. Next: WP-K (Plexus Integration, deferred) → WP-J (Bootstrapping). | WP-I closed. **TS-2 reached — stateless baseline complete per ADR-002 Layer 1-3 and AS-8.** Calibration Gate is a new L1 module; `CalibrationGate` holds per-session records indexed by `(session_id, ensemble_name)`. `DEFAULT_CALIBRATION_N = 3` (ODP #4 resolved). `EnsembleBackedChecker` invokes the shipped `agentic-calibration-checker.yaml` ensemble and parses `signal: positive\|negative\|absent`. Tool Dispatch interposes `mark_composed` on compose success and `check_and_record` on invoke before summarization; ADR-007 clause 2 preserved (checker failure swallowed). `ToolDispatcher` Protocol widened with `session_id` kwarg; Runtime threads `state.identity.value` through. FC-12 satisfied via boundary integration test. Test suite: 2336 passing, 91.56% coverage, lint clean. TS-3 remaining: WP-I + WP-J. |
 | DECIDE (mini-cycle from BUILD) | ✅ Complete 2026-04-22 | `../scenarios.md` §Client Tool Surface Commitment (5 scenarios), `../system-design.md` §Client Tool Surface Commitment Amendment #4, `../roadmap.md` ODP #1 closed + ODP #8 added, gate reflection at `gates/wpf-decide-gate.md`, audits at `audits/argument-audit-decide-005-wpf.md` (4 rounds: 5, 5b, 5c, 5d — all closed clean) + `audits/susceptibility-snapshot-wpf-decide.md` | WP-F scenario gate resolved — Option C confirmed, retry pattern is the mechanism for scenario (d) with a negative-path scenario covering silent quality degradation. Commitment to retry pattern is **conditional** — committed-to insofar as it delivers more capable agentic serving; revisitable if WP-F or post-WP-F reveals capability benefit is not borne out. Option D out of scope (requires ADR-001/002 amendment). Five scenarios are WP-F acceptance criteria. |
 | PLAY | ☐ Optional | -- | -- |
 | SYNTHESIZE | ☐ Optional | -- | -- |
@@ -280,9 +280,68 @@
 
 118. **Raw-output composition + calibration interaction is unexercised.** `CompositionRequest.raw_output=True` (FF #108) writes a composed ensemble whose invocations bypass the Harness. Calibration still fires — the gate sees the raw result before summarization — so raw-output composed ensembles would be calibrated on their unsummarized payload. Not a problem today (no scenario exercises this path), but worth a scenario when composition-with-raw-output becomes operationally relevant.
 
-119. **WP-I handoff.** Calibration Gate's surface is stable; WP-I adds persistence without changing Tool Dispatch or any public call site. The `Calibration Gate → Plexus Adapter` edge noted in system-design §Dependency Graph lands when WP-I writes the Adapter. Scenario §Calibration persists across sessions when Plexus is active becomes the WP-I acceptance test for that edge. Implementation pattern: a `PlexusBackedStore` Protocol behind the gate's internal `_sessions` dict, injected via DI at session construction. No Tool Dispatch or Runtime changes required.
+119. **WP-I handoff.** Calibration Gate's surface is stable; WP-I adds persistence without changing Tool Dispatch or any public call site. The `Calibration Gate → Plexus Adapter` edge noted in system-design §Dependency Graph lands when WP-I writes the Adapter. Scenario §Calibration persists across sessions when Plexus is active becomes the WP-I acceptance test for that edge. Implementation pattern: a `PlexusBackedStore` Protocol behind the gate's internal `_sessions` dict, injected via DI at session construction. No Tool Dispatch or Runtime changes required. *(2026-04-24 update: this FF is partially superseded — WP-I split into a skeleton WP (now closed, no-op fallbacks only) and WP-K (deferred Plexus-active paths). The cross-session calibration persistence concern moves entirely to WP-K. See FF #120-#127 below.)*
+
+### From BUILD (WP-I close, 2026-04-24)
+
+120. **WP-I scoped to skeleton + no-op only; WP-K split off as deferred.** User-driven roadmap restructure (2026-04-24): WP-I lands the Plexus Adapter module and Tool Dispatch wiring with Plexus-absent fallbacks only. WP-K, the Plexus-active integration (real plexus MCP client + cross-session calibration persistence), is deferred until `/rdd-play` surfaces concrete needs, production deployments accumulate enough composition activity that cross-session trust matters, or a dedicated cycle takes it on. Reasoning: the RDD principle "stop at uncertainty" — committing to integration shape ahead of contact with reality (no production use signal yet, OQ #7 enrichment pipeline maturity unresolved) is premature. Splitting now means WP-I gets the FC-7 surface in place and WP-K is body-swap territory when ready.
+
+121. **`PlexusAccess` Protocol is the seam (`orchestrator_tool_dispatch.py`).** Tool Dispatch holds a `PlexusAccess`-typed reference (narrow surface — `query` and `record` async methods over `dict[str, Any]`). The concrete `PlexusAdapter` satisfies it structurally. WP-K replaces the Adapter's method bodies and any consumer that holds a `PlexusAccess` reference (Tool Dispatch today, future cross-session calibration store) keeps working unchanged.
+
+122. **`record_outcome` payload schema (Open Decision Point #6) resolved at WP-I close.** Recommended shape `{ensemble_name: str, quality_signal: "positive"|"negative"|"absent", context: str}` — composes with WP-H's `QualitySignal` vocabulary. Tool Dispatch forwards arguments verbatim to the Adapter — no schema validation, no rejection of richer payloads. The orchestrator LLM gets the recommendation through the system prompt; WP-K extends if Plexus enrichment requires more fields. Important: the schema is conventional, not enforced — forcing schema validation in Tool Dispatch would couple it to Plexus enrichment shape that WP-K decides.
+
+123. **No defensive try/except around Adapter calls in WP-I.** The no-op fallback never raises — adding exception handling now would commit to either degrade-to-empty or surface-as-ToolCallError semantics, which is contextual to plexus MCP client behavior. WP-K decides. The dispatch code is bare delegation:
+```python
+result = await self._plexus_adapter.query(arguments)
+return ToolCallSuccess(id=id_, name="query_knowledge", content=result)
+```
+
+124. **`not_yet_wired` retained as defensive fallback for absent-adapter case.** After WP-I, no production code path produces it (`v1_chat_completions.get_orchestrator_tool_dispatch` always constructs the Adapter). The kind remains in `ToolErrorKind` so tests that omit the Adapter parameter (and any future misconfigured deployment) get a typed error rather than crashing. Existing `TestNotYetWiredTools` renamed to `TestPlexusToolsRequireAdapter` to reflect the new semantic.
+
+125. **Adapter constructor is parameterless in WP-I.** Class-shaped (rather than module-level functions) so WP-K can inject the plexus MCP client through `__init__` without touching call sites. The Serving Layer's `PlexusAdapter()` constructor call becomes `PlexusAdapter(plexus_client=...)` in WP-K with no other code changing. This matches how `EnsembleBackedChecker` and `ResultSummarizerHarness` accept their dependencies through `__init__`.
+
+126. **Boundary integration test (FC-7) lands.** `tests/integration/test_tool_dispatch_plexus_boundary.py::TestQueryKnowledgeAndRecordOutcomeRoundTrip` exercises real Tool Dispatch + real `PlexusAdapter` (no-op) for both query and record paths, plus the §ReAct loop remains responsive while enrichment lags scenario (vacuous in WP-I — no enrichment runs — but the no-op branch passes by construction). When WP-K lands, this test class extends with Plexus-active variants; the no-op coverage stays.
+
+127. **WP-K scope crystallized at WP-I close.** When un-deferred, WP-K does:
+    - Replace `PlexusAdapter.query` body with real plexus MCP search
+    - Replace `PlexusAdapter.record` body with async write through plexus MCP
+    - Decide exception semantics (degrade-to-empty vs `ToolCallError` — informed by plexus MCP client behavior)
+    - Extract `CalibrationStore` Protocol behind `CalibrationGate._sessions` dict; default `InProcessCalibrationStore`; new `PlexusBackedCalibrationStore` for Plexus-active deployments
+    - Land §Calibration persists across sessions when Plexus is active (the scenario WP-H deferred)
+    - Land §query_knowledge returns enriched content when Plexus is populated
+    - Land §Session Lifecycle: Four-layer stack operates with Plexus present
+    - Land §Cost and Quality Experimentation: Same task with/without Plexus across Model Profiles (testable OQ #1)
+    Test count expectation: ~10-15 new unit tests + 3-5 boundary integration tests + 1 acceptance test for the cost/quality experimentation scenario. WP-J (Bootstrapping) follows once WP-K is in.
 
 ## Context for Resumption
+
+**Post-WP-I resumption pointer (2026-04-24, Plexus Adapter skeleton complete).** WP-I is complete on branch `agentic-serving`. Three logical commits (roadmap restructure, G1 module + tests, G2 wiring + integration + close docs).
+
+**State at WP-I close: 2347 tests passing, 91.56% coverage, lint clean.** Tier 1 stewardship clean. New `PlexusAdapter` is layering-clean (L1, no L2/L3 imports). New `PlexusAccess` Protocol on Tool Dispatch's surface — narrow, well-named. FC-7 (Plexus no-op coverage) satisfied by the boundary integration test.
+
+**Pre-WP-K options.** WP-K is deferred and does not need to be the next thing. Candidate next moves:
+
+1. **`/rdd-play`** — TS-2 reached + Plexus skeleton wired. Real system to inhabit. Direct value: surface what Plexus actually needs to do (informs WP-K shape), validate WP-H's calibration checker quality in production prose (FF #115), validate `[composition: {json}]` narration in OpenCode/Roo Code/Cline (FF #60, #83), validate retry-convention adherence in production summarizers (FF #105/#106).
+
+2. **AS-6 authorship DECIDE mini-cycle (FF #100)** — bounded standalone decision: should the orchestrator be allowed to author scripts and model profiles? Currently AS-6 forbids it on safety-conservative grounds (RCE vector, deliberate operator curation, calibration is plausibility not code-safety). User flagged this as eventually desirable; post-TS-2 is the natural revisit point.
+
+3. **`/rdd-conform`** — close the v0.7.3 → v0.8.0 plugin gap. Lightweight, surfaces drift in the artifact corpus before any new WP starts.
+
+4. **Tactical follow-ups bundleable into a small WP** — per-request Budget override application (FF #41), per-session Autonomy Level overrides (FF #88), `/v1/health` or status endpoint (FF #47), operator-tooling visibility surface (SSE comments, dedicated events endpoint), async/background calibration optimization. Each is small; together they're a tidy-and-tighten ship.
+
+5. **WP-K (Plexus Integration)** if a real Plexus client is available and integration shape is clear.
+
+6. **WP-J (Bootstrapping)** — blocked on WP-K (depends on Plexus-active paths).
+
+**Suggested fresh-session handoff prompt for `/rdd-play`:**
+
+> Continue the agentic-serving scoped cycle. WP-I closed 2026-04-24; Plexus Adapter skeleton complete with no-op fallbacks. Run `/rdd-play` to inhabit stakeholders against the live system. Read `docs/agentic-serving/housekeeping/cycle-status.md` §Context for Resumption + the latest §From BUILD (WP-I close) FFs + `docs/agentic-serving/interaction-specs.md`. Stakeholders to inhabit include the operator (deploying llm-orc, configuring calibration checker, observing in-stream visibility narration) and the tool user (operating OpenCode/Roo Code/Cline against `/v1/chat/completions`, observing the orchestrator's compose + calibrate flow). Open questions to validate against situated encounter: in-stream visibility form (OQ #2 / FF #60, #83), retry-convention adherence (FF #105/#106), default checker quality (FF #115), and what Plexus would actually need to do to be worth the integration cost (informs WP-K shape).
+
+**Forward-carrying concerns from WP-I:**
+- WP-K shape decisions (degrade-to-empty vs `ToolCallError` on plexus failures; `CalibrationStore` Protocol shape; `record_outcome` schema extensions if any). All deferred until WP-K runs.
+- Production deployments will pay the no-op `query_knowledge` round trip without benefit. Negligible cost (synchronous return), but worth noting if profiling becomes relevant.
+
+---
 
 **Post-WP-H resumption pointer (2026-04-24, TS-2 reached).** WP-H is complete on branch `agentic-serving` across four commits:
 

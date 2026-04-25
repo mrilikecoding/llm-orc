@@ -56,6 +56,7 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     TOOL_NAMES,
     OrchestratorToolDispatch,
 )
+from llm_orc.agentic.plexus_adapter import PlexusAdapter
 from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
 from llm_orc.agentic.session_registry import SessionRegistry
 from llm_orc.agentic.session_start import ChatMessage, SessionContext, SessionStartCache
@@ -126,6 +127,7 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
             default_n=config.calibration.default_n,
             checker=calibration_checker,
         )
+        plexus_adapter = PlexusAdapter()
         _SHARED_TOOL_DISPATCH = OrchestratorToolDispatch(
             operations=service,
             harness=harness,
@@ -133,6 +135,7 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
             composition_validator=composition_validator,
             local_ensemble_writer=local_ensemble_writer,
             calibration_gate=calibration_gate,
+            plexus_adapter=plexus_adapter,
         )
     return _SHARED_TOOL_DISPATCH
 
