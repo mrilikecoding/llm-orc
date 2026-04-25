@@ -48,7 +48,7 @@
 
 ### Task: Observe orchestrator behavior during sessions
 
-**Interaction mechanics:** The operator watches sessions through whatever visibility surface is configured — structured logs, an events stream, a dashboard, or inline surfacing in the tool user's output. The form of this surface is Open Question #2 and unresolved at this phase; what the interaction commits to is that composition events, routing decisions, calibration checks, and budget consumption are *observable in some form* during a session, not opaque.
+**Interaction mechanics:** The operator watches sessions through visibility surfaced inline in the tool user's response stream — composition events, calibration outcomes, and other orchestrator-internal signals render as `[kind: {json}]` narration on `delta.content` so vanilla OpenAI-compat clients (OpenCode, Roo Code, Cline) display them inline in the assistant message (OQ #2 resolved during WP-E build, 2026-04-22). What the interaction commits to is that these events are *observable in the conversation*, not opaque. Operator-only tooling surfaces (SSE comments, dedicated events endpoint) can layer on as a second audience-specific surface without changing the inline narration shape.
 
 ### Task: Review local-tier compositions and decide on promotion
 
