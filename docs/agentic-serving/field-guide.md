@@ -281,9 +281,9 @@ responses across Runtime and `ModelInterface.generate_with_tools`).
 
 ## Module: Orchestrator Tool Dispatch
 
-**Implementation state:** Complete for WP-C + WP-D + WP-E + WP-G wiring. `invoke_ensemble` interposes the Result Summarizer Harness on every return (Amendment #3). `list_ensembles` delegates to `OrchestraService.read_ensembles`. `compose_ensemble` delegates to `CompositionValidator` then writes via `LocalEnsembleWriter` on accept (WP-G). `query_knowledge` / `record_outcome` return typed `not_yet_wired` errors pending WP-I.
+**Implementation state:** Complete for WP-C + WP-D + WP-E + WP-G + WP-H + WP-I wiring. `invoke_ensemble` interposes the Result Summarizer Harness on every return (Amendment #3) and runs the Calibration Gate's Quality Signal check on in-calibration ensembles (WP-H). `list_ensembles` delegates to `OrchestraService.read_ensembles`. `compose_ensemble` delegates to `CompositionValidator`, writes via `LocalEnsembleWriter` on accept, and registers the new ensemble with the Calibration Gate (WP-G + WP-H). `query_knowledge` / `record_outcome` delegate through the `PlexusAccess` Protocol surface — production wiring constructs a `PlexusAdapter` whose method bodies are no-op fallbacks (WP-I); WP-K replaces the bodies with real plexus MCP calls.
 **Code location:** `src/llm_orc/agentic/orchestrator_tool_dispatch.py`.
-**Stability:** Settled on the closed-set structure and the Harness/Autonomy/Composition interpositions. Two handler bodies change when WP-I wires them.
+**Stability:** Settled on the closed-set structure and the Harness / Autonomy / Composition / Calibration / Plexus interpositions. WP-K replaces `PlexusAdapter` method bodies, not Tool Dispatch wiring.
 
 ### Domain concepts in code
 
