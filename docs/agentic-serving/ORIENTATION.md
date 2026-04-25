@@ -45,7 +45,7 @@ Drawn from `domain-model.md` (AS-1 through AS-8) and project-level Invariants 1-
 
 ## Current state
 
-**RESEARCH, DISCOVER, MODEL, DECIDE, and ARCHITECT phases complete. BUILD in progress — WP-A through WP-H done. TS-1 (stateless orchestrator serving OpenCode) reached at WP-F close; TS-2 (stateless baseline complete per ADR-002 Layer 1-3 and AS-8) reached at WP-H close (2026-04-24). Eight of ten work packages complete.**
+**RESEARCH, DISCOVER, MODEL, DECIDE, and ARCHITECT phases complete. BUILD in progress — WP-A through WP-I done. TS-1 (stateless orchestrator serving OpenCode) reached at WP-F close; TS-2 (stateless baseline complete per ADR-002 Layer 1-3 and AS-8) reached at WP-H close (2026-04-24). The Plexus Adapter skeleton landed at WP-I close (2026-04-24) with no-op fallbacks — FC-7 stateless coverage complete; the Plexus-active integration (WP-K) is deferred until /rdd-play surfaces concrete needs or production use accumulates enough composition activity that cross-session trust matters. Nine of ten original work packages complete (eleven counting WP-K).**
 
 The essay investigates six questions across two research cycles and concludes with a four-layer architecture. Product discovery surfaced seven value tensions and six assumption inversions. The domain model establishes 8 scoped invariants (AS-1 through AS-8), 17 concepts, 13 actions, and 7 open questions. DECIDE produced 11 accepted ADRs, 29 behavior scenarios, and stakeholder interaction specifications. ARCHITECT produced a 12-module system design across 4 dependency layers, a 13-criterion fitness-criteria set, an 18-edge boundary integration test plan, and a 10-WP roadmap with 3 classified transition states.
 
@@ -55,15 +55,17 @@ The essay investigates six questions across two research cycles and concludes wi
 
 **TS-2 reached.** Stateless baseline complete per ADR-002 Layer 1-3 and AS-8. An operator can deploy llm-orc with the Serving Layer, point OpenCode (or any OpenAI-compat agentic coding tool) at `/v1/chat/completions`, run an RDD phase through it, and the orchestrator can compose new ensembles from library primitives — with calibration gating the first N invocations of each composed ensemble through a quality-signal check. No Plexus, no cross-session trust persistence; those layer on top as TS-3.
 
-**Next WPs (toward TS-3):**
-- **WP-I: Plexus Adapter (tool-first)** — begins TS-3. Wires `query_knowledge` and `record_outcome` with graceful no-op fallbacks when Plexus is absent. Also layers a Plexus-backed Calibration store behind the Calibration Gate's existing public surface, delivering scenario §Calibration persists across sessions when Plexus is active. Open decision: `record_outcome` payload schema.
-- **WP-J: Bootstrapping Pipeline** — depends on WP-I. Operator-triggered batch ingestion of the library into Plexus as source material (AS-4). Completes TS-3.
+**WP-I (Plexus Adapter skeleton) closed.** The Adapter module is wired through Tool Dispatch with no-op `query` and `record` method bodies. `query_knowledge` returns `{"results": [], "context": ""}` and `record_outcome` returns `{"acknowledged": True}` — both flow through dispatch as `ToolCallSuccess` rather than `not_yet_wired` errors. FC-7 (Plexus-absent path coverage) complete. WP-K replaces the no-op bodies with real plexus MCP client calls; the public surface, Tool Dispatch wiring, and Adapter construction don't change.
 
-WP-I depends only on WP-C; WP-J depends on WP-I.
+**Next WPs (toward TS-3):**
+- **WP-K: Plexus Integration (Plexus-active paths)** — *deferred*. Replaces `PlexusAdapter` no-op bodies with real plexus MCP calls; lands the cross-session calibration persistence edge. Un-defers when `/rdd-play` surfaces a concrete need, when production deployments accumulate enough composition activity that cross-session trust matters, or when the Plexus enrichment pipeline matures sufficiently (cycle-status OQ #7).
+- **WP-J: Bootstrapping Pipeline** — depends on WP-K. Operator-triggered batch ingestion of the library into Plexus as source material (AS-4). Closes TS-3.
+
+WP-K depends on WP-I (now complete); WP-J depends on WP-K.
 
 **Open questions carried forward:**
 - **AS-6 authorship** — the orchestrator currently cannot author scripts or model profiles (safety-conservative). Flagged as eventually desirable; revisit as a standalone DECIDE mini-cycle post-TS-1 (see cycle-status FF #100).
-- **Summarizer-quality echo-back (WP-D FF #81) and silent quality failures in retry (WP-F FF #107).** Both remain in scope for the Calibration Gate — the WP-H default checker does plausibility judgment, not echo-back-specific detection. Operators can swap `agentic_serving.orchestrator.calibration.checker_ensemble` to a stricter checker; a dedicated richer checker (or additional detection) is a WP-I-or-later question if empirical observation warrants.
-- **`record_outcome` payload schema** (WP-I).
+- **Summarizer-quality echo-back (WP-D FF #81) and silent quality failures in retry (WP-F FF #107).** Both remain in scope for the Calibration Gate — the WP-H default checker does plausibility judgment, not echo-back-specific detection. Operators can swap `agentic_serving.orchestrator.calibration.checker_ensemble` to a stricter checker; a dedicated richer checker is a follow-up question if empirical observation warrants.
+- **WP-K integration shape.** What does Plexus actually need to do for the orchestrator to benefit? `/rdd-play` may surface answers; otherwise WP-K shape is decided when production use accumulates concrete signal.
 
 See `roadmap.md` §Open Decision Points for the full list.

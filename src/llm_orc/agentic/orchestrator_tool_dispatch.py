@@ -177,6 +177,20 @@ class AutonomyGate(Protocol):
     ) -> AutonomyDecision: ...
 
 
+class PlexusAccess(Protocol):
+    """Minimum Plexus Adapter surface Tool Dispatch consults.
+
+    :class:`~llm_orc.agentic.plexus_adapter.PlexusAdapter` satisfies
+    this structurally. ``query`` services ``query_knowledge`` and
+    ``record`` services ``record_outcome``. WP-I supplies the no-op
+    Adapter; WP-K replaces the bodies with real plexus MCP calls.
+    """
+
+    async def query(self, arguments: dict[str, Any]) -> dict[str, Any]: ...
+
+    async def record(self, arguments: dict[str, Any]) -> dict[str, Any]: ...
+
+
 class OrchestratorToolDispatch:
     """Closed five-tool dispatch surface (ADR-003, FC-5)."""
 
@@ -189,6 +203,7 @@ class OrchestratorToolDispatch:
         composition_validator: CompositionGate,
         local_ensemble_writer: LocalEnsembleWriter,
         calibration_gate: CalibrationGate | None = None,
+        plexus_adapter: PlexusAccess | None = None,
     ) -> None:
         self._operations = operations
         self._harness = harness
@@ -196,6 +211,7 @@ class OrchestratorToolDispatch:
         self._composition_validator = composition_validator
         self._local_ensemble_writer = local_ensemble_writer
         self._calibration_gate = calibration_gate
+        self._plexus_adapter = plexus_adapter
 
     async def dispatch(
         self, call: InternalToolCall, *, session_id: str = ""
@@ -436,26 +452,46 @@ class OrchestratorToolDispatch:
     async def query_knowledge(
         self, id_: str, arguments: dict[str, Any]
     ) -> ToolCallResult:
-        """Query the knowledge graph (WP-I Plexus Adapter)."""
-        del arguments
-        return ToolCallError(
-            id=id_,
-            name="query_knowledge",
-            kind="not_yet_wired",
-            reason="query_knowledge lands in WP-I (Plexus Adapter)",
-        )
+        """Query the knowledge graph via the Plexus Adapter (WP-I).
+
+        Delegates to the configured Adapter when present. Production
+        always wires one; the absence path is a defensive fallback for
+        tests that omit it. The Adapter's no-op fallback returns a
+        well-formed empty result when Plexus is absent (AS-8 / FC-7);
+        WP-K replaces the body with real plexus MCP query semantics
+        without changing this call site.
+        """
+        if self._plexus_adapter is None:
+            return ToolCallError(
+                id=id_,
+                name="query_knowledge",
+                kind="not_yet_wired",
+                reason="query_knowledge requires a Plexus Adapter",
+            )
+        result = await self._plexus_adapter.query(arguments)
+        return ToolCallSuccess(id=id_, name="query_knowledge", content=result)
 
     async def record_outcome(
         self, id_: str, arguments: dict[str, Any]
     ) -> ToolCallResult:
-        """Record a routing decision or outcome (WP-I Plexus Adapter)."""
-        del arguments
-        return ToolCallError(
-            id=id_,
-            name="record_outcome",
-            kind="not_yet_wired",
-            reason="record_outcome lands in WP-I (Plexus Adapter)",
-        )
+        """Record a routing decision or outcome via the Plexus Adapter (WP-I).
+
+        Delegates to the configured Adapter when present. The Adapter's
+        no-op fallback returns acknowledgement immediately, satisfying
+        ADR-009's "acknowledgement promptly" contract for the
+        Plexus-absent case. WP-K's real implementation writes
+        asynchronously and still returns an immediate ack (eventual
+        consistency at the enrichment layer).
+        """
+        if self._plexus_adapter is None:
+            return ToolCallError(
+                id=id_,
+                name="record_outcome",
+                kind="not_yet_wired",
+                reason="record_outcome requires a Plexus Adapter",
+            )
+        result = await self._plexus_adapter.record(arguments)
+        return ToolCallSuccess(id=id_, name="record_outcome", content=result)
 
     async def _calibration_check_safe(
         self, *, session_id: str, ensemble_name: str, raw_result: dict[str, Any]
