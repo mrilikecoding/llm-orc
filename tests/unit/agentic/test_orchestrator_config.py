@@ -243,6 +243,55 @@ class TestOrchestratorConfigResolver:
         assert "client-declared" in prompt or "client tool" in prompt.lower()
         assert "needs_client_tool" in prompt
 
+    def test_default_orchestrator_system_prompt_biases_toward_internal_tools(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The default prompt biases tool selection toward internal tools.
+
+        Empirical finding (research log 2026-04-28, CAP-1 → CAP-3): with a
+        neutral default prompt, qwen3:8b chose a client-declared tool over
+        list_ensembles when the user asked about ensembles available in the
+        instance. With an explicit bias directive in the system prompt, the
+        same model drives the cascade through the internal surface
+        correctly. This test pins the bias directive so an operator
+        override (or future revision) that drops it is a visible
+        regression rather than a silent re-emergence of CAP-1's failure
+        mode.
+        """
+        cm = _make_config_manager(tmp_path, monkeypatch)
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        prompt = config.orchestrator_system_prompt
+        lower = prompt.lower()
+
+        # Bias directive: list_ensembles should be the first call for
+        # capability queries. Empirical fix from CAP-3.
+        list_idx = lower.find("list_ensembles")
+        assert list_idx >= 0
+        # "first" should appear in the vicinity (~200 chars) of the
+        # list_ensembles description so the bias is structurally co-located
+        # with the tool definition rather than buried elsewhere.
+        surrounding = lower[max(0, list_idx - 200) : list_idx + 200]
+        assert "first" in surrounding, (
+            "Default prompt must include a 'first' directive near "
+            "list_ensembles to bias toward internal tools for capability "
+            "queries (CAP-3 fix). Without it, smaller models (~qwen3:8b "
+            "tier on consumer hardware) drop into CAP-1's silent-giveup "
+            "or wrong-surface failure mode."
+        )
+
+        # Disambiguation directive: warn against client tools that sound
+        # similar to capability queries. Empirical fix from CAP-1, where
+        # qwen3:8b chose 'skill' over list_ensembles for a question about
+        # available ensembles.
+        assert "do not" in lower or "never" in lower, (
+            "Default prompt must carry a negative directive against "
+            "confusing client-declared tools for internal capability "
+            "queries (CAP-1 disambiguation)."
+        )
+
     def test_operator_override_replaces_default_system_prompt(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
