@@ -7,6 +7,7 @@ from llm_orc.models.base import (
     HTTPConnectionPool,
     ModelInterface,
     ToolCall,
+    ToolCallingNotSupportedError,
     ToolCallingResponse,
     ToolCallUsage,
 )
@@ -128,6 +129,22 @@ class OpenAICompatibleModel(ModelInterface):
         )
 
         if response.status_code != 200:
+            # Per-model tool-calling unsupported: distinguish from generic
+            # transport failure so downstream code can treat this as a
+            # configuration error rather than a transient/retryable fault.
+            # Empirical signal (research log 2026-04-28, S0-CAP-8): Ollama
+            # returns 400 with "does not support tools" when the configured
+            # model has no tool-calling capability metadata; the
+            # ``supports_tool_calling`` flag on this class is class-level
+            # and does not catch that per-model variation.
+            if (
+                response.status_code == 400
+                and "does not support tools" in response.text
+            ):
+                raise ToolCallingNotSupportedError(
+                    f"Model '{self.name}' does not support tool calling on "
+                    f"this provider. Provider returned: {response.text}"
+                )
             raise RuntimeError(
                 f"OpenAI-compatible tool-calling API error "
                 f"{response.status_code}: {response.text}"

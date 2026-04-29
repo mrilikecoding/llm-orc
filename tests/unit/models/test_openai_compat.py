@@ -491,3 +491,43 @@ class TestOpenAICompatibleModelToolCalling:
             ),
         ):
             await model.generate_with_tools(messages=[], tools=[])
+
+    @pytest.mark.asyncio
+    async def test_generate_with_tools_typed_error_when_model_lacks_tool_support(
+        self, model: OpenAICompatibleModel
+    ) -> None:
+        """Ollama returns 400 with a clear "does not support tools" message
+        when the configured model has no tool-calling capability metadata.
+
+        Empirical finding (research log 2026-04-28, S0-CAP-8): with
+        ``deepseek-r1:8b`` configured as the orchestrator profile,
+        Ollama returned exactly this error on the first turn. The
+        existing 500-style ``RuntimeError`` propagated as a generic
+        500 to the SSE stream, leading OpenCode to retry silently.
+        Distinguishing this configuration error from a transport
+        failure with a typed ``ToolCallingNotSupportedError`` lets the
+        operator surface (and downstream code) treat it as a setup
+        error rather than retry against an impossible target.
+        """
+        from llm_orc.models.base import ToolCallingNotSupportedError
+
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.text = (
+            '{"error":{"message":"registry.ollama.ai/library/deepseek-r1:8b'
+            ' does not support tools","type":"invalid_request_error"}}'
+        )
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+
+        with (
+            patch(
+                "llm_orc.models.openai_compat.HTTPConnectionPool.get_httpx_client",
+                return_value=mock_client,
+            ),
+            pytest.raises(
+                ToolCallingNotSupportedError,
+                match="does not support tools",
+            ),
+        ):
+            await model.generate_with_tools(messages=[], tools=[])
