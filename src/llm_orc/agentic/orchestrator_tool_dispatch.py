@@ -40,6 +40,7 @@ closed-set property holds from WP-C onward.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
@@ -60,6 +61,17 @@ from llm_orc.agentic.result_summarizer_harness import (
     SummarizationFailure,
     SummarizationSuccess,
 )
+
+_logger = logging.getLogger(__name__)
+"""Operator-side log surface for tool-dispatch outcomes.
+
+Emits an INFO-level result line on every dispatch so the operator can
+diagnose orchestrator behavior. Error paths include the full ``reason``
+field so misconfiguration (e.g., a summarizer profile pointing at an
+Ollama model that isn't pulled — research log 2026-04-28, DIAG-1)
+surfaces actionably without spike-only instrumentation. Success paths
+log the kind only.
+"""
 
 TOOL_NAMES: frozenset[str] = frozenset(
     {
@@ -237,7 +249,7 @@ class OrchestratorToolDispatch:
         handed.
         """
         if call.name not in TOOL_NAMES:
-            return ToolCallError(
+            error = ToolCallError(
                 id=call.id,
                 name=call.name,
                 kind="unknown_tool",
@@ -246,20 +258,26 @@ class OrchestratorToolDispatch:
                     "committed tool set"
                 ),
             )
+            _log_dispatch_result(call.name, error)
+            return error
 
         decision = self._autonomy_policy.decide(
             tool_name=call.name, arguments=call.arguments
         )
         if isinstance(decision, Deny):
-            return ToolCallError(
+            error = ToolCallError(
                 id=call.id,
                 name=call.name,
                 kind="denied_by_autonomy",
                 reason=decision.reason,
             )
+            _log_dispatch_result(call.name, error)
+            return error
 
         events = decision.events if isinstance(decision, Allow) else ()
-        return _with_events(await self._route(call, session_id), events)
+        result = _with_events(await self._route(call, session_id), events)
+        _log_dispatch_result(call.name, result)
+        return result
 
     async def _route(self, call: InternalToolCall, session_id: str) -> ToolCallResult:
         """Dispatch a committed tool name to its method.
@@ -514,6 +532,26 @@ class OrchestratorToolDispatch:
             )
         except Exception:  # noqa: BLE001 — ADR-007 clause 2: never block invocation
             return None
+
+
+def _log_dispatch_result(tool_name: str, result: ToolCallResult) -> None:
+    """Emit an INFO-level result line for a tool dispatch.
+
+    Success path logs ``name`` and ``kind=success``. Error path includes
+    the full ``reason`` so misconfiguration surfaces actionably in the
+    operator log (research log 2026-04-28, DIAG-1: surfacing the actual
+    reason was the unblock for diagnosing summarization_failed root
+    cause).
+    """
+    if isinstance(result, ToolCallSuccess):
+        _logger.info("tool dispatch: result name=%s kind=success", tool_name)
+        return
+    _logger.info(
+        "tool dispatch: result name=%s kind=error:%s reason=%s",
+        tool_name,
+        result.kind,
+        result.reason,
+    )
 
 
 def _with_events(

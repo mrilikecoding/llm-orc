@@ -301,6 +301,104 @@ class TestDispatchRejectsUnknownTool:
         assert result.kind == "unknown_tool"
 
 
+class TestDispatchOperatorLog:
+    """Scenario: Operator log carries actionable diagnostic on tool errors.
+
+    Empirical finding (research log 2026-04-28, DIAG-1): when
+    summarization failed during the qwen3:14b S0 and qwen3:8b CAP-3
+    runs, the surfaced error kind was the generic
+    ``error:summarization_failed``. The actual failure reason — that
+    the configured summarizer model profile pointed at an Ollama model
+    that wasn't pulled — lived in ``ToolCallError.reason`` but was not
+    surfaced in the operator-side log. Diagnosis required adding the
+    reason to the log line. Production code now emits the reason on
+    error paths so misconfiguration surfaces actionably without spike
+    instrumentation.
+    """
+
+    @pytest.mark.asyncio
+    async def test_error_dispatch_logs_kind_and_reason(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """An error result must surface name, kind, and reason in the log."""
+        import logging
+
+        dispatch = _build_dispatch(
+            operations=_RaisingOperations(),
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+        )
+
+        with caplog.at_level(
+            logging.INFO, logger="llm_orc.agentic.orchestrator_tool_dispatch"
+        ):
+            await dispatch.dispatch(
+                InternalToolCall(
+                    id="call_xyz",
+                    name="hallucinated_tool",
+                    arguments={},
+                )
+            )
+
+        result_records = [
+            rec
+            for rec in caplog.records
+            if rec.name == "llm_orc.agentic.orchestrator_tool_dispatch"
+            and "result" in rec.message
+        ]
+        assert result_records, "dispatch must emit a result log line"
+        result_log = result_records[-1].message
+        assert "name=hallucinated_tool" in result_log
+        assert "unknown_tool" in result_log
+        assert "committed tool set" in result_log, (
+            "error log line must include the reason field so operators "
+            "can act on the failure (DIAG-1 fix)."
+        )
+
+    @pytest.mark.asyncio
+    async def test_success_dispatch_logs_kind_without_reason(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A success result logs the result line without an error reason."""
+        import logging
+
+        class _StubOperations:
+            async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
+                raise AssertionError("not exercised by this test")
+
+            async def read_ensembles(self) -> list[dict[str, Any]]:
+                return [{"name": "demo", "description": "test ensemble"}]
+
+        dispatch = _build_dispatch(
+            operations=_StubOperations(),
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+        )
+
+        with caplog.at_level(
+            logging.INFO, logger="llm_orc.agentic.orchestrator_tool_dispatch"
+        ):
+            result = await dispatch.dispatch(
+                InternalToolCall(
+                    id="call_ok",
+                    name="list_ensembles",
+                    arguments={},
+                )
+            )
+
+        assert isinstance(result, ToolCallSuccess)
+        result_records = [
+            rec
+            for rec in caplog.records
+            if rec.name == "llm_orc.agentic.orchestrator_tool_dispatch"
+            and "result" in rec.message
+        ]
+        assert result_records, "dispatch must emit a result log line on success"
+        result_log = result_records[-1].message
+        assert "name=list_ensembles" in result_log
+        assert "success" in result_log
+
+
 class TestClosedToolSet:
     """Scenario: Orchestrator tool surface is exactly the committed set (FC-5).
 
