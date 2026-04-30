@@ -337,9 +337,27 @@ def _start_server(
     matches the operator's mental model: ``web`` for "browser UI"
     and ``serve`` for "agentic endpoint behind an LLM client".
     """
+    import logging
+    import sys
+
     import uvicorn
 
     from llm_orc.web.server import create_app
+
+    # Surface llm_orc.* INFO-level logs (orchestrator runtime, tool
+    # dispatch results-with-reason) to the operator terminal. Without
+    # this, child loggers inherit uvicorn's WARNING root level and the
+    # production dispatch logger is dormant. propagate=False insulates
+    # the llm_orc surface from future uvicorn config changes.
+    _orc_handler = logging.StreamHandler(sys.stderr)
+    _orc_handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    )
+    _orc_logger = logging.getLogger("llm_orc")
+    _orc_logger.setLevel(logging.INFO)
+    if not any(isinstance(h, logging.StreamHandler) for h in _orc_logger.handlers):
+        _orc_logger.addHandler(_orc_handler)
+    _orc_logger.propagate = False
 
     url = f"http://{host}:{port}"
 
@@ -365,7 +383,7 @@ def _start_server(
         threading.Thread(target=open_browser_delayed, daemon=True).start()
 
     app = create_app()
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 @cli.command()
