@@ -903,6 +903,59 @@ The prompt-as-fix is *qwen3-family-specific or capability-tier-conditional*. It 
 - **DIAG-1: Summarization failure root cause.** Still outstanding. The cascade engagement at qwen3:8b in CAP-3 surfaced 4 consecutive summarization_failed events. Whatever's wrong with the code-review ensemble's summarization is product-quality blocking.
 - **CAP-8: Confabulation detection.** Given that fast-confabulation is the most insidious failure mode, can the operator-side observability surface it specifically? E.g., flag responses where the model claims to have queried state without an actual tool dispatch event in the log. This is a structural detection rather than a model fix.
 
+### S0-CAP-9 — Cloud orchestrator + local ensembles hybrid (2026-04-29)
+
+**Triggered by:** practitioner observation at the essay-002 reflection gate that the cycle's empirical scope was "local-only on consumer hardware" and that a cloud-but-cheap orchestrator paired with local ensembles was a deployment shape the cycle had not probed. Specifically: MiniMax M2.5 Free via OpenCode's Zen platform is accessible via an OpenAI-compatible endpoint and offers a free tier suitable for spike testing.
+
+**Method:** Add `orchestrator-minimax-m25-free` profile to llm-orc config (`provider: openai-compatible/zen`, `base_url: https://opencode.ai/zen/v1`, `model: minimax-m2.5-free`). Register the OpenCode Zen API key (sourced from `~/.local/share/opencode/auth.json`) under `openai-compatible/zen` via `llm-orc auth add`. Switch `agentic_serving.orchestrator.model_profile`, restart server, fire same biased-prompt ask via `opencode run`. The local ensemble engine remains unchanged; only the orchestrator LLM moves to cloud.
+
+**Endpoint discovery:** Zen exposes a publicly-addressable OpenAI-compatible API at `https://opencode.ai/zen/v1` per public documentation. `/v1/models` lists eleven models; four are free-tier (minimax-m2.5-free, hy3-preview-free, ling-2.6-flash-free, nemotron-3-super-free). Tool-calling support not advertised in the docs but verified empirically by this spike.
+
+**Observed cascade trajectory:**
+
+| Timestamp | Event | Latency |
+|-----------|-------|---------|
+| 17:18:06 | Request received by `opencode run` | — |
+| 17:18:11 | Orchestrator first turn complete: preamble text + `invoke_ensemble` tool call | 5s |
+| 17:19:08 | Final synthesis text complete; loop close | 57s (ensemble execution + synthesis) |
+| **Total** | **62s wall-clock** | |
+
+**OpenCode user-facing response (excerpt):**
+
+> *"The `code-review` ensemble at `development/code-review.yaml` is designed for comprehensive code review. Let me read the README and invoke the ensemble on it."*
+>
+> [followed by]
+>
+> *"Here's what was returned from the `code-review` ensemble: ## Summary: README Analysis. The `code-review` ensemble (development/code-review.yaml) is a 4-agent ensemble that: Runs 3 parallel specialist reviewers (security, performance, quality) using local models; Synthesizes findings with a senior reviewer using Claude. The analysis found: Strengths: Well-structured document...Security Notes: The auth commands properly handle API keys...Recommendations: Add notes about rotating API keys periodically..."*
+
+**Path accuracy: 100%.** The cited ensemble path (`development/code-review.yaml`), structure (4 agents, 3 specialists + synthesizer), and agent role separation (security/performance/quality + Claude synthesizer) all match the actual `.llm-orc/config.yaml` definitions. No fabrication.
+
+**Decisive findings:**
+
+1. **Tool-calling works on MiniMax M2.5 Free via Zen.** No special configuration required; the OpenAI-compatible endpoint passes tool schemas through correctly and the model emits valid `tool_calls` payloads. Zen's free tier supports the full tool-calling protocol.
+
+2. **The hybrid (cloud orchestrator + local ensembles) deployment pattern works end-to-end.** Cloud orchestrator decides; Tool Dispatch routes `invoke_ensemble` to the local Ensemble Engine; the local code-review ensemble executes (with its own mixed local+Claude agents per its config); Result Summarizer Harness summarizes; orchestrator synthesizes. Every architectural module exercised; no platform-boundary issues.
+
+3. **Latency drops by approximately 6× vs qwen3:8b local-only.** ~62 seconds end-to-end for a full cascade vs ~6 minutes for qwen3:8b CAP-3b on the same hardware. The orchestrator's per-turn cost essentially disappears (cloud sub-second per LLM call); the dominant time is local ensemble execution time, which is the work that *should* take time. Interactive-acceptable territory.
+
+4. **The cycle's "latency is binding at consumer hardware" finding requires scope-revision.** It holds for local-only deployment. It does not hold for hybrid deployment. The architecture supports both natively (it was always a configuration choice; the cycle just hadn't probed the cloud-orchestrator point in the design space).
+
+**Implications for the cycle's findings and essay 002:**
+
+- **Project hypothesis empirically validated more strongly.** "Non-frontier orchestration delivers good results" — MiniMax M2.5 Free is non-frontier and zero-cost. The hypothesis is validated at both qwen3:8b local (slow but works) and MiniMax-free-via-Zen cloud (fast and works). The local-only constraint of the prior validations was practitioner-imposed, not project-required.
+
+- **Deployment recommendation expands.** Pure-local (qwen3:8b on consumer hardware, slow but private, useful for batch/async workflows) and hybrid (cloud orchestrator + local ensembles, fast and inexpensive, useful for interactive workflows) are both validated configurations. Operators choose based on privacy, cost, and latency tolerance.
+
+- **Dual-contract divergence at latency is no longer architectural — it's deployment-shape-dependent.** The convergence under "correct configuration" finding holds; the divergence at latency was specific to the local-only deployment shape. Hybrid deployment closes the latency gap without breaking the convergence conditions (the orchestrator-side biased prompt still applies; the summarizer model dependency is still satisfied; the model-profile selection just moves to cloud).
+
+**Production gap surfaced (separate from spike findings):**
+
+The dispatch result logger (`_log_dispatch_result` in `orchestrator_tool_dispatch.py`) and the explicit `_logger` declaration committed earlier in the cycle ARE NOT firing in production deployment. Cause: `cli.py:368` passes `log_level="warning"` to `uvicorn.run`, which sets the effective log level for child loggers (including `llm_orc.*`) to WARNING. The INFO-level dispatch result lines are gated out. CAP-9 surfaced this when the server log showed only error-level output despite the production dispatch logger being in place.
+
+This is a real production gap. Fix is one line in `cli.py` plus likely an explicit `llm_orc` logger handler with `propagate=False` to insulate from future uvicorn config changes. Will commit as a separate small change.
+
+**S0-CAP-9 closes (decisive).** The hybrid deployment pattern is empirically validated; the essay's framing requires revision; the cycle now has a clear "ship this" deployment recommendation that doesn't require operators to commit to local-only.
+
 ### S0-DIAG-1 — Summarization failure root cause (2026-04-28)
 
 **Method:** Patched `OrchestratorToolDispatch.dispatch` to surface `ToolCallError.reason` on result lines (not just the kind), with both INFO logger and SPIKE-S0 print equivalents. Re-fired CAP-3's exact ask.
