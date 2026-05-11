@@ -17,19 +17,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ---
 
-### WP-B4: FC-2 automated import layering check + FC-3 automated cycle detection — *T1 prerequisite*
-
-**Objective:** Land the static fitness checks the conformance scan flagged as missing prerequisites. Both checks recognize the ADR-016 calibration-channel exception via an annotated allowed-edge in the layer map.
-
-**Changes:**
-- New `tests/unit/agentic/test_fc2_layering.py` — AST-based per-module import walk; layer-map registry; assertion that every import edge respects "edges point higher → same-or-lower" with the calibration-channel exception annotated. Pattern follows existing `test_fc4_runtime_import_surface.py`.
-- New `tests/unit/agentic/test_fc3_no_cycles.py` — directed graph construction over agentic-module imports + annotated logical edges; cycle detection via DFS or topological sort; assertion of zero cycles.
-
-**Scenarios covered:** none directly — these enforce architectural fitness criteria. They constrain all subsequent BUILD work.
-
-**Dependencies:** Open choice with WP-A4 — mutually independent.
-
-**Participating modules:** test files only.
+### WP-B4: FC-2 automated import layering check + FC-3 automated cycle detection — *T1 prerequisite* — ✅ **Closed 2026-05-11** — see Completed Work Log
 
 ---
 
@@ -332,6 +320,7 @@ The Calibration Signal Channel is active; HTC trajectory features extracted at L
 | WP | Title | Closed | Commits | Status |
 |----|-------|--------|---------|--------|
 | WP-A4 | Shared `LlmOrcStructuralError` base class | 2026-05-11 | `cc0d94f`, `7c2f64e` | Complete |
+| WP-B4 | FC-2 layering + FC-3 cycle-detection automated checks | 2026-05-11 | `1701a22` | Complete |
 
 #### WP-A4 detail
 
@@ -345,6 +334,24 @@ The Calibration Signal Channel is active; HTC trajectory features extracted at L
 **Outcome:** FC-17 coverage at 1 of 8 typed-error surfaces; full test suite 2363 passing; mypy strict + ruff + complexipy + bandit + vulture all clean. Tier 1 stewardship check clean — no responsibility, dependency, cohesion, size, or test-quality flags. No undecided territory surfaced.
 
 **Participating modules:** `models/structural_errors` (new), `models/base.py` (existing — `ToolCallingNotSupportedError` re-parented).
+
+#### WP-B4 detail
+
+**Objective:** Land the static fitness checks the conformance scan flagged as missing prerequisites. Both checks recognize the ADR-016 calibration-channel exception via an annotated allowed-edge in the layer map.
+
+**Commits (in order):**
+
+- `1701a22 test: add FC-2 layering and FC-3 cycle-detection checks (WP-B4)` — AST-based static scan with layer-map registry covering all 12 existing agentic modules plus the Ensemble Engine; ADR-016 read-only L0→L1 signal-channel exception pre-declared in `_ALLOWED_UPWARD_EDGES`; not-yet-landed Cycle 4 modules (`conversation_compaction`, `tier_router`, `calibration_signal_channel`) pre-declared so the test is ready when subsequent WPs ship; fail-closed coverage test catches new agentic modules without an explicit layer assignment; FC-3 uses iterative tri-color DFS cycle detection with a complementary non-empty-graph assertion preventing vacuous pass.
+
+**Design notes:**
+
+- Contract modules (`orchestrator_chunk`, `session_start`) are layer-neutral and exempt from FC-2; they participate in FC-3 as ordinary graph nodes.
+- Imports inside `if TYPE_CHECKING:` blocks are excluded from both scans — they are a Python idiom for breaking circular type-annotation imports and do not execute at module load. `session_registry`'s `TYPE_CHECKING` import of `session_start.ChatMessage` exercises this exclusion.
+- The dep-graph in system-design.agents.md notes 28 architectural edges; this test exercises the subset that manifest as actual Python imports (~11 edges). Logical "calls" edges (e.g., Budget Controller → Session Registry, where the dependency is parameter-injected rather than imported) are not in scope — adding them would be a deferred amendment.
+
+**Outcome:** Four new tests, all passing; full suite 2367 passing; mypy strict + ruff + complexipy + bandit + vulture all clean. Tier 1 stewardship check clean.
+
+**Participating modules:** test files only.
 
 ---
 
