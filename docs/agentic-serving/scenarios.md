@@ -1,6 +1,22 @@
 # Behavior Scenarios: Agentic Serving
 
-*Derived from domain model, ADRs 001-011, and conformance scan conformance-scan-decide-001. Every term used here comes from the scoped domain model or the project-level domain model.*
+*Derived from domain model, ADRs 001-017, deferred candidate #5, conformance scan conformance-scan-decide-001, and conformance-scan-cycle-4-decide. Every term used here comes from the scoped domain model or the project-level domain model.*
+
+---
+
+## Cycle Acceptance Criteria Table (Cycle 4 additions)
+
+The following acceptance criteria from Cycle 4's product-discovery and DECIDE-phase carry-forwards are emergent, aggregate, or integration-layer-specific. BUILD Step 5.5 (when BUILD is run on these ADRs in a future cycle) verifies each entry at its specified layer.
+
+| Criterion | Specified layer | Verification method | Layer-match check |
+|-----------|----------------|--------------------|-----|
+| Cross-layer calibration channel produces measurable bias-bound under multi-iteration session work | Integration (multi-ensemble multi-iteration runtime) | Composes scenarios "Calibration data flows L0 → L1 through read-only channel" + "Time-decay windowing limits trajectory features to recent window" + "Out-of-band audit detects parameter drift" + first-deployment evidence on North-Star benchmark | no — individual scenarios exercise mechanisms in isolation; integration test or first-deployment evidence verifies the composition |
+| Structured-handoff artifact set composes the three non-regression-plus-continuity properties | Integration (multi-session continuation with cluster-2 declared) | Composes scenarios "Cluster 2 session activates structured-handoff artifact set" + "Monotonic passes constraint enforced at schema level" + "Append-only progress log rejects non-append writes" + "init.sh hash mismatch produces typed error" | no — individual scenarios exercise components in isolation; integration test verifies the artifact set's composed properties across a session boundary |
+| Capability-floor runtime probe surfaces operator-readable mismatch when local-tier falls below baseline | Live install/startup against operator hardware | Composes scenario "Baseline-competence calibration ensemble reports operator-readable mismatch" with operator-deployed runtime against deployment-realistic local-model availability | no — synthetic test cannot exercise operator hardware; runtime probe is the verification layer; live install/startup is the only fully-conformant verification surface |
+| Calibration verdict trichotomy produces correct router action across all three verdict classes | Integration (calibration verdict + router composition) | Composes scenarios "Proceed verdict — dispatch as-is" + "Reflect verdict routes to escalated-tier" + "Abstain verdict produces escalation-bypass typed error" with verified data flow between ADR-014 and ADR-015 | no — individual scenarios exercise verdicts in isolation; integration test verifies router consumes verdicts correctly |
+| Conversation Compaction five-layer pipeline maintains orchestrator coherence across long sessions | Integration (multi-turn session with context approaching threshold) | Composes scenarios "Persist-large-tool-results triggers above 50K-character output" + "LLM summary runs only when Layers 0-3 cannot reduce context" + "Layer 4 circuit-breaker after three consecutive failures" with multi-turn session fixture | no — individual scenarios exercise pipeline layers in isolation; integration test or first-deployment evidence verifies the cheapest-first ordering's coherence property |
+
+The Layer-match "no" entries are not failures — they are the table working as designed, surfacing where BUILD Step 5.5 (when BUILD runs) closes integration verification gaps with dedicated tests or harness work, and where first-deployment evidence is the natural verification surface.
 
 ---
 
@@ -249,3 +265,271 @@
 **Given** both the future `compose_ensemble` tool and the existing load path
 **When** each validates the same proposed ensemble configuration containing a cross-ensemble cycle
 **Then** both return the same validation error identifying the cycle, their behavior cannot diverge because both call the extracted public routine, and the split-implementation risk flagged in ADR-006's Negative consequence is mechanically avoided
+
+---
+
+## Feature: Conversation Compaction Five-Layer Pipeline (ADR-012)
+
+### Scenario: Tool result over 50K characters persists to disk
+**Given** an Orchestrator Agent receives a tool-call result whose payload exceeds 50,000 characters
+**When** the Conversation Compaction module's Layer 0 runs at the next turn boundary
+**Then** the full payload persists to disk at an operator-configurable path, the orchestrator's context receives a 2,048-byte preview plus the persistent path, and the path is queryable through the existing query channels later
+
+### Scenario: Cache-edit removes old entries without invalidating prefix
+**Given** a Session whose conversation prefix has cache entries from prior turns
+**When** Layer 1 cache-edit runs
+**Then** old cache entries are deleted and the conversation prefix's cached state continues amortizing over subsequent turns — no cache invalidation propagates to the prefix
+
+### Scenario: Idle-expiry clears tool results inactive for 60 minutes
+**Given** a long-running Session containing tool results last touched more than 60 minutes ago alongside recent tool results
+**When** Layer 2 idle-expiry runs at a turn boundary
+**Then** idle-expired tool results are cleared from active context, recent tool results are preserved, and the cleared results remain reclaimable by their persistent path
+
+### Scenario: Session notes template updates each turn at zero LLM cost
+**Given** an active Session with the nine-section session-notes template at any state below the 12,288-token cap
+**When** Layer 3 fires at a turn boundary
+**Then** the template's nine sections are updated by deterministic logic with no LLM call, and the template's token budget remains capped at 12,288
+
+### Scenario: LLM semantic summary runs only when Layers 0-3 cannot reduce context below threshold
+**Given** a Session whose context budget exceeds the configured threshold and Layers 0-3 have already reduced what they can
+**When** the Conversation Compaction pipeline reaches Layer 4
+**Then** the LLM semantic summarizer runs and produces a summary that brings context below the threshold
+
+### Scenario: Layer 4 circuit-breaker after three consecutive failures
+**Given** a Session in which Layer 4 has produced LLM-summary failures on three consecutive invocations
+**When** the Conversation Compaction pipeline would invoke Layer 4 a fourth time
+**Then** the circuit-breaker suspends Layer 4 for the remainder of the session, a typed error is logged with operator-readable diagnostics, and the orchestrator is notified that semantic summary is unavailable
+
+### Scenario: Layer 4 circuit-breaker state resets at session start
+**Given** a previous Session that left Layer 4 in suspended state due to three consecutive failures
+**When** a new Session begins
+**Then** Layer 4 circuit-breaker state is automatically reset to active without operator intervention
+
+### Preservation: AS-7 result-summarization path is unchanged
+**Given** an Orchestrator Agent calling `invoke_ensemble` whose ensemble result triggers AS-7 summarization
+**When** Conversation Compaction is active in the same Session
+**Then** the AS-7 summarization (Result Summarizer Harness per ADR-004) continues to run on ensemble outputs as before, independently of Conversation Compaction operating on the conversation history
+
+---
+
+## Feature: Session Registry Initializer-then-Resume (ADR-013)
+
+### Scenario: Cluster 2 session activates structured-handoff artifact set
+**Given** an operator declares a session as Cluster 2 (BUILD/ARCHITECT/DEBUG/REFACTOR territory) at session start
+**When** the Session Registry processes the declaration
+**Then** the structured-handoff artifact set (feature_list.json, append-only progress log, init.sh) is required and write-gate validation activates for all artifact writes
+
+### Scenario: Cluster 1 session opts out of artifact set
+**Given** an operator declares a session as Cluster 1 (RESEARCH/DECIDE/SYNTHESIZE territory) at session start
+**When** the Session Registry processes the declaration
+**Then** the structured-handoff artifact set is supported but not required; operator can opt-in with explicit configuration
+
+### Scenario: Monotonic passes constraint enforced at schema level
+**Given** a feature_list.json entry with `passes: true` for feature `auth-flow`
+**When** the orchestrator submits a write that would set `auth-flow` to `passes: false` without an audit-logged operator override
+**Then** the write-gate rejects the write with a typed `write_gate_rejection` error and the feature_list.json on disk is unchanged
+
+### Scenario: Append-only progress log rejects non-append writes
+**Given** an active Session with an append-only progress log at any state
+**When** the orchestrator submits a write that attempts to overwrite, truncate, or mid-file edit the log
+**Then** the write-gate rejects the operation with a typed `write_gate_rejection` error and the progress log on disk is unchanged
+
+### Scenario: init.sh hash mismatch produces typed error
+**Given** a Session Registry configuration with init.sh integrity hash `H1` recorded at operator-authoring time
+**When** the Session Registry would invoke init.sh whose actual content hashes to `H2 ≠ H1`
+**Then** init.sh execution is gated, a typed `write_gate_rejection` error fires naming the hash mismatch, and the Session does not proceed past initialization until the operator resolves
+
+### Scenario: Operator hash rotation re-authors integrity record
+**Given** an operator legitimately modifies init.sh content (e.g., adds a new dependency to PATH setup)
+**When** the operator runs the hash-rotation workflow recording the new hash in the Session Registry's configuration
+**Then** subsequent Sessions execute the modified init.sh successfully, and the rotation event is audit-logged
+
+### Scenario: Cross-cluster session defaults to required artifact set
+**Given** a session whose declaration is ambiguous or names multiple clusters (e.g., a North-Star-benchmark-style session straddling RESEARCH and BUILD)
+**When** the Session Registry processes the declaration
+**Then** disposition (i) — default to required-artifact-set behavior — applies, and the artifact set is active for the session
+
+### Preservation: Existing Session identification responsibility unchanged
+**Given** a multi-request Session under the existing Session Registry implementation
+**When** ADR-013's structured-handoff artifact extension is active
+**Then** the existing SessionIdentity derivation, SessionState tracking, turn_count, and token_spend bookkeeping continue to operate exactly as before — the artifact extension is additive
+
+---
+
+## Feature: Calibration Verdict Trichotomy (ADR-014)
+
+### Scenario: Proceed verdict routes dispatch as-is
+**Given** a calibration verdict computation where AUQ confidence is above the System 2 threshold (default 0.85), trajectory features are in normal range, and post-hoc result-check is positive
+**When** the Calibration Gate produces its verdict for the dispatch
+**Then** the verdict is *Proceed* and dispatch routes to the per-skill cheap-tier Model Profile per ADR-015 without any reflection or escalation
+
+### Scenario: Reflect verdict routes to escalated tier per ADR-015
+**Given** a calibration verdict where AUQ confidence is below the System 2 threshold but trajectory features show no anomaly
+**When** the Calibration Gate produces its verdict for the dispatch
+**Then** the verdict is *Reflect* and the per-role tier-escalation router routes the dispatch to the per-skill escalated-tier Model Profile
+
+### Scenario: Abstain verdict blocks dispatch and produces typed error
+**Given** a calibration trajectory where token-level entropy in the most recent N tokens drops more than 1.5 standard deviations below the trajectory's running mean
+**When** the Calibration Gate evaluates the verdict for the dispatch
+**Then** the verdict is *Abstain*, dispatch is blocked, the orchestrator receives a typed `calibration_abstain` error, and the orchestrator must take a different action (reformulate, dispatch elsewhere, or abstain entirely)
+
+### Scenario: Time-decay windowing limits trajectory features to dual-bound recent window
+**Given** a Calibration Gate computing the next verdict with trajectory data spanning two hours and 250 prior dispatches
+**When** the verdict computation aggregates trajectory features
+**Then** only signals within the most recent 60 minutes OR most recent 100 dispatches (whichever is shorter) contribute to the verdict, weighted linearly from 1.0 at signal-emission to 0.0 at window-edge
+
+### Scenario: Calibration verdict feeds router input
+**Given** a calibration verdict produced by the Calibration Gate for a specific dispatch
+**When** the per-role tier-escalation router (ADR-015) processes the dispatch through the Tool Dispatch interposition
+**Then** the router consumes the verdict directly as input — no LLM-mediated translation step — and the verdict's three values (Proceed/Reflect/Abstain) map deterministically to router actions (cheap-tier, escalated-tier, escalation-bypass)
+
+### Preservation: ADR-007 first-N post-hoc calibration mechanism unchanged
+**Given** a composed ensemble in its first-N invocation calibration window per ADR-007
+**When** ADR-014's in-process trajectory-level calibration is active
+**Then** the existing post-hoc result-check from ADR-007 continues to fire on every first-N invocation, the existing quality-signal accumulation and trusted-status transition logic continue unchanged, and ADR-014's in-process layer composes additively without replacing ADR-007's mechanism
+
+---
+
+## Feature: Per-Role Tier-Escalation Router (ADR-015)
+
+### Scenario: Code-generation skill routes to per-skill cheap-tier on Proceed
+**Given** an ensemble whose YAML metadata declares Topaz skill `code_generation` and operator-configured tier defaults specify `cheap-tier: ollama-deepseek-coder-v2:16b` for that skill
+**When** the orchestrator dispatches the ensemble via `invoke_ensemble` with calibration verdict *Proceed*
+**Then** the Tool Dispatch router selects `ollama-deepseek-coder-v2:16b` as the dispatch's Model Profile
+
+### Scenario: Reflect verdict routes to per-skill escalated-tier
+**Given** an ensemble with Topaz skill `tool_use` and operator-configured tier defaults specifying `escalated-tier: gpt-5-mini` for that skill
+**When** the calibration verdict for the dispatch is *Reflect*
+**Then** the router selects `gpt-5-mini` as the dispatch's Model Profile
+
+### Scenario: Abstain verdict produces escalation-bypass typed error
+**Given** any dispatch with calibration verdict *Abstain*
+**When** the per-role tier-escalation router processes the dispatch
+**Then** the router does not perform tier escalation, instead produces a typed `escalation_bypass` error to the orchestrator, and the orchestrator must reformulate or take a different action
+
+### Scenario: Ensemble lacking Topaz skill metadata fails dispatch with explanatory error
+**Given** an ensemble in the library whose YAML configuration does not declare a Topaz skill metadata field
+**When** the orchestrator dispatches the ensemble
+**Then** the Tool Dispatch router rejects the dispatch with a typed `missing_skill_metadata` error explaining that all ensembles must declare their primary Topaz skill, and the rejection includes a list of valid skill values
+
+### Scenario: Per-skill (not per-ensemble) tier defaults
+**Given** two ensembles `code-review-pair-A` and `code-review-pair-B` both declaring Topaz skill `code_generation`
+**When** the operator's tier-default configuration specifies cheap-tier and escalated-tier Model Profiles for `code_generation`
+**Then** both ensembles use the same cheap-tier and escalated-tier Model Profiles when dispatched — the configuration is per-skill, not per-ensemble
+
+### Preservation: ADR-011 orchestrator's own LLM session-boundary scope unchanged
+**Given** an active Session with the orchestrator parameterized by Model Profile `profile-A` and ADR-015's router active
+**When** the orchestrator dispatches multiple ensembles whose calibration verdicts span Proceed and Reflect (cheap-tier and escalated-tier dispatches in the same session)
+**Then** the orchestrator's own Model Profile remains `profile-A` for the entire Session — only the dispatched task's tier varies; the orchestrator's session-boundary-event constraint per ADR-011 is preserved
+
+---
+
+## Feature: Cross-Layer Calibration Channel (ADR-016)
+
+### Scenario: Calibration data flows L0 → L1 through read-only channel
+**Given** an Ensemble Engine (L0) emitting calibration signals (trajectory features, dispatch outcomes, deterministic-tool-output anchors when applicable) and a Calibration Gate (L1) consuming those signals
+**When** an L0 ensemble dispatch completes
+**Then** the calibration signals propagate upward through the read-only channel, the L1 consumer receives typed signal data, and the L1 verdict computation incorporates the signals subject to the five bounding mechanisms
+
+### Scenario: Upward write attempt through channel is rejected
+**Given** an L1 consumer attempting to write data back through the calibration channel toward L0
+**When** the write reaches the channel boundary
+**Then** the write is rejected at the structural level, no L0 state is mutated, and ADR-002's layering-rule write-path discipline is preserved
+
+### Scenario: Non-calibration data attempt through channel is rejected
+**Given** an L0 module attempting to send non-calibration data (e.g., an arbitrary upward import) through the calibration channel
+**When** the data reaches the channel boundary
+**Then** the channel rejects the data via the structural validation guard, the L1 consumer never receives it, and ADR-002's layering-rule signal-channel scoping is preserved
+
+### Scenario: Mechanism (a) — fresh-context isolation in the calibration consumer
+**Given** an L1 calibration consumer computing a new calibration verdict
+**When** the consumer reads channel signals
+**Then** the consumer's evaluation context is fresh — prior signals from earlier verdicts are not carried forward through the consumer's context; their influence on the next verdict is only through the time-decay-windowed feature aggregation specified by mechanism (b)
+
+### Scenario: Mechanism (b) — time-decay windowing eliminates stale-signal influence
+**Given** a Calibration Gate computing a verdict at time T with calibration signals spanning T-180 minutes through T-0
+**When** the verdict computation aggregates feature values
+**Then** signals older than the dual-bound (60 minutes / 100 signals, whichever shorter) contribute weight 0 to the verdict, and signals within the window contribute weight from 1.0 (most recent) linearly decaying to 0.0 (window edge)
+
+### Scenario: Mechanism (c) — deterministic-tool-output anchor when ensemble has script-model slot
+**Given** an ensemble with a script-model slot producing binary-verifiable deterministic output
+**When** the deterministic output enters the calibration signal stream
+**Then** mechanism (c) treats the output as a categorical anchor that LLM-consensus signals cannot override probabilistically, and the L1 verdict reflects the categorical signal at higher weight
+
+### Scenario: Mechanism (c) — LLM-only ensemble operates with mechanisms (a), (b), (d), (e) only
+**Given** an ensemble with no script-model slots (LLM-only configuration)
+**When** the Calibration Gate computes verdicts for dispatches of this ensemble
+**Then** mechanism (c) is unavailable, mechanisms (a), (b), (d), (e) remain load-bearing, and the calibration signal flow continues without categorical anchor — consistent with ADR-002's AS-8 optionality parallel
+
+### Scenario: Mechanism (d) — out-of-band audit dispatch fires at trigger frequency
+**Given** a calibration system with the audit trigger frequency configured (default every 100 verdicts or 24 wall-clock hours, whichever first)
+**When** the trigger condition is reached
+**Then** the audit dispatches in a fresh context, evaluates verdict skew + outcome divergence + signal-to-verdict correlation drift against operationally-tunable thresholds, and produces a typed verdict (no drift / drift detected / severe drift)
+
+### Scenario: Mechanism (e) — malformed signal produces typed error
+**Given** an L0 module emitting a calibration signal whose schema does not match the typed signal-data specification
+**When** the signal reaches the L1 channel boundary
+**Then** the structural validation rejects the signal with a typed `malformed_signal` error, the verdict computation skips the malformed signal as if outside the window, and no verdict-side action is taken on the signal's content
+
+### Scenario: Severe drift verdict triggers fail-safe mode
+**Given** a periodic out-of-band audit producing verdict *severe drift* (multiple drift criteria simultaneously exceed thresholds OR any single criterion exceeds severe-threshold)
+**When** the audit verdict reaches the calibration consumer
+**Then** the calibration system enters fail-safe mode — calibration verdicts default to Reflect-or-Abstain — operator-notification fires, and the system remains in fail-safe until operator review releases it
+
+### Scenario: ADR-016 not active — ADR-014 operates on L1-internal data only
+**Given** an llm-orc deployment in which ADR-016 is rejected (no cross-layer signal channel)
+**When** the Calibration Gate computes verdicts for dispatches
+**Then** ADR-014's in-process trajectory-level calibration operates on L1-internal trajectory data only, the verdict trichotomy continues to function with the in-layer feature set, and no cross-layer signals enter the verdict computation
+
+### Preservation: ADR-002 layering rule unchanged for write paths and non-calibration upward signaling
+**Given** an llm-orc deployment with ADR-016's calibration channel active
+**When** any non-calibration upward signal flow or any upward write path is exercised
+**Then** the layering rule continues to prohibit it (FC-2 static import check rejects the import; FC-3 cycle detection rejects the dependency edge), and only the read-only calibration channel from L0 to L1 is permitted
+
+---
+
+## Feature: Tool-Call Structural Validation Guard (ADR-017)
+
+### Scenario: Match — prose claim plus tool-call structure passes validation
+**Given** an orchestrator response containing prose "I called `invoke_ensemble('code-review-A')` and the tool returned ..." alongside an actual tool-call structure naming `invoke_ensemble` with argument `{'ensemble_name': 'code-review-A'}`
+**When** the structural validation guard scans the response
+**Then** the guard verifies the structural correspondence and the dispatch proceeds without rejection
+
+### Scenario: Mismatch — prose claim without tool-call structure produces phantom_tool_call error
+**Given** an orchestrator response containing prose "The tool call has been made and the result is displayed above" with zero tool-call structures actually emitted
+**When** the structural validation guard scans the response
+**Then** the guard produces a typed `phantom_tool_call` error including the detected prose claim, the empty list of actually-emitted tool-call structures, and the dispatch context, and the orchestrator must take a different action
+
+### Scenario: Future-intent patterns are not flagged
+**Given** an orchestrator response containing prose "I will call `invoke_ensemble` next" without yet emitting a tool-call structure
+**When** the structural validation guard scans the response
+**Then** no error is produced — future-intent patterns describe upcoming action and are not assertion patterns; the guard's conservative discipline excludes them
+
+### Scenario: Pattern set is operator-extensible at deployment configuration
+**Given** an operator deploying llm-orc who has observed a deployment-specific phantom-tool-call pattern not in the default pattern set
+**When** the operator adds the pattern to the deployment configuration
+**Then** the structural validation guard scans incoming orchestrator responses with the extended pattern set, and the new pattern triggers `phantom_tool_call` errors when matched without a corresponding tool-call structure
+
+---
+
+## Feature: Capability Floor (Cycle 4 discover-gate carry-forward #7)
+
+### Scenario: Default `orchestrator-local` Model Profile fails baseline competence on install
+**Given** an operator who has installed llm-orc without configuring a custom orchestrator Model Profile, and whose locally-available models do not meet the capability floor for the closed five-tool surface
+**When** the operator runs the baseline-competence calibration ensemble at install
+**Then** the ensemble produces an operator-readable diagnostic naming the specific failure (e.g., the local model fails to produce structurally valid tool-call outputs) and recommends concrete remediation paths (configure cheap-cloud orchestrator profile; install a more-capable local model; etc.)
+
+### Scenario: Baseline-competence calibration ensemble reports operator-readable mismatch
+**Given** an operator's locally-available models including `ollama-llama3:8b` and `ollama-mistral:7b`
+**When** the baseline-competence ensemble probes each model against the capability-floor baseline
+**Then** the ensemble produces a structured report identifying which models meet the floor (and on which capability dimensions), which fall below the floor, and what concrete operator action is recommended for the deployment
+
+### Scenario: Operator runs runtime probe at install/startup
+**Given** an operator running `llm-orc serve` for the first time on a hardware configuration whose local-model availability is unknown to the system
+**When** the operator invokes the runtime probe (either explicitly via `llm-orc orchestrator probe` or automatically at first-run startup if configured to do so)
+**Then** the probe runs the baseline-competence calibration ensemble against discovered local models and produces an actionable recommendation surface — operator can act on the recommendations before the first agentic-coding session
+
+### Scenario: Static specification + runtime probe compose
+**Given** the static capability-floor specification documented in `domain-model.md` and `system-design.md`
+**When** the runtime probe runs against operator hardware
+**Then** the static specification provides the abstract floor reference; the runtime probe produces the concrete-against-operator-hardware mismatch detection; both surfaces co-exist as compatible design surfaces (per discover-gate carry-forward #7)

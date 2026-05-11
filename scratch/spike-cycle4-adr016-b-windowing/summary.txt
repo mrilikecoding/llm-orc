@@ -1,0 +1,71 @@
+Spike (b) — Time-Decay Windowing Validation
+==================================================
+
+Steps: 500, seed: 20260506, noise sd: 0.2
+
+## Scenario: slow_drift
+
+config                        tracking_mse  lag_steps  stale_weight  final_verdict  final_bias
+non_windowed                        0.0862         46         0.800         -0.012       0.500
+linear_decay_default                0.0036          6         0.000          0.444       0.500
+linear_decay_smaller                0.0027          2         0.000          0.482       0.500
+linear_decay_larger                 0.0078          7         0.000          0.395       0.500
+hard_cutoff_default                 0.0056          8         0.000          0.411       0.500
+exponential_decay_default           0.0036          7         0.000          0.444       0.500
+
+## Scenario: step_change
+
+config                        tracking_mse  lag_steps  stale_weight  final_verdict  final_bias
+non_windowed                        0.2588         60         0.800         -0.010       0.500
+linear_decay_default                0.0253         17         0.000          0.497       0.500
+linear_decay_smaller                0.0147          9         0.000          0.504       0.500
+linear_decay_larger                 0.0502         31         0.000          0.501       0.500
+hard_cutoff_default                 0.0407         29         0.000          0.478       0.500
+exponential_decay_default           0.0245         16         0.000          0.492       0.500
+
+## Scenario: periodic_oscillation
+
+config                        tracking_mse  lag_steps  stale_weight  final_verdict  final_bias
+non_windowed                        0.1221         28         0.800         -0.015      -0.025
+linear_decay_default                0.0763         18         0.000         -0.303      -0.025
+linear_decay_smaller                0.0247          9         0.000         -0.226      -0.025
+linear_decay_larger                 0.1203         30         0.000         -0.154      -0.025
+hard_cutoff_default                 0.1472         29         0.000         -0.318      -0.025
+exponential_decay_default           0.0734         18         0.000         -0.287      -0.025
+
+## Validation check
+
+Two distinct properties are tested:
+
+(1) STRUCTURAL bias-bound — does windowing prevent stale signals from
+    contributing to current verdicts? Tested via stale_signal_weight_fraction.
+    PASS criterion: linear_decay_default reduces stale-weight by ≥ 0.5 vs
+    non_windowed in all scenarios.
+
+(2) PARAMETRIC tracking — do default window parameters track bias trajectory
+    better than non-windowed baseline? Tested via tracking_error_mse ratio.
+    Pass means the default is operationally workable; sub-optimal-but-positive
+    is parameter-tuning territory, not falsification.
+    PASS criterion: linear_decay_default tracking_error < non_windowed in all
+    scenarios (any positive improvement).
+
+  slow_drift:
+    structural — stale_weight reduction = 0.800 PASS
+    parametric — default tracking_error_ratio = 0.042 PASS
+    parametric optimum (across windowed configs) = linear_decay_smaller
+  step_change:
+    structural — stale_weight reduction = 0.800 PASS
+    parametric — default tracking_error_ratio = 0.098 PASS
+    parametric optimum (across windowed configs) = linear_decay_smaller
+  periodic_oscillation:
+    structural — stale_weight reduction = 0.800 PASS
+    parametric — default tracking_error_ratio = 0.625 PASS
+    parametric optimum (across windowed configs) = linear_decay_smaller
+
+STRUCTURAL VERDICT: VALIDATED (does windowing structurally bound stale-signal influence?)
+PARAMETRIC VERDICT: VALIDATED (do default parameters produce positive tracking improvement?)
+
+Parameter-tuning notes:
+  slow_drift: default is sub-optimal; linear_decay_smaller tracks better — operational tuning territory
+  step_change: default is sub-optimal; linear_decay_smaller tracks better — operational tuning territory
+  periodic_oscillation: default is sub-optimal; linear_decay_smaller tracks better — operational tuning territory

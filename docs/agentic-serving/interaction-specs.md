@@ -62,6 +62,34 @@
 
 **Interaction mechanics:** The operator uses their own agentic coding tool pointed at their own llm-orc server, collapsing the tool-user and operator roles into one person (product discovery assumption inversion #3). They observe orchestrator decisions in the tool's response, note patterns they want to change, edit ensemble YAML or profile configurations outside the agentic flow, and run the next session to see the effect. Tinkering is a cycle of observation → edit → re-run, not a one-shot configuration task.
 
+### Task: Configure per-skill tier defaults (ADR-015)
+
+**Interaction mechanics:** At deployment, the operator configures Model Profile pairs (cheap-tier + escalated-tier) for each of the eight Topaz skills (`code_generation`, `tool_use`, `mathematical_reasoning`, `logical_reasoning`, `factual_knowledge`, `writing_quality`, `instruction_following`, `summarization`) — sixteen Model Profile slots, with deployment-time defaults shareable across skills (e.g., a single local-7B profile may serve as cheap-tier for code_generation and tool_use). The operator declares each ensemble's primary Topaz skill in the ensemble's YAML metadata. Configuration is via configuration files; changes take effect on new Sessions per ADR-011's session-boundary discipline. The friction trade is for discovery — full taxonomy enables operator deployment evidence to surface which skill dimensions actually drive value.
+
+### Task: Author or update structured-handoff artifacts (ADR-013)
+
+**Interaction mechanics:** For Cluster 2 sessions (BUILD/ARCHITECT/DEBUG/REFACTOR territory), the operator authors and maintains three artifacts: `feature_list.json` (with monotonic `passes` field; cataloging the session's feature scope), an append-only progress log (free-text narrative continuity), and `init.sh` (deterministic environment bootstrap script). The operator runs `init.sh` integrity hash rotation when legitimately modifying the script — recording the new hash in the Session Registry's configuration. Write-gate validation enforces structural non-regression at the schema level; operator overrides (e.g., setting a `passes: true` feature back to `false`) require an explicit audit-logged action.
+
+### Task: Declare session cluster at session start (ADR-013)
+
+**Interaction mechanics:** At session creation, the operator declares the session's cluster via configuration or CLI flag — Cluster 1 (RESEARCH/DECIDE/SYNTHESIZE), Cluster 2 (BUILD/ARCHITECT/DEBUG/REFACTOR), or Cluster 3 (DISCOVER/PLAY). Cluster 2 default-activates the structured-handoff artifact set; Cluster 1 and 3 do not. Cross-cluster sessions (declared as multi-cluster, or ambiguous) default to Cluster 2 behavior — required artifact set — per ADR-013 disposition (i).
+
+### Task: Run baseline-competence calibration ensemble at install/startup (capability-floor)
+
+**Interaction mechanics:** At install or first-startup, the operator runs the baseline-competence calibration ensemble (an llm-orc-shipped ensemble that probes the operator's available local models against capability-floor baselines). The ensemble produces an operator-readable report identifying which local models meet the floor, which fall below, and what concrete remediation is recommended (configure cheap-cloud orchestrator profile; install more-capable local model; etc.). The operator can run the probe explicitly via `llm-orc orchestrator probe` or have it run automatically at first-run startup if configured to do so.
+
+### Task: Review calibration audit diagnostics (ADR-016 mechanism (d))
+
+**Interaction mechanics:** The periodic out-of-band audit dispatch produces drift-detection diagnostics that flow to operator-facing storage (log entries, optional webhook/email per deployment configuration). For advisory drift, the operator reviews diagnostics at their own cadence — diagnostic + parameter-tuning recommendation surface lets the operator approve, override, or ignore the recommended adjustment; on approval, the calibration system applies the adjustment at the next session boundary. For severe drift, the calibration system enters fail-safe mode automatically (verdicts default to Reflect-or-Abstain); the operator must review and release the system from fail-safe.
+
+### Task: Configure Conversation Compaction defaults (ADR-012)
+
+**Interaction mechanics:** The operator tunes four threshold defaults — Layer 0's 50K-character persist trigger, Layer 2's 60-minute idle window, Layer 3's 12K-token notes cap, Layer 4's 3-failure circuit-breaker — through configuration files. Defaults match Anthropic's published values; operationally tunable per deployment workload shape. Filesystem persistence root for Layer 0 must also be operator-configured. The operator monitors Layer 4 failures (the typed-error log surface); persistent Layer 4 failures may indicate the orchestrator Model Profile's semantic-summary capability is mismatched to the deployment's session shape.
+
+### Task: Extend tool-call structural validation pattern set (ADR-017)
+
+**Interaction mechanics:** The default phantom-tool-call pattern set is conservative (minimal). When the operator observes a deployment-specific phantom-tool-call pattern not in the default set, the operator extends the pattern set via deployment configuration. The structural validation guard scans incoming orchestrator responses with the extended pattern set; new patterns trigger `phantom_tool_call` errors when matched without a corresponding tool-call structure. The operator-extension surface is the operational discovery path, not a fallback — defaults are minimal because the cycle's spike evidence does not support a richer calibrated default.
+
 ---
 
 ## Stakeholder: Orchestrator LLM
@@ -91,3 +119,15 @@
 ### Task: Terminate the task cleanly
 
 **Interaction mechanics:** When the orchestrator determines the task is complete, it emits a final message with `finish_reason: stop` (OpenAI-compatible protocol). No tool call is in flight at termination. If the orchestrator reasons itself into a dead end, it emits a message explaining the impasse and stops, rather than looping until Budget exhaustion — this is a quality behavior the orchestrator's Model Profile should support, not a guarantee of the framework.
+
+### Task: Receive and act on calibration verdicts (ADR-014)
+
+**Interaction mechanics:** For each `invoke_ensemble` dispatch, the Calibration Gate produces a verdict (Proceed / Reflect / Abstain) that the orchestrator consumes through dispatch outcomes. *Proceed* — dispatch proceeds normally; the orchestrator continues its ReAct loop. *Reflect* — the orchestrator may choose to escalate the dispatch's tier (handled by the per-role tier-escalation router per ADR-015 transparently), reformulate the dispatch with different inputs, or proceed with explicit acknowledgement of the low-confidence verdict. *Abstain* — dispatch is blocked; the orchestrator receives a typed `calibration_abstain` error and must reformulate or take a different action.
+
+### Task: Recover from escalation-bypass typed errors (ADR-015)
+
+**Interaction mechanics:** When a calibration verdict is *Abstain*, the per-role tier-escalation router does not perform tier escalation; it produces a typed `escalation_bypass` error. The orchestrator must reformulate the dispatch (different inputs, different ensemble, or different sub-task decomposition), not retry the same dispatch with an escalated tier — the Abstain semantics imply a different action class is needed, not more capability.
+
+### Task: Recover from phantom_tool_call typed errors (ADR-017)
+
+**Interaction mechanics:** When the structural validation guard detects a mismatch between the orchestrator's prose claim of a tool call and the actual tool-call structures emitted, the orchestrator receives a typed `phantom_tool_call` error including the detected prose substring and the actual list of emitted tool-call structures. The orchestrator must re-emit the response with actual tool-call structures (if a tool call was intended), reformulate the dispatch (if no tool call was intended but the prose mistakenly claimed one), or abstain — silent retry is not the intended recovery.

@@ -1,6 +1,8 @@
 # ADR-002: Four-Layer Architecture with Plexus Optional
 
-**Status:** Accepted
+> **Updated by ADR-016 on 2026-05-06.** The layering rule's "edges never upward" property is amended for a single narrow exception — a read-only signal channel may flow from L0 (Ensemble Engine outputs) to L1 (Calibration Gate dispatch decisions), gated by five bounding mechanisms specified in ADR-016. The exception is signal-channel-specific (calibration only) and read-only (no upward writes). All other layer pairs remain prohibited; the rest of this ADR (four-layer architecture, Plexus optionality, baseline-vs-upgrade distinction, and consequences) remains current.
+
+**Status:** Updated by ADR-016 (was: Accepted)
 
 **Date:** 2026-04-17
 

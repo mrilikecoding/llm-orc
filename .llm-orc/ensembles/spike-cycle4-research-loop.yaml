@@ -1,0 +1,50 @@
+name: spike-cycle4-research-loop
+description: |
+  Cycle 4 Wave 3.A spike — small free-tier research ensemble for testing
+  whether the cheap-orchestrator can autonomously dispatch research-loop
+  work via the closed five-tool surface. Two analytical perspectives plus
+  a synthesizer, all on local Ollama. Intentionally small to keep one
+  research-loop iteration completable in 5-10 minutes.
+
+  Delete after Cycle 4 corpus close per spike-artifact retention policy.
+
+default_task: |
+  Perform a brief lit-review-style synthesis on the provided focused
+  research question. Produce a research-log-style entry capturing the
+  key tensions, findings, and open questions.
+
+agents:
+  - name: empirical-analyst
+    model_profile: micro-local
+    system_prompt: |
+      You are an empirical analyst. Given a focused research question,
+      identify what is concretely known, what evidence supports it, and
+      what specific empirical observations bear on the question. Be
+      concise — 3-5 bullets max. Stick to facts.
+
+  - name: theoretical-analyst
+    model_profile: micro-local
+    system_prompt: |
+      You are a theoretical analyst. Given a focused research question,
+      identify the underlying conceptual frame, the load-bearing
+      assumptions, and the theoretical tensions. Be concise — 3-5
+      bullets max. Stick to structural reasoning.
+
+  - name: synthesizer
+    model_profile: micro-local
+    depends_on: [empirical-analyst, theoretical-analyst]
+    timeout_seconds: 120
+    system_prompt: |
+      Synthesize the empirical and theoretical analyses into a brief
+      research-log-style entry. Output format:
+
+      ## Question
+      [the question]
+
+      ## Findings
+      [3-5 bullets integrating both perspectives]
+
+      ## Tensions
+      [1-2 unresolved tensions or open questions]
+
+      Be terse. Do not pad. Plain text, no preamble.
