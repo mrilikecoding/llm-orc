@@ -8,6 +8,7 @@ preserves the message-pass-through behavior of the precedent class
 
 import pytest
 
+from llm_orc.models.base import ToolCallingNotSupportedError
 from llm_orc.models.structural_errors import LlmOrcStructuralError
 
 
@@ -76,3 +77,31 @@ class TestLlmOrcStructuralError:
         )
 
         assert error.recovery_action_required == recovery_action
+
+
+class TestToolCallingNotSupportedErrorAsConcreteSubclass:
+    """``ToolCallingNotSupportedError`` (commit ``9f86d0b``) is the first
+    concrete subclass per ADR-017 §"Shared typed-error base class"."""
+
+    def test_is_subclass_of_structural_error_base(self) -> None:
+        assert issubclass(ToolCallingNotSupportedError, LlmOrcStructuralError)
+
+    def test_fixes_error_kind_to_tool_call_rejected_per_model(self) -> None:
+        """The error_kind discriminator is set by construction; not caller-supplied."""
+        error = ToolCallingNotSupportedError("model X does not support tool calling")
+
+        assert error.error_kind == "tool_call_rejected_per_model"
+
+    def test_fixes_recovery_action_to_reformulate(self) -> None:
+        """Per FC-17 ``error_kind`` table — orchestrator-recoverable surface."""
+        error = ToolCallingNotSupportedError("model X does not support tool calling")
+
+        assert error.recovery_action_required == "reformulate"
+
+    def test_preserves_message_for_existing_callers(self) -> None:
+        """Pre-existing call sites (``raise ToolCallingNotSupportedError(msg)``)
+        continue to work — ``str(e)`` and ``match=`` still see the message."""
+        with pytest.raises(
+            ToolCallingNotSupportedError, match="does not support tool calling"
+        ):
+            raise ToolCallingNotSupportedError("model X does not support tool calling")

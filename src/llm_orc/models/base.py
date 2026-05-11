@@ -4,6 +4,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from llm_orc.models.structural_errors import LlmOrcStructuralError
+
 _DEFAULT_PERFORMANCE_CONFIG: dict[str, Any] = {
     "concurrency": {
         "connection_pool": {
@@ -96,13 +98,30 @@ class HTTPConnectionPool:
             cls._httpx_client = None
 
 
-class ToolCallingNotSupportedError(NotImplementedError):
+class ToolCallingNotSupportedError(LlmOrcStructuralError):
     """Raised when a model that does not support tool calling is asked to.
 
-    Providers that support tool calling override ``generate_with_tools``
-    and set ``supports_tool_calling = True``. Providers that do not
-    inherit the default behavior from ``ModelInterface``.
+    First concrete subclass of :class:`LlmOrcStructuralError` per ADR-017
+    §"Shared typed-error base class" and FC-17. The discriminator
+    ``error_kind="tool_call_rejected_per_model"`` and the disposition
+    ``recovery_action_required="reformulate"`` are fixed by construction —
+    callers continue to instantiate with a message string.
     """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        dispatch_context: dict[str, Any] | None = None,
+        operator_diagnostic: str | None = None,
+    ) -> None:
+        super().__init__(
+            message,
+            error_kind="tool_call_rejected_per_model",
+            recovery_action_required="reformulate",
+            dispatch_context=dispatch_context,
+            operator_diagnostic=operator_diagnostic,
+        )
 
 
 @dataclass(frozen=True)
