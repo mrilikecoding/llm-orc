@@ -134,6 +134,27 @@ When both spikes are complete (or one, if practitioner elects partial scope), th
 4. **ORIENTATION.md regenerated** if the spike outcomes change Cycle 4's design surface materially.
 5. **Phase advance** to BUILD: `**Current phase:**` set to `build`; `**In-progress phase:**` set to `build`; `**In-progress gate:**` field removed (gate complete).
 
+## Suggested fresh-session handoff prompt for WP-C4 entry (2026-05-11)
+
+> Continue Cycle 4 BUILD at **WP-C4 — ADR-017 tool-call structural validation guard**. WP-A4 (shared `LlmOrcStructuralError` base class) closed 2026-05-11 commits `cc0d94f` + `7c2f64e`; WP-B4 (FC-2 layering + FC-3 cycle-detection tests) closed 2026-05-11 commit `1701a22`. Both T1 prerequisites are complete. Full suite 2367 passing; mypy strict + ruff + complexipy + bandit + vulture all clean. **BUILD mode: gated** (per-scenario-group EPISTEMIC GATES with AID cycle).
+>
+> **Read in this order before opening WP-C4:** (1) `housekeeping/cycle-status.md` for the cycle's current state; (2) `decisions/adr-017-tool-call-structural-validation-guard.md` in full — the Decision section plus the six Rejected Alternatives (the conservative false-positive discipline is load-bearing per (c) and (f)); (3) `scenarios.md` §Tool-Call Structural Validation Guard for the four scenarios (Match, Mismatch, Future-intent not flagged, Pattern set is operator-extensible); (4) the existing `src/llm_orc/agentic/orchestrator_tool_dispatch.py` to understand where the response-text scan interposes; (5) `src/llm_orc/models/structural_errors.py` for the `LlmOrcStructuralError` base class WP-C4's `phantom_tool_call` subclass derives from.
+>
+> **Settled premises going into WP-C4:**
+>
+> 1. **Shared `LlmOrcStructuralError` base class is the typed-error parent** for the new `phantom_tool_call` error_kind (per ADR-017 §"Shared typed-error base class"). Construction shape: `error_kind="phantom_tool_call"`, `recovery_action_required="reformulate"`, plus the prose claim + actually-emitted-tool-calls in `dispatch_context`.
+> 2. **FC-2 and FC-3 are now enforced as automated tests** — any new module that lands in `src/llm_orc/agentic/` must be added to `_LAYER_MAP` (or `_CONTRACT_MODULES`) in `tests/unit/agentic/test_fc2_layering.py`, and must not introduce an import cycle. WP-C4 extends existing modules rather than adding new ones — no layer-map edit expected.
+> 3. **Operator-extensibility surface lives in `OrchestratorConfig` (L3)**. The pattern-set default is "minimal rather than calibrated" (per ADR-017 §"Minimal default pattern set with operator-extension surface"); the operator-extensibility is the operational refinement surface, NOT a fallback for under-specification.
+> 4. **Conservative false-positive discipline is load-bearing** (per rejected alternative (c) and (f)). Intent patterns (*"I will call X"*) are NOT flagged — only assertion patterns (*"the tool returned ..."*).
+>
+> **Honor at WP-C4 entry:**
+>
+> 1. **Pattern-set definition is BUILD-time tuning territory.** The default set in ADR-017 §Detection is a starting point; the BUILD-time judgment is which patterns to ship as default vs which to leave operator-configured. The ADR's spike-evidence caveat means there's no calibration-data ground truth — operator judgment is the calibration mechanism.
+> 2. **The typed error is structural feedback, not silent retry** (rejected alternative (b)). The orchestrator MUST receive the typed error as a tool-call observation; downstream reasoning incorporates the rejection rather than continuing as if the phantom call had effects.
+> 3. **ADR-016 falsification trigger remains live for downstream WP-H4** — does NOT apply to WP-C4 directly, but stay aware that WP-C4's typed-error pattern extends to ADR-016's `malformed_signal` later.
+>
+> **Next steps after WP-C4 closes** (in conformance-scan order): WP-D4 (ADR-013 Session Registry write-gate) — open choice with WP-C4 per roadmap, can land either order; then WP-E4 → WP-F4 → WP-G4-1 → WP-G4-2 → WP-H4 (conditional on first-deployment evidence).
+
 ## Suggested fresh-session handoff prompt for BUILD entry
 
 > Continue Cycle 4 of the agentic-serving scoped corpus. ARCHITECT phase is **complete** (gate closed 2026-05-11). The cycle is now in BUILD. Cycle 4 was re-scoped 2026-05-08 from Mode B+ → DECIDE close to **Mode A — extended through ARCHITECT and BUILD** (PLAY open; decision deferred to BUILD close).
