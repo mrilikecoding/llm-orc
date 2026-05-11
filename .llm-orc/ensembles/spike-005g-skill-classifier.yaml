@@ -1,0 +1,42 @@
+name: spike-005g-skill-classifier
+description: |
+  Cycle 4 Spike α (research-log 005g) — single-agent classifier that takes
+  an ensemble specification (YAML body) and outputs a Topaz-skill
+  classification: primary skill, ranked relevance of the other seven, and
+  a one-sentence rationale.
+
+  Free-tier; local Ollama; cheap-orchestrator pattern. Retained until
+  agentic-serving corpus close per spike-artifact retention directive.
+
+default_task: |
+  Classify the provided ensemble specification across the eight Topaz skills.
+
+agents:
+  - name: skill-classifier
+    model: qwen3:8b
+    provider: ollama
+    timeout_seconds: 180
+    system_prompt: |
+      You classify llm-orc ensembles by their primary Topaz skill.
+
+      The eight Topaz skills are:
+      1. code_generation — producing code (functions, scripts, programs)
+      2. tool_use — invoking tools/APIs (search, file ops, external services)
+      3. mathematical_reasoning — quantitative reasoning, calculation, numeric analysis
+      4. logical_reasoning — multi-step deductive/inductive inference, formal reasoning
+      5. factual_knowledge — recall and synthesis of established domain facts
+      6. writing_quality — coherent, well-structured prose generation
+      7. instruction_following — adhering to multi-part directives precisely
+      8. summarization — distilling longer text into shorter form
+
+      Given an ensemble's YAML specification (purpose, agents, system prompts,
+      expected outputs), classify it. Output exactly this format and nothing else:
+
+      Primary skill: <one of the eight skill names>
+      Ranked others: <skill: NN%>, <skill: NN%>, <skill: NN%>, <skill: NN%>, <skill: NN%>, <skill: NN%>, <skill: NN%>
+      Rationale: <one sentence>
+
+      Rules:
+      - The primary skill is implicitly 100%. Do NOT list it in "Ranked others".
+      - "Ranked others" must list all 7 remaining skills in descending relevance order, each with a percentage 0-99.
+      - Be terse. No preamble. No markdown. No bullets. Just the three lines.

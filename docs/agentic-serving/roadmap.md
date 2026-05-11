@@ -1,17 +1,193 @@
 # Roadmap: Agentic Serving
 
-**Generated:** 2026-04-20
-**Derived from:** `system-design.md` (v1.0), ADRs 001-011, scenarios.md, interaction-specs.md
+**Generated:** 2026-04-20; **last amended:** 2026-05-08 (Cycle 4 ARCHITECT close)
+**Derived from:** `system-design.md` (v3.0), ADRs 001-017 + adr-deferred-005, scenarios.md, interaction-specs.md
 
 This roadmap expresses the sequencing landscape for building agentic serving — what depends on what, where the builder has a choice, and which coherent intermediates are worth pausing at. It does not prescribe a build order. Work package order within each dependency band is a build-time decision.
 
 ---
 
-## Work Packages
+## Work Packages — Cycle 4 (active)
 
-> **WP-A through WP-I are complete.** See [Completed Work Log](#completed-work-log) at the end of this document for scope, commits, and outcomes. **TS-1 (stateless orchestrator serving OpenCode) was reached at WP-F close; TS-2 (stateless baseline complete) was reached at WP-H close 2026-04-24; the Plexus Adapter skeleton landed at WP-I close 2026-04-24 — all FC-7 stateless paths covered, WP-K is body-swap territory.** The active section below lists only upcoming or in-progress work.
+> **Cycle 1 WPs (WP-A through WP-I) are complete and migrated to the Completed Work Log.** TS-1 (stateless orchestrator serving OpenCode) reached at WP-F close (2026-04-22); TS-2 (stateless baseline) reached at WP-H close (2026-04-24); Plexus Adapter skeleton landed at WP-I close (2026-04-24). The active section below lists Cycle 4 work plus deferred Cycle 1 work (WP-K, WP-J).
+>
+> **Cycle 4 BUILD comprises eight new WPs (WP-A4 through WP-H4)** integrating ADRs 012–017 into the codebase per the conformance-scan-recommended sequence. Identifiers reset for the new active cycle (per skill methodology: "Reset identifiers for the next active cycle — don't accumulate escalating letters across cycles").
 
-### WP-K: Plexus Integration (Plexus-active paths)
+### WP-A4: Shared `LlmOrcStructuralError` base class — *T1 prerequisite*
+
+**Objective:** Land the typed-error base class that ADRs 012, 013, 014, 015, 016, and 017 all depend on. Migrate the existing `ToolCallingNotSupportedError` (commit `9f86d0b`) as the first concrete subclass.
+
+**Changes:**
+- New module `models/structural_errors.py` with `LlmOrcStructuralError` base class and the four common fields (`error_kind`, `dispatch_context`, `recovery_action_required`, `operator_diagnostic`)
+- Migrate `ToolCallingNotSupportedError` → `LlmOrcStructuralError(error_kind="tool_call_rejected_per_model", ...)`; preserve existing exception chain via subclassing if call sites depend on the old type
+- Update `recovery_action_required` literal type to `Literal["reformulate", "escalate", "abstain", "operator_intervention_required"]`
+
+**Scenarios covered:** none directly — infrastructure prerequisite. Unblocks the eight `error_kind` types in ADRs 012–017.
+
+**Dependencies:** None. **First WP.**
+
+**Participating modules:** `models/structural_errors` (new), `models/base.py` (existing — preserves precedent).
+
+---
+
+### WP-B4: FC-2 automated import layering check + FC-3 automated cycle detection — *T1 prerequisite*
+
+**Objective:** Land the static fitness checks the conformance scan flagged as missing prerequisites. Both checks recognize the ADR-016 calibration-channel exception via an annotated allowed-edge in the layer map.
+
+**Changes:**
+- New `tests/unit/agentic/test_fc2_layering.py` — AST-based per-module import walk; layer-map registry; assertion that every import edge respects "edges point higher → same-or-lower" with the calibration-channel exception annotated. Pattern follows existing `test_fc4_runtime_import_surface.py`.
+- New `tests/unit/agentic/test_fc3_no_cycles.py` — directed graph construction over agentic-module imports + annotated logical edges; cycle detection via DFS or topological sort; assertion of zero cycles.
+
+**Scenarios covered:** none directly — these enforce architectural fitness criteria. They constrain all subsequent BUILD work.
+
+**Dependencies:** Open choice with WP-A4 — mutually independent.
+
+**Participating modules:** test files only.
+
+---
+
+### WP-C4: ADR-017 — Tool-call structural validation guard
+
+**Objective:** Land the structural validation guard in Tool Dispatch as the most-bounded ADR with the most direct codebase precedent.
+
+**Changes:**
+- Extend `orchestrator_tool_dispatch.py` with response-text scan for default phantom_tool_call assertion patterns
+- New `phantom_tool_call` typed error (uses `LlmOrcStructuralError` base from WP-A4)
+- Operator-extensible pattern set surface in `OrchestratorConfig`
+- Pattern-matching logic produces typed error on mismatch; orchestrator gets the error as a tool-call observation
+
+**Scenarios covered:** scenarios.md §Tool-Call Structural Validation Guard — Match (validation passes); Mismatch (phantom_tool_call produced); Future-intent patterns not flagged; Pattern set is operator-extensible.
+
+**Participating modules:** Orchestrator Tool Dispatch (extended), models/structural_errors (uses base class), Orchestrator Configuration (extends pattern-set surface).
+
+**Dependencies:** Hard on **WP-A4** (uses `LlmOrcStructuralError`).
+
+---
+
+### WP-D4: ADR-013 — Session Registry structured-handoff artifacts + write-gate validation + cluster determination
+
+**Objective:** Extend Session Registry with the three adoption-derived components (feature-list, append-only progress log, init.sh deterministic bootstrap) plus the novel-design write-gate validation surface plus cluster determination at session-start.
+
+**Changes:**
+- Extend `session_registry.py` with `StructuredHandoffArtifactSet` dataclass and `cluster: Cluster` field on `SessionState`
+- New module `session_artifacts.py` (or sub-module of session_registry) with the three write-gate validation classes — JSON schema validation for feature-list, append-only constraint enforcement for progress-log, signed-script integrity verification for init.sh
+- Hash-rotation workflow tooling (CLI command or library function for operators)
+- Cluster determination at session-start with disposition (i) default-to-required for cross-cluster ambiguity
+- New `write_gate_rejection` typed error (uses `LlmOrcStructuralError` base)
+- Session-start hook updated to invoke init.sh with hash verification
+
+**Scenarios covered:** scenarios.md §Session Registry Initializer-then-Resume — all 8 scenarios (Cluster 2 activates artifact set; Cluster 1 opts out; monotonic passes constraint; append-only rejection; init.sh hash mismatch; operator hash rotation; cross-cluster session defaults; preservation of existing identification).
+
+**Participating modules:** Session Registry (extended), session_artifacts (new sub-module), models/structural_errors (uses base class), CLI for hash rotation.
+
+**Dependencies:** Hard on **WP-A4** (uses `LlmOrcStructuralError`). Open choice with **WP-C4** — mutually independent.
+
+---
+
+### WP-E4: ADR-012 — Conversation Compaction five-layer pipeline
+
+**Objective:** Land the cheapest-first compaction pipeline as a new L2 module the Runtime invokes at turn boundaries.
+
+**Changes:**
+- New module `conversation_compaction.py` with the five layers, four thresholds, circuit-breaker state, nine-section session-notes template
+- Layer 0 filesystem persistence (operator-configurable root)
+- Layer 4 invokes a configured summarizer ensemble via `EnsembleExecutor.execute` (distinct from Result Summarizer Harness)
+- Circuit-breaker auto-reset at session start
+- New `compaction_layer_4_failure` typed error with `recovery_action_required="operator_intervention_required"`
+- Extend `OrchestratorConfig` with the four threshold defaults
+- Extend `orchestrator_runtime.py` to invoke compaction at turn boundaries (FC-4 amendment: `conversation_compaction` is added to the Runtime's allowed-import set)
+- New default `agentic-context-summarizer.yaml` ensemble (Layer 4 summarizer, distinct from `agentic-result-summarizer.yaml`)
+
+**Scenarios covered:** scenarios.md §Conversation Compaction Five-Layer Pipeline — all 8 scenarios.
+
+**Participating modules:** Orchestrator Runtime (extended), Conversation Compaction (new), models/structural_errors (uses base class), Ensemble Engine (Layer 4 invocation), filesystem.
+
+**Dependencies:** Hard on **WP-A4** (uses `LlmOrcStructuralError`). Open choice with **WP-D4** at the architecture level (Layer 3 session-notes template stays in-memory by default; storage-coupling is a BUILD-time decision per Open Decision Point #1 below).
+
+---
+
+### WP-F4: ADR-014 — Calibration Gate trajectory-level extension
+
+**Objective:** Extend the existing Calibration Gate with in-process trajectory-level calibration (AUQ + HTC + verdict trichotomy + time-decay windowing).
+
+**Changes:**
+- Extend `calibration_gate.py` with verdict trichotomy (`Proceed | Reflect | Abstain`)
+- AUQ verbalized-confidence consumption (System 1 attention-soft, System 2 binary gate at default 0.85 within 0.8–1.0 range)
+- HTC trajectory feature extraction (token-level entropy, attention-weight distributions, decision-confidence trajectories)
+- Three Abstain criteria (entropy collapse > 1.5σ; post-hoc result-check hard failure; multiple drift criteria simultaneously exceeding thresholds)
+- Time-decay windowing (60-min/100-signal dual-bound, linear decay)
+- New `calibration_abstain` typed error
+- Verdict surface published via `verdict_for(session_id, ensemble_name, dispatch_context)`
+- Conditional signal-channel consumption: if Calibration Signal Channel is registered, gate reads windowed signals; otherwise operates on L1-internal trajectory data only
+
+**Scenarios covered:** scenarios.md §Calibration Verdict Trichotomy — all 6 scenarios.
+
+**Participating modules:** Calibration Gate (extended), models/structural_errors.
+
+**Dependencies:** Hard on **WP-A4** (typed errors). Implied ordering before **WP-G4** (Tier-Escalation Router consumes the verdict surface) — a skilled builder could stub the verdict surface and run G4 in parallel.
+
+---
+
+### WP-G4: ADR-015 + ADR-018 — Per-role tier-escalation router + (d)-analog audit dispatch
+
+**Objective:** Land the new Tier-Escalation Router L2 module + Topaz skill metadata schema migration on existing library ensembles + per-skill tier-defaults configuration. **Per ADR-018 (added at architect-gate close 2026-05-11):** also land the (d)-analog audit dispatch — periodic out-of-band audit on the verdict→router edge analogous to ADR-016 mechanism (d).
+
+**Changes (WP-G4-1 — core router, per ADR-015):**
+- New module `tier_router.py` with verdict→tier mapping (Proceed → cheap; Reflect → escalated; Abstain → `escalation_bypass`)
+- Extend `EnsembleConfig` with optional `topaz_skill: TopazSkill` field
+- One-time migration: add `topaz_skill` field to all existing ensembles in `.llm-orc/ensembles/*.yaml` (Spike α 2026-05-11 confirmed all classifiable ensembles have a clean primary — the migration's classification choices are operator judgment; the 21-of-21 spike result validates that operator-authored classifications will not produce systemically-ambiguous primaries)
+- Extend `OrchestratorConfig` with `per_skill_tier_defaults` configuration surface (8 skills × 2 tiers)
+- Tool Dispatch interposition: route `invoke_ensemble` through tier_router before `EnsembleExecutor.execute`
+- New `escalation_bypass` and `missing_skill_metadata` typed errors
+- **Operator documentation:** the WP-G4 operator-facing docs should surface ADR-015 §Consequences §Negative's coverage hedge as load-bearing (Spike α distribution finding: 4 actively-used Topaz skills + 3 single-instance + `mathematical_reasoning` unused on the existing library; operators may legitimately collapse unused skill slots to shared Model Profiles)
+
+**Changes (WP-G4-2 — (d)-analog audit dispatch, per ADR-018):**
+- Extend `tier_router.py` with the (d)-analog audit dispatch (or a sibling module `tier_router_audit.py` if responsibility footprint warrants separation — judgment at BUILD-time)
+- Three drift criteria at quantitative-threshold level: verdict-distribution shift (±15% between consecutive windows); escalation-vs-outcome correlation drift (default: escalation must produce at least +5pp outcome improvement over the audit window to be interpretable as a tier-configuration signal — this is the Sub-Q6 evidence surface); bypass-rate trend (default: +25% relative-rate increase per window)
+- Audit verdict trichotomy: no drift / advisory / severe drift
+- Severe-drift response: route-all-to-escalated fail-safe mode + operator notification
+- Asynchronous-operator-review dynamic for advisory drift (diagnostics accumulate in operator-facing storage; operator reviews at session boundary)
+- Extend `OrchestratorConfig` with audit-dispatch trigger thresholds (count + wall-clock) and drift-criteria thresholds — all operationally tunable
+- Outcome observer wiring: the Router observes the dispatched ensemble's outcome (already available at the interposition point) for the escalation-vs-outcome correlation criterion
+- **Sub-Q6 downstream consequence (per ADR-018 + ADR-015 §Consequences §Neutral coupling note):** the (d)-analog audit's escalation-vs-outcome correlation drift criterion's first-deployment evidence on the cycle's North-Star benchmark structurally closes Sub-Q6 (autonomous-routing evidence gap). OQ #14 partial closure for the L1→L2 stage is the inline-grounding deliverable; Sub-Q6 closure is the empirical-validation deliverable
+
+**Scenarios covered:** scenarios.md §Per-Role Tier-Escalation Router — all 6 scenarios. **(d)-analog audit dispatch scenarios:** added in roadmap.md as design drivers; scenario candidates for the audit dispatch's trigger, drift criteria, and severe-drift fail-safe are Cycle 5+ scenario authorship territory (the audit dispatch is structurally specified by ADR-018, but scenario-level test specification can be deferred to the BUILD work or to a follow-up scenarios update).
+
+**Participating modules:** Tier-Escalation Router (new + extended), Orchestrator Tool Dispatch (extended), Orchestrator Configuration (extended), Calibration Gate (verdict consumer), Ensemble Engine (metadata source + outcome observer for the (d)-analog audit), models/structural_errors.
+
+**Dependencies:** Hard on **WP-A4** (typed errors). Hard on **WP-F4** (consumes verdict surface from extended Calibration Gate). WP-G4-2 ((d)-analog audit dispatch) has implied ordering after WP-G4-1 (core router) — a skilled builder could land them together or sequence them at BUILD-time judgment.
+
+**Falsification trigger (per ADR-018, inherits ADR-016's elaboration-by-evidence discipline):** if BUILD finds that the (d)-analog audit dispatch cannot be operationalized within the Tier-Escalation Router module's responsibility (e.g., requires its own top-level module orthogonal to L0–L3, or requires bidirectional coupling with Calibration Gate that violates the read-only verdict-consumption contract), the elaboration-by-evidence framing commitment is invalidated for WP-G4-2; ADR-018 re-deliberates, OQ #14 partial closure reverts to "BUILD evidence will inform", and Sub-Q6 re-opens. Pause BUILD and escalate to practitioner.
+
+---
+
+### WP-H4: ADR-016 — Cross-layer calibration channel — *CONDITIONAL ACCEPTANCE*
+
+**Objective:** Land the Calibration Signal Channel L1 module with the five bounding mechanisms; satisfy ADR-016's first-deployment evidence trigger.
+
+**Changes:**
+- New module `calibration_signal_channel.py` with the read-only L0→L1 signal channel
+- The five bounding mechanisms — (a) fresh-context isolation in consumer, (b) time-decay windowing on cross-layer signals (60-min/100-signal dual-bound, linear decay), (c) categorical anchors via deterministic-tool-output (when ensemble has script-model slot), (d) periodic out-of-band audit dispatch (every 100 verdicts or 24 hours, whichever first), (e) read-only structural validation at the consumer
+- Audit verdict trichotomy: no drift / advisory / severe drift
+- Severe drift triggers fail-safe mode (verdicts default to Reflect-or-Abstain); operator notification
+- Update FC-2 layer map to recognize the L0→L1 read-only annotated exception
+- Update FC-3 cycle detection to account for the new edge
+- New `malformed_signal` typed error (mechanism (e); internal — not raised to orchestrator)
+- Calibration Gate (extended in WP-F4) gains conditional signal-channel consumption — when WP-H4 is active, gate reads windowed signals; HTC features extracted once at L0 and propagated upward
+
+**Scenarios covered:** scenarios.md §Cross-Layer Calibration Channel — all 11 scenarios.
+
+**Participating modules:** Calibration Signal Channel (new), Calibration Gate (extends consumption), Ensemble Engine (emits signals via registered hook), models/structural_errors.
+
+**Dependencies:** Hard on **WP-A4** (typed errors), Hard on **WP-F4** (Calibration Gate's verdict surface). **Last in BUILD sequence** per the conformance scan and ADR-016's conditional-acceptance status.
+
+**Conditional-acceptance handling.** WP-H4 is the only WP whose acceptance is conditional on first-deployment evidence. Per ADR-016 §"Concrete monitoring specification": the trigger artifact is either (i) a BUILD-phase research log entry recording the cross-layer channel's first dispatch outcome on a non-trivial fixture, or (ii) a PLAY-phase field note recording the channel's behavior on the cycle's North-Star benchmark. The cycle-status table for any cycle that touches ADR-016 includes a row noting the channel's status (conditional / fully accepted / superseded).
+
+**Falsification trigger.** If BUILD or first-deployment evidence finds that mechanism (b) windowing or mechanism (d) audit dispatch cannot be operationalized within ADR-002's L0-L3 structure (e.g., they require a top-level module orthogonal to the four-layer architecture), the elaboration-by-evidence framing commitment is invalidated; the reorganization branch re-opens; ADR-016 is re-deliberated with reorganization on the table.
+
+---
+
+### WP-K: Plexus Integration (Plexus-active paths) — *deferred from Cycle 1*
 
 **Objective:** Replace the Adapter's no-op bodies with real plexus MCP client calls; land the cross-session calibration persistence edge so composed ensembles' trust survives Session boundaries when Plexus is active.
 
@@ -54,62 +230,93 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ---
 
-## Dependency Graph
+## Dependency Graph (Cycle 4)
 
 ```
-WP-A (extract cycle validator)
+WP-A4 (LlmOrcStructuralError base class)
    │
-   └─ hard ─▶ WP-G
+   ├─ hard ─▶ WP-C4 (ADR-017 phantom_tool_call guard)
+   ├─ hard ─▶ WP-D4 (ADR-013 Session Registry artifacts)
+   ├─ hard ─▶ WP-E4 (ADR-012 Conversation Compaction)
+   └─ hard ─▶ WP-F4 (ADR-014 Calibration Gate verdict trichotomy)
 
-WP-B (serving foundation; includes resolve_session_start_context)
+WP-B4 (FC-2 + FC-3 automated checks)
    │
-   ├─ hard ─▶ WP-C
-   └─ hard ─▶ WP-F
+   └─ open choice with WP-A4 — no hard dependency in either direction
 
-WP-C (ReAct core)
+WP-C4 (ADR-017) ─ open choice with WP-D4 (mutually independent)
+WP-D4 (ADR-013) ─ open choice with WP-E4 (mutually independent at architecture level)
+WP-E4 (ADR-012) ─ open choice with WP-D4
+
+WP-F4 (ADR-014)
    │
-   ├─ hard ─▶ WP-D
-   ├─ hard ─▶ WP-E
-   ├─ hard ─▶ WP-F
-   ├─ hard ─▶ WP-G
-   ├─ implied ─▶ WP-H
-   └─ hard ─▶ WP-I
+   ├─ hard ─▶ WP-G4 (ADR-015 router consumes verdict)
+   └─ hard ─▶ WP-H4 (ADR-016 channel composes with verdict computation)
 
-WP-G (composition) ─ implied ─▶ WP-H
-WP-I (Adapter skeleton) ─ hard ─▶ WP-K (replaces no-op bodies with real Plexus client)
-WP-K (Plexus integration) ─ implied ─▶ WP-H (delivers cross-session calibration persistence)
-WP-K ─ hard ─▶ WP-J
+WP-G4 (ADR-015) ─ implied ─▶ no downstream WP (terminal in this cycle's WP set)
+WP-H4 (ADR-016) ─ conditional acceptance — first-deployment evidence is the validation trigger
+
+(deferred Cycle 1 WPs)
+WP-I (Adapter skeleton, complete) ─ hard ─▶ WP-K (replaces no-op bodies with real Plexus client)
+WP-K (Plexus integration, deferred) ─ implied ─▶ cross-session calibration persistence
+WP-K ─ hard ─▶ WP-J (Bootstrapping pipeline, deferred)
 ```
 
 **Classification key:**
 
 - **Hard dependency:** structural necessity — the downstream WP's code imports, extends, or requires the upstream WP's output. The builder has no choice.
 - **Implied logic:** suggested ordering — building the upstream first is simpler because the downstream references concepts it defines, but a skilled builder could stub the references and fill in later.
-- **Open choice:** genuinely independent — build either first. (WP-A and WP-B have no dependency between them; either can start. Similarly WP-D, WP-E, WP-F, WP-I are all mutually independent once their hard deps are met.)
+- **Open choice:** genuinely independent — build either first.
 
 ---
 
-## Transition States
+## Transition States (Cycle 4)
 
-### TS-1: Stateless orchestrator serving OpenCode (after WP-A, WP-B, WP-C, WP-D, WP-E, WP-F)
+### TS-1: Stateless orchestrator serving OpenCode — **reached 2026-04-22 (Cycle 1)**
 
-A complete, useful intermediate. An operator points OpenCode at the llm-orc endpoint and runs an RDD phase through it. The orchestrator routes tasks to existing library ensembles, summarizes results, enforces Budget, and delegates client-side actions (bash, file edits) to OpenCode at turn boundaries. No self-composition, no Plexus, no calibration. This is the minimum coherent system that satisfies the vision named in ARCHITECT: *"I can use OpenCode and run a version of this RDD pipeline with it."*
+See Completed Work Log. An operator points OpenCode at the llm-orc endpoint and runs an RDD phase through it; the orchestrator routes tasks to existing library ensembles, summarizes results, enforces Budget, and delegates client-side actions at turn boundaries. No self-composition, no Plexus, no calibration.
 
-At TS-1, the fitness criteria satisfied are: FC-1 through FC-5, FC-8, FC-10, FC-11, FC-13. FC-6 (shared validator), FC-7 (Plexus no-op coverage), FC-9 (injection stage exists), and FC-12 (calibration interposition) are satisfied later.
+### TS-2: Stateless baseline complete — **reached 2026-04-24 (Cycle 1)**
 
-### TS-2: Stateless baseline complete (after TS-1 + WP-G + WP-H) — **reached 2026-04-24**
+See Completed Work Log. The orchestrator composes new ensembles from existing library primitives, validates them, and calibrates them within the session. Still no Plexus.
 
-The orchestrator can now compose new ensembles from existing library primitives, validate them, and calibrate them within the session. Still no Plexus — calibration is session-scoped; cross-session trust does not persist. This is the complete **baseline product** as defined by ADR-002 Layer 1-3 and AS-8. Fitness criteria FC-6 and FC-12 satisfied at TS-2 — **FC-6 landed at WP-G close (2026-04-22), FC-12 landed at WP-H close (2026-04-24)**.
+### TS-3: Four-layer stack with Phase 1 Plexus integration — *deferred*
 
-### TS-3: Four-layer stack with Phase 1 Plexus integration (after TS-2 + WP-I + WP-K + WP-J)
+Reached via WP-I (skeleton, complete) + WP-K (deferred — un-defers when `/rdd-play` surfaces concrete needs, when production deployments accumulate composition activity, or when the Plexus enrichment pipeline matures sufficiently) + WP-J (deferred until WP-K).
 
-Full architecture live. `query_knowledge` and `record_outcome` flow to Plexus; library bootstrapping is available. Calibration now persists across sessions. Fitness criterion FC-7 satisfied (FC-9 was satisfied at WP-B via `resolve_session_start_context`). Phase 2 injection remains deferred per ADR-009 — when it lands, the change is a function body, not a structural addition.
+### TS-4: Typed-error infrastructure + structural fitness checks (after WP-A4 + WP-B4) — *Cycle 4*
 
-**Reaching TS-3 in two ships.** WP-I lands the Plexus Adapter skeleton with no-op fallbacks (FC-7 satisfied for the Plexus-absent branches; surface wired through Tool Dispatch). WP-K replaces the no-op method bodies with real plexus MCP client calls and lands the cross-session calibration persistence edge. WP-K is deferred — it un-defers when `/rdd-play` surfaces a concrete need, when production deployments accumulate enough composition activity that cross-session trust matters, or when the Plexus enrichment pipeline matures sufficiently. Splitting the Plexus integration across WP-I (now) and WP-K (later) lets the stateless baseline observe production use before committing to integration shape.
+A coherent intermediate where the typed-error base class lives, FC-2 and FC-3 run automated, and the codebase's layering discipline is mechanically verified. No new behavior shipped, but the substrate for ADRs 012–017 is in place. Foundational; unblocks all subsequent Cycle 4 WPs.
+
+### TS-5: Independent ADR completions (after TS-4 + WP-C4 + WP-D4 + WP-E4) — *Cycle 4*
+
+Three of the six new ADRs (017, 013, 012) are landed independently. The orchestrator now has the structural validation guard (phantom_tool_call detection), the structured-handoff artifact set with write-gate validation (Cluster 2 sessions), and the conversation compaction pipeline (long-horizon coherence). No tier escalation, no cross-layer calibration. This is a usable Cluster-2-aware long-horizon orchestrator.
+
+### TS-6: In-process calibration + tier escalation (after TS-5 + WP-F4 + WP-G4) — *Cycle 4*
+
+The verdict trichotomy and per-role tier-escalation router are landed. Dispatches now route to per-skill tier defaults based on calibration verdicts. ADR-014 + ADR-015 compose to form the in-process calibration-and-escalation system. Still no cross-layer calibration channel; in-process layer operates on L1-internal trajectory data only.
+
+### TS-7: Full cross-layer calibration system (after TS-6 + WP-H4 conditional acceptance) — *Cycle 4*
+
+The Calibration Signal Channel is active; HTC trajectory features extracted at L0 and propagated upward through the read-only channel; bounding mechanisms (a)–(e) operational; periodic audit dispatch detecting drift. **Conditional on first-deployment evidence on the cycle's North-Star benchmark.** This is the cycle's most novel architectural territory — the moment the elaboration-by-evidence framing commitment is empirically tested.
 
 ---
 
-## Open Decision Points
+## Open Decision Points (Cycle 4)
+
+### Cycle 4 build-time decision points
+
+**C4-1. Layer 3 session-notes template storage.** ADR-012 specifies "continuously-maintained at zero LLM cost"; storage is implementation-tunable. Build-time decision: in-memory (simpler) vs. filesystem-resident (operator-readable, can compose with structured-handoff artifact set per ADR-013). Default: in-memory; promote to filesystem if BUILD evidence shows operators want to read the template. Affects WP-D4 / WP-E4 coupling.
+
+**C4-2. Topaz skill metadata migration order.** Existing library ensembles need `topaz_skill` field (FC-18). Decision: migrate all at once (single PR) vs. incremental with default-to-`tool_use` fallback. Default: migrate all at once; absent-skill produces explicit error per ADR-015. Affects WP-G4.
+
+**C4-3. Layer 4 summarizer ensemble — separate from `agentic-result-summarizer`?** ADR-012 §Consequences §Neutral says "Layer 4's LLM-summary semantics are a Conversation Compaction concern, distinct from AS-7's Result Summarization." Decision: ship separate `agentic-context-summarizer.yaml` for Cycle 4. Default: separate. Affects WP-E4.
+
+**C4-4. OQ #14 grounding-mechanism asymmetry follow-up.** The decide-gate finding flagged five other cross-layer stages with less rigor than ADR-016. ARCHITECT's responsibility-allocation choices either (a) surface gaps for Cycle 5+ research, (b) propose grounding mechanisms inline as drivers, or (c) note that BUILD evidence will inform what grounding the other stages need. **Per the cycle status: choice (c) is the practitioner's selection** — first-deployment evidence is the natural validation surface for the asymmetric-rigor concern.
+
+**C4-5. Sub-Q6 routing-reliability evidence gap (ADR-015 carry-forward).** Multi-iteration routing reliability at North-Star benchmark session length is empirically open. ARCHITECT records this as a deployment-evidence carry-forward — operators interpreting escalation-rate calibration evidence may be reading routing-noise rather than tier-configuration mismatches until first-deployment evidence resolves Sub-Q6. No architectural action; the responsibility is Calibration Gate's audit dispatch (mechanism (d)) detecting routing-quality patterns over time. Affects WP-H4 audit-verdict diagnostic content.
+
+### Carry-forward Cycle 1 decision points (preserved for posterity / unresolved deferred WPs)
 
 1. **Client-tool delegation scenarios in `scenarios.md`** *(resolved 2026-04-22 via DECIDE mini-cycle)*. The four stress scenarios are written into `scenarios.md` §Client Tool Surface Commitment. All four carried by Option C: (a)/(b) via intended turn-boundary delegation and Session continuity; (c) via pre-invoke delegation (orchestrator reads file at prior turn boundary, folds content into `input_data`); (d) via the **retry pattern** (ensemble runs atomically, agent emits structured `needs_client_tool`, Result Summarization preserves signal, orchestrator re-invokes with client-tool result folded into `input_data`). Option D (mid-execution callback) is out of scope for this cycle — it would require amending ADR-001/ADR-002 and adding suspend/resume to the DAG engine's synchronous phase loop — so scenario (d) could not reopen the Commitment as an Option-D question — only as a retry-viability question. Retry is viable; Commitment stands. See `system-design.md` Amendment #4. WP-F is now unblocked. The retry pattern's conditional dependence on a composed-ensemble convention for emitting structured un-met-dependency signals carries forward as Open Decision Point #8.
 
@@ -130,6 +337,43 @@ Full architecture live. `query_knowledge` and `record_outcome` flow to Plexus; l
 ---
 
 ## Completed Work Log
+
+### Cycle 1: Stateless agentic serving baseline (closed 2026-04-29)
+
+**Derived from:** ADRs 001-011, Essay 001 (`001-agentic-serving-architecture.md`), Essay 002 (`002-capability-floor-and-observability.md`)
+
+| WP | Title | Closed | Status |
+|----|-------|--------|--------|
+| WP-A | Cycle-validator extraction (retrofit debt) | 2026-04-20 | Complete |
+| WP-B | Serving foundation + session-start | 2026-04-21 | Complete |
+| WP-C | ReAct core + real LLM adapter | 2026-04-21 | Complete |
+| WP-D | Result Summarizer Harness | 2026-04-21 | Complete |
+| WP-E | Autonomy Policy | 2026-04-22 | Complete |
+| WP-F | Client-tool turn-boundary delegation | 2026-04-22 | Complete |
+| WP-G | Composition + Composition Validator | 2026-04-22 | Complete |
+| WP-H | Calibration Gate | 2026-04-24 | Complete |
+| WP-I | Plexus Adapter skeleton (no-op fallbacks) | 2026-04-24 | Complete |
+
+**Summary:**
+- TS-1 (stateless orchestrator serving OpenCode) reached at WP-F close (2026-04-22)
+- TS-2 (stateless baseline complete per ADR-002 Layer 1-3 and AS-8) reached at WP-H close (2026-04-24)
+- Plexus Adapter skeleton landed at WP-I close (2026-04-24) — FC-7 stateless coverage complete; WP-K (Plexus-active body-swap) and WP-J (Bootstrapping pipeline) deferred
+- 13 fitness criteria (FC-1 through FC-13) defined and verified or in-place; 18 boundary integration tests; 12 modules + 1 typed extension function across 4 dependency layers
+- Test suite at Cycle 1 close: 2347 passing, 91.56% coverage, lint clean (mypy strict + ruff + bandit + vulture + complexipy)
+
+**Dependency graph (as-built; preserved for posterity):**
+
+```
+WP-A (extract cycle validator) ─ hard ─▶ WP-G (composition)
+WP-B (serving foundation) ─ hard ─▶ {WP-C, WP-F}
+WP-C (ReAct core) ─ hard ─▶ {WP-D, WP-E, WP-F, WP-G, WP-I}; implied ─▶ WP-H
+WP-G (composition) ─ implied ─▶ WP-H (calibration of composed ensembles)
+WP-I (Adapter skeleton) ─ hard ─▶ WP-K (deferred Plexus body-swap)
+```
+
+**Per-WP detail follows below.** Migrated unchanged from prior roadmap structure.
+
+---
 
 ### WP-I: Plexus Adapter skeleton (no-op fallbacks) — 2026-04-24
 
