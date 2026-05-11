@@ -1,32 +1,112 @@
 # System Design: Agentic Serving
 
-**Version:** 1.0
+**Version:** 3.0
 **Status:** Current
-**Last amended:** 2026-04-20
+**Last amended:** 2026-05-08
 **Scope:** Scoped RDD cycle at `docs/agentic-serving/`. Inherits the project-level domain model (Invariants 1-14) and existing system architecture.
 
 ---
 
-## Architectural Drivers
+## What this document is, who it's for, where to read what
 
-| Driver | Type | Provenance |
-|--------|------|------------|
-| Stateless-first operability — baseline product (Layers 1-3) runs with no Plexus dependency | Quality Attribute (primary) | AS-8; ADR-002; cycle-status §FF 15-16 |
-| Deterministic control plane — Budget, Tool Surface, and Primitive set are harness-level circuit breakers, not model-level choices | Quality Attribute | AS-3, AS-6; ADR-003, ADR-005, ADR-008 |
-| Orchestrator reasoning quality across long sessions | Quality Attribute | AS-7; ADR-004, ADR-005; essay §Context Management |
-| Swappable orchestrator LLM via Model Profile | Quality Attribute | ADR-011; OQ #1 (knowledge-compensated model selection) |
-| Observability of orchestrator activity (visibility *form* unresolved — OQ #2) | Quality Attribute | Product discovery tensions #2 and #5 |
-| Auditability — closed tool-call vocabulary | Quality Attribute | ADR-003 |
-| OpenAI-compatible protocol: `/v1/chat/completions` + `/v1/models`, SSE streaming with tool-call round-trips | Constraint | Essay §API Surface; interaction specs |
-| Phase 2 Plexus injection hook point must be structurally reserved | Constraint | ADR-009 (post-gate reframe) |
-| Ensemble Engine (Layer 3) unchanged | Constraint | ADR-001, ADR-002 |
-| Project-level Invariants 1-14 remain in force; AS-1 through AS-8 layered on top | Constraint | Project domain model; agentic-serving domain model |
-| Push-model Plexus ingestion; source-material ingestion boundary; async enrichment | Constraint | AS-4; ADR-010 |
-| Orchestrator profile change is a session-boundary event | Constraint | ADR-011 |
-| Existing FastAPI server and MCP handlers are extended, not replaced | Integration | Retrofit reconnaissance (2026-04-20) |
-| Plexus (external lib) is optional; two code paths — with and without Plexus — must maintain feature parity on Layers 1-3 | Integration | ADR-002; AS-8 |
-| Client-declared tools (OpenCode, Roo Code, etc.) flow through turn-boundary delegation, not through the orchestrator's internal action space | Integration | This document, §Client Tool Surface Commitment |
-| Session sized for sustained agentic coding comparable to an RDD phase; multi-LLM-call-per-turn token accounting | Scale | ADR-005 |
+This is the technical perspective on **agentic serving** — how llm-orc serves as the orchestrator backend for agentic coding tools (OpenCode, Roo Code, Cline, etc.) via OpenAI-compatible endpoints. It describes the four-layer system, the closed-set tool surface, the client-tool delegation boundary, and the supporting modules that govern Budget, Composition, Calibration, Autonomy, and the (optional) Plexus knowledge-graph integration.
+
+**First-encounter readers** orient through the diagram, brief module summaries, and the Client Tool Surface Commitment below. **Agents constructing context** for code work read the companion file at [system-design.agents.md](./system-design.agents.md), which carries the full architectural drivers table, module decomposition (Owns/Depends/Inversion notes), responsibility matrix, dependency graph, integration contracts, fitness criteria, test architecture, and Appendix A per-phase susceptibility-snapshot briefs in the form best suited to that work.
+
+The split between this artifact and `system-design.agents.md` is the **companion-file pattern** (ADR-084 Pattern B): a single human-facing surface here, with a parallel-sibling agent-context file at a predictable path. The diagram below retains its load-bearing role for human orientation; the dense reference material has been relocated rather than removed.
+
+**Sequencing** lives in [roadmap.md](./roadmap.md). **Decisions** live in [decisions/](./decisions/). **Vocabulary** lives in [domain-model.md](./domain-model.md). **Behavior** lives in [scenarios.md](./scenarios.md) and [interaction-specs.md](./interaction-specs.md). If you are coming to this corpus with no prior context, read [ORIENTATION.md](./ORIENTATION.md) first.
+
+---
+
+## Architecture at a glance
+
+```
+                       OpenAI-compatible client
+                       (OpenCode, Roo Code, Cline, ...)
+                                  │
+                                  ▼  /v1/chat/completions, /v1/models
+┌─────────────────────────────────────────────────────────────────────┐
+│  L3 — Entry Layer                                                    │
+│  Serving Layer · Session Registry (extended w/ structured-handoff   │
+│  artifacts + write-gate validation per ADR-013) · Bootstrapping     │
+│  Pipeline · Orchestrator Configuration                               │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  L2 — Runtime                                                        │
+│  Orchestrator Runtime ──── ReAct loop, fixed 5-tool action surface   │
+│  Orchestrator Tool Dispatch (extended w/ structural validation guard │
+│  per ADR-017) · Result Summarizer Harness · Conversation Compaction  │
+│  (5-layer pipeline per ADR-012) · Tier-Escalation Router (per-role   │
+│  via OI-MAS per ADR-015)                                             │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │     ▲
+                                  ▼     │ (read-only signal channel —
+┌─────────────────────────────────────────────────────────────────────┐
+│  L1 — Domain Policy                  │ ADR-016 narrow exception)    │
+│  Composition Validator · Budget Controller · Autonomy Policy ·       │
+│  Calibration Gate (extended w/ verdict trichotomy + AUQ + HTC +      │
+│  time-decay windowing per ADR-014) · Plexus Adapter (optional,       │
+│  no-op when absent) · Calibration Signal Channel (per ADR-016;       │
+│  conditional acceptance — first-deployment evidence pending)         │
+└─────────────────────────────────────────────────────────────────────┘
+                                        │
+                                  ▼     │
+┌─────────────────────────────────────────────────────────────────────┐
+│  L0 — Core (existing)                                                │
+│  Ensemble Engine ───── DAG executor (Layer 3 unchanged per ADR-002)  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Layering rule.** Edges point from a higher layer to a same-or-lower layer; never upward — **with one narrow exception per ADR-016 (conditional acceptance; first-deployment evidence pending):** a read-only signal channel may flow from L0 (Ensemble Engine dispatch outputs) to L1 (Calibration Signal Channel module), restricted to calibration data and gated by five bounding mechanisms specified in ADR-016. The exception is signal-channel-specific (calibration only; not a general upward import permission) and read-only (no upward writes; ADR-002's layering rule for write paths is unchanged). All other layer pairs remain prohibited. FC-2 (static import check) and FC-3 (cycle detection) recognize the calibration-channel exception via an annotated allowed-edge in their layer map. Intra-L3 edges (Serving Layer ↔ Session Registry, Orchestrator Configuration) do not form cycles. Cycle 4's seven new dependency edges (Runtime → Conversation Compaction; Compaction → Ensemble Engine; Tool Dispatch → Tier-Escalation Router; Tier-Escalation Router → Calibration Gate; Tier-Escalation Router → Ensemble Engine; Calibration Gate → Calibration Signal Channel; Ensemble Engine → Calibration Signal Channel as the upward exception) are all verified cycle-free.
+
+**Falsification trigger (ADR-016).** If BUILD or first-deployment evidence finds that mechanism (b) time-decay windowing or mechanism (d) periodic out-of-band audit dispatch cannot be operationalized within ADR-002's L0-L3 structure (e.g., the mechanisms require a top-level module orthogonal to the four-layer architecture), the elaboration-by-evidence framing commitment is invalidated, the reorganization branch re-opens, and ADR-016 is re-deliberated with reorganization on the table.
+
+**Five-tool internal action surface (ADR-003).** The orchestrator's ReAct iterations call only: `invoke_ensemble`, `compose_ensemble`, `list_ensembles`, `query_knowledge`, `record_outcome`. No others. Client-declared tools flow through the response surface (turn-boundary delegation), not the action surface.
+
+**Plexus is optional (ADR-002, AS-8).** L1's Plexus Adapter has no-op fallbacks exercised by stateless-mode tests (FC-7). The orchestrator works statelessly without Plexus; Plexus upgrades it to a learning system.
+
+---
+
+## Modules — brief
+
+### L3 — Entry layer
+
+| Module | One-line purpose |
+|---|---|
+| **Serving Layer** | Translates OpenAI-compatible wire protocol (`/v1/chat/completions`, `/v1/models`, SSE) into Session-scoped orchestrator interactions. Owns session-start flow including the typed `resolve_session_start_context` extension point (Phase 1 returns `[]`; Phase 2 reads from Plexus). |
+| **Session Registry** *(extended in Cycle 4 per ADR-013)* | Identifies and continues a multi-request Session; maintains the structured-handoff artifact set (feature-list-with-monotonic-passes, append-only progress log, init.sh deterministic environment bootstrap) for Cluster 2 sessions; runs three-class write-gate validation (JSON schema, append-only constraint, signed-script tamper-detection) on artifact writes; resolves cluster declaration at session-start (default-required for cross-cluster ambiguity per disposition (i)). |
+| **Bootstrapping Pipeline** | Operator-triggered batch ingestion of the library into Plexus as source material per AS-4. Currently deferred (WP-J). |
+| **Orchestrator Configuration** | Loads and resolves per-session config: Budget defaults, Autonomy defaults, Plexus enablement, orchestrator Model Profile (ADR-011), Conversation Compaction thresholds (ADR-012), per-skill tier defaults for the eight Topaz skills (ADR-015), structural validation guard pattern set (ADR-017). |
+
+### L2 — Runtime
+
+| Module | One-line purpose |
+|---|---|
+| **Orchestrator Runtime** *(extended in Cycle 4 per ADR-012)* | Runs the ReAct loop. Imports only Budget Controller, Orchestrator Tool Dispatch, and Conversation Compaction (FC-4 amendment). Invokes compaction at each turn boundary; unaware of compaction internals. Aware of Routing Decisions and Conversation Compaction; unaware of summarization, Plexus, Autonomy, Calibration, or tier escalation. |
+| **Orchestrator Tool Dispatch** *(extended in Cycle 4 per ADR-015 + ADR-017)* | Defines the closed five-tool surface (FC-5) and dispatches each call to its downstream service. Interposes (in order on `invoke_ensemble`): structural validation guard (response-text scan for phantom_tool_call assertion patterns); Autonomy Policy gate; Tier-Escalation Router (verdict→tier selection); `EnsembleExecutor.execute`; Calibration Gate post-result; Result Summarizer Harness. |
+| **Result Summarizer Harness** | Unskippable interposition between ensemble completion and the orchestrator's context. Configured summarizer ensemble; raw-output escape hatch (ADR-004). |
+| **Conversation Compaction** *(new in Cycle 4 per ADR-012)* | Runs the five-layer cheapest-first compaction pipeline at orchestrator turn boundaries. Layer 0 persist-large-tool-results (>50K char to disk); Layer 1 cache-edit; Layer 2 idle-expiry (60-min default); Layer 3 free summary via nine-section session-notes template (12K-token cap; zero LLM cost); Layer 4 LLM semantic summary with three-failure circuit-breaker (auto-resets at session start). |
+| **Tier-Escalation Router** *(new in Cycle 4 per ADR-015)* | Selects per-dispatch Model Profile (cheap-tier or escalated-tier) for `invoke_ensemble` based on the dispatched ensemble's Topaz skill metadata and the Calibration Gate's verdict. Verdict→tier mapping: Proceed → cheap; Reflect → escalated; Abstain → typed `escalation_bypass` error. Honors ADR-011's session-boundary scope for the orchestrator's own LLM. |
+
+### L1 — Domain policy
+
+| Module | One-line purpose |
+|---|---|
+| **Composition Validator** | Validates a proposed composed ensemble against the existing reference graph using the same routine as load-time validation (FC-6). Stricter than load-time: enforces "compose from existing primitives only" (AS-6). |
+| **Budget Controller** | Enforces turn and token limits at each ReAct iteration boundary (FC-10). Control plane, not model plane (AS-3). |
+| **Autonomy Policy** | Gates orchestrator actions against the Session's Autonomy Level (FC-11). Surfaces composition events when configuration requires it. |
+| **Calibration Gate** *(extended in Cycle 4 per ADR-014)* | Tracks Calibration state and produces dispatch-time calibration verdict (Proceed / Reflect / Abstain trichotomy). Verdict composition: AUQ verbalized confidence (System 1 + System 2 at default 0.85 threshold within 0.8–1.0 range), HTC trajectory features (token-level entropy, attention-weight distributions, decision-confidence trajectories), and ADR-007's existing post-hoc result-check signal. Time-decay windowing on trajectory features (60-min/100-signal dual-bound, linear decay). Three Abstain criteria (entropy collapse > 1.5σ; post-hoc hard failure; multiple drift criteria simultaneously). When ADR-016 channel is active, HTC features extracted once at L0 and propagated upward; otherwise extracted in-layer. |
+| **Plexus Adapter** | Single place Plexus-aware code lives. No-op fallbacks when Plexus is absent (FC-7). WP-K (Plexus-active paths) deferred; WP-I shipped the skeleton. |
+| **Calibration Signal Channel** *(new in Cycle 4 per ADR-016; conditional acceptance)* | Carries read-only calibration data upward from L0 (Ensemble Engine outputs) to L1 (Calibration Gate dispatch decisions), enforcing the five bounding mechanisms — (a) fresh-context isolation in the consumer, (b) time-decay windowing for the bias-compounding horizon, (c) categorical anchors via deterministic-tool-output (when ensemble has script-model slot), (d) periodic out-of-band audit dispatch (every 100 verdicts or 24 hours; severe drift triggers fail-safe), (e) read-only structural validation. Owns the upward L0→L1 read-only edge — the single narrow exception ADR-016 amends ADR-002 to permit. **Conditional acceptance:** synthetic-data validation (mechanism b) and structural-transfer validation (mechanism d) completed; first-deployment evidence on the cycle's North-Star benchmark closes the conditionality (or fires the falsification trigger). |
+
+### L0 — Core (existing, unchanged per ADR-002)
+
+| Module | One-line purpose |
+|---|---|
+| **Ensemble Engine** | Executes ensembles per the existing declarative DAG engine. Cross-ensemble references, depth limits, fan-out gather, child executor, immutable-vs-mutable state separation. |
 
 ---
 
@@ -40,415 +120,41 @@
 
 **Provenance.** Committed in ARCHITECT 2026-04-20 on user direction. Honors ADR-003 strictly ("no others" refers to *internal* action surface; delegation at the turn boundary is response-surface behavior, not internal action). Supersedes the `interaction-specs.md` open-boundary note for the Tool User stakeholder.
 
-**Scenario gate resolved (2026-04-22).** The four stress scenarios from roadmap Open Decision Point #1 are written into `scenarios.md` §Client Tool Surface Commitment. All four are carried by Option C:
+**Scenario gate resolved (2026-04-22; Amendment #4).** The four stress scenarios from roadmap Open Decision Point #1 are written into `scenarios.md` §Client Tool Surface Commitment. All four are carried by Option C:
 
-- Scenarios (a) and (b) exercise the intended turn-boundary delegation path and Session continuity across a client-tool round trip.
-- Scenario (c) — an ensemble whose first agent needs a client-filesystem file — is carried by *pre-invoke* delegation: the orchestrator reads the file at the prior turn boundary and folds the content into `invoke_ensemble`'s `input_data`.
-- Scenario (d) — a composed ensemble's un-predicted mid-execution client-tool need — is carried by the **retry pattern**: the ensemble runs to completion, an agent that cannot proceed emits a structured `needs_client_tool` signal, the Result Summarization preserves the signal, the orchestrator observes it and closes the next turn with a client-tool delegation, and the orchestrator re-invokes the ensemble with the client-tool result folded into `input_data`. The DAG engine never suspends; Layer 3 is unchanged.
+- Scenarios (a) and (b) — turn-boundary delegation path, Session continuity across a client-tool round trip.
+- Scenario (c) — first-agent client-filesystem-file need carried by *pre-invoke* delegation: orchestrator reads at the prior turn boundary, folds into `invoke_ensemble`'s `input_data`.
+- Scenario (d) — composed ensemble's un-predicted mid-execution client-tool need carried by the **retry pattern**: ensemble runs to completion; agent emits structured `needs_client_tool` signal; Result Summarization preserves it; orchestrator observes, closes next turn with client-tool delegation, re-invokes with client-tool result folded into `input_data`. The DAG engine never suspends; Layer 3 is unchanged.
 
-Option D (mid-execution callback) would require the DAG engine to support suspend/resume — the `_execute_core` phase loop is synchronous and atomic with no yield points between phases — which would require amending ADR-001 and ADR-002 ("Ensemble Engine (Layer 3) unchanged"). Option D is therefore out of scope for this cycle; scenario (d) could not reopen it as a viable alternative — only as a retry-pattern-viability question. The retry pattern is itself conditional: it works only when composed ensembles follow a convention for emitting structured un-met-dependency signals. The specific mechanism that ensures the convention is honored (orchestrator system prompt, composed-ensemble prompt convention, deterministic script-agent precondition guard, structural detection in Tool Dispatch, Calibration Gate quality check) is a build-time layering decision carried as roadmap Open Decision Point #8.
-
-Future finding — an ensemble execution model that needs to reach the client's environment *during* agent execution with unbounded retry cost — would reopen ADR-001/ADR-002 at the structural level, not this commitment alone.
-
----
-
-## Module Decomposition
-
-Twelve modules plus one typed extension-point function. Existing modules are marked **(existing)**; everything else is net-new surface area for agentic serving.
-
-### Module: Serving Layer
-
-**Purpose:** Translates the OpenAI-compatible wire protocol into Session-scoped orchestrator interactions.
-**Provenance:** AS-8; ADR-001, ADR-002 (Layer 1); ADR-009 (Phase 2 injection reservation — function-level); Essay §API Surface; Client Tool Surface Commitment.
-**Owns:** Serving Layer (concept); SSE streaming; tool-call formatting; `/v1/chat/completions` and `/v1/models` endpoints; response-surface tool delegation; session-start flow including the typed `resolve_session_start_context` function (Phase 1 returns `[]`; Phase 2 reads from Plexus Adapter).
-**Depends on:** Session Registry, Orchestrator Configuration, Orchestrator Runtime. In Phase 2 only: Plexus Adapter.
-**Depended on by:** (external clients — FastAPI app)
-**Phase 2 hook point.** ADR-009 requires the Phase 2 injection point to be structurally reserved. This is satisfied by the typed function `resolve_session_start_context(session: SessionContext) -> list[PromptFragment]` at a single call site in the session-start flow. Phase 1 returns `[]` unconditionally; Phase 2 populates the body by reading from Plexus Adapter. The contract is the load-bearing part of the reservation — signature and call site commit the interface now so Phase 2 is a function-body change, not a structural change.
-**Inversion note:** The Serving Layer boundary serves the Tool User's "the endpoint is a model" mental model (they see only the HTTP surface) and the Operator's "I start the server and point a client at it" mental model. Both converge at this boundary, so the boundary serves both users.
-
-### Module: Session Registry
-
-**Purpose:** Identifies and continues a multi-request Session by reconstructing orchestrator state from the conversation history.
-**Provenance:** Session (concept); ADR-005 (Budget is Session-scoped); ADR-008 (Autonomy is Session-scoped); ADR-011 (Model Profile is Session-scoped); Client Tool Surface Commitment (Session spans client-tool round trips).
-**Owns:** Session identity; Session lookup by request; cumulative-turn-count and cumulative-token-spend derivation; persistence of Session state across HTTP requests when persistence is required by Autonomy Level or Calibration state.
-**Depends on:** Ensemble Engine (for profile resolution — optional).
-**Depended on by:** Serving Layer, Budget Controller, Autonomy Policy, Calibration Gate.
-**Inversion note:** The Operator's mental model is "a Session is the thing with Budget, Autonomy, and orchestrator profile; requests are how clients interact with it." The boundary aligns.
-
-### Module: Budget Controller
-
-**Purpose:** Enforces turn and token limits at each ReAct iteration boundary.
-**Provenance:** AS-3; ADR-005; domain concept Budget.
-**Owns:** Budget (concept); per-iteration circuit-breaker check; graceful termination with explicit exhaustion signaling.
-**Depends on:** Session Registry.
-**Depended on by:** Orchestrator Runtime.
-**Inversion note:** Operator's mental model — "Budget is a thing I set; its enforcement is automatic and never negotiable by the LLM." The boundary is thin but load-bearing (AS-3 says control plane, not model plane). Kept separate from Session Registry because its change rate is different (Budget semantics will shift during rollout; Session identity rarely changes).
-
-### Module: Orchestrator Runtime
-
-**Purpose:** Runs the ReAct loop that delegates to llm-orc operations via a fixed tool surface.
-**Provenance:** ADR-001; domain concepts Orchestrator Agent, Routing Decision, Conversation Compaction.
-**Owns:** Orchestrator Agent (concept); Routing Decision (generation); Conversation Compaction (concept and action); Route, Invoke (Dynamic), Query, Record, Calibrate (as actor).
-**Depends on:** Budget Controller, Orchestrator Tool Dispatch.
-**Depended on by:** Serving Layer.
-**Inversion note:** The Orchestrator LLM's mental model is "I reason, I emit tool calls, I observe results." The Runtime boundary aligns with that mental model — it does not expose Session bookkeeping, Plexus awareness, Autonomy gating, or summarization to the LLM's reasoning context. Result summarization is interposed by Orchestrator Tool Dispatch on the `invoke_ensemble` return path; the Runtime is unaware of the Harness (per Amendment #3).
-
-### Module: Orchestrator Tool Dispatch
-
-**Purpose:** Defines the fixed five-tool surface and dispatches each orchestrator tool call to its downstream service.
-**Provenance:** ADR-003; AS-6; domain concepts Orchestrator Tool, Dynamic Invocation.
-**Owns:** Orchestrator Tool (concept); tool-name allowlist enforcement; routing of `invoke_ensemble`, `compose_ensemble`, `list_ensembles`, `query_knowledge`, `record_outcome` to their downstream services; rejection of any other tool name as a tool error; interposition of Result Summarizer Harness on the `invoke_ensemble` return path.
-**Depends on:** Ensemble Engine, Composition Validator, Plexus Adapter, Autonomy Policy, Calibration Gate, Result Summarizer Harness.
-**Depended on by:** Orchestrator Runtime.
-**Rationale for separate module:** Keeping dispatch separate from the Runtime's reasoning loop makes the closed-set property of ADR-003 structurally enforceable — a code path that bypasses the dispatch to do something tool-like is mechanically excluded, not merely proscribed.
-
-### Module: Composition Validator
-
-**Purpose:** Validates a proposed ensemble against the existing reference graph using the same routine as load-time validation.
-**Provenance:** AS-2, AS-6; ADR-006; Invariant 5 (cross-ensemble acyclicity); Invariant 7 (static references); Invariant 8 (depth limit); Invariant 11 (extras forbidden); scenarios.md refactor 1-3; cycle-status §FF 21.
-**Owns:** Composition (concept); composition-time validation routine shared with `EnsembleLoader`.
-**Depends on:** Ensemble Engine (shared validator routine lives in `core/config/ensemble_config.py` as a public function after the refactor).
-**Depended on by:** Orchestrator Tool Dispatch.
-**Retrofit debt:** Existing `EnsembleLoader._validate_cross_ensemble_cycles` and `_build_reference_graph` are private. They must be extracted to a public function (`core/config/ensemble_config.py`) that both the loader and the composition path call. `ValidationHandler._collect_validation_errors` must be wired through the same function with real `search_dirs`, and `list_ensembles` must pass its directory as `search_dirs` (scenarios refactor 1-3).
-
-### Module: Ensemble Engine **(existing)**
-
-**Purpose:** Executes ensembles per the existing declarative DAG engine.
-**Provenance:** Entire project-level domain model; ADR-001, ADR-002 (Layer 3 unchanged).
-**Owns:** Ensemble, Agent, AgentConfig (LLM/Script/Ensemble), Model Profile, Inline Model, Dependency, Phase, Fan-Out, Input Key, Ensemble Reference, Ensemble Reference Graph, Depth, Depth Limit, Artifact, Child Executor, Immutable Infrastructure, Mutable State, Agent Discriminator; actions Load, Validate, Discriminate, Execute, Dispatch, Recurse, Fan Out, Gather, Select, Detect Cycles, Check Depth, Merge Profile.
-**Depends on:** (project-level dependencies unchanged)
-**Depended on by:** Orchestrator Tool Dispatch (via invoke_ensemble), Composition Validator (shared validator), Result Summarizer Harness (invokes a summarizer ensemble), Bootstrapping Pipeline (reads library), Plexus Adapter (persistence of Routing Decisions derived from executions).
-
-### Module: Result Summarizer Harness
-
-**Purpose:** Positions a summarizer between ensemble completion and the orchestrator's context so unsummarized results never reach reasoning.
-**Provenance:** AS-7; ADR-004; domain concepts Result Summarization, Summarize action.
-**Owns:** Result Summarization (concept); Summarize (action); raw-output escape-hatch dispatch.
-**Depends on:** Ensemble Engine (invokes the summarizer ensemble).
-**Depended on by:** Orchestrator Tool Dispatch (interposed on `invoke_ensemble`'s return path).
-**Rationale for separate module:** The summarizer itself is an ensemble (a primitive — configured, not coded). What this module owns is the *harness position* — the unskippable interposition between ensemble completion and tool-call result return. The Runtime is not aware of the summarizer; the summarizer is not aware of the Runtime. The harness makes the enforcement of AS-7 structural rather than conventional.
-
-### Module: Autonomy Policy
-
-**Purpose:** Gates orchestrator actions against the Session's Autonomy Level.
-**Provenance:** ADR-008; AS-6 (hard limit: no configuration permits primitive authorship); domain concept Autonomy Level.
-**Owns:** Autonomy Level (concept); per-action gate resolution; visibility surfacing of composition events when a tightened level requires it.
-**Depends on:** Session Registry.
-**Depended on by:** Orchestrator Tool Dispatch.
-**Note on the pure-tool-user default.** Cycle-status §FF 25 flags that the default baseline Autonomy Level is calibrated for the operator-as-tool-user persona. Pure tool-user deployments (FF-2) may warrant a tighter default that surfaces composition events. The Autonomy Policy module exposes this as a configuration surface rather than a code change.
-
-### Module: Calibration Gate
-
-**Purpose:** Tracks Calibration state and runs quality checks on a composed ensemble's first N invocations.
-**Provenance:** ADR-007; AS-5; domain concepts Calibration, Quality Signal.
-**Owns:** Calibration (concept); Quality Signal (concept and generation in stateless mode; Plexus Adapter persists when active); per-ensemble calibration counter and transition-to-trusted logic; session-scoped state in stateless mode (ADR-007 clause 4).
-**Depends on:** Ensemble Engine (invokes a check mechanism, which is itself an ensemble); Plexus Adapter (persistence when Plexus is active).
-**Depended on by:** Orchestrator Tool Dispatch (interposed on `invoke_ensemble` for ensembles in calibration).
-
-### Module: Plexus Adapter
-
-**Purpose:** Mediates all Plexus interaction with no-op fallbacks when Plexus is absent.
-**Provenance:** ADR-009, ADR-010; AS-4, AS-8; domain concepts Ingestion, Enrichment, Context Injection (data flow), Routing Decision (persistence), Quality Signal (persistence).
-**Owns:** Ingestion (push to Plexus); Enrichment (invocation; Plexus performs the actual enrichment); Query (knowledge graph query mechanics); Record (outcome persistence); no-op fallback semantics when Plexus is absent.
-**Depends on:** (external — Plexus lib)
-**Depended on by:** Orchestrator Tool Dispatch (query_knowledge, record_outcome), Bootstrapping Pipeline (ingestion), Serving Layer's `resolve_session_start_context` (Phase 2 only), Calibration Gate (persistence of Quality Signals).
-**Inversion note:** The Operator's mental model is "Plexus is a lib I enable; llm-orc pushes to it." The boundary preserves that — the Adapter is the single place Plexus-aware code lives, so the rest of the system sees a tool interface regardless of Plexus state. This is what makes AS-8 structurally enforceable.
-
-### Module: Bootstrapping Pipeline
-
-**Purpose:** Pushes library source material into Plexus as a deliberate operator operation.
-**Provenance:** AS-4; ADR-010; DISCOVER FF #9 and #14; domain concept Bootstrapping.
-**Owns:** Bootstrapping (concept and action); operator-triggered batch ingestion flow.
-**Depends on:** Plexus Adapter, Ensemble Engine (reads library via existing config manager).
-**Depended on by:** (operator — CLI/web trigger)
-
-### Module: Orchestrator Configuration
-
-**Purpose:** Loads and resolves the orchestrator's per-session configuration surface.
-**Provenance:** ADR-005 (Budget defaults), ADR-008 (Autonomy defaults), ADR-009 (Plexus enablement), ADR-011 (Orchestrator Model Profile).
-**Owns:** Per-session config resolution; operator-set bounds on per-request overrides.
-**Depends on:** (project config manager — existing)
-**Depended on by:** Serving Layer.
-
----
-
-## Responsibility Matrix
-
-Every concept and action from the agentic-serving domain model and the touched project-level concepts maps to exactly one owning module. Inherited project-level concepts that are not touched by agentic serving live with the existing Ensemble Engine (listed once at the bottom).
-
-| Domain Concept / Action | Owning Module | Provenance |
-|------------------------|---------------|------------|
-| Orchestrator Agent | Orchestrator Runtime | Domain model; ADR-001 |
-| Session | Session Registry | Domain model; ADR-005, ADR-008, ADR-011 |
-| Serving Layer | Serving Layer | Domain model; ADR-002 |
-| Orchestrator Tool | Orchestrator Tool Dispatch | Domain model; ADR-003 |
-| Routing Decision | Orchestrator Runtime (generation); Plexus Adapter (persistence) | Domain model; ADR-009 |
-| Dynamic Invocation | Orchestrator Tool Dispatch | AS-1; domain model |
-| Composition | Composition Validator | Domain model; AS-2, ADR-006 |
-| Primitive | Ensemble Engine (existing — role played by existing concepts) | AS-6; ADR-006 |
-| Library | Ensemble Engine (existing — config manager) | Domain model |
-| Budget | Budget Controller | AS-3; ADR-005 |
-| Result Summarization | Result Summarizer Harness | AS-7; ADR-004 |
-| Conversation Compaction | Orchestrator Runtime | Essay §Context Management; AS-7 |
-| Context Injection | Serving Layer (function `resolve_session_start_context`) | ADR-009 (structurally reserved via typed function signature) |
-| Ingestion | Plexus Adapter | AS-4; ADR-010 |
-| Enrichment | Plexus Adapter (invocation); Plexus lib (performance) | AS-4; ADR-010 |
-| Quality Signal | Calibration Gate (generation); Plexus Adapter (persistence when active) | AS-5; ADR-007 |
-| Stabilization | Plexus Adapter (emergent; surfaced via queries) | AS-5; ADR-007 |
-| Bootstrapping | Bootstrapping Pipeline | ADR-010; DISCOVER FF #9, #14 |
-| Autonomy Level | Autonomy Policy | ADR-008 |
-| Calibration | Calibration Gate | ADR-007 |
-| Route (action) | Orchestrator Runtime | Domain model |
-| Compose (action) | Orchestrator Tool Dispatch → Composition Validator | ADR-006 |
-| Invoke (Dynamic) (action) | Orchestrator Tool Dispatch → Ensemble Engine | AS-1 |
-| Summarize (action) | Result Summarizer Harness | ADR-004 |
-| Compact (action) | Orchestrator Runtime | Essay §Context Management |
-| Inject (action) | Serving Layer (function) | ADR-009 |
-| Ingest (action) | Plexus Adapter | ADR-010 |
-| Enrich (action) | Plexus Adapter (invocation) | ADR-010 |
-| Query (action) | Orchestrator Tool Dispatch → Plexus Adapter | ADR-009 |
-| Record (action) | Orchestrator Tool Dispatch → Plexus Adapter | ADR-009 |
-| Calibrate (action) | Calibration Gate | ADR-007 |
-| Stabilize (action) | (emergent — not owned by a single module) | AS-5 |
-| Bootstrap (action) | Bootstrapping Pipeline | ADR-010 |
-| Ensemble, Agent, AgentConfig, Model Profile, Inline Model, Dependency, Phase, Fan-Out, Input Key, Ensemble Reference, Ensemble Reference Graph, Depth, Depth Limit, Artifact, Child Executor, Immutable Infrastructure, Mutable State, Agent Discriminator; Load, Validate, Discriminate, Execute, Dispatch, Recurse, Fan Out, Gather, Select, Detect Cycles, Check Depth, Merge Profile | Ensemble Engine (existing) | Project-level domain model |
-
-**Coverage check:** Every scoped concept (19) and action (13) is allocated. Every touched project-level concept stays with the existing Ensemble Engine. Stabilize is marked emergent — it is not owned by a module because AS-5 defines it as an emergent property of accumulated Quality Signals, not an explicit action.
-
----
-
-## Dependency Graph
-
-**Directed edges (A → B means A imports/calls B):**
-
-```
-Serving Layer ──────────────────────────────────▶ Session Registry
-Serving Layer ──────────────────────────────────▶ Orchestrator Configuration
-Serving Layer ──────────────────────────────────▶ Orchestrator Runtime
-Serving Layer ───── (Phase 2 only) ─────────────▶ Plexus Adapter
-Session Registry ───────────────────────────────▶ Ensemble Engine (profile lookup)
-Orchestrator Runtime ───────────────────────────▶ Budget Controller
-Orchestrator Runtime ───────────────────────────▶ Orchestrator Tool Dispatch
-Budget Controller ──────────────────────────────▶ Session Registry
-Orchestrator Tool Dispatch ─────────────────────▶ Ensemble Engine
-Orchestrator Tool Dispatch ─────────────────────▶ Composition Validator
-Orchestrator Tool Dispatch ─────────────────────▶ Plexus Adapter
-Orchestrator Tool Dispatch ─────────────────────▶ Autonomy Policy
-Orchestrator Tool Dispatch ─────────────────────▶ Calibration Gate
-Orchestrator Tool Dispatch ─────────────────────▶ Result Summarizer Harness
-Result Summarizer Harness ──────────────────────▶ Ensemble Engine
-Composition Validator ──────────────────────────▶ Ensemble Engine (shared public validator)
-Autonomy Policy ────────────────────────────────▶ Session Registry
-Calibration Gate ───────────────────────────────▶ Ensemble Engine
-Calibration Gate ───────────────────────────────▶ Plexus Adapter
-Bootstrapping Pipeline ─────────────────────────▶ Plexus Adapter
-Bootstrapping Pipeline ─────────────────────────▶ Ensemble Engine
-Plexus Adapter ─────────────────────────────────▶ (external — Plexus lib)
-```
-
-**Layering (inner → outer):**
-
-| Layer | Modules | Rule |
-|-------|---------|------|
-| L0 — Core (existing) | Ensemble Engine | May not depend on any agentic-serving module |
-| L1 — Domain Policy | Composition Validator, Budget Controller, Autonomy Policy, Calibration Gate, Plexus Adapter | May depend on L0 only |
-| L2 — Runtime | Result Summarizer Harness, Orchestrator Tool Dispatch, Orchestrator Runtime | May depend on L0 and L1 |
-| L3 — Entry | Serving Layer, Session Registry, Bootstrapping Pipeline, Orchestrator Configuration | May depend on L0, L1, and L2 |
-
-**No cycles.** Verified by static inspection: every edge points from a higher layer to a same-or-lower layer. The only intra-layer dependencies are within L3 (Serving Layer → Session Registry; Serving Layer → Orchestrator Configuration) and do not form cycles.
-
-**Fan-out warnings.** Orchestrator Tool Dispatch has six outbound edges: five correspond to the closed tool set (Ensemble Engine, Composition Validator, Plexus Adapter, Autonomy Policy, Calibration Gate) — intentional per ADR-003; the fan-out *is* the closed tool set. The sixth edge (Result Summarizer Harness) is a cross-cutting interposition on the `invoke_ensemble` return path — orthogonal to the closed set, structurally placed on the Tool Dispatch side rather than the Runtime side so the Runtime stays unaware of summarization (per Amendment #3). Ensemble Engine remains the highest-fan-in module (five agentic-serving modules depend on it), consistent with Layer 3 being the single shared execution substrate.
-
----
-
-## Integration Contracts
-
-### Serving Layer → Session Registry
-
-**Protocol:** Synchronous function call at request entry.
-**Shared types:** `SessionIdentity` (derivation-method-agnostic: may be client-supplied `user` field, hash of initial message prefix, or explicit session id header); `SessionState` (current Budget state, Autonomy Level, Calibration state if required).
-**Error handling:** A request that fails Session identity resolution is treated as a new Session (cold start). Identity-resolution failures are not client errors.
-**Owned by:** Session Registry defines the contract.
-
-### Serving Layer → Orchestrator Runtime
-
-**Protocol:** Asynchronous streaming; the Runtime yields SSE chunks.
-**Shared types:** `SessionContext` (messages, tools array, session state); `OrchestratorChunk` (one of: content delta, internal tool call invocation-in-flight, internal tool call result, client tool call in final turn, completion).
-**Error handling:** An Orchestrator Runtime exception becomes an SSE `error` chunk. The Runtime guarantees no partial state persists to the Session after a thrown exception unless explicitly committed.
-**Owned by:** Orchestrator Runtime defines the contract.
-
-### Orchestrator Runtime → Budget Controller
-
-**Protocol:** Synchronous pre-iteration check.
-**Shared types:** `BudgetCheck` (pass, or a typed exhaustion reason: turn or token).
-**Error handling:** A failed check raises a typed `BudgetExhausted` event that the Runtime converts into a graceful session termination with explicit exhaustion signaling (ADR-005).
-**Owned by:** Budget Controller defines the contract.
-
-### Orchestrator Runtime → Orchestrator Tool Dispatch
-
-**Protocol:** Synchronous tool invocation; returns the summarized/gated result.
-**Shared types:** `InternalToolCall` (tool name from the fixed five, arguments); `ToolCallResult` (summarized result or typed error).
-**Error handling:** A tool name outside the fixed five returns a `ToolCallResult` error (not an exception). The Runtime passes the error back to the orchestrator LLM as an observation (scenarios §Invocation outside the tool set).
-**Owned by:** Orchestrator Tool Dispatch defines the contract.
-
-### Orchestrator Tool Dispatch → Autonomy Policy
-
-**Protocol:** Synchronous gate check before every tool dispatch.
-**Shared types:** `AutonomyGateInput` (tool name, tool arguments, current Session Autonomy Level, tool-user persona flag); `AutonomyGateOutput` (allow, require_approval, or deny).
-**Error handling:** `require_approval` surfaces an event to the operator via the visibility surface; `deny` is returned as a tool error to the orchestrator.
-**Owned by:** Autonomy Policy defines the contract.
-
-### Orchestrator Tool Dispatch → Ensemble Engine
-
-**Protocol:** Existing `EnsembleExecutor.execute` (Layer 3 API, unchanged). Wrapped by Result Summarizer Harness on the return path.
-**Shared types:** (existing Layer 3 types)
-**Error handling:** Invariant 14 applies — runtime errors recorded; structural errors raised at load time.
-**Owned by:** Ensemble Engine (existing).
-
-### Orchestrator Tool Dispatch → Composition Validator
-
-**Protocol:** Synchronous validation at composition time.
-**Shared types:** `CompositionRequest` (proposed ensemble config, library search_dirs); `CompositionResult` (accepted and stored to local tier, or typed validation error naming the specific invariant violated).
-**Error handling:** Validation failures are returned to the orchestrator as tool errors. No partial or pending ensemble state persists (ADR-006; scenarios §Composition that would introduce a reference-graph cycle).
-**Owned by:** Composition Validator defines the contract.
-
-### Composition Validator ↔ Ensemble Engine (shared validator routine)
-
-**Protocol:** Shared public function call (`validate_ensemble_reference_graph` — new public API in `core/config/ensemble_config.py`).
-**Shared types:** (existing `EnsembleConfig`, `AgentConfig` union, search_dirs list).
-**Error handling:** Raises `ValueError` with cycle description on failure; returns `None` on success.
-**Owned by:** Ensemble Engine owns the shared routine after extraction from private helpers. Both load-time (`EnsembleLoader.load_from_file`, `list_ensembles`) and composition-time callers use the same function (scenarios refactor 1-3; regression scenario "shared single routine").
-
-### Orchestrator Tool Dispatch → Plexus Adapter
-
-**Protocol:** Synchronous for `query_knowledge`; asynchronous-with-immediate-ack for `record_outcome`.
-**Shared types:** `QueryRequest`, `QueryResult` (possibly empty — AS-8); `OutcomeRecord`, `RecordAck`.
-**Error handling:** When Plexus is absent, both tools return well-formed empty/ack responses — no exception surfaces (scenarios §query_knowledge returns empty gracefully, §record_outcome writes asynchronously).
-**Owned by:** Plexus Adapter defines the contract.
-
-### Orchestrator Tool Dispatch → Calibration Gate
-
-**Protocol:** Synchronous pre-invoke check and post-invoke Quality Signal attachment; interposed transparently on `invoke_ensemble` for ensembles in calibration.
-**Shared types:** `CalibrationState` (in_calibration, trusted); `QualitySignal` (positive, negative, absent).
-**Error handling:** A failing calibration check does not prevent invocation (ADR-007 clause 2) — it attaches the signal and returns the result normally.
-**Owned by:** Calibration Gate defines the contract.
-
-### Result Summarizer Harness → Ensemble Engine
-
-**Protocol:** The Harness invokes a summarizer ensemble (configured primitive) via `EnsembleExecutor.execute`.
-**Shared types:** (existing Layer 3 types)
-**Error handling:** A summarizer failure is a tool failure — the original ensemble result is still persisted to its artifact (Invariant 9), but the orchestrator receives a typed summarization error as a tool result. Raw-output escape hatch (ADR-004) bypasses the Harness entirely for flagged ensembles.
-**Owned by:** Result Summarizer Harness defines the contract.
-
-### Serving Layer → `resolve_session_start_context` (internal function)
-
-**Protocol:** Synchronous session-start hook; returns optional system-prompt augmentation. The hook is a typed function, not a module; call site and signature are the structural reservation.
-**Shared types:** `SessionContext` (Session identity and state at start); `list[PromptFragment]` (empty in Phase 1; populated from Plexus Adapter in Phase 2).
-**Error handling:** Injection failure in Phase 2 falls through to no injection rather than failing the session start.
-**Owned by:** Serving Layer owns the function and its contract. **Phase 1 status:** returns `[]` unconditionally.
-
-### Bootstrapping Pipeline → Plexus Adapter, Ensemble Engine
-
-**Protocol:** Batch operation: reads from the library via the config manager, pushes file content to Plexus via the Adapter's ingestion path.
-**Shared types:** `LibraryArtifactStream`, `IngestionAck` (AS-4: source material only — never LLM summaries).
-**Error handling:** Ingestion is non-blocking; per-artifact failures are logged and the batch continues.
-**Owned by:** Bootstrapping Pipeline defines the contract.
-
-### Autonomy Policy → Session Registry; Calibration Gate → Session Registry; Budget Controller → Session Registry
-
-**Protocol:** Read-only synchronous queries for Session state.
-**Shared types:** `SessionState` (subsets scoped to consumer).
-**Error handling:** Missing Session (identity unresolved) is treated as cold-session defaults for every consumer.
-**Owned by:** Session Registry defines the contract.
-
----
-
-## Fitness Criteria
-
-| # | Criterion | Measure | Threshold | Derived From |
-|---|-----------|---------|-----------|-------------|
-| FC-1 | No module owns more than 5 scoped glossary entries as primary owner | Count rows per module in the Responsibility Matrix | ≤ 5 | God-class prevention (Essay §Guardrails; ARCHITECT principle) |
-| FC-2 | Dependency edges point from higher layer to same-or-lower layer only | Static inspection of module imports against L0-L3 assignment | 0 violations | Layering rule (Dependency Graph) |
-| FC-3 | No cycles in the dependency graph | Static cycle detection over the dependency edge list | 0 cycles | ARCHITECT principle |
-| FC-4 | Orchestrator Runtime imports only Budget Controller and Orchestrator Tool Dispatch — no Result Summarizer Harness, no Plexus, no config, no Autonomy, no Calibration. Result Summarizer Harness is interposed on the `invoke_ensemble` return path by Orchestrator Tool Dispatch (Amendment #3). | Static import check | Exact match | Orchestrator LLM's mental model alignment; structural ADR-003 enforcement |
-| FC-5 | Orchestrator Tool Dispatch has exactly five public entry points — one per committed tool | Static count of public dispatch methods | = 5 | ADR-003 (closed tool set) |
-| FC-6 | Composition Validator and Ensemble Engine's load path call the same public validator function | Static check: single definition, two call sites | 1 definition, 2+ call sites | Scenarios refactor 1-3; ADR-006 negative consequence |
-| FC-7 | Every Plexus-facing code path has a no-op fallback exercised by a stateless-mode test | Per-edge coverage of the stateless branch | 100% | AS-8 |
-| FC-8 | `unsummarized-result` cannot reach the Orchestrator Runtime's context | Static check: Runtime imports `ToolCallResult`; no path from `EnsembleExecutor` to Runtime bypasses the Harness | 0 bypass paths | AS-7; ADR-004 |
-| FC-9 | Session-start flow calls `resolve_session_start_context` exactly once; the function has a typed signature returning `list[PromptFragment]` | Static inspection | Exactly 1 call; signature present | ADR-009 (structural reservation via typed function) |
-| FC-10 | Budget check executes before every ReAct iteration begins | Integration test covering the iteration-boundary contract | 100% of iterations | AS-3; ADR-005 |
-| FC-11 | Autonomy Policy check executes before every Orchestrator Tool Dispatch | Integration test | 100% of dispatches | ADR-008 |
-| FC-12 | Composed ensembles enter Calibration Gate transparently on `invoke_ensemble` during calibration | Integration test | 100% of in-calibration invocations | ADR-007 |
-| FC-13 | Changing the orchestrator Model Profile requires touching only Orchestrator Configuration and Session start-logic — not Runtime, not Tool Dispatch | Diff inspection on a profile-swap change | No edits to Runtime or Tool Dispatch | ADR-011 |
-
-All criteria are automatable via a combination of static import analysis, test coverage, and dependency-graph reconstruction. FC-1 is the only criterion that already passes for every module (maximum in the Responsibility Matrix is 5, held by Ensemble Engine for its cluster of project-level concepts — which are out-of-scope inheritance, not agentic-serving allocations).
-
----
-
-## Test Architecture
-
-### Boundary Integration Tests
-
-Every dependency edge must have at least one integration test that exercises real data flow with real types on both sides. No mocking at the boundary under test.
-
-| Edge | Integration Test | Verifies |
-|------|-----------------|----------|
-| Serving Layer → Session Registry | `test_serving_resolves_session_identity` | HTTP request with/without session continuity correlates to correct SessionState |
-| Serving Layer → Orchestrator Runtime | `test_serving_streams_runtime_output` | SSE chunks flow end-to-end; client-tool round trip resumes same Session |
-| Orchestrator Runtime → Budget Controller | `test_runtime_honors_budget_at_iteration_boundary` | Turn-limit and token-limit exhaustion both terminate at an iteration boundary |
-| Orchestrator Runtime → Orchestrator Tool Dispatch | `test_runtime_dispatches_internal_tools_only` | Any tool name outside the five returns a tool error observation, not an exception |
-| Orchestrator Tool Dispatch → Result Summarizer Harness | `test_runtime_never_sees_unsummarized_result` | `invoke_ensemble` returning a large dict reaches the Runtime as a summary via the Harness; escape-hatch flag bypasses. Interposition lives on Tool Dispatch per Amendment #3 — the Runtime is unaware of the Harness |
-| Orchestrator Tool Dispatch → Ensemble Engine | `test_invoke_ensemble_executes_real_ensemble` | End-to-end ensemble execution with real `EnsembleExecutor` |
-| Orchestrator Tool Dispatch → Composition Validator | `test_compose_ensemble_rejects_cycle` | Cyclic reference graph rejected at composition time |
-| Orchestrator Tool Dispatch → Plexus Adapter | `test_query_knowledge_and_record_outcome_round_trip` | Real Plexus-active path; also run in stateless mode to verify no-op returns |
-| Orchestrator Tool Dispatch → Autonomy Policy | `test_autonomy_gate_fires_before_every_dispatch` | Every tool path passes through the gate; baseline level allows invoke, composes, denies promotion |
-| Orchestrator Tool Dispatch → Calibration Gate | `test_calibration_interposes_on_in_calibration_ensembles` | First N invocations run the check; (N+1)th does not |
-| Composition Validator ↔ Ensemble Engine (shared) | `test_shared_validator_same_result_both_paths` | `validate_ensemble_reference_graph` returns identical outcome when called from load path and composition path on the same input (scenarios regression) |
-| Result Summarizer Harness → Ensemble Engine | `test_summarizer_failure_preserves_artifact` | Summarizer exception: original artifact persists on disk, Runtime receives typed summarization error |
-| Serving Layer's `resolve_session_start_context` | `test_session_start_context_is_empty_in_phase_1` | Function called once per session start, returns `[]`, never touches Plexus Adapter in Phase 1 |
-| Bootstrapping Pipeline → Plexus Adapter | `test_bootstrap_pushes_source_material_not_summaries` | Ingested content is file content; no LLM-generated summaries in the push stream (AS-4) |
-| Bootstrapping Pipeline → Ensemble Engine | `test_bootstrap_reads_library_via_config_manager` | Pipeline uses the existing config-manager path; respects tiered storage |
-| Autonomy Policy → Session Registry | `test_autonomy_reads_session_state` | Autonomy Level resolved from per-session config, not global |
-| Budget Controller → Session Registry | `test_budget_derives_cumulative_spend_from_session` | Token and turn spend sums are session-scoped, not request-scoped |
-| Calibration Gate → Plexus Adapter | `test_calibration_persists_across_sessions_when_plexus_active` | Session 2 sees cleared calibration from Session 1 when Plexus is active; not when absent |
-
-### Invariant Enforcement Tests
-
-| Invariant | Enforcement Module | Test |
-|-----------|--------------------|------|
-| AS-1 (dynamic invocations outside reference graph) | Orchestrator Tool Dispatch | `test_invoke_ensemble_does_not_register_reference` — an invoke_ensemble call leaves the static reference graph unchanged |
-| AS-2 (composed ensembles validated before loading) | Composition Validator | `test_compose_ensemble_validates_before_write` — no file written until validation passes |
-| AS-3 (Budget is control-plane) | Budget Controller | `test_orchestrator_llm_cannot_observe_budget_state_in_context` |
-| AS-4 (ingestion boundary is source material) | Plexus Adapter + Bootstrapping Pipeline | `test_ingestion_rejects_llm_summary_marker` (source-material assertion by type) |
-| AS-5 (quality signals govern stabilization, not frequency) | Calibration Gate | `test_frequency_without_quality_does_not_trust` |
-| AS-6 (compose from existing primitives only) | Composition Validator + Orchestrator Tool Dispatch | `test_compose_ensemble_rejects_new_script_or_profile` |
-| AS-7 (result summarization is a correctness requirement) | Result Summarizer Harness | `test_runtime_never_sees_unsummarized_result` (also FC-8) |
-| AS-8 (Plexus is optional) | Plexus Adapter + Serving Layer session-start function | `test_all_operations_work_with_plexus_absent` — full coverage of every Plexus-facing edge, including the session-start function in Phase 2 |
-| Invariant 5 (cross-ensemble acyclicity) | Composition Validator + Ensemble Engine | `test_compose_ensemble_rejects_cycle` (also FC-6 regression) |
-| Invariant 7 (static ensemble references) | Orchestrator Tool Dispatch | `test_invoke_ensemble_uses_existing_name_no_template_expression` |
-| Invariant 9 (child artifacts nested) | Ensemble Engine (existing) + Result Summarizer Harness | `test_summarizer_failure_preserves_full_artifact` |
-| Invariant 13 (execution resilient) | Ensemble Engine (existing) | (existing test suite) |
-
-### Test Layers
-
-- **Unit.** Verify logic within a single module. Mocks are acceptable for neighbor modules. Every module has unit tests for its core state transitions (e.g., Budget Controller's exhaustion check; Calibration Gate's N-invocation transition; Composition Validator's cycle detection on synthetic graphs).
-- **Integration.** Verify real data flow across module boundaries. No mocks at the boundary under test. All 18 edges in the Boundary Integration Tests table are integration tests.
-- **Acceptance.** Verify scenarios end-to-end using real wiring. The scenarios in `scenarios.md` map to acceptance tests. The scenario "Tool user completes a task against the stateless orchestrator" is the happy-path acceptance test; "Session terminates gracefully on turn limit exhaustion" and "Composition with ensemble-to-ensemble reference passes validation" are the representative stress paths.
+Option D (mid-execution callback) would require amending ADR-001/ADR-002 and adding suspend/resume to the synchronous DAG phase loop. Out of scope for Cycle 1; reopens only at the architectural ADR level. The retry pattern is conditional on composed ensembles following a `needs_client_tool` convention; the enforcement mechanism is a build-time layering decision (roadmap Open Decision Point #8).
 
 ---
 
 ## Roadmap
 
-See [`./roadmap.md`](./roadmap.md) for the current roadmap — work packages, classified dependencies, transition states, and open decision points.
+See [`./roadmap.md`](./roadmap.md) for active work packages, classified dependencies, transition states, completed work log, and open decision points.
+
+**Cycle 1 status (closed 2026-04-29):** TS-1 (stateless orchestrator serving OpenCode) reached at WP-F close; TS-2 (stateless baseline) reached at WP-H close; WP-I (Plexus Adapter skeleton) shipped with no-op fallbacks. WP-K (Plexus-active) and WP-J (Bootstrapping) deferred.
+
+**Cycle 4 ARCHITECT close (2026-05-08):** Six new ADRs (012-017) integrated into the system design. Three new modules (Conversation Compaction L2; Tier-Escalation Router L2; Calibration Signal Channel L1 conditional). Four module extensions (Session Registry; Orchestrator Runtime; Orchestrator Tool Dispatch; Calibration Gate). Five new system-level fitness criteria (FC-14 through FC-18); ADR-076 qualitative-claim decomposition complete; design audit clean. Cycle 4 BUILD comprises eight WPs (WP-A4 through WP-H4) per the conformance-scan-recommended sequence: shared `LlmOrcStructuralError` base class first; FC-2/FC-3 automated checks; ADR-017 → ADR-013 → ADR-012 → ADR-014 → ADR-015 → ADR-016 (last; conditional on first-deployment evidence per ADR-016 §"Concrete monitoring specification").
 
 ---
 
 ## Design Amendment Log
 
-| # | Date | What Changed | Trigger | Provenance | Status |
-|---|------|-------------|---------|------------|--------|
-| — | 2026-04-20 | Initial system design | ARCHITECT phase | All inputs | Current |
-| 1 | 2026-04-20 | Demote Context Injection Stage from module to typed function `resolve_session_start_context` owned by Serving Layer | ARCHITECT reflection-time Grounding Reframe (susceptibility-snapshot-agentic-serving-architect.md Item 1) | ADR-009; single-agent-paradigm survey (Claude Code, OpenCode, claw-code, OpenHands) | Current |
-| 2 | 2026-04-20 | Mark Client Tool Surface Commitment (Option C) as scenario-gated — WP-F does not start until stress scenarios are written and C is shown to handle them | ARCHITECT reflection-time Grounding Reframe (Item 2) | Interaction specs open boundary; user direction "a step that direction" of OpenCode support | Current |
-| 3 | 2026-04-21 | Move the Result Summarizer Harness dependency edge from Orchestrator Runtime to Orchestrator Tool Dispatch. FC-4 amended to exclude RSH from Runtime's allow list. Dependency Graph, module Depends-on lists, fan-out note, and Test Architecture boundary label updated in sync | WP-C close detected the inconsistency: the RSH module's own rationale states the Runtime is unaware of the Harness, but the Dependency Graph had `Runtime → RSH`. `orchestrator_runtime.py` never imported RSH (FC-4 static test already enforced the corrected reading at WP-C close). Cycle-status §Feed-Forward #73 captured the amendment as a WP-D first commit | §Module: Orchestrator Runtime (Depends on), §Module: Orchestrator Tool Dispatch (Depends on + Owns), §Module: Result Summarizer Harness (already consistent), §Dependency Graph, §Fitness Criteria FC-4, §Test Architecture (`Orchestrator Runtime → Result Summarizer Harness` relabeled to `Orchestrator Tool Dispatch → Result Summarizer Harness`) | Current |
-| 4 | 2026-04-22 | Resolve Amendment #2's scenario gate on the Client Tool Surface Commitment. All four WP-F stress scenarios from roadmap Open Decision Point #1 now written into `scenarios.md` §Client Tool Surface Commitment and carried by Option C. Scenarios (a)/(b) exercise the intended turn-boundary path and Session continuity. Scenario (c) carried by pre-invoke delegation. Scenario (d) carried by the retry pattern (ensemble runs atomically; agent emits structured `needs_client_tool`; Result Summarization preserves signal; orchestrator re-invokes with client-tool result folded into `input_data`). Option D (mid-execution callback) is out of scope for this cycle — it would require amending ADR-001/ADR-002 and adding suspend/resume to the DAG engine's synchronous phase loop — so scenario (d) could not reopen it as a viable alternative. Commitment text updated to record the resolution, name the retry pattern, flag the retry-mechanism layering as a build-time decision (roadmap Open Decision Point #8), and narrow the "future finding" clause to architectural ADR territory | WP-F scenario-gate resolution (DECIDE mini-cycle, 2026-04-22) | §Client Tool Surface Commitment (Provenance line split into unchanged provenance + new "Scenario gate resolved" block); `scenarios.md` (new §Client Tool Surface Commitment feature with four scenarios); `roadmap.md` (Open Decision Point #1 closed; Open Decision Point #8 added for retry-mechanism layering) | Current |
+| # | Date | What Changed | Trigger | Status |
+|---|------|-------------|---------|--------|
+| — | 2026-04-20 | Initial system design | ARCHITECT phase | Superseded by v2.0 |
+| 1 | 2026-04-20 | Demote Context Injection Stage from module to typed function `resolve_session_start_context` owned by Serving Layer | ARCHITECT reflection-time Grounding Reframe (Item 1) | Current |
+| 2 | 2026-04-20 | Mark Client Tool Surface Commitment scenario-gated; WP-F blocked until stress scenarios written | ARCHITECT reflection-time Grounding Reframe (Item 2) | Resolved by Amendment #4 |
+| 3 | 2026-04-21 | Move Result Summarizer Harness dependency edge from Orchestrator Runtime to Orchestrator Tool Dispatch; FC-4 amended to exclude RSH from Runtime's allow list | WP-C close detected `Runtime → RSH` was inconsistent with RSH's own rationale; structural test already enforced corrected reading | Current |
+| 4 | 2026-04-22 | Resolve Amendment #2 scenario gate. Four WP-F stress scenarios written; Option C carries all four (turn-boundary, session continuity, pre-invoke delegation, retry pattern). Option D out of scope this cycle | WP-F scenario-gate resolution (DECIDE mini-cycle) | Current |
+| 5 | 2026-04-29 | Restructure per ADR-083 (F-pattern orientation lead) and ADR-084 (Pattern B companion-file split). Architectural drivers, full module decomposition, responsibility matrix, dependency graph, integration contracts, fitness criteria, test architecture, and new Appendix A per-phase susceptibility-snapshot briefs relocated to `system-design.agents.md`. Slim human-facing surface here. | Cycle 2 entry conformance to v0.8.5 (ADR-083, ADR-084); CHANGELOG note "system-design.md restructured to slim human-facing v14.0 with companion `system-design.agents.md`" applied to scoped corpus | Current |
+| 6 | 2026-05-06 | Layering rule amended: read-only signal channel from L0 to L1 permitted (calibration-only), gated by five bounding mechanisms per ADR-016. All other layer pairs remain prohibited. Six new ADRs accepted (Conversation Compaction five-layer pipeline ADR-012; Session Registry initializer-then-resume schema ADR-013; Calibration Gate trajectory-level extension ADR-014; per-role tier-escalation router ADR-015; upward L0→L1 signal channel ADR-016 conditional acceptance; tool-call structural validation guard ADR-017). One ADR candidate deferred (ADR-004 amendment for Result Summarizer Harness reconsideration — below evidentiary threshold). Implementation gap inventory recorded in conformance-scan-cycle-4-decide.md; full BUILD work pending. | Cycle 4 DECIDE close (Mode B+ → DECIDE close shape); cross-references ADR-016 (load-bearing decision), conformance-scan-cycle-4-decide.md, argument-audit-cycle-4-decide.md (round 2 clean) | Current |
+| 7 | 2026-05-08 | Cycle 4 ARCHITECT integration of ADRs 012-017. Three new modules: Conversation Compaction (L2; ADR-012 five-layer pipeline + circuit-breaker + nine-section session-notes template); Tier-Escalation Router (L2; ADR-015 verdict→tier mapping + Topaz skill metadata + per-skill tier defaults); Calibration Signal Channel (L1; ADR-016 read-only L0→L1 channel + five bounding mechanisms; conditional acceptance). Four module extensions: Session Registry (ADR-013 structured-handoff artifacts + write-gate validation + cluster determination); Orchestrator Runtime (ADR-012 turn-boundary compaction invocation; FC-4 amendment to add `conversation_compaction` to allowed imports); Orchestrator Tool Dispatch (ADR-017 structural validation guard + ADR-015 router interposition); Calibration Gate (ADR-014 verdict trichotomy + AUQ + HTC + time-decay windowing). Seven new dependency edges including the load-bearing read-only L0→L1 upward exception. Five new fitness criteria (FC-14 cheapest-first compaction; FC-15 every dispatch through tier router; FC-16 signal channel read-only; FC-17 typed errors derive from `LlmOrcStructuralError` base; FC-18 every ensemble declares Topaz skill). ADR-076 qualitative-claim decomposition: 24 fitness properties recorded inline; 3 direction-not-constraint annotations (ADR-013 narrative continuity; ADR-016 aggregate bias-bound; ADR-017 pattern-set adequacy). | Cycle 4 ARCHITECT phase (re-scoped 2026-05-08 from Mode B+ → DECIDE close to Mode A — extended through ARCHITECT and BUILD); cross-references conformance-scan-cycle-4-decide.md (BUILD sequencing recommendation honored), cycle-4-decide-gate.md (asymmetric-grounding finding carried forward to OQ #14), ADR-016 §"Concrete monitoring specification" (conditional-acceptance trigger artifact + sweep responsibility recorded). | Current |
+
+---
+
+## Provenance
+
+The full architectural-drivers table, module decomposition, responsibility matrix, dependency graph, integration contracts, fitness criteria, test architecture, and Appendix A per-phase susceptibility-snapshot briefs are in [system-design.agents.md](./system-design.agents.md). That companion file is the verification surface for FC-1 through FC-13 and the canonical brief source for every phase boundary's susceptibility-snapshot dispatch.
