@@ -13,20 +13,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 >
 > **Cycle 4 BUILD comprises eight new WPs (WP-A4 through WP-H4)** integrating ADRs 012–017 into the codebase per the conformance-scan-recommended sequence. Identifiers reset for the new active cycle (per skill methodology: "Reset identifiers for the next active cycle — don't accumulate escalating letters across cycles").
 
-### WP-A4: Shared `LlmOrcStructuralError` base class — *T1 prerequisite*
-
-**Objective:** Land the typed-error base class that ADRs 012, 013, 014, 015, 016, and 017 all depend on. Migrate the existing `ToolCallingNotSupportedError` (commit `9f86d0b`) as the first concrete subclass.
-
-**Changes:**
-- New module `models/structural_errors.py` with `LlmOrcStructuralError` base class and the four common fields (`error_kind`, `dispatch_context`, `recovery_action_required`, `operator_diagnostic`)
-- Migrate `ToolCallingNotSupportedError` → `LlmOrcStructuralError(error_kind="tool_call_rejected_per_model", ...)`; preserve existing exception chain via subclassing if call sites depend on the old type
-- Update `recovery_action_required` literal type to `Literal["reformulate", "escalate", "abstain", "operator_intervention_required"]`
-
-**Scenarios covered:** none directly — infrastructure prerequisite. Unblocks the eight `error_kind` types in ADRs 012–017.
-
-**Dependencies:** None. **First WP.**
-
-**Participating modules:** `models/structural_errors` (new), `models/base.py` (existing — preserves precedent).
+### WP-A4: Shared `LlmOrcStructuralError` base class — *T1 prerequisite* — ✅ **Closed 2026-05-11** — see Completed Work Log
 
 ---
 
@@ -337,6 +324,29 @@ The Calibration Signal Channel is active; HTC trajectory features extracted at L
 ---
 
 ## Completed Work Log
+
+### Cycle 4: Cheap-orchestrator + ensembles support — in progress
+
+**Derived from:** ADRs 012-018, Essay 005 (`005-layer-conditional-composition.md`)
+
+| WP | Title | Closed | Commits | Status |
+|----|-------|--------|---------|--------|
+| WP-A4 | Shared `LlmOrcStructuralError` base class | 2026-05-11 | `cc0d94f`, `7c2f64e` | Complete |
+
+#### WP-A4 detail
+
+**Objective:** Land the typed-error base class that ADRs 012, 013, 014, 015, 016, and 017 all depend on. Migrate the existing `ToolCallingNotSupportedError` (commit `9f86d0b`) as the first concrete subclass.
+
+**Commits (in order):**
+
+- `cc0d94f feat: add LlmOrcStructuralError base class for typed-error pipeline (WP-A4)` — new module `src/llm_orc/models/structural_errors.py` with the four common fields per ADR-017 §"Shared typed-error base class" and FC-17; `RecoveryAction` literal finalized as `"reformulate" | "escalate" | "abstain" | "operator_intervention_required"` per the architect-close decomposition. New test file `tests/unit/models/test_structural_errors.py` (8 base-class tests).
+- `7c2f64e refactor: migrate ToolCallingNotSupportedError to LlmOrcStructuralError subclass` — re-parented in `src/llm_orc/models/base.py`; `error_kind="tool_call_rejected_per_model"` and `recovery_action_required="reformulate"` fixed by construction; existing call sites unchanged. `NotImplementedError` lineage dropped (verified no caller depends on it). 4 new tests confirming subclass shape.
+
+**Outcome:** FC-17 coverage at 1 of 8 typed-error surfaces; full test suite 2363 passing; mypy strict + ruff + complexipy + bandit + vulture all clean. Tier 1 stewardship check clean — no responsibility, dependency, cohesion, size, or test-quality flags. No undecided territory surfaced.
+
+**Participating modules:** `models/structural_errors` (new), `models/base.py` (existing — `ToolCallingNotSupportedError` re-parented).
+
+---
 
 ### Cycle 1: Stateless agentic serving baseline (closed 2026-04-29)
 
