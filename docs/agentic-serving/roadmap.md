@@ -21,21 +21,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ---
 
-### WP-C4: ADR-017 — Tool-call structural validation guard
-
-**Objective:** Land the structural validation guard in Tool Dispatch as the most-bounded ADR with the most direct codebase precedent.
-
-**Changes:**
-- Extend `orchestrator_tool_dispatch.py` with response-text scan for default phantom_tool_call assertion patterns
-- New `phantom_tool_call` typed error (uses `LlmOrcStructuralError` base from WP-A4)
-- Operator-extensible pattern set surface in `OrchestratorConfig`
-- Pattern-matching logic produces typed error on mismatch; orchestrator gets the error as a tool-call observation
-
-**Scenarios covered:** scenarios.md §Tool-Call Structural Validation Guard — Match (validation passes); Mismatch (phantom_tool_call produced); Future-intent patterns not flagged; Pattern set is operator-extensible.
-
-**Participating modules:** Orchestrator Tool Dispatch (extended), models/structural_errors (uses base class), Orchestrator Configuration (extends pattern-set surface).
-
-**Dependencies:** Hard on **WP-A4** (uses `LlmOrcStructuralError`).
+### WP-C4: ADR-017 — Tool-call structural validation guard — ✅ **Closed 2026-05-11** — see Completed Work Log
 
 ---
 
@@ -321,6 +307,7 @@ The Calibration Signal Channel is active; HTC trajectory features extracted at L
 |----|-------|--------|---------|--------|
 | WP-A4 | Shared `LlmOrcStructuralError` base class | 2026-05-11 | `cc0d94f`, `7c2f64e` | Complete |
 | WP-B4 | FC-2 layering + FC-3 cycle-detection automated checks | 2026-05-11 | `1701a22` | Complete |
+| WP-C4 | ADR-017 tool-call structural validation guard | 2026-05-11 | (this commit) | Complete |
 
 #### WP-A4 detail
 
@@ -352,6 +339,25 @@ The Calibration Signal Channel is active; HTC trajectory features extracted at L
 **Outcome:** Four new tests, all passing; full suite 2367 passing; mypy strict + ruff + complexipy + bandit + vulture all clean. Tier 1 stewardship check clean.
 
 **Participating modules:** test files only.
+
+#### WP-C4 detail
+
+**Objective:** Land the structural validation guard in Tool Dispatch as the most-bounded ADR with the most direct codebase precedent. First behavioral typed-error producer using `LlmOrcStructuralError` (WP-A4 base class).
+
+**Commits:**
+
+- `feat: add ADR-017 tool-call structural validation guard (WP-C4)` — new module `src/llm_orc/agentic/tool_call_validation_guard.py` with `PhantomToolCallError` (subclass of `LlmOrcStructuralError`, fixed `error_kind="phantom_tool_call"` + `recovery_action_required="reformulate"`), nine default assertion-pattern regexes per ADR-017 §Detection (deliberately excluding future-intent patterns per rejected alternative (f)), and the pure scanner function `scan_response_for_phantom_claims`. Tool Dispatch (`orchestrator_tool_dispatch.py`) gains a `validate_response(response_text, tool_call_names, *, session_id)` method and a `tool_call_validation_patterns` constructor argument; the typed error is re-exported through Tool Dispatch as the public API surface. Runtime (`orchestrator_runtime.py`) calls the dispatcher's `validate_response` after each LLM response; on detection a new `_record_phantom_tool_call_rejection` helper appends the rejected assistant turn plus a structural-feedback `role:user` diagnostic before continuing the loop (orchestrator reformulates on the next iteration; rejected response prose is not surfaced to the client). To stay under the complexipy ceiling after adding the new branch, two existing-logic helpers are extracted from `run`: `_chunks_for_response` (post-response routing — content delta + tool_calls split + mixed batch + client batch + internal dispatch) and `_budget_exhaustion_chunks`. `OrchestratorConfig` (`orchestrator_config.py`) gains a `tool_call_validation_patterns: tuple[str, ...] = ()` field with a malformed-input-tolerant resolver helper; `v1_chat_completions._build_orchestrator_tool_dispatch` threads the operator pattern set through to the dispatcher. `tool_call_validation_guard` added to `_LAYER_MAP` at L2 in the FC-2 test (FC-4's narrow Runtime allowlist preserved — Runtime imports only the typed-error class, not the guard module).
+
+**Design notes:**
+
+- **Scope of structural correspondence check.** The guard treats any non-empty `tool_calls` list as the structural anchor — a response with prose claiming a tool was called and an emitted tool-call structure passes regardless of name correspondence. Per-name correspondence (prose claims `invoke_ensemble`, structure names `compose_ensemble` → partial mismatch) is a future enhancement; the four ADR-017 scenarios as written are satisfied at the minimum-viable level and the conservative false-positive discipline supports the simpler check.
+- **Default pattern set source.** Patterns derive from the spike's observed text (essay 005 Wave 3.A Trial 3: *"the tool call has been made and the result is displayed above"*) plus the explicit examples in ADR-017 §Detection. The set is **minimal rather than calibrated** — the spike evidence does not support a richer default per ADR-017 §"Minimal default pattern set". Operator-extensibility under `orchestrator.tool_call_validation_patterns` in config is the operational refinement surface.
+- **Phantom rejection wiring.** The runtime's `_record_phantom_tool_call_rejection` helper appends a `role:user` diagnostic (not `role:tool` — the rejected response had no tool-call structure to attach a `tool_call_id` to) carrying the JSON payload `{error: "phantom_tool_call", reason: ..., detected_prose_claim: ..., recovery_action_required: "reformulate"}`. The orchestrator's next iteration sees this in its message history and reformulates per ADR-017 §Rejection ("the orchestrator's reasoning surface receives the structural feedback").
+- **FC-4 architectural preservation.** Tool Dispatch owns the guard responsibility (per system-design.agents.md L107-119); the Runtime calls through to Tool Dispatch's `validate_response` rather than importing the guard module directly. This preserves FC-4's narrow Runtime allowlist (the guard module is not in `_ALLOWED_AGENTIC_IMPORTS`) and matches the architectural intent: the guard is Tool Dispatch's interposition step (1) on `invoke_ensemble`.
+
+**Outcome:** 27 new guard-module tests + 4 new runtime guard tests + 3 new config tests + parametrized future-intent and assertion-pattern coverage; full suite 2400 passing; mypy strict + ruff + complexipy + bandit + vulture all clean. Tier 1 stewardship check clean. FC-17 coverage now 2 of 8 typed-error surfaces.
+
+**Participating modules:** `agentic/tool_call_validation_guard` (new), `agentic/orchestrator_tool_dispatch` (extended), `agentic/orchestrator_runtime` (extended), `agentic/orchestrator_config` (extended), `web/api/v1_chat_completions` (wiring).
 
 ---
 

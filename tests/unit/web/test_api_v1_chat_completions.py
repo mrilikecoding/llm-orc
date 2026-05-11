@@ -159,6 +159,23 @@ class _StubToolDispatch:
             )
         return self._results[call.id]
 
+    def validate_response(
+        self,
+        response_text: str,
+        tool_call_names: tuple[str, ...],
+        *,
+        session_id: str = "",
+    ) -> Any:
+        """ADR-017 structural validation guard pass-through.
+
+        Web-layer tests do not exercise phantom-claim detection;
+        always returns ``None`` so the Runtime proceeds normally. The
+        agentic-layer ``test_orchestrator_runtime.py`` tests exercise
+        the guard directly with the real scanner.
+        """
+        del response_text, tool_call_names, session_id
+        return None
+
 
 def _stop_response(content: str = "", total_tokens: int = 0) -> ToolCallingResponse:
     """Build a minimal stop-reason response for default-path tests."""

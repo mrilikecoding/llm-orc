@@ -136,6 +136,7 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
             local_ensemble_writer=local_ensemble_writer,
             calibration_gate=calibration_gate,
             plexus_adapter=plexus_adapter,
+            tool_call_validation_patterns=config.tool_call_validation_patterns,
         )
     return _SHARED_TOOL_DISPATCH
 
