@@ -159,6 +159,13 @@ class OrchestratorConfig:
     summarizer_ensemble: str
     orchestrator_system_prompt: str
     calibration: CalibrationDefaults
+    tool_call_validation_patterns: tuple[str, ...] = ()
+    """Operator-extension regexes for ADR-017's structural validation guard.
+
+    The default pattern set lives in the guard module
+    (``DEFAULT_ASSERTION_PATTERNS``); these values are appended at scan
+    time. Empty tuple = guard scans defaults only.
+    """
 
 
 class OrchestratorConfigResolver:
@@ -220,6 +227,9 @@ class OrchestratorConfigResolver:
                         "checker_ensemble", DEFAULT_CALIBRATION_CHECKER_ENSEMBLE
                     )
                 ),
+            ),
+            tool_call_validation_patterns=_resolve_pattern_tuple(
+                orchestrator.get("tool_call_validation_patterns")
             ),
         )
 
@@ -283,3 +293,16 @@ def _resolve_allowed_profiles(raw: Any, model_profile: str) -> tuple[str, ...]:
     if isinstance(raw, list) and raw:
         return tuple(str(item) for item in raw)
     return (model_profile,)
+
+
+def _resolve_pattern_tuple(raw: Any) -> tuple[str, ...]:
+    """Normalize an operator-supplied list of regex pattern strings.
+
+    Per ADR-017 §"Minimal default pattern set with operator-extension
+    surface". A missing or malformed value (typo: string instead of list)
+    falls back to the empty tuple so session start does not crash on a
+    bad config entry; the guard then scans defaults only.
+    """
+    if isinstance(raw, list):
+        return tuple(str(item) for item in raw)
+    return ()

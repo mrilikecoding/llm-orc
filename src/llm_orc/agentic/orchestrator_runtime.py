@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from llm_orc.agentic.budget_controller import (
     BudgetCheckExhausted,
@@ -47,6 +47,7 @@ from llm_orc.agentic.orchestrator_chunk import (
 from llm_orc.agentic.orchestrator_tool_dispatch import (
     TOOL_NAMES,
     InternalToolCall,
+    PhantomToolCallError,
     ToolCallResult,
     ToolCallSuccess,
 )
@@ -79,6 +80,16 @@ class ToolDispatcher(Protocol):
     async def dispatch(
         self, call: InternalToolCall, *, session_id: str = ""
     ) -> ToolCallResult: ...
+
+    def validate_response(
+        self,
+        response_text: str,
+        tool_call_names: tuple[str, ...],
+        *,
+        session_id: str = "",
+    ) -> PhantomToolCallError | None:
+        """Run ADR-017 structural validation on an orchestrator response."""
+        ...
 
 
 def _build_tool_schemas() -> list[dict[str, Any]]:
@@ -195,13 +206,10 @@ class OrchestratorRuntime:
         client_tool_names = _client_tool_names(context.tools)
 
         while True:
-            check = self._budget.check(
-                turn_count=state.turn_count,
-                token_spend=state.token_spend,
-            )
-            if isinstance(check, BudgetCheckExhausted):
-                yield ContentDelta(content=_format_exhaustion_message(check))
-                yield Completion(finish_reason="length")
+            exhaustion_chunks = self._budget_exhaustion_chunks(state)
+            if exhaustion_chunks is not None:
+                yield exhaustion_chunks[0]
+                yield exhaustion_chunks[1]
                 return
 
             response = await self._llm.generate_with_tools(
@@ -209,36 +217,114 @@ class OrchestratorRuntime:
             )
             state.record_iteration(response.usage.total_tokens)
 
-            if response.content:
-                yield ContentDelta(content=response.content)
-
-            if not response.tool_calls:
-                yield Completion(finish_reason="stop")
-                return
-
-            client_calls, internal_calls = _split_tool_calls(
-                response.tool_calls, client_tool_names
-            )
-            if client_calls and internal_calls:
-                # Mixed batch: Option C's one-kind-per-turn discipline is
-                # violated. Reject all; the LLM retries with a pure batch
-                # on the next iteration. See ``_record_mixed_batch_rejection``.
-                _record_mixed_batch_rejection(messages, response)
+            if self._record_phantom_if_detected(
+                messages, response, state.identity.value
+            ):
                 continue
 
-            if client_calls:
-                # Option C: pure client-declared batch closes the turn.
-                # DAG engine runs atomically (ADR-001/002); no mid-turn
-                # callback. The client executes the tools and resumes the
-                # Session on the next ``/v1/chat/completions`` request.
-                yield _client_delegation_chunk(client_calls)
+            chunks, signal = await self._chunks_for_response(
+                messages, response, client_tool_names, state.identity.value
+            )
+            for chunk in chunks:
+                yield chunk
+            if signal == "return":
                 return
 
-            messages.append(_assistant_message(response))
-            async for chunk in self._dispatch_internal_calls(
-                response.tool_calls, messages, state.identity.value
-            ):
-                yield chunk
+    async def _chunks_for_response(
+        self,
+        messages: list[dict[str, Any]],
+        response: ToolCallingResponse,
+        client_tool_names: frozenset[str],
+        session_id: str,
+    ) -> tuple[list[OrchestratorChunk], Literal["return", "continue"]]:
+        """Compute chunks + control signal for a (non-phantom) LLM response.
+
+        Returns ``(chunks, "return")`` for terminal cases — bare stop
+        response or pure client-tool delegation — so the caller's
+        ``run`` loop yields the chunks then returns. Returns
+        ``(chunks, "continue")`` for the in-loop cases (mixed batch
+        rejection or internal-tool dispatch); the caller yields and
+        loops to the next iteration.
+
+        Buffering chunks (rather than yielding directly) keeps the
+        outer ``run`` method's cognitive complexity below the
+        repository's complexipy ceiling without changing the chunk
+        order callers observe.
+        """
+        chunks: list[OrchestratorChunk] = []
+        if response.content:
+            chunks.append(ContentDelta(content=response.content))
+        if not response.tool_calls:
+            chunks.append(Completion(finish_reason="stop"))
+            return chunks, "return"
+        client_calls, internal_calls = _split_tool_calls(
+            response.tool_calls, client_tool_names
+        )
+        if client_calls and internal_calls:
+            # Mixed batch: Option C's one-kind-per-turn discipline is
+            # violated. Reject all; the LLM retries with a pure batch
+            # on the next iteration. See ``_record_mixed_batch_rejection``.
+            _record_mixed_batch_rejection(messages, response)
+            return chunks, "continue"
+        if client_calls:
+            # Option C: pure client-declared batch closes the turn.
+            # DAG engine runs atomically (ADR-001/002); no mid-turn
+            # callback. The client executes the tools and resumes the
+            # Session on the next ``/v1/chat/completions`` request.
+            chunks.append(_client_delegation_chunk(client_calls))
+            return chunks, "return"
+        messages.append(_assistant_message(response))
+        async for chunk in self._dispatch_internal_calls(
+            response.tool_calls, messages, session_id
+        ):
+            chunks.append(chunk)
+        return chunks, "continue"
+
+    def _budget_exhaustion_chunks(
+        self, state: Any
+    ) -> tuple[OrchestratorChunk, ...] | None:
+        """Return the chunks for the budget-exhaustion path or ``None``.
+
+        ``None`` means the Budget passed; the loop proceeds to the LLM
+        call. A non-None tuple is the pair of chunks the caller yields
+        before returning — the human-readable exhaustion message
+        followed by ``Completion(finish_reason="length")``.
+        """
+        check = self._budget.check(
+            turn_count=state.turn_count, token_spend=state.token_spend
+        )
+        if not isinstance(check, BudgetCheckExhausted):
+            return None
+        return (
+            ContentDelta(content=_format_exhaustion_message(check)),
+            Completion(finish_reason="length"),
+        )
+
+    def _record_phantom_if_detected(
+        self,
+        messages: list[dict[str, Any]],
+        response: ToolCallingResponse,
+        session_id: str,
+    ) -> bool:
+        """ADR-017 §Rejection — return True if a phantom claim was recorded.
+
+        Delegates the structural validation to Tool Dispatch
+        (``validate_response``). On detection, the rejected response's
+        prose is NOT surfaced to the client (the phantom claim would
+        mislead); the orchestrator's reasoning surface receives the
+        structural feedback via an injected diagnostic and reformulates
+        on the next iteration. Caller treats ``True`` as "continue the
+        loop"; ``False`` means the response passed validation.
+        """
+        phantom_error = self._tool_dispatch.validate_response(
+            response.content,
+            tuple(tc.name for tc in response.tool_calls),
+            session_id=session_id,
+        )
+        if phantom_error is None:
+            return False
+        _record_phantom_tool_call_rejection(messages, response, phantom_error)
+        return True
 
     async def _dispatch_internal_calls(
         self,
@@ -346,6 +432,40 @@ def _record_mixed_batch_rejection(
     messages.append(_assistant_message(response))
     for tool_call in response.tool_calls:
         messages.append(_mixed_batch_error_observation(tool_call))
+
+
+def _record_phantom_tool_call_rejection(
+    messages: list[dict[str, Any]],
+    response: ToolCallingResponse,
+    phantom_error: PhantomToolCallError,
+) -> None:
+    """Append the rejected assistant turn + a structural-feedback diagnostic.
+
+    ADR-017 §Rejection: the orchestrator must take a different action —
+    re-emit with actual tool-call structures, reformulate, or abstain.
+    The diagnostic is appended as a ``role: user`` message because the
+    rejected response had no tool-call structures to attach a
+    ``role: tool`` observation to. The next iteration's LLM call sees
+    the rejected turn followed by the rejection reason and can
+    reformulate.
+    """
+    messages.append(_assistant_message(response))
+    payload = {
+        "error": "phantom_tool_call",
+        "reason": (
+            "Your previous response asserted that a tool call has been "
+            "made or that a tool result is displayed above, but no "
+            "tool-call structure was emitted in that response. The "
+            "structural validation guard rejected the response. To "
+            "continue, either emit the tool call as a structured "
+            "tool_call rather than narrating it in prose, or revise "
+            "the response so it does not assert that a tool call has "
+            "occurred."
+        ),
+        "detected_prose_claim": phantom_error.dispatch_context["detected_prose_claim"],
+        "recovery_action_required": phantom_error.recovery_action_required,
+    }
+    messages.append({"role": "user", "content": json.dumps(payload)})
 
 
 def _client_delegation_chunk(client_calls: list[ToolCall]) -> ClientToolCall:

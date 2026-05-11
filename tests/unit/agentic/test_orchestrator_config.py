@@ -88,6 +88,60 @@ class TestOrchestratorConfigResolver:
         # WP-H: Calibration defaults come from the Calibration Gate module.
         assert config.calibration.default_n == 3
         assert config.calibration.checker_ensemble == "agentic-calibration-checker"
+        # WP-C4: tool-call validation patterns default to an empty
+        # tuple — operators extend; defaults live in the guard module.
+        assert config.tool_call_validation_patterns == ()
+
+    def test_operator_supplied_tool_call_validation_patterns_are_read(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Per ADR-017 §"Minimal default pattern set with operator-extension
+        surface": operators add deployment-specific phantom-claim patterns
+        via ``orchestrator.tool_call_validation_patterns``; the values flow
+        downward as ``extra_patterns`` to the guard scanner (WP-C4)."""
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            global_yaml={
+                "agentic_serving": {
+                    "orchestrator": {
+                        "tool_call_validation_patterns": [
+                            r"\bsite-specific phantom phrasing\b",
+                            r"\bdeployment-specific assertion\b",
+                        ]
+                    }
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        assert config.tool_call_validation_patterns == (
+            r"\bsite-specific phantom phrasing\b",
+            r"\bdeployment-specific assertion\b",
+        )
+
+    def test_malformed_tool_call_validation_patterns_falls_back_to_empty(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Operator typos (string instead of list) should not crash session
+        start — per the existing tolerant-coercion convention used by other
+        operator-set sections."""
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            global_yaml={
+                "agentic_serving": {
+                    "orchestrator": {"tool_call_validation_patterns": "not-a-list"}
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        assert config.tool_call_validation_patterns == ()
 
     def test_global_config_overlays_defaults(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

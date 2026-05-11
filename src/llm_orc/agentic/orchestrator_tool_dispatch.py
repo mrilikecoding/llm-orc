@@ -61,6 +61,21 @@ from llm_orc.agentic.result_summarizer_harness import (
     SummarizationFailure,
     SummarizationSuccess,
 )
+from llm_orc.agentic.tool_call_validation_guard import (
+    PhantomToolCallError,
+    scan_response_for_phantom_claims,
+)
+
+__all__ = [
+    "InternalToolCall",
+    "OrchestratorToolDispatch",
+    "PhantomToolCallError",
+    "TOOL_NAMES",
+    "ToolCallError",
+    "ToolCallResult",
+    "ToolCallSuccess",
+    "ToolErrorKind",
+]
 
 _logger = logging.getLogger(__name__)
 """Operator-side log surface for tool-dispatch outcomes.
@@ -216,6 +231,7 @@ class OrchestratorToolDispatch:
         local_ensemble_writer: LocalEnsembleWriter,
         calibration_gate: CalibrationGate | None = None,
         plexus_adapter: PlexusAccess | None = None,
+        tool_call_validation_patterns: tuple[str, ...] = (),
     ) -> None:
         self._operations = operations
         self._harness = harness
@@ -224,6 +240,37 @@ class OrchestratorToolDispatch:
         self._local_ensemble_writer = local_ensemble_writer
         self._calibration_gate = calibration_gate
         self._plexus_adapter = plexus_adapter
+        self._tool_call_validation_patterns = tool_call_validation_patterns
+        """Operator-extension patterns appended to ADR-017's default
+        assertion-pattern set in :meth:`validate_response`.
+        Empty tuple = scan defaults only."""
+
+    def validate_response(
+        self,
+        response_text: str,
+        tool_call_names: tuple[str, ...],
+        *,
+        session_id: str = "",
+    ) -> PhantomToolCallError | None:
+        """Run ADR-017 structural validation on an orchestrator response.
+
+        Per system-design.agents.md §Orchestrator Tool Dispatch's
+        post-Cycle 4 interposition order: this is step (1) on every
+        ``invoke_ensemble`` (and other tool dispatches). Scans
+        ``response_text`` against the union of
+        :data:`DEFAULT_ASSERTION_PATTERNS` and the operator-supplied
+        ``tool_call_validation_patterns`` provided at construction
+        time. Returns the typed :class:`PhantomToolCallError` on
+        mismatch (prose claim with zero tool-call structures); ``None``
+        on pass (any tool-call structure emitted, or no assertion
+        pattern matched).
+        """
+        return scan_response_for_phantom_claims(
+            response_text,
+            tool_call_names,
+            dispatch_context={"session_id": session_id},
+            extra_patterns=self._tool_call_validation_patterns,
+        )
 
     async def dispatch(
         self, call: InternalToolCall, *, session_id: str = ""

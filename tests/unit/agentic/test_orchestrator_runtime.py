@@ -69,12 +69,25 @@ class _StubToolDispatch:
     Satisfies ``ToolDispatcher`` structurally. Defaults to raising if
     asked to dispatch a call the test didn't expect — vacuous-mock
     hazard prevention.
+
+    ``extra_validation_patterns`` extends ADR-017's default
+    assertion-pattern set for the structural validation guard
+    (``validate_response``); tests that exercise the operator-extension
+    surface set this directly on the stub. The stub uses the real
+    scanner from :mod:`llm_orc.agentic.tool_call_validation_guard` so
+    the wiring matches production.
     """
 
-    def __init__(self, results: dict[str, ToolCallResult]) -> None:
+    def __init__(
+        self,
+        results: dict[str, ToolCallResult],
+        *,
+        extra_validation_patterns: tuple[str, ...] = (),
+    ) -> None:
         self._results = dict(results)
         self.calls: list[InternalToolCall] = []
         self.session_ids: list[str] = []
+        self._extra_validation_patterns = extra_validation_patterns
 
     async def dispatch(
         self, call: InternalToolCall, *, session_id: str = ""
@@ -86,6 +99,24 @@ class _StubToolDispatch:
                 f"_StubToolDispatch received unexpected call id={call.id!r}"
             )
         return self._results[call.id]
+
+    def validate_response(
+        self,
+        response_text: str,
+        tool_call_names: tuple[str, ...],
+        *,
+        session_id: str = "",
+    ) -> Any:
+        from llm_orc.agentic.tool_call_validation_guard import (
+            scan_response_for_phantom_claims,
+        )
+
+        return scan_response_for_phantom_claims(
+            response_text,
+            tool_call_names,
+            dispatch_context={"session_id": session_id},
+            extra_patterns=self._extra_validation_patterns,
+        )
 
 
 def _make_session_context(messages: list[ChatMessage] | None = None) -> SessionContext:
@@ -565,3 +596,185 @@ class TestOrchestratorSystemPrompt:
         messages = llm.calls[0][0]
         assert messages[0]["role"] != "system"
         assert [m["role"] for m in messages] == ["user"]
+
+
+class TestPhantomToolCallGuard:
+    """ADR-017 — structural validation guard interposed on the orchestrator
+    response. The guard scans response text for assertion patterns; if a
+    phantom claim is detected with no corresponding tool-call structure,
+    the runtime injects a structural-feedback diagnostic and re-enters the
+    ReAct loop so the orchestrator reformulates."""
+
+    @pytest.mark.asyncio
+    async def test_phantom_response_with_zero_tool_calls_loops_with_diagnostic(
+        self,
+    ) -> None:
+        """The spike phrasing (essay 005 Wave 3.A Trial 3): the orchestrator
+        emits prose claiming a tool call without emitting the structure.
+
+        The runtime must NOT yield Completion(stop) on this response — the
+        orchestrator's reasoning surface must receive the structural
+        feedback and reformulate (per ADR-017 §Rejection)."""
+        phantom_response = ToolCallingResponse(
+            content=(
+                "The tool call has been made and the result is displayed "
+                "above as a `role:tool` observation."
+            ),
+            tool_calls=[],
+            usage=ToolCallUsage(
+                prompt_tokens=10, completion_tokens=20, total_tokens=30
+            ),
+            finish_reason="stop",
+        )
+        clean_followup = ToolCallingResponse(
+            content="Apologies; let me retry without that prose.",
+            tool_calls=[],
+            usage=ToolCallUsage(
+                prompt_tokens=20, completion_tokens=10, total_tokens=30
+            ),
+            finish_reason="stop",
+        )
+        llm = _ScriptedLLM(responses=[phantom_response, clean_followup])
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=BudgetController(turn_limit=10, token_limit=1000),
+            tool_dispatch=_StubToolDispatch(results={}),
+        )
+
+        chunks = await _collect(runtime.run(_make_session_context()))
+
+        # The runtime called the LLM twice — phantom + reformulated turn.
+        assert len(llm.calls) == 2
+        # Second call's messages include the phantom assistant turn AND
+        # the structural-feedback diagnostic appended after it.
+        second_call_messages = llm.calls[1][0]
+        assistant_turns = [m for m in second_call_messages if m["role"] == "assistant"]
+        assert len(assistant_turns) == 1
+        assert "the result is displayed above" in assistant_turns[0]["content"]
+        # The diagnostic is the message immediately following the assistant
+        # turn — surfaces the phantom_tool_call kind so the orchestrator's
+        # reasoning surface incorporates the rejection.
+        diagnostic = second_call_messages[-1]
+        assert "phantom_tool_call" in diagnostic["content"]
+        # Final completion is from the clean followup, not the phantom.
+        completions = [c for c in chunks if isinstance(c, Completion)]
+        assert len(completions) == 1
+        assert completions[0].finish_reason == "stop"
+
+    @pytest.mark.asyncio
+    async def test_clean_response_with_no_tool_calls_proceeds_without_diagnostic(
+        self,
+    ) -> None:
+        """Existing behavior preservation — a response with no tool_calls
+        and no phantom assertion patterns terminates with finish_reason
+        ``stop`` (one LLM call only)."""
+        clean_response = ToolCallingResponse(
+            content="Here is your answer with no fabricated tool claims.",
+            tool_calls=[],
+            usage=ToolCallUsage(
+                prompt_tokens=10, completion_tokens=10, total_tokens=20
+            ),
+            finish_reason="stop",
+        )
+        llm = _ScriptedLLM(responses=[clean_response])
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=BudgetController(turn_limit=10, token_limit=1000),
+            tool_dispatch=_StubToolDispatch(results={}),
+        )
+
+        await _collect(runtime.run(_make_session_context()))
+
+        assert len(llm.calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_response_with_tool_calls_proceeds_regardless_of_prose(
+        self,
+    ) -> None:
+        """Match scenario: a response with prose that would otherwise match
+        an assertion pattern is NOT flagged when the structural anchor (an
+        emitted tool_call) is present in the same response."""
+        invoke_call = ToolCall(
+            id="call-1",
+            name="invoke_ensemble",
+            arguments_json='{"name": "x", "input": "y"}',
+        )
+        narrating_response = ToolCallingResponse(
+            content=("I called invoke_ensemble and the result was the answer."),
+            tool_calls=[invoke_call],
+            usage=ToolCallUsage(
+                prompt_tokens=10, completion_tokens=10, total_tokens=20
+            ),
+            finish_reason="tool_calls",
+        )
+        clean_followup = ToolCallingResponse(
+            content="Done.",
+            tool_calls=[],
+            usage=ToolCallUsage(prompt_tokens=20, completion_tokens=5, total_tokens=25),
+            finish_reason="stop",
+        )
+        llm = _ScriptedLLM(responses=[narrating_response, clean_followup])
+        # Stub dispatcher returns a successful result for the invoke_call.
+        dispatch = _StubToolDispatch(
+            results={
+                "call-1": ToolCallSuccess(
+                    id="call-1",
+                    name="invoke_ensemble",
+                    content={"summary": "ok"},
+                ),
+            }
+        )
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=BudgetController(turn_limit=10, token_limit=1000),
+            tool_dispatch=dispatch,
+        )
+
+        await _collect(runtime.run(_make_session_context()))
+
+        # Tool call dispatched; no phantom-rejection diagnostic injected.
+        assert len(dispatch.calls) == 1
+        # Followup messages should NOT contain a phantom-diagnostic
+        # role:user shaped like the rejection payload.
+        second_call_messages = llm.calls[1][0]
+        for message in second_call_messages:
+            assert "phantom_tool_call" not in str(message.get("content", ""))
+
+    @pytest.mark.asyncio
+    async def test_operator_extended_pattern_flows_through_to_guard(
+        self,
+    ) -> None:
+        """Scenario 4 (operator-extensibility) at the runtime level: an
+        operator-supplied pattern flows through the runtime constructor to
+        the guard scanner; matching prose without a tool_call structure
+        triggers the same diagnostic-then-loop behavior."""
+        operator_phrasing_response = ToolCallingResponse(
+            content="site-specific phantom phrasing happened in this turn",
+            tool_calls=[],
+            usage=ToolCallUsage(
+                prompt_tokens=10, completion_tokens=10, total_tokens=20
+            ),
+            finish_reason="stop",
+        )
+        clean_followup = ToolCallingResponse(
+            content="ok.",
+            tool_calls=[],
+            usage=ToolCallUsage(prompt_tokens=20, completion_tokens=2, total_tokens=22),
+            finish_reason="stop",
+        )
+        llm = _ScriptedLLM(responses=[operator_phrasing_response, clean_followup])
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=BudgetController(turn_limit=10, token_limit=1000),
+            tool_dispatch=_StubToolDispatch(
+                results={},
+                extra_validation_patterns=(r"\bsite-specific phantom phrasing\b",),
+            ),
+        )
+
+        await _collect(runtime.run(_make_session_context()))
+
+        # Operator-extended pattern matched; loop continued with diagnostic.
+        assert len(llm.calls) == 2
+        diagnostic = llm.calls[1][0][-1]
+        assert "phantom_tool_call" in diagnostic["content"]
