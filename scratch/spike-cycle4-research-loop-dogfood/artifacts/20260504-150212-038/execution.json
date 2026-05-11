@@ -1,0 +1,396 @@
+{
+  "ensemble": "spike-cycle4-research-loop",
+  "status": "completed",
+  "input": {
+    "data": "What conditions make pre-specifiable routing (class-c decomposition) reliable at the cheap-orchestrator tier vs. when does it degrade?"
+  },
+  "results": {
+    "empirical-analyst": {
+      "response": "- **Conditions for reliability**: Low latency, efficient protocols (e.g., QoS), and stable network infrastructure.  \n- **When it degrades**: High traffic load, network instability, or congestion.",
+      "status": "success",
+      "model_substituted": false
+    },
+    "theoretical-analyst": {
+      "response": "- **Conceptual Frame**: Network routing/communication partitioning into class-specific components.  \n- **Load-Bearing Assumptions**: Limited computational power and high traffic demand at the cheap-orchestrator tier.  \n- **Theoretical Tensions**: Balance between flexibility (to handle dynamic traffic) and performance (to avoid excessive overhead).",
+      "status": "success",
+      "model_substituted": false
+    },
+    "synthesizer": {
+      "response": "## Question  \nWhat conditions make pre-specifiable routing (class-c decomposition) reliable at the cheap-orchestrator tier vs. when does it degrade?  \n\n## Findings  \n- **Conditions for reliability**: Low latency, efficient protocols (e.g., QoS), and stable network infrastructure.  \n- **When it degrades**: High traffic load, network instability, or congestion.  \n- **Tensions**: Balance between flexibility (to handle dynamic traffic) and performance (to avoid excessive overhead).  \n\n## Tensions  \n- Unresolved tension: How to reconcile flexibility with performance constraints in dynamic environments.  \n- Open question: What role does computational power at the cheap-orchestrator tier play in balancing these factors?",
+      "status": "success",
+      "model_substituted": false
+    }
+  },
+  "metadata": {
+    "agents_used": 3,
+    "started_at": 1777932123.7746172,
+    "duration": "8.26s",
+    "completed_at": 1777932132.038232,
+    "usage": {
+      "agents": {
+        "empirical-analyst": {
+          "input_tokens": 95,
+          "output_tokens": 235,
+          "total_tokens": 330,
+          "cost_usd": 0.0,
+          "duration_ms": 5835,
+          "model": "qwen3:0.6b",
+          "eval_duration_ns": 1228002757,
+          "prompt_eval_duration_ns": 31516791,
+          "load_duration_ns": 1564386417,
+          "model_profile": "micro-local",
+          "start_time": 1777932123.775278,
+          "baseline_cpu": 0.0,
+          "baseline_memory": 71.4,
+          "sample_count": 3,
+          "peak_cpu": 33.3,
+          "avg_cpu": 11.1,
+          "peak_memory": 84.1,
+          "avg_memory": 79.86666666666666,
+          "cpu_samples": [
+            33.3,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            71.4,
+            84.1,
+            84.1
+          ],
+          "resource_duration_seconds": 5.852654933929443,
+          "resource_sample_count": 3
+        },
+        "theoretical-analyst": {
+          "input_tokens": 91,
+          "output_tokens": 317,
+          "total_tokens": 408,
+          "cost_usd": 0.0,
+          "duration_ms": 4529,
+          "model": "qwen3:0.6b",
+          "eval_duration_ns": 1737731385,
+          "prompt_eval_duration_ns": 1084049333,
+          "load_duration_ns": 1564253625,
+          "model_profile": "micro-local",
+          "start_time": 1777932123.783937,
+          "baseline_cpu": 0.0,
+          "baseline_memory": 71.4,
+          "sample_count": 3,
+          "peak_cpu": 57.1,
+          "avg_cpu": 19.033333333333335,
+          "peak_memory": 83.7,
+          "avg_memory": 79.60000000000001,
+          "cpu_samples": [
+            57.1,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            71.4,
+            83.7,
+            83.7
+          ],
+          "resource_duration_seconds": 4.542779922485352,
+          "resource_sample_count": 3
+        },
+        "synthesizer": {
+          "input_tokens": 286,
+          "output_tokens": 403,
+          "total_tokens": 689,
+          "cost_usd": 0.0,
+          "duration_ms": 2378,
+          "model": "qwen3:0.6b",
+          "eval_duration_ns": 2164695083,
+          "prompt_eval_duration_ns": 76843375,
+          "load_duration_ns": 64379583,
+          "model_profile": "micro-local",
+          "start_time": 1777932129.629498,
+          "baseline_cpu": 0.0,
+          "baseline_memory": 84.1,
+          "sample_count": 3,
+          "peak_cpu": 27.3,
+          "avg_cpu": 9.1,
+          "peak_memory": 84.1,
+          "avg_memory": 84.1,
+          "cpu_samples": [
+            0.0,
+            27.3,
+            0.0
+          ],
+          "memory_samples": [
+            84.1,
+            84.1,
+            84.1
+          ],
+          "resource_duration_seconds": 2.4085068702697754,
+          "resource_sample_count": 3
+        }
+      },
+      "totals": {
+        "total_tokens": 1427,
+        "total_input_tokens": 472,
+        "total_output_tokens": 955,
+        "total_cost_usd": 0.0,
+        "total_duration_ms": 12742,
+        "agents_count": 3
+      }
+    },
+    "adaptive_resource_management": {
+      "adaptive_used": false,
+      "management_type": "user_configured",
+      "concurrency_decisions": [],
+      "resource_metrics": [
+        {
+          "cpu_percent": 0.0,
+          "memory_percent": 79.2,
+          "circuit_breaker_state": "N/A",
+          "measurement_point": "final_fallback"
+        }
+      ],
+      "execution_metrics": {
+        "peak_cpu": 0.0,
+        "avg_cpu": 0.0,
+        "peak_memory": 79.2,
+        "avg_memory": 79.2,
+        "sample_count": 1,
+        "raw_cpu_samples": [
+          0.0
+        ],
+        "raw_memory_samples": [
+          79.2
+        ]
+      },
+      "phase_metrics": [
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 3,
+          "phase_start_time": 1777508300.217973,
+          "agent_names": [
+            "security-auditor",
+            "performance-engineer",
+            "senior-reviewer"
+          ],
+          "start_time": 1777508300.217973,
+          "duration_seconds": 5.853465795516968,
+          "end_time": 1777932129.6282308,
+          "agents_completed": 2,
+          "peak_cpu": 77.5,
+          "avg_cpu": 18.273684210526316,
+          "peak_memory": 84.1,
+          "avg_memory": 79.79122807017545,
+          "sample_count": 57
+        },
+        {
+          "phase_index": 1,
+          "phase_name": "phase_1",
+          "agent_count": 1,
+          "phase_start_time": 1777508335.61617,
+          "agent_names": [
+            "tech-lead-synthesizer"
+          ],
+          "start_time": 1777508335.616172,
+          "duration_seconds": 2.4097959995269775,
+          "end_time": 1777932132.038134,
+          "agents_completed": 1,
+          "peak_cpu": 37.7,
+          "avg_cpu": 23.43913043478261,
+          "peak_memory": 84.4,
+          "avg_memory": 84.27391304347827,
+          "sample_count": 23
+        },
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 1,
+          "phase_start_time": 1777508342.623272,
+          "agent_names": [
+            "summarizer"
+          ],
+          "start_time": 1777508342.623272
+        },
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 3,
+          "phase_start_time": 1777613266.598121,
+          "agent_names": [
+            "security-auditor",
+            "performance-engineer",
+            "senior-reviewer"
+          ],
+          "start_time": 1777613266.598123
+        },
+        {
+          "phase_index": 1,
+          "phase_name": "phase_1",
+          "agent_count": 1,
+          "phase_start_time": 1777613291.65267,
+          "agent_names": [
+            "tech-lead-synthesizer"
+          ],
+          "start_time": 1777613291.6526709
+        },
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 1,
+          "phase_start_time": 1777613299.6736891,
+          "agent_names": [
+            "summarizer"
+          ],
+          "start_time": 1777613299.67369
+        },
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 3,
+          "phase_start_time": 1777613363.814794,
+          "agent_names": [
+            "security-auditor",
+            "performance-engineer",
+            "senior-reviewer"
+          ],
+          "start_time": 1777613363.814794
+        },
+        {
+          "phase_index": 1,
+          "phase_name": "phase_1",
+          "agent_count": 1,
+          "phase_start_time": 1777613387.0145621,
+          "agent_names": [
+            "tech-lead-synthesizer"
+          ],
+          "start_time": 1777613387.0145652
+        },
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 1,
+          "phase_start_time": 1777613395.209387,
+          "agent_names": [
+            "summarizer"
+          ],
+          "start_time": 1777613395.209387
+        },
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 3,
+          "phase_start_time": 1777614116.8255439,
+          "agent_names": [
+            "security-auditor",
+            "performance-engineer",
+            "senior-reviewer"
+          ],
+          "start_time": 1777614116.8255439
+        },
+        {
+          "phase_index": 1,
+          "phase_name": "phase_1",
+          "agent_count": 1,
+          "phase_start_time": 1777614152.770109,
+          "agent_names": [
+            "tech-lead-synthesizer"
+          ],
+          "start_time": 1777614152.770112
+        },
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 1,
+          "phase_start_time": 1777614160.634016,
+          "agent_names": [
+            "summarizer"
+          ],
+          "start_time": 1777614160.634017
+        },
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 3,
+          "phase_start_time": 1777614272.3351848,
+          "agent_names": [
+            "security-auditor",
+            "performance-engineer",
+            "senior-reviewer"
+          ],
+          "start_time": 1777614272.3351848
+        },
+        {
+          "phase_index": 1,
+          "phase_name": "phase_1",
+          "agent_count": 1,
+          "phase_start_time": 1777614314.39785,
+          "agent_names": [
+            "tech-lead-synthesizer"
+          ],
+          "start_time": 1777614314.397868
+        },
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 1,
+          "phase_start_time": 1777614324.278954,
+          "agent_names": [
+            "summarizer"
+          ],
+          "start_time": 1777614324.278955
+        },
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 3,
+          "phase_start_time": 1777614420.475112,
+          "agent_names": [
+            "security-auditor",
+            "performance-engineer",
+            "senior-reviewer"
+          ],
+          "start_time": 1777614420.475112
+        },
+        {
+          "phase_index": 1,
+          "phase_name": "phase_1",
+          "agent_count": 1,
+          "phase_start_time": 1777614509.085899,
+          "agent_names": [
+            "tech-lead-synthesizer"
+          ],
+          "start_time": 1777614509.085902
+        },
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 1,
+          "phase_start_time": 1777614524.7152672,
+          "agent_names": [
+            "summarizer"
+          ],
+          "start_time": 1777614524.7152681
+        },
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 2,
+          "phase_start_time": 1777932123.774715,
+          "agent_names": [
+            "empirical-analyst",
+            "theoretical-analyst"
+          ],
+          "start_time": 1777932123.774716
+        },
+        {
+          "phase_index": 1,
+          "phase_name": "phase_1",
+          "agent_count": 1,
+          "phase_start_time": 1777932129.6282911,
+          "agent_names": [
+            "synthesizer"
+          ],
+          "start_time": 1777932129.628293
+        }
+      ]
+    }
+  },
+  "synthesis": null
+}
