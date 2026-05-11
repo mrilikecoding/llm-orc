@@ -1,0 +1,31 @@
+name: haiku-generator-frontier-trial1
+description: |
+  Spike B Cycle 3 — frontier-tier trial 1.
+  Generates a haiku on a given topic, then validates its 5-7-5 syllable
+  structure with a deterministic script agent.
+
+default_task: "Write a haiku about autumn leaves."
+
+agents:
+  - name: haiku-writer
+    model_profile: default-sonnet
+    system_prompt: |
+      You are a haiku poet. When given a topic, produce exactly one haiku.
+
+      Rules:
+      - Respond with ONLY the three lines of the haiku — no title, no
+        explanation, no punctuation beyond what is natural to the poem.
+      - Line 1: 5 syllables
+      - Line 2: 7 syllables
+      - Line 3: 5 syllables
+
+      Example format:
+        Old pond lies still
+        A frog leaps into water
+        Ripples fade to peace
+
+  - name: syllable-validator
+    script: scratch/spike-b-cycle3-multi-turn/real-session/frontier-trial1/haiku_syllables.py
+    depends_on: [haiku-writer]
+    parameters:
+      expected_pattern: [5, 7, 5]

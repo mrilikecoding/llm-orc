@@ -1,0 +1,220 @@
+=== SCRIPT-AGENT FINDINGS (deterministic) ===
+{"success": true, "summary": {"added_line_count": 101, "new_functions_count": 10, "new_classes_count": 2, "new_constants_count": 2, "security_pattern_flags": 3, "type_annotation_flags": 1, "cross_reference_claims": 1}, "changed_symbols": {"functions": [{"name": "add_tokens", "line": 44, "params": "self, input_count: int, output_count: int", "return_annotation": "None", "is_method": true}, {"name": "total_used", "line": 49, "params": "self", "return_annotation": "int", "is_method": true}, {"name": "check_limit", "line": 52, "params": "self", "return_annotation": "bool", "is_method": true}, {"name": "remaining", "line": 66, "params": "self", "return_annotation": "int", "is_method": true}, {"name": "get_metadata", "line": 69, "params": "self", "return_annotation": "dict[str, Any]", "is_method": true}, {"name": "__init__", "line": 77, "params": "self", "return_annotation": "None", "is_method": true}, {"name": "register", "line": 80, "params": "self, session_id: str, api_key: str, limit: int = None", "return_annotation": "SessionBudget", "is_method": true}, {"name": "get", "line": 90, "params": "self, session_id: str", "return_annotation": "SessionBudget", "is_method": true}, {"name": "add_usage", "line": 94, "params": "self, session_id: str, input_count: int, output_count: int", "return_annotation": "bool", "is_method": true}, {"name": "all_sessions", "line": 100, "params": "self", "return_annotation": "dict[str, SessionBudget]", "is_method": true}], "classes": [{"name": "SessionBudget", "line": 26}, {"name": "SessionBudgetRegistry", "line": 74}], "constants": [{"name": "NOTE", "line": 7}, {"name": "DEFAULT_BUDGET_LIMIT", "line": 22}]}, "security_pattern_flags": [{"line": 20, "content": "# DEFAULT_MAX_TOKEN_LIMIT in orchestrator_config.py \u2014 if these drift,", "sensitive_terms": ["token"], "log_calls_in_window": [{"line": 17, "content": "logger = logging.getLogger(__name__)"}], "concern": "sensitive term(s) ['token'] appear in or near a logging call (within 6-line window). Verify the credential is not being emitted to logs."}, {"line": 60, "content": "f\"{self.total_used()}/{self.limit} tokens. \"", "sensitive_terms": ["token"], "log_calls_in_window": [{"line": 58, "content": "logger.warning("}], "concern": "sensitive term(s) ['token'] appear in or near a logging call (within 6-line window). Verify the credential is not being emitted to logs."}, {"line": 61, "content": "f\"API key: {self.api_key}\"", "sensitive_terms": ["api_key"], "log_calls_in_window": [{"line": 58, "content": "logger.warning("}], "concern": "sensitive term(s) ['api_key'] appear in or near a logging call (within 6-line window). Verify the credential is not being emitted to logs."}], "type_annotation_flags": [{"line": 80, "content": "def register(self, session_id: str, api_key: str, limit: int = None) -> SessionBudget:", "param": "limit", "type_annotation": "int", "concern": "parameter 'limit' annotated as 'int' but defaults to None; should be 'int | None'"}], "test_presence": {"test_files_added_in_diff": false, "test_methods_added_count": 0, "explicit_test_deferral_phrases_found": [{"pattern": "[Tt]ests?\\b[^\\n]{0,80}will\\s+be\\s+added", "match": "Tests for the new module will be added"}, {"pattern": "[Tt]ests?\\b[^\\n]{0,40}follow.?up", "match": "Tests for the new module will be added in a follow-up"}, {"pattern": "[Tt]ests?\\b[^\\n]{0,80}in\\s+a\\s+follow", "match": "Tests for the new module will be added in a follow"}]}, "cross_reference_claims": [{"line": 19, "context_excerpt": "mport Any |  | logger = logging.getLogger(__name__) |  |   Hard-coded budget threshold. Should match |   DEFAULT_MAX_TOKEN_LIMIT in orchestrator_config.py \u2014 if these dr", "referenced_symbol": "DEFAULT_MAX_TOKEN_LIMIT"}], "cross_reference_verifications": [{"diff_constant": "NOTE", "diff_value": null, "expected_to_match": "DEFAULT_MAX_TOKEN_LIMIT", "external_value": "50_000_000", "external_file": "src/llm_orc/agentic/orchestrator_config.py", "values_match": false}, {"diff_constant": "DEFAULT_BUDGET_LIMIT", "diff_value": "100_000", "expected_to_match": "DEFAULT_MAX_TOKEN_LIMIT", "external_value": "50_000_000", "external_file": "src/llm_orc/agentic/orchestrator_config.py", "values_match": false}], "notes": ["This is a deterministic analysis. The output is intended as anchor evidence for downstream LLM reviewers. False positives may occur on regex matches; false negatives may occur on patterns not covered by the regexes."]}
+
+=== LLM REVIEWER ANALYSIS ===
+# Code Review: Session Budget Tracking Module
+
+## Executive Summary
+
+This patch introduces `SessionBudget` and `SessionBudgetRegistry` for per-session token budget enforcement. The diff is small (90 lines) but contains several issues that should be addressed, including one **critical cross-file consistency problem** and a **real security concern** with API key logging.
+
+---
+
+## 1. Logic / Semantic Issues
+
+### 🔴 CRITICAL: Unchecked `get()` will raise unhandled `KeyError`
+
+**Lines 90–92:**
+```python
+def get(self, session_id: str) -> SessionBudget:
+    """Look up the budget for a session."""
+    return self._budgets[session_id]
+```
+
+`SessionBudgetRegistry.get()` performs a direct dictionary lookup with no guard. Any caller requesting a non-existent session will receive an unhandled `KeyError`. This is problematic because:
+
+- `add_usage()` (line 94–98) calls `get()`, propagating the crash upward
+- The Orchestrator Runtime calling `check_limit()` before each iteration could crash if a session was somehow unregistered
+
+**Recommendation:** Either raise a descriptive custom exception (e.g., `SessionNotFoundError`) or return `None` with proper null handling by callers.
+
+---
+
+### 🟡 Potential Integer Overflow
+
+**Lines 44–46:**
+```python
+def add_tokens(self, input_count: int, output_count: int) -> None:
+    self.input_tokens_used += input_count
+    self.output_tokens_used += output_count
+```
+
+Token counters accumulate indefinitely without overflow protection. For long-running sessions with high-throughput LLM calls, these values could exceed typical integer ranges (though Python's arbitrary-precision integers mitigate this). Consider adding a sanity check or overflow guard.
+
+---
+
+### 🟡 `remaining()` Returns Negative Values
+
+**Lines 66–67:**
+```python
+def remaining(self) -> int:
+    return self.limit - self.total_used()
+```
+
+If `check_limit()` returns `False`, `remaining()` will return a negative integer. This may be unexpected for callers. Document this behavior or consider returning `max(0, ...)` with a note.
+
+---
+
+### 🟢 `check_limit()` Logging Side Effect
+
+**Lines 52–62:**
+The `check_limit()` method logs a warning as a side effect when the budget is exceeded. This conflates checking with reporting. Callers may call `check_limit()` purely for the boolean return value but unexpectedly trigger logging.
+
+**Recommendation:** Consider separating the check from the log, or document this dual behavior clearly.
+
+---
+
+## 2. Security / Sensitive-Data Issues
+
+### 🔴 HIGH PRIORITY: API Key Logged on Budget Exceeded
+
+**Lines 58–61:**
+```python
+logger.warning(
+    f"Session {self.session_id} exceeded budget: "
+    f"{self.total_used()}/{self.limit} tokens. "
+    f"API key: {self.api_key}"
+)
+```
+
+The `api_key` attribute is being written to the log stream when a session exceeds its budget. This is a **real security concern** confirmed by the script-agent's detection. API keys should never appear in logs because:
+
+- Logs are often aggregated to external services (Datadog, CloudWatch, ELK)
+- Access to log aggregation systems is typically broader than access to credentials
+- Log retention policies may keep sensitive data longer than intended
+- This violates least-privilege principles for logging
+
+**Recommendation:** Remove `f"API key: {self.api_key}"` from the log message entirely. If correlation is needed for debugging, log a truncated hash or masked version of the key instead.
+
+---
+
+### 🟢 Token Count in Logs (False Positive)
+
+**Lines 60:** The script-agent flagged "token" as a sensitive term in the log message. This is a false positive — token *counts* (integers) are not sensitive data. Only the `api_key` logging is a genuine issue.
+
+---
+
+## 3. Type-Safety / API-Contract Issues
+
+### 🟡 Type Annotation: `limit` Should Be `int | None`
+
+**Line 80:**
+```python
+def register(self, session_id: str, api_key: str, limit: int = None) -> SessionBudget:
+```
+
+The script-agent correctly flagged this. `limit` is annotated as `int` but defaults to `None`. The correct annotation should be:
+
+```python
+def register(self, session_id: str, api_key: str, limit: int | None = None) -> SessionBudget:
+```
+
+This will cause a mypy/type-checker error in strict mode.
+
+---
+
+### 🟡 No Type Validation on `metadata`
+
+**Line 34:**
+```python
+metadata: dict[str, Any] = field(default_factory=dict)
+```
+
+The `metadata` dict accepts `Any` values. No validation exists to prevent accidentally storing sensitive data (e.g., user credentials, PII). Document the contract for what metadata is acceptable, or add validation.
+
+---
+
+## 4. Test Coverage
+
+### ⚠️ Explicit Deferral Found
+
+The commit message explicitly defers tests:
+
+> "Tests for the new module will be added in a follow-up PR — the budget logic is straightforward and the registry is in-memory only, so test coverage is not blocking on this change."
+
+The script-agent detected three matching deferral phrases. While the stated rationale ("straightforward") has some merit, the following cases warrant at least minimal test coverage before merge:
+
+| Edge Case | Why It Matters |
+|-----------|----------------|
+| `get()` with non-existent session | Currently crashes with `KeyError` |
+| `remaining()` with exceeded budget | Returns negative; behavior should be documented/defined |
+| `check_limit()` boundary conditions | Off-by-one at `total_used() == limit` |
+| `add_tokens()` with zero/negative counts | Negative counts produce invalid totals |
+
+**Recommendation:** Add at least 3–5 unit tests covering the above before this is merged. The follow-up PR should not be indefinitely deferred.
+
+---
+
+## 5. Cross-File Consistency
+
+### 🔴 CRITICAL MISMATCH: `DEFAULT_BUDGET_LIMIT` vs `DEFAULT_MAX_TOKEN_LIMIT`
+
+**Lines 19–22:**
+```python
+# Hard-coded budget threshold. Should match
+# DEFAULT_MAX_TOKEN_LIMIT in orchestrator_config.py — if these drift,
+# behavior across the two enforcement paths will diverge silently.
+DEFAULT_BUDGET_LIMIT = 100_000
+```
+
+The script-agent's `cross_reference_verifications` found a **500× value mismatch**:
+
+| Symbol | Value | Location |
+|--------|-------|----------|
+| `DEFAULT_BUDGET_LIMIT` | `100_000` | `session_budget.py` (new) |
+| `DEFAULT_MAX_TOKEN_LIMIT` | `50_000_000` | `orchestrator_config.py` |
+
+The comment explicitly warns: *"if these drift, behavior across the two enforcement paths will diverge silently."* This is not hypothetical — they have already drifted.
+
+**Impact:** The Orchestrator Runtime may enforce a 100K token limit per session while the config system expects a 50 million token limit. This will cause:
+- Premature session termination (sessions hitting 100K while the system expects 50M)
+- Confusing behavior for API consumers
+- Silent divergence between two enforcement paths as the comment predicts
+
+**Recommendation:** Either:
+1. Synchronize `DEFAULT_BUDGET_LIMIT` to `50_000_000`, or
+2. Update the comment to reflect the intentional deviation and explain why, or
+3. Extract the constant from `orchestrator_config.py` and import it rather than duplicating
+
+The comment mentions this should match — the diff should not introduce a mismatch that the author explicitly warned about.
+
+---
+
+## 6. Other Concerns
+
+### 🟢 In-Memory Registry — No Persistence or Cleanup
+
+**Line 76:**
+```python
+self._budgets: dict[str, SessionBudget] = {}
+```
+
+The registry is purely in-memory. Per the comment: "the registry is in-memory only, so test coverage is not blocking." This is acceptable for v1 but note:
+- Sessions are never removed from the registry
+- No TTL or expiration mechanism exists
+- Server restarts wipe all session budget state
+
+If sessions can be long-lived, this could cause unbounded memory growth. Consider adding a `unregister()` method or implementing periodic cleanup.
+
+### 🟢 No Bounds Checking on `add_tokens` Inputs
+
+**Lines 44–46:** Negative token counts could produce invalid totals. Validate that `input_count >= 0` and `output_count >= 0`, or document the assumption that callers are trusted.
+
+### 🟢 Missing `__repr__` for Debugging
+
+Neither `SessionBudget` nor `SessionBudgetRegistry` implements `__repr__`. Given that this system deals with session IDs and API keys, a debug-friendly representation would aid troubleshooting.
+
+---
+
+## Summary of Findings
+
+| Severity | Issue | Location |
+|----------|-------|----------|
+| 🔴 CRITICAL | `DEFAULT_BUDGET_LIMIT` (100K) does not match `DEFAULT_MAX_TOKEN_LIMIT` (50M) in orchestrator_config.py | Line 22 |
+| 🔴 HIGH | `api_key` is logged when budget exceeded | Lines 58–61 |
+| 🔴 CRITICAL | `get()` raises unhandled `KeyError` for unknown sessions | Lines 90–92 |
+| 🟡 | Type annotation: `limit: int = None` should be `int \| None` | Line 80 |
+| 🟡 | `remaining()` returns negative values after budget exceeded | Lines 66–67 |
+| ⚠️ | Tests explicitly deferred; edge cases lack coverage | Global |
+
+**Recommended Action:** Block merge until the cross-file mismatch is resolved and API key logging is removed. Add minimal unit tests before or alongside these fixes.

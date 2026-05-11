@@ -1,0 +1,137 @@
+{
+  "scenario_name": "available",
+  "arm": "cheap-bare",
+  "trial_index": 1,
+  "turns": [
+    {
+      "turn": 0,
+      "assistant_content": "",
+      "tool_calls": [
+        {
+          "id": "call_function_n80z65ep544n_1",
+          "name": "search_catalog",
+          "arguments_json": "{\"query\": \"The Great Gatsby\"}"
+        },
+        {
+          "id": "call_function_n80z65ep544n_2",
+          "name": "check_patron_status",
+          "arguments_json": "{\"patron_id\": 1001}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "duration_s": 3.1549129486083984
+    },
+    {
+      "turn": 1,
+      "assistant_content": "",
+      "tool_calls": [
+        {
+          "id": "call_function_dieja4nfi1po_1",
+          "name": "check_out",
+          "arguments_json": "{\"book_id\": 7142, \"patron_id\": 1001}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "duration_s": 4.9325010776519775
+    },
+    {
+      "turn": 2,
+      "assistant_content": "",
+      "tool_calls": [
+        {
+          "id": "call_function_hiswgtf2m6hw_1",
+          "name": "send_response",
+          "arguments_json": "{\"message\": \"Hi Alice! Your check-out of \\\"The Great Gatsby\\\" by F. Scott Fitzgerald was successful. The book is due back on May 22, 2026. Enjoy your reading!\"}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "duration_s": 3.1722829341888428
+    }
+  ],
+  "tool_call_log": [
+    {
+      "name": "search_catalog",
+      "arguments": {
+        "query": "The Great Gatsby"
+      },
+      "result": {
+        "results": [
+          {
+            "book_id": 7142,
+            "title": "The Great Gatsby",
+            "author": "F. Scott Fitzgerald",
+            "status": "available",
+            "due_date": null,
+            "holds_count": 0
+          }
+        ],
+        "count": 1
+      },
+      "turn": 0
+    },
+    {
+      "name": "check_patron_status",
+      "arguments": {
+        "patron_id": 1001
+      },
+      "result": {
+        "patron_id": 1001,
+        "name": "Alice Chen",
+        "current_holds": [],
+        "overdue_books": [],
+        "fine_balance": 0.0
+      },
+      "turn": 0
+    },
+    {
+      "name": "check_out",
+      "arguments": {
+        "book_id": 7142,
+        "patron_id": 1001
+      },
+      "result": {
+        "success": true,
+        "book_id": 7142,
+        "title": "The Great Gatsby",
+        "due_date": "2026-05-22",
+        "loan_days": 21
+      },
+      "turn": 1
+    },
+    {
+      "name": "send_response",
+      "arguments": {
+        "message": "Hi Alice! Your check-out of \"The Great Gatsby\" by F. Scott Fitzgerald was successful. The book is due back on May 22, 2026. Enjoy your reading!"
+      },
+      "result": {
+        "success": true,
+        "sent": true,
+        "char_count": 143
+      },
+      "turn": 2
+    }
+  ],
+  "final_state_summary": {
+    "books": {
+      "7142": "checked_out",
+      "7143": "available"
+    },
+    "patron_fine_balance": 0.0,
+    "responses_sent": [
+      "Hi Alice! Your check-out of \"The Great Gatsby\" by F. Scott Fitzgerald was successful. The book is due back on May 22, 2026. Enjoy your reading!"
+    ]
+  },
+  "grade": {
+    "scenario_name": "available",
+    "expected_action": "check_out_and_respond",
+    "success": true,
+    "notes": [
+      "Successfully checked out the book."
+    ],
+    "failure_modes": []
+  },
+  "error": null,
+  "total_duration_s": 11.259845972061157,
+  "total_input_tokens": 3327,
+  "total_output_tokens": 307
+}

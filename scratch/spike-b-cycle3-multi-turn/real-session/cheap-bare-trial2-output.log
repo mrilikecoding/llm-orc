@@ -1,0 +1,7 @@
+Done. Created both files:
+- `scratch/.../cheap-bare-trial2/haiku-generator.yaml` — ensemble with haiku-writer LLM agent and syllable-validator script agent
+- `scratch/.../cheap-bare-trial2/haiku_syllables.py` — stdlib syllable counter using regex vowel heuristic
+
+Hand-test confirms:
+- **Valid haiku** (Basho): 5/7/5 ✓ → `success: true`
+- **Invalid haiku**: 2/10/3 → `success: false` with per-line breakdown

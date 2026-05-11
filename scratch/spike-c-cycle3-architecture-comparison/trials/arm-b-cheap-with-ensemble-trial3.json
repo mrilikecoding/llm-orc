@@ -1,0 +1,140 @@
+Skipping invalid ensemble /Users/nathangreen/Development/eddi-lab/llm-orc/.llm-orc/ensembles/fan-out-test.yaml: 2 validation errors for ScriptAgentConfig
+type
+  Extra inputs are not permitted [type=extra_forbidden, input_value='script', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+system_prompt
+  Extra inputs are not permitted [type=extra_forbidden, input_value='Split input text into sentences', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+Skipping invalid ensemble /Users/nathangreen/Development/eddi-lab/llm-orc/.llm-orc/ensembles/plexus-graph-analysis.yaml: 1 validation error for ScriptAgentConfig
+type
+  Extra inputs are not permitted [type=extra_forbidden, input_value='script', input_type=str]
+    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+{
+  "results": {
+    "diff-analyzer": {
+      "response": "{\"success\": true, \"summary\": {\"added_line_count\": 101, \"new_functions_count\": 10, \"new_classes_count\": 2, \"new_constants_count\": 2, \"security_pattern_flags\": 3, \"type_annotation_flags\": 1, \"cross_reference_claims\": 1}, \"changed_symbols\": {\"functions\": [{\"name\": \"add_tokens\", \"line\": 44, \"params\": \"self, input_count: int, output_count: int\", \"return_annotation\": \"None\", \"is_method\": true}, {\"name\": \"total_used\", \"line\": 49, \"params\": \"self\", \"return_annotation\": \"int\", \"is_method\": true}, {\"name\": \"check_limit\", \"line\": 52, \"params\": \"self\", \"return_annotation\": \"bool\", \"is_method\": true}, {\"name\": \"remaining\", \"line\": 66, \"params\": \"self\", \"return_annotation\": \"int\", \"is_method\": true}, {\"name\": \"get_metadata\", \"line\": 69, \"params\": \"self\", \"return_annotation\": \"dict[str, Any]\", \"is_method\": true}, {\"name\": \"__init__\", \"line\": 77, \"params\": \"self\", \"return_annotation\": \"None\", \"is_method\": true}, {\"name\": \"register\", \"line\": 80, \"params\": \"self, session_id: str, api_key: str, limit: int = None\", \"return_annotation\": \"SessionBudget\", \"is_method\": true}, {\"name\": \"get\", \"line\": 90, \"params\": \"self, session_id: str\", \"return_annotation\": \"SessionBudget\", \"is_method\": true}, {\"name\": \"add_usage\", \"line\": 94, \"params\": \"self, session_id: str, input_count: int, output_count: int\", \"return_annotation\": \"bool\", \"is_method\": true}, {\"name\": \"all_sessions\", \"line\": 100, \"params\": \"self\", \"return_annotation\": \"dict[str, SessionBudget]\", \"is_method\": true}], \"classes\": [{\"name\": \"SessionBudget\", \"line\": 26}, {\"name\": \"SessionBudgetRegistry\", \"line\": 74}], \"constants\": [{\"name\": \"NOTE\", \"line\": 7}, {\"name\": \"DEFAULT_BUDGET_LIMIT\", \"line\": 22}]}, \"security_pattern_flags\": [{\"line\": 20, \"content\": \"# DEFAULT_MAX_TOKEN_LIMIT in orchestrator_config.py \\u2014 if these drift,\", \"sensitive_terms\": [\"token\"], \"log_calls_in_window\": [{\"line\": 17, \"content\": \"logger = logging.getLogger(__name__)\"}], \"concern\": \"sensitive term(s) ['token'] appear in or near a logging call (within 6-line window). Verify the credential is not being emitted to logs.\"}, {\"line\": 60, \"content\": \"f\\\"{self.total_used()}/{self.limit} tokens. \\\"\", \"sensitive_terms\": [\"token\"], \"log_calls_in_window\": [{\"line\": 58, \"content\": \"logger.warning(\"}], \"concern\": \"sensitive term(s) ['token'] appear in or near a logging call (within 6-line window). Verify the credential is not being emitted to logs.\"}, {\"line\": 61, \"content\": \"f\\\"API key: {self.api_key}\\\"\", \"sensitive_terms\": [\"api_key\"], \"log_calls_in_window\": [{\"line\": 58, \"content\": \"logger.warning(\"}], \"concern\": \"sensitive term(s) ['api_key'] appear in or near a logging call (within 6-line window). Verify the credential is not being emitted to logs.\"}], \"type_annotation_flags\": [{\"line\": 80, \"content\": \"def register(self, session_id: str, api_key: str, limit: int = None) -> SessionBudget:\", \"param\": \"limit\", \"type_annotation\": \"int\", \"concern\": \"parameter 'limit' annotated as 'int' but defaults to None; should be 'int | None'\"}], \"test_presence\": {\"test_files_added_in_diff\": false, \"test_methods_added_count\": 0, \"explicit_test_deferral_phrases_found\": [{\"pattern\": \"[Tt]ests?\\\\b[^\\\\n]{0,80}will\\\\s+be\\\\s+added\", \"match\": \"Tests for the new module will be added\"}, {\"pattern\": \"[Tt]ests?\\\\b[^\\\\n]{0,40}follow.?up\", \"match\": \"Tests for the new module will be added in a follow-up\"}, {\"pattern\": \"[Tt]ests?\\\\b[^\\\\n]{0,80}in\\\\s+a\\\\s+follow\", \"match\": \"Tests for the new module will be added in a follow\"}]}, \"cross_reference_claims\": [{\"line\": 19, \"context_excerpt\": \"mport Any |  | logger = logging.getLogger(__name__) |  |   Hard-coded budget threshold. Should match |   DEFAULT_MAX_TOKEN_LIMIT in orchestrator_config.py \\u2014 if these dr\", \"referenced_symbol\": \"DEFAULT_MAX_TOKEN_LIMIT\"}], \"cross_reference_verifications\": [{\"diff_constant\": \"NOTE\", \"diff_value\": null, \"expected_to_match\": \"DEFAULT_MAX_TOKEN_LIMIT\", \"external_value\": \"50_000_000\", \"external_file\": \"src/llm_orc/agentic/orchestrator_config.py\", \"values_match\": false}, {\"diff_constant\": \"DEFAULT_BUDGET_LIMIT\", \"diff_value\": \"100_000\", \"expected_to_match\": \"DEFAULT_MAX_TOKEN_LIMIT\", \"external_value\": \"50_000_000\", \"external_file\": \"src/llm_orc/agentic/orchestrator_config.py\", \"values_match\": false}], \"notes\": [\"This is a deterministic analysis. The output is intended as anchor evidence for downstream LLM reviewers. False positives may occur on regex matches; false negatives may occur on patterns not covered by the regexes.\"]}",
+      "status": "success",
+      "model_substituted": false,
+      "agent_requests": []
+    },
+    "code-reviewer": {
+      "response": "# Code Review: `session_budget.py` \u2014 Per-Session Token Budget Tracking\n\n**File Reviewed:** `src/llm_orc/agentic/session_budget.py`  \n**Commit:** `e8a3c2f1d4b9...8b6a7d3` \u2014 feat(agentic-serving): add per-session token-budget tracking\n\n---\n\n## 1. Logic / Semantic Issues\n\n### 1.1 Zero-value Budget Disallowed (Off-by-One / Falsy Pitfall)\n\n**Location:** Line 80 \u2014 `register()` method\n\n```python\ndef register(self, session_id: str, api_key: str, limit: int = None) -> SessionBudget:\n    budget = SessionBudget(\n        session_id=session_id,\n        api_key=api_key,\n        limit=limit if limit else DEFAULT_BUDGET_LIMIT,\n    )\n```\n\n**Issue:** The conditional `limit if limit else DEFAULT_BUDGET_LIMIT` treats `0` as falsy. A caller explicitly requesting `limit=0` (i.e., no tokens allowed) will silently receive the default limit instead. This is a semantic violation of the caller's intent.\n\n**Fix:** Use `limit if limit is not None else DEFAULT_BUDGET_LIMIT` or require callers to explicitly pass `DEFAULT_BUDGET_LIMIT`.\n\n---\n\n### 1.2 `get()` Raises Unhandled `KeyError`\n\n**Location:** Line 90 \u2014 `SessionBudgetRegistry.get()`\n\n```python\ndef get(self, session_id: str) -> SessionBudget:\n    \"\"\"Look up the budget for a session.\"\"\"\n    return self._budgets[session_id]\n```\n\n**Issue:** If a session ID is not found, this raises a raw `KeyError` with no context. Callers (including `add_usage()`) will crash with an unhelpful error message like `KeyError: 'abc123'`.\n\n**Recommendation:** Either document this as intentional (caller must ensure session exists) or return `None` / raise a custom exception with the session ID included.\n\n---\n\n### 1.3 `remaining()` Can Return Negative Values\n\n**Location:** Line 66 \u2014 `remaining()` method\n\n```python\ndef remaining(self) -> int:\n    return self.limit - self.total_used()\n```\n\n**Issue:** After `total_used()` exceeds `limit`, this method returns a negative integer (e.g., `-5000`). This may be intentional for diagnostic purposes, but it should be explicitly documented or guarded if callers expect non-negative values.\n\n---\n\n### 1.4 `get_metadata()` Returns Mutable Internal Reference\n\n**Location:** Line 69 \u2014 `get_metadata()`\n\n```python\ndef get_metadata(self) -> dict[str, Any]:\n    return self.metadata\n```\n\n**Issue:** Returns the internal `self.metadata` dict directly. Callers can mutate `SessionBudget` state (add/modify/delete metadata) without going through any accessor, bypassing the dataclass's field protection. This is a subtle aliasing risk.\n\n**Fix:** Return `dict(self.metadata)` (a shallow copy).\n\n---\n\n## 2. Security / Sensitive-Data Issues\n\n### 2.1 API Key Logged in Warning Message \u2014 **HIGH PRIORITY**\n\n**script-agent flagged this.** The script correctly identified that `self.api_key` appears in a logging call (line 61).\n\n**Evidence:**\n\n```python\n# Lines 58-61\nlogger.warning(\n    f\"Session {self.session_id} exceeded budget: \"\n    f\"{self.total_used()}/{self.limit} tokens. \"\n    f\"API key: {self.api_key}\"\n)\n```\n\n**Severity:** API keys are credentials. Logging them \u2014 even at WARNING level \u2014 risks exposure in:\n- Log aggregation pipelines (Datadog, Splunk, ELK)\n- CI/CD job logs\n- Shared debugging channels\n- Production log storage\n\n**Recommendation:** Remove `API key: {self.api_key}` from the log message entirely. If debugging context is needed, log a truncated or hashed version (e.g., `api_key[-8:]`) or log the session ID only.\n\n---\n\n### 2.2 Token Counts in Logs \u2014 **Low Risk / Informational**\n\n**script-agent flagged this.** The diff analyzer noted that \"token\" appears near logging calls.\n\n**Assessment:** This is a false positive. Token counts (`15000/100000 tokens`) are operational metrics, not secrets. They are safe to log. No action required.\n\n---\n\n## 3. Type-Safety / API-Contract Issues\n\n### 3.1 `limit` Parameter Type Annotation \u2014 **VALID FLAG**\n\n**script-agent flagged this.** The parameter is annotated `int` but defaults to `None`.\n\n**Evidence:**\n\n```python\ndef register(self, session_id: str, api_key: str, limit: int = None) -> SessionBudget:\n```\n\n**Issue:** This is a type annotation error. The `Optional[int]` (or `int | None`) semantics are not expressed, which:\n- Confuses type checkers (mypy/pyright will flag mismatches)\n- Misleads API consumers about the expected type\n\n**Fix:**\n\n```python\ndef register(self, session_id: str, api_key: str, limit: int | None = None) -> SessionBudget:\n```\n\n---\n\n### 3.2 Missing `__slots__` \u2014 Informational\n\nFor a high-frequency object like `SessionBudget`, adding `__slots__` to the dataclass could reduce memory footprint. This is optional but worth noting for a future optimization pass.\n\n---\n\n## 4. Test Coverage\n\n### 4.1 No Tests in Diff \u2014 Explicit Deferral Found\n\nThe commit message explicitly defers tests:\n\n> \"Tests for the new module will be added in a follow-up PR \u2014 the budget logic is straightforward and the registry is in-memory only, so test coverage is not blocking on this change.\"\n\n**Assessment:** The logic is not as \"straightforward\" as the commit message suggests. The following edge cases warrant tests before merge:\n\n| Scenario | What to Test |\n|---|---|\n| Budget exactly at limit | `check_limit()` returns `True` |\n| Budget exceeded by 1 token | `check_limit()` returns `False` |\n| `limit=0` provided | Should respect zero (not default) |\n| Session not registered | `get()` / `add_usage()` behavior |\n| `remaining()` after overrun | Returns negative |\n| `add_tokens()` accumulates | Multiple calls accumulate correctly |\n| `get_metadata()` mutation | Returns copy, not original |\n\n**Recommendation:** This review should not block merge, but the follow-up PR must include these tests. Consider adding a TODO comment in the module:\n\n```python\n# TODO: Add unit tests in tests/unit/llm_orc/agentic/test_session_budget.py\n```\n\n---\n\n## 5. Cross-File Consistency \u2014 **CRITICAL MISMATCH**\n\n**script-agent flagged cross_reference_verifications. This is a HIGH-priority issue.**\n\n### 5.1 Budget Limit Values Diverge\n\n| Location | Constant | Value |\n|---|---|---|\n| `session_budget.py` (line 22) | `DEFAULT_BUDGET_LIMIT` | **100,000** |\n| `orchestrator_config.py` | `DEFAULT_MAX_TOKEN_LIMIT` | **50,000,000** |\n\nThe comment in `session_budget.py` (lines 19-21) explicitly warns about this:\n\n> `# Hard-coded budget threshold. Should match`  \n> `# DEFAULT_MAX_TOKEN_LIMIT in orchestrator_config.py \u2014 if these drift,`  \n> `# behavior across the two enforcement paths will diverge silently.`\n\n**Yet they already diverge by 500x.**\n\n**Impact:** If the Orchestrator Runtime enforces a 50M token limit per `orchestrator_config.py`, but the budget tracker enforces a 100K limit, sessions will hit budget limits 500\u00d7 earlier than intended. This silently throttles sessions before the actual global limit is reached.\n\n**Recommendation:** Either:\n1. Have `session_budget.py` import `DEFAULT_MAX_TOKEN_LIMIT` from `orchestrator_config.py` to enforce a single source of truth, or\n2. Explicitly document why the limits differ (with a comment explaining the intentional ratio)\n\n---\n\n## 6. Other Concerns\n\n### 6.1 No Thread-Safety on Registry\n\n`SessionBudgetRegistry` uses a plain `dict` with no locking. Under concurrent access (multiple ReAct iterations, async callers), this could cause data races. If the agentic-serving layer is async, this needs synchronization.\n\n**Recommendation:** Add a comment noting that the registry is not thread-safe, or use `threading.Lock` if concurrency is expected.\n\n---\n\n### 6.2 API Key Stored in Plain Text\n\n`SessionBudget` stores `api_key: str` directly. If budget objects are serialized (e.g., for persistence or debugging dumps), the API key could be exposed. Consider masking the key in `__repr__` or any serialization methods.\n\n---\n\n### 6.3 `metadata` Dict Unbounded\n\nThe `metadata: dict[str, Any]` field has no size limit. A malicious or buggy caller could stuff large objects into metadata, causing memory exhaustion.\n\n**Recommendation:** Add a note in the docstring that metadata should be kept small, or add an optional size guard.\n\n---\n\n## Summary\n\n| Category | Severity | Count |\n|---|---|---|\n| Logic issues | Medium | 4 |\n| Security (API key logged) | **High** | 1 |\n| Security (token counts) | Low (false positive) | \u2014 |\n| Type annotation | Medium | 1 |\n| Test coverage | Medium (deferred) | \u2014 |\n| Cross-file mismatch | **Critical** | 1 |\n| Other concerns | Low-Medium | 3 |\n\n**Blocking Issues:**  \n1. **API key in log message** (line 61) \u2014 must be removed  \n2. **Budget limit mismatch** (100K vs 50M) \u2014 must be reconciled or documented\n\n**Non-Blocking but Required Before Close:**\n- Fix `limit: int = None` type annotation\n- Fix falsy-zero bug in `register()`\n- Add `get_metadata()` copy guard\n- Add thread-safety note or implementation\n- Follow-up PR with test coverage",
+      "status": "success",
+      "model_substituted": false
+    }
+  },
+  "metadata": {
+    "agents_used": 2,
+    "started_at": 1777703070.472905,
+    "duration": "44.17s",
+    "completed_at": 1777703114.646831,
+    "usage": {
+      "agents": {
+        "code-reviewer": {
+          "input_tokens": 2831,
+          "output_tokens": 2585,
+          "total_tokens": 5416,
+          "cost_usd": 0.0,
+          "duration_ms": 44042,
+          "model": "minimax-m2.5-free",
+          "model_profile": "orchestrator-minimax-m25-free",
+          "start_time": 1777703070.600853,
+          "baseline_cpu": 29.6,
+          "baseline_memory": 63.9,
+          "sample_count": 3,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 63.9,
+          "avg_memory": 63.76666666666667,
+          "cpu_samples": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "memory_samples": [
+            63.9,
+            63.7,
+            63.7
+          ],
+          "resource_duration_seconds": 44.04576516151428,
+          "resource_sample_count": 3
+        }
+      },
+      "totals": {
+        "total_tokens": 5416,
+        "total_input_tokens": 2831,
+        "total_output_tokens": 2585,
+        "total_cost_usd": 0.0,
+        "total_duration_ms": 44042,
+        "agents_count": 1
+      }
+    },
+    "adaptive_resource_management": {
+      "adaptive_used": false,
+      "management_type": "user_configured",
+      "concurrency_decisions": [],
+      "resource_metrics": [
+        {
+          "cpu_percent": 0.0,
+          "memory_percent": 63.7,
+          "circuit_breaker_state": "N/A",
+          "measurement_point": "final_fallback"
+        }
+      ],
+      "execution_metrics": {
+        "peak_cpu": 0.0,
+        "avg_cpu": 0.0,
+        "peak_memory": 63.7,
+        "avg_memory": 63.7,
+        "sample_count": 1,
+        "raw_cpu_samples": [
+          0.0
+        ],
+        "raw_memory_samples": [
+          63.7
+        ]
+      },
+      "phase_metrics": [
+        {
+          "phase_index": 0,
+          "phase_name": "phase_0",
+          "agent_count": 1,
+          "phase_start_time": 1777703070.472928,
+          "agent_names": [
+            "diff-analyzer"
+          ],
+          "start_time": 1777703070.472928,
+          "duration_seconds": 0.10476899147033691,
+          "end_time": 1777703070.577746,
+          "agents_completed": 1,
+          "peak_cpu": 0.0,
+          "avg_cpu": 0.0,
+          "peak_memory": 0.0,
+          "avg_memory": 0.0,
+          "sample_count": 0
+        },
+        {
+          "phase_index": 1,
+          "phase_name": "phase_1",
+          "agent_count": 1,
+          "phase_start_time": 1777703070.577808,
+          "agent_names": [
+            "code-reviewer"
+          ],
+          "start_time": 1777703070.577808,
+          "duration_seconds": 44.06888484954834,
+          "end_time": 1777703114.6467788,
+          "agents_completed": 1,
+          "peak_cpu": 44.2,
+          "avg_cpu": 10.946559633027523,
+          "peak_memory": 64.1,
+          "avg_memory": 63.89403669724771,
+          "sample_count": 436
+        }
+      ]
+    }
+  },
+  "config": {
+    "type": "mock_config"
+  }
+}

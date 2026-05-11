@@ -1,0 +1,9 @@
+```json
+{
+  "content": "",
+  "tool_calls": [
+    {"name": "check_out", "arguments": {"book_id": 7142, "patron_id": 1001}},
+    {"name": "send_response", "arguments": {"message": "Hi Alice! I've checked out 'The Great Gatsby' by F. Scott Fitzgerald to your account. Your account has no outstanding fines or holds. Enjoy the read!"}}
+  ]
+}
+```

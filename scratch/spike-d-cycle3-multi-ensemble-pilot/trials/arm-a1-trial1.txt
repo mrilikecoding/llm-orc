@@ -1,0 +1,150 @@
+Now let me check the referenced config file for the cross-file consistency issue and look at any existing patterns in the codebase:
+---
+
+# Code Review Report: `session_budget.py`
+
+## STAGE 1: Issues Identified
+
+### CRITICAL
+
+| # | Category | Location | Issue |
+|---|----------|----------|-------|
+| 1 | **Logic** | `check_limit()` line 56 | Off-by-one: uses `>` instead of `>=`. A session at exactly `limit` tokens is allowed one more call before the limit fires, violating the ReAct iteration boundary contract. |
+| 2 | **Security** | `check_limit()` line 53 | `api_key` logged in plaintext — sensitive credential exposed in log output. Standard practice: log hash or prefix-only. |
+| 3 | **Cross-file** | Line 46 | `DEFAULT_BUDGET_LIMIT = 100_000` should match `orchestrator_config.py:43` (`DEFAULT_MAX_TOKEN_LIMIT = 50_000_000`) but is 500× smaller. Comment acknowledges drift risk; no enforcement exists. |
+| 4 | **Type-safety** | `register()` line 79 | `limit: int = None` — type annotation says `int` but default is `None`. Should be `int | None`. The `if limit else` truthy check also conflates `None` and `0`. |
+
+### MAJOR
+
+| # | Category | Location | Issue |
+|---|----------|----------|-------|
+| 5 | **Logic** | `register()` line 79 | `limit if limit else DEFAULT_BUDGET_LIMIT` treats `0` as falsy — caller passing `limit=0` (no tokens allowed) silently gets default. |
+| 6 | **API-contract** | `get()` line 90 | Unhandled `KeyError` for missing sessions — crashes with no context for callers including `add_usage()`. |
+| 7 | **API-contract** | `all_sessions()` line 100 | Returns mutable internal `_budgets` dict — callers can mutate registry state directly. |
+| 8 | **API-contract** | `get_metadata()` line 93 | Returns mutable reference to internal `metadata` — callers can mutate session data externally. |
+| 9 | **Logic** | `remaining()` line 91 | Returns negative values when budget exceeded — no floor at 0. |
+| 10 | **Logic** | `register()` line 104 | No check for duplicate `session_id` — silently overwrites existing budgets. |
+
+### MINOR / TEST GAP
+
+| # | Category | Issue |
+|---|----------|-------|
+| 11 | **Test coverage** | PR explicitly defers tests to follow-up. Budget-enforcement logic at ReAct boundary needs coverage before shipping. |
+| 12 | **Resilience** | No TTL or cleanup for abandoned sessions — in-memory registry leaks indefinitely. |
+| 13 | **Input validation** | `add_tokens()` accepts negative values silently. |
+
+---
+
+## STAGE 2: Fixed File
+
+Saved to: `scratch/spike-d-cycle3-multi-ensemble-pilot/fixed-files/arm-a1-trial1.py`
+
+**Key fixes applied:**
+
+| Issue | Fix |
+|-------|-----|
+| ISSUE-1 (off-by-one) | Changed `>` to `>=` in `check_limit()` |
+| ISSUE-2 (api_key leak) | Log `hashlib.sha256(api_key)[:8]` instead of plaintext |
+| ISSUE-3 (cross-file drift) | `DEFAULT_BUDGET_LIMIT = DEFAULT_MAX_TOKEN_LIMIT` — single source of truth |
+| ISSUE-3b (type annotation) | `limit: int \| None = None` with `is not None` check |
+| ISSUE-5 (0-as-falsy) | Fixed by using `is not None` guard |
+| ISSUE-6 (KeyError) | Custom `SessionNotFoundError` raised with context |
+| ISSUE-7 (mutable dict) | `return dict(self._budgets)` — shallow copy |
+| ISSUE-8 (mutable metadata) | `return dict(self.metadata)` — defensive copy |
+| ISSUE-9 (negative remaining) | `return max(remaining, 0)` |
+| ISSUE-10 (duplicate overwrite) | Raises `ValueError` on duplicate registration |
+| ISSUE-13 (negative tokens) | `raise ValueError` on negative input |
+
+---
+
+## STAGE 3: Verification Strategy
+
+| Issue | Verification Method |
+|-------|---------------------|
+| ISSUE-1 | Add unit test: `budget.limit=100`, call `add_tokens(50, 50)`, assert `check_limit()` returns `False` (at-limit case) |
+| ISSUE-2 | Enable log capture (e.g., `caplog`), trigger `check_limit()` return `False`, assert captured log contains no plaintext `api_key` |
+| ISSUE-3 | Run `mypy --strict` — import cycle check. Add assertion: `assert DEFAULT_BUDGET_LIMIT == DEFAULT_MAX_TOKEN_LIMIT` |
+| ISSUE-3 (value match) | Grep both files, assert values equal |
+| ISSUE-5 | Unit test: `register(session_id, key, limit=0)` — assert resulting budget limit is 0 |
+| ISSUE-6 | Test `registry.get("nonexistent")` — assert raises `SessionNotFoundError`, not `KeyError` |
+| ISSUE-7 | Mutate returned dict, assert registry unchanged |
+| ISSUE-8 | Mutate returned metadata, assert internal unchanged |
+| ISSUE-9 | `remaining()` after over-limit scenario returns `0`, not negative |
+| ISSUE-10 | `register()` same session_id twice raises `ValueError` |
+| ISSUE-11 | `pytest --collect-only` on new test file returns ≥8 tests covering core paths |
+| ISSUE-13 | `add_tokens(-1, 0)` raises `ValueError` |
+
+**Lint/typecheck command:**
+```bash
+cd /Users/nathangreen/Development/eddi-lab/llm-orc && python -m py_compile fixed-files/arm-a1-trial1.py && python -m mypy --strict src/llm_orc/agentic/session_budget.py
+```
+
+---
+# Code Review Report: `session_budget.py`
+
+## STAGE 1 — Issues Identified
+
+### CRITICAL
+
+| # | Category | Location | Issue |
+|---|----------|----------|-------|
+| **ISSUE-1** | Security | L82-86 | `api_key` logged in plaintext — credential exposure via log files/monitoring |
+| **ISSUE-5** | Cross-file | L46 | `DEFAULT_BUDGET_LIMIT = 100_000` vs `orchestrator_config.DEFAULT_MAX_TOKEN_LIMIT = 50_000_000` — **500× mismatch**, silent divergence risk |
+
+### HIGH
+
+| # | Category | Location | Issue |
+|---|----------|----------|-------|
+| **ISSUE-2** | Logic | L81 | Off-by-one: `> self.limit` allows one extra call at exactly the limit |
+| **ISSUE-3** | Type-safety | L104 | `limit: int = None` violates type annotation; truthy-check also rejects `limit=0` |
+
+### MEDIUM
+
+| # | Category | Location | Issue |
+|---|----------|----------|-------|
+| **ISSUE-4** | Test gap | Commit msg | PR explicitly defers tests — violates project's TDD discipline |
+| **ISSUE-6** | Logic | L116 | `get()` raises unhandled `KeyError` for missing sessions |
+| **ISSUE-7** | Logic | L124 | `all_sessions()` returns mutable internal dict — breaks encapsulation |
+
+### LOW
+
+| # | Category | Location | Issue |
+|---|----------|----------|-------|
+| **ISSUE-8** | Logic | L47-48 | `add_tokens()` accepts negative values without validation |
+| **ISSUE-9** | Logic | L91 | `remaining()` returns negative when over budget |
+| **ISSUE-10** | Logic | L104 | `register()` silently overwrites existing sessions |
+
+---
+
+## STAGE 2 — Fixes Applied
+
+Fixed file saved to: `scratch/spike-d-cycle3-multi-ensemble-pilot/fixed-files/arm-a1-trial1.py`
+
+| Issue | Fix Applied |
+|-------|-------------|
+| ISSUE-1 | Replaced `api_key` in log with `hashlib.sha256(...).hexdigest()[:8]` prefix |
+| ISSUE-5 | Import `DEFAULT_MAX_TOKEN_LIMIT` from `orchestrator_config` at runtime (with `TYPE_CHECKING` guard) |
+| ISSUE-2 | Changed `> self.limit` to `>= self.limit` |
+| ISSUE-3 | Changed to `limit: int \| None = None` + `is not None` check |
+| ISSUE-6 | Custom `SessionNotFoundError` raised on missing session |
+| ISSUE-7 | `all_sessions()` returns `dict(self._budgets)` copy |
+| ISSUE-8 | `add_tokens()` raises `ValueError` on negative counts |
+| ISSUE-9 | `remaining()` uses `max(remaining, 0)` |
+| ISSUE-10 | `register()` raises `ValueError` if session already exists |
+
+---
+
+## STAGE 3 — Verification Strategy
+
+| Issue | Verification Method |
+|-------|---------------------|
+| ISSUE-1 | Grep logs for raw `api_key` pattern; confirm only `***` + hash appears |
+| ISSUE-5 | Compare constants with `python -c "from src.llm_orc.agentic.orchestrator_config import DEFAULT_MAX_TOKEN_LIMIT; print(DEFAULT_MAX_TOKEN_LIMIT)"` — should match |
+| ISSUE-2 | Unit test: `budget = SessionBudget(..., limit=100); budget.add_tokens(50, 50); assert budget.check_limit() == False` |
+| ISSUE-3 | Run `mypy --strict` — should pass with no type errors |
+| ISSUE-4 | Review that `tests/unit/agentic/test_session_budget.py` exists with coverage of all methods |
+| ISSUE-6 | Test: `registry.get("nonexistent")` → should raise `SessionNotFoundError`, not `KeyError` |
+| ISSUE-7 | Verify: `sessions = registry.all_sessions(); sessions.clear()` does not affect internal state |
+| ISSUE-8 | Test: `budget.add_tokens(-1, 0)` → should raise `ValueError` |
+| ISSUE-9 | Test: over-budget budget.remaining() returns 0, not negative |
+| ISSUE-10 | Test: `register("s1", "key"); register("s1", "key")` → should raise `ValueError` |

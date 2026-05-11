@@ -1,0 +1,11 @@
+I need to simultaneously check the patron's status and search for the book before deciding what action to take.
+
+```json
+{
+  "content": "",
+  "tool_calls": [
+    {"name": "check_patron_status", "arguments": {"patron_id": 1001}},
+    {"name": "search_catalog", "arguments": {"query": "The Great Gatsby F. Scott Fitzgerald"}}
+  ]
+}
+```

@@ -1,0 +1,21 @@
+Bootstrapping llm-orc client for profile 'orchestrator-minimax-m25-free'...
+  Resolved: model=minimax-m2.5-free, provider=openai-compatible/zen
+Running 3 trial(s) per arm across 2 arm(s)...
+
+--- arm3_debiased (Script-as-orchestrator DEBIASED (same script + README, no specific failure-mode hints in system prompt)) ---
+  Trial 1/3... OK — 19.36s, 7947 in / 2207 out, saved to arm3_debiased-trial01-1777686893.json
+  Trial 2/3... OK — 65.10s, 7947 in / 3043 out, saved to arm3_debiased-trial02-1777686912.json
+  Trial 3/3... OK — 47.82s, 7947 in / 2490 out, saved to arm3_debiased-trial03-1777686978.json
+
+--- arm4 (Script-only (debiased synthesis prompt, NO README content) — tests whether bug-detection requires README for grounded analysis) ---
+  Trial 1/3... OK — 18.52s, 319 in / 1382 out, saved to arm4-trial01-1777687025.json
+  Trial 2/3... OK — 12.46s, 319 in / 1025 out, saved to arm4-trial02-1777687044.json
+  Trial 3/3... OK — 24.36s, 319 in / 1362 out, saved to arm4-trial03-1777687056.json
+
+================================================================================
+SUMMARY
+================================================================================
+  arm3_debiased: n=3/3 ok, median=47.82s, range=[19.36s, 65.10s], avg in/out tokens=7947/2580
+  arm4: n=3/3 ok, median=18.52s, range=[12.46s, 24.36s], avg in/out tokens=319/1256
+
+All trial outputs saved to: scratch/spike-a-cycle3-a2-script-input/trials

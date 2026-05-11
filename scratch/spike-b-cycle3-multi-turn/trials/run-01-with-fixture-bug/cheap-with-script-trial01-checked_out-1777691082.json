@@ -1,0 +1,114 @@
+{
+  "scenario_name": "checked_out",
+  "arm": "cheap-with-script",
+  "trial_index": 1,
+  "turns": [
+    {
+      "turn": 0,
+      "assistant_content": "I'd be happy to help you check out \"1984\" by George Orwell! Let me look that up in our catalog and verify your patron status.\n",
+      "tool_calls": [
+        {
+          "id": "call_function_tr77n70e62j1_1",
+          "name": "search_catalog",
+          "arguments_json": "{\"query\": \"1984 George Orwell\"}"
+        },
+        {
+          "id": "call_function_tr77n70e62j1_2",
+          "name": "check_patron_status",
+          "arguments_json": "{\"patron_id\": 1002}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "duration_s": 2.2036261558532715
+    },
+    {
+      "turn": 1,
+      "assistant_content": "",
+      "tool_calls": [
+        {
+          "id": "call_function_hr9fu7rtfgiy_1",
+          "name": "send_response",
+          "arguments_json": "{\"message\": \"Hello! I'm sorry, but we do not have '1984' by George Orwell in our catalog. The search did not return any results for that title. You may want to try a different title or author, or check with another library branch for availability.\\n\\nIs there anything else I can help you with?\"}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "duration_s": 3.0673279762268066
+    }
+  ],
+  "tool_call_log": [
+    {
+      "name": "check_patron_status",
+      "arguments": {
+        "patron_id": 1002
+      },
+      "result": {
+        "patron_id": 1002,
+        "name": "Bob Yamada",
+        "current_holds": [],
+        "overdue_books": [],
+        "fine_balance": 0.0
+      },
+      "turn": -1
+    },
+    {
+      "name": "search_catalog",
+      "arguments": {
+        "query": "1984 George Orwell"
+      },
+      "result": {
+        "results": [],
+        "count": 0
+      },
+      "turn": 0
+    },
+    {
+      "name": "check_patron_status",
+      "arguments": {
+        "patron_id": 1002
+      },
+      "result": {
+        "patron_id": 1002,
+        "name": "Bob Yamada",
+        "current_holds": [],
+        "overdue_books": [],
+        "fine_balance": 0.0
+      },
+      "turn": 0
+    },
+    {
+      "name": "send_response",
+      "arguments": {
+        "message": "Hello! I'm sorry, but we do not have '1984' by George Orwell in our catalog. The search did not return any results for that title. You may want to try a different title or author, or check with another library branch for availability.\n\nIs there anything else I can help you with?"
+      },
+      "result": {
+        "success": true,
+        "sent": true,
+        "char_count": 279
+      },
+      "turn": 1
+    }
+  ],
+  "final_state_summary": {
+    "books": {
+      "4419": "checked_out",
+      "4420": "available"
+    },
+    "patron_fine_balance": 0.0,
+    "responses_sent": [
+      "Hello! I'm sorry, but we do not have '1984' by George Orwell in our catalog. The search did not return any results for that title. You may want to try a different title or author, or check with another library branch for availability.\n\nIs there anything else I can help you with?"
+    ]
+  },
+  "grade": {
+    "scenario_name": "checked_out",
+    "expected_action": "place_hold_and_respond",
+    "success": false,
+    "notes": [
+      "No successful place_hold call."
+    ],
+    "failure_modes": []
+  },
+  "error": null,
+  "total_duration_s": 5.270997047424316,
+  "total_input_tokens": 1964,
+  "total_output_tokens": 342
+}
