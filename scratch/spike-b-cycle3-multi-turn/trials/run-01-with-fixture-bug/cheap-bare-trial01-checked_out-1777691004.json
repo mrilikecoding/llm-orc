@@ -1,0 +1,133 @@
+{
+  "scenario_name": "checked_out",
+  "arm": "cheap-bare",
+  "trial_index": 1,
+  "turns": [
+    {
+      "turn": 0,
+      "assistant_content": "I'll help you check out '1984' by George Orwell. Let me first check your patron status and search for the book in the catalog.\n",
+      "tool_calls": [
+        {
+          "id": "call_function_50dvnoif8kjs_1",
+          "name": "check_patron_status",
+          "arguments_json": "{\"patron_id\": 1002}"
+        },
+        {
+          "id": "call_function_50dvnoif8kjs_2",
+          "name": "search_catalog",
+          "arguments_json": "{\"query\": \"1984 George Orwell\"}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "duration_s": 4.376410961151123
+    },
+    {
+      "turn": 1,
+      "assistant_content": "",
+      "tool_calls": [
+        {
+          "id": "call_function_n1qx524mmozs_1",
+          "name": "search_catalog",
+          "arguments_json": "{\"query\": \"1984\"}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "duration_s": 4.959764003753662
+    },
+    {
+      "turn": 2,
+      "assistant_content": "",
+      "tool_calls": [
+        {
+          "id": "call_function_vycjxma8kycf_1",
+          "name": "send_response",
+          "arguments_json": "{\"message\": \"Hello Bob! Your account is in good standing with no outstanding fines. Unfortunately, \\\"1984\\\" by George Orwell is currently checked out and not available. However, there are already 2 holds on this book. Would you like me to place an additional hold on it for you? The due date for the current checkout is 2026-05-15.\"}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "duration_s": 4.975200176239014
+    }
+  ],
+  "tool_call_log": [
+    {
+      "name": "check_patron_status",
+      "arguments": {
+        "patron_id": 1002
+      },
+      "result": {
+        "patron_id": 1002,
+        "name": "Bob Yamada",
+        "current_holds": [],
+        "overdue_books": [],
+        "fine_balance": 0.0
+      },
+      "turn": 0
+    },
+    {
+      "name": "search_catalog",
+      "arguments": {
+        "query": "1984 George Orwell"
+      },
+      "result": {
+        "results": [],
+        "count": 0
+      },
+      "turn": 0
+    },
+    {
+      "name": "search_catalog",
+      "arguments": {
+        "query": "1984"
+      },
+      "result": {
+        "results": [
+          {
+            "book_id": 4419,
+            "title": "1984",
+            "author": "George Orwell",
+            "status": "checked_out",
+            "due_date": "2026-05-15",
+            "holds_count": 2
+          }
+        ],
+        "count": 1
+      },
+      "turn": 1
+    },
+    {
+      "name": "send_response",
+      "arguments": {
+        "message": "Hello Bob! Your account is in good standing with no outstanding fines. Unfortunately, \"1984\" by George Orwell is currently checked out and not available. However, there are already 2 holds on this book. Would you like me to place an additional hold on it for you? The due date for the current checkout is 2026-05-15."
+      },
+      "result": {
+        "success": true,
+        "sent": true,
+        "char_count": 316
+      },
+      "turn": 2
+    }
+  ],
+  "final_state_summary": {
+    "books": {
+      "4419": "checked_out",
+      "4420": "available"
+    },
+    "patron_fine_balance": 0.0,
+    "responses_sent": [
+      "Hello Bob! Your account is in good standing with no outstanding fines. Unfortunately, \"1984\" by George Orwell is currently checked out and not available. However, there are already 2 holds on this book. Would you like me to place an additional hold on it for you? The due date for the current checkout is 2026-05-15."
+    ]
+  },
+  "grade": {
+    "scenario_name": "checked_out",
+    "expected_action": "place_hold_and_respond",
+    "success": false,
+    "notes": [
+      "No successful place_hold call."
+    ],
+    "failure_modes": []
+  },
+  "error": null,
+  "total_duration_s": 14.31144404411316,
+  "total_input_tokens": 2817,
+  "total_output_tokens": 408
+}

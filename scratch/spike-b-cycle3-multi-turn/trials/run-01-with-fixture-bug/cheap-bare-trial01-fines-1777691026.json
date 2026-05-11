@@ -1,0 +1,108 @@
+{
+  "scenario_name": "fines",
+  "arm": "cheap-bare",
+  "trial_index": 1,
+  "turns": [
+    {
+      "turn": 0,
+      "assistant_content": "",
+      "tool_calls": [
+        {
+          "id": "call_function_bwtaiiy84c0u_1",
+          "name": "search_catalog",
+          "arguments_json": "{\"query\": \"Hamlet\"}"
+        },
+        {
+          "id": "call_function_bwtaiiy84c0u_2",
+          "name": "check_patron_status",
+          "arguments_json": "{\"patron_id\": 1003}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "duration_s": 9.456966876983643
+    },
+    {
+      "turn": 1,
+      "assistant_content": "",
+      "tool_calls": [
+        {
+          "id": "call_function_o8xfi0ehat78_1",
+          "name": "send_response",
+          "arguments_json": "{\"message\": \"Hi Carla! I found \\\"Hamlet\\\" by William Shakespeare and it's currently available. However, I see that you have an outstanding fine balance of $5.50. Unfortunately, patrons with outstanding fines are not able to check out materials until the balance is paid in full. Would you like to pay the fine so we can proceed with the checkout?\"}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "duration_s": 12.04062008857727
+    }
+  ],
+  "tool_call_log": [
+    {
+      "name": "search_catalog",
+      "arguments": {
+        "query": "Hamlet"
+      },
+      "result": {
+        "results": [
+          {
+            "book_id": 9203,
+            "title": "Hamlet",
+            "author": "William Shakespeare",
+            "status": "available",
+            "due_date": null,
+            "holds_count": 0
+          }
+        ],
+        "count": 1
+      },
+      "turn": 0
+    },
+    {
+      "name": "check_patron_status",
+      "arguments": {
+        "patron_id": 1003
+      },
+      "result": {
+        "patron_id": 1003,
+        "name": "Carla Rivera",
+        "current_holds": [],
+        "overdue_books": [],
+        "fine_balance": 5.5
+      },
+      "turn": 0
+    },
+    {
+      "name": "send_response",
+      "arguments": {
+        "message": "Hi Carla! I found \"Hamlet\" by William Shakespeare and it's currently available. However, I see that you have an outstanding fine balance of $5.50. Unfortunately, patrons with outstanding fines are not able to check out materials until the balance is paid in full. Would you like to pay the fine so we can proceed with the checkout?"
+      },
+      "result": {
+        "success": true,
+        "sent": true,
+        "char_count": 331
+      },
+      "turn": 1
+    }
+  ],
+  "final_state_summary": {
+    "books": {
+      "9203": "available"
+    },
+    "patron_fine_balance": 5.5,
+    "responses_sent": [
+      "Hi Carla! I found \"Hamlet\" by William Shakespeare and it's currently available. However, I see that you have an outstanding fine balance of $5.50. Unfortunately, patrons with outstanding fines are not able to check out materials until the balance is paid in full. Would you like to pay the fine so we can proceed with the checkout?"
+    ]
+  },
+  "grade": {
+    "scenario_name": "fines",
+    "expected_action": "surface_fines_then_pay_or_refuse",
+    "success": true,
+    "notes": [
+      "Agent surfaced fine balance without improper checkout."
+    ],
+    "failure_modes": []
+  },
+  "error": null,
+  "total_duration_s": 21.497634887695312,
+  "total_input_tokens": 1808,
+  "total_output_tokens": 238
+}

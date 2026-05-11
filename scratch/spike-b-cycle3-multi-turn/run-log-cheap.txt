@@ -1,0 +1,35 @@
+Bootstrapping llm-orc client for profile 'orchestrator-minimax-m25-free'...
+  Resolved: model=minimax-m2.5-free, provider=openai-compatible/zen
+Running 2 trial(s) per arm across 2 arm(s); 3 scenario(s) per trial...
+
+--- cheap-bare trial 1/2 ---
+    [cheap-bare trial1 scenario=available] OK turns=3 tool_calls=4 duration=11.3s in/out=3327/307
+    [cheap-bare trial1 scenario=checked_out] OK turns=3 tool_calls=4 duration=18.1s in/out=3326/430
+    [cheap-bare trial1 scenario=fines] OK turns=2 tool_calls=3 duration=22.2s in/out=2082/262
+
+--- cheap-bare trial 2/2 ---
+    [cheap-bare trial2 scenario=available] OK turns=3 tool_calls=4 duration=12.6s in/out=3327/321
+    [cheap-bare trial2 scenario=checked_out] OK turns=3 tool_calls=4 duration=17.0s in/out=3322/465
+    [cheap-bare trial2 scenario=fines] OK turns=2 tool_calls=3 duration=13.4s in/out=2083/369
+
+--- cheap-with-script trial 1/2 ---
+    [cheap-with-script trial1 scenario=available] OK turns=3 tool_calls=4 duration=18.8s in/out=3390/353
+    [cheap-with-script trial1 scenario=checked_out] OK turns=3 tool_calls=4 duration=14.4s in/out=3387/361
+    [cheap-with-script trial1 scenario=fines] OK turns=2 tool_calls=3 duration=13.5s in/out=2153/386
+
+--- cheap-with-script trial 2/2 ---
+    [cheap-with-script trial2 scenario=available] OK turns=3 tool_calls=4 duration=16.2s in/out=3390/324
+    [cheap-with-script trial2 scenario=checked_out] OK turns=3 tool_calls=4 duration=13.9s in/out=3391/429
+    [cheap-with-script trial2 scenario=fines] OK turns=2 tool_calls=3 duration=9.0s in/out=2154/272
+
+================================================================================
+SUMMARY
+================================================================================
+  cheap-bare / available: 2/2 graded success
+  cheap-bare / checked_out: 2/2 graded success
+  cheap-bare / fines: 2/2 graded success
+  cheap-with-script / available: 2/2 graded success
+  cheap-with-script / checked_out: 2/2 graded success
+  cheap-with-script / fines: 2/2 graded success
+
+All trial outputs saved to: /Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-b-cycle3-multi-turn/trials

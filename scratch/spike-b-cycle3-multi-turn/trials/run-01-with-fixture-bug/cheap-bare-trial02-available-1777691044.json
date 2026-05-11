@@ -1,0 +1,137 @@
+{
+  "scenario_name": "available",
+  "arm": "cheap-bare",
+  "trial_index": 2,
+  "turns": [
+    {
+      "turn": 0,
+      "assistant_content": "I'll help you check out \"The Great Gatsby\"! Let me look up the book in the catalog and verify your patron status.\n",
+      "tool_calls": [
+        {
+          "id": "call_function_pnmyaqpxlel8_1",
+          "name": "search_catalog",
+          "arguments_json": "{\"query\": \"The Great Gatsby\"}"
+        },
+        {
+          "id": "call_function_pnmyaqpxlel8_2",
+          "name": "check_patron_status",
+          "arguments_json": "{\"patron_id\": 1001}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "duration_s": 8.174095153808594
+    },
+    {
+      "turn": 1,
+      "assistant_content": "",
+      "tool_calls": [
+        {
+          "id": "call_function_wt9c9wehv1a5_1",
+          "name": "check_out",
+          "arguments_json": "{\"book_id\": 7142, \"patron_id\": 1001}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "duration_s": 3.6571552753448486
+    },
+    {
+      "turn": 2,
+      "assistant_content": "",
+      "tool_calls": [
+        {
+          "id": "call_function_d4mz299ipm8g_1",
+          "name": "send_response",
+          "arguments_json": "{\"message\": \"Hi Alice! I've successfully checked out \\\"The Great Gatsby\\\" by F. Scott Fitzgerald for you. The book is due back on 05/22/2026. Enjoy your reading!\"}"
+        }
+      ],
+      "finish_reason": "tool_calls",
+      "duration_s": 6.5722901821136475
+    }
+  ],
+  "tool_call_log": [
+    {
+      "name": "search_catalog",
+      "arguments": {
+        "query": "The Great Gatsby"
+      },
+      "result": {
+        "results": [
+          {
+            "book_id": 7142,
+            "title": "The Great Gatsby",
+            "author": "F. Scott Fitzgerald",
+            "status": "available",
+            "due_date": null,
+            "holds_count": 0
+          }
+        ],
+        "count": 1
+      },
+      "turn": 0
+    },
+    {
+      "name": "check_patron_status",
+      "arguments": {
+        "patron_id": 1001
+      },
+      "result": {
+        "patron_id": 1001,
+        "name": "Alice Chen",
+        "current_holds": [],
+        "overdue_books": [],
+        "fine_balance": 0.0
+      },
+      "turn": 0
+    },
+    {
+      "name": "check_out",
+      "arguments": {
+        "book_id": 7142,
+        "patron_id": 1001
+      },
+      "result": {
+        "success": true,
+        "book_id": 7142,
+        "title": "The Great Gatsby",
+        "due_date": "2026-05-22",
+        "loan_days": 21
+      },
+      "turn": 1
+    },
+    {
+      "name": "send_response",
+      "arguments": {
+        "message": "Hi Alice! I've successfully checked out \"The Great Gatsby\" by F. Scott Fitzgerald for you. The book is due back on 05/22/2026. Enjoy your reading!"
+      },
+      "result": {
+        "success": true,
+        "sent": true,
+        "char_count": 146
+      },
+      "turn": 2
+    }
+  ],
+  "final_state_summary": {
+    "books": {
+      "7142": "checked_out",
+      "7143": "available"
+    },
+    "patron_fine_balance": 0.0,
+    "responses_sent": [
+      "Hi Alice! I've successfully checked out \"The Great Gatsby\" by F. Scott Fitzgerald for you. The book is due back on 05/22/2026. Enjoy your reading!"
+    ]
+  },
+  "grade": {
+    "scenario_name": "available",
+    "expected_action": "check_out_and_respond",
+    "success": true,
+    "notes": [
+      "Successfully checked out the book."
+    ],
+    "failure_modes": []
+  },
+  "error": null,
+  "total_duration_s": 18.403614282608032,
+  "total_input_tokens": 2908,
+  "total_output_tokens": 365
+}

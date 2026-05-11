@@ -1,0 +1,15 @@
+Carla has a $5.50 outstanding fine balance. Per policy, I cannot check out the book until the fine is paid. I need to send a response surfacing this to the patron.
+
+```json
+{
+  "content": "Carla has an outstanding fine of $5.50, which blocks new checkouts per library policy. I will surface this and invite payment.",
+  "tool_calls": [
+    {
+      "name": "send_response",
+      "arguments": {
+        "message": "Hi Carla! I found 'Hamlet' by William Shakespeare and it's available — but your account has an outstanding fine balance of $5.50. Library policy requires all fines to be paid before new checkouts can be processed.\n\nOnce your fine is cleared, I'll be happy to check out Hamlet for you right away. You can pay in person at the circulation desk or ask me to apply a payment here. Just let me know how you'd like to proceed!"
+      }
+    }
+  ]
+}
+```

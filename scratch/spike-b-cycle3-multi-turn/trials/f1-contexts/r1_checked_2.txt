@@ -1,0 +1,13 @@
+The patron has no fines, so checkout is clear. The book is currently checked out (due back 2026-05-15) with 2 existing holds, so I need to place a hold and then send the response.
+
+```json
+{
+  "content": "",
+  "tool_calls": [
+    {
+      "name": "place_hold",
+      "arguments": {"book_id": 4419, "patron_id": 1002}
+    }
+  ]
+}
+```

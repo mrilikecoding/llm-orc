@@ -1,0 +1,106 @@
+```python
+"""Session-token budget tracking for the agentic-serving layer.
+
+Tracks input + output tokens per session against a configured budget. The
+Orchestrator Runtime calls these methods at each ReAct iteration to enforce
+budget limits before continuing.
+
+NOTE: This is the new file in the diff under review. Tests for this module
+will be added in a follow-up PR.
+
+TODO: Add comprehensive unit tests for SessionBudget and SessionBudgetRegistry.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from typing import Any
+
+from llm_orc.agentic.orchestrator_config import DEFAULT_MAX_TOKEN_LIMIT
+
+logger = logging.getLogger(__name__)
+
+# Hard-coded budget threshold. Should match
+# DEFAULT_MAX_TOKEN_LIMIT in orchestrator_config.py — if these drift,
+# behavior across the two enforcement paths will diverge silently.
+DEFAULT_BUDGET_LIMIT = DEFAULT_MAX_TOKEN_LIMIT
+
+
+@dataclass
+class SessionBudget:
+    """Per-session token budget tracking.
+
+    Attributes:
+        session_id: Unique session identifier.
+        api_key: The API key associated with this session, used for billing.
+        input_tokens_used: Cumulative input tokens consumed.
+        output_tokens_used: Cumulative output tokens consumed.
+        limit: Maximum total tokens allowed for this session.
+    """
+
+    session_id: str
+    api_key: str
+    input_tokens_used: int = 0
+    output_tokens_used: int = 0
+    limit: int = DEFAULT_BUDGET_LIMIT
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def add_tokens(self, input_count: int, output_count: int) -> None:
+        """Record token consumption from a single LLM call."""
+        self.input_tokens_used += input_count
+        self.output_tokens_used += output_count
+
+    def total_used(self) -> int:
+        return self.input_tokens_used + self.output_tokens_used
+
+    def check_limit(self) -> bool:
+        """Return True if the session is within budget, False if exceeded.
+
+        Called at each ReAct iteration by the Orchestrator Runtime.
+        """
+        if self.total_used() >= self.limit:
+            logger.warning(
+                f"Session {self.session_id} exceeded budget: "
+                f"{self.total_used()}/{self.limit} tokens."
+            )
+            return False
+        return True
+
+    def remaining(self) -> int:
+        return self.limit - self.total_used()
+
+    def get_metadata(self) -> dict[str, Any]:
+        """Return session metadata for logging or persistence."""
+        return self.metadata
+
+
+class SessionBudgetRegistry:
+    """In-memory registry of active session budgets."""
+
+    def __init__(self) -> None:
+        self._budgets: dict[str, SessionBudget] = {}
+
+    def register(self, session_id: str, api_key: str, limit: int | None = None) -> SessionBudget:
+        """Create a new session budget and register it."""
+        budget = SessionBudget(
+            session_id=session_id,
+            api_key=api_key,
+            limit=limit if limit is not None else DEFAULT_BUDGET_LIMIT,
+        )
+        self._budgets[session_id] = budget
+        return budget
+
+    def get(self, session_id: str) -> SessionBudget:
+        """Look up the budget for a session."""
+        return self._budgets[session_id]
+
+    def add_usage(self, session_id: str, input_count: int, output_count: int) -> bool:
+        """Record token usage and return whether the session is still within budget."""
+        budget = self.get(session_id)
+        budget.add_tokens(input_count, output_count)
+        return budget.check_limit()
+
+    def all_sessions(self) -> dict[str, SessionBudget]:
+        return self._budgets
+```
