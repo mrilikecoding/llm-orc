@@ -61,6 +61,7 @@ _LAYER_MAP: dict[str, int] = {
     "llm_orc.agentic.tier_router": 2,  # WP-G4-1 per ADR-015
     # L3 — Entry
     "llm_orc.agentic.session_registry": 3,
+    "llm_orc.agentic.session_artifacts": 3,  # WP-D4 per ADR-013
     "llm_orc.agentic.orchestrator_config": 3,
     # Serving Layer lives outside src/llm_orc/agentic/ (in web/api/)
     # and Bootstrapping Pipeline is deferred (WP-J); both omitted
