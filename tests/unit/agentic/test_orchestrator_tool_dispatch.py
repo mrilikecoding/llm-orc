@@ -198,6 +198,7 @@ def _build_dispatch(
     calibration_gate: Any = None,
     plexus_adapter: Any = None,
     tier_router: Any = None,
+    tier_router_audit: Any = None,
 ) -> OrchestratorToolDispatch:
     """Construct a dispatch with sensible test defaults.
 
@@ -235,6 +236,7 @@ def _build_dispatch(
         calibration_gate=calibration_gate,
         plexus_adapter=plexus_adapter,
         tier_router=tier_router,
+        tier_router_audit=tier_router_audit,
     )
 
 
@@ -1460,11 +1462,18 @@ class _ScriptedCalibrationGate:
     Satisfies the gate's :meth:`verdict_for` surface that Tool Dispatch
     consumes for WP-G4-1. Records calls so tests can assert the gate
     was consulted with the right session/ensemble identifiers.
+
+    The verdict is mutable via :meth:`set_verdict` so multi-window
+    audit-drift tests can shift the gate's output between windows
+    without rebuilding the dispatch.
     """
 
     def __init__(self, verdict: CalibrationVerdict = "proceed") -> None:
-        self._verdict = verdict
+        self._verdict: CalibrationVerdict = verdict
         self.verdict_calls: list[tuple[str, str]] = []
+
+    def set_verdict(self, verdict: CalibrationVerdict) -> None:
+        self._verdict = verdict
 
     def verdict_for(
         self,
@@ -1985,3 +1994,314 @@ class TestRouterRequiresCalibrationGateAtConstruction:
                 tier_router=router,
                 # calibration_gate intentionally omitted
             )
+
+
+# ---------------------------------------------------------------------------
+# WP-G4-2 — ADR-018 (d)-analog audit dispatch interposition
+# ---------------------------------------------------------------------------
+
+
+class _ManualAuditClock:
+    """Wall-clock double for audit-trigger-by-time tests."""
+
+    def __init__(self, start_seconds: float = 0.0) -> None:
+        self._now = start_seconds
+
+    def now_seconds(self) -> float:
+        return self._now
+
+    def advance_seconds(self, delta: float) -> None:
+        self._now += delta
+
+
+def _build_audit_test_thresholds(*, trigger_count: int = 10) -> Any:
+    """Test-tuned thresholds — small trigger_count keeps tests fast."""
+    from llm_orc.agentic.tier_router_audit import TierEscalationAuditThresholds
+
+    return TierEscalationAuditThresholds(
+        trigger_count=trigger_count,
+        trigger_wall_clock_hours=24.0,
+        verdict_distribution_shift=0.15,
+        escalation_outcome_correlation_pp=0.05,
+        bypass_rate_increase=0.25,
+        severe_drift_multiplier=2.0,
+    )
+
+
+class TestTierEscalationAuditorWiring:
+    """WP-G4-2 — ADR-018 (d)-analog audit dispatch integration.
+
+    Verifies that Tool Dispatch:
+    1. records verdict consumptions into the auditor on every dispatch,
+    2. records dispatch outcomes by tier,
+    3. overrides verdict-driven routing to escalated tier under
+       fail-safe mode,
+    4. validates ``tier_router_audit`` requires ``tier_router`` at
+       construction.
+    """
+
+    @staticmethod
+    def _build_router_and_ops(
+        *, verdict: CalibrationVerdict = "proceed"
+    ) -> tuple[_ScriptedOperations, _ScriptedCalibrationGate, Any]:
+        gate = _ScriptedCalibrationGate(verdict=verdict)
+        router = TestTierEscalationRouterInterposition._build_router_with_skill(
+            "ens-A",
+            "code_generation",
+            cheap="cheap-code-gen",
+            escalated="escalated-code-gen",
+        )
+        ops = _ScriptedOperations(
+            invoke_result={
+                "results": {},
+                "synthesis": "",
+                "status": "success",
+                "raw_output": True,
+            }
+        )
+        return ops, gate, router
+
+    def test_auditor_without_router_raises_at_construction(self) -> None:
+        from llm_orc.agentic.tier_router_audit import TierEscalationAuditor
+
+        auditor = TierEscalationAuditor(
+            thresholds=_build_audit_test_thresholds(),
+            clock=_ManualAuditClock(),
+        )
+        with pytest.raises(ValueError, match="tier_router_audit requires"):
+            _build_dispatch(
+                operations=_ScriptedOperations(invoke_result={}),
+                tier_router_audit=auditor,
+            )
+
+    @pytest.mark.asyncio
+    async def test_proceed_dispatch_records_consumption_and_cheap_outcome(
+        self,
+    ) -> None:
+        from llm_orc.agentic.tier_router_audit import TierEscalationAuditor
+
+        ops, gate, router = self._build_router_and_ops(verdict="proceed")
+        auditor = TierEscalationAuditor(
+            thresholds=_build_audit_test_thresholds(trigger_count=100),
+            clock=_ManualAuditClock(),
+        )
+        dispatch = _build_dispatch(
+            operations=ops,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate,
+            tier_router=router,
+            tier_router_audit=auditor,
+        )
+
+        await dispatch.dispatch(
+            InternalToolCall(
+                id="t1",
+                name="invoke_ensemble",
+                arguments={"name": "ens-A", "input": "x"},
+            )
+        )
+
+        # Outcome recorded as cheap-tier success.
+        snapshot = auditor.outcome_snapshot_for_tests
+        assert snapshot["cheap"] == (1, 0)
+        assert snapshot["escalated"] == (0, 0)
+
+    @pytest.mark.asyncio
+    async def test_abstain_dispatch_records_bypass_into_audit(self) -> None:
+        from llm_orc.agentic.tier_router_audit import TierEscalationAuditor
+
+        ops, gate, router = self._build_router_and_ops(verdict="abstain")
+        auditor = TierEscalationAuditor(
+            thresholds=_build_audit_test_thresholds(trigger_count=100),
+            clock=_ManualAuditClock(),
+        )
+        dispatch = _build_dispatch(
+            operations=ops,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate,
+            tier_router=router,
+            tier_router_audit=auditor,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="t1",
+                name="invoke_ensemble",
+                arguments={"name": "ens-A", "input": "x"},
+            )
+        )
+
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "escalation_bypass"
+        # The invoke did not run, but the bypass was recorded.
+        assert ops.invoke_calls == []
+
+    @pytest.mark.asyncio
+    async def test_invocation_failure_records_failure_outcome(self) -> None:
+        from llm_orc.agentic.tier_router_audit import TierEscalationAuditor
+
+        gate = _ScriptedCalibrationGate(verdict="proceed")
+        router = TestTierEscalationRouterInterposition._build_router_with_skill(
+            "ens-A",
+            "code_generation",
+            cheap="cheap-code-gen",
+            escalated="escalated-code-gen",
+        )
+        auditor = TierEscalationAuditor(
+            thresholds=_build_audit_test_thresholds(trigger_count=100),
+            clock=_ManualAuditClock(),
+        )
+        # ValueError simulates the "ensemble not found" failure path
+        # that ExecutionHandler.invoke produces in production.
+        failing_ops = _ScriptedOperations(
+            invoke_raises=ValueError("ensemble 'ens-A' not found")
+        )
+        dispatch = _build_dispatch(
+            operations=failing_ops,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate,
+            tier_router=router,
+            tier_router_audit=auditor,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="t1",
+                name="invoke_ensemble",
+                arguments={"name": "ens-A", "input": "x"},
+            )
+        )
+
+        assert isinstance(result, ToolCallError)
+        # Outcome recorded as failure for cheap-tier.
+        snapshot = auditor.outcome_snapshot_for_tests
+        assert snapshot["cheap"] == (0, 1)
+
+    @pytest.mark.asyncio
+    async def test_fail_safe_active_routes_proceed_to_escalated_tier(
+        self,
+    ) -> None:
+        """Under fail-safe, a Proceed verdict still routes to escalated
+        tier — fail-safe overrides verdict-driven routing per ADR-018
+        §"Severe-drift response".
+        """
+        from llm_orc.agentic.tier_router_audit import TierEscalationAuditor
+
+        ops, gate, router = self._build_router_and_ops(verdict="proceed")
+        auditor = TierEscalationAuditor(
+            thresholds=_build_audit_test_thresholds(trigger_count=100),
+            clock=_ManualAuditClock(),
+        )
+        # Force fail-safe state directly — the test exercises the
+        # override path, not the trigger logic.
+        auditor._fail_safe_active = True
+
+        dispatch = _build_dispatch(
+            operations=ops,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate,
+            tier_router=router,
+            tier_router_audit=auditor,
+        )
+
+        await dispatch.dispatch(
+            InternalToolCall(
+                id="t1",
+                name="invoke_ensemble",
+                arguments={"name": "ens-A", "input": "x"},
+            )
+        )
+
+        # Despite Proceed verdict, escalated tier was selected.
+        assert ops.invoke_calls[0]["model_profile_override"] == "escalated-code-gen"
+
+
+class TestDAnalogAuditDispatchFiresAtTriggerAndSevereDriftActivatesFailSafe:
+    """FC-20 named test per system-design.agents.md L229.
+
+    Test exercises the full integration path:
+
+    1. Build a Tool Dispatch with router + auditor (low trigger_count
+       for test speed).
+    2. Drive 10 Proceed verdicts — first audit fires, no_drift verdict.
+    3. Flip the gate to Reflect — drive 10 more — second audit fires.
+       Verdict distribution shifted 100% on both Proceed and Reflect
+       axes; well past 2× the 0.15 threshold → severe verdict.
+    4. Verify ``auditor.fail_safe_active`` becomes True at severe
+       verdict.
+    5. Flip the gate back to Proceed — verify the next dispatch still
+       routes to escalated tier (fail-safe override active).
+    """
+
+    @pytest.mark.asyncio
+    async def test_audit_fires_at_trigger_and_severe_activates_fail_safe(
+        self,
+    ) -> None:
+        from llm_orc.agentic.tier_router_audit import TierEscalationAuditor
+
+        ops, gate, router = TestTierEscalationAuditorWiring._build_router_and_ops(
+            verdict="proceed"
+        )
+        auditor = TierEscalationAuditor(
+            thresholds=_build_audit_test_thresholds(trigger_count=10),
+            clock=_ManualAuditClock(),
+        )
+        dispatch = _build_dispatch(
+            operations=ops,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate,
+            tier_router=router,
+            tier_router_audit=auditor,
+        )
+
+        # Phase 1: 10 Proceed dispatches — first audit window fires
+        # (no_drift; first window has no prior to compare).
+        for i in range(10):
+            await dispatch.dispatch(
+                InternalToolCall(
+                    id=f"p{i}",
+                    name="invoke_ensemble",
+                    arguments={"name": "ens-A", "input": "x"},
+                )
+            )
+        first_window_diagnostics = auditor.diagnostics()
+        assert len(first_window_diagnostics) == 1
+        assert first_window_diagnostics[0].verdict == "no_drift"
+        assert auditor.fail_safe_active is False
+
+        # Phase 2: flip to Reflect; 10 more dispatches — second audit
+        # window fires. Verdict distribution shifts 100% on both
+        # Proceed and Reflect axes, well past 2x the 0.15 threshold
+        # (i.e., the severe-magnitude cutoff) → severe verdict.
+        gate.set_verdict("reflect")
+        for i in range(10):
+            await dispatch.dispatch(
+                InternalToolCall(
+                    id=f"r{i}",
+                    name="invoke_ensemble",
+                    arguments={"name": "ens-A", "input": "x"},
+                )
+            )
+        diagnostics = auditor.diagnostics()
+        assert len(diagnostics) == 2
+        assert diagnostics[1].verdict == "severe"
+        assert auditor.fail_safe_active is True
+
+        # Phase 3: flip gate back to Proceed. The next dispatch still
+        # routes to escalated tier because fail-safe overrides the
+        # verdict.
+        gate.set_verdict("proceed")
+        ops.invoke_calls.clear()
+        await dispatch.dispatch(
+            InternalToolCall(
+                id="x1",
+                name="invoke_ensemble",
+                arguments={"name": "ens-A", "input": "x"},
+            )
+        )
+        assert ops.invoke_calls[0]["model_profile_override"] == "escalated-code-gen"

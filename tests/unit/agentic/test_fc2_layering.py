@@ -59,6 +59,7 @@ _LAYER_MAP: dict[str, int] = {
     "llm_orc.agentic.tool_call_validation_guard": 2,  # WP-C4 per ADR-017
     "llm_orc.agentic.conversation_compaction": 2,  # WP-E4 per ADR-012
     "llm_orc.agentic.tier_router": 2,  # WP-G4-1 per ADR-015
+    "llm_orc.agentic.tier_router_audit": 2,  # WP-G4-2 per ADR-018
     # L3 — Entry
     "llm_orc.agentic.session_registry": 3,
     "llm_orc.agentic.session_artifacts": 3,  # WP-D4 per ADR-013

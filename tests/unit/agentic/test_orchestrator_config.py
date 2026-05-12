@@ -372,6 +372,195 @@ class TestOrchestratorConfigResolver:
             == DEFAULT_COMPACTION_LAYER_4_CIRCUIT_BREAKER_THRESHOLD
         )
 
+    def test_per_skill_tier_defaults_unconfigured_returns_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Absent ``per_skill_tier_defaults`` leaves it ``None`` so the
+        Serving Layer skips Router construction (pre-WP-G4-1 behavior)."""
+        cm = _make_config_manager(tmp_path, monkeypatch)
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        assert config.per_skill_tier_defaults is None
+
+    def test_per_skill_tier_defaults_full_8_skills_parses(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """All 8 Topaz skills supplied → mapping populates correctly."""
+        full_defaults = {
+            "code_generation": {
+                "cheap_tier": "ollama-qwen-coder-7b",
+                "escalated_tier": "anthropic-claude-sonnet-4-5",
+            },
+            "tool_use": {
+                "cheap_tier": "ollama-qwen3-8b",
+                "escalated_tier": "anthropic-claude-haiku-4-5",
+            },
+            "mathematical_reasoning": {
+                "cheap_tier": "ollama-qwen3-8b",
+                "escalated_tier": "anthropic-claude-opus-4-7",
+            },
+            "logical_reasoning": {
+                "cheap_tier": "ollama-qwen3-8b",
+                "escalated_tier": "anthropic-claude-opus-4-7",
+            },
+            "factual_knowledge": {
+                "cheap_tier": "ollama-qwen3-8b",
+                "escalated_tier": "anthropic-claude-haiku-4-5",
+            },
+            "writing_quality": {
+                "cheap_tier": "ollama-qwen3-8b",
+                "escalated_tier": "anthropic-claude-sonnet-4-5",
+            },
+            "instruction_following": {
+                "cheap_tier": "ollama-qwen3-8b",
+                "escalated_tier": "anthropic-claude-haiku-4-5",
+            },
+            "summarization": {
+                "cheap_tier": "ollama-qwen3-8b",
+                "escalated_tier": "anthropic-claude-haiku-4-5",
+            },
+        }
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            global_yaml={
+                "agentic_serving": {
+                    "orchestrator": {"per_skill_tier_defaults": full_defaults}
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        assert config.per_skill_tier_defaults is not None
+        assert (
+            config.per_skill_tier_defaults["code_generation"].cheap_tier
+            == "ollama-qwen-coder-7b"
+        )
+        assert (
+            config.per_skill_tier_defaults["summarization"].escalated_tier
+            == "anthropic-claude-haiku-4-5"
+        )
+        assert len(config.per_skill_tier_defaults) == 8
+
+    def test_partial_per_skill_tier_defaults_raises_at_session_start(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A partial mapping (3 of 8 skills) raises ValueError per ADR-015
+        explicit-error stance — fail at session start, not silently."""
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            local_yaml={
+                "agentic_serving": {
+                    "orchestrator": {
+                        "per_skill_tier_defaults": {
+                            "code_generation": {
+                                "cheap_tier": "a",
+                                "escalated_tier": "b",
+                            },
+                            "tool_use": {
+                                "cheap_tier": "a",
+                                "escalated_tier": "b",
+                            },
+                            "summarization": {
+                                "cheap_tier": "a",
+                                "escalated_tier": "b",
+                            },
+                        }
+                    }
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        with pytest.raises(ValueError, match="missing"):
+            resolver.resolve()
+
+    def test_tier_router_audit_defaults_match_adr_018(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Absent ``tier_router_audit`` populates with ADR-018 §Decision
+        defaults (100, 24h, 0.15, 0.05, 0.25, 2.0)."""
+        cm = _make_config_manager(tmp_path, monkeypatch)
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        audit = config.tier_router_audit
+        assert audit.trigger_count == 100
+        assert audit.trigger_wall_clock_hours == 24.0
+        assert audit.verdict_distribution_shift == 0.15
+        assert audit.escalation_outcome_correlation_pp == 0.05
+        assert audit.bypass_rate_increase == 0.25
+        assert audit.severe_drift_multiplier == 2.0
+
+    def test_operator_supplied_tier_router_audit_thresholds_are_read(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            global_yaml={
+                "agentic_serving": {
+                    "orchestrator": {
+                        "tier_router_audit": {
+                            "trigger_count": 50,
+                            "trigger_wall_clock_hours": 12.0,
+                            "verdict_distribution_shift": 0.10,
+                            "escalation_outcome_correlation_pp": 0.08,
+                            "bypass_rate_increase": 0.40,
+                            "severe_drift_multiplier": 3.0,
+                        }
+                    }
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        audit = config.tier_router_audit
+        assert audit.trigger_count == 50
+        assert audit.trigger_wall_clock_hours == 12.0
+        assert audit.verdict_distribution_shift == 0.10
+        assert audit.escalation_outcome_correlation_pp == 0.08
+        assert audit.bypass_rate_increase == 0.40
+        assert audit.severe_drift_multiplier == 3.0
+
+    def test_invalid_tier_router_audit_threshold_falls_back_to_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Zero / negative / non-numeric thresholds fall back per the
+        tolerant-coercion convention; severe_drift_multiplier below 1.0
+        falls back to default rather than collapsing severity."""
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            local_yaml={
+                "agentic_serving": {
+                    "orchestrator": {
+                        "tier_router_audit": {
+                            "trigger_count": 0,
+                            "verdict_distribution_shift": -0.1,
+                            "severe_drift_multiplier": 0.5,
+                        }
+                    }
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        audit = config.tier_router_audit
+        assert audit.trigger_count == 100
+        assert audit.verdict_distribution_shift == 0.15
+        assert audit.severe_drift_multiplier == 2.0
+
     def test_default_orchestrator_system_prompt_teaches_retry_convention(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
