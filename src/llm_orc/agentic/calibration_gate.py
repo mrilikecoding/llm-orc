@@ -50,9 +50,24 @@ import math
 import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Final, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Final, Literal, Protocol
+
+if TYPE_CHECKING:
+    from llm_orc.agentic.calibration_signal_channel import (
+        CalibrationSignalChannel,
+    )
 
 from llm_orc.models.structural_errors import LlmOrcStructuralError
+
+# WP-H4 / ADR-016 conditional-acceptance type-only reference. The
+# channel module imports :data:`CalibrationVerdict` from this module
+# at runtime; relying on PEP-563 deferred annotations (enabled by
+# ``from __future__ import annotations`` above) lets us annotate the
+# constructor without importing :class:`CalibrationSignalChannel`
+# here. The gate uses the channel via duck-typing at the call sites
+# in :meth:`verdict_for`. The deferred-annotation pattern is the
+# same one FC-2's layering check excludes from TYPE_CHECKING blocks
+# — no runtime import, no upward-edge concern.
 
 DEFAULT_CALIBRATION_CHECKER_ENSEMBLE = "agentic-calibration-checker"
 """Default checker ensemble bundled with the library.
@@ -339,6 +354,7 @@ class CalibrationGate:
         trajectory_window_dispatches: int = DEFAULT_TRAJECTORY_WINDOW_DISPATCHES,
         entropy_collapse_sigma: float = DEFAULT_ENTROPY_COLLAPSE_SIGMA,
         clock: WallClock | None = None,
+        signal_channel: CalibrationSignalChannel | None = None,
     ) -> None:
         if default_n < 1:
             raise ValueError(
@@ -372,6 +388,14 @@ class CalibrationGate:
         self._entropy_collapse_sigma = entropy_collapse_sigma
         self._clock: WallClock = clock if clock is not None else _SystemWallClock()
         self._sessions: dict[str, _SessionRecords] = {}
+        # WP-H4 / ADR-016: optional cross-layer calibration channel.
+        # When present, the gate consumes the channel's windowed
+        # features at verdict time and reports verdict outcomes back
+        # to the channel's audit (mechanism (d)). When None (default —
+        # the inactive-ADR-016 case), the gate operates on L1-internal
+        # trajectory data per the scenarios.md §"ADR-016 not active"
+        # scenario.
+        self._signal_channel = signal_channel
 
     def mark_composed(self, *, session_id: str, ensemble_name: str) -> None:
         """Register a newly composed ensemble for calibration.
@@ -535,14 +559,36 @@ class CalibrationGate:
 
         criterion = self._abstain_criterion(dispatch_context, running)
         if criterion is not None:
-            return "abstain"
-
-        if (
+            verdict: CalibrationVerdict = "abstain"
+        elif self._signal_channel is not None and self._signal_channel.fail_safe_active:
+            # ADR-016 §"Mechanism (d)" — severe-drift fail-safe defaults
+            # calibration verdicts to Reflect-or-Abstain. The channel's
+            # audit declared its own state degraded; the gate's verdict
+            # producer honors that synchronously.
+            verdict = "reflect"
+        elif (
             dispatch_context.auq_confidence is not None
             and dispatch_context.auq_confidence < self._auq_confidence_threshold
         ):
-            return "reflect"
-        return "proceed"
+            verdict = "reflect"
+        else:
+            verdict = "proceed"
+
+        # Mechanism (d) audit feedback. The channel records the
+        # verdict-and-feature-snapshot pair into its audit window;
+        # diagnostics accumulate for asynchronous operator review.
+        if self._signal_channel is not None:
+            channel_features = self._signal_channel.windowed_features(
+                now_seconds=timestamp,
+                ensemble_name=ensemble_name,
+            )
+            self._signal_channel.record_verdict_outcome(
+                verdict=verdict,
+                ensemble_name=ensemble_name,
+                signal_features=channel_features,
+            )
+
+        return verdict
 
     def abstain_criterion_for(
         self,

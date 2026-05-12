@@ -1,4 +1,15 @@
-"""Ensemble execution with agent coordination."""
+"""Ensemble execution with agent coordination.
+
+**WP-H4 — ADR-016 (conditional acceptance):** when constructed with a
+:class:`~llm_orc.agentic.calibration_signal_channel.CalibrationSignalChannel`
+the executor emits a read-only calibration signal at every successful
+:meth:`EnsembleExecutor.execute` completion. This is the single
+upward L0 → L1 import permitted by ADR-002's amendment — pre-declared
+in ``tests/unit/agentic/test_fc2_layering.py``'s
+``_ALLOWED_UPWARD_EDGES``. Per ADR-016 §"Mechanism (e)" the channel's
+``MalformedSignalError`` is caught here so the orchestrator's
+reasoning surface never sees it.
+"""
 
 import asyncio
 import logging
@@ -7,6 +18,11 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
+from llm_orc.agentic.calibration_signal_channel import (
+    CalibrationSignal,
+    CalibrationSignalChannel,
+    MalformedSignalError,
+)
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.config.config_manager import ConfigurationManager
 from llm_orc.core.config.ensemble_config import EnsembleConfig, EnsembleLoader
@@ -185,6 +201,7 @@ class EnsembleExecutor:
         _model_factory: ModelFactory,
         _depth: int = 0,
         _save_artifacts: bool = True,
+        _calibration_signal_channel: CalibrationSignalChannel | None = None,
     ) -> None:
         """Initialize the ensemble executor.
 
@@ -193,10 +210,17 @@ class EnsembleExecutor:
 
         Use ExecutorFactory.create_root_executor() to construct a top-level
         executor, or ExecutorFactory.create_child_executor() for nested ones.
+
+        ``_calibration_signal_channel`` is the optional ADR-016 channel
+        the executor emits L0 signals into. ``None`` (the default — and
+        the inactive-ADR-016 case in scenarios.md §"ADR-016 not active")
+        skips signal emission entirely; the executor's behavior is
+        unchanged from pre-WP-H4 paths.
         """
         self._project_dir = project_dir
         self._depth = _depth
         self._save_artifacts = _save_artifacts
+        self._calibration_signal_channel = _calibration_signal_channel
 
         # Immutable infrastructure: must be supplied by caller (factory)
         if _config_manager is None:
@@ -451,7 +475,70 @@ class EnsembleExecutor:
         if self._progress_controller:
             await self._progress_controller.complete_ensemble()
 
-        return final_result.to_dict()
+        result_dict = final_result.to_dict()
+
+        # WP-H4 / ADR-016: emit a read-only calibration signal upward
+        # if the channel is wired. Mechanism (e) — any
+        # MalformedSignalError is caught here so the orchestrator's
+        # reasoning surface never sees it.
+        if self._calibration_signal_channel is not None:
+            self._emit_calibration_signal(config, result_dict)
+
+        return result_dict
+
+    def _emit_calibration_signal(
+        self, config: EnsembleConfig, result_dict: dict[str, Any]
+    ) -> None:
+        """Emit one calibration signal per :meth:`execute` completion.
+
+        Per ADR-016 §"The signal channel" the signal carries dispatch
+        outcome (structural success/failure) and trajectory features
+        when available. WP-H4 ships the structural surface; richer
+        trajectory features (HTC entropy at the token level) follow
+        first-deployment evidence per the conditional-acceptance
+        pathway. Per mechanism (e), :class:`MalformedSignalError`
+        from the channel is caught and dropped silently — the
+        orchestrator's reasoning surface never sees signal-channel
+        errors.
+        """
+        if self._calibration_signal_channel is None:  # defensive — caller checks
+            return
+        dispatch_success = self._infer_dispatch_success(result_dict)
+        signal = CalibrationSignal(
+            timestamp_seconds=time.time(),
+            ensemble_name=config.name,
+            dispatch_success=dispatch_success,
+        )
+        try:
+            self._calibration_signal_channel.record_signal(signal)
+        except MalformedSignalError:
+            # ADR-016 mechanism (e): the error is internal — caught
+            # at L0 and dropped. Operator-visible footprint is the
+            # channel's malformed_signal_count() surface.
+            logger.debug(
+                "Calibration signal rejected at channel boundary "
+                "(ensemble=%s); dropping per ADR-016 mechanism (e)",
+                config.name,
+            )
+
+    @staticmethod
+    def _infer_dispatch_success(result_dict: dict[str, Any]) -> bool:
+        """Whether this dispatch's outcome counts as a structural success.
+
+        Conservative shape: a dispatch with at least one ``results``
+        entry that does not carry an ``error`` field is structurally
+        successful. The interpretation is intentionally narrow — richer
+        outcome signals (post-hoc result-check, calibration-checker
+        verdict) belong on the Calibration Gate path, not on the
+        signal channel.
+        """
+        results = result_dict.get("results")
+        if not isinstance(results, dict) or not results:
+            return False
+        return all(
+            not (isinstance(entry, dict) and "error" in entry)
+            for entry in results.values()
+        )
 
     def _detect_interactive_ensemble(self, config: EnsembleConfig) -> bool:
         """Detect if ensemble contains scripts that require user input.
