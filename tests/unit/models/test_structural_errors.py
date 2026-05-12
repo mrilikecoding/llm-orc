@@ -8,6 +8,7 @@ preserves the message-pass-through behavior of the precedent class
 
 import pytest
 
+from llm_orc.agentic.calibration_gate import CalibrationAbstainError
 from llm_orc.models.base import ToolCallingNotSupportedError
 from llm_orc.models.structural_errors import LlmOrcStructuralError
 
@@ -105,3 +106,61 @@ class TestToolCallingNotSupportedErrorAsConcreteSubclass:
             ToolCallingNotSupportedError, match="does not support tool calling"
         ):
             raise ToolCallingNotSupportedError("model X does not support tool calling")
+
+
+class TestCalibrationAbstainErrorAsConcreteSubclass:
+    """``CalibrationAbstainError`` is the fifth concrete subclass per FC-17
+    (after ``ToolCallingNotSupportedError``, ``PhantomToolCallError``,
+    ``WriteGateRejectionError``, ``CompactionLayer4FailureError``)."""
+
+    def test_is_subclass_of_structural_error_base(self) -> None:
+        assert issubclass(CalibrationAbstainError, LlmOrcStructuralError)
+
+    def test_fixes_error_kind_to_calibration_abstain(self) -> None:
+        """The error_kind discriminator is set by construction per ADR-014."""
+        error = CalibrationAbstainError(
+            "entropy collapse exceeded 1.5σ threshold",
+            session_id="s1",
+            ensemble_name="composed-a",
+            criterion="entropy_collapse",
+        )
+
+        assert error.error_kind == "calibration_abstain"
+
+    def test_fixes_recovery_action_to_abstain(self) -> None:
+        """Per ADR-014 §Decision and the four-value Literal in
+        ``structural_errors``: the orchestrator must take a different
+        action (reformulate, dispatch elsewhere, or abstain entirely).
+        """
+        error = CalibrationAbstainError(
+            "entropy collapse exceeded 1.5σ threshold",
+            session_id="s1",
+            ensemble_name="composed-a",
+            criterion="entropy_collapse",
+        )
+
+        assert error.recovery_action_required == "abstain"
+
+    def test_dispatch_context_carries_calibration_metadata(self) -> None:
+        """``dispatch_context`` is the operator-readable structural cause."""
+        error = CalibrationAbstainError(
+            "post-hoc hard failure (non-recoverable)",
+            session_id="s1",
+            ensemble_name="composed-a",
+            criterion="post_hoc_hard_failure",
+        )
+
+        assert error.dispatch_context == {
+            "session_id": "s1",
+            "ensemble_name": "composed-a",
+            "criterion": "post_hoc_hard_failure",
+        }
+
+    def test_preserves_message_for_raise_catch_path(self) -> None:
+        with pytest.raises(CalibrationAbstainError, match="severe drift"):
+            raise CalibrationAbstainError(
+                "severe drift verdict from ADR-016 mechanism (d)",
+                session_id="s2",
+                ensemble_name="composed-b",
+                criterion="severe_drift",
+            )
