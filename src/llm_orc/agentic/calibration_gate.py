@@ -59,15 +59,28 @@ if TYPE_CHECKING:
 
 from llm_orc.models.structural_errors import LlmOrcStructuralError
 
-# WP-H4 / ADR-016 conditional-acceptance type-only reference. The
-# channel module imports :data:`CalibrationVerdict` from this module
-# at runtime; relying on PEP-563 deferred annotations (enabled by
-# ``from __future__ import annotations`` above) lets us annotate the
-# constructor without importing :class:`CalibrationSignalChannel`
-# here. The gate uses the channel via duck-typing at the call sites
-# in :meth:`verdict_for`. The deferred-annotation pattern is the
-# same one FC-2's layering check excludes from TYPE_CHECKING blocks
-# — no runtime import, no upward-edge concern.
+# WP-H4 / ADR-016 conditional-acceptance type-only reference. Two
+# Python idioms compose here:
+#
+# * ``from __future__ import annotations`` (PEP-563) makes ALL
+#   annotations in this file deferred — they are stored as strings
+#   at module-import time and resolved lazily by ``typing.get_type_
+#   hints()`` or by tooling that explicitly inspects annotations.
+# * The ``TYPE_CHECKING`` block (above) prevents
+#   :class:`CalibrationSignalChannel` from being imported at runtime;
+#   mypy sees the import and can resolve the name, but Python's
+#   import machinery does not execute the line.
+#
+# Why both patterns together: the channel module imports
+# :data:`CalibrationVerdict` from this file at runtime, which would
+# create a circular import if this file imported the channel back
+# at runtime. PEP-563 alone would suffice for the constructor's
+# annotation, but mypy-strict requires the name to resolve in some
+# scope — TYPE_CHECKING is the canonical idiom for that. PEP-563 +
+# TYPE_CHECKING is the standard mypy-strict pattern for type-only
+# circular references; FC-2's layering check explicitly excludes
+# imports nested under ``if TYPE_CHECKING:`` for the same reason
+# (no runtime edge, no upward-edge concern).
 
 DEFAULT_CALIBRATION_CHECKER_ENSEMBLE = "agentic-calibration-checker"
 """Default checker ensemble bundled with the library.

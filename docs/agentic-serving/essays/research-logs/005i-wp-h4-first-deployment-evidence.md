@@ -164,30 +164,115 @@ courses:
 - **(c) Falsification trigger fires** — a superseding ADR is filed;
   the reorganization branch is re-opened.
 
-This research log's BUILD-phase evidence is consistent with **(a) full
-acceptance at the BUILD-phase level** OR **(b) preserved-conditional**
-depending on the practitioner's standard of evidence:
+Option (c) is **closed by BUILD-phase evidence.** The falsification
+trigger — as specifically written in ADR-016 §"Falsification trigger"
+— names structural-operationalization failure as its criterion: *if
+any validation pathway produces evidence that mechanism (b) or (d)
+cannot be operationalized within the Calibration Gate's existing or
+extended class structure without introducing a new top-level module*.
+Both mechanisms operationalized inside L1 of ADR-002's four-layer
+structure. The trigger did not fire. Option (c) is structurally
+foreclosed at this gate.
 
-- The structural validation at BUILD-phase is sufficient to demonstrate
-  that *the methodology operationalizes* — no design flaw forces a
-  top-level module outside L0–L3; mechanism (b) and (d) both work as
-  specified at the integration level.
-- The operational validation — *does the drift detection produce useful
-  diagnostics in real deployments; do operators understand and act on
-  the asynchronous-review surface; does the (b)/(d) coupling tune
-  parameters productively* — remains BEYOND BUILD-phase evidence.
-  PLAY-phase or post-cycle first-deployment is the natural validation
-  surface for that.
+The choice between (a) and (b) is a practitioner judgment that the
+BUILD-phase evidence informs but does not resolve. Both readings are
+defensible; the two-question test below names the load-bearing
+distinction.
 
-**Suggested practitioner disposition (for review at WP-H4 close gate):**
-preserve conditional-acceptance status pending PLAY-phase or post-
-cycle first-deployment evidence; record BUILD-phase evidence as
-satisfying the *structural-operationalization* portion of the
-conditional-acceptance criteria; OQ #14 partial-closure for L1→L2
-stage stands (closed at architect-gate per WP-G4-2); ADR-016 stage's
-conditional-acceptance status narrows from "conditional pending all
-evidence" to "conditional pending operational evidence at deployment
-scale" — a real narrowing, not a removal.
+### Two-question test for (a) vs. (b)
+
+The practitioner should form an independent judgment via this
+two-question test before adopting either disposition:
+
+**Q1.** Does ADR-016's falsification trigger — as specifically written
+— name *operational-validation failure* or *structural-operationalization
+failure* as its criterion?
+
+- If **structural-operationalization**, the trigger's non-firing IS
+  the conditionality's primary criterion. Option (a) full acceptance
+  may be earned at this gate; operational validation becomes a natural
+  post-deployment learning surface that the ADR-016 §"Sweep
+  responsibility" clause already provides for.
+- If **operational-validation**, the trigger's non-firing is necessary
+  but not sufficient. Option (b) preserved-conditional is the
+  appropriate disposition until first-deployment evidence at the
+  cycle's North-Star benchmark resolves the operational question.
+
+**Q2.** Is the remaining operational-validation question (drift
+diagnostics produce useful action on real deployments; operator
+workflow handles advisory diagnostics productively; (b)/(d) coupling
+tunes parameters under deployment dynamics) a *condition of the
+ADR-016 amendment's acceptance*, or a *natural post-deployment learning
+surface regardless of acceptance status*?
+
+- If **condition of acceptance**, option (b) preserved-conditional is
+  the appropriate disposition; the ADR-016 amendment is not yet fully
+  accepted.
+- If **post-deployment learning surface**, option (a) is the appropriate
+  disposition; the ADR-016 amendment is accepted; the operational
+  questions are tracked as Cycle 5+ research / observation territory
+  not as conditional-acceptance status.
+
+### The case for option (a) — full acceptance at this gate
+
+ADR-016 §"Falsification trigger" was written with structural-
+operationalization as its specific concrete criterion. The trigger
+did not fire. FC-17 typed-error coverage closed at 8 of 8. All five
+bounding mechanisms operationalize inside L1. The static FC-2
+layering check accepts the single pre-declared upward edge and
+rejects all others. The conditional-acceptance status's gate
+criterion is structurally satisfied.
+
+The operational validation questions (drift diagnostics on real
+deployments; operator workflow; (b)/(d) coupling under deployment
+dynamics) are real and important — but they are the *next learning
+surface*, not the *conditionality's gate criterion*. ADR-016's
+sweep-responsibility clause already requires a cycle-status row for
+any future cycle that exercises the channel; that mechanism handles
+ongoing operational learning regardless of conditional-vs-full
+acceptance status.
+
+### The case for option (b) — preserved-conditional
+
+ADR-016's conditional-acceptance status was written to track *all*
+the open evidence surfaces, not only structural operationalization.
+The practitioner-guidance recorded at decide-gate (*"I'd rather be
+explicit about potential decisions that need more support. What I
+don't want is to codify an unsupported assumption without evidence.
+Rather we should do spikes or experiments to validate our hunches"*,
+ADR-016 §"Practitioner guidance on unsupported assumptions") frames
+the conditionality broadly: it captures the gap between *structural
+validation* and *operational sufficiency*, not only structural
+failure.
+
+Preserved-conditional acknowledges that mechanism (b)'s windowing
+parameters were operationally tuned by Spike (b) under synthetic-data
+conditions, not real-deployment conditions. Mechanism (d)'s drift
+criteria thresholds were drafting-time synthesis. Until first-
+deployment evidence resolves whether these tunings hold, preserved-
+conditional reflects the actual evidence state more accurately than
+full acceptance.
+
+### The case is genuinely open
+
+Both readings are defensible. This research log does not pre-frame
+the practitioner's choice. The trigger-action review is a practitioner
+judgment about how strictly to read ADR-016's conditional-acceptance
+language — broadly (everything operational) or narrowly (just the
+falsification trigger).
+
+If the practitioner reads broadly: option (b) is earned; the
+preserved-conditional status carries to Cycle 5+ with explicit
+operational-evidence sweep at every cycle that exercises the channel.
+
+If the practitioner reads narrowly (per ADR-016 §"Falsification
+trigger" as the specific gate criterion): option (a) is earned; the
+operational questions become Cycle 5+ research territory tracked via
+the §"Sweep responsibility" clause but not via conditional-acceptance
+status.
+
+The practitioner's disposition is recorded at the WP-H4 close gate
+in the gate reflection note and the cycle-status §BUILD row.
 
 ## Implementation provenance
 

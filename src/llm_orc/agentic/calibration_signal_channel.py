@@ -55,6 +55,25 @@ to the four-layer architecture), the elaboration-by-evidence framing
 commitment is invalidated, the reorganization branch re-opens, and
 ADR-016 is re-deliberated. Both mechanisms are implemented inside the
 L1 module here; the falsification trigger has not fired in BUILD.
+
+**Module-decomposition note (sibling-vs-monolithic, per WP-H4
+post-build susceptibility snapshot Advisory 1).** WP-G4-2's
+:class:`~llm_orc.agentic.tier_router_audit.TierEscalationAuditor` is
+a public sibling module (separate file from `tier_router.py`) — a
+directly analogous precedent that could have been applied here by
+splitting :class:`_ChannelAuditWindow` (and the audit-firing logic)
+into a separate file. The choice to keep mechanism (d)'s audit
+state private inside this module rather than as a public sibling is
+deliberate: the channel *owns* the audit data (it is channel-internal
+state that no other module reads), and exposing the auditor as a
+sibling would require widening the channel's public surface to include
+audit-window state for the sibling to consume. The TierEscalationAuditor
+split made sense because the router's :meth:`select_tier` is a
+stateless pure function (FC-19) — the auditor's state had to live
+somewhere outside the router. Here, the channel is already stateful
+(it holds the signal buffer), so the audit state composes naturally
+with the existing state, and the sibling pattern would add a coupling
+surface without removing one.
 """
 
 from __future__ import annotations

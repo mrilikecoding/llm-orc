@@ -72,6 +72,29 @@ WP-K depends on WP-I (now complete); WP-J depends on WP-K.
 
 See `roadmap.md` §Open Decision Points for the full list.
 
+### Cycle 4 BUILD outcomes (BUILD scope structurally complete 2026-05-12)
+
+Cycle 4 BUILD landed all eight work packages (WP-A4 through WP-H4) across 2026-05-11 and 2026-05-12. Final test suite: **2656 passing** (+140 from Cycle 4 BUILD entry baseline); all linters clean (mypy strict + ruff + complexipy + bandit + vulture). BUILD scope structurally complete; PLAY decision opens (deferred to BUILD close per cycle-status); SYNTHESIZE optional.
+
+- **WP-A4** — Shared `LlmOrcStructuralError` base class (FC-17 typed-error infrastructure foundation).
+- **WP-B4** — FC-2 / FC-3 automated checks (AST-based per-module layering + dependency-graph cycle detection). Pre-declares the ADR-016 read-only L0→L1 signal-channel exception in `_ALLOWED_UPWARD_EDGES`.
+- **WP-C4** — ADR-017 tool-call structural validation guard (`PhantomToolCallError`).
+- **WP-D4** — ADR-013 Session Registry structured-handoff artifacts + write-gate validation + cluster determination (`WriteGateRejectionError`).
+- **WP-E4** — ADR-012 Conversation Compaction five-layer pipeline (`CompactionLayer4FailureError`); Layer 4 circuit-breaker.
+- **WP-F4** — ADR-014 Calibration Gate trajectory-level extension (`CalibrationAbstainError`; verdict trichotomy Proceed/Reflect/Abstain).
+- **WP-G4-1** — ADR-015 per-role tier-escalation router core (`EscalationBypassError`, `MissingSkillMetadataError`); per-skill (not per-ensemble) tier defaults; stateless `select_tier` (FC-19).
+- **WP-G4-2** — ADR-018 (d)-analog audit dispatch (TierEscalationAuditor with verdict-distribution shift / escalation-vs-outcome correlation / bypass-rate trend criteria; severe-drift fail-safe; FC-20).
+- **WP-H4** (terminal) — ADR-016 cross-layer calibration channel (`MalformedSignalError` — FC-17 8 of 8 typed-error surfaces, terminal coverage); five bounding mechanisms (a)–(e) operationalized inside L1; falsification trigger has NOT fired; conditional-acceptance trigger-action review reserved for practitioner (option (a) full acceptance or option (b) preserved-conditional — option (c) falsification structurally closed by BUILD-phase evidence).
+
+**Key BUILD-phase architectural commitments:**
+
+- The five `LlmOrcStructuralError` typed-error surfaces in code (`tool_call_rejected_per_model`, `phantom_tool_call`, `write_gate_rejection`, `compaction_layer_4_failure`, `calibration_abstain`, `escalation_bypass`, `missing_skill_metadata`, `malformed_signal`) provide uniform `(error_kind, dispatch_context, recovery_action_required, operator_diagnostic)` shape across the orchestrator's recovery paths.
+- The L0→L1 read-only signal channel is the single narrow exception ADR-002 amends. FC-2's static check accepts only the pre-declared edge `(llm_orc.core.execution.ensemble_execution, llm_orc.agentic.calibration_signal_channel)`; all other upward attempts continue to be rejected.
+- TierEscalationAuditor (L2 sibling to TierRouter) and CalibrationSignalChannel's internal `_ChannelAuditWindow` (private inside L1) are *both* parallel-by-construction implementations of the audit-dispatch pattern from RDD methodology's susceptibility-snapshot pattern — sibling vs. monolithic decomposition chosen per module per the audit-state-ownership question (WP-G4-2: stateless-pure router needs auditor outside; WP-H4: stateful channel composes audit-state internally).
+- The "no stopping" practitioner directive shifted reflection-time from per-scenario-group AID cycles to phase-boundary susceptibility snapshot + commit-level review. The BUILD susceptibility snapshot at WP-H4 close (one Grounding Reframe on conditional-acceptance trigger-action pre-framing; two advisory observations on sibling-vs-monolithic and PEP-563/TYPE_CHECKING comment accuracy) caught two framing-adoption patterns that would have surfaced earlier under gated-mode AID cycles.
+
+**FC-17 typed-error coverage at WP-H4 close: 8 of 8 (terminal).** No further typed-error surfaces are scoped for the cycle.
+
 ### Cycle 4 outcomes (DECIDE close 2026-05-06; ARCHITECT close 2026-05-11)
 
 Cycle 4 (Mode A — re-scoped 2026-05-08 from Mode B+ → DECIDE close) advanced the cycle's research-derived design surface through ADRs and ARCHITECT. Seven new ADRs accepted, one deferred:
