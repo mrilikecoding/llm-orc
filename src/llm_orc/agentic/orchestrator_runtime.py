@@ -35,6 +35,7 @@ from llm_orc.agentic.budget_controller import (
     BudgetCheckExhausted,
     BudgetController,
 )
+from llm_orc.agentic.conversation_compaction import CompactedContext
 from llm_orc.agentic.orchestrator_chunk import (
     ClientToolCall,
     Completion,
@@ -90,6 +91,27 @@ class ToolDispatcher(Protocol):
     ) -> PhantomToolCallError | None:
         """Run ADR-017 structural validation on an orchestrator response."""
         ...
+
+
+class Compaction(Protocol):
+    """Conversation Compaction surface the Runtime invokes at turn boundaries.
+
+    Per ADR-012 and system-design.agents.md §"Orchestrator Runtime →
+    Conversation Compaction": the Runtime calls ``compact()`` before
+    each ``generate_with_tools`` invocation; the resulting
+    ``CompactedContext`` is what flows into the next LLM call. The
+    Protocol keeps the Runtime decoupled from
+    :class:`ConversationCompaction`'s construction surface so tests
+    can pass stubs without setting up persistence-root, summarizer,
+    or clock dependencies.
+    """
+
+    def compact(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        session_id: str,
+    ) -> CompactedContext: ...
 
 
 def _build_tool_schemas() -> list[dict[str, Any]]:
@@ -160,6 +182,7 @@ class OrchestratorRuntime:
         budget: BudgetController,
         tool_dispatch: ToolDispatcher,
         system_prompt: str = "",
+        compaction: Compaction | None = None,
     ) -> None:
         """Construct a Runtime for one session turn.
 
@@ -173,11 +196,20 @@ class OrchestratorRuntime:
         survives competing client guidance. Empty string is a no-op —
         used by tests and by deployments that want no orchestrator-
         side prompt.
+
+        ``compaction`` is the optional Conversation Compaction
+        interposer (WP-E4, ADR-012). When supplied, the Runtime
+        invokes ``compaction.compact()`` at every turn boundary
+        before the next ``generate_with_tools`` call; the resulting
+        ``CompactedContext`` becomes the messages array the LLM
+        sees. ``None`` disables compaction — used by tests that do
+        not need it and by deployments that defer the feature.
         """
         self._llm = llm
         self._budget = budget
         self._tool_dispatch = tool_dispatch
         self._system_prompt = system_prompt
+        self._compaction = compaction
 
     async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
         """Run the ReAct loop for this session turn.
@@ -211,6 +243,19 @@ class OrchestratorRuntime:
                 yield exhaustion_chunks[0]
                 yield exhaustion_chunks[1]
                 return
+
+            # WP-E4 / ADR-012: invoke Conversation Compaction at the
+            # turn boundary per system-design.agents.md §"Orchestrator
+            # Runtime → Conversation Compaction" (line 612). The
+            # compacted messages array is what flows into the next LLM
+            # call; below-threshold inputs are returned untouched
+            # (``triggered=False``).
+            if self._compaction is not None:
+                compacted = self._compaction.compact(
+                    messages, session_id=state.identity.value
+                )
+                if compacted.triggered:
+                    messages = compacted.messages
 
             response = await self._llm.generate_with_tools(
                 messages=messages, tools=tools

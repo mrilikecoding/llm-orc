@@ -30,6 +30,7 @@ from llm_orc.agentic.autonomy_policy import (
     PURE_TOOL_USER_VISIBLE_LEVEL,
     AutonomyPolicy,
 )
+from llm_orc.agentic.conversation_compaction import CompactedContext
 from llm_orc.agentic.orchestrator_config import (
     BudgetDefaults,
     CalibrationDefaults,
@@ -216,6 +217,30 @@ def _default_orchestrator_config() -> OrchestratorConfig:
     )
 
 
+class _NoOpCompaction:
+    """No-op Compaction stub for serving-layer tests.
+
+    Satisfies the Runtime's ``Compaction`` protocol structurally.
+    Always returns ``triggered=False`` so existing tests are not
+    affected by the new turn-boundary invocation wired up in
+    WP-E4. Tests that exercise compaction behavior directly do so
+    in ``test_conversation_compaction.py`` and
+    ``test_orchestrator_runtime.py``.
+    """
+
+    def compact(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        session_id: str,
+    ) -> CompactedContext:
+        return CompactedContext(
+            messages=list(messages),
+            layers_applied=(),
+            triggered=False,
+        )
+
+
 class _FakeConfigResolver:
     """Returns a canned ``OrchestratorConfig`` without touching the filesystem.
 
@@ -300,6 +325,15 @@ def _build_client(
         v1_chat_completions,
         "get_orchestrator_config_resolver",
         lambda: resolver,
+    )
+
+    # WP-E4 — Compaction is a no-op in serving-layer tests so existing
+    # behavior assertions are unaffected by the new turn-boundary
+    # wiring. Compaction-specific behavior is tested directly.
+    monkeypatch.setattr(
+        v1_chat_completions,
+        "get_conversation_compaction",
+        lambda: _NoOpCompaction(),
     )
 
     return TestClient(create_app()), shared_registry, cache

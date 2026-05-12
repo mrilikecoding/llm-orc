@@ -55,12 +55,19 @@ _RUNTIME_MODULE_PATH = Path(orchestrator_runtime.__file__)
 _ALLOWED_AGENTIC_IMPORTS = frozenset(
     {
         "llm_orc.agentic.budget_controller",
+        "llm_orc.agentic.conversation_compaction",  # WP-E4 per ADR-012
         "llm_orc.agentic.orchestrator_chunk",
         "llm_orc.agentic.orchestrator_tool_dispatch",
         "llm_orc.agentic.session_start",
     }
 )
-"""Modules the Runtime is allowed to import from the scoped agentic layer."""
+"""Modules the Runtime is allowed to import from the scoped agentic layer.
+
+The Conversation Compaction entry was added by WP-E4 per ADR-012 and
+system-design.agents.md §"Orchestrator Runtime → Conversation
+Compaction" — the Runtime invokes ``compact()`` at every turn
+boundary; the resulting compacted messages array is what flows into
+the next ``generate_with_tools`` call."""
 
 _FORBIDDEN_AGENTIC_IMPORTS = frozenset(
     {
