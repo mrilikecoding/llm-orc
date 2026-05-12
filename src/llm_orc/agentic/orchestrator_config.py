@@ -21,6 +21,15 @@ from llm_orc.agentic.calibration_gate import (
     DEFAULT_CALIBRATION_CHECKER_ENSEMBLE,
     DEFAULT_CALIBRATION_N,
 )
+from llm_orc.agentic.conversation_compaction import (
+    DEFAULT_COMPACTION_IDLE_WINDOW_MINUTES,
+    DEFAULT_COMPACTION_LAYER_4_CIRCUIT_BREAKER_THRESHOLD,
+    DEFAULT_COMPACTION_PERSIST_THRESHOLD_CHARS,
+    DEFAULT_COMPACTION_SESSION_NOTES_TOKEN_CAP,
+    DEFAULT_COMPACTION_SUMMARIZER_ENSEMBLE,
+    DEFAULT_COMPACTION_TRIGGER_TOKEN_COUNT,
+    CompactionDefaults,
+)
 from llm_orc.core.config.config_manager import ConfigurationManager
 
 
@@ -43,17 +52,10 @@ DEFAULT_MAX_TURN_LIMIT = 1_000
 DEFAULT_MAX_TOKEN_LIMIT = 50_000_000
 DEFAULT_SUMMARIZER_ENSEMBLE = "agentic-result-summarizer"
 
-# WP-E4 — Conversation Compaction defaults per ADR-012 §Decision.
-# The four named thresholds are the operator-tunable values
-# Anthropic's published specification ships with; trigger-token-count
-# and summarizer-ensemble are WP-E4 additions per the build-time
-# disposition recorded in cycle-status.md.
-DEFAULT_COMPACTION_PERSIST_THRESHOLD_CHARS = 50_000
-DEFAULT_COMPACTION_IDLE_WINDOW_MINUTES = 60
-DEFAULT_COMPACTION_SESSION_NOTES_TOKEN_CAP = 12_288
-DEFAULT_COMPACTION_LAYER_4_CIRCUIT_BREAKER_THRESHOLD = 3
-DEFAULT_COMPACTION_TRIGGER_TOKEN_COUNT = 100_000
-DEFAULT_COMPACTION_SUMMARIZER_ENSEMBLE: str | None = None
+# Conversation Compaction defaults are owned by the L2 module
+# (``llm_orc.agentic.conversation_compaction``) and imported above —
+# the L3 config module composes them but does not own them, per the
+# layering rule (L3 → L2 → L1 → L0).
 
 DEFAULT_ORCHESTRATOR_SYSTEM_PROMPT = """\
 You are the llm-orc orchestrator. You route tool-user tasks by invoking \
@@ -151,29 +153,6 @@ class CalibrationDefaults:
 
     default_n: int
     checker_ensemble: str
-
-
-@dataclass(frozen=True)
-class CompactionDefaults:
-    """Conversation Compaction configuration (ADR-012, WP-E4).
-
-    The four named thresholds (``persist_threshold_chars``,
-    ``idle_window_minutes``, ``session_notes_token_cap``,
-    ``layer_4_circuit_breaker_threshold``) are Anthropic's published
-    operational values per ADR-012's defaults-provenance note.
-    ``trigger_token_count`` and ``summarizer_ensemble`` are WP-E4
-    additions: ADR-012 specifies "the context budget is satisfied"
-    without naming the trigger, and names the Layer 4 ensemble as
-    "configured" without specifying a default. Both are recorded as
-    operator-tunable.
-    """
-
-    persist_threshold_chars: int
-    idle_window_minutes: int
-    session_notes_token_cap: int
-    layer_4_circuit_breaker_threshold: int
-    trigger_token_count: int
-    summarizer_ensemble: str | None
 
 
 @dataclass(frozen=True)

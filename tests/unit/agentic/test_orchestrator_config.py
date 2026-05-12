@@ -12,14 +12,16 @@ from pathlib import Path
 import pytest
 import yaml
 
-from llm_orc.agentic.orchestrator_config import (
-    DEFAULT_AUTONOMY_LEVEL,
+from llm_orc.agentic.conversation_compaction import (
     DEFAULT_COMPACTION_IDLE_WINDOW_MINUTES,
     DEFAULT_COMPACTION_LAYER_4_CIRCUIT_BREAKER_THRESHOLD,
     DEFAULT_COMPACTION_PERSIST_THRESHOLD_CHARS,
     DEFAULT_COMPACTION_SESSION_NOTES_TOKEN_CAP,
     DEFAULT_COMPACTION_SUMMARIZER_ENSEMBLE,
     DEFAULT_COMPACTION_TRIGGER_TOKEN_COUNT,
+)
+from llm_orc.agentic.orchestrator_config import (
+    DEFAULT_AUTONOMY_LEVEL,
     DEFAULT_MAX_TOKEN_LIMIT,
     DEFAULT_MAX_TURN_LIMIT,
     DEFAULT_MODEL_PROFILE,
