@@ -42,6 +42,7 @@ from llm_orc.agentic.composition_validator import (
     ConfigManagerEnsembleWriter,
     ConfigManagerPrimitiveRegistry,
 )
+from llm_orc.agentic.conversation_compaction import ConversationCompaction
 from llm_orc.agentic.orchestrator_chunk import (
     ClientToolCall,
     Completion,
@@ -77,6 +78,7 @@ router = APIRouter(prefix="/v1", tags=["openai-compat"])
 _SHARED_REGISTRY = SessionRegistry()
 _SHARED_SESSION_START_CACHE = SessionStartCache()
 _SHARED_TOOL_DISPATCH: OrchestratorToolDispatch | None = None
+_SHARED_CONVERSATION_COMPACTION: ConversationCompaction | None = None
 
 
 def get_session_registry() -> SessionRegistry:
@@ -139,6 +141,45 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
             tool_call_validation_patterns=config.tool_call_validation_patterns,
         )
     return _SHARED_TOOL_DISPATCH
+
+
+def get_conversation_compaction() -> ConversationCompaction:
+    """Return the process-scoped Conversation Compaction module.
+
+    Per ADR-012 and system-design.agents.md §"Orchestrator Runtime →
+    Conversation Compaction" — invoked at every orchestrator turn
+    boundary; per-session state (circuit-breaker, tool first-seen
+    timestamps, nine-section session notes) is keyed by session_id
+    inside the instance so a singleton serves all in-flight sessions.
+
+    The persistence root is rooted under the operator's global
+    configuration directory (``~/.config/llm-orc/compaction-artifacts/``
+    on a typical XDG setup); created lazily on first Layer 0 persist.
+
+    The Layer 4 summarizer is left unconfigured by default —
+    operators who want LLM-based semantic summary opt in by setting
+    ``orchestrator.compaction.summarizer_ensemble`` in config.yaml
+    and wiring a summarizer adapter. WP-E4 ships Layers 0–3 as the
+    primary value; Layer 4 wiring lands when an operator-facing
+    summarizer-ensemble convention exists.
+
+    Tests override this factory to inject a stub or a tmp-rooted
+    compaction.
+    """
+    global _SHARED_CONVERSATION_COMPACTION
+    if _SHARED_CONVERSATION_COMPACTION is None:
+        service = get_orchestra_service()
+        resolver = get_orchestrator_config_resolver()
+        config = resolver.resolve()
+        persistence_root = (
+            service.config_manager.global_config_dir / "compaction-artifacts"
+        )
+        _SHARED_CONVERSATION_COMPACTION = ConversationCompaction(
+            defaults=config.compaction,
+            persistence_root=persistence_root,
+            summarizer=None,
+        )
+    return _SHARED_CONVERSATION_COMPACTION
 
 
 async def _default_orchestrator_llm_loader(model_profile: str) -> OrchestratorLLM:
@@ -308,6 +349,7 @@ async def _build_runtime() -> OrchestratorRuntime:
         budget=budget,
         tool_dispatch=get_orchestrator_tool_dispatch(),
         system_prompt=config.orchestrator_system_prompt,
+        compaction=get_conversation_compaction(),
     )
 
 

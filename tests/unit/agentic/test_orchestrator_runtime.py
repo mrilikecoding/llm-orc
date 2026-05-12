@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 
 from llm_orc.agentic.budget_controller import BudgetController
+from llm_orc.agentic.conversation_compaction import CompactedContext
 from llm_orc.agentic.orchestrator_chunk import (
     Completion,
     ContentDelta,
@@ -778,3 +779,201 @@ class TestPhantomToolCallGuard:
         assert len(llm.calls) == 2
         diagnostic = llm.calls[1][0][-1]
         assert "phantom_tool_call" in diagnostic["content"]
+
+
+class _StubCompaction:
+    """Captures compaction invocations and replays scripted results.
+
+    Satisfies ``Compaction`` structurally. Tests can pre-load the
+    script with sentinel ``CompactedContext`` values to verify the
+    Runtime threads the compacted messages into the next LLM call.
+    """
+
+    def __init__(self, script: list[CompactedContext] | None = None) -> None:
+        self._script = list(script) if script else []
+        self.invocations: list[tuple[list[dict[str, Any]], str]] = []
+
+    def compact(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        session_id: str,
+    ) -> CompactedContext:
+        self.invocations.append(([dict(m) for m in messages], session_id))
+        if self._script:
+            return self._script.pop(0)
+        # Default: do not trigger; messages flow through unchanged.
+        return CompactedContext(
+            messages=[dict(m) for m in messages],
+            layers_applied=(),
+            triggered=False,
+        )
+
+
+class TestRuntimeCompactionInvocation:
+    """WP-E4 / ADR-012 — the Runtime invokes Conversation Compaction at
+    every turn boundary; the resulting compacted messages array is what
+    flows into the next LLM call (system-design.agents.md L612)."""
+
+    @pytest.mark.asyncio
+    async def test_runtime_invokes_compaction_before_each_llm_call(self) -> None:
+        """compact() fires once per ReAct iteration, before
+        generate_with_tools — the turn-boundary contract."""
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="done.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=5, completion_tokens=2, total_tokens=7
+                    ),
+                    finish_reason="stop",
+                )
+            ]
+        )
+        compaction = _StubCompaction()
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=BudgetController(turn_limit=10, token_limit=1000),
+            tool_dispatch=_StubToolDispatch(results={}),
+            compaction=compaction,
+        )
+
+        await _collect(runtime.run(_make_session_context()))
+
+        # One LLM call, one compaction invocation — same count.
+        assert len(compaction.invocations) == 1
+        assert len(llm.calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_runtime_threads_session_id_to_compaction(self) -> None:
+        """The compaction module needs the session_id to key per-session
+        state (circuit-breaker, tool first-seen timestamps); the Runtime
+        threads it from the SessionContext's identity."""
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="ok.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=5, completion_tokens=2, total_tokens=7
+                    ),
+                    finish_reason="stop",
+                )
+            ]
+        )
+        compaction = _StubCompaction()
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=BudgetController(turn_limit=10, token_limit=1000),
+            tool_dispatch=_StubToolDispatch(results={}),
+            compaction=compaction,
+        )
+
+        await _collect(runtime.run(_make_session_context()))
+
+        assert compaction.invocations[0][1] == "test-session"
+
+    @pytest.mark.asyncio
+    async def test_runtime_uses_compacted_messages_in_next_llm_call(self) -> None:
+        """When compaction triggers, the LLM receives the compacted
+        messages — not the original. The contract from
+        system-design.agents.md L612: the resulting ``CompactedContext``
+        is what flows into the next LLM call."""
+        sentinel_message = {"role": "system", "content": "[compacted sentinel]"}
+        compaction = _StubCompaction(
+            script=[
+                CompactedContext(
+                    messages=[sentinel_message],
+                    layers_applied=(0,),
+                    triggered=True,
+                )
+            ]
+        )
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="ok.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=5, completion_tokens=2, total_tokens=7
+                    ),
+                    finish_reason="stop",
+                )
+            ]
+        )
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=BudgetController(turn_limit=10, token_limit=1000),
+            tool_dispatch=_StubToolDispatch(results={}),
+            compaction=compaction,
+        )
+
+        await _collect(runtime.run(_make_session_context()))
+
+        # The LLM saw the sentinel — proving the compacted messages
+        # flowed through. ``triggered=True`` activates the substitution.
+        llm_messages = llm.calls[0][0]
+        assert sentinel_message in llm_messages
+
+    @pytest.mark.asyncio
+    async def test_below_threshold_compaction_leaves_messages_unchanged(self) -> None:
+        """When compaction does NOT trigger (``triggered=False``), the
+        Runtime keeps the original messages — no spurious substitution."""
+        compaction = _StubCompaction()  # default: triggered=False
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="ok.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=5, completion_tokens=2, total_tokens=7
+                    ),
+                    finish_reason="stop",
+                )
+            ]
+        )
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=BudgetController(turn_limit=10, token_limit=1000),
+            tool_dispatch=_StubToolDispatch(results={}),
+            compaction=compaction,
+        )
+
+        await _collect(runtime.run(_make_session_context()))
+
+        # Original user message survives.
+        llm_messages = llm.calls[0][0]
+        user_messages = [m for m in llm_messages if m.get("role") == "user"]
+        assert user_messages == [{"role": "user", "content": "hello"}]
+
+    @pytest.mark.asyncio
+    async def test_runtime_without_compaction_works_unchanged(self) -> None:
+        """``compaction=None`` is the prior-WP behavior — Runtime
+        operates without the Compaction interposer."""
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="ok.",
+                    tool_calls=[],
+                    usage=ToolCallUsage(
+                        prompt_tokens=5, completion_tokens=2, total_tokens=7
+                    ),
+                    finish_reason="stop",
+                )
+            ]
+        )
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=BudgetController(turn_limit=10, token_limit=1000),
+            tool_dispatch=_StubToolDispatch(results={}),
+            # compaction defaults to None
+        )
+
+        chunks = await _collect(runtime.run(_make_session_context()))
+
+        # Behavior preserved: single LLM call, stop completion.
+        assert len(llm.calls) == 1
+        completions = [c for c in chunks if isinstance(c, Completion)]
+        assert len(completions) == 1
+        assert completions[0].finish_reason == "stop"
