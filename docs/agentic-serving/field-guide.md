@@ -594,9 +594,9 @@ Malformed LLM-emitted arguments (missing `name`, wrong `description` type, non-l
 
 ## Module: Calibration Gate
 
-**Implementation state:** Complete at TS-2 (WP-H, 2026-04-24). Cross-session persistence via Plexus is the WP-I extension.
+**Implementation state:** Complete at TS-2 (WP-H, 2026-04-24). Extended at WP-F4 (2026-05-11) with the dispatch-time verdict trichotomy (`CalibrationVerdict = "proceed" | "reflect" | "abstain"`). Extended at WP-H4 (2026-05-12) with optional consumption of the Calibration Signal Channel (ADR-016). Cross-session persistence via Plexus is the WP-I extension (deferred).
 **Code location:** `src/llm_orc/agentic/calibration_gate.py`. Default checker ensemble at `.llm-orc/ensembles/agentic-calibration-checker.yaml`.
-**Stability:** Settled for the stateless baseline; the Plexus-backed store for cross-session trust lands behind the same public surface in WP-I.
+**Stability:** Settled for the stateless baseline + Cycle 4 extensions; the Plexus-backed store for cross-session trust lands behind the same public surface in WP-I.
 
 ### Domain Concepts in Code
 
@@ -625,6 +625,50 @@ Malformed LLM-emitted arguments (missing `name`, wrong `description` type, non-l
 - **Session Registry** (L3) — indirectly. Tool Dispatch threads `state.identity.value` through `dispatch(call, *, session_id)`, and the Runtime reads the identity from `SessionContext.state`. The gate never imports Session Registry.
 - **Ensemble Engine** (L0) — via the `EnsembleBackedChecker`'s `CheckerInvoker` Protocol (structurally satisfied by `OrchestraService`). The checker invokes the configured checker ensemble through the same invocation path `invoke_ensemble` uses for library ensembles.
 - **Plexus Adapter** (L1) — reserved for WP-I. Cross-session trust persistence (scenario §Calibration persists across sessions when Plexus is active) layers behind the current public API without changing Tool Dispatch or Session Registry call sites.
+- **Calibration Signal Channel** (L1, new at WP-H4) — when the gate is constructed with `signal_channel: CalibrationSignalChannel`, `verdict_for` reads `channel.windowed_features(now_seconds, ensemble_name)` to obtain the cross-layer signal aggregation, defaults the verdict to `reflect` when `channel.fail_safe_active`, and calls `channel.record_verdict_outcome(verdict, ensemble_name, signal_features)` to feed the audit. When `signal_channel=None` (the inactive-ADR-016 case), the gate operates on L1-internal trajectory data only — `verdict_for` is unchanged from WP-F4 behavior.
+
+---
+
+## Module: Calibration Signal Channel
+
+**Implementation state:** Complete at WP-H4 (2026-05-12). Conditional acceptance per ADR-016 §"Concrete monitoring specification" — structural-operationalization confirmed at BUILD-phase; operational-validation territory at PLAY-phase or post-cycle deployment.
+**Code location:** `src/llm_orc/agentic/calibration_signal_channel.py`.
+**Stability:** Settled at the structural level (the five bounding mechanisms operationalize as ADR-016 specifies). In flux at the operational tuning level — Spike (b) flagged that smaller window defaults track better than the 60-min / 100-signal default under synthetic-data conditions; deployment may want to tune.
+
+### Domain Concepts in Code
+
+| Concept | Code Manifestation | Location |
+|---------|-------------------|----------|
+| Cross-layer calibration channel | `CalibrationSignalChannel` class | `calibration_signal_channel.py` |
+| Calibration signal (typed L0→L1 boundary) | `CalibrationSignal` frozen dataclass — `(timestamp_seconds, ensemble_name, dispatch_success, recent_token_entropy, deterministic_anchor)` | `calibration_signal_channel.py` |
+| Mechanism (a) fresh-context isolation | `WindowedSignalFeatures` frozen dataclass + `windowed_features()` method returns a fresh value per call | `calibration_signal_channel.py` |
+| Mechanism (b) time-decay windowing | `_prune_window()` + `_weighted_entropy_stats()` (linear-decay weights 1.0→0.0 across in-window signals) | `calibration_signal_channel.py` |
+| Mechanism (c) deterministic anchor | `CalibrationSignal.deterministic_anchor: bool \| None` + `WindowedSignalFeatures.deterministic_anchor_count` / `.deterministic_anchor_positive_fraction` | `calibration_signal_channel.py` |
+| Mechanism (d) audit dispatch | `_ChannelAuditWindow` (per-window accumulator), `_fire_audit()`, three drift criteria (`_verdict_skew_finding`, `_outcome_divergence_finding`, `_signal_verdict_correlation_finding`) | `calibration_signal_channel.py` |
+| Mechanism (e) typed-error surface | `MalformedSignalError(LlmOrcStructuralError)` — FC-17 8 of 8 | `calibration_signal_channel.py` |
+| Audit verdict trichotomy | `CalibrationChannelAuditVerdict = Literal["no_drift", "advisory", "severe"]` | `calibration_signal_channel.py` |
+| Severe-drift fail-safe | `CalibrationSignalChannel.fail_safe_active` property | `calibration_signal_channel.py` |
+| Operator-readable audit diagnostic | `CalibrationChannelAuditDiagnostic` frozen dataclass with `criteria_findings` tuple | `calibration_signal_channel.py` |
+| Operator audit thresholds | `CalibrationChannelAuditThresholds` frozen dataclass with construction-time validation | `calibration_signal_channel.py` |
+
+### Design Rationale
+
+- **Read-only-by-API-shape (mechanism (e) plus the read-only constraint).** The channel exposes exactly six public methods: `record_signal`, `windowed_features`, `record_verdict_outcome`, `audit_diagnostics`, `clear_fail_safe`, `malformed_signal_count`. There is **no** L1→L0 write method on the channel — the structural absence of such a method is the runtime enforcement of ADR-016 §"The exception" §"read-only". The scenario "Upward write attempt through channel is rejected" becomes a Python-level introspection test asserting the public method set rather than a runtime check. This is methodology-relevant — transferable to other "no-bidirectional" boundaries (recorded as SYNTHESIZE candidate in cycle-status §BUILD).
+- **Mechanism (d) audit state lives inside the channel (not as a public sibling).** WP-G4-2's `TierEscalationAuditor` is a public sibling module — analogous but not identical. Here the audit state (`_ChannelAuditWindow`) is private inside the channel because the audit data is channel-internal state that no other module reads; exposing the auditor as a sibling would require widening the channel's public surface for the sibling to consume. WP-G4-2's split made sense because `TierRouter.select_tier` is stateless-pure (FC-19) — the audit state had to live outside the router. Here, the channel is already stateful (it holds the signal buffer), so audit state composes naturally.
+- **PEP-563 + TYPE_CHECKING block compose to resolve the gate↔channel cycle.** The channel imports `CalibrationVerdict` from `calibration_gate.py` at runtime (needed for the `_VERDICT_NUMERIC` map). The gate references `CalibrationSignalChannel` only as a type annotation. `from __future__ import annotations` (PEP-563) defers the gate's annotations; the `TYPE_CHECKING` block makes the name resolvable for mypy. The standard mypy-strict pattern for type-only circular imports.
+- **The audit's three drift criteria are parallel-by-construction to ADR-018's TierEscalationAuditor.** Verdict-distribution shift (default ±15%); outcome divergence (default 10pp predictive-accuracy decline); signal-to-verdict correlation drift (default ±0.20 Pearson on `(entropy, verdict_numeric)` with proceed=1.0/reflect=0.5/abstain=0.0). Severity rule identical to ADR-018: 0 exceeds → no_drift; 1 non-severe → advisory; 2+ OR any single at severe magnitude (2× threshold) → severe.
+- **Schema validation at the boundary, error caught at L0.** `record_signal` validates each incoming signal against the typed schema (`MalformedSignalError` on mismatch). The error is raised at the boundary so the typed-error pattern is uniform with FC-17, but `EnsembleExecutor._emit_calibration_signal` catches it and drops the signal — per ADR-016 §"Mechanism (e)" the error is internal and never propagates to the orchestrator.
+- **Window dual-bound with linear decay.** The window is bounded by the lesser of `window_minutes` (default 60.0) or `window_signals` (default 100); whichever bound is tighter wins. Linear-decay weights run from 1.0 (most-recent signal) to 0.0 (window-edge signal). With n=2 in-window signals the oldest-weight is 0 and the basis collapses — `has_entropy_basis=False`, mean and stdev are reported as `None`. Honest about lack of basis rather than misfiring.
+
+### Key Integration Points
+
+- **Ensemble Engine** (L0). The single upward import ADR-002 amends to permit, pre-declared in FC-2's `_ALLOWED_UPWARD_EDGES`: `(llm_orc.core.execution.ensemble_execution, llm_orc.agentic.calibration_signal_channel)`. `EnsembleExecutor` constructor takes optional `_calibration_signal_channel: CalibrationSignalChannel | None = None`; at the end of `execute()` after building `final_result`, the executor calls `_emit_calibration_signal(config, result_dict)` which builds a `CalibrationSignal` and calls `channel.record_signal(...)`. `MalformedSignalError` is caught and logged at DEBUG level per mechanism (e).
+- **Calibration Gate** (L1). Gate constructor takes optional `signal_channel: CalibrationSignalChannel | None = None`. When set, `verdict_for` reads `channel.windowed_features(now_seconds, ensemble_name)`, defaults to Reflect when `channel.fail_safe_active`, and calls `channel.record_verdict_outcome(...)` to feed the audit. When `None`, gate operates on L1-internal trajectory data only — the "ADR-016 not active" scenario.
+- **Plexus Adapter** (L1, optional cross-session integration). The channel's signal buffer is per-session in WP-H4. Cross-session signal persistence is Cycle 5+ territory (Plexus-active branch); the current channel does not write to or read from Plexus.
+
+### Conditional-acceptance status
+
+ADR-016 ships with **conditional acceptance** — first-deployment evidence is the validation gate. WP-H4 produced the BUILD-phase research log `essays/research-logs/005i-wp-h4-first-deployment-evidence.md` as trigger-artifact (i) per ADR-016 §"Concrete monitoring specification". The falsification trigger has NOT fired (mechanism (b) and (d) both operationalize inside L1; no top-level module outside L0–L3 was needed). The trigger-action disposition between option (a) full acceptance and option (b) preserved-conditional is a practitioner judgment — see the research log §"Two-question test for (a) vs. (b)".
 
 ---
 
