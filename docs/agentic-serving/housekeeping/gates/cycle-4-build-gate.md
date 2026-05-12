@@ -20,9 +20,14 @@ The question's purpose: test whether the conditional-acceptance status's gate cr
 
 ## User's response
 
-*Pending — to be recorded when practitioner reviews the WP-H4 close at the next interactive session.*
+Practitioner reviewed the Grounding Reframe with both options surfaced at equal weight, applied the two-question test, and selected **option (a) full acceptance**:
 
-The Grounding Reframe is surfaced in the BUILD-phase research log (`essays/research-logs/005i-wp-h4-first-deployment-evidence.md` §"Two-question test for (a) vs. (b)") with both options presented at equal weight. The trigger-action disposition (a vs. b) is reserved for practitioner review; option (c) falsification is structurally closed by the BUILD-phase tests.
+- **Q1 (criterion shape).** ADR-016's falsification trigger names structural-operationalization failure ("*cannot be operationalized within ADR-002's L0–L3 structure without introducing a new top-level module*"). The criterion is structural; it did not fire.
+- **Q2 (operational scope).** The remaining operational-validation question (drift diagnostics on real deployments; operator workflow; (b)/(d) coupling under deployment dynamics) is a post-deployment learning surface tracked via §"Sweep responsibility", not a condition of the amendment's acceptance.
+
+Disposition recorded in ADR-016 §"WP-H4 close disposition" (status header transitions Proposed → Accepted) and in cycle-status §BUILD row.
+
+The practitioner additionally elected to run `/rdd-play` in this cycle (deferred PLAY decision resolved). PLAY's experiential discovery against the BUILD-complete scope may surface operational-evidence signal for ADR-016 (informing §"Sweep responsibility" attention even though the conditional-acceptance gate is closed).
 
 ## Pedagogical move selected
 
@@ -45,13 +50,15 @@ Two advisory observations addressed in code:
 - The five bounding mechanisms (a)–(e) operationalize as specified by ADR-016; the channel exposes only the four expected public surfaces (`record_signal`, `windowed_features`, `record_verdict_outcome`, audit-state accessors) plus `malformed_signal_count` for operator-dashboard observability
 - The BUILD-phase research log (`005i-wp-h4-first-deployment-evidence.md`) serves as ADR-016 §"Concrete monitoring specification" trigger-artifact (i)
 
-**Open questions (the practitioner is holding these open going into cycle close):**
+**Resolved at this gate:**
 
-- **Trigger-action disposition (a vs. b)** — the Grounding Reframe's two-question test. The practitioner's disposition determines whether the conditional-acceptance status carries forward as standing-conditional (option b — operational evidence still pending) or closes as full acceptance (option a — structural-operationalization is the gate criterion; the trigger did not fire). Both options are defensible. Option (c) falsification is structurally closed at this gate.
+- **Trigger-action disposition** — practitioner selected option (a) full acceptance after Grounding Reframe surfaced both options at equal weight. ADR-016 status header transitions to Accepted. The conditional-acceptance gate criterion is closed.
 
-- **PLAY decision** — deferred to BUILD close per cycle-status. The practitioner has not yet decided whether to run PLAY in this cycle or schedule as a follow-up. The decision will be informed by the practitioner's available cognitive budget and by their disposition on whether PLAY-phase field-note evidence is necessary to close the trigger-action review (relevant if option (b) is selected — PLAY may produce trigger-artifact (ii) per ADR-016 §"Concrete monitoring specification").
+- **PLAY decision** — practitioner elected to run `/rdd-play` in this cycle. The phase transition (build → play) happens now; cycle-status `**Current phase:**` advances to `play` and `**In-progress phase:** play` is set.
 
-- **SYNTHESIZE decision** — optional. The BUILD susceptibility snapshot surfaced one novelty-candidate worth recording for SYNTHESIZE: the *read-only-by-API-shape* pattern (no L1→L0 write method exists; structural absence of the API surface enforces the read-only constraint) emerged as a cleaner enforcement than the originally-imagined runtime read-only validation. The scenario "Upward write attempt through channel is rejected" became a Python-level introspection test asserting the public method set rather than a runtime check. This is methodology-relevant — transferable to other "no-bidirectional" boundaries (e.g., future ADRs adding narrow exceptions to ADR-002's other layer pairs). Whether to capture this in SYNTHESIZE is a practitioner decision.
+**Open questions (the practitioner is holding these open going into PLAY):**
+
+- **SYNTHESIZE decision (carry forward to post-PLAY)** — optional. The BUILD susceptibility snapshot surfaced one novelty-candidate worth recording for SYNTHESIZE: the *read-only-by-API-shape* pattern (no L1→L0 write method exists; structural absence of the API surface enforces the read-only constraint) emerged as a cleaner enforcement than the originally-imagined runtime read-only validation. The scenario "Upward write attempt through channel is rejected" became a Python-level introspection test asserting the public method set rather than a runtime check. This is methodology-relevant — transferable to other "no-bidirectional" boundaries (e.g., future ADRs adding narrow exceptions to ADR-002's other layer pairs). Whether to capture this in SYNTHESIZE is a post-PLAY practitioner decision.
 
 - **OQ #14 — four cross-layer stages remain Cycle 5+ research territory.** WP-H4 closes ADR-016's own stage's grounding rigor (all five mechanisms operational in code); WP-G4-2 closed the L1→L2 verdict→router stage at architect-gate. The remaining four stages (L3 cross-session artifact set; intra-L2 conversation-history boundary; orchestrator-response → tool-dispatch boundary; L1→L4 Plexus integration boundary) carry forward unchanged.
 

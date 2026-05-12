@@ -1,6 +1,6 @@
 # ADR-016: Upward L0→L1 Read-Only Signal Channel for Cross-Layer Calibration
 
-**Status:** Proposed (conditional acceptance — synthetic-data and structural-transfer validation completed 2026-05-06; first-deployment evidence pending for full operational validation; see §"Empirical validation pathway")
+**Status:** Accepted (2026-05-12; BUILD-phase structural-operationalization confirmed at WP-H4 close — falsification trigger did not fire; option (a) full acceptance selected by practitioner at WP-H4 close gate after Grounding Reframe surfaced both options at equal weight. Operational-validation observations carry forward as Cycle 5+ research territory under §"Sweep responsibility" but no longer as conditional-acceptance gate criterion. See §"WP-H4 close disposition" for the trigger-action review record.)
 
 **Date:** 2026-05-05 (drafted); 2026-05-06 (spike validation incorporated)
 
@@ -299,3 +299,33 @@ This monitoring specification is what makes the conditional-acceptance status st
   - **(v) The amendment scope** — is read-only-and-calibration-only narrow enough to preserve ADR-002's discipline, or does the precedent erode the rule meaningfully?
 
   Conformance-audit on this ADR should examine the codebase for the precedent patterns the mechanisms reference: fresh-context isolation in audit-subagent dispatches (mechanism (a)); typed-error path at commit `9f86d0b` (mechanism (e)); Spike A3's script-member-alongside-LLM pattern (mechanism (c)). The codebase precedents must be operational, not only documented.
+
+---
+
+## WP-H4 close disposition (2026-05-12)
+
+**Status transition:** Proposed (conditional acceptance) → **Accepted (full)**.
+
+**Trigger-action review.** At WP-H4 close, the BUILD susceptibility snapshot surfaced a Grounding Reframe on the WP-H4 research log's pre-framed disposition. The research log was rewritten to present option (a) full acceptance and option (b) preserved-conditional at equal weight, with the two-question test made explicit:
+
+- **Q1.** Does the falsification trigger — as specifically written — name structural-operationalization failure or operational-validation failure? *Answer: structural-operationalization*. The trigger text reads "*if any validation pathway produces evidence that mechanism (b) or (d) cannot be operationalized within the Calibration Gate's existing or extended class structure without introducing a new top-level module*." The criterion is structural; it did not fire.
+- **Q2.** Is operational validation a condition of acceptance or a natural post-deployment learning surface? *Answer: post-deployment learning surface*. The operational questions (drift diagnostics on real deployments; operator workflow; (b)/(d) coupling under deployment dynamics) are real and important, but they are tracked via §"Sweep responsibility" as ongoing Cycle 5+ observation territory, not as a gate criterion that blocks acceptance.
+
+**Disposition selected by practitioner: (a) full acceptance.** The conditional-acceptance status was reading the trigger criterion narrowly (structural-operationalization, which is met) rather than broadly (all-evidence, which the trigger text does not actually require). The structural-operationalization gate criterion is satisfied at BUILD-phase; full acceptance is earned.
+
+**What changes:**
+- ADR-016 status header transitions from "Proposed (conditional acceptance)" to "Accepted".
+- ADR-002's amendment for the single narrow L0→L1 read-only signal channel exception is fully in force.
+- The conditional-acceptance gate criterion (the falsification trigger's non-firing) is closed.
+
+**What does NOT change:**
+- §"Falsification trigger" remains in force as a structural invariant — if a Cycle 5+ deployment finds that mechanism (b) or (d) cannot operationalize within ADR-002's L0–L3 structure, ADR-016 re-opens with the reorganization branch on the table. Full acceptance does not foreclose re-deliberation if structural evidence later contradicts.
+- §"Sweep responsibility" remains in force as ongoing Cycle 5+ observation territory — practitioners should attend to first-deployment evidence on the cycle's North-Star benchmark and on subsequent deployments. The obligation lifts from "include a cycle-status row noting channel status" (the conditional-acceptance obligation) to "review operational evidence opportunistically as deployments accumulate" (the post-acceptance obligation).
+- §"Mechanism (b) operational-tuning territory" remains in force — Spike (b) flagged that smaller windows track better than the default under synthetic-data conditions; deployment may want to tune downward. This is parameter-tuning territory, not acceptance-gate territory.
+
+**Evidence record (BUILD-phase, trigger-artifact (i) per §"Concrete monitoring specification"):**
+- WP-H4 research log: `essays/research-logs/005i-wp-h4-first-deployment-evidence.md`
+- BUILD susceptibility snapshot: `housekeeping/audits/susceptibility-snapshot-cycle-4-build.md`
+- BUILD gate reflection note: `housekeeping/gates/cycle-4-build-gate.md`
+- Implementation commits: `2fd9a55` (WP-H4 implementation), `6424781` (cycle-close documentation)
+- Full test suite at WP-H4 close: 2656 passing; mypy strict + ruff + complexipy + bandit + vulture all clean.
