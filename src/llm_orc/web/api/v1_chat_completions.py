@@ -61,6 +61,12 @@ from llm_orc.agentic.plexus_adapter import PlexusAdapter
 from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
 from llm_orc.agentic.session_registry import SessionRegistry
 from llm_orc.agentic.session_start import ChatMessage, SessionContext, SessionStartCache
+from llm_orc.agentic.tier_router import (
+    EnsembleConfigTopazSkillReader,
+    TierRouter,
+    TierRouterDefaults,
+)
+from llm_orc.agentic.tier_router_audit import TierEscalationAuditor
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.models.base import ToolCallingNotSupportedError
@@ -130,6 +136,9 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
             checker=calibration_checker,
         )
         plexus_adapter = PlexusAdapter()
+        tier_router, tier_router_audit = _build_tier_router_and_audit(
+            service=service, config=config
+        )
         _SHARED_TOOL_DISPATCH = OrchestratorToolDispatch(
             operations=service,
             harness=harness,
@@ -139,8 +148,46 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
             calibration_gate=calibration_gate,
             plexus_adapter=plexus_adapter,
             tool_call_validation_patterns=config.tool_call_validation_patterns,
+            tier_router=tier_router,
+            tier_router_audit=tier_router_audit,
         )
     return _SHARED_TOOL_DISPATCH
+
+
+def _build_tier_router_and_audit(
+    *,
+    service: Any,
+    config: Any,
+) -> tuple[TierRouter | None, TierEscalationAuditor | None]:
+    """Construct the Tier-Escalation Router and audit per operator config.
+
+    Returns ``(None, None)`` when the operator has not configured
+    ``per_skill_tier_defaults`` — Tool Dispatch then runs without tier
+    escalation (pre-WP-G4-1 behavior). When configured, builds:
+
+    * an :class:`EnsembleConfigTopazSkillReader` bridged to the
+      service's ensemble loader (the L0 metadata source);
+    * a :class:`TierRouter` with the operator-configured 8-skill
+      defaults (WP-G4-1, ADR-015);
+    * a :class:`TierEscalationAuditor` with operator-tunable
+      thresholds (WP-G4-2, ADR-018).
+
+    Per-skill tier defaults flow from L3 → L2 at construction time
+    (no L3 import inside the router or auditor). The audit's
+    SystemAuditClock default is used; tests inject a controllable
+    clock via the factory override.
+    """
+    if config.per_skill_tier_defaults is None:
+        return None, None
+    skill_reader = EnsembleConfigTopazSkillReader(
+        find_ensemble=service.find_ensemble_by_name
+    )
+    router = TierRouter(
+        defaults=TierRouterDefaults(per_skill=dict(config.per_skill_tier_defaults)),
+        skill_reader=skill_reader,
+    )
+    auditor = TierEscalationAuditor(thresholds=config.tier_router_audit)
+    return router, auditor
 
 
 def get_conversation_compaction() -> ConversationCompaction:

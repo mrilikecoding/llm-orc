@@ -47,6 +47,7 @@ from typing import Any, Literal, Protocol
 from llm_orc.agentic.autonomy_policy import Allow, AutonomyDecision, Deny
 from llm_orc.agentic.calibration_gate import (
     CalibrationGate,
+    CalibrationVerdict,
     DispatchContext,
     QualitySignal,
 )
@@ -71,6 +72,7 @@ from llm_orc.agentic.tier_router import (
     TierRouter,
     TierSelection,
 )
+from llm_orc.agentic.tier_router_audit import TierEscalationAuditor
 from llm_orc.agentic.tool_call_validation_guard import (
     PhantomToolCallError,
     scan_response_for_phantom_claims,
@@ -245,11 +247,18 @@ class OrchestratorToolDispatch:
         plexus_adapter: PlexusAccess | None = None,
         tool_call_validation_patterns: tuple[str, ...] = (),
         tier_router: TierRouter | None = None,
+        tier_router_audit: TierEscalationAuditor | None = None,
     ) -> None:
         if tier_router is not None and calibration_gate is None:
             raise ValueError(
                 "tier_router requires calibration_gate per ADR-015 §Router "
                 "logic — the router consumes the verdict the gate produces"
+            )
+        if tier_router_audit is not None and tier_router is None:
+            raise ValueError(
+                "tier_router_audit requires tier_router per ADR-018 — the "
+                "(d)-analog audit observes the verdict→router edge that "
+                "only exists when the router is configured"
             )
         self._operations = operations
         self._harness = harness
@@ -272,6 +281,19 @@ class OrchestratorToolDispatch:
         that have not been migrated. Construction requires that
         ``calibration_gate`` is also configured when ``tier_router``
         is — the router cannot fire without the verdict producer.
+        """
+        self._tier_router_audit = tier_router_audit
+        """(d)-analog audit dispatch on the verdict→router edge
+        (WP-G4-2, ADR-018).
+
+        When configured, every router consultation records the
+        consumed verdict (and the selected tier, when the router
+        produced one) into the auditor's window; outcomes record
+        after ``_operations.invoke``. The auditor's fail-safe state
+        overrides verdict-driven tier selection under severe drift
+        (route-all-to-escalated until operator review). Requires
+        ``tier_router`` to be configured (the audit observes the
+        router's interposition point).
         """
 
     def validate_response(
@@ -440,12 +462,26 @@ class OrchestratorToolDispatch:
         try:
             result = await self._operations.invoke(invocation_args)
         except ValueError as exc:
+            # ADR-018: record dispatch outcome as failure for the
+            # escalation-vs-outcome correlation criterion.
+            self._record_dispatch_outcome(
+                ensemble_name=name, selection=selection, success=False
+            )
             return ToolCallError(
                 id=id_,
                 name="invoke_ensemble",
                 kind="invocation_failed",
                 reason=str(exc),
             )
+
+        # ADR-018: record dispatch outcome as success for the
+        # escalation-vs-outcome correlation criterion. Outcome maps
+        # to dispatch-completion-without-exception per WP-G4-2 scope;
+        # a richer outcome signal (e.g., calibration quality signal)
+        # is Cycle 5+ territory.
+        self._record_dispatch_outcome(
+            ensemble_name=name, selection=selection, success=True
+        )
 
         await self._calibration_check_safe(
             session_id=session_id, ensemble_name=name, raw_result=result
@@ -620,6 +656,14 @@ class OrchestratorToolDispatch:
         cheap-tier). Typed router errors translate to
         ``ToolCallError`` so the orchestrator's ReAct loop continues
         with the failure as an observation per ADR-015 §Router logic.
+
+        Per ADR-018 (WP-G4-2): when ``tier_router_audit`` is configured
+        and ``fail_safe_active`` is True, the original verdict is
+        recorded into the audit window but the router is invoked with
+        a synthetic ``"reflect"`` verdict so every dispatch routes to
+        the escalated tier. The audit records the *original* verdict
+        (not the override) so drift detection is not corrupted by the
+        fail-safe response itself.
         """
         if self._tier_router is None or self._calibration_gate is None:
             return None
@@ -628,13 +672,27 @@ class OrchestratorToolDispatch:
             ensemble_name=ensemble_name,
             dispatch_context=DispatchContext(),
         )
+        fail_safe = (
+            self._tier_router_audit is not None
+            and self._tier_router_audit.fail_safe_active
+        )
+        effective_verdict = "reflect" if fail_safe else verdict
         try:
-            return self._tier_router.select_tier(
+            selection = self._tier_router.select_tier(
                 ensemble_name=ensemble_name,
-                verdict=verdict,
+                verdict=effective_verdict,
                 session_id=session_id,
             )
         except EscalationBypassError as exc:
+            # Original verdict was Abstain (fail-safe inactive). Record
+            # the bypass before returning the typed error so the audit's
+            # bypass-rate trend criterion sees it.
+            self._record_audit_consumption(
+                verdict=verdict,
+                selection=None,
+                ensemble_name=ensemble_name,
+                bypassed=True,
+            )
             return ToolCallError(
                 id=call_id,
                 name="invoke_ensemble",
@@ -642,12 +700,68 @@ class OrchestratorToolDispatch:
                 reason=exc.operator_diagnostic,
             )
         except MissingSkillMetadataError as exc:
+            # Missing metadata is metadata-driven, not verdict-driven.
+            # Don't pollute the audit's verdict-distribution baseline.
             return ToolCallError(
                 id=call_id,
                 name="invoke_ensemble",
                 kind="missing_skill_metadata",
                 reason=exc.operator_diagnostic,
             )
+        # Successful selection (cheap or escalated tier). Record the
+        # original verdict so the audit's verdict-distribution
+        # criterion measures actual gate output, not fail-safe-coerced
+        # values.
+        self._record_audit_consumption(
+            verdict=verdict,
+            selection=selection,
+            ensemble_name=ensemble_name,
+            bypassed=False,
+        )
+        return selection
+
+    def _record_audit_consumption(
+        self,
+        *,
+        verdict: CalibrationVerdict,
+        selection: TierSelection | None,
+        ensemble_name: str,
+        bypassed: bool,
+    ) -> None:
+        """Record a verdict consumption into the audit window (if configured)."""
+        if self._tier_router_audit is None:
+            return
+        self._tier_router_audit.record_consumption(
+            verdict=verdict,
+            selection=selection,
+            ensemble_name=ensemble_name,
+            bypassed=bypassed,
+        )
+
+    def _record_dispatch_outcome(
+        self,
+        *,
+        ensemble_name: str,
+        selection: TierSelection | None,
+        success: bool,
+    ) -> None:
+        """Record a dispatch outcome into the audit window (if configured).
+
+        Tool Dispatch calls this after ``_operations.invoke`` either
+        returns or raises. The auditor's escalation-vs-outcome
+        correlation criterion compares cheap-tier and escalated-tier
+        success rates within the current window per ADR-018 §"Drift
+        criteria". Outcomes are recorded only when a tier was actually
+        selected — bypassed and metadata-error dispatches do not
+        contribute to the correlation criterion.
+        """
+        if self._tier_router_audit is None or selection is None:
+            return
+        self._tier_router_audit.record_outcome(
+            ensemble_name=ensemble_name,
+            tier=selection.tier,
+            success=success,
+        )
 
     async def _calibration_check_safe(
         self, *, session_id: str, ensemble_name: str, raw_result: dict[str, Any]

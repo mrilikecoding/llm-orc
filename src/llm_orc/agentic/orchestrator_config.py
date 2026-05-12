@@ -14,6 +14,7 @@ can wire in the override path without revisiting this module's shape.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -30,6 +31,12 @@ from llm_orc.agentic.conversation_compaction import (
     DEFAULT_COMPACTION_TRIGGER_TOKEN_COUNT,
     CompactionDefaults,
 )
+from llm_orc.agentic.tier_router import (
+    ALL_TOPAZ_SKILLS,
+    PerSkillTierDefaults,
+    TopazSkill,
+)
+from llm_orc.agentic.tier_router_audit import TierEscalationAuditThresholds
 from llm_orc.core.config.config_manager import ConfigurationManager
 
 
@@ -51,6 +58,16 @@ DEFAULT_ALLOW_BUDGET_OVERRIDE = True
 DEFAULT_MAX_TURN_LIMIT = 1_000
 DEFAULT_MAX_TOKEN_LIMIT = 50_000_000
 DEFAULT_SUMMARIZER_ENSEMBLE = "agentic-result-summarizer"
+
+DEFAULT_TIER_AUDIT_TRIGGER_COUNT = 100
+DEFAULT_TIER_AUDIT_TRIGGER_WALL_CLOCK_HOURS = 24.0
+DEFAULT_TIER_AUDIT_VERDICT_DISTRIBUTION_SHIFT = 0.15
+DEFAULT_TIER_AUDIT_ESCALATION_OUTCOME_CORRELATION_PP = 0.05
+DEFAULT_TIER_AUDIT_BYPASS_RATE_INCREASE = 0.25
+DEFAULT_TIER_AUDIT_SEVERE_DRIFT_MULTIPLIER = 2.0
+"""ADR-018 §"Drift criteria" defaults for the Tier-Escalation Router
+(d)-analog audit dispatch (WP-G4-2). All operationally tunable via
+``orchestrator.tier_router_audit`` in ``config.yaml``."""
 
 # Conversation Compaction defaults are owned by the L2 module
 # (``llm_orc.agentic.conversation_compaction``) and imported above —
@@ -198,6 +215,34 @@ class OrchestratorConfig:
     default factory keeps existing OrchestratorConfig construction
     sites working without specifying compaction settings.
     """
+    per_skill_tier_defaults: Mapping[TopazSkill, PerSkillTierDefaults] | None = None
+    """Per-skill tier defaults for the Tier-Escalation Router (ADR-015).
+
+    ``None`` when the operator has not configured any tier defaults —
+    in that case the Serving Layer does not construct a Router and
+    dispatches run without tier escalation (pre-WP-G4-1 behavior).
+    When present, the mapping must cover all 8 Topaz skills; partial
+    configurations raise at session start.
+    """
+    tier_router_audit: TierEscalationAuditThresholds = field(
+        default_factory=lambda: TierEscalationAuditThresholds(
+            trigger_count=DEFAULT_TIER_AUDIT_TRIGGER_COUNT,
+            trigger_wall_clock_hours=DEFAULT_TIER_AUDIT_TRIGGER_WALL_CLOCK_HOURS,
+            verdict_distribution_shift=(DEFAULT_TIER_AUDIT_VERDICT_DISTRIBUTION_SHIFT),
+            escalation_outcome_correlation_pp=(
+                DEFAULT_TIER_AUDIT_ESCALATION_OUTCOME_CORRELATION_PP
+            ),
+            bypass_rate_increase=DEFAULT_TIER_AUDIT_BYPASS_RATE_INCREASE,
+            severe_drift_multiplier=DEFAULT_TIER_AUDIT_SEVERE_DRIFT_MULTIPLIER,
+        )
+    )
+    """ADR-018 (d)-analog audit dispatch thresholds (WP-G4-2).
+
+    Operator-tunable via ``orchestrator.tier_router_audit``. The audit
+    fires only when the Serving Layer constructs a Router (i.e.,
+    ``per_skill_tier_defaults`` is configured); the defaults are
+    still composed so consumers can read them unconditionally.
+    """
 
 
 class OrchestratorConfigResolver:
@@ -217,6 +262,8 @@ class OrchestratorConfigResolver:
         summarizer = _as_mapping(raw.get("summarizer"))
         calibration = _as_mapping(orchestrator.get("calibration"))
         compaction = _as_mapping(orchestrator.get("compaction"))
+        tier_audit = _as_mapping(orchestrator.get("tier_router_audit"))
+        per_skill_raw = orchestrator.get("per_skill_tier_defaults")
 
         model_profile = str(orchestrator.get("model_profile", DEFAULT_MODEL_PROFILE))
         allowed_profiles = _resolve_allowed_profiles(
@@ -288,6 +335,33 @@ class OrchestratorConfigResolver:
                 summarizer_ensemble=_resolve_optional_str(
                     compaction.get("summarizer_ensemble"),
                     DEFAULT_COMPACTION_SUMMARIZER_ENSEMBLE,
+                ),
+            ),
+            per_skill_tier_defaults=_resolve_per_skill_tier_defaults(per_skill_raw),
+            tier_router_audit=TierEscalationAuditThresholds(
+                trigger_count=_positive_int(
+                    tier_audit.get("trigger_count"),
+                    DEFAULT_TIER_AUDIT_TRIGGER_COUNT,
+                ),
+                trigger_wall_clock_hours=_positive_float(
+                    tier_audit.get("trigger_wall_clock_hours"),
+                    DEFAULT_TIER_AUDIT_TRIGGER_WALL_CLOCK_HOURS,
+                ),
+                verdict_distribution_shift=_positive_float(
+                    tier_audit.get("verdict_distribution_shift"),
+                    DEFAULT_TIER_AUDIT_VERDICT_DISTRIBUTION_SHIFT,
+                ),
+                escalation_outcome_correlation_pp=_positive_float(
+                    tier_audit.get("escalation_outcome_correlation_pp"),
+                    DEFAULT_TIER_AUDIT_ESCALATION_OUTCOME_CORRELATION_PP,
+                ),
+                bypass_rate_increase=_positive_float(
+                    tier_audit.get("bypass_rate_increase"),
+                    DEFAULT_TIER_AUDIT_BYPASS_RATE_INCREASE,
+                ),
+                severe_drift_multiplier=_severe_multiplier(
+                    tier_audit.get("severe_drift_multiplier"),
+                    DEFAULT_TIER_AUDIT_SEVERE_DRIFT_MULTIPLIER,
                 ),
             ),
         )
@@ -378,3 +452,73 @@ def _resolve_optional_str(raw: Any, fallback: str | None) -> str | None:
     if raw is None:
         return fallback
     return str(raw)
+
+
+def _positive_float(raw: Any, fallback: float) -> float:
+    """Coerce ``raw`` to a float > 0, falling back on malformed values.
+
+    Mirrors :func:`_positive_int` semantics for ADR-018 audit thresholds
+    that take fractional values (windowing hours, percentage-point
+    tolerances expressed as fractions).
+    """
+    try:
+        candidate = float(raw)
+    except (TypeError, ValueError):
+        return fallback
+    return candidate if candidate > 0 else fallback
+
+
+def _severe_multiplier(raw: Any, fallback: float) -> float:
+    """Coerce ``raw`` to a float >= 1.0 (severe must be at or above advisory).
+
+    Per ADR-018: the severe-magnitude cutoff cannot sit below the
+    advisory threshold. Operator-supplied values below 1.0 fall back
+    to the shipped default so misconfiguration does not collapse
+    severity into a tautology.
+    """
+    try:
+        candidate = float(raw)
+    except (TypeError, ValueError):
+        return fallback
+    return candidate if candidate >= 1.0 else fallback
+
+
+def _resolve_per_skill_tier_defaults(
+    raw: Any,
+) -> Mapping[TopazSkill, PerSkillTierDefaults] | None:
+    """Parse the operator's per-skill tier defaults.
+
+    Returns ``None`` when the section is absent or empty — the Serving
+    Layer then skips Router construction and dispatches run without
+    tier escalation. When present, all 8 Topaz skills must be supplied
+    and each must declare ``cheap_tier`` and ``escalated_tier`` Model
+    Profile names; partial or malformed entries raise so operator
+    misconfiguration surfaces at session start (per ADR-015's
+    "explicit error" stance from rejected alternative §(c)).
+    """
+    if not isinstance(raw, dict) or not raw:
+        return None
+    per_skill: dict[TopazSkill, PerSkillTierDefaults] = {}
+    missing: list[str] = []
+    for skill in ALL_TOPAZ_SKILLS:
+        entry = raw.get(skill)
+        if not isinstance(entry, dict):
+            missing.append(skill)
+            continue
+        cheap_tier = entry.get("cheap_tier")
+        escalated_tier = entry.get("escalated_tier")
+        if not isinstance(cheap_tier, str) or not isinstance(escalated_tier, str):
+            raise ValueError(
+                "OrchestratorConfig per_skill_tier_defaults: "
+                f"skill {skill!r} must declare 'cheap_tier' and "
+                "'escalated_tier' as string Model Profile names"
+            )
+        per_skill[skill] = PerSkillTierDefaults(
+            cheap_tier=cheap_tier, escalated_tier=escalated_tier
+        )
+    if missing:
+        raise ValueError(
+            "OrchestratorConfig per_skill_tier_defaults must cover all 8 "
+            f"Topaz skills per ADR-015 §Decision; missing: {missing!r}"
+        )
+    return per_skill
