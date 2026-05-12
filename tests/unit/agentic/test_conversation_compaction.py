@@ -329,33 +329,37 @@ class TestLayer1CacheEdit:
     and never invalidates the prefix; in the no-cache substrate it
     reports "did not reduce" so subsequent layers fire."""
 
-    def test_layer_1_does_not_invalidate_prefix(self, tmp_path: Path) -> None:
-        """The conversation prefix's content survives a Layer 1
-        invocation unchanged — the no-prefix-invalidation property
-        ADR-012 §Layer 1 names is preserved by the structural-no-op
-        implementation."""
+    def test_layer_1_preserves_task_anchor_through_pipeline(
+        self, tmp_path: Path
+    ) -> None:
+        """The no-prefix-invalidation property is structurally
+        guaranteed for Layer 1 in the no-cache substrate (its body
+        does not mutate messages). Layer 3 may legitimately replace
+        older history with a notes summary per ADR-012 §Layer 3's
+        "free summary" design — the property to preserve is that the
+        original user message (the task anchor) survives the pipeline
+        so the orchestrator can continue reasoning from the
+        load-bearing context."""
         compaction = ConversationCompaction(
             defaults=_defaults(
-                # Force the pipeline to reach Layer 1: trigger token
-                # count exceeded, but Layer 0 has nothing to persist.
                 persist_threshold_chars=10_000_000,
                 trigger_token_count=10,
             ),
             persistence_root=tmp_path,
         )
-        prefix_user = _message("user", "stable prefix content")
-        prefix_assistant = _message("assistant", "stable prefix reply")
+        task_anchor = _message("user", "stable task description")
         messages = [
-            prefix_user,
-            prefix_assistant,
+            task_anchor,
+            _message("assistant", "stable prefix reply"),
             _message("user", "more " * 1_000),
         ]
 
         result = compaction.compact(messages, session_id="s1")
 
-        # Prefix entries' content survives unchanged.
-        assert result.messages[0]["content"] == prefix_user["content"]
-        assert result.messages[1]["content"] == prefix_assistant["content"]
+        # The task anchor — the original user message — survives.
+        # Layer 3's summary replaces the middle history but never
+        # the anchor.
+        assert result.messages[0]["content"] == task_anchor["content"]
 
     def test_layer_1_is_invocable_and_traced(self, tmp_path: Path) -> None:
         """The layer participates in the pipeline trace when it

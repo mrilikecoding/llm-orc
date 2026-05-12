@@ -346,8 +346,11 @@ class ConversationCompaction:
             if not self._exceeds_trigger(current):
                 return self._final(current, applied)
 
-        # Layer 3 — session notes update (zero LLM cost)
-        self._layer_3_update_session_notes(messages, state)
+        # Layer 3 — free summary via session notes (zero LLM cost).
+        # Updates the nine-section template AND replaces older history
+        # with a synthetic notes-summary message per ADR-012 §Layer 3
+        # ("free summary"). Bounded by the operator-configured cap.
+        current = self._layer_3_summarize_via_notes(messages, current, state)
         applied.append(3)
         if not self._exceeds_trigger(current):
             return self._final(current, applied)
@@ -434,23 +437,29 @@ class ConversationCompaction:
             kept.append(message)
         return kept, fired
 
-    def _layer_3_update_session_notes(
+    def _layer_3_summarize_via_notes(
         self,
         original_messages: list[dict[str, Any]],
+        current_messages: list[dict[str, Any]],
         state: _SessionCompactionState,
-    ) -> None:
-        """Deterministically update the nine-section template from the
-        most recent turn — zero LLM cost; bounded by the configured
-        token cap.
+    ) -> list[dict[str, Any]]:
+        """Update the nine-section template AND replace older history
+        with a synthetic summary message.
 
-        The update rule for WP-E4 is intentionally minimal: each turn's
-        content appends a one-line entry to the ``worklog`` section
-        with a deterministic prefix; the other sections remain
-        operator-managed surfaces for future cycles to elaborate.
+        Per ADR-012 §Layer 3, the nine-section template IS the
+        compaction surface — the notes "summarize" prior turns
+        without any LLM cost. The reduction strategy for WP-E4:
+        preserve the first user turn (the task description) and the
+        most recent two messages (the in-flight tool round-trip);
+        replace everything else with a single ``role: system`` entry
+        carrying the rendered notes.
+
+        The update rule for the nine sections is intentionally
+        minimal — each turn's content appends a one-line entry to
+        ``worklog``; the other eight sections remain operator-managed
+        surfaces for future cycles to elaborate.
         """
         notes = state.session_notes
-        # Build the worklog entry from the latest turn (last user or
-        # assistant message). Deterministic — no LLM call.
         latest = self._latest_speaker_message(original_messages)
         if latest is not None:
             role = latest.get("role", "")
@@ -461,6 +470,54 @@ class ConversationCompaction:
                 notes.sections["worklog"] = notes.sections["worklog"] + entry
 
         self._enforce_session_notes_cap(notes)
+        return self._build_reduced_messages(current_messages, notes)
+
+    def _build_reduced_messages(
+        self,
+        current_messages: list[dict[str, Any]],
+        notes: SessionNotes,
+    ) -> list[dict[str, Any]]:
+        """Compose ``[first_user_turn, notes_summary, ...tail]`` where
+        ``tail`` is the most recent two messages.
+
+        Below three messages there is nothing to reduce — the current
+        array is already at the minimum the summary structure would
+        produce, so return it unchanged.
+        """
+        if len(current_messages) < 3:
+            return current_messages
+
+        first_user = self._first_user_message(current_messages)
+        tail = current_messages[-2:]
+        if first_user in tail:
+            return current_messages
+
+        summary_message = self._render_notes_summary(notes)
+        reduced: list[dict[str, Any]] = []
+        if first_user is not None:
+            reduced.append(first_user)
+        reduced.append(summary_message)
+        reduced.extend(tail)
+        return reduced
+
+    def _first_user_message(
+        self, messages: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        for message in messages:
+            if message.get("role") == "user":
+                return message
+        return None
+
+    def _render_notes_summary(self, notes: SessionNotes) -> dict[str, Any]:
+        """Render the nine-section template as a single
+        ``role: system`` message — the synthetic summary that
+        replaces verbose prior history."""
+        body_lines = ["[Conversation summary via session notes (Layer 3)]"]
+        for section_name in NINE_SECTIONS:
+            section_content = notes.sections.get(section_name, "").strip()
+            if section_content:
+                body_lines.append(f"\n## {section_name}\n{section_content}")
+        return {"role": "system", "content": "\n".join(body_lines)}
 
     def _layer_4_available(self, state: _SessionCompactionState) -> bool:
         """Layer 4 dispatches only if a summarizer is configured AND
