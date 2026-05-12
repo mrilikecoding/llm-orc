@@ -14,7 +14,7 @@ can wire in the override path without revisiting this module's shape.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from llm_orc.agentic.calibration_gate import (
@@ -42,6 +42,18 @@ DEFAULT_ALLOW_BUDGET_OVERRIDE = True
 DEFAULT_MAX_TURN_LIMIT = 1_000
 DEFAULT_MAX_TOKEN_LIMIT = 50_000_000
 DEFAULT_SUMMARIZER_ENSEMBLE = "agentic-result-summarizer"
+
+# WP-E4 — Conversation Compaction defaults per ADR-012 §Decision.
+# The four named thresholds are the operator-tunable values
+# Anthropic's published specification ships with; trigger-token-count
+# and summarizer-ensemble are WP-E4 additions per the build-time
+# disposition recorded in cycle-status.md.
+DEFAULT_COMPACTION_PERSIST_THRESHOLD_CHARS = 50_000
+DEFAULT_COMPACTION_IDLE_WINDOW_MINUTES = 60
+DEFAULT_COMPACTION_SESSION_NOTES_TOKEN_CAP = 12_288
+DEFAULT_COMPACTION_LAYER_4_CIRCUIT_BREAKER_THRESHOLD = 3
+DEFAULT_COMPACTION_TRIGGER_TOKEN_COUNT = 100_000
+DEFAULT_COMPACTION_SUMMARIZER_ENSEMBLE: str | None = None
 
 DEFAULT_ORCHESTRATOR_SYSTEM_PROMPT = """\
 You are the llm-orc orchestrator. You route tool-user tasks by invoking \
@@ -142,6 +154,29 @@ class CalibrationDefaults:
 
 
 @dataclass(frozen=True)
+class CompactionDefaults:
+    """Conversation Compaction configuration (ADR-012, WP-E4).
+
+    The four named thresholds (``persist_threshold_chars``,
+    ``idle_window_minutes``, ``session_notes_token_cap``,
+    ``layer_4_circuit_breaker_threshold``) are Anthropic's published
+    operational values per ADR-012's defaults-provenance note.
+    ``trigger_token_count`` and ``summarizer_ensemble`` are WP-E4
+    additions: ADR-012 specifies "the context budget is satisfied"
+    without naming the trigger, and names the Layer 4 ensemble as
+    "configured" without specifying a default. Both are recorded as
+    operator-tunable.
+    """
+
+    persist_threshold_chars: int
+    idle_window_minutes: int
+    session_notes_token_cap: int
+    layer_4_circuit_breaker_threshold: int
+    trigger_token_count: int
+    summarizer_ensemble: str | None
+
+
+@dataclass(frozen=True)
 class OrchestratorConfig:
     """Immutable per-session configuration surface.
 
@@ -166,6 +201,24 @@ class OrchestratorConfig:
     (``DEFAULT_ASSERTION_PATTERNS``); these values are appended at scan
     time. Empty tuple = guard scans defaults only.
     """
+    compaction: CompactionDefaults = field(
+        default_factory=lambda: CompactionDefaults(
+            persist_threshold_chars=DEFAULT_COMPACTION_PERSIST_THRESHOLD_CHARS,
+            idle_window_minutes=DEFAULT_COMPACTION_IDLE_WINDOW_MINUTES,
+            session_notes_token_cap=DEFAULT_COMPACTION_SESSION_NOTES_TOKEN_CAP,
+            layer_4_circuit_breaker_threshold=(
+                DEFAULT_COMPACTION_LAYER_4_CIRCUIT_BREAKER_THRESHOLD
+            ),
+            trigger_token_count=DEFAULT_COMPACTION_TRIGGER_TOKEN_COUNT,
+            summarizer_ensemble=DEFAULT_COMPACTION_SUMMARIZER_ENSEMBLE,
+        )
+    )
+    """ADR-012 Conversation Compaction defaults (WP-E4).
+
+    Operator-tunable thresholds and Layer 4 summarizer ensemble. The
+    default factory keeps existing OrchestratorConfig construction
+    sites working without specifying compaction settings.
+    """
 
 
 class OrchestratorConfigResolver:
@@ -184,6 +237,7 @@ class OrchestratorConfigResolver:
         overrides = _as_mapping(raw.get("overrides"))
         summarizer = _as_mapping(raw.get("summarizer"))
         calibration = _as_mapping(orchestrator.get("calibration"))
+        compaction = _as_mapping(orchestrator.get("compaction"))
 
         model_profile = str(orchestrator.get("model_profile", DEFAULT_MODEL_PROFILE))
         allowed_profiles = _resolve_allowed_profiles(
@@ -230,6 +284,32 @@ class OrchestratorConfigResolver:
             ),
             tool_call_validation_patterns=_resolve_pattern_tuple(
                 orchestrator.get("tool_call_validation_patterns")
+            ),
+            compaction=CompactionDefaults(
+                persist_threshold_chars=_positive_int(
+                    compaction.get("persist_threshold_chars"),
+                    DEFAULT_COMPACTION_PERSIST_THRESHOLD_CHARS,
+                ),
+                idle_window_minutes=_positive_int(
+                    compaction.get("idle_window_minutes"),
+                    DEFAULT_COMPACTION_IDLE_WINDOW_MINUTES,
+                ),
+                session_notes_token_cap=_positive_int(
+                    compaction.get("session_notes_token_cap"),
+                    DEFAULT_COMPACTION_SESSION_NOTES_TOKEN_CAP,
+                ),
+                layer_4_circuit_breaker_threshold=_positive_int(
+                    compaction.get("layer_4_circuit_breaker_threshold"),
+                    DEFAULT_COMPACTION_LAYER_4_CIRCUIT_BREAKER_THRESHOLD,
+                ),
+                trigger_token_count=_positive_int(
+                    compaction.get("trigger_token_count"),
+                    DEFAULT_COMPACTION_TRIGGER_TOKEN_COUNT,
+                ),
+                summarizer_ensemble=_resolve_optional_str(
+                    compaction.get("summarizer_ensemble"),
+                    DEFAULT_COMPACTION_SUMMARIZER_ENSEMBLE,
+                ),
             ),
         )
 
@@ -306,3 +386,16 @@ def _resolve_pattern_tuple(raw: Any) -> tuple[str, ...]:
     if isinstance(raw, list):
         return tuple(str(item) for item in raw)
     return ()
+
+
+def _resolve_optional_str(raw: Any, fallback: str | None) -> str | None:
+    """Normalize an operator-supplied optional string config value.
+
+    ``None`` or missing key returns ``fallback``. Any other value is
+    coerced to ``str``. Used by the Compaction summarizer-ensemble
+    setting (ADR-012 Layer 4): unconfigured by default; when an
+    operator supplies an ensemble name, Layer 4 dispatches it.
+    """
+    if raw is None:
+        return fallback
+    return str(raw)
