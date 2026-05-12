@@ -9,6 +9,10 @@ preserves the message-pass-through behavior of the precedent class
 import pytest
 
 from llm_orc.agentic.calibration_gate import CalibrationAbstainError
+from llm_orc.agentic.tier_router import (
+    EscalationBypassError,
+    MissingSkillMetadataError,
+)
 from llm_orc.models.base import ToolCallingNotSupportedError
 from llm_orc.models.structural_errors import LlmOrcStructuralError
 
@@ -163,4 +167,106 @@ class TestCalibrationAbstainErrorAsConcreteSubclass:
                 session_id="s2",
                 ensemble_name="composed-b",
                 criterion="severe_drift",
+            )
+
+
+class TestEscalationBypassErrorAsConcreteSubclass:
+    """``EscalationBypassError`` is the sixth concrete subclass per FC-17.
+
+    Raised by the Tier-Escalation Router (WP-G4-1) when the calibration
+    verdict is Abstain. Per ADR-015 §Router logic, Abstain bypasses
+    routing entirely — the orchestrator must reformulate, dispatch to
+    a different ensemble, or abandon the task.
+    """
+
+    def test_is_subclass_of_structural_error_base(self) -> None:
+        assert issubclass(EscalationBypassError, LlmOrcStructuralError)
+
+    def test_fixes_error_kind_to_escalation_bypass(self) -> None:
+        """The error_kind discriminator is set by construction per ADR-015."""
+        error = EscalationBypassError(
+            "Abstain verdict — routing bypassed",
+            ensemble_name="composed-a",
+        )
+
+        assert error.error_kind == "escalation_bypass"
+
+    def test_fixes_recovery_action_to_reformulate(self) -> None:
+        """Per ADR-015 §Router logic: the orchestrator must reformulate."""
+        error = EscalationBypassError(
+            "Abstain verdict — routing bypassed",
+            ensemble_name="composed-a",
+        )
+
+        assert error.recovery_action_required == "reformulate"
+
+    def test_dispatch_context_carries_router_metadata(self) -> None:
+        """``dispatch_context`` records the ensemble and session causing the bypass."""
+        error = EscalationBypassError(
+            "Abstain verdict — routing bypassed",
+            ensemble_name="composed-a",
+            session_id="s-77",
+        )
+
+        assert error.dispatch_context == {
+            "session_id": "s-77",
+            "ensemble_name": "composed-a",
+        }
+
+    def test_preserves_message_for_raise_catch_path(self) -> None:
+        with pytest.raises(EscalationBypassError, match="routing bypassed"):
+            raise EscalationBypassError(
+                "Abstain verdict — routing bypassed",
+                ensemble_name="composed-a",
+            )
+
+
+class TestMissingSkillMetadataErrorAsConcreteSubclass:
+    """``MissingSkillMetadataError`` is the seventh concrete subclass per FC-17.
+
+    Raised by the Tier-Escalation Router when a dispatched ensemble's
+    YAML configuration does not declare a ``topaz_skill`` metadata
+    field. Per ADR-015 §Per-skill role profiling, every ensemble in
+    the library must declare its primary Topaz skill.
+    """
+
+    def test_is_subclass_of_structural_error_base(self) -> None:
+        assert issubclass(MissingSkillMetadataError, LlmOrcStructuralError)
+
+    def test_fixes_error_kind_to_missing_skill_metadata(self) -> None:
+        error = MissingSkillMetadataError(
+            "ensemble lacks topaz_skill metadata",
+            ensemble_name="untagged-ensemble",
+        )
+
+        assert error.error_kind == "missing_skill_metadata"
+
+    def test_fixes_recovery_action_to_reformulate(self) -> None:
+        """Per ADR-015 §Per-skill role profiling: the orchestrator must
+        dispatch to a different ensemble (one with the metadata field)
+        or abandon the task; operator correction is the durable fix."""
+        error = MissingSkillMetadataError(
+            "ensemble lacks topaz_skill metadata",
+            ensemble_name="untagged-ensemble",
+        )
+
+        assert error.recovery_action_required == "reformulate"
+
+    def test_dispatch_context_carries_ensemble_name(self) -> None:
+        error = MissingSkillMetadataError(
+            "ensemble lacks topaz_skill metadata",
+            ensemble_name="untagged-ensemble",
+            session_id="s-77",
+        )
+
+        assert error.dispatch_context == {
+            "session_id": "s-77",
+            "ensemble_name": "untagged-ensemble",
+        }
+
+    def test_preserves_message_for_raise_catch_path(self) -> None:
+        with pytest.raises(MissingSkillMetadataError, match="topaz_skill"):
+            raise MissingSkillMetadataError(
+                "ensemble lacks topaz_skill metadata",
+                ensemble_name="untagged-ensemble",
             )

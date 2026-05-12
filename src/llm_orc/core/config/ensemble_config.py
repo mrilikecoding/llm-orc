@@ -169,6 +169,24 @@ class EnsembleConfig:
     output is already small and structured (classifiers, single-field lookups).
     Default is false — summarization is the operator's default contract."""
 
+    topaz_skill: str | None = None
+    """ADR-015 primary Topaz skill metadata for tier-escalation routing.
+
+    Operator-authored YAML field naming the ensemble's primary Topaz
+    skill — one of: ``code_generation``, ``tool_use``,
+    ``mathematical_reasoning``, ``logical_reasoning``,
+    ``factual_knowledge``, ``writing_quality``,
+    ``instruction_following``, ``summarization``. The Tier-Escalation
+    Router (WP-G4-1) reads this field to select the per-skill cheap-
+    or escalated-tier Model Profile per the Calibration Gate's
+    verdict. ``None`` (the field missing in YAML) causes the router
+    to raise :class:`MissingSkillMetadataError` per ADR-015 §Per-
+    skill role profiling. Stored as ``str`` rather than the
+    :data:`TopazSkill` Literal because EnsembleConfig is loaded from
+    operator YAML before validation; the router validates the value
+    against the closed Topaz taxonomy at dispatch time.
+    """
+
 
 class EnsembleLoader:
     """Loads ensemble configurations from files."""
@@ -192,6 +210,11 @@ class EnsembleLoader:
         # Parse each agent dict into typed AgentConfig (ADR-012)
         agents = [parse_agent_config(a) for a in data["agents"]]
 
+        topaz_skill_raw = data.get("topaz_skill")
+        topaz_skill: str | None = (
+            str(topaz_skill_raw) if topaz_skill_raw is not None else None
+        )
+
         config = EnsembleConfig(
             name=data["name"],
             description=data["description"],
@@ -201,6 +224,7 @@ class EnsembleLoader:
             validation=data.get("validation"),
             test_mode=data.get("test_mode"),
             raw_output=bool(data.get("raw_output", False)),
+            topaz_skill=topaz_skill,
         )
 
         # Validate agent dependencies

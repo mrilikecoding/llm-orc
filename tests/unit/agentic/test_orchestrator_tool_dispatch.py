@@ -27,6 +27,7 @@ from llm_orc.agentic.autonomy_policy import (
     AutonomyPolicy,
     Deny,
 )
+from llm_orc.agentic.calibration_gate import CalibrationVerdict, QualitySignal
 from llm_orc.agentic.composition_validator import (
     CompositionAccepted,
     CompositionOutcome,
@@ -42,6 +43,7 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     ToolCallSuccess,
 )
 from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
+from llm_orc.agentic.tier_router import TopazSkill
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 
 
@@ -195,6 +197,7 @@ def _build_dispatch(
     local_ensemble_writer: Any = None,
     calibration_gate: Any = None,
     plexus_adapter: Any = None,
+    tier_router: Any = None,
 ) -> OrchestratorToolDispatch:
     """Construct a dispatch with sensible test defaults.
 
@@ -207,6 +210,11 @@ def _build_dispatch(
     exercise calibration get the no-op path (invoke skips the gate;
     compose does not register). Tests that assert on gate interposition
     pass a ``_RecordingCalibrationGate`` (or the real gate) explicitly.
+
+    ``tier_router`` defaults to ``None`` — back-compat with pre-WP-G4-1
+    tests. Tests that assert on router interposition pass a real or
+    scripted ``TierRouter`` alongside a ``calibration_gate`` (the
+    constructor requires both together).
     """
     return OrchestratorToolDispatch(
         operations=operations,
@@ -226,6 +234,7 @@ def _build_dispatch(
         ),
         calibration_gate=calibration_gate,
         plexus_adapter=plexus_adapter,
+        tier_router=tier_router,
     )
 
 
@@ -1438,3 +1447,541 @@ class TestPlexusToolWiring:
 
         assert isinstance(result, ToolCallSuccess)
         assert result.content == {"acknowledged": True}
+
+
+# ---------------------------------------------------------------------------
+# WP-G4-1 — Tier-Escalation Router interposition (ADR-015)
+# ---------------------------------------------------------------------------
+
+
+class _ScriptedCalibrationGate:
+    """Calibration Gate double that returns a scripted verdict.
+
+    Satisfies the gate's :meth:`verdict_for` surface that Tool Dispatch
+    consumes for WP-G4-1. Records calls so tests can assert the gate
+    was consulted with the right session/ensemble identifiers.
+    """
+
+    def __init__(self, verdict: CalibrationVerdict = "proceed") -> None:
+        self._verdict = verdict
+        self.verdict_calls: list[tuple[str, str]] = []
+
+    def verdict_for(
+        self,
+        *,
+        session_id: str,
+        ensemble_name: str,
+        dispatch_context: Any,
+    ) -> CalibrationVerdict:
+        del dispatch_context
+        self.verdict_calls.append((session_id, ensemble_name))
+        return self._verdict
+
+    async def check_and_record(
+        self, *, session_id: str, ensemble_name: str, raw_result: dict[str, Any]
+    ) -> QualitySignal | None:
+        del session_id, ensemble_name, raw_result
+        return None
+
+    def mark_composed(self, *, session_id: str, ensemble_name: str) -> None:
+        del session_id, ensemble_name
+
+
+class TestTierEscalationRouterInterposition:
+    """WP-G4-1 — ADR-015 per-role tier-escalation router.
+
+    Covers scenarios from ``scenarios.md`` §Per-Role Tier-Escalation
+    Router (ADR-015) at the Tool Dispatch integration layer (the
+    router-only assertions live in :mod:`test_tier_router`).
+
+    Integration boundary verifications per system-design.agents.md
+    §Integration Contracts (lines 615-617):
+
+    * ``test_invoke_ensemble_routes_through_tier_router``
+    * ``test_router_consumes_calibration_verdict``
+    * ``test_router_reads_topaz_skill_from_ensemble_yaml``
+    """
+
+    @staticmethod
+    def _build_router_with_skill(
+        ensemble_name: str,
+        skill: TopazSkill,
+        *,
+        cheap: str = "cheap-default",
+        escalated: str = "escalated-default",
+    ) -> Any:
+        """Construct a real TierRouter wired with a scripted skill reader
+        and full 8-skill defaults — the named ensemble routes through
+        the supplied (cheap, escalated) pair.
+        """
+        from llm_orc.agentic.tier_router import (
+            ALL_TOPAZ_SKILLS,
+            PerSkillTierDefaults,
+            TierRouter,
+            TierRouterDefaults,
+        )
+
+        class _Reader:
+            def topaz_skill_for(self, ensemble_name_: str) -> TopazSkill | None:
+                if ensemble_name_ == ensemble_name:
+                    return skill
+                return None
+
+        per_skill: dict[TopazSkill, PerSkillTierDefaults] = {
+            s: PerSkillTierDefaults(
+                cheap_tier=f"cheap-{s}",
+                escalated_tier=f"escalated-{s}",
+            )
+            for s in ALL_TOPAZ_SKILLS
+        }
+        # Override the named skill with the requested pair.
+        per_skill[skill] = PerSkillTierDefaults(
+            cheap_tier=cheap, escalated_tier=escalated
+        )
+        defaults = TierRouterDefaults(per_skill=per_skill)
+        return TierRouter(defaults=defaults, skill_reader=_Reader())
+
+    @pytest.mark.asyncio
+    async def test_invoke_ensemble_routes_through_tier_router(self) -> None:
+        """Per system-design.agents.md L615:
+        ``test_invoke_ensemble_routes_through_tier_router`` — every
+        ``invoke_ensemble`` dispatch passes through tier selection;
+        verdict input flows from Calibration Gate; selected tier flows
+        into ``EnsembleExecutor``.
+        """
+        gate = _ScriptedCalibrationGate(verdict="proceed")
+        router = self._build_router_with_skill(
+            "code-review",
+            "code_generation",
+            cheap="ollama-deepseek-coder-v2:16b",
+            escalated="claude-sonnet-4-6",
+        )
+        operations = _ScriptedOperations(
+            invoke_result={
+                "results": {"a": "x"},
+                "synthesis": "ok",
+                "status": "success",
+                "raw_output": True,
+            }
+        )
+        dispatch = _build_dispatch(
+            operations=operations,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate,
+            tier_router=router,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="t1",
+                name="invoke_ensemble",
+                arguments={"name": "code-review", "input": "fix the parser"},
+            ),
+            session_id="s-1",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        # Gate was consulted for the verdict before invoke.
+        assert gate.verdict_calls == [("s-1", "code-review")]
+        # The selected cheap-tier Model Profile flowed into invoke args.
+        assert operations.invoke_calls == [
+            {
+                "ensemble_name": "code-review",
+                "input": "fix the parser",
+                "model_profile_override": "ollama-deepseek-coder-v2:16b",
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_router_consumes_calibration_verdict(self) -> None:
+        """Per system-design.agents.md L616: the verdict's three values
+        map deterministically to router actions (cheap-tier / escalated-
+        tier / ``escalation_bypass`` typed error). This test exercises
+        the Reflect → escalated branch through Tool Dispatch.
+        """
+        gate = _ScriptedCalibrationGate(verdict="reflect")
+        router = self._build_router_with_skill(
+            "plexus-graph-analysis",
+            "tool_use",
+            cheap="ollama-qwen3:8b",
+            escalated="gpt-5-mini",
+        )
+        operations = _ScriptedOperations(
+            invoke_result={
+                "results": {},
+                "synthesis": "",
+                "status": "success",
+                "raw_output": True,
+            }
+        )
+        dispatch = _build_dispatch(
+            operations=operations,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate,
+            tier_router=router,
+        )
+
+        await dispatch.dispatch(
+            InternalToolCall(
+                id="t2",
+                name="invoke_ensemble",
+                arguments={"name": "plexus-graph-analysis", "input": "x"},
+            ),
+            session_id="s-2",
+        )
+
+        assert operations.invoke_calls[0]["model_profile_override"] == "gpt-5-mini"
+
+    @pytest.mark.asyncio
+    async def test_router_reads_topaz_skill_from_ensemble_yaml(self) -> None:
+        """Per system-design.agents.md L617: the router resolves the
+        dispatched ensemble's ``topaz_skill`` field via the configured
+        reader; ensembles without the field produce
+        ``missing_skill_metadata`` typed error.
+        """
+        gate = _ScriptedCalibrationGate(verdict="proceed")
+        # Reader returns None for any ensemble — simulates a YAML lacking
+        # the topaz_skill field per ADR-015 §Per-skill role profiling.
+        from llm_orc.agentic.tier_router import (
+            ALL_TOPAZ_SKILLS,
+            PerSkillTierDefaults,
+            TierRouter,
+            TierRouterDefaults,
+        )
+
+        class _EmptyReader:
+            def topaz_skill_for(self, ensemble_name_: str) -> TopazSkill | None:
+                del ensemble_name_
+                return None
+
+        empty_per_skill: dict[TopazSkill, PerSkillTierDefaults] = {
+            s: PerSkillTierDefaults(
+                cheap_tier=f"cheap-{s}", escalated_tier=f"escalated-{s}"
+            )
+            for s in ALL_TOPAZ_SKILLS
+        }
+        router = TierRouter(
+            defaults=TierRouterDefaults(per_skill=empty_per_skill),
+            skill_reader=_EmptyReader(),
+        )
+        operations = _ScriptedOperations()
+        dispatch = _build_dispatch(
+            operations=operations,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate,
+            tier_router=router,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="t3",
+                name="invoke_ensemble",
+                arguments={"name": "untagged-ensemble", "input": "x"},
+            ),
+            session_id="s-3",
+        )
+
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "missing_skill_metadata"
+        # Operations.invoke must NOT have been called — the error is
+        # raised before dispatch reaches ensemble execution (FC-18).
+        assert operations.invoke_calls == []
+
+    @pytest.mark.asyncio
+    async def test_abstain_verdict_produces_escalation_bypass_tool_error(
+        self,
+    ) -> None:
+        """Scenario: Abstain verdict produces escalation-bypass typed error
+        (scenarios.md §Per-Role Tier-Escalation Router)."""
+        gate = _ScriptedCalibrationGate(verdict="abstain")
+        router = self._build_router_with_skill("composed-a", "code_generation")
+        operations = _ScriptedOperations()
+        dispatch = _build_dispatch(
+            operations=operations,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate,
+            tier_router=router,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="t4",
+                name="invoke_ensemble",
+                arguments={"name": "composed-a", "input": "x"},
+            ),
+            session_id="s-4",
+        )
+
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "escalation_bypass"
+        assert "Abstain" in result.reason
+        # Abstain bypasses dispatch entirely.
+        assert operations.invoke_calls == []
+
+
+class TestVerdictToTierMappingDeterministicViaDispatch:
+    """Per system-design.agents.md §Tier-Escalation Router Fitness:
+
+        The verdict-to-action mapping is deterministic: Proceed →
+        cheap-tier dispatch; Reflect → escalated-tier dispatch;
+        Abstain → ``escalation_bypass`` typed error.
+
+    M-dimension test (verdict variation) at the Tool Dispatch
+    integration layer. The router-isolated version lives in
+    :class:`TestVerdictToTierMappingIsDeterministic` in
+    ``test_tier_router``.
+    """
+
+    @staticmethod
+    def _build(verdict: CalibrationVerdict) -> tuple[_ScriptedOperations, Any]:
+        gate = _ScriptedCalibrationGate(verdict=verdict)
+        router = TestTierEscalationRouterInterposition._build_router_with_skill(
+            "e", "summarization", cheap="cheap-summ-A", escalated="escalated-summ-A"
+        )
+        operations = _ScriptedOperations(
+            invoke_result={
+                "results": {},
+                "synthesis": "",
+                "status": "success",
+                "raw_output": True,
+            }
+        )
+        dispatch = _build_dispatch(
+            operations=operations,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate,
+            tier_router=router,
+        )
+        return operations, dispatch
+
+    @pytest.mark.asyncio
+    async def test_proceed_routes_to_cheap_tier_via_dispatch(self) -> None:
+        operations, dispatch = self._build("proceed")
+
+        await dispatch.dispatch(
+            InternalToolCall(
+                id="p1",
+                name="invoke_ensemble",
+                arguments={"name": "e", "input": "x"},
+            )
+        )
+
+        assert operations.invoke_calls[0]["model_profile_override"] == "cheap-summ-A"
+
+    @pytest.mark.asyncio
+    async def test_reflect_routes_to_escalated_tier_via_dispatch(self) -> None:
+        operations, dispatch = self._build("reflect")
+
+        await dispatch.dispatch(
+            InternalToolCall(
+                id="r1",
+                name="invoke_ensemble",
+                arguments={"name": "e", "input": "x"},
+            )
+        )
+
+        assert (
+            operations.invoke_calls[0]["model_profile_override"] == "escalated-summ-A"
+        )
+
+    @pytest.mark.asyncio
+    async def test_abstain_produces_typed_error_via_dispatch(self) -> None:
+        operations, dispatch = self._build("abstain")
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="a1",
+                name="invoke_ensemble",
+                arguments={"name": "e", "input": "x"},
+            )
+        )
+
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "escalation_bypass"
+        assert operations.invoke_calls == []
+
+
+class TestADR011PreservationUnderTierEscalation:
+    """Per system-design.agents.md L224:
+    ``test_orchestrator_profile_unchanged_under_tier_escalation`` —
+    preservation of FC-13.
+
+    Tier escalation acts on the *dispatched task's* tier only; the
+    orchestrator's own Model Profile remains session-boundary scoped
+    per ADR-011. The Tool Dispatch's existing surface does not own
+    the orchestrator's Model Profile (it lives in OrchestratorConfig
+    at L3); the preservation property here is that the router does
+    not touch any orchestrator-side configuration — only the
+    ``model_profile_override`` key in invoke arguments.
+    """
+
+    @pytest.mark.asyncio
+    async def test_router_only_writes_dispatch_arg_not_orchestrator_state(
+        self,
+    ) -> None:
+        """ADR-011 preservation: the only side effect of the router is
+        the per-dispatch ``model_profile_override`` argument value.
+        The router does NOT mutate any shared/orchestrator state.
+        """
+        gate = _ScriptedCalibrationGate(verdict="reflect")
+        router = TestTierEscalationRouterInterposition._build_router_with_skill(
+            "e",
+            "code_generation",
+            cheap="cheap-profile",
+            escalated="escalated-profile",
+        )
+        operations = _ScriptedOperations(
+            invoke_result={
+                "results": {},
+                "synthesis": "",
+                "status": "success",
+                "raw_output": True,
+            }
+        )
+        dispatch = _build_dispatch(
+            operations=operations,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate,
+            tier_router=router,
+        )
+
+        # Drive multiple dispatches under Reflect (escalated-tier).
+        for n in range(3):
+            await dispatch.dispatch(
+                InternalToolCall(
+                    id=f"d{n}",
+                    name="invoke_ensemble",
+                    arguments={"name": "e", "input": "x"},
+                ),
+                session_id="s-stable",
+            )
+
+        # Every dispatch must have routed to escalated-tier — no
+        # carry-forward drift, no orchestrator-side state mutation.
+        # FC-13 (the orchestrator's own Model Profile remains constant)
+        # holds vacuously here because the router only touches the
+        # per-dispatch arguments dict.
+        for call in operations.invoke_calls:
+            assert call["model_profile_override"] == "escalated-profile"
+
+    @pytest.mark.asyncio
+    async def test_invoke_ensemble_api_unchanged_under_tier_escalation(
+        self,
+    ) -> None:
+        """Per system-design.agents.md L225:
+        ``test_invoke_ensemble_api_unchanged_under_tier_escalation`` —
+        the orchestrator's tool-call API (``invoke_ensemble``) is
+        unchanged under tier escalation. The orchestrator's reasoning
+        surface receives the same shape of ``ToolCallResult``
+        regardless of which tier was dispatched.
+        """
+        # Cheap-tier dispatch
+        gate_cheap = _ScriptedCalibrationGate(verdict="proceed")
+        router_cheap = TestTierEscalationRouterInterposition._build_router_with_skill(
+            "e", "code_generation"
+        )
+        ops_cheap = _ScriptedOperations(
+            invoke_result={
+                "results": {"a": "cheap-output"},
+                "synthesis": "cheap-synth",
+                "status": "success",
+                "raw_output": True,
+            }
+        )
+        dispatch_cheap = _build_dispatch(
+            operations=ops_cheap,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate_cheap,
+            tier_router=router_cheap,
+        )
+
+        # Escalated-tier dispatch
+        gate_esc = _ScriptedCalibrationGate(verdict="reflect")
+        router_esc = TestTierEscalationRouterInterposition._build_router_with_skill(
+            "e", "code_generation"
+        )
+        ops_esc = _ScriptedOperations(
+            invoke_result={
+                "results": {"a": "escalated-output"},
+                "synthesis": "escalated-synth",
+                "status": "success",
+                "raw_output": True,
+            }
+        )
+        dispatch_esc = _build_dispatch(
+            operations=ops_esc,
+            harness=_build_harness(),
+            autonomy_policy=_permissive_policy(),
+            calibration_gate=gate_esc,
+            tier_router=router_esc,
+        )
+
+        result_cheap = await dispatch_cheap.dispatch(
+            InternalToolCall(
+                id="api1",
+                name="invoke_ensemble",
+                arguments={"name": "e", "input": "x"},
+            )
+        )
+        result_esc = await dispatch_esc.dispatch(
+            InternalToolCall(
+                id="api2",
+                name="invoke_ensemble",
+                arguments={"name": "e", "input": "x"},
+            )
+        )
+
+        # Both are ToolCallSuccess with identical shape — only the
+        # underlying content differs (per tier). The orchestrator's
+        # ReAct loop consumes the same surface.
+        assert isinstance(result_cheap, ToolCallSuccess)
+        assert isinstance(result_esc, ToolCallSuccess)
+        assert result_cheap.name == "invoke_ensemble"
+        assert result_esc.name == "invoke_ensemble"
+        assert type(result_cheap.content) is type(result_esc.content)
+
+
+class TestRouterRequiresCalibrationGateAtConstruction:
+    """Construction-time validation: ``tier_router`` requires
+    ``calibration_gate`` (the router consumes the verdict the gate
+    produces; see system-design.agents.md L162)."""
+
+    def test_constructing_router_without_gate_raises(self) -> None:
+        from llm_orc.agentic.tier_router import (
+            ALL_TOPAZ_SKILLS,
+            PerSkillTierDefaults,
+            TierRouter,
+            TierRouterDefaults,
+        )
+
+        class _AnyReader:
+            def topaz_skill_for(self, ensemble_name_: str) -> TopazSkill | None:
+                del ensemble_name_
+                return "code_generation"
+
+        any_per_skill: dict[TopazSkill, PerSkillTierDefaults] = {
+            s: PerSkillTierDefaults(
+                cheap_tier=f"cheap-{s}", escalated_tier=f"escalated-{s}"
+            )
+            for s in ALL_TOPAZ_SKILLS
+        }
+        router = TierRouter(
+            defaults=TierRouterDefaults(per_skill=any_per_skill),
+            skill_reader=_AnyReader(),
+        )
+
+        with pytest.raises(ValueError, match="tier_router requires calibration_gate"):
+            _build_dispatch(
+                operations=_RaisingOperations(),
+                harness=_build_harness(),
+                autonomy_policy=_permissive_policy(),
+                tier_router=router,
+                # calibration_gate intentionally omitted
+            )

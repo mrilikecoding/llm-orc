@@ -45,7 +45,11 @@ from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
 from llm_orc.agentic.autonomy_policy import Allow, AutonomyDecision, Deny
-from llm_orc.agentic.calibration_gate import CalibrationGate, QualitySignal
+from llm_orc.agentic.calibration_gate import (
+    CalibrationGate,
+    DispatchContext,
+    QualitySignal,
+)
 from llm_orc.agentic.composition_validator import (
     CompositionAccepted,
     CompositionOutcome,
@@ -60,6 +64,12 @@ from llm_orc.agentic.result_summarizer_harness import (
     ResultSummarizerHarness,
     SummarizationFailure,
     SummarizationSuccess,
+)
+from llm_orc.agentic.tier_router import (
+    EscalationBypassError,
+    MissingSkillMetadataError,
+    TierRouter,
+    TierSelection,
 )
 from llm_orc.agentic.tool_call_validation_guard import (
     PhantomToolCallError,
@@ -107,6 +117,8 @@ ToolErrorKind = Literal[
     "invalid_arguments",
     "summarization_failed",
     "denied_by_autonomy",
+    "escalation_bypass",
+    "missing_skill_metadata",
 ]
 
 
@@ -232,7 +244,13 @@ class OrchestratorToolDispatch:
         calibration_gate: CalibrationGate | None = None,
         plexus_adapter: PlexusAccess | None = None,
         tool_call_validation_patterns: tuple[str, ...] = (),
+        tier_router: TierRouter | None = None,
     ) -> None:
+        if tier_router is not None and calibration_gate is None:
+            raise ValueError(
+                "tier_router requires calibration_gate per ADR-015 §Router "
+                "logic — the router consumes the verdict the gate produces"
+            )
         self._operations = operations
         self._harness = harness
         self._autonomy_policy = autonomy_policy
@@ -244,6 +262,17 @@ class OrchestratorToolDispatch:
         """Operator-extension patterns appended to ADR-017's default
         assertion-pattern set in :meth:`validate_response`.
         Empty tuple = scan defaults only."""
+        self._tier_router = tier_router
+        """Per-role tier-escalation router (WP-G4-1, ADR-015).
+
+        When configured, every ``invoke_ensemble`` consumes the
+        Calibration Gate's verdict via the router and selects a per-
+        skill Model Profile for the dispatch. ``None`` preserves the
+        pre-Cycle-4 dispatch path for existing tests and call sites
+        that have not been migrated. Construction requires that
+        ``calibration_gate`` is also configured when ``tier_router``
+        is — the router cannot fire without the verdict producer.
+        """
 
     def validate_response(
         self,
@@ -387,10 +416,29 @@ class OrchestratorToolDispatch:
                 reason="invoke_ensemble 'input' must be a string",
             )
 
+        # WP-G4-1, ADR-015: tier-escalation router interposes between
+        # the autonomy gate (applied in ``dispatch``) and the actual
+        # ensemble execution. When configured, the router consumes the
+        # Calibration Gate's verdict for this dispatch and selects a
+        # per-skill Model Profile (cheap or escalated). Abstain
+        # verdicts and missing-metadata cases surface as typed
+        # ToolCallErrors so the ReAct loop continues with the failure
+        # as an observation rather than a crash.
+        selection = self._select_tier_for(
+            session_id=session_id, ensemble_name=name, call_id=id_
+        )
+        if isinstance(selection, ToolCallError):
+            return selection
+
+        invocation_args: dict[str, Any] = {
+            "ensemble_name": name,
+            "input": input_data,
+        }
+        if selection is not None:
+            invocation_args["model_profile_override"] = selection.model_profile
+
         try:
-            result = await self._operations.invoke(
-                {"ensemble_name": name, "input": input_data}
-            )
+            result = await self._operations.invoke(invocation_args)
         except ValueError as exc:
             return ToolCallError(
                 id=id_,
@@ -557,6 +605,49 @@ class OrchestratorToolDispatch:
             )
         result = await self._plexus_adapter.record(arguments)
         return ToolCallSuccess(id=id_, name="record_outcome", content=result)
+
+    def _select_tier_for(
+        self, *, session_id: str, ensemble_name: str, call_id: str
+    ) -> TierSelection | ToolCallError | None:
+        """Consult the Tier-Escalation Router for this dispatch.
+
+        Returns ``None`` when no router is configured (back-compat for
+        pre-WP-G4-1 wiring). Otherwise consumes the Calibration Gate's
+        verdict via ``verdict_for`` with a default
+        :class:`DispatchContext` (AUQ confidence and trajectory features
+        flow in once WP-H4 lands ADR-016's signal channel; until then
+        the verdict defaults to ``proceed`` and the router selects
+        cheap-tier). Typed router errors translate to
+        ``ToolCallError`` so the orchestrator's ReAct loop continues
+        with the failure as an observation per ADR-015 §Router logic.
+        """
+        if self._tier_router is None or self._calibration_gate is None:
+            return None
+        verdict = self._calibration_gate.verdict_for(
+            session_id=session_id,
+            ensemble_name=ensemble_name,
+            dispatch_context=DispatchContext(),
+        )
+        try:
+            return self._tier_router.select_tier(
+                ensemble_name=ensemble_name,
+                verdict=verdict,
+                session_id=session_id,
+            )
+        except EscalationBypassError as exc:
+            return ToolCallError(
+                id=call_id,
+                name="invoke_ensemble",
+                kind="escalation_bypass",
+                reason=exc.operator_diagnostic,
+            )
+        except MissingSkillMetadataError as exc:
+            return ToolCallError(
+                id=call_id,
+                name="invoke_ensemble",
+                kind="missing_skill_metadata",
+                reason=exc.operator_diagnostic,
+            )
 
     async def _calibration_check_safe(
         self, *, session_id: str, ensemble_name: str, raw_result: dict[str, Any]
