@@ -14,6 +14,12 @@ import yaml
 
 from llm_orc.agentic.orchestrator_config import (
     DEFAULT_AUTONOMY_LEVEL,
+    DEFAULT_COMPACTION_IDLE_WINDOW_MINUTES,
+    DEFAULT_COMPACTION_LAYER_4_CIRCUIT_BREAKER_THRESHOLD,
+    DEFAULT_COMPACTION_PERSIST_THRESHOLD_CHARS,
+    DEFAULT_COMPACTION_SESSION_NOTES_TOKEN_CAP,
+    DEFAULT_COMPACTION_SUMMARIZER_ENSEMBLE,
+    DEFAULT_COMPACTION_TRIGGER_TOKEN_COUNT,
     DEFAULT_MAX_TOKEN_LIMIT,
     DEFAULT_MAX_TURN_LIMIT,
     DEFAULT_MODEL_PROFILE,
@@ -91,6 +97,31 @@ class TestOrchestratorConfigResolver:
         # WP-C4: tool-call validation patterns default to an empty
         # tuple — operators extend; defaults live in the guard module.
         assert config.tool_call_validation_patterns == ()
+        # WP-E4: Conversation Compaction defaults match ADR-012 §Decision.
+        assert (
+            config.compaction.persist_threshold_chars
+            == DEFAULT_COMPACTION_PERSIST_THRESHOLD_CHARS
+        )
+        assert (
+            config.compaction.idle_window_minutes
+            == DEFAULT_COMPACTION_IDLE_WINDOW_MINUTES
+        )
+        assert (
+            config.compaction.session_notes_token_cap
+            == DEFAULT_COMPACTION_SESSION_NOTES_TOKEN_CAP
+        )
+        assert (
+            config.compaction.layer_4_circuit_breaker_threshold
+            == DEFAULT_COMPACTION_LAYER_4_CIRCUIT_BREAKER_THRESHOLD
+        )
+        assert (
+            config.compaction.trigger_token_count
+            == DEFAULT_COMPACTION_TRIGGER_TOKEN_COUNT
+        )
+        assert (
+            config.compaction.summarizer_ensemble
+            == DEFAULT_COMPACTION_SUMMARIZER_ENSEMBLE
+        )
 
     def test_operator_supplied_tool_call_validation_patterns_are_read(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -269,6 +300,75 @@ class TestOrchestratorConfigResolver:
         config = resolver.resolve()
 
         assert config.calibration.default_n == 3
+
+    def test_operator_supplied_compaction_thresholds_are_read(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Per ADR-012 §Decision the four named thresholds plus the
+        WP-E4 additions (trigger_token_count, summarizer_ensemble) are
+        operator-tunable via ``orchestrator.compaction``."""
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            global_yaml={
+                "agentic_serving": {
+                    "orchestrator": {
+                        "compaction": {
+                            "persist_threshold_chars": 25_000,
+                            "idle_window_minutes": 30,
+                            "session_notes_token_cap": 8_192,
+                            "layer_4_circuit_breaker_threshold": 5,
+                            "trigger_token_count": 60_000,
+                            "summarizer_ensemble": "conversation-summarizer",
+                        }
+                    }
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        assert config.compaction.persist_threshold_chars == 25_000
+        assert config.compaction.idle_window_minutes == 30
+        assert config.compaction.session_notes_token_cap == 8_192
+        assert config.compaction.layer_4_circuit_breaker_threshold == 5
+        assert config.compaction.trigger_token_count == 60_000
+        assert config.compaction.summarizer_ensemble == "conversation-summarizer"
+
+    def test_invalid_compaction_threshold_falls_back_to_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A zero, negative, or non-integer threshold should not crash
+        session start — fall back to the shipped default per the
+        existing tolerant-coercion convention used by the budget,
+        overrides, and calibration sections."""
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            local_yaml={
+                "agentic_serving": {
+                    "orchestrator": {
+                        "compaction": {
+                            "persist_threshold_chars": 0,
+                            "layer_4_circuit_breaker_threshold": "not-an-int",
+                        }
+                    }
+                }
+            },
+        )
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        assert (
+            config.compaction.persist_threshold_chars
+            == DEFAULT_COMPACTION_PERSIST_THRESHOLD_CHARS
+        )
+        assert (
+            config.compaction.layer_4_circuit_breaker_threshold
+            == DEFAULT_COMPACTION_LAYER_4_CIRCUIT_BREAKER_THRESHOLD
+        )
 
     def test_default_orchestrator_system_prompt_teaches_retry_convention(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
