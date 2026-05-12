@@ -9,6 +9,7 @@ preserves the message-pass-through behavior of the precedent class
 import pytest
 
 from llm_orc.agentic.calibration_gate import CalibrationAbstainError
+from llm_orc.agentic.calibration_signal_channel import MalformedSignalError
 from llm_orc.agentic.tier_router import (
     EscalationBypassError,
     MissingSkillMetadataError,
@@ -269,4 +270,73 @@ class TestMissingSkillMetadataErrorAsConcreteSubclass:
             raise MissingSkillMetadataError(
                 "ensemble lacks topaz_skill metadata",
                 ensemble_name="untagged-ensemble",
+            )
+
+
+class TestMalformedSignalErrorAsConcreteSubclass:
+    """``MalformedSignalError`` is the eighth and final FC-17 subclass.
+
+    Raised by the Calibration Signal Channel (WP-H4, ADR-016) at the
+    L0 → L1 boundary when an incoming signal fails schema validation.
+    Per ADR-016 §"Mechanism (e)" the error is *internal* — the L0
+    caller catches and drops the signal; the error never propagates
+    to the orchestrator's reasoning surface. ``recovery_action_
+    required`` is ``reformulate`` to align with the FC-17 family
+    shape; the recovery path is exercised only by tests because the
+    operative call sites catch the error.
+
+    FC-17 coverage reaches 8 of 8 at WP-H4 close:
+    ``tool_call_rejected_per_model``, ``phantom_tool_call``,
+    ``write_gate_rejection``, ``compaction_layer_4_failure``,
+    ``calibration_abstain``, ``escalation_bypass``,
+    ``missing_skill_metadata``, ``malformed_signal``.
+    """
+
+    def test_is_subclass_of_structural_error_base(self) -> None:
+        assert issubclass(MalformedSignalError, LlmOrcStructuralError)
+
+    def test_fixes_error_kind_to_malformed_signal(self) -> None:
+        error = MalformedSignalError(
+            "signal missing required dispatch_success field",
+            ensemble_name="ens-A",
+            field_name="dispatch_success",
+        )
+
+        assert error.error_kind == "malformed_signal"
+
+    def test_fixes_recovery_action_to_reformulate(self) -> None:
+        error = MalformedSignalError(
+            "signal missing required dispatch_success field",
+            ensemble_name="ens-A",
+        )
+
+        assert error.recovery_action_required == "reformulate"
+
+    def test_dispatch_context_carries_field_and_ensemble_metadata(self) -> None:
+        error = MalformedSignalError(
+            "signal field 'recent_token_entropy' must be numeric",
+            ensemble_name="ens-A",
+            field_name="recent_token_entropy",
+        )
+
+        assert error.dispatch_context == {
+            "ensemble_name": "ens-A",
+            "field_name": "recent_token_entropy",
+        }
+
+    def test_omits_ensemble_name_from_context_when_unavailable(self) -> None:
+        """Tolerates ``None`` ensemble_name (top-level shape errors)."""
+        error = MalformedSignalError(
+            "calibration signal must be a CalibrationSignal or Mapping",
+            ensemble_name=None,
+        )
+
+        assert "ensemble_name" not in error.dispatch_context
+
+    def test_preserves_message_for_raise_catch_path(self) -> None:
+        with pytest.raises(MalformedSignalError, match="missing required"):
+            raise MalformedSignalError(
+                "signal missing required ensemble_name field",
+                ensemble_name=None,
+                field_name="ensemble_name",
             )
