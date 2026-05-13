@@ -6,210 +6,99 @@
 
 ## Cycle Stack
 
-### Active: Cycle 5 — Agentic-serving library structure (capability ensembles + multi-methodology-consumer surface)
+### Active: Cycle 6 — Routing surface + observability (post-Cycle-5-PLAY pickup)
 
-**Cycle number:** 5
-**Started:** 2026-05-12
-**Current phase:** play (entered 2026-05-12; Cycle 5 elected PLAY as next move after BUILD close)
+**Cycle number:** 6
+**Started:** 2026-05-13
+**Current phase:** discover (next)
 **Cycle type:** mini-cycle
 **Plugin version:** v0.8.5
 **Artifact base:** `docs/agentic-serving/`
-**Skipped phases:** research, model, architect, synthesize
-**BUILD mode:** auto (declared 2026-05-12 per ADR-091; mechanical-character YAML/config authoring suits autonomous execution after high-level direction; review concentrated at start-and-end. Practitioner accepts the mode-selection tradeoff: design-alternative examination and scoping-judgment surfacing are gated-mode capabilities.)
-**In-progress phase:** play
+**Skipped phases:** research, model, synthesize (architect retained as possibly needed depending on DECIDE outcomes — see ARCHITECT note below)
+**BUILD mode:** to be declared at BUILD entry (gated recommended given the design-alternative examination character of routing/observability work; auto mode appropriate only if BUILD reduces to mechanical wiring after DECIDE)
 
-**Origin:** Cycle 4 PLAY (2026-05-12) chose option (c) — follow-up cycle DECIDE/BUILD pickup — with the play-derived proposal `proposals/agentic-serving-library-structure.md` as substrate. Cycle 4 status archived at `cycle-archive/cycle-4-cheap-orchestrator-and-ensembles.md`.
+**Origin:** Cycle 5 PLAY (2026-05-13) chose **Path 1** — Thread A defects (4 broken capability ensembles + result-summarizer compression + `code-generator` coder timeout) handled as normal llm-orc dev work outside the methodology cycle; routing + observability axes opened as Cycle 6 scoped mini-cycle. Practitioner verbatim: *"I think path 1 is the way forward. Routing + observability need to be addressed."* Cycle 5 status archived at `cycle-archive/cycle-5-agentic-serving-library-structure.md`.
 
-**Recommended cycle shape (per proposal §"RDD-phase routing"):** DISCOVER (update mode against multi-methodology-consumer pattern) → DECIDE (resolve OD-1 through OD-6) → BUILD (mechanical authoring of capability ensembles, profile file, subdirectory layout, README).
+**Cycle 6 question framing (provisional, for DISCOVER):**
 
-**MODEL handling for Cycle 5:** Skipped as a standalone phase per user-selected Mode D shape. New vocabulary that surfaces in DISCOVER (e.g., "methodology layer", "dispatch layer", "execution layer", "capability ensemble", "operation-named ensemble", "methodology consumer") will be folded into DISCOVER's tail as Amendment Log entries on `domain-model.md`. If DECIDE deliberation reveals vocabulary territory that warrants a dedicated MODEL phase, the cycle's `Skipped phases:` field can be amended mid-cycle.
+The cycle has two linked axes:
 
-**ARCHITECT handling for Cycle 5:** Skipped per the proposal recommendation — the existing `system-design.md` and `system-design.agents.md` modules accommodate the proposed library structure without re-allocation. If DECIDE outcomes (particularly OD-3 methodology-layer composition shape) introduce module-shape change, the cycle's `Skipped phases:` field can be amended to insert ARCHITECT before BUILD.
+1. **Routing surface** — Cycle 5 PLAY note 20 disclosed the orchestrator's operational routing preference under both tested client configurations is **direct LLM completion → client-tool delegation → `invoke_ensemble` dispatch**, not ensemble-first-when-slot-fits as ADR-021's natural-language-supported clause implies. Cycle 6 asks: is this the routing surface the system wants, or is it a defect? If wanted, document the operative routing preference (and narrow or clarify ADR-021's natural-language-supported clause). If defect, what intervention (system-prompt work? dispatch-routing-policy ADR?) restores ensemble-first routing under NL framing?
+
+2. **Observability** — Cycle 5 PLAY note 19 (sharpened by susceptibility snapshot) discloses the gap as **infrastructure-complete / routing-incomplete**. Cycle 5 BUILD shipped new internal events (verdicts, tier-routing decisions, audit consumption, signal-channel aggregation); the architecture has the telemetry; what is missing is the routing of telemetry to human-visible surfaces. Cycle 6 asks: which surfaces should receive which events? Operator-terminal (colored logs? TUI dashboard?) for the Ensemble Author / Operator stakeholder; orchestrator-context-includes-execution-state for the orchestrator's reasoning surface so it can answer the timing/graph questions a Skill Orchestration User asks.
+
+The two axes are linked: the operator cannot tell what routing decision happened without observability; the orchestrator cannot refine its routing decisions without visibility into its own dispatches.
+
+**MODEL handling for Cycle 6:** Skipped as a standalone phase per Mode D shape. New vocabulary that surfaces in DISCOVER (e.g., "routing surface," "operator-visible event surface," "orchestrator execution context," "tier-routing decision," etc.) folds into DISCOVER's tail as Amendment Log entries on `domain-model.md`. If DECIDE deliberation reveals vocabulary territory warranting a dedicated MODEL phase, the cycle's `Skipped phases:` field can be amended mid-cycle.
+
+**ARCHITECT handling for Cycle 6:** Initially retained as possibly needed. If DECIDE outcomes specify a new operator-visible event surface module (e.g., a TUI dashboard component or a structured-logging surface module), ARCHITECT runs to allocate responsibilities and dependencies. If DECIDE outcomes are extensions to existing modules (e.g., extending Serving Layer with structured log output, extending Orchestrator Runtime with an execution-context-population API), ARCHITECT may be skipped. The cycle's `Skipped phases:` field will be updated at DECIDE close based on which path the decisions take.
 
 ## Phase Status
 
 | Phase | Status | Artifact | Key Epistemic Response |
 |-------|--------|----------|----------------------|
-| DISCOVER | ✅ Complete (2026-05-12; update mode; gate closed with belief-mapping on Methodology Consumer framing) | updated `product-discovery.md` (new candidate stakeholder confirmed as distinct role; 2 new jobs for Ensemble Author / Operator; new Skill Orchestration User role with jobs + mental model; 3 new value tensions; 6 new assumption inversions with attribution discipline; 7 new vocabulary entries with three-tier settled/candidate disposition) + susceptibility snapshot `housekeeping/audits/susceptibility-snapshot-cycle-5-discover.md` (no Grounding Reframe; 2 advisories integrated into DECIDE entry commitments) + gate reflection `housekeeping/gates/cycle-5-discover-gate.md` | Practitioner refined the architectural commitment from the proposal's "methodology-agnostic orchestrator" to **"skill-framework-agnostic orchestrator"** — broader: covers RDD, Anthropic Skills, OpenAI Assistants, MCP-based skill frameworks, and emerging skill standards. Practitioner verbatim: *"Better is to be able to leverage any agentic skill (as 'skills' are more-or-less standardized these days). [Encoding] a specific flow into llm-orc... that's not my first choice."* Methodology Consumer renamed / generalized to **Skill Orchestration User**, confirmed as distinct role (humans wear multiple roles; concerns are distinct). Topaz 8-skill taxonomy is the lingua franca between skill frameworks (decomposing) and capability dispatch (routing). Capability library is capability-fine-grained / operation-named. Working defaults are in Cycle 5 BUILD scope. Reliability profile observation captured for Orchestrator LLM (high on derivable, low on integration). |
-| DECIDE | ✅ Complete (2026-05-12; gate closed with belief-mapping on parameterized-capability-ensembles timing; conjunctive falsification standard practitioner-generated) | 3 new ADRs (019, 020, 021) + ADR-015 partial-update header + `skill-framework-capability-registry.md` artifact + scenarios.md additions (3 feature blocks + Cycle 5 Cycle Acceptance Criteria Table + preservation scenarios) + interaction-specs.md additions (new Skill Orchestration User stakeholder + 4 new Ensemble Author / Operator tasks) + 3-round argument audit (clean at round 3) + conformance scan (zero violations; 10 BUILD-scope gaps; 3 compatible notes) + susceptibility snapshot (no Grounding Reframe; 2 advisories integrated into BUILD carry-forwards) + gate reflection `housekeeping/gates/cycle-5-decide-gate.md` | Practitioner refined ADR-021's falsification trigger from output-quality divergence at sub-task verdict level to a **conjunctive standard at long-horizon task outcome level**: (a) generalized agnostic scheme fails to produce good long-horizon results under cheap-cloud-orchestrator + local-free-model leverage AND (b) framework-encoding into agentic serving is empirically the *only* way to recover good results. Targets the premature-inversion failure mode where one capability ensemble serving one skill framework better than another might be mistaken for the agnostic commitment being wrong. Value-proposition framing: cost savings via local-free-model leverage under cheap-cloud orchestration; long-horizon task outcomes as measurement surface (not per-sub-task verdicts). Skill frameworks are *pluggable consumers* of the generalized orchestration scheme, not *modalities* of the orchestrator. |
-| PLAY | ▶ In Progress (entered 2026-05-12 after BUILD close) | — | — |
-| BUILD | ✅ Complete (2026-05-12; auto mode; phase-close susceptibility snapshot + gate reflection note written) | 7 per-file Model Profiles in `.llm-orc/profiles/agentic-*.yaml` (WP-A5; profile-file format refined from proposal's single-aggregate-file shape to one-file-per-profile to match the loader's `name:`-discriminated format); `.llm-orc/ensembles/agentic-serving/` subdirectory with 8 ensembles — 6 capability (`code-generator` promoted from `agentic-coding-helper` per ADR-019 §"Working defaults"; `claim-extractor`, `argument-mapper`, `prose-improver`, `text-summarizer`, `web-searcher`) + 2 system (moved with names preserved) — and operator-facing README (WP-B5 through WP-F5); `.llm-orc/scripts/agentic_serving/web_searcher.py` (Tavily adapter; 3 error paths smoke-tested) (WP-E5); `.llm-orc/config.yaml` `agentic_serving:` section rewritten to reference `agentic-*` profile names (WP-G5); downstream sweep applied — system-design.md Amendment Log entry 8; domain-model.md Amendment Log entry 9; scenarios.md preservation scenario amended to reflect agentic-coding-helper → code-generator promotion; ORIENTATION.md current-state regenerated for BUILD-close milestone (WP-H5); ADR-019 §Consequences §Positive scope-of-claim qualifier added at snapshot remediation; README authoring guide distinguishes LLM-agent vs. script-agent schemas at snapshot remediation. Verification: `llm-orc list-ensembles` discovers all 8 agentic-serving ensembles; `ConfigurationManager.get_model_profiles()` resolves all 7 `agentic-*` profiles. Susceptibility snapshot `housekeeping/audits/susceptibility-snapshot-cycle-5-build.md` (no Grounding Reframe; 3 advisory carry-forwards — 2 applied in-cycle as remediations, 1 — preservation-scenario-amendment pattern — recorded as auto-mode feed-forward); gate reflection `housekeeping/gates/cycle-5-build-gate.md`. | Practitioner-implicit signal at BUILD entry: auto-mode declaration warranted by the WPs' mechanical character (YAML/config authoring + Python adapter script). BUILD ran without per-scenario-group gates; close-out reflection-time at cycle close confirmed two in-cycle remediations (snapshot findings 2 + 3) and one auto-mode feed-forward (snapshot finding 1). Cycle 4 PLAY's n=1 evidence-basis qualifier on the proposal's framings is confirmed settled-by-use at Cycle 5 close — the operation-named principle, capability-fine-grained naming, three-layer architecture, and skill-framework-agnostic dispatch survived concrete BUILD-phase authoring as operator/structural vocabulary. Cycle acceptance criteria Layer-match `no` entries (multi-skill-framework deployment evidence; fresh-clone first-encounter live exercise; integration scenario through five capability dispatches) remain unsatisfied at the named layer; deferred to operator-driven empirical work per ADR-019 §Negative. |
+| DISCOVER | ☐ Next | — | — |
+| DECIDE | ☐ Pending | — | — |
+| ARCHITECT | ☐ Conditional | — | — |
+| BUILD | ☐ Pending | — | — |
+| PLAY | ☐ Optional | — | — |
+| SYNTHESIZE | ☐ Optional | — | — |
 
-## Carry-forward signals from Cycle 4
+## DISCOVER-entry context (carry-forwards from Cycle 5 PLAY close)
 
-### Substrate
+A fresh session entering Cycle 6 DISCOVER should read in this order:
 
-**Load-bearing handoff artifact:** `proposals/agentic-serving-library-structure.md` (2026-05-12). Cycle 5 takes this as the directionally-strong starting point for DISCOVER, not as architectural settlement. Per Cycle 4 PLAY susceptibility snapshot advisory #2, all framings in the proposal derive from a single inhabitation session (n=1) and have not been examined under DISCOVER-phase assumption inversion.
+1. This file (Cycle 6 cycle-status.md) — current state.
+2. `essays/reflections/field-notes.md` Cycle 5 PLAY section (20 observations + cross-cutting reflection + post-reflection coda + routing summary) — the empirical substrate Cycle 6 is responding to.
+3. `housekeeping/audits/susceptibility-snapshot-cycle-5-play.md` — the snapshot that reframed three of the field notes' aggregate framings (note 1's overstated diagnosis; note 19's infrastructure-complete/routing-incomplete; note 15's compound-framing split).
+4. `cycle-archive/cycle-5-agentic-serving-library-structure.md` — Cycle 5 close-state, including the three active BUILD-snapshot advisories.
+5. `product-discovery.md` §Stakeholder Map — Ensemble Author / Operator (Cycle 5 added 4 tasks) + Skill Orchestration User (Cycle 5 confirmed-distinct).
+6. `decisions/adr-019-*.md`, `adr-020-*.md`, `adr-021-*.md` — Cycle 5's three new ADRs, particularly ADR-021's natural-language-supported clause (the contract Cycle 6 must either re-ground or narrow).
 
-### DISCOVER-routed PLAY notes
+### Settled premises going into Cycle 6 DISCOVER
 
-From Cycle 4 `essays/reflections/field-notes.md`:
+1. **The orchestrator's operational routing preference is direct → client-tools → ensemble** (PLAY notes 1–9, 20 — empirically verified under both tool-less `curl` and tool-rich OpenCode). ADR-021's "natural-language supported" clause is unsupported under both tested client configurations.
+2. **The observability gap is infrastructure-complete / routing-incomplete** (PLAY note 19 + snapshot reframe). Cycle 5 BUILD's new internal events exist in code and write to `execution.json` artifacts; routing of those events to human-visible surfaces has not been designed.
+3. **Routing + observability are linked axes** (PLAY note 12 — orchestrator's structural blindness to its own execution graph; PLAY notes 13–15 — orchestrator articulating dispatch defects without resolution paths). The two axes share a common architectural concern: the orchestrator's reasoning surface is structurally separated from the dispatch telemetry it commissions.
+4. **The Skill Orchestration User stakeholder's mental model of "the orchestrator will route my NL request to a capability ensemble" is not borne out** (PLAY note 20). DISCOVER must either revise the stakeholder's mental model entry in `product-discovery.md` or treat the routing surface as defect territory and design intervention.
+5. **The Ensemble Author / Operator stakeholder's super-objective includes observability** (Cycle 1 PLAY notes 7, 9, 10; Cycle 4 PLAY note 7; Cycle 5 PLAY note 19 — bilateral visibility absence across three cycles). The cycle's recurring observability gap is now empirically anchored at the operator-stakeholder level.
 
-- **Note 1** — auto-mode of BUILD shipped mechanism architecture but did not ship operator-facing working defaults; ADR-015 §Negative's "operator-driven library migration" reads cleanly at decide time but produced a configuration-surface gap at first-encounter (practitioner verbatim: *"the agentic-serving config is to me part of the build"*). **DISCOVER attends:** how should the Ensemble Author / Operator stakeholder's super-objective or jobs be refined to capture the working-defaults-at-first-encounter requirement?
-- **Note 8** — usability friction observation (DISCOVER as candidate value tension).
-- **Note 11** — usability friction observation (DISCOVER as candidate value tension).
-- **Note 14** (extended routing per Cycle 4 PLAY snapshot advisory #1) — RDD's tier-1 Architectural Isolation mechanism maps cleanly to `invoke_ensemble`'s fresh-context dispatch property. Multi-methodology-consumer pattern (the orchestrator is a substrate). **DISCOVER attends:** does the stakeholder model need a "Methodology Consumer" stakeholder role distinct from Ensemble Author / Operator? Are RDD-as-methodology, code-review-as-methodology, security-review-as-methodology separate stakeholder instances or one parameterized role?
-- **Note 18** — usability friction observation (DISCOVER as candidate value tension).
+### Open questions DISCOVER must address
 
-### Three-layer framing under examination (proposal substrate, n=1 evidence)
+1. **Routing-surface intent.** Is the operational routing preference (direct → client-tools → ensemble) the intended behavior, or a defect to remediate? Belief-mapping question: what would have to be true for the operational preference to be the intended behavior? (Possibility: capability ensembles are deliberate-explicit territory; client-tool delegation is the expected NL response surface; ADR-021's natural-language-supported clause was over-broad.)
+2. **Observability scope.** What surfaces should receive what events? Operator-terminal (colored logs / TUI dashboard); orchestrator-context (so the orchestrator can answer dispatch-graph questions); both. Belief-mapping question: what would have to be true for the orchestrator-context route to be sufficient on its own (skipping the operator-terminal route)?
+3. **The compound-framing split** (PLAY note 15 / snapshot Advisory 3). The two failure modes — (a) hallucination presented as ensemble output, and (b) accurate critique of ensemble dispatch-surface behavior — may warrant different remediation paths. DISCOVER asks: are these one stakeholder concern or two?
+4. **The Skill Orchestration User's expectation of dispatch-via-NL.** PLAY note 20 disclosed the gap between stakeholder mental model and operational behavior. DISCOVER asks: should the stakeholder's mental model be revised (operators learn to use explicit naming), or should the system meet the stakeholder's existing mental model (NL routes to ensemble when slot fits)?
 
-The proposal proposes a three-layer architecture (methodology layer / capability dispatch layer / capability instance layer). DISCOVER should examine this framing under assumption inversion:
+### Specific commitments carried forward to DISCOVER (from Cycle 5 PLAY snapshot)
 
-- What would have to be true for the three-layer separation to be the wrong abstraction?
-- What would have to be true for "operation-named ensembles" to be wrong (vs. methodology-named ensembles)?
-- What would have to be true for the `agentic-` prefix / `agentic-serving/` subdirectory convention to be wrong?
-- What would the right ensemble decomposition look like if the orchestrator were *not* methodology-agnostic?
+1. **Note 1's "structurally inadequate" framing overstates the diagnosis.** Cycle 6 DISCOVER should NOT treat the Thread A defects as Cycle 6 territory. The remediation is a single scenario addition + mechanical fix, handled as normal dev work. Thread A is mentioned here only because the scenario addition (runtime-dispatch test mandate) interacts with Cycle 6's DECIDE work on observability (the test scenario benefits from the new operator-visible event surface).
 
-### DECIDE-phase open decisions (resolved at DECIDE)
+2. **The compound-framing split (snapshot Advisory 3)** is dispatched to DECIDE — DISCOVER surfaces both failure modes; DECIDE deliberates whether they warrant one ADR or two.
 
-Carried forward from `proposals/agentic-serving-library-structure.md` §"Open decisions":
-
-| OD | Topic | DECIDE territory |
-|----|-------|------------------|
-| OD-1 | `mathematical_reasoning` slot strategy | Minor ADR or domain-model amendment; proposal recommends option (b) leave unauthored |
-| OD-2 | `tool_use` ensemble shape | ADR-003 amendment territory if option (b) MCP; BUILD-mechanical if option (a) script-agent or option (c) client-side delegation |
-| OD-3 | Methodology-layer composition shape | Multi-ADR territory; affects scenarios + may reopen ARCHITECT |
-| OD-4 | Web-search backend (Brave / Tavily / Exa / Serper / DDG) | Operational decision; possibly ADR |
-| OD-5 | Placement of general-purpose ensembles (e.g., `development/code-review.yaml`) | Style decision; can defer to BUILD |
-| OD-6 | Methodology-skill / capability-ensemble naming registry | New corpus artifact territory |
-
-### BUILD-phase mechanical work (queued for after DECIDE)
-
-Per `proposals/agentic-serving-library-structure.md` §"RDD-phase routing":
-
-- Author capability ensemble YAMLs: `code-generator`, `claim-extractor`, `argument-mapper`, `prose-improver`, `text-summarizer`.
-- Create `.llm-orc/profiles/agentic-serving-profiles.yaml` (isolates all agentic-serving Model Profiles for easy model-swap).
-- Create `.llm-orc/ensembles/agentic-serving/` subdirectory; move `agentic-result-summarizer.yaml` and `agentic-calibration-checker.yaml` into it.
-- Rewrite `.llm-orc/config.yaml` `agentic_serving:` section to reference renamed profiles and the new subdirectory layout.
-- Write `agentic-serving/README.md` (structure + extension guide).
-
-Specific work packages (WP-A5, WP-B5, ...) will be enumerated in DECIDE-phase scenarios once OD-1 through OD-6 resolve.
-
-### Advisory carry-forwards from Cycle 4 PLAY susceptibility snapshot
-
-- **Evidence-basis is n=1.** Cycle 4 PLAY produced one inhabitation session. The directionally-strong framings in the proposal warrant DISCOVER-phase assumption inversion, not direct acceptance.
-- **Attribution discipline.** Cycle 4 PLAY's snapshot caught agent-introduced framings recorded as practitioner-generated discoveries (notes 14, 19). Cycle 5 DISCOVER should attend: when reading proposal framings, distinguish *empirically-grounded findings* (MissingSkillMetadataError recovery path works on first encounter; multi-methodology pattern feasible on existing primitives; tier-routing activated cleanly through OpenCode) from *agent-analytical-synthesis* (three-layer framing labels; operation-named-vs-methodology-named principle; capability-fine-grained naming pattern).
-- **Plexus-conditional value claim** (carried from DECIDE-gate snapshot of Cycle 4). If Cycle 5 DECIDE deliberation on OD-2/OD-3 surfaces cross-session calibration needs, the value claim is Plexus-conditional; in-session value preserves without Plexus.
-
-## Context for Resumption
-
-A fresh session resuming Cycle 5 PLAY should read in this order:
-
-1. This file (Cycle 5 cycle-status.md) — current state.
-2. `housekeeping/gates/cycle-5-build-gate.md` — BUILD close reflection note + commitment-gating outputs going into PLAY.
-3. `housekeeping/audits/susceptibility-snapshot-cycle-5-build.md` — three advisory carry-forwards (2 applied in-cycle, 1 auto-mode feed-forward).
-4. `product-discovery.md` §Stakeholder Map + §Jobs and Mental Models — the Skill Orchestration User role (Cycle 5 confirmed-distinct) and Ensemble Author / Operator (Cycle 5 added 4 new tasks).
-5. `interaction-specs.md` §Stakeholder: Skill Orchestration User (new) + §Ensemble Author / Operator — additional Cycle 5 tasks — the playable surface for PLAY.
-6. `.llm-orc/ensembles/agentic-serving/README.md` — what BUILD shipped on disk (the artifact-on-disk layer that PLAY is the live-deployment encounter venue for).
-7. `decisions/adr-019-*.md`, `adr-020-*.md`, `adr-021-*.md` — only if specific decisions need reference during PLAY.
-
-### PLAY entry — candidate scenes proposed at session pause
-
-Three candidate first-scenes were proposed at PLAY entry; practitioner paused before selecting. A fresh session resumes by presenting them again (or letting the practitioner counter-propose). Order of proposal at pause:
-
-1. **Skill Orchestration User — RDD instance, dispatching a real sub-task.** Pick a concrete RDD sub-skill (e.g., `/rdd:research` lit-review step) and dispatch through the new library; reference `skill-framework-capability-registry.md`; explicit naming OR natural-language prompt.
-2. **Skill Orchestration User — non-RDD instance** *(the n=1 gap from Cycle 5 BUILD close)*. Inhabit a Skill Orchestration User using Anthropic Skills, an MCP-skill-framework, or a hypothetical methodology and compose against the same library.
-3. **Ensemble Author / Operator — fresh-clone first-encounter** *(the BUILD-scope claim layer)*. Inhabit an operator who just cloned the repo, has the README + config, has not read the ADRs, and needs to set env vars, choose orchestrator profile, dispatch their first capability ensemble.
-
-Gamemaster recommendation at pause: scene 3 (most concrete first-encounter; BUILD-scope claim layer). Scene 1 dwells inside RDD where the practitioner lives. Scene 2 reaches for the n=1 gap but requires sketching an unfamiliar skill framework.
-
-The candidate scenes are *proposals*, not commitments. Practitioner may pick, modify, reject, or counter-propose at resumption.
-
-## DECIDE-entry context (carry-forwards from DISCOVER gate close)
-
-### Settled premises going into DECIDE
-
-1. **Skill Orchestration User / Methodology Consumer is a distinct role** — humans wear multiple roles concurrently; concerns are distinct.
-2. **The orchestrator commitment is skill-framework-agnostic** (broader than the proposal's "methodology-agnostic" framing) — covers RDD, Anthropic Skills, OpenAI Assistants, MCP-based skill frameworks, and emerging skill standards.
-3. **Topaz 8-skill taxonomy is the lingua franca** between skill frameworks (decomposing) and capability dispatch (routing).
-4. **Capability library is capability-fine-grained / operation-named**, not methodology-coarse.
-5. **Working defaults are in Cycle 5 BUILD scope** — operator-facing deployment shape lands, not just mechanism architecture. Practitioner verbatim from Cycle 4 PLAY note 1: *"the agentic-serving config is to me part of the build."*
-6. **Reliability profile observation for Orchestrator LLM** — high on derivable claims; low on integration claims; consistent across task types.
-
-### Open questions DECIDE must address
-
-1. **OD-1 through OD-6** from the proposal — all six need DECIDE resolution.
-2. **No-dispatch fallback (note 19)** — coverage gap (Cycle 5+ ADR) or intended scope (orchestrator narration *is meant* to bypass dispatch for tasks no ensemble matches)? Framing examination at DECIDE.
-3. **Calibration on orchestrator-own-narration (note 16)** — hold; do not force resolution this cycle.
-4. **Vocabulary disposition** — does "three-layer architecture" / "capability ensemble" / "operation-named ensemble" survive as operator voice through DECIDE work, or relocate to research voice?
-5. **`compose_ensemble` primitives misunderstanding (note 13)** — does this need a DECIDE scenario, and what?
-
-### Specific commitments carried forward to DECIDE (from snapshot advisories)
-
-1. **DECIDE OD-3 acknowledges the skill-framework-agnostic commitment is provisionally settled** (snapshot Advisory 1). OD-3's deliberation includes seam-case inversions: does Topaz-skill routing produce routing-quality parity across skill-framework contexts, or do framework-specific dispatch needs surface?
-
-2. **DECIDE explicitly dispatches the four inversion questions** named in §"Three-layer framing under examination" (snapshot Advisory 2) to specific OD slots:
-   - What would have to be true for the three-layer separation to be the wrong abstraction?
-   - What would have to be true for "operation-named ensembles" to be wrong (vs. methodology-named)?
-   - What would have to be true for the `agentic-` prefix / `agentic-serving/` subdirectory convention to be wrong?
-   - What would the right ensemble decomposition look like if the orchestrator were *not* skill-framework-agnostic?
-
-3. **Cycle 4 PLAY attribution discipline holds at DECIDE entry** — load-bearing empirical observations (n=1 evidence) are usable substrate; framings (especially agent-introduced "fallback" / "two gaps" characterizations) require examination, not direct adoption.
-
-## BUILD-entry context (carry-forwards from DECIDE gate close)
-
-### Settled premises going into BUILD
-
-1. **Skill-framework-agnostic dispatch is the architectural commitment**; falsification standard is conjunctive at long-horizon task outcome level (general scheme fails AND framework-encoding only path).
-2. **Value proposition**: cost savings via local-free-model leverage under cheap-cloud orchestration; long-horizon task outcomes as measurement surface.
-3. **Minimum-viable capability ensemble set (5 ensembles)** is BUILD-scope authoring target — RDD-research-workflow-representative initial shape.
-4. **On-ramp authoring is in BUILD scope**: profile file + subdirectory + README + rewritten config section.
-5. **`web-searcher` with Tavily default** is the `tool_use` slot's authored capability.
-6. **Per-capability dispatch contract** with explicit-naming preferred + natural-language supported.
-
-### Open commitments BUILD must honor
-
-1. **Snapshot Advisory 1 — scope-claim breadth (BUILD-phase settlement)**: skill-framework-agnostic commitment is grounded in RDD only (n=1). BUILD scope is RDD-decomposition exercise. If BUILD-phase work produces decomposition evidence for any non-RDD framework, capture it; otherwise scope claim persists as candidate at BUILD close.
-
-2. **Snapshot Advisory 2 — no-dispatch-fallback resolution durability**: the "intended scope" resolution closes the discover-gate examination commitment at minimum threshold. BUILD work surfacing orchestrator-natural-language-response errors should be recorded as candidate evidence — either for continued "intended scope" or future-cycle reconsideration as coverage-gap territory.
-
-3. **Vocabulary candidacy resolution at BUILD close**: "capability ensemble", "operation-named ensemble", "three-layer architecture" enter BUILD as candidates pending settled-by-use confirmation. Product-discovery vocabulary table updates at BUILD close — settled (survived concrete authoring) or relocated to research-voice in domain-model.md.
-
-4. **Cycle Acceptance Criteria Table integration verification**: 4 emergent/aggregate criteria identified; 3 with Layer-match "no" requiring integration tests or live-deployment evidence at BUILD Step 5.5.
-
-5. **Downstream-artifact sweep for ADR-019's update of ADR-015**: four-artifact sweep (system-design.md, ORIENTATION.md, domain-model.md, field-guide.md) deferred to BUILD close. Likely brief — reframing is at proposal/product-discovery characterization layer, not at system-design module layer.
-
-6. **BUILD mode declaration**: defaults to `gated`; practitioner declares at BUILD entry. Cycle 5 BUILD's mechanical-character work (YAML/config authoring) may suit `auto` mode; practitioner's call.
-
-### BUILD work packages
-
-Per ADR-019 §"Working defaults are in Cycle 5 BUILD scope" and ADR-020:
-
-- **WP-A5**: `.llm-orc/profiles/agentic-serving-profiles.yaml` new file (all agentic-serving Model Profiles isolated; single-file model swaps).
-- **WP-B5**: `.llm-orc/ensembles/agentic-serving/` subdirectory + move `agentic-result-summarizer` and `agentic-calibration-checker` into it.
-- **WP-C5**: `code-generator.yaml` capability ensemble (promoted from `agentic-coding-helper`, code_generation).
-- **WP-D5**: `claim-extractor.yaml` (factual_knowledge), `argument-mapper.yaml` (logical_reasoning), `prose-improver.yaml` (writing_quality), `text-summarizer.yaml` (summarization). Four single-agent ensembles authored in one work package.
-- **WP-E5**: `web-searcher.yaml` script-agent ensemble + Tavily adapter Python script + environment-variable wiring (per ADR-020).
-- **WP-F5**: `.llm-orc/ensembles/agentic-serving/README.md` operator-facing extension guide.
-- **WP-G5**: Rewrite `.llm-orc/config.yaml` `agentic_serving:` section to reference renamed profiles and new subdirectory.
-- **WP-H5**: Downstream sweep (system-design.md, ORIENTATION.md, domain-model.md, field-guide.md) for ADR-019's update of ADR-015; cycle-status archive prep at BUILD close.
-- **WP-I5** (optional): integration scenarios at Step 5.5 — fresh-clone first-encounter live exercise verifying the cycle's working-defaults claim.
-
-Work-package dependencies: WP-A5 (profile file) and WP-B5 (subdirectory) before WP-G5 (config rewrite references them). WP-C5/D5/E5 (capability ensembles) before WP-G5 (config references them). WP-F5 (README) can land in parallel.
+3. **Active BUILD-snapshot advisory carry-forwards** from Cycle 5 BUILD (still active):
+   - Preservation-scenario amendment pattern (auto-mode feed-forward) — Cycle 6 BUILD should not amend scenarios silently; surface scenario-rewrite events for practitioner review.
+   - Script-agent YAML schema constraint documentation — if Cycle 6 touches operator-facing documentation, distinguish LLM-agent and script-agent YAML schemas explicitly.
+   - ADR-019 §Consequences §Positive n=1 scope qualifier — Cycle 6 should either act on this (extend evidence base via non-RDD framework integration during PLAY) or explicitly defer with rationale.
 
 ## Feed-Forward Signals
 
-### From DECIDE (Cycle 5)
+### From Cycle 5 (closed at PLAY 2026-05-13)
 
-1. **Conjunctive falsification standard for the agnostic commitment** — long-horizon task outcome layer is the measurement surface; sub-task verdict divergence alone (ADR-018 drift criteria) does not invalidate the contract. BUILD-phase work that surfaces *task-outcome* signal feeds this measurement directly.
-2. **Three resolution paths under falsification** — parameterized capability ensembles (lightest, preserves operation-named principle); per-skill-framework capability ensembles (reopens ADR-019); explicit acceptance the agnostic commitment was over-broad. Cycle 5 commits to neither under falsification — names them as available paths.
-3. **`web-searcher`'s tier-escalation degeneracy** — script-agent ensembles have no-op tier escalation (same cheap and escalated profile reference). The README documents this; future capability ensembles with similar shapes (script-agents for other tool_use cases) inherit the same property.
-4. **n=1 skill-framework scope gap** — RDD is the only framework structurally verified. BUILD's RDD-decomposition exercise is the natural empirical anchor; non-RDD framework integration evidence is desired but not in BUILD scope.
+The Cycle 5 archive carries forward five load-bearing findings for Cycle 6 DISCOVER attention:
 
-### From DISCOVER (Cycle 5)
+1. **Routing-preference disclosure (PLAY notes 1–9, 20)** — the orchestrator's operational routing is direct → client-tools → ensemble across both tested client configurations. ADR-021's natural-language-supported clause is the contract under question.
+2. **Observability framing sharpening (snapshot reframe of note 19)** — infrastructure-complete / routing-incomplete. The DECIDE target is wiring existing telemetry, not designing observability from scratch.
+3. **Orchestrator self-modeling reliability (PLAY notes 13, 14)** — the orchestrator names dispatch defects accurately but its self-predictions of fix effectiveness do not bear out. RESEARCH-routed: at what threshold of self-knowledge does an orchestrator stop fabricating recovery-narrations?
+4. **Bilateral visibility absence across three cycles (PLAY note 19 + Cycles 1, 4 baseline)** — the operator-stakeholder concern is now empirically anchored. Cycle 6 is the natural cycle to close this carry-forward.
+5. **Working surfaces verified at PLAY** (notes 3, 7, 8, 17) — explicit-naming dispatch contract; script-agent error-path handling; composition dependency handling; multi-turn memory. Cycle 6 does NOT need to re-verify these; they are settled-by-use substrate.
 
-1. **Skill-framework-agnostic commitment** is the load-bearing architectural refinement of the proposal's framing. DECIDE OD-3 deliberation is the practical test surface.
-2. **Operation-named / capability-fine-grained library** is the working organizational principle for BUILD-phase ensemble authoring; survives DECIDE if concrete authoring decisions hold the principle.
-3. **Working defaults in BUILD scope** removes the cycle-shape ambiguity that produced Cycle 4 PLAY note 1's first-encounter gap. BUILD scope includes the agentic-serving profile file, tagged capability ensembles, subdirectory layout, and README.
-4. **Reliability profile observation** for Orchestrator LLM is feed-forward for any DECIDE scenario that involves orchestrator-natural-language-claims (note 16 / note 19 territory if a future cycle takes it up).
-5. **Vocabulary three-tier disposition** (settled at gate / candidate under DECIDE / candidate agent-introduced) is the working frame for any new vocabulary that surfaces at DECIDE; preserve attribution discipline across the cycle.
+### From Cycle 5 BUILD susceptibility snapshot (3 advisories still active)
 
-### From Cycle 4 (closed at PLAY)
+1. Preservation-scenario amendment pattern (auto-mode feed-forward) — applies to any Cycle 6 BUILD that runs auto mode.
+2. Script-agent YAML schema constraint documentation — applies if Cycle 6 BUILD touches operator-facing docs.
+3. ADR-019 §Consequences §Positive n=1 scope qualifier — Cycle 6 should explicitly disposition this (act on, or defer with rationale).
 
-The Cycle 4 archive carries forward five load-bearing findings for Cycle 5 DISCOVER attention:
+### From Cycle 4 (closed at PLAY 2026-05-12; archived `cycle-archive/cycle-4-cheap-orchestrator-and-ensembles.md`)
 
-1. **Note 1: configuration-surface gap** — operator-driven library migration produced a first-encounter gap; the agentic-serving config is part of what BUILD ships in operator perception (whether or not the ADR-015 §Negative reading places it elsewhere).
-2. **Note 14: multi-methodology-consumer feasibility** — RDD-via-agentic-serving (and other methodology consumers) is structurally feasible on the existing primitive surface; no ADR amendment needed.
-3. **Note 15: methodology-layer separation** — methodology / dispatch / execution as three substrate layers; the operation-level discovery question is downstream of slot-level Topaz framing.
-4. **Notes 16 + 19: quality-infrastructure coverage gap** — Calibration Gate covers dispatched-ensemble outputs and ADR-017 covers tool-call patterns, but neither inspects the orchestrator's natural-language output to the client, and the no-dispatch fallback path bypasses the entire quality infrastructure. **This may be DECIDE territory in Cycle 5, not DISCOVER — note as candidate ADR if OD-2 or OD-3 deliberation surfaces the gap.**
-5. **Six Open Decisions (OD-1 through OD-6)** — see DECIDE territory table above.
+Cycle 4 PLAY's notes 7, 16, 19 are the empirical roots Cycle 6 acts on. Cycle 4 PLAY's notes 14, 15 (settled by use in Cycle 5) are substrate for the routing-axis question: if methodology-layer / dispatch-layer / execution-layer separation is the architectural framing, observability and routing are both dispatch-layer concerns.
