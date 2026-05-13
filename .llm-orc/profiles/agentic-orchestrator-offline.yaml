@@ -1,0 +1,15 @@
+# Agentic-serving — offline-fallback orchestrator profile (Cycle 5).
+#
+# Local Ollama. Use when the cheap-cloud orchestrator (Zen) is
+# unavailable or for fully-offline deployments. Same underlying model
+# as agentic-tier-escalated-general so Ollama loads it once and reuses
+# across roles when both run locally.
+#
+# To use this profile as the active orchestrator, edit the
+# `agentic_serving.orchestrator.model_profile` value in
+# `.llm-orc/config.yaml` to `agentic-orchestrator-offline`.
+name: agentic-orchestrator-offline
+model: qwen3:14b
+provider: ollama
+cost_per_token: 0.0
+timeout_seconds: 300

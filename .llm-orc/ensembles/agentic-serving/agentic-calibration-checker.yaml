@@ -44,4 +44,4 @@ default_task: |
 
 agents:
   - name: checker
-    model_profile: summarizer
+    model_profile: agentic-summarizer

@@ -1,0 +1,37 @@
+name: web-searcher
+description: |
+  Script-agent capability ensemble that satisfies the `tool_use` Topaz
+  slot via an external web-search API. Per ADR-020: the `tool_use`
+  slot is the only Topaz skill requiring actual external action (not
+  just LLM-text generation), so the ensemble's "agent" is a Python
+  script wrapping a search-API adapter rather than an LLM Model
+  Profile.
+
+  Backend is operator-configurable via the WEB_SEARCH_BACKEND
+  environment variable (default: tavily); the API key is read from
+  WEB_SEARCH_API_KEY. Cycle 5 BUILD ships the Tavily adapter; Brave /
+  Exa / Serper adapters can be authored by extending
+  `scripts/agentic_serving/web_searcher.py` under the same shape.
+
+  Tagged `tool_use` per the Topaz eight-skill taxonomy (ADR-015). The
+  `tool_use` tier abstraction is **degenerate** for script-agents —
+  script execution is deterministic, with no Model Profile to swap
+  between cheap and escalated tiers. The per_skill_tier_defaults for
+  `tool_use` reference the same profile for both tiers (no-op tier
+  escalation, acknowledged in ADR-020 §Consequences §Negative); the
+  Calibration Gate's post-hoc result-check (ADR-007) still fires on
+  the structured JSON result.
+
+  The script surfaces backend failures (authentication, rate limit,
+  network) as structured error objects rather than raising — the
+  orchestrator's reasoning surface acts on the error shape.
+
+topaz_skill: tool_use
+
+default_task: |
+  Search the web for the provided query. Return top results with
+  URLs and snippets.
+
+agents:
+  - name: searcher
+    script: scripts/agentic_serving/web_searcher.py

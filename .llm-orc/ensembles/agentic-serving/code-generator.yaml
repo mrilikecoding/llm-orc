@@ -1,0 +1,64 @@
+name: code-generator
+description: |
+  Default code-generation capability ensemble for agentic-serving
+  deployments. A three-agent flow — coder produces an implementation
+  or analysis, critic flags issues, synthesizer integrates — that any
+  skill framework can dispatch via `invoke_ensemble("code-generator", ...)`
+  when its workflow decomposes into a code-generation sub-task.
+
+  Promoted from Cycle 4 PLAY's `agentic-coding-helper` per ADR-019;
+  the rename moves the ensemble from a methodology-coded name to an
+  operation-named name consistent with the skill-framework-agnostic
+  library principle.
+
+  Tagged `code_generation` per the Topaz eight-skill taxonomy (ADR-015).
+  Cheap-tier defaults to qwen3:8b (agentic-tier-cheap-general); the
+  Calibration Gate (ADR-014) produces a Reflect verdict when AUQ
+  confidence falls below 0.85, routing the next dispatch of this
+  ensemble to the escalated tier (default qwen3:14b /
+  agentic-tier-escalated-general) via the Tier-Escalation Router.
+
+  Operators can swap this ensemble for a richer flow (more agents,
+  test-runner integration, repo-aware retrieval) — the dispatch
+  surface stays the same as long as the replacement carries
+  `topaz_skill: code_generation` in its metadata.
+
+# ADR-015 per-skill metadata. The Tier-Escalation Router reads this
+# field at dispatch time to select cheap-tier vs escalated-tier
+# Model Profile per the operator's per_skill_tier_defaults.
+topaz_skill: code_generation
+
+default_task: |
+  Help with a coding task from the client. Produce a clear,
+  correct, and focused response. Prefer concrete code or specific
+  guidance over general advice.
+
+agents:
+  - name: coder
+    model_profile: agentic-tier-cheap-general
+    system_prompt: |
+      You are a coding assistant. Given a programming task or question,
+      respond with the most useful code or guidance you can produce.
+      Keep responses focused. Show the code change or example directly.
+      When you are uncertain, say so rather than fabricating APIs or
+      file paths. Format code with appropriate fenced blocks.
+
+  - name: critic
+    model_profile: agentic-tier-cheap-general
+    system_prompt: |
+      You review a coding response from another assistant. Identify
+      any specific issues — incorrect API usage, logic errors,
+      missed edge cases, hallucinated module names, or unsupported
+      assumptions. Be concrete and brief. If the response is sound,
+      say so in one sentence. Do not rewrite the code; flag what
+      needs attention.
+
+  - name: synthesizer
+    model_profile: agentic-tier-cheap-general
+    depends_on: [coder, critic]
+    system_prompt: |
+      Combine the coder's response and the critic's review into a
+      single result for the client. If the critic flagged concrete
+      issues, surface them clearly alongside the code. If the
+      critic found no issues, present the coder's response with
+      minimal editorial. Output exactly what the client should see.
