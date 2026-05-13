@@ -7,14 +7,14 @@ description: |
   script wrapping a search-API adapter rather than an LLM Model
   Profile.
 
-  Three adapters ship: `kagi` (paid; reads KAGI_API_TOKEN), `tavily`
-  (paid; reads WEB_SEARCH_API_KEY), and `ddgs` (DuckDuckGo via the
-  `ddgs` package; no key required). WEB_SEARCH_BACKEND explicit
-  override is always honored; absent override, auto-detect priority
-  is kagi → tavily → ddgs (keyed backends with their key present win
-  over the no-key fallback). Operators can extend with additional
-  adapters by adding a `_search_<backend>` function and registering
-  it in `BACKEND_ADAPTERS` in `scripts/agentic_serving/web_searcher.py`.
+  Three adapters ship: `ddgs` (DuckDuckGo via the `ddgs` package;
+  no key required; the default), `kagi` (paid; reads KAGI_API_TOKEN),
+  and `tavily` (paid; reads WEB_SEARCH_API_KEY). Default is `ddgs`
+  so fresh-clone deployments work without authentication setup; paid
+  backends are explicit opt-in via WEB_SEARCH_BACKEND=<name>. Operators
+  can extend with additional adapters by adding a `_search_<backend>`
+  function and registering it in `BACKEND_ADAPTERS` in
+  `scripts/agentic_serving/web_searcher.py`.
 
   Tagged `tool_use` per the Topaz eight-skill taxonomy (ADR-015). The
   `tool_use` tier abstraction is **degenerate** for script-agents —
