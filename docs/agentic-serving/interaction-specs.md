@@ -131,3 +131,53 @@
 ### Task: Recover from phantom_tool_call typed errors (ADR-017)
 
 **Interaction mechanics:** When the structural validation guard detects a mismatch between the orchestrator's prose claim of a tool call and the actual tool-call structures emitted, the orchestrator receives a typed `phantom_tool_call` error including the detected prose substring and the actual list of emitted tool-call structures. The orchestrator must re-emit the response with actual tool-call structures (if a tool call was intended), reformulate the dispatch (if no tool call was intended but the prose mistakenly claimed one), or abstain — silent retry is not the intended recovery.
+
+---
+
+## Stakeholder: Skill Orchestration User (Cycle 5 introduction)
+
+**Super-Objective:** Compose a skill orchestration process (RDD, Anthropic Skills, OpenAI Assistants, MCP-based skill framework, or other) against the orchestrator's capability library — decompose a higher-level workflow into capability-typed sub-tasks the orchestrator dispatches by Topaz skill.
+
+### Task: Decompose a workflow into capability-typed sub-tasks
+
+**Interaction mechanics:** The skill orchestration user's skill framework owns workflow decomposition: which sub-skills run, in what order, with what dependencies on prior sub-task outputs. The decomposition is **client-side only**; the orchestrator never sees the workflow's higher-level shape. The skill framework must produce sub-tasks tagged with Topaz skill identifiers (per ADR-015) — either directly (if the framework's vocabulary aligns) or via an adapter layer mapping the framework's internal vocabulary to the Topaz 8-skill taxonomy (per ADR-021 §Negative consequence). RDD's `rdd:*` skill plugin maintains this mapping internally; `skill-framework-capability-registry.md` documents the per-skill-framework mapping for deployments that need to reference it.
+
+### Task: Dispatch a sub-task via explicit ensemble naming
+
+**Interaction mechanics:** The skill framework consults `skill-framework-capability-registry.md` (or `list_ensembles()` at runtime) to identify the target capability ensemble for the sub-task, then emits an OpenAI-compatible chat completion request to the orchestrator with `invoke_ensemble("<ensemble-name>", {...})` as the tool-call argument. The orchestrator dispatches directly without inferring the target ensemble from prompt content. Explicit naming is the **preferred dispatch shape** — it preserves ADR-015's pre-specified-routing commitment end-to-end. The skill framework absorbs the cost of maintaining library-topology knowledge.
+
+### Task: Dispatch a sub-task via natural-language prompt
+
+**Interaction mechanics:** When the skill framework cannot or chooses not to maintain library-topology knowledge, it emits the sub-task as natural-language user-prompt content (e.g., "extract factual claims from the following text: ..."). The orchestrator's ReAct loop selects the target capability ensemble using LLM-judgment matching of the prompt's task description to ensemble descriptions returned by `list_ensembles()`. This reintroduces LLM-judgment at the *capability-selection boundary* (retrieval over the library, not evaluative classification of output quality — distinct from the pattern ADR-015 §(f) rejected). The Tier-Router Audit's drift criteria (ADR-018) measure the operational impact of using this path.
+
+### Task: Carry workflow state forward across sub-tasks
+
+**Interaction mechanics:** State that crosses capability sub-tasks (e.g., "the lit-review's search results feed the claim-extractor's input") lives **client-side**, in the skill framework's own state management. The skill framework formats prior sub-task outputs into the next sub-task's prompt (or `invoke_ensemble` arguments) before emitting the next dispatch. The orchestrator's per-request model does not maintain workflow state across `invoke_ensemble` calls — `invoke_ensemble`'s fresh-context property is the architectural commitment.
+
+### Task: Reformulate when MissingSkillMetadataError is returned
+
+**Interaction mechanics:** When the skill framework attempts to dispatch to an unauthored Topaz slot (e.g., `mathematical_reasoning` in the Cycle 5 default deployment), the Tier-Escalation Router returns `MissingSkillMetadataError` (per ADR-015) with `recovery_action_required="reformulate"`. The orchestrator's recovery path reformulates the dispatch — typically by trying a different ensemble that approximates the unauthored capability, or by emitting the sub-task as natural-language content for the orchestrator's direct response. The skill framework's decomposition shape may need to revise if a load-bearing sub-task consistently routes to an unauthored slot.
+
+### Task: Consume capability-ensemble dispatch results
+
+**Interaction mechanics:** Each `invoke_ensemble` dispatch returns the capability ensemble's output (already summarized per AS-7 / ADR-004) as the chat completion response content. The skill framework parses the response, validates the shape against its expected sub-task output format, and proceeds to the next capability sub-task in its decomposition. Output-shape mismatches (e.g., the response doesn't contain the structured fields the skill framework expected) are the skill framework's responsibility to handle — typically by retrying the dispatch with refined inputs, or by surfacing the mismatch to the skill orchestration user as a workflow-level error.
+
+---
+
+## Ensemble Author / Operator — additional Cycle 5 tasks
+
+### Task: Author capability ensembles in the agentic-serving subdirectory (ADR-019)
+
+**Interaction mechanics:** The operator authors new operation-named capability ensembles as YAML files under `.llm-orc/ensembles/agentic-serving/`. Each ensemble file declares (a) `name` matching the file's basename; (b) `description` (consumed by `list_ensembles()` for natural-language-dispatch matching); (c) `topaz_skill` from the eight-skill taxonomy; (d) `default_task` description; (e) `agents` array specifying the ensemble's composition. The minimum-viable set authored by Cycle 5 BUILD (`code-generator`, `claim-extractor`, `argument-mapper`, `prose-improver`, `text-summarizer`) is the reference shape; additional capability ensembles follow the same pattern. The `.llm-orc/ensembles/agentic-serving/README.md` documents the structure and extension principles.
+
+### Task: Configure the agentic-serving profile file (ADR-019)
+
+**Interaction mechanics:** The operator manages all agentic-serving Model Profiles in `.llm-orc/profiles/agentic-serving-profiles.yaml` — the orchestrator's Model Profile, the tier profiles for the eight Topaz slots, and any deployment-specific profile additions. To swap a model (e.g., upgrade the orchestrator from MiniMax M2.5 to a different cheap-cloud provider, or swap a local-tier model), the operator edits only this single file; `.llm-orc/config.yaml`'s `agentic_serving:` section references profiles by *name*, not by inline model definition.
+
+### Task: Set up the web-searcher backend (ADR-020)
+
+**Interaction mechanics:** The operator obtains an API key for the web-search backend (Tavily by default, or Brave/Exa/Serper if the operator has authored those adapters) and sets two environment variables: `WEB_SEARCH_BACKEND` (default `tavily`) and `WEB_SEARCH_API_KEY` (the operator's key). The `web-searcher` script-agent reads both at startup. The README at `.llm-orc/ensembles/agentic-serving/web-searcher/` documents the setup. Operators choosing a non-default backend author a new adapter Python file under the script-agent's adapter directory.
+
+### Task: Maintain the skill-framework-capability-registry artifact (ADR-021, OD-6)
+
+**Interaction mechanics:** When the operator's deployment serves a new skill framework (RDD already documented; Anthropic Skills, OpenAI Assistants, or others added per deployment), the operator extends `skill-framework-capability-registry.md` with the new framework's decomposition shape, capability consumption table, and library coverage gaps. The registry is **client-side reference**, not orchestrator-consulted lookup — it informs skill-framework authors and operators about which library entries are required for which methodology consumers.

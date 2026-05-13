@@ -533,3 +533,131 @@ The Layer-match "no" entries are not failures — they are the table working as 
 **Given** the static capability-floor specification documented in `domain-model.md` and `system-design.md`
 **When** the runtime probe runs against operator hardware
 **Then** the static specification provides the abstract floor reference; the runtime probe produces the concrete-against-operator-hardware mismatch detection; both surfaces co-exist as compatible design surfaces (per discover-gate carry-forward #7)
+
+---
+
+## Cycle Acceptance Criteria Table (Cycle 5 additions)
+
+| Criterion | Specified layer | Verification method | Layer-match check |
+|-----------|----------------|--------------------|-----|
+| The five minimum-viable capability ensembles (`code-generator`, `claim-extractor`, `argument-mapper`, `prose-improver`, `text-summarizer`) compose with the per-skill tier defaults to produce a dispatch across all five non-degenerate Topaz slots | Integration (orchestrator dispatch through all five ensembles with the Cycle 5 agentic-serving config) | Composes scenarios "Capability ensemble dispatches via explicit ensemble naming" + "Per-skill tier defaults select correct tier per dispatch" for each of five capability ensembles; plus integration scenario "Skill framework decomposes RDD research workflow through five capability dispatches" | no — individual ensemble scenarios exercise dispatch in isolation; integration test verifies the library's compositional shape under a realistic skill-framework workflow |
+| Skill-framework-agnostic dispatch contract works for at least two distinct skill orchestration users without orchestrator-side methodology knowledge | Integration (two skill framework clients composing against the same library) | Composes scenarios "RDD `rdd:research` decomposes to capability dispatches" + a non-RDD-framework analog (e.g., a manual ad-hoc skill workflow via OpenCode prompts) consuming the same five-ensemble library | no — synthetic test cannot exercise multi-skill-framework deployment; verification requires either RDD + a second skill framework (Anthropic Skills, code-review-as-methodology, etc.) or live-deployment evidence. The criterion captures the architectural commitment's empirical test surface |
+| `web-searcher` script-agent dispatches return structured results within the calibration-gate-observable shape (Calibration Gate fires on result structure via post-hoc result-check) | Integration (web-searcher dispatched through Calibration Gate; Tavily backend live) | Composes scenarios "Web-searcher dispatch returns structured JSON" + "Calibration Gate post-hoc result-check verifies result schema" + "MissingSkillMetadataError recovery is bypass-able when tool_use ensemble is available" | yes — composed scenario exercises the dispatch path through Calibration Gate with the script-agent shape |
+| Working-defaults BUILD-scope deliverables (`agentic-serving-profiles.yaml` + `agentic-serving/` subdirectory + minimum-viable ensemble set + rewritten `agentic_serving:` config section + `agentic-serving/README.md`) compose into a runnable deployment on first encounter, without operator manual authoring beyond environment-variable setup | Live install/startup against operator hardware | Composes the BUILD-phase mechanical deliverables with a fresh-clone run-through scenario — `git clone` → environment-variable setup → `llm-orc serve` → OpenCode dispatch → response returned. The criterion is satisfied when an operator can complete this sequence without authoring any YAML or config files. | no — synthetic test cannot exercise fresh-clone first-encounter; live install/startup is the verification layer |
+
+The Layer-match "no" entries are not failures — they identify where BUILD Step 5.5 closes integration verification gaps with dedicated tests or harness work, and where live-deployment evidence is the natural verification surface (the same pattern Cycle 4's table established).
+
+---
+
+## Feature: Skill-Framework-Agnostic Capability Library (ADR-019)
+
+### Scenario: Capability ensemble carries Topaz skill metadata and is dispatchable by name
+**Given** a capability ensemble at `.llm-orc/ensembles/agentic-serving/claim-extractor.yaml` with `topaz_skill: factual_knowledge` declared in its YAML frontmatter
+**When** the orchestrator invokes `invoke_ensemble("claim-extractor", {...})`
+**Then** the Tier-Escalation Router (per ADR-015) reads `topaz_skill: factual_knowledge` from the ensemble's metadata, consults the `factual_knowledge` per-skill tier defaults in `agentic_serving.orchestrator.per_skill_tier_defaults`, and dispatches the ensemble at the calibration-verdict-selected tier
+
+### Scenario: Operation-named ensembles live in the agentic-serving subdirectory
+**Given** the Cycle 5 BUILD deliverable shape — `.llm-orc/ensembles/agentic-serving/` subdirectory containing operation-named capability ensembles (`code-generator`, `claim-extractor`, `argument-mapper`, `prose-improver`, `text-summarizer`) and the moved system ensembles (`agentic-result-summarizer`, `agentic-calibration-checker`)
+**When** the orchestrator's ensemble walk path discovers `.llm-orc/ensembles/agentic-serving/` during library traversal
+**Then** all ensembles in the subdirectory are loaded into the library and available for dispatch; subdirectory namespace is structural, not load-bearing for routing logic
+
+### Scenario: Mathematical reasoning slot is configured but unauthored
+**Given** the Cycle 5 `agentic_serving.orchestrator.per_skill_tier_defaults` configuration declaring tier profiles for all eight Topaz skills including `mathematical_reasoning`, but no capability ensemble in the library carrying `topaz_skill: mathematical_reasoning`
+**When** the orchestrator's Tier-Escalation Router attempts to route a sub-task to `mathematical_reasoning`
+**Then** the router raises `MissingSkillMetadataError` per ADR-015; the typed error reaches the orchestrator's reasoning surface with `recovery_action_required="reformulate"`; the orchestrator reformulates and attempts a different dispatch path
+
+### Scenario: Operator-facing README documents the structure and extension pattern
+**Given** the Cycle 5 BUILD deliverable shape including `.llm-orc/ensembles/agentic-serving/README.md`
+**When** an operator opens the README at the deployment's `agentic-serving/` subdirectory
+**Then** the README explains the operation-named principle, names the existing five capability ensembles, distinguishes capability ensembles from system ensembles (`agentic-result-summarizer`, `agentic-calibration-checker`), and describes how operators author additional capability ensembles under the same shape principle
+
+### Preservation: ADR-015 per-skill tier defaults shape is unchanged
+**Given** the Cycle 4 BUILD-shipped `per_skill_tier_defaults` configuration with eight Topaz slot entries, each containing `cheap_tier` and `escalated_tier` profile references
+**When** the Cycle 5 `agentic_serving:` config section is rewritten to reference profiles from `.llm-orc/profiles/agentic-serving-profiles.yaml` rather than inline profiles
+**Then** the `per_skill_tier_defaults` shape is unchanged — same eight slots, same cheap/escalated pair structure, same construction-time validation rules; only profile *references* change (from inline names to file-resolved names)
+
+### Preservation: Cycle 4 PLAY tagging work continues to dispatch correctly
+**Given** the Cycle 4 PLAY-config-tagged ensembles — `agentic-coding-helper` (code_generation; uncommitted PLAY artifact in `.llm-orc/ensembles/agentic-coding-helper.yaml`) and `development/code-review` (instruction_following; pre-existing top-level ensemble)
+**When** Cycle 5 BUILD authors the new capability ensembles and rewrites the `agentic_serving:` config
+**Then** the tagging work is preserved by ADR-019's library reshape:
+  - `agentic-coding-helper` is **promoted** (per ADR-019 §"Working defaults") to `code-generator` in `.llm-orc/ensembles/agentic-serving/code-generator.yaml`, retaining the same `topaz_skill: code_generation` tag and the same three-agent flow shape; the code_generation dispatch path is preserved through the rename
+  - `development/code-review` continues to dispatch by its existing name with its existing `topaz_skill: instruction_following` tag (the `instruction_following` slot continues to be served by this deployment-specific ensemble per the README's coverage table)
+  - ADR-019's library reshape does not break either Cycle 4 PLAY tagging commitment; the operation-named principle is honored by the promotion (verb-noun: `code-generator`) rather than the methodology-coded name (`agentic-coding-helper`)
+
+---
+
+## Feature: Tool-Use Ensemble — Web-Searcher (ADR-020)
+
+### Scenario: Web-searcher dispatches via the script-agent path
+**Given** a `web-searcher` ensemble in `.llm-orc/ensembles/agentic-serving/web-searcher.yaml` with `topaz_skill: tool_use`, a script-model-slot agent wrapping the Tavily search API
+**When** the orchestrator invokes `invoke_ensemble("web-searcher", {"query": "claim verification sources for X"})` and the script-agent executes with `WEB_SEARCH_BACKEND=tavily` and a valid `WEB_SEARCH_API_KEY`
+**Then** the script-agent calls the Tavily API, receives structured JSON, and returns top-N URLs and snippets as agent output; the dispatch completes through the existing Tool Dispatch path
+
+### Scenario: Backend selection via environment variable
+**Given** an operator who has set `WEB_SEARCH_BACKEND=brave` and `WEB_SEARCH_API_KEY=<brave-key>` in the environment running `llm-orc serve`, and a `web-searcher` script-agent with the Brave adapter authored by the operator
+**When** the orchestrator dispatches `web-searcher`
+**Then** the script-agent selects the Brave adapter at startup based on the environment variable; the dispatch returns Brave-search-API results with the same structured shape Tavily uses
+
+### Scenario: Authentication failure surfaces as structured error
+**Given** a `web-searcher` script-agent whose backend API key is invalid (revoked, mistyped, or absent from the environment)
+**When** the orchestrator invokes `web-searcher`
+**Then** the script-agent surfaces a structured error output the orchestrator's reasoning surface can act on (e.g., `{"error": "authentication_failed", "backend": "tavily"}`); the orchestrator does not crash the session; the post-hoc result-check (ADR-007) sees the error shape and produces a calibration signal appropriate to the error
+
+### Scenario: Tier escalation is no-op for script-agent tool_use ensemble
+**Given** the `tool_use` slot's per-skill tier defaults configured with `cheap_tier: agentic-tier-cheap-general` and `escalated_tier: agentic-tier-escalated-general` referencing the same Model Profile (no-op tier escalation because the script-agent does not consume an LLM Model Profile for its execution)
+**When** the Calibration Gate produces a Reflect verdict on a prior `web-searcher` dispatch and the Tier-Escalation Router selects the escalated tier for the next dispatch
+**Then** the dispatch still executes via the script-agent; the Model Profile selection has no effect on script execution; the tier-escalation mechanism is structurally inert for script-agent ensembles (acknowledged in ADR-020 §Consequences §Negative)
+
+### Preservation: ADR-003 closed five-tool surface is unchanged
+**Given** the Cycle 4 BUILD-shipped Orchestrator Tool Dispatch's closed five-tool surface (`invoke_ensemble`, `compose_ensemble`, `list_ensembles`, `query_knowledge`, `record_outcome`)
+**When** Cycle 5 BUILD adds the `web-searcher` capability ensemble to the library
+**Then** the orchestrator's internal action space remains exactly five tools; the `web-searcher` ensemble is invokable *through* `invoke_ensemble`, not as a new internal action; ADR-003's invariant is preserved by construction
+
+### Preservation: Calibration Gate post-hoc result-check fires on web-searcher dispatches
+**Given** the Cycle 4 BUILD-shipped Calibration Gate (ADR-007 + ADR-014) firing on `invoke_ensemble` return paths
+**When** `web-searcher` dispatches return structured search results
+**Then** the Calibration Gate's post-hoc result-check verifies the result structure (count, schema, error-flag presence); the AUQ and HTC calibration components are inactive for script-agent execution (acknowledged in ADR-020 §Consequences §Positive); the calibration signal flows through the existing Calibration Gate path unchanged
+
+---
+
+## Feature: Skill-Orchestration Composition via Per-Capability Dispatch (ADR-021)
+
+### Scenario: Skill framework dispatches via explicit ensemble naming
+**Given** an RDD skill plugin (`rdd:research` skill) that has consulted `skill-framework-capability-registry.md` and identified `claim-extractor` as the target capability for a sub-task
+**When** the skill plugin emits an OpenAI-compatible request to the orchestrator with `invoke_ensemble("claim-extractor", {"data": "..."})` as the tool-call argument
+**Then** the orchestrator dispatches `claim-extractor` directly without inferring the target ensemble from prompt content; the Tier-Escalation Router reads `claim-extractor`'s tagged Topaz skill; pre-specified routing is preserved end-to-end
+
+### Scenario: Skill framework dispatches via natural-language prompt
+**Given** a skill orchestration user who has emitted a natural-language sub-task to the orchestrator (e.g., "extract factual claims from the following text: ...") without naming the target ensemble
+**When** the orchestrator's ReAct loop receives the prompt
+**Then** the orchestrator selects `claim-extractor` from the library using LLM-judgment matching of the prompt's task description to the ensemble's description (retrieval over the `list_ensembles()` result, not evaluative classification); dispatches via `invoke_ensemble`; the dispatch proceeds with the Tier-Escalation Router's normal pre-specified routing
+
+### Scenario: Fresh-context property holds across capability sub-tasks
+**Given** an RDD lit-review workflow that decomposes into three capability sub-tasks: `web-searcher` (search for sources); `claim-extractor` (extract claims from search results); `argument-mapper` (map argument structure across extracted claims)
+**When** the skill plugin dispatches the three sub-tasks sequentially via three `invoke_ensemble` calls in three chat-completion requests
+**Then** each dispatched ensemble receives `input + system_prompt` only; no orchestrator conversation history from prior sub-tasks bleeds into the next ensemble's context; the architectural-isolation property described in ADR-019 / ADR-021 holds across the workflow (per Cycle 4 PLAY note 14's empirical observation, treated as an architectural fact of `invoke_ensemble`)
+
+### Scenario: Skill framework owns workflow state across sub-tasks
+**Given** an RDD lit-review's three-sub-task decomposition that requires the `claim-extractor` sub-task to consume the `web-searcher`'s search-result output as input
+**When** the skill plugin completes the `web-searcher` dispatch and prepares the `claim-extractor` dispatch
+**Then** the skill plugin extracts the search results from the `web-searcher` response, formats them into the `claim-extractor`'s input prompt, and emits the next dispatch with the workflow-state forward-passing handled client-side; the orchestrator does not maintain workflow state across the two dispatches
+
+### Scenario: Non-Topaz-aligned skill framework requires adapter layer
+**Given** a hypothetical skill framework that decomposes its workflows into framework-specific sub-task types (`framework-source-finder`, `framework-claim-puller`) rather than Topaz-skill-named sub-tasks
+**When** the framework attempts to dispatch sub-tasks to the agentic-serving orchestrator
+**Then** the framework requires either (a) an internal mapping from `framework-source-finder` → `tool_use` and `framework-claim-puller` → `factual_knowledge` before emitting dispatch requests, or (b) an adapter layer between the framework's decomposition vocabulary and the Topaz routing vocabulary; the precondition is named in ADR-021 §Consequences §Negative
+
+### Scenario: compose_ensemble rejects invalid primitive types (Cycle 4 PLAY note 13)
+**Given** a request to `compose_ensemble` whose composition shape names an internal-tool name (e.g., `list_ensembles`) as if it were an agent primitive — the category error Cycle 4 PLAY note 13 recorded the orchestrator making in a recommendation
+**When** the Composition Validator (per ADR-006) processes the request
+**Then** the Composition Validator rejects the composition with a typed error indicating that internal-tool names are not valid agent primitives; the primitive-validation discipline (per AS-6) is enforced at composition time, not at runtime; the orchestrator's recovery path receives the typed error and reformulates
+
+### Preservation: ADR-006 composition palette validation is unchanged
+**Given** the Cycle 4 BUILD-shipped Composition Validator with AS-2 / AS-6 / Invariant 7 / Invariant 8 enforcement
+**When** Cycle 5 BUILD adds the per-capability dispatch contract and the `skill-framework-capability-registry.md` artifact
+**Then** the Composition Validator's existing validation logic — primitive-existence check, depth check, cycle detection, no-partial-state-on-validation-failure — operates unchanged; ADR-021's per-capability dispatch contract is consumer-side (skill-framework client-side), not Composition-Validator-side; ADR-006's invariants are preserved
+
+### Preservation: invoke_ensemble's fresh-context dispatch property is unchanged
+**Given** the Cycle 4 BUILD-shipped `invoke_ensemble` dispatch shape — each invocation provides the dispatched ensemble's agents with `input + system_prompt` only
+**When** skill frameworks compose against the orchestrator via per-capability dispatch (ADR-021)
+**Then** `invoke_ensemble`'s context-isolation property holds for every dispatch; ADR-021's per-capability dispatch contract is a *consumer-side* layering of `invoke_ensemble`'s existing property, not a change to the property itself

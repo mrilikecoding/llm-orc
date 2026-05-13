@@ -1,11 +1,14 @@
 # ADR-015: Per-Role Tier-Escalation Router via OI-MAS
 
-**Status:** Updated by ADR-018
+**Status:** Updated by ADR-018; Updated by ADR-019
 
 **Date:** 2026-05-05
 
 > Updated by ADR-018 on 2026-05-11.
 > ADR-018 amends this ADR by adding a periodic out-of-band audit dispatch responsibility to the Tier-Escalation Router module (analog of ADR-016 mechanism (d), operating on the L1→L2 verdict→router edge). The amendment does not change the primary-skill framing, the verdict-to-tier mapping, or the rejected alternatives — those remain unchanged. ADR-018 is the empirical-anchor record for the (d)-analog audit dispatch and the Sub-Q6 coupling noted in §Consequences §Neutral below. The amendment is empirically anchored by Spike β (research log `005h-spike-bounding-mechanism-transfer-l1-l2.md`, 2026-05-11). Spike α (research log `005g-spike-topaz-skill-classification.md`, 2026-05-11) confirmed that the primary-skill framing in this ADR stands — 21 of 21 classified library ensembles satisfy the clean-primary criterion; rejected alternative §(b) (per-ensemble overrides) remains unwarranted.
+
+> Updated by ADR-019 on 2026-05-12.
+> The reframing this header records applies to ADR-015 §Negative *as characterized in the proposal `proposals/agentic-serving-library-structure.md` and the Cycle 4 / Cycle 5 product-discovery rendering of ADR-015 §Negative* — specifically the "operator-driven library migration" reading. ADR-015's body §Negative addresses one concrete instance of operator-driven migration (Topaz-metadata addition on existing ensembles); ADR-019 leaves that body bullet undisturbed (existing ensembles still need one-time metadata migration to participate in tier-router dispatch). What ADR-019 *does* amend is the *broader* operator-driven-migration framing that the proposal and product-discovery extended from ADR-015's §Negative: the assumption that working defaults for the agentic-serving deployment (a profile file, an `agentic-serving/` subdirectory, a minimum-viable capability ensemble set, a rewritten `agentic_serving:` config section) live outside the cycle's BUILD scope. ADR-019 moves those into Cycle 5 BUILD scope. The verdict-to-tier mapping, primary-skill framing, per-skill tier defaults configuration shape, and rejected alternatives in ADR-015's body all remain unchanged. ADR-019 is the architectural-commitment record for the skill-framework-agnostic orchestrator + operation-named capability ensemble library framings the reframing rests on. The amendment is grounded in Cycle 4 PLAY note 1 (practitioner verbatim: *"the agentic-serving config is to me part of the build"*) and the Cycle 5 DISCOVER gate's settled commitment.
 
 ---
 
