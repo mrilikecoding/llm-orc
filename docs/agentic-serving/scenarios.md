@@ -661,3 +661,12 @@ The Layer-match "no" entries are not failures — they identify where BUILD Step
 **Given** the Cycle 4 BUILD-shipped `invoke_ensemble` dispatch shape — each invocation provides the dispatched ensemble's agents with `input + system_prompt` only
 **When** skill frameworks compose against the orchestrator via per-capability dispatch (ADR-021)
 **Then** `invoke_ensemble`'s context-isolation property holds for every dispatch; ADR-021's per-capability dispatch contract is a *consumer-side* layering of `invoke_ensemble`'s existing property, not a change to the property itself
+
+## Feature: BUILD Runtime-Dispatch Verification (Cycle 5 PLAY carry-forward)
+
+### Scenario: BUILD close requires end-to-end dispatch of each shipped capability ensemble
+**Given** a cycle BUILD phase that ships one or more capability ensembles in `.llm-orc/ensembles/agentic-serving/` or extends existing ones
+**When** the BUILD phase declares close-readiness
+**Then** each shipped or extended capability ensemble has been dispatched end-to-end at least once via `llm-orc invoke <ensemble> <input>` (or `mcp__llm-orc__invoke`), the resulting `execution.json` carries `status: "completed"` and a non-null primary agent response, and the verification is recorded in the BUILD gate reflection note or cycle-status BUILD row. Discovery-layer checks (`list-ensembles`, `validate_ensemble`, `check_ensemble_runnable`) alone do not satisfy this commitment.
+
+**Rationale (Cycle 5 PLAY note 1 — sharpened by susceptibility snapshot):** Cycle 5 BUILD declared close after verifying discovery (`llm-orc list-ensembles` discovered all 8 ensembles), schema (`validate_ensemble` returned valid), and provider runnability (`check_ensemble_runnable` returned true for each). At Cycle 5 PLAY, four of six capability ensembles errored at runtime dispatch with `unsupported operand type(s) for +: 'NoneType' and 'str'` — `agents_count: 0`; agent never started. The defect was caught only because the practitioner exercised dispatch directly during PLAY. This scenario adds runtime-dispatch as a third verification layer alongside discovery and schema validation. Auto-mode BUILD per ADR-091 is no exception — close-out should include explicit dispatch-verification status for each shipped/extended ensemble.
