@@ -10,12 +10,13 @@
 
 **Cycle number:** 5
 **Started:** 2026-05-12
-**Current phase:** build (closed 2026-05-12; play / synthesize / graduate available as next moves)
+**Current phase:** play (entered 2026-05-12; Cycle 5 elected PLAY as next move after BUILD close)
 **Cycle type:** mini-cycle
 **Plugin version:** v0.8.5
 **Artifact base:** `docs/agentic-serving/`
-**Skipped phases:** research, model, architect, play, synthesize
+**Skipped phases:** research, model, architect, synthesize
 **BUILD mode:** auto (declared 2026-05-12 per ADR-091; mechanical-character YAML/config authoring suits autonomous execution after high-level direction; review concentrated at start-and-end. Practitioner accepts the mode-selection tradeoff: design-alternative examination and scoping-judgment surfacing are gated-mode capabilities.)
+**In-progress phase:** play
 
 **Origin:** Cycle 4 PLAY (2026-05-12) chose option (c) — follow-up cycle DECIDE/BUILD pickup — with the play-derived proposal `proposals/agentic-serving-library-structure.md` as substrate. Cycle 4 status archived at `cycle-archive/cycle-4-cheap-orchestrator-and-ensembles.md`.
 
@@ -31,6 +32,7 @@
 |-------|--------|----------|----------------------|
 | DISCOVER | ✅ Complete (2026-05-12; update mode; gate closed with belief-mapping on Methodology Consumer framing) | updated `product-discovery.md` (new candidate stakeholder confirmed as distinct role; 2 new jobs for Ensemble Author / Operator; new Skill Orchestration User role with jobs + mental model; 3 new value tensions; 6 new assumption inversions with attribution discipline; 7 new vocabulary entries with three-tier settled/candidate disposition) + susceptibility snapshot `housekeeping/audits/susceptibility-snapshot-cycle-5-discover.md` (no Grounding Reframe; 2 advisories integrated into DECIDE entry commitments) + gate reflection `housekeeping/gates/cycle-5-discover-gate.md` | Practitioner refined the architectural commitment from the proposal's "methodology-agnostic orchestrator" to **"skill-framework-agnostic orchestrator"** — broader: covers RDD, Anthropic Skills, OpenAI Assistants, MCP-based skill frameworks, and emerging skill standards. Practitioner verbatim: *"Better is to be able to leverage any agentic skill (as 'skills' are more-or-less standardized these days). [Encoding] a specific flow into llm-orc... that's not my first choice."* Methodology Consumer renamed / generalized to **Skill Orchestration User**, confirmed as distinct role (humans wear multiple roles; concerns are distinct). Topaz 8-skill taxonomy is the lingua franca between skill frameworks (decomposing) and capability dispatch (routing). Capability library is capability-fine-grained / operation-named. Working defaults are in Cycle 5 BUILD scope. Reliability profile observation captured for Orchestrator LLM (high on derivable, low on integration). |
 | DECIDE | ✅ Complete (2026-05-12; gate closed with belief-mapping on parameterized-capability-ensembles timing; conjunctive falsification standard practitioner-generated) | 3 new ADRs (019, 020, 021) + ADR-015 partial-update header + `skill-framework-capability-registry.md` artifact + scenarios.md additions (3 feature blocks + Cycle 5 Cycle Acceptance Criteria Table + preservation scenarios) + interaction-specs.md additions (new Skill Orchestration User stakeholder + 4 new Ensemble Author / Operator tasks) + 3-round argument audit (clean at round 3) + conformance scan (zero violations; 10 BUILD-scope gaps; 3 compatible notes) + susceptibility snapshot (no Grounding Reframe; 2 advisories integrated into BUILD carry-forwards) + gate reflection `housekeeping/gates/cycle-5-decide-gate.md` | Practitioner refined ADR-021's falsification trigger from output-quality divergence at sub-task verdict level to a **conjunctive standard at long-horizon task outcome level**: (a) generalized agnostic scheme fails to produce good long-horizon results under cheap-cloud-orchestrator + local-free-model leverage AND (b) framework-encoding into agentic serving is empirically the *only* way to recover good results. Targets the premature-inversion failure mode where one capability ensemble serving one skill framework better than another might be mistaken for the agnostic commitment being wrong. Value-proposition framing: cost savings via local-free-model leverage under cheap-cloud orchestration; long-horizon task outcomes as measurement surface (not per-sub-task verdicts). Skill frameworks are *pluggable consumers* of the generalized orchestration scheme, not *modalities* of the orchestrator. |
+| PLAY | ▶ In Progress (entered 2026-05-12 after BUILD close) | — | — |
 | BUILD | ✅ Complete (2026-05-12; auto mode; phase-close susceptibility snapshot + gate reflection note written) | 7 per-file Model Profiles in `.llm-orc/profiles/agentic-*.yaml` (WP-A5; profile-file format refined from proposal's single-aggregate-file shape to one-file-per-profile to match the loader's `name:`-discriminated format); `.llm-orc/ensembles/agentic-serving/` subdirectory with 8 ensembles — 6 capability (`code-generator` promoted from `agentic-coding-helper` per ADR-019 §"Working defaults"; `claim-extractor`, `argument-mapper`, `prose-improver`, `text-summarizer`, `web-searcher`) + 2 system (moved with names preserved) — and operator-facing README (WP-B5 through WP-F5); `.llm-orc/scripts/agentic_serving/web_searcher.py` (Tavily adapter; 3 error paths smoke-tested) (WP-E5); `.llm-orc/config.yaml` `agentic_serving:` section rewritten to reference `agentic-*` profile names (WP-G5); downstream sweep applied — system-design.md Amendment Log entry 8; domain-model.md Amendment Log entry 9; scenarios.md preservation scenario amended to reflect agentic-coding-helper → code-generator promotion; ORIENTATION.md current-state regenerated for BUILD-close milestone (WP-H5); ADR-019 §Consequences §Positive scope-of-claim qualifier added at snapshot remediation; README authoring guide distinguishes LLM-agent vs. script-agent schemas at snapshot remediation. Verification: `llm-orc list-ensembles` discovers all 8 agentic-serving ensembles; `ConfigurationManager.get_model_profiles()` resolves all 7 `agentic-*` profiles. Susceptibility snapshot `housekeeping/audits/susceptibility-snapshot-cycle-5-build.md` (no Grounding Reframe; 3 advisory carry-forwards — 2 applied in-cycle as remediations, 1 — preservation-scenario-amendment pattern — recorded as auto-mode feed-forward); gate reflection `housekeeping/gates/cycle-5-build-gate.md`. | Practitioner-implicit signal at BUILD entry: auto-mode declaration warranted by the WPs' mechanical character (YAML/config authoring + Python adapter script). BUILD ran without per-scenario-group gates; close-out reflection-time at cycle close confirmed two in-cycle remediations (snapshot findings 2 + 3) and one auto-mode feed-forward (snapshot finding 1). Cycle 4 PLAY's n=1 evidence-basis qualifier on the proposal's framings is confirmed settled-by-use at Cycle 5 close — the operation-named principle, capability-fine-grained naming, three-layer architecture, and skill-framework-agnostic dispatch survived concrete BUILD-phase authoring as operator/structural vocabulary. Cycle acceptance criteria Layer-match `no` entries (multi-skill-framework deployment evidence; fresh-clone first-encounter live exercise; integration scenario through five capability dispatches) remain unsatisfied at the named layer; deferred to operator-driven empirical work per ADR-019 §Negative. |
 
 ## Carry-forward signals from Cycle 4
@@ -91,14 +93,27 @@ Specific work packages (WP-A5, WP-B5, ...) will be enumerated in DECIDE-phase sc
 
 ## Context for Resumption
 
-A fresh session resuming Cycle 5 DISCOVER should read in this order:
+A fresh session resuming Cycle 5 PLAY should read in this order:
 
 1. This file (Cycle 5 cycle-status.md) — current state.
-2. `proposals/agentic-serving-library-structure.md` — load-bearing handoff substrate.
-3. `cycle-archive/cycle-4-cheap-orchestrator-and-ensembles.md` — Cycle 4's complete state at close, including PLAY field-notes routing summary and susceptibility snapshot disposition.
-4. `essays/reflections/field-notes.md` Cycle 4 section — original PLAY notes 1–19 (the proposal's evidence base).
-5. `product-discovery.md` — current product discovery state (target for DISCOVER update).
-6. `housekeeping/audits/susceptibility-snapshot-cycle-4-play.md` — advisory context that shaped the proposal's evidence-basis qualifier and the four advisory integrations recorded against `field-notes.md` and the proposal itself.
+2. `housekeeping/gates/cycle-5-build-gate.md` — BUILD close reflection note + commitment-gating outputs going into PLAY.
+3. `housekeeping/audits/susceptibility-snapshot-cycle-5-build.md` — three advisory carry-forwards (2 applied in-cycle, 1 auto-mode feed-forward).
+4. `product-discovery.md` §Stakeholder Map + §Jobs and Mental Models — the Skill Orchestration User role (Cycle 5 confirmed-distinct) and Ensemble Author / Operator (Cycle 5 added 4 new tasks).
+5. `interaction-specs.md` §Stakeholder: Skill Orchestration User (new) + §Ensemble Author / Operator — additional Cycle 5 tasks — the playable surface for PLAY.
+6. `.llm-orc/ensembles/agentic-serving/README.md` — what BUILD shipped on disk (the artifact-on-disk layer that PLAY is the live-deployment encounter venue for).
+7. `decisions/adr-019-*.md`, `adr-020-*.md`, `adr-021-*.md` — only if specific decisions need reference during PLAY.
+
+### PLAY entry — candidate scenes proposed at session pause
+
+Three candidate first-scenes were proposed at PLAY entry; practitioner paused before selecting. A fresh session resumes by presenting them again (or letting the practitioner counter-propose). Order of proposal at pause:
+
+1. **Skill Orchestration User — RDD instance, dispatching a real sub-task.** Pick a concrete RDD sub-skill (e.g., `/rdd:research` lit-review step) and dispatch through the new library; reference `skill-framework-capability-registry.md`; explicit naming OR natural-language prompt.
+2. **Skill Orchestration User — non-RDD instance** *(the n=1 gap from Cycle 5 BUILD close)*. Inhabit a Skill Orchestration User using Anthropic Skills, an MCP-skill-framework, or a hypothetical methodology and compose against the same library.
+3. **Ensemble Author / Operator — fresh-clone first-encounter** *(the BUILD-scope claim layer)*. Inhabit an operator who just cloned the repo, has the README + config, has not read the ADRs, and needs to set env vars, choose orchestrator profile, dispatch their first capability ensemble.
+
+Gamemaster recommendation at pause: scene 3 (most concrete first-encounter; BUILD-scope claim layer). Scene 1 dwells inside RDD where the practitioner lives. Scene 2 reaches for the n=1 gap but requires sketching an unfamiliar skill framework.
+
+The candidate scenes are *proposals*, not commitments. Practitioner may pick, modify, reject, or counter-propose at resumption.
 
 ## DECIDE-entry context (carry-forwards from DISCOVER gate close)
 
