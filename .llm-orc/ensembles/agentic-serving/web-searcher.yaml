@@ -7,11 +7,14 @@ description: |
   script wrapping a search-API adapter rather than an LLM Model
   Profile.
 
-  Backend is operator-configurable via the WEB_SEARCH_BACKEND
-  environment variable (default: tavily); the API key is read from
-  WEB_SEARCH_API_KEY. Cycle 5 BUILD ships the Tavily adapter; Brave /
-  Exa / Serper adapters can be authored by extending
-  `scripts/agentic_serving/web_searcher.py` under the same shape.
+  Three adapters ship: `kagi` (paid; reads KAGI_API_TOKEN), `tavily`
+  (paid; reads WEB_SEARCH_API_KEY), and `ddgs` (DuckDuckGo via the
+  `ddgs` package; no key required). WEB_SEARCH_BACKEND explicit
+  override is always honored; absent override, auto-detect priority
+  is kagi → tavily → ddgs (keyed backends with their key present win
+  over the no-key fallback). Operators can extend with additional
+  adapters by adding a `_search_<backend>` function and registering
+  it in `BACKEND_ADAPTERS` in `scripts/agentic_serving/web_searcher.py`.
 
   Tagged `tool_use` per the Topaz eight-skill taxonomy (ADR-015). The
   `tool_use` tier abstraction is **degenerate** for script-agents —
