@@ -1,0 +1,42 @@
+name: claim-extractor
+description: |
+  Single-agent capability ensemble that extracts factual claims from
+  input text. Any skill framework whose workflow decomposes into a
+  claim-extraction sub-task can dispatch this ensemble via
+  `invoke_ensemble("claim-extractor", ...)`.
+
+  Output: a bulleted list of claims, each labeled as established
+  (widely-accepted, traceable to authoritative sources) or contested
+  (disputed, requires verification, or single-source).
+
+  Tagged `factual_knowledge` per the Topaz eight-skill taxonomy
+  (ADR-015). Cheap-tier defaults to qwen3:8b
+  (agentic-tier-cheap-general); the Calibration Gate routes escalation
+  to qwen3:14b (agentic-tier-escalated-general) on a Reflect verdict.
+
+  Distinct from `claim-verifier` (not in Cycle 5 minimum-viable set) —
+  this ensemble surfaces claims; verification of those claims (e.g., via
+  `web-searcher` cross-referencing) is a separate sub-task the consuming
+  skill framework dispatches separately.
+
+topaz_skill: factual_knowledge
+
+default_task: |
+  Extract the factual claims from the provided text. List each claim
+  on its own line as a bullet. After each claim, label it in
+  parentheses as either:
+
+  - (established) — the claim is widely accepted, traceable to
+    authoritative sources, or is general background a reasonable
+    domain reader would not contest.
+  - (contested) — the claim is disputed, single-source, or requires
+    further verification to accept.
+
+  Output only the bulleted list — no preamble, no synthesis, no
+  conclusions. If the text contains no extractable factual claims
+  (e.g., it is purely procedural, fictional, or a question), output
+  the single line: "No factual claims extracted."
+
+agents:
+  - name: extractor
+    model_profile: agentic-tier-cheap-general

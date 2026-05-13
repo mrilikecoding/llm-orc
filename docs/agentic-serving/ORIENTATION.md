@@ -45,6 +45,27 @@ Drawn from `domain-model.md` (AS-1 through AS-8) and project-level Invariants 1-
 
 ## Current state
 
+### Cycle 5 BUILD close (2026-05-12)
+
+**Cycle 5 — Agentic-serving library structure (capability ensembles + multi-methodology-consumer surface).** Mode D mini-cycle, auto BUILD mode (ADR-091). DISCOVER → DECIDE → BUILD; research, model, architect, play, synthesize skipped. DISCOVER closed with the architectural commitment refined from the proposal's "methodology-agnostic" framing to **skill-framework-agnostic** — broader, covering RDD, Anthropic Skills, OpenAI Assistants, MCP-based skill frameworks, and emerging skill standards. DECIDE closed with three new ADRs:
+
+- **ADR-019** — skill-framework-agnostic orchestrator + operation-named capability ensemble library (the library-shape decision; amends ADR-015 §Negative's "operator-driven library migration" framing — working defaults are in cycle BUILD scope)
+- **ADR-020** — `tool_use` slot satisfied by a script-agent `web-searcher` with operator-configurable backend (Tavily default; adapter pattern for Brave / Exa / Serper extensibility); ADR-003 closed 5-tool surface unchanged
+- **ADR-021** — skill frameworks compose via per-capability dispatch (each sub-task is one `invoke_ensemble` call); conjunctive falsification standard at the long-horizon task outcome layer
+
+BUILD landed the operator-facing deployment shape on disk:
+
+- 7 per-file Model Profiles in `.llm-orc/profiles/agentic-*.yaml` (loader's expected one-profile-per-file format — a build-time refinement of the proposal's single-aggregated-file shape, recorded in the build session log)
+- `.llm-orc/ensembles/agentic-serving/` subdirectory with 6 capability ensembles (`code-generator` — promoted from Cycle 4 PLAY's `agentic-coding-helper` — plus `claim-extractor`, `argument-mapper`, `prose-improver`, `text-summarizer`, `web-searcher`) and 2 system ensembles (`agentic-result-summarizer`, `agentic-calibration-checker`)
+- `.llm-orc/scripts/agentic_serving/web_searcher.py` (Tavily adapter; structured-error surface for authentication / rate-limit / backend-unavailability)
+- `.llm-orc/ensembles/agentic-serving/README.md` (operator-facing structure + extension guide)
+- `.llm-orc/config.yaml` `agentic_serving:` section rewritten to reference `agentic-*` profile names
+- `docs/agentic-serving/skill-framework-capability-registry.md` — descriptive registry of known skill frameworks and their capability consumption
+
+The cycle's BUILD-scope claim — fresh-clone first-encounter operator runnable without authoring beyond environment-variable setup — holds at the artifact-on-disk level (verified: `llm-orc list-ensembles` discovers all 8 agentic-serving ensembles; `ConfigurationManager.get_model_profiles()` resolves all 7 `agentic-*` profiles). The cycle acceptance criteria table's Layer-match `no` entries identify integration-test territory (multi-skill-framework deployment evidence; fresh-clone live exercise) deferred per ADR-019 §Negative — n=1 skill-framework scope persists at cycle close; RDD is the only framework structurally verified. See `housekeeping/cycle-status.md` for current state.
+
+**Cycle 4 closed at PLAY (2026-05-12).** Practitioner chose option (c) — follow-up cycle DECIDE/BUILD pickup. Cycle 4's complete status archived at `cycle-archive/cycle-4-cheap-orchestrator-and-ensembles.md`. BUILD scope structurally complete (8 of 8 work packages); ADR-016 in full acceptance; PLAY produced 19 field notes and the play-derived proposal. SYNTHESIZE and graduate both deferred as later moves available, not closed off.
+
 **Cycle 1 baseline complete (closed 2026-04-29): RESEARCH, DISCOVER, MODEL, DECIDE, ARCHITECT, and BUILD-WP-A through WP-I done. TS-1 reached at WP-F close (2026-04-22); TS-2 reached at WP-H close (2026-04-24). Plexus Adapter skeleton at WP-I close — FC-7 stateless coverage complete; WP-K (Plexus-active) and WP-J (Bootstrapping) deferred.**
 
 **Cycle 4 ARCHITECT closed 2026-05-11** (deliverables completed 2026-05-08; gate paused for pre-BUILD spikes per practitioner direction; spikes completed and gate closed 2026-05-11). Seven new ADRs (012-018) integrated into the system design: three new modules (Conversation Compaction L2; Tier-Escalation Router L2 — extended at architect-gate close per ADR-018; Calibration Signal Channel L1 — conditional acceptance); four module extensions (Session Registry; Orchestrator Runtime; Orchestrator Tool Dispatch; Calibration Gate); seven new dependency edges including the load-bearing read-only L0→L1 calibration signal channel exception ADR-016 amends ADR-002 to permit. Seven new fitness criteria (FC-14 through FC-20; FC-19 and FC-20 added at architect-gate close per ADR-018); ADR-076 qualitative-claim decomposition complete. Cycle 4 BUILD comprises eight WPs with WP-G4 split into WP-G4-1 + WP-G4-2 at architect-gate close (per the conformance-scan-recommended sequence): shared `LlmOrcStructuralError` base class first (WP-A4); FC-2/FC-3 automated checks (WP-B4); ADR-017 → ADR-013 → ADR-012 → ADR-014 → ADR-015 (WP-G4-1) + ADR-018 (WP-G4-2 — (d)-analog audit dispatch) → ADR-016 (last; conditional on first-deployment evidence per ADR-016 §"Concrete monitoring specification").

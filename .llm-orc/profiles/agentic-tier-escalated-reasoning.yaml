@@ -1,0 +1,12 @@
+# Agentic-serving — escalated-tier dispatch target for
+# `mathematical_reasoning` and `logical_reasoning`
+# (Cycle 5 / ADR-015 Reflect verdict routing per ADR-014).
+#
+# Reasoning-tuned model (DeepSeek R1 8B); when a Reflect verdict
+# arrives on a reasoning-heavy dispatch, the router escalates to a
+# model that paid for reasoning capability specifically.
+name: agentic-tier-escalated-reasoning
+model: deepseek-r1:8b
+provider: ollama
+cost_per_token: 0.0
+timeout_seconds: 240
