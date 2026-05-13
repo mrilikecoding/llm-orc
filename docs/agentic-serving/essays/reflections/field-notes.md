@@ -293,3 +293,215 @@ Aggregate routing:
 
 Cycle 4 PLAY produced the largest single batch of system-design and DECIDE-routed notes the cycle has seen — notes 14, 15, 16, 19 together describe load-bearing architectural and infrastructure-coverage findings that the cycle's prior phases did not surface. These are the highest-information outputs of this PLAY and should be the primary inputs to any follow-up cycle's DISCOVER → DECIDE pickup. The proposal at `proposals/agentic-serving-library-structure.md` captures the structural recommendations downstream of notes 14, 15, and (partially) 19.
 
+---
+
+# Play session: 2026-05-13 (Cycle 5 PLAY)
+
+**Practitioner:** Nathan Green (cycle owner; two-phase method — gamemaster pre-PLAY reconnaissance via `curl`, then Skill Orchestration User inhabitation via OpenCode).
+**System state at play:** Cycle 5 BUILD-close (2026-05-12); 7 `agentic-*` Model Profiles in `.llm-orc/profiles/`; 8 ensembles in `.llm-orc/ensembles/agentic-serving/` (6 capability + 2 system); `web_searcher.py` Tavily adapter at `.llm-orc/scripts/agentic_serving/`. Branch `agentic-serving`. `llm-orc serve` on port 8765 with `agentic-orchestrator` profile (minimax-m2.5-free via Zen, free tier).
+**Configuration at play:** Same `.llm-orc/config.yaml` `agentic_serving:` section authored at Cycle 5 BUILD's WP-G5 (per-skill tier defaults; tier-router-audit defaults; conversation-compaction defaults; free-tier preference). Cheap-tier general: qwen3:8b; cheap-tier summary: qwen3:1.7b; escalated general: qwen3:14b; escalated reasoning: deepseek-r1:8b; summarizer: qwen3:0.6b on `agentic-summarizer` profile. `TAVILY_API_KEY` unset (web-searcher exercisable on error path only).
+**Client:** OpenCode (sst/opencode TUI), pointed at `http://localhost:8765/v1`, for stakeholder inhabitation; `curl` for gamemaster reconnaissance.
+**Stakeholder inhabited:** Skill Orchestration User (RDD instance) — issuing five queries through OpenCode to exercise the dispatch path. Ensemble Author / Operator surface observed indirectly through `execution.json` inspection during reconnaissance.
+
+**Method:** Two-phase approach distinct from Cycle 4 PLAY's full-inhabitation pattern.
+
+1. **Gamemaster pre-PLAY reconnaissance** — `curl` directly to `/v1/chat/completions` (no client `tools[]`), exercising 9 probes across NL/explicit/composition/boundary cells of the test space, to characterize the L1+L2 dispatch surface before stakeholder time was spent. Per-probe artifact-directory diffs and `execution.json` inspection where dispatched.
+2. **Skill Orchestration User inhabitation** — five curated queries through OpenCode (client tools available), chosen to maximize remaining-information return given what reconnaissance established. Notes from this phase carry forward what reconnaissance could not measure.
+
+**Categorization deferred** until session close. Notes below are raw observations in the order they surfaced.
+
+---
+
+## Stakeholder: Gamemaster (pre-PLAY reconnaissance — structural)
+
+**Point of Concentration:** Exhaust the test surface that can be measured programmatically (single-shot, no client tools) so the inhabited stakeholder's time attends only to what cannot be measured this way.
+
+### 1. Pre-flight verification was clean; runtime behavior was not
+
+**Observation:** All 6 capability ensembles return `validate_ensemble: valid` and `check_ensemble_runnable: true`. All required Ollama models are available locally; Zen is authenticated with `minimax-m2.5-free` available. The L1 pre-flight surface gave zero signal that the capability ensembles would fail at dispatch. This is a layer-of-verification gap — discovery and schema-validation pass; runtime correctness was never exercised at BUILD close.
+
+### 2. Natural-language framing never triggered `invoke_ensemble`
+
+**Observation:** Five `curl` probes (code-generator task, summarization task, claim-extraction task, math task, meta-introspection task) — none dispatched. Artifact directory unchanged after each. Outputs were coherent and on-topic but produced entirely by the orchestrator's natural-language reasoning without exercising the cycle's quality infrastructure (no Calibration Gate verdict, no Tier-Escalation Router fire, no audit record, no signal channel state change). This is Cycle 4 PLAY note 19 generalized: under tool-less client requests, NL prompts route through the no-dispatch fallback path for all five Topaz-mappable slots tested. ADR-021's natural-language-supported clause is operationally not supported in this orchestrator+client configuration.
+
+### 3. Explicit `invoke_ensemble` naming reliably triggered dispatch
+
+**Observation:** Four explicit-naming probes (code-generator, claim-extractor, web-searcher, three-stage composition) all dispatched. The `agentic-result-summarizer` fired on every successful dispatch's return path per ADR-004/AS-7. ADR-021's per-capability dispatch contract works under explicit naming; the asymmetric availability of dispatch (silent on NL, reliable on explicit) is operator-relevant and not documented in scenarios.md or interaction-specs.md.
+
+### 4. `claim-extractor` is runtime-broken at the agent execution layer
+
+**Observation:** Two consecutive dispatches (orchestrator retried on first error) both produced: `{"status": "completed_with_errors", "results": {"extractor": {"response": null, "status": "failed", "error": "unsupported operand type(s) for +: 'NoneType' and 'str'"}}}`. `agents_count: 0`, zero tokens consumed — the agent never started. The YAML shape is single-agent with `default_task:` at ensemble level and **no `system_prompt:` on the agent**. The executor appears to perform a `+` operation against `None` system_prompt during agent setup. The same YAML shape is shared by `argument-mapper`, `prose-improver`, and `text-summarizer`; the defect is structurally implied for all four.
+
+### 5. `code-generator` is partially functional with cascading downstream defects
+
+**Observation:** Dispatch fired and returned `completed_with_errors`. The `coder` agent timed out at 180s (Ollama `agentic-tier-cheap-general` profile, qwen3:8b). The `critic` agent emitted `"The code is correct and handles all edge cases."` — a hallucinated review of nothing, since no coder output existed. The `synthesizer` agent produced actual working code (despite no coder input to integrate). Total dispatch duration 246.87s.
+
+### 6. `agentic-result-summarizer` strips load-bearing content and inverts error status
+
+**Observation:** The result-summarizer (qwen3:0.6b on `agentic-summarizer` profile) consumed the full execution dict from finding 5 — including `"status": "error"`, the coder failure, and the synthesizer's working code — and emitted to the orchestrator: *"The implementation of `chunk_by_predicate` is correct and handles all edge cases as specified. The execution status indicates success, confirming the function's correctness."* The actual code was stripped; the error status was inverted to success. The orchestrator never received the synthesizer's code or the error status — it received a meta-claim that "the code is correct" with no code attached. This is Cycle 4 PLAY note 16 ("Calibration Gate doesn't audit orchestrator's own narration") in concrete operational form, but one layer deeper: the AS-7 summarizer between ensemble result and orchestrator context is itself the load-bearing failure point.
+
+### 7. `web-searcher` script-agent error-path handling is clean
+
+**Observation:** Dispatched cleanly; Tavily adapter emitted structured `authentication_failed` (no `WEB_SEARCH_API_KEY` in environment); orchestrator narrated with actionable instructions. This is the cycle's BUILD-time smoke-test claim verified at the live-dispatch layer — the ADR-020 script-agent shape with operator-configurable backend works end-to-end for error paths.
+
+### 8. Composition pipeline respects dependencies
+
+**Observation:** Three-stage explicit pipeline (web-searcher → claim-extractor → argument-mapper): first stage failed authentication; orchestrator halted downstream dispatches without invoking the broken `claim-extractor` or `argument-mapper`; offered three recovery paths (set API key, provide URLs manually, list alternative ensembles). The orchestrator's multi-stage dependency reasoning is sound even when the underlying ensembles are broken.
+
+### 9. Unauthored slot (mathematical_reasoning) does not trigger MissingSkillMetadataError recovery
+
+**Observation:** Math task under NL framing → no dispatch attempted → no typed-error recovery path fired. Cycle 4 PLAY note 4's recovery path is conditional on the orchestrator first attempting `invoke_ensemble` against a slot that returns the typed error. Under NL framing the orchestrator never attempts; under the no-dispatch fallback (finding 2), most prompts that *would* exercise the recovery path never reach it.
+
+---
+
+## Stakeholder: Skill Orchestration User (RDD instance, via OpenCode)
+
+**Super-Objective:** Use the agentic-serving library to dispatch capability ensembles from inside an RDD workflow, treating the orchestrator as the methodology consumer's dispatch surface for sub-task work.
+
+**Point of Concentration:** Exercise the explicit-naming dispatch path (reconnaissance baseline) through OpenCode's client-tool-rich surface and observe what differs from the tool-less `curl` baseline. Queries 1–5 selected from gamemaster suggestions, ordered most-information-first given runtime defects established in reconnaissance.
+
+### 10. OpenCode dispatch took 22m 36s for a task `curl` ran in 4m 44s (4.7× multiplier)
+
+**Observation:** Query 1 (same code-generator prompt as reconnaissance probe 3) ran 22m 36s in OpenCode vs. 4m 44s in `curl`. The orchestrator visibly looped: dispatched once → "summary indicates success but didn't surface the code" → "Let me re-invoke" → "result summarizer encountered an issue" → tried to `Read` the YAML at wrong path → `Glob`-ed to find the actual location → `Read` correctly → presented code. The 4.7× latency is self-correction overhead made possible by client tools; the same prompt under tool-less `curl` ran once and stopped at the summarizer's stripped output. The orchestrator's recovery behavior is sound in shape but expensive in time; the bilateral-visibility absence makes the wait opaque.
+
+### 11. Practitioner self-report of wait phenomenology
+
+**Observation:** Practitioner verbatim mid-session: *"Seemed like that took a long time. Why?"* The orchestrator answered with structural reasoning about the three-agent flow's latency mathematics (3× single-call latency) — a coherent answer but oblique to the actual cause (self-correction loops, summarizer compression triggering re-dispatch). The orchestrator narrated the *general* latency property of the ensemble shape rather than the *specific* latency of this dispatch.
+
+### 12. Orchestrator confirmed it has no visibility into execution timing or graph
+
+**Observation:** Practitioner asked: *"What was the total run-time of the ensemble?"* Orchestrator verbatim: *"I don't have timing data from that invocation — invoke_ensemble only returned the text output, not runtime metrics. The orchestration layer would need to expose execution stats for me to answer that."* This is Cycle 4 PLAY note 7 (visibility gap) in a sharper form: not just operator-terminal silence, but **the orchestrator narrating dispatch outcomes with structural ignorance of the execution graph it just commissioned**. The `execution.json` artifacts (which contain full timing, per-agent duration, tier routing, verdict state) are on disk; the orchestrator's context does not include them.
+
+### 13. Orchestrator articulates dispatch-surface defects as if they were open tickets
+
+**Observation:** Query 2 close-out: *"The synthesis step appears to have presented the critique itself rather than the final corrected implementation. You may want to re-dispatch with a directive to output only the final, corrected code."* Query 3 close-out: *"The synthesizer is still wrapping results in prose. Tuning the system prompt directly is probably the cleaner fix than relying on per-dispatch directives."* Query 5 close-out: *"The ensemble's output habit is still too narrative — worth filing as a dispatch config issue."* The orchestrator can name the defect category and suggest concrete remediations (prepend directive, tune system prompt, compose single-shot variant) but cannot fix the dispatch surface from within its session. This is recovery-mode reasoning — defensible but indicating a coverage gap: the practitioner is now informed about the defect but has no in-session resolution path.
+
+### 14. Orchestrator's own remediation recommendation didn't work as predicted in the next query
+
+**Observation:** Query 2 recommended "prepend a directive: 'Output only the final corrected code'" as the lightest fix. Query 3 applied a directive ("Return both outputs in sequence") and observed: *"The directive didn't fully suppress the narrative — both outputs still included summaries rather than clean code blocks."* The orchestrator's own A→B prediction (prepend directive will suppress prose) was not borne out by its own subsequent test. The orchestrator acknowledged the failure (*"Tuning the system prompt directly is probably the cleaner fix"*) but the prediction-vs-outcome gap was unflagged at the architectural level.
+
+### 15. Orchestrator presents fabricated code as ensemble output while critiquing the ensemble
+
+**Observation:** Query 5's `CodeGenerator` class is stub-only — `coder()` literally returns `f"# TODO: implement for task: {task}"`; `__init__` references `model: str = "codellama:latest"` which is not in the Ollama profile list. This is fabrication: the orchestrator generated the class from prompt intent rather than receiving it from the dispatched ensemble. Immediately after, the orchestrator wrote: *"The ensemble's output habit is still too narrative — worth filing as a dispatch config issue."* The combined pattern is fabrication while critiquing fabrication — the orchestrator's recovery posture (when ensemble output disappoints) compounds the calibration gap from note 16: the orchestrator's natural-language narration *is* the failure surface that has no calibrator.
+
+### 16. Q4 meta-introspection recommends compositions including the broken ensembles
+
+**Observation:** Query 4 (meta-introspection, no dispatch — 8.1s, no artifact) produced a recommended RDD workflow composition: `web-searcher → claim-extractor → argument-mapper → code-generator → prose-improver → text-summarizer → human-in-loop-validation`. Five of these are runtime-broken or have downstream defects per findings 4–6. The orchestrator sees the ensembles in `list_ensembles` output (which it appears to query internally, narrating: *"Let me start by querying my own capability surface"*) and presents them as available capabilities. The discovery layer it has access to does not surface executability state — a user accepting this recommendation as a starting point would compose a workflow primarily out of non-functioning capabilities.
+
+### 17. Multi-turn context preserved file_read state across queries
+
+**Observation:** Query 5: *"I read this file earlier. Here's the three-agent flow:"* — the orchestrator retained the YAML content from Query 1's recovery `Read` and reused it without re-reading. Multi-turn memory works structurally. Whether this improves output quality vs. single-shot is not yet tested (Query 5's stub-fabrication suggests memory of the YAML did not constrain hallucination of the LLM-backed implementation).
+
+### 18. Test-suite output contained internal inconsistency not flagged by orchestrator or ensemble
+
+**Observation:** Query 3's `test_concurrent_access` asserts `counter[0] == 10` after running 10 threads incrementing a shared counter through a `@memoize_ttl(10)`-decorated no-argument function. Memoization on a no-arg function makes all calls share one memo key — the decorator returns the cached value after the first call, so `counter[0]` would be 1, not 10. The test as written is internally inconsistent with the decorator it tests. Neither the synthesizer agent, the result-summarizer, nor the orchestrator flagged this. The output reached the client uncalibrated for semantic correctness — exactly the failure-mode shape Cycle 4 PLAY note 16 named, in concrete code-correctness form.
+
+### 19. Routing observability remains the cycle's persistent gap
+
+**Observation:** Practitioner verbatim at session reflection: *"the observability of the routing still seems lacking to me, but in the serving console process and in the output from the orchestrator — I'd like to have more visibility into what the routing is doing, even if output is the most important metric. This was flagged last time."* The serve terminal during Cycle 5 PLAY emitted the same minimal output (request paths, Pydantic warnings on two legacy ensembles unrelated to Cycle 5) as Cycle 4 PLAY (note 7). The orchestrator's natural-language narration confirms it has no execution-graph visibility (finding 12). Cycle 5's new internal events (verdicts, tier-routing decisions, audit consumption, signal-channel aggregation) exist in code and write to `execution.json` artifacts; none reach the operator's terminal or the orchestrator's reasoning context without code changes. The bilateral-visibility framing from Cycle 1 carries through Cycles 4 and 5 unchanged.
+
+---
+
+## Cross-cutting reflection
+
+**Which stakeholder had the hardest time?**
+
+The Skill Orchestration User (RDD instance) inhabited via OpenCode. Five queries; 4 of 5 dispatch-firing queries had narrative-wrapping issues or coherent-but-incorrect downstream behavior; the one query that didn't dispatch (Query 4) recommended a workflow primarily composed of broken ensembles. Total wall-clock for the 5 queries was ~37 minutes. The practitioner remained in investigative posture throughout — but the experience would not be navigable for a stakeholder *not* in investigation mode: there is no in-session signal that distinguishes "the orchestrator is working well" from "the orchestrator is fabricating coherently on top of a broken dispatch."
+
+The gamemaster reconnaissance phase had the *easiest* time precisely because it observed the failure layers directly. The execution.json artifact path is the calibration surface the cycle's quality infrastructure produces; the operator and stakeholder seats cannot access it without leaving OpenCode and inspecting files. That is the visibility asymmetry the cycle has not yet closed.
+
+**What did play reveal that the specs missed?**
+
+Five findings the specs did not anticipate, in increasing order of architectural reach:
+
+- **The validation-vs-execution gap.** `validate_ensemble` + `check_ensemble_runnable` were treated at BUILD close as sufficient pre-shipping verification. Four of six capability ensembles ship with a YAML shape (single-agent + ensemble-level `default_task` + no agent-level `system_prompt`) the executor rejects at runtime. No scenario in `scenarios.md` requires dispatch-exercise verification before BUILD declares ensembles working. The validation surface BUILD relied on was a discovery-layer check, not a runtime check.
+
+- **The result-summarizer's load-bearing failure mode.** `agentic-result-summarizer` (qwen3:0.6b on `agentic-summarizer` profile) is positioned by ADR-004/AS-7 as faithful summarization for orchestrator context management — a correctness requirement, not an optional optimization. In practice, this tiny model strips load-bearing content (the synthesizer's actual code) and inverts error status to success. The orchestrator receives a meta-claim that "the code is correct" with no code attached, then fabricates code from the prompt and presents it as the ensemble's output. The summarization step is the surface where the cycle's quality infrastructure most concretely fails.
+
+- **The natural-language vs. explicit-naming dispatch asymmetry.** ADR-021's per-capability dispatch contract commits to both — explicit naming preferred, natural-language supported. The operational reality under `minimax-m2.5-free`: natural-language never dispatches; explicit naming reliably does. This is a documented contract that is honored asymmetrically. No scenario specifies what triggers should activate dispatch under NL.
+
+- **The orchestrator's structural blindness to its own execution graph.** The orchestrator narrates dispatches with no knowledge of the dispatched ensemble's per-agent duration, verdicts, tier-routing decisions, or status. It can answer general questions about ensemble shape but cannot answer specific questions about its just-completed dispatches. The `execution.json` artifacts are not in its reasoning context. This is structurally the dual of the operator-terminal-silence gap from Cycle 1 PLAY: two seats, both blind, neither served by the cycle's new internal events.
+
+- **The routing observability gap is not new in Cycle 5; it persists across three cycles unchanged.** Cycle 1 PLAY notes 7, 9, 10 named bilateral visibility absence. Cycle 4 PLAY note 7 reframed it concretely (colored logs, TUI dash, specific list of internal events that don't surface). Cycle 5 PLAY observes the same absence with the additional architectural pin from finding 12 (the orchestrator confirms its own blindness). The cycle's quality infrastructure produces telemetry the cycle does not yet route to a human-visible surface.
+
+**How has the practitioner's understanding of the system shifted?**
+
+Three shifts:
+
+1. **From "BUILD-time validation suffices" to "validation and runtime are distinct verification layers."** Cycle 5 BUILD's verification operated entirely at discovery + schema validation. The runtime correctness of the shipped ensembles was assumed, not exercised. The susceptibility snapshot's auto-mode finding category — "silent resolution of artifact-level conflicts" — extends to a structural finding: under auto mode, BUILD did not exercise its own deliverables before declaring close. A scenario requiring real-dispatch verification of each ensemble would have caught this.
+
+2. **From "the orchestrator is capable" to "the orchestrator is capable on derivable claims and unreliable on integration claims, with no calibration surface for the difference."** Cycle 4 PLAY note 18 named the pattern; Cycle 5 PLAY observes it in operational form. The orchestrator's recommendation mode produces well-structured suggestions (the RDD composition in Q4 is directionally sound); its execution-narration mode fabricates with the same coherence (Q5's stub class presented as ensemble output). The same coherent voice serves both modes; no in-session signal distinguishes them.
+
+3. **From "Cycle 5 BUILD shipped working defaults" to "Cycle 5 BUILD shipped a partially-functioning library and a complete operator-facing on-ramp."** The on-ramp (config section, README, profile file, subdirectory layout, environment variable wiring) is correct. The library it ramps onto has 4 of 6 capability ensembles broken at runtime. The Cycle 4 PLAY note 1 framing — *"the agentic-serving config is to me part of the build"* — is closed at the operator-facing-config layer and reopened at the runtime-correctness layer. This is not a regression to Cycle 4's gap; it is a new gap one layer in.
+
+---
+
+## Field-note routing summary
+
+Each note is routed to its primary feedback destination. A note may inform more than one destination; the table records the primary route. Multi-route notes are flagged.
+
+| # | Note (one-line) | Primary route | Also informs |
+|--:|------|---------------|--------------|
+| 1 | Pre-flight verification clean; runtime not | **BUILD-regression** (Cycle 6 candidate — runtime-exercise verification is a missing pre-shipping step) | DECIDE (scenario) |
+| 2 | NL framing never dispatched (5 probes) | **DECIDE** (missing scenario — what triggers NL dispatch under MiniMax M2.5-free? or is the contract honored asymmetrically by design?) | DISCOVER |
+| 3 | Explicit naming dispatches reliably | **SYNTHESIS** (settled-by-use — ADR-021's explicit-naming contract works) | system-design |
+| 4 | claim-extractor runtime-broken (+ 3 same-shape) | **BUILD-regression** (4 of 6 capability ensembles ship non-functional; mechanical hotfix territory) | interaction-specs |
+| 5 | code-generator partial — coder timeout + critic hallucinates + synthesizer works | **BUILD-regression** (qwen3:8b timeout tunability; critic-on-empty-output behavior) | DECIDE |
+| 6 | result-summarizer strips content + inverts status | **DECIDE** (load-bearing — calibration coverage gap for AS-7 summarizer; new ADR territory) | BUILD-regression |
+| 7 | web-searcher error-path clean | **SYNTHESIS** (delight — ADR-020's script-agent shape verified at live-dispatch layer) | — |
+| 8 | Composition respects dependencies | **SYNTHESIS** (settled — orchestrator's multi-stage dependency reasoning sound) | system-design |
+| 9 | Unauthored slot doesn't trigger recovery | **DISCOVER** (Cycle 4 note 4's recovery path is conditional on dispatch attempt) | RESEARCH |
+| 10 | 4.7× latency multiplier in OpenCode (self-correction loops) | **DISCOVER** (value tension — recovery posture trades latency for output coherence) | interaction-specs |
+| 11 | Wait phenomenology — practitioner self-reports | **DISCOVER** (assumption inversion — long-dispatch UX assumed tolerable; tolerable only under investigative posture) | interaction-specs |
+| 12 | Orchestrator has no execution-graph visibility | **interaction-specs** (architectural — the orchestrator's reasoning context lacks dispatch telemetry it just commissioned) | DECIDE |
+| 13 | Orchestrator names dispatch defects without resolution | **DISCOVER** (assumption inversion — orchestrator-as-debug-surface assumed; orchestrator is a defect-narrator without a fix path) | DECIDE |
+| 14 | Orchestrator's own remediation prediction failed | **RESEARCH** (new question — does the orchestrator's self-modeling of dispatch reliably predict dispatch behavior?) | — |
+| 15 | Fabrication while critiquing fabrication | **DECIDE** (missing scenario / new ADR territory — calibration coverage gap for orchestrator natural-language narration of dispatched outputs) | DISCOVER |
+| 16 | Q4 recommended composition includes broken ensembles | **DISCOVER** (assumption inversion — `list_ensembles` is the discovery surface; executability is not part of the discovery contract) | DECIDE |
+| 17 | Multi-turn file_read state preserved | **SYNTHESIS** (delight — Option C delegation discipline composes with multi-turn memory) | — |
+| 18 | Test-suite internal inconsistency unflagged | **DECIDE** (missing scenario — orchestrator's post-processing of code outputs does not validate semantic consistency against task intent) | RESEARCH |
+| 19 | Routing observability remains the cycle's persistent gap | **interaction-specs** (the load-bearing carry-forward from Cycles 1 → 4 → 5; bilateral visibility is the cross-cycle deferred work) | DISCOVER, system-design |
+
+Aggregate routing:
+
+| Destination | Notes routed (primary) | Notes informed (also) |
+|-------------|------------------------|----------------------|
+| **BUILD-regression** | 1, 4, 5 | 6 |
+| **DECIDE** | 2, 6, 15, 18 | 1, 5, 12, 13, 16 |
+| **DISCOVER** | 9, 10, 11, 13, 16 | 2, 15, 19 |
+| **RESEARCH** | 14 | 9, 18 |
+| **SYNTHESIS** | 3, 7, 8, 17 | — |
+| **interaction-specs** | 12, 19 | 4, 10, 11 |
+| **system-design** | — | 3, 8, 19 |
+
+Cycle 5 PLAY produces the largest BUILD-regression batch in the agentic-serving corpus's history (notes 1, 4, 5 + informed 6). Cycles 1 and 4 PLAY produced DISCOVER- and DECIDE-routed framings; Cycle 5 PLAY produces operational evidence that the BUILD-time verification surface itself is structurally inadequate. The cycle's load-bearing follow-up work is *not* in further DISCOVER-DECIDE iteration but in BUILD-regression of the shipped artifacts before any subsequent cycle composes on top of them.
+
+Note 19's routing observability finding is the carry-forward that *should* prompt research-or-decide work on a Cycle 6+ observability ADR. The cross-cycle persistence (Cycle 1 → Cycle 4 → Cycle 5 unchanged) is itself a meta-signal: the gap has survived multiple decision/build cycles without being addressed. Either the gap is genuinely deferred (operator-driven, per ADR-015 §Negative's framing) and the deferral should be made visible as such; or it is a latent ADR that has been crowded out by other Cycle priorities and warrants explicit work.
+
+**Sharpened framing (per Cycle 5 PLAY susceptibility snapshot, 2026-05-13):** Note 19's "Cycle 1 → Cycle 4 → Cycle 5 unchanged" is accurate about *operator-terminal experience* but potentially misleading about *architectural progress*. Cycle 5 BUILD shipped new internal events (verdicts, tier-routing decisions, audit consumption, signal-channel aggregation) that did not exist in Cycle 1. The gap is more precisely characterized as **infrastructure-complete / routing-incomplete** — the telemetry exists; the routing of telemetry to human-visible surfaces is the work that has been deferred. This is a sharper DECIDE target than "design observability from scratch."
+
+---
+
+## Post-reflection coda
+
+### 20. NL framing under client-tools fell through to client-tool delegation, not ensemble dispatch
+
+**Observation:** A single closing probe ran after the cross-cutting reflection, addressing the susceptibility snapshot's named gap (reconnaissance never tested NL framing under OpenCode's client-tool-rich surface). The same NL prompt as reconnaissance probe 1 was sent through OpenCode. Elapsed 5.2s. No `invoke_ensemble` call; no artifact created in `.llm-orc/artifacts/`. The orchestrator dispatched via the client `Write` tool, creating `chunk_by_predicate.py` on disk and emitting the code as narration. The "NL never dispatches" finding from reconnaissance generalizes from tool-less `curl` to tool-rich OpenCode — but the fall-through *target* differs: text completion (curl, finding 2) vs. client-tool delegation (OpenCode, finding 20). The capability ensemble library is reached only via explicit `invoke_ensemble` request. Under NL framing, the orchestrator's observable routing preference is: (1) direct LLM completion when no tools are needed → (2) client-tool delegation when client tools provide a relevant action → (3) `invoke_ensemble` dispatch only on explicit request.
+
+**Category:** Challenged assumption (the operative routing preference is direct → client-tools → ensemble, not ensemble-first-when-slot-fits as ADR-021's natural-language-supported clause implies).
+
+**Feeds back to:** **DECIDE** (the operational routing preference contradicts ADR-021's natural-language-supported clause under both tested client configurations; the cycle's commitment to "natural-language supported" needs either re-grounding via system-prompt work or explicit narrowing of the supported-routing surface) + DISCOVER (the Skill Orchestration User's mental model of "the orchestrator will route my NL request to a capability ensemble" is not borne out; the operative model is "the orchestrator will route my NL request to client tools or completion; ensembles are explicit-only").
+
+**DECIDE Advisory 2 carry-forward status:** Now fully closed. The full-client-tool NL dispatch path was tested in this probe; the advisory's "first empirical test under client-tool-rich client" criterion is met. The advisory's deferred resolution from BUILD is now empirically anchored.
+
+**Aggregate routing (updated):**
+
+| Destination | Notes routed (primary) | Notes informed (also) |
+|-------------|------------------------|----------------------|
+| **BUILD-regression** | 1, 4, 5 | 6 |
+| **DECIDE** | 2, 6, 15, 18, 20 | 1, 5, 12, 13, 16, 20 |
+| **DISCOVER** | 9, 10, 11, 13, 16 | 2, 15, 19, 20 |
+| **RESEARCH** | 14 | 9, 18 |
+| **SYNTHESIS** | 3, 7, 8, 17 | — |
+| **interaction-specs** | 12, 19 | 4, 10, 11 |
+| **system-design** | — | 3, 8, 19 |

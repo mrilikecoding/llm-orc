@@ -45,6 +45,25 @@ Drawn from `domain-model.md` (AS-1 through AS-8) and project-level Invariants 1-
 
 ## Current state
 
+### Cycle 5 PLAY close → Cycle 6 opens on routing + observability (2026-05-13)
+
+**Cycle 5 closed at PLAY** with the cycle archived to `cycle-archive/cycle-5-agentic-serving-library-structure.md`. PLAY used a two-phase method new to this corpus: **gamemaster pre-PLAY reconnaissance** via `curl` directly to the orchestrator's OpenAI-compat endpoint (9 probes, no client tools) followed by **Skill Orchestration User inhabitation** via OpenCode (5 curated queries + 1 post-reflection coda). 20 field notes total in `essays/reflections/field-notes.md` (Cycle 5 PLAY section); susceptibility snapshot in `housekeeping/audits/susceptibility-snapshot-cycle-5-play.md` returned no Grounding Reframe and 3 advisory carry-forwards.
+
+**Three load-bearing PLAY findings:**
+
+1. **Routing-preference disclosure.** The orchestrator's operational routing preference under both tested client configurations is **direct LLM completion → client-tool delegation → `invoke_ensemble` dispatch**, not ensemble-first-when-slot-fits. ADR-021's natural-language-supported clause is the contract under question — unsupported under both tool-less `curl` and tool-rich OpenCode.
+2. **Observability framing sharpened.** PLAY note 19's "Cycle 1 → 4 → 5 unchanged" was reframed by the susceptibility snapshot to **infrastructure-complete / routing-incomplete** — Cycle 5 BUILD shipped new internal events (verdicts, tier-routing decisions, audit consumption, signal-channel aggregation) that did not exist in Cycle 1; the architecture has the telemetry; what is missing is the routing of telemetry to human-visible surfaces.
+3. **Thread A defects — runtime defects in the shipped library.** 4 of 6 capability ensembles (`claim-extractor`, `argument-mapper`, `prose-improver`, `text-summarizer`) share a YAML shape (single-agent + ensemble-level `default_task` + no agent-level `system_prompt`) the executor rejects at runtime; `code-generator` partial (coder timeout + critic-on-empty-output hallucination + summarizer content-stripping + error-status-inversion); `web-searcher` script-agent error-path works cleanly. `validate_ensemble` + `check_ensemble_runnable` passed pre-shipping; runtime correctness was assumed, not exercised, at BUILD close.
+
+**Path forward chosen at close: Path 1** (practitioner verbatim: *"I think path 1 is the way forward. Routing + observability need to be addressed."*).
+
+- **Thread A defects** → handled as normal llm-orc dev work, outside the methodology cycle. Fix the 4 broken capability ensembles (YAML/executor mismatch); tune `code-generator` coder timeout; tune `agentic-result-summarizer` to preserve code blocks and not invert error status; add a runtime-dispatch test scenario to `scenarios.md` so future BUILD cycles exercise their deliverables before declaring close. Per snapshot Advisory 1, the remediation is a single scenario addition + mechanical fix, not tooling redesign.
+- **Cycle 6** → scoped mini-cycle on **routing surface + observability**. Mode D shape: DISCOVER → DECIDE → ARCHITECT (conditional) → BUILD. The two axes are linked: the operator cannot tell what routing decision happened without observability; the orchestrator cannot refine its routing decisions without visibility into its own dispatches. Cycle 6 entry context is captured in `housekeeping/cycle-status.md` (Cycle 6 active entry).
+- **Synthesize Cycle 5** → deferred (available as later move). Cycle 5's "validation-vs-execution gap" pattern, the two-phase PLAY method, and the routing-preference / observability findings are publishable signal.
+- **Graduate** → deferred. Cycle 6 close is the natural revisit point. Graduating now would inherit the Thread A defects in native docs.
+
+See `cycle-archive/cycle-5-agentic-serving-library-structure.md` for the full Cycle 5 close-state and detailed carry-forward signals.
+
 ### Cycle 5 BUILD close (2026-05-12)
 
 **Cycle 5 — Agentic-serving library structure (capability ensembles + multi-methodology-consumer surface).** Mode D mini-cycle, auto BUILD mode (ADR-091). DISCOVER → DECIDE → BUILD; research, model, architect, play, synthesize skipped. DISCOVER closed with the architectural commitment refined from the proposal's "methodology-agnostic" framing to **skill-framework-agnostic** — broader, covering RDD, Anthropic Skills, OpenAI Assistants, MCP-based skill frameworks, and emerging skill standards. DECIDE closed with three new ADRs:
