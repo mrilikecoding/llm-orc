@@ -12,12 +12,17 @@ three adapters out of the box:
 
 Backend selection rules:
 
-- ``WEB_SEARCH_BACKEND`` explicit override is always honored. If the
-  named backend requires a key and the key is unset, ``authentication_failed``
-  is emitted.
-- ``WEB_SEARCH_BACKEND`` unset → auto-detect priority: ``kagi`` (if
-  ``KAGI_API_TOKEN`` set) → ``tavily`` (if ``WEB_SEARCH_API_KEY`` set)
-  → ``ddgs`` (no-key fallback; always available).
+- Default backend is ``ddgs`` — no key required, no setup, works on
+  fresh-clone deployments without authentication friction.
+- Paid backends (``kagi``, ``tavily``) are explicit opt-in via
+  ``WEB_SEARCH_BACKEND=<name>``. If the named backend requires a key
+  and the key is unset, ``authentication_failed`` is emitted.
+
+The explicit-opt-in design avoids the trap of auto-preferring a paid
+backend whose key is set but not actually authorized for the relevant
+API surface — operators choosing a paid backend make the choice
+deliberately rather than inheriting it from environment-variable
+presence.
 
 The script reads a JSON input from stdin shaped roughly like
 ``{"query": "..."}`` (the orchestrator's dispatch payload), calls the
@@ -233,21 +238,10 @@ BACKEND_ADAPTERS: dict[str, dict[str, Any]] = {
     },
 }
 
-# Auto-detect priority when WEB_SEARCH_BACKEND is not explicitly set.
-# Keyed backends with their key present win over the no-key fallback.
-BACKEND_AUTO_DETECT_PRIORITY = ("kagi", "tavily", "ddgs")
-
-
-def _auto_detect_backend() -> str:
-    """Pick a backend based on which API keys are present in the env."""
-    for backend_name in BACKEND_AUTO_DETECT_PRIORITY:
-        spec = BACKEND_ADAPTERS[backend_name]
-        if not spec["requires_key"]:
-            return backend_name
-        key_env = spec["key_env"]
-        if isinstance(key_env, str) and os.environ.get(key_env, "").strip():
-            return backend_name
-    return "ddgs"
+# Default backend when WEB_SEARCH_BACKEND is not explicitly set.
+# ddgs requires no key and works on fresh-clone deployments. Operators
+# opt into paid backends (kagi, tavily) via WEB_SEARCH_BACKEND=<name>.
+DEFAULT_BACKEND = "ddgs"
 
 
 def _resolve_api_key(spec: dict[str, Any], backend: str) -> str | None:
@@ -307,7 +301,7 @@ def _dispatch_adapter(
 
 def main() -> int:
     explicit_backend = (os.environ.get("WEB_SEARCH_BACKEND") or "").strip().lower()
-    backend = explicit_backend or _auto_detect_backend()
+    backend = explicit_backend or DEFAULT_BACKEND
 
     spec = BACKEND_ADAPTERS.get(backend)
     if spec is None:
