@@ -5,7 +5,6 @@ description: >
 
 agents:
   - name: pagerank
-    type: script
     script: scripts/specialized/plexus/run_pagerank.py
     parameters:
       damping: 0.85
@@ -13,7 +12,6 @@ agents:
       tolerance: 1.0e-06
 
   - name: community
-    type: script
     script: scripts/specialized/plexus/run_communities.py
     parameters:
       resolution: 1
