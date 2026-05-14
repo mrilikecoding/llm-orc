@@ -6,7 +6,7 @@
 
 ## Cycle Stack
 
-### Active: Cycle 6 — Routing surface + observability (post-Cycle-5-PLAY pickup)
+### Active: Cycle 6 — Ensemble contract + observability + routing (post-Cycle-5-PLAY pickup; expanded from initial two-axis framing per 2026-05-14 follow-on verification)
 
 **Cycle number:** 6
 **Started:** 2026-05-13
@@ -14,24 +14,26 @@
 **Cycle type:** mini-cycle
 **Plugin version:** v0.8.5
 **Artifact base:** `docs/agentic-serving/`
-**Skipped phases:** research, model, synthesize (architect retained as possibly needed depending on DECIDE outcomes — see ARCHITECT note below)
+**Skipped phases:** research, synthesize (model and architect both retained as likely-needed given the ensemble-contract cluster's vocabulary and module-shape implications — see MODEL and ARCHITECT notes below). SYNTHESIZE flagged as attractive at cycle close given the cross-cycle pattern-recognition character of the ensemble-contract proposal; remains optional per Mode D shape.
 **BUILD mode:** to be declared at BUILD entry (gated recommended given the design-alternative examination character of routing/observability work; auto mode appropriate only if BUILD reduces to mechanical wiring after DECIDE)
 
 **Origin:** Cycle 5 PLAY (2026-05-13) chose **Path 1** — Thread A defects (4 broken capability ensembles + result-summarizer compression + `code-generator` coder timeout) handled as normal llm-orc dev work outside the methodology cycle; routing + observability axes opened as Cycle 6 scoped mini-cycle. Practitioner verbatim: *"I think path 1 is the way forward. Routing + observability need to be addressed."* Cycle 5 status archived at `cycle-archive/cycle-5-agentic-serving-library-structure.md`.
 
 **Cycle 6 question framing (provisional, for DISCOVER):**
 
-The cycle has two linked axes:
+The cycle has three linked clusters that emerged from Cycle 5 PLAY findings + 2026-05-14 follow-on verification work:
 
-1. **Routing surface** — Cycle 5 PLAY note 20 disclosed the orchestrator's operational routing preference under both tested client configurations is **direct LLM completion → client-tool delegation → `invoke_ensemble` dispatch**, not ensemble-first-when-slot-fits as ADR-021's natural-language-supported clause implies. Cycle 6 asks: is this the routing surface the system wants, or is it a defect? If wanted, document the operative routing preference (and narrow or clarify ADR-021's natural-language-supported clause). If defect, what intervention (system-prompt work? dispatch-routing-policy ADR?) restores ensemble-first routing under NL framing?
+1. **Observability** — Cycle 5 PLAY note 19 (sharpened by susceptibility snapshot) discloses the gap as **infrastructure-complete / routing-incomplete**. Cycle 5 BUILD shipped new internal events (verdicts, tier-routing decisions, audit consumption, signal-channel aggregation); the architecture has the telemetry; what is missing is the routing of telemetry to human-visible surfaces. Follow-on verification sharpened this further to include **liveness signal** — not just completion events but in-flight state visibility during long cloud-LLM inference waits. Cycle 6 asks: which surfaces should receive which events? Operator-terminal (colored logs? TUI dashboard?) for the Ensemble Author / Operator stakeholder; orchestrator-context-includes-execution-state for the orchestrator's reasoning surface so it can answer the timing/graph questions a Skill Orchestration User asks; tool-call-emit logging and inference-wait heartbeats so the operator has signal during in-flight states.
 
-2. **Observability** — Cycle 5 PLAY note 19 (sharpened by susceptibility snapshot) discloses the gap as **infrastructure-complete / routing-incomplete**. Cycle 5 BUILD shipped new internal events (verdicts, tier-routing decisions, audit consumption, signal-channel aggregation); the architecture has the telemetry; what is missing is the routing of telemetry to human-visible surfaces. Cycle 6 asks: which surfaces should receive which events? Operator-terminal (colored logs? TUI dashboard?) for the Ensemble Author / Operator stakeholder; orchestrator-context-includes-execution-state for the orchestrator's reasoning surface so it can answer the timing/graph questions a Skill Orchestration User asks.
+2. **Ensemble contract** — Cycle 5 PLAY note 6 (AS-7 result-summarizer content-stripping) + follow-on findings 2 (output-spec drift) + 8 (artifact-substrate proposal) + the practitioner's 2026-05-14 framing of common I/O contract for ensembles cluster around a single architectural question: **what is the ensemble-response (and ensemble-input) contract?** Two sub-questions within: (a) **common I/O envelope** — what fields does every ensemble response carry (`status`, `primary`, `metadata`, `artifacts[]`, `diagnostics`?); (b) **artifact-substrate** — within the envelope, the policy for "when `primary` is large or structurally complex, write to artifact and put reference in `artifacts[]` instead of inline." This cluster touches ADR-021 (per-capability dispatch contract) and ADR-004 (result-summarizer role) directly; likely produces a new ADR or amends both.
 
-The two axes are linked: the operator cannot tell what routing decision happened without observability; the orchestrator cannot refine its routing decisions without visibility into its own dispatches.
+3. **Routing-preference** — Cycle 5 PLAY note 20 disclosed the orchestrator's operational routing preference under both tested client configurations is **direct LLM completion → client-tool delegation → `invoke_ensemble` dispatch**, not ensemble-first-when-slot-fits as ADR-021's natural-language-supported clause implies. Follow-on finding 3 strengthened this — even *explicit-naming* of the ensemble + dispatch verb was insufficient on first attempt; the orchestrator used the client `Write` tool instead. Cycle 6 asks: is this the routing surface the system wants, or is it a defect? If wanted, document the operative routing preference (and narrow or clarify ADR-021's natural-language-supported clause). If defect, what intervention (system-prompt work? dispatch-routing-policy ADR?) restores ensemble-first routing under NL framing? Is the preference MiniMax M2.5-free specific or systemic to the cheap-cloud-orchestrator + tool-rich-client pattern?
 
-**MODEL handling for Cycle 6:** Skipped as a standalone phase per Mode D shape. New vocabulary that surfaces in DISCOVER (e.g., "routing surface," "operator-visible event surface," "orchestrator execution context," "tier-routing decision," etc.) folds into DISCOVER's tail as Amendment Log entries on `domain-model.md`. If DECIDE deliberation reveals vocabulary territory warranting a dedicated MODEL phase, the cycle's `Skipped phases:` field can be amended mid-cycle.
+The three clusters are linked: the operator cannot tell what routing decision happened without observability; the orchestrator cannot refine its routing decisions without visibility into its own dispatches; and the ensemble contract shapes both what the orchestrator dispatches AND what the operator sees when it does.
 
-**ARCHITECT handling for Cycle 6:** Initially retained as possibly needed. If DECIDE outcomes specify a new operator-visible event surface module (e.g., a TUI dashboard component or a structured-logging surface module), ARCHITECT runs to allocate responsibilities and dependencies. If DECIDE outcomes are extensions to existing modules (e.g., extending Serving Layer with structured log output, extending Orchestrator Runtime with an execution-context-population API), ARCHITECT may be skipped. The cycle's `Skipped phases:` field will be updated at DECIDE close based on which path the decisions take.
+**MODEL handling for Cycle 6:** Retained as likely-needed (shifted from "skipped" per the 2026-05-14 follow-on framing). The ensemble-contract cluster introduces substantial new vocabulary candidates: `envelope`, `primary`, `artifact reference`, `content_type`, `retention policy`, `diagnostics`, `deliverable` (and possibly `routing preference`, `tool-call-emit`, `inference-wait heartbeat` from the routing and observability clusters). If DISCOVER surfaces enough new vocabulary, a dedicated MODEL phase formalizes the additions in `domain-model.md` before DECIDE. If the vocabulary turns out to be light, the additions can still fold into DISCOVER's tail as Amendment Log entries and MODEL stays skipped — the decision is DISCOVER's based on what surfaces.
+
+**ARCHITECT handling for Cycle 6:** Retained as likely-needed (shifted from "conditionally possibly-needed" per the 2026-05-14 follow-on framing). The ensemble-contract cluster has module-shape implications across at least three modules: `agentic-result-summarizer` (consumes envelope's metadata rather than content), `OrchestratorToolDispatch` (response shape constraint; possibly artifact reference handling), and possibly a new operator-visible-event surface module for the observability cluster. If DECIDE outcomes confirm the contract changes and the new event surface, ARCHITECT allocates the responsibilities. The cycle's `Skipped phases:` field will be amended at DECIDE close if ARCHITECT turns out to be unnecessary after all.
 
 ## Phase Status
 
@@ -118,7 +120,34 @@ After Thread A hotfixes shipped (commits `e1b0111` role-loading fix, `a935078` c
 
    **DISCOVER attends:** is artifact-as-substrate the right architectural commitment for capability ensembles whose output is large or structurally complex? Five sub-questions: (a) **Boundary** — which ensemble outputs warrant artifact-substrate vs. response-substrate? (Single-bullet claims are fine in-response; multi-hundred-line code is not.) (b) **Contract** — is `artifact_path` a typed field on ensemble response, or a convention? (c) **Client access** — does the client have filesystem access to read the artifact, or does it fetch via an HTTP endpoint the serve layer exposes? (d) **Cleanup** — artifacts accumulate; what's the retention policy? (e) **Backward compat** — current ensemble responses are content-bearing; how does the contract change interact with ensembles already deployed?
 
-   This proposal is candidate ADR territory for Cycle 6 DECIDE — possibly a new ADR amending ADR-021 (ensemble dispatch contract) and ADR-004 (result-summarizer role). Sequenced after Cycle 6 DISCOVER establishes which findings warrant deliberation.
+   This proposal is candidate ADR territory for Cycle 6 DECIDE — possibly a new ADR amending ADR-021 (ensemble dispatch contract) and ADR-004 (result-summarizer role). Sequenced after Cycle 6 DISCOVER establishes which findings warrant deliberation. See **Candidate spikes** subsection below for the survey-and-propose investigation that informs DECIDE on this cluster.
+
+### Candidate spikes for DISCOVER or DECIDE entry
+
+The post-hotfix verification surfaced three spike candidates worth scoping at Cycle 6 entry. Each spike's purpose is to resolve uncertainty empirically before committing the cluster's design decisions; per the spike-runner pattern, each is bounded and produces a research log feeding the relevant phase.
+
+**Spike α — Common I/O envelope survey + proposal (ensemble-contract cluster).**
+
+- **Question.** What envelope shape can wrap all 8 agentic-serving ensembles' current behavior with minimum disruption? Candidate fields: `status`, `primary`, `metadata`, `artifacts[]`, `diagnostics`.
+- **Method.** (1) Enumerate current I/O shapes for the 8 ensembles (6 capability + 2 system) by reading each YAML's `default_task` and a representative invocation result. (2) Draft 2-3 candidate envelope shapes. (3) For each ensemble, test fit per candidate envelope: does the envelope wrap the ensemble's current behavior? what changes are required (system prompt, synthesizer logic, response shape)?
+- **Output.** Research log documenting envelope candidates with per-ensemble fit notes. Feeds DECIDE on the ensemble-contract cluster's primary ADR.
+- **Bounded scope.** ~3-4 hours of analytical work; no LLM dispatch required (or minimal — one representative invocation per ensemble).
+
+**Spike β — Composition predictability under common envelope (ensemble-contract cluster).**
+
+- **Question.** With a common envelope, do A→B compositions become structurally predictable rather than ad-hoc text-passing? Where do current assumptions about output structure actually live in the orchestrator's reasoning, and would a typed envelope move them into the contract instead?
+- **Method.** Take the lit-review composition shape (`web-searcher` → `claim-extractor` → `argument-mapper`) and the candidate envelope from Spike α. Trace data flow: what does each stage produce, what does the next stage need? Identify where current implicit assumptions live (orchestrator prompt instructions? synthesizer agent default_task wording? ad-hoc text parsing?). Test: if A emits envelope-shaped output, can B consume it without intermediate text-massaging?
+- **Output.** Research log capturing composition predictability findings; informs whether artifact-substrate alone is sufficient or whether typed output fields in the envelope are also load-bearing for composition.
+- **Bounded scope.** ~2-3 hours; analytical, no required LLM dispatch.
+- **Collapsibility with Spike α.** If scoped together as one investigation, Spike α + Spike β share data-gathering and propose-and-test work. Recommended unless the practitioner wants to time-box them separately.
+
+**Spike γ — Routing-preference characterization (routing-preference cluster).**
+
+- **Question.** Is the orchestrator's `direct → client-tools → invoke_ensemble` routing preference (PLAY note 20, finding 3) a MiniMax M2.5-free-specific reasoning shape, or systemic to the cheap-cloud-orchestrator + tool-rich-client pattern?
+- **Method.** Dispatch the same prompt (a clean NL framing that maps unambiguously to one slot) under varied orchestrator profiles and client tool sets: (a) MiniMax M2.5-free via Zen, OpenCode (tool-rich) — replicates current; (b) `agentic-orchestrator-offline` (qwen3:14b local), OpenCode — controls for cloud-vs-local; (c) MiniMax M2.5-free, `curl` (tool-less) — replicates Cycle 5 PLAY baseline; (d) optionally a different cloud profile if accessible. Record routing decisions per cell.
+- **Output.** Research log characterizing the routing-preference behavior across configurations; informs whether the routing-preference cluster needs orchestrator-profile-specific ADRs or a generic ADR.
+- **Bounded scope.** ~2-4 hours including dispatch wait time; requires live serve and at least two orchestrator profiles available.
+- **Independence.** Spike γ is independent of Spikes α/β and can run in parallel.
 
 ## Feed-Forward Signals
 
