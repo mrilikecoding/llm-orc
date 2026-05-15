@@ -670,3 +670,226 @@ The Layer-match "no" entries are not failures — they identify where BUILD Step
 **Then** each shipped or extended capability ensemble has been dispatched end-to-end at least once via `llm-orc invoke <ensemble> <input>` (or `mcp__llm-orc__invoke`), the resulting `execution.json` carries `status: "completed"` and a non-null primary agent response, and the verification is recorded in the BUILD gate reflection note or cycle-status BUILD row. Discovery-layer checks (`list-ensembles`, `validate_ensemble`, `check_ensemble_runnable`) alone do not satisfy this commitment.
 
 **Rationale (Cycle 5 PLAY note 1 — sharpened by susceptibility snapshot):** Cycle 5 BUILD declared close after verifying discovery (`llm-orc list-ensembles` discovered all 8 ensembles), schema (`validate_ensemble` returned valid), and provider runnability (`check_ensemble_runnable` returned true for each). At Cycle 5 PLAY, four of six capability ensembles errored at runtime dispatch with `unsupported operand type(s) for +: 'NoneType' and 'str'` — `agents_count: 0`; agent never started. The defect was caught only because the practitioner exercised dispatch directly during PLAY. This scenario adds runtime-dispatch as a third verification layer alongside discovery and schema validation. Auto-mode BUILD per ADR-091 is no exception — close-out should include explicit dispatch-verification status for each shipped/extended ensemble.
+
+
+---
+
+## Cycle Acceptance Criteria Table (Cycle 6 additions)
+
+The following acceptance criteria from Cycle 6 product-discovery (T14, T15, T16, T17) and the DECIDE-phase spike findings are emergent, aggregate, or integration-layer-specific. BUILD Step 5.5 verifies each entry at its specified layer.
+
+| Criterion | Specified layer | Verification method | Layer-match check |
+|-----------|----------------|--------------------|-----|
+| Capability-matched NL framing routes to `invoke_ensemble` under at least one orchestrator profile after ADR-022 system-prompt amendment | Live serve dispatch (integration with orchestrator-LLM reasoning surface) | Composes scenarios "NL request matching capability ensemble dispatches via `invoke_ensemble`" + "Client-tool verb-match does not displace capability-match" with live orchestrator dispatch under MiniMax M2.5-free | no — unit tests verify the prompt amendment is present; only live dispatch verifies the orchestrator-LLM honors the amended commitment under capability-matched NL framing |
+| Dispatch events route to both operator-terminal AND orchestrator-context destinations from one event substrate (Inversion N+2) | Integration (multi-dispatch session with both destinations active) | Composes scenarios "Operator-terminal destination emits per-event INFO lines" + "Orchestrator-context destination prepends structured observation between turns" + "`dispatch_id` correlation joins events for one dispatch" with multi-turn session fixture | no — individual destination scenarios verify routing per destination; integration test verifies one-substrate-two-destinations composition without parallel-infrastructure duplication |
+| Liveness signals fire during in-flight states before completion events | Live serve dispatch (timing-sensitive integration) | Composes scenarios "Tool-call-emit log line precedes dispatch" + "Inference-wait heartbeat fires after `heartbeat_interval_seconds` of inactivity" with a long-inference dispatch fixture (>30s wall-clock) | no — only timed live dispatch fires the heartbeat path; mock-time tests verify the heartbeat-interval-counter logic |
+| Capability ensemble dispatches produce typed `DispatchEnvelope` with `artifacts[0]` carrying substrate reference | Integration (envelope + substrate composition) | Composes scenarios "`invoke_ensemble` returns typed `DispatchEnvelope`" + "Capability ensemble writes deliverable to session-dir artifact path" + "`primary` carries summary line; `artifacts[0]` carries typed reference" | no — individual scenarios verify envelope shape and substrate writing in isolation; integration test verifies the composition for at least one capability ensemble end-to-end |
+| AS-7 amendment honored: substrate-routed dispatches skip content summarization; inline-response dispatches retain summarization | Integration (mixed-mode session) | Composes scenarios "Substrate-routed dispatch's envelope is not passed through `agentic-result-summarizer`" + "Inline-response dispatch (per `output_substrate: inline`) is passed through `agentic-result-summarizer`" with a session exercising both modes | no — individual scenarios verify per-dispatch behavior; integration test verifies the AS-7 amendment's scope is honored across a mixed-mode session |
+| Calibration gate evaluation operates correctly under substrate-routing | Integration (calibration gate + substrate composition) | Composes scenarios "Calibration gate evaluators receive `primary` + `artifacts[0].summary` by default" + "Calibration gate evaluators receive `envelope.structured` when `output_schema:` declared" + "Calibration gate evaluators read artifact content when `calibration_substrate_access: artifact` declared" with `code-generator` as the lead `calibration_substrate_access: artifact` case | no — individual scenarios verify per-ensemble evaluation surface; integration verifies the calibration gate's verdict accuracy under each evaluation surface |
+
+The Layer-match "no" entries fire BUILD Step 5.5 work for integration tests or harness exercises beyond individual scenarios' coverage. Cell B's qwen3:14b over-delegation finding from spike γ is **not** an integration-test target at Cycle 6 close — disposition (iii) configuration-conditional effectiveness is named in ADR-022 as deferred to BUILD or follow-on PLAY; the cross-profile characterization is a PLAY-phase observational concern rather than a scenario-verifiable behavior.
+
+---
+
+## Feature: Routing Surface Behavior — System-Prompt Amendment (ADR-022)
+
+### Scenario: NL request matching capability ensemble dispatches via `invoke_ensemble`
+**Given** an operator-deployed serve with the ADR-022 amended `DEFAULT_ORCHESTRATOR_SYSTEM_PROMPT` active, and the agentic-serving library containing `code-generator` (Topaz skill `code_generation`)
+**And** a skill orchestration user emits a natural-language request via the `/v1/chat/completions` endpoint: *"Write a Python function that computes the Fibonacci sequence up to N terms"* — no explicit ensemble naming
+**When** the orchestrator's ReAct loop processes the request under the MiniMax M2.5-free orchestrator profile
+**Then** the orchestrator calls `list_ensembles()`, identifies `code-generator` as the capability match for the NL request, and dispatches via `invoke_ensemble("code-generator", {"data": "..."})` — not via direct LLM completion and not via a client-declared tool. The `execution.json` artifact records the dispatch with `code-generator` named as the dispatched ensemble.
+
+### Scenario: Client-tool verb-match does not displace capability-match
+**Given** an operator-deployed serve with the ADR-022 amended system prompt active, the agentic-serving library containing `code-generator`, and a tool-rich client (OpenCode) exposing client tools including `write_file`
+**And** a skill orchestration user emits a natural-language request: *"Write a Python class CircularBuffer with iter and len protocol"*
+**When** the orchestrator's ReAct loop processes the request
+**Then** the orchestrator does NOT pick the `write_file` client tool merely because the request's verb ("write") matches the client tool's verb. The orchestrator identifies `code-generator` as the capability match (code-generation request; `code-generator` covers code-generation), and dispatches via `invoke_ensemble`. The client `write_file` tool remains available for non-capability filesystem-write tasks (e.g., "write the current session log to /tmp/session.log").
+
+### Scenario: Direct completion residual when no capability match exists
+**Given** an operator-deployed serve with the ADR-022 amended system prompt active, and the agentic-serving library
+**And** a skill orchestration user emits a request the library does not cover (e.g., *"What is the relationship between the Gödel incompleteness theorems and Turing's halting problem?"* — a question with no Topaz-aligned capability ensemble in the library)
+**When** the orchestrator's ReAct loop processes the request
+**Then** the orchestrator calls `list_ensembles()`, finds no capability match for the request's framing, and produces a direct LLM completion as the residual behavior. The `execution.json` artifact records that no `invoke_ensemble` dispatch occurred for this turn. Direct completion is the correct path under ADR-022 when no internal or client tool applies.
+
+### Scenario: ADR-022 amendment effectiveness is per-orchestrator-profile-conditional
+**Given** an operator-deployed serve running with the ADR-022 amended system prompt and an alternative orchestrator profile (e.g., `agentic-orchestrator-offline-tools` — qwen3:14b local via OpenAI-compatible Ollama adapter)
+**And** a skill orchestration user emits the same NL request from Scenario 1
+**When** the orchestrator's ReAct loop processes the request under qwen3:14b
+**Then** the orchestrator may or may not honor the amendment's `prefer invoke_ensemble` clause — the model's reasoning shape governs whether the clause translates to dispatch behavior. The `execution.json` artifact records the actual routing decision; if dispatch occurred, the dispatch is correct; if direct completion or client-tool delegation occurred, ADR-022's disposition (iii) acknowledges the per-profile divergence and ADR-022 §"Effectiveness is configuration-conditional" frames the BUILD/PLAY characterization path.
+
+### Preservation: ADR-021 per-capability dispatch contract is unchanged at the dispatch boundary
+**Given** the ADR-021-shipped per-capability dispatch contract (one capability sub-task per orchestrator request; client-side state across sub-tasks; `invoke_ensemble`'s fresh-context property)
+**When** Cycle 6 BUILD ships the ADR-022 system-prompt amendment
+**Then** ADR-021's dispatch contract operates unchanged at the dispatch boundary. The amendment changes which requests reach `invoke_ensemble` (more NL-framed requests reach it under capability match); the contract for what happens **after** `invoke_ensemble` is called (Tier-Escalation Router, Calibration Gate, fresh-context dispatch) is preserved.
+
+### Preservation: ADR-003's closed 5-tool internal surface is unchanged
+**Given** the ADR-003-shipped closed five-tool internal surface (`list_ensembles`, `invoke_ensemble`, `compose_ensemble`, `query_knowledge`, `record_outcome`)
+**When** Cycle 6 BUILD ships the ADR-022 system-prompt amendment
+**Then** the orchestrator's internal action space remains exactly five tools. The amendment changes the prompt's guidance for **when** to use `invoke_ensemble` relative to direct completion and client-declared tools; it does not introduce a sixth tool or change the existing five tools' semantics.
+
+---
+
+## Feature: Observability Event Routing — Unified Substrate, Two Destinations (ADR-023)
+
+### Scenario: Operator-terminal destination emits per-event INFO lines
+**Given** an operator-deployed serve with ADR-023's event-routing surface active, and an invocation of `code-generator` via `invoke_ensemble`
+**When** the dispatch executes through the orchestrator's tool dispatch path
+**Then** the serve console emits, in dispatch order: `INFO: dispatch start: ensemble=code-generator profile=<profile> dispatch_id=<id>` → `INFO: tier selection: ensemble=code-generator profile=<profile> tier=<tier> topaz_skill=code_generation dispatch_id=<id>` → `INFO: calibration verdict: <verdict> dispatch_id=<id>` → `INFO: dispatch end: ensemble=code-generator duration=<seconds> exit=success dispatch_id=<id>`. The coarse `INFO: tool dispatch: result name=invoke_ensemble kind=success` line from the pre-ADR-023 code is replaced; the new per-event lines carry ensemble identification, duration, verdict, and `dispatch_id` correlation.
+
+### Scenario: Orchestrator-context destination prepends structured observation between turns
+**Given** an operator-deployed serve with ADR-023 active, and the same `code-generator` dispatch as above
+**When** the orchestrator's next ReAct turn begins (after the dispatch returns control to the orchestrator)
+**Then** the orchestrator's turn context begins with a JSON-shaped observation block containing `{dispatched: "code-generator", duration_seconds: <float>, model_profile: <str>, tier: <str>, topaz_skill: "code_generation", calibration_verdict: <verdict>, dispatch_id: <id>}`. The orchestrator's reasoning surface can answer the practitioner question *"What was the total run-time of the ensemble?"* directly from the observation's `duration_seconds` field.
+
+### Scenario: `dispatch_id` correlation joins events for one dispatch
+**Given** a multi-dispatch orchestrator session that produces three dispatch events for one `code-generator` invocation: `DispatchTiming(phase="start")`, `TierSelection`, `CalibrationVerdict`, `DispatchTiming(phase="end")`
+**When** the session's `execution.json` artifact is read post-hoc
+**Then** all four events share the same `dispatch_id` value; joining the events on `dispatch_id` reconstructs the full dispatch picture (ensemble, profile, tier, verdict, start time, end time, duration). Events from other dispatches in the same session have different `dispatch_id` values; the correlation is structurally unambiguous.
+
+### Scenario: `DispatchTiming` event carries `start` and `end` phases with timing data
+**Given** an operator-deployed serve with ADR-023 active, and a `code-generator` invocation
+**When** the dispatch starts and later returns
+**Then** the dispatch emits exactly two `DispatchTiming` events: `DispatchTiming(phase="start", dispatch_id, ensemble_name="code-generator", model_profile, timestamp)` at dispatch start; `DispatchTiming(phase="end", dispatch_id, ensemble_name="code-generator", duration_seconds, exit_status="success", timestamp)` at dispatch return. `duration_seconds` is the wall-clock interval between the two events; `exit_status` is one of `success`, `error`, `timeout`, `aborted`.
+
+### Scenario: Tool-call-emit log line precedes dispatch
+**Given** an operator-deployed serve with ADR-023 active, and an orchestrator response stream containing an `invoke_ensemble` tool call structure
+**When** the serving layer receives the tool call structure
+**Then** the serving layer emits `INFO: tool-call emit: tool=invoke_ensemble dispatch_id=<id>` **before** dispatching the tool call. The log line is a liveness anchor distinct from the post-dispatch `tool dispatch: result` line; operators see "received tool call from cloud LLM at HH:MM:SS" before the dispatch fires.
+
+### Scenario: Inference-wait heartbeat fires after `heartbeat_interval_seconds` of inactivity
+**Given** an operator-deployed serve with ADR-023 active, `heartbeat_interval_seconds=30` (default), and an open chat-completions request whose orchestrator is waiting on cloud-LLM inference for >30 seconds without tool activity
+**When** 30 seconds elapse without a tool-call-emit event or dispatch start/end event
+**Then** the serving layer emits `INFO: inference wait: elapsed=30 session_id=<id>` to the operator-terminal destination. If the wait continues, the heartbeat fires again every 30 seconds until tool activity resumes. The orchestrator-context destination does NOT receive heartbeats (the orchestrator's reasoning surface already has natural session-level timing context).
+
+### Scenario: Validate-once-at-load eliminates per-enumeration noise
+**Given** an operator-deployed serve at startup that loads the ensemble library containing legacy schema-drifted YAMLs (e.g., `fan-out-test.yaml`, `plexus-graph-analysis.yaml`) and valid ensembles
+**When** the serve completes startup
+**Then** the legacy YAMLs produce one `WARN` line each at startup with the file path and validation error rationale; the valid subset is loaded. Subsequent `list_ensembles()` calls return the validated subset without re-emitting warnings. A multi-dispatch session with 8 enumeration cycles produces 0 additional validation warnings for the same legacy YAMLs.
+
+### Scenario: Final dispatch's in-turn routing skipped; end-of-session summary captures events
+**Given** an operator-deployed serve with ADR-023 active, and a session whose final operation before close is a `code-generator` dispatch
+**When** the dispatch completes and the session closes immediately afterward
+**Then** the in-turn orchestrator-context routing is skipped (no next turn exists). The dispatch's events route to the **end-of-session summary** under the `dispatch_log` key in the session's `execution.json` artifact. The operator-terminal destination emits all dispatch events at emission time regardless of session close.
+
+### Preservation: ADR-018 Tier-Router-Audit drift criteria are unchanged
+**Given** the ADR-018-shipped Tier-Router-Audit with three drift criteria (verdict-distribution shift, escalation-vs-outcome correlation, bypass-rate trend)
+**When** ADR-023 adds the `dispatch_id` field to `AuditDiagnostic` events
+**Then** the audit's drift-criteria semantics are unchanged. The `dispatch_id` field is additive metadata enabling per-dispatch correlation; the criteria's findings (drift detected / not detected) operate on the same population data and produce the same verdicts.
+
+### Preservation: `CalibrationSignal` cross-layer channel is unchanged
+**Given** the ADR-016-shipped cross-layer calibration signal channel (L0 → L1 read-only, bounded)
+**When** ADR-023 adds `dispatch_id` to `CalibrationSignal` events and excludes them from orchestrator-context routing by default
+**Then** the cross-layer channel's existing bounding mechanisms (a)–(e) and its read-only / signal-channel-specific scope are unchanged. The `dispatch_id` is additive; the orchestrator-context exclusion is a routing-destination decision, not a change to the signal channel's emission semantics.
+
+### Preservation: `execution.json` artifact existing fields are unchanged
+**Given** the Cycle 5 BUILD-shipped `execution.json` artifact shape (`{ensemble, status, input, results, metadata, synthesis}`)
+**When** ADR-023 adds the `dispatch_log` key for end-of-session summary
+**Then** the existing fields (`ensemble`, `status`, `input`, `results`, `metadata`, `synthesis`) are preserved. The `dispatch_log` is an additive key; readers parsing the existing fields ignore it harmlessly until they choose to consume it.
+
+---
+
+## Feature: Common I/O Envelope — Typed Dispatch Response (ADR-024)
+
+### Scenario: `invoke_ensemble` returns typed `DispatchEnvelope`
+**Given** an operator-deployed serve with ADR-024 active, and a `text-summarizer` invocation
+**When** the dispatch completes
+**Then** `invoke_ensemble` returns a `DispatchEnvelope` dataclass instance with `status: "success"`, `primary: <human-readable summary line>`, `diagnostics: {ensemble: "text-summarizer", dispatch_id: <id>, duration_seconds: <float>, model_profile: <str>, tier: <str>, topaz_skill: "summarization", calibration_verdict: <verdict>, audit_findings: []}`. Optional fields (`structured`, `errors`, `artifacts`) are populated only when applicable per ADR-024 / ADR-025.
+
+### Scenario: `output_schema:` declaration populates `envelope.structured`
+**Given** an operator-deployed serve with ADR-024 active, a `claim-extractor` ensemble YAML carrying `output_schema:` declaring `{claims: [{text: string, label: string}, ...]}`, and a dispatch of `claim-extractor` against source material
+**When** the dispatch completes
+**Then** `envelope.structured` carries a typed payload matching the schema shape: `{claims: [{text: "...", label: "established"}, {text: "...", label: "contested"}, ...]}`. Downstream consumers (other ensembles in a composition; the orchestrator's reasoning surface) parse `envelope.structured` directly without re-parsing `primary`.
+
+### Scenario: Capability ensemble without `output_schema:` produces `envelope.structured = None`
+**Given** an operator-deployed serve with ADR-024 active, and a `prose-improver` ensemble YAML without `output_schema:` declared
+**When** the ensemble is dispatched
+**Then** the envelope's `structured` field is `None`; only `primary` carries the deliverable. Downstream consumers expecting `structured` handle the `None` case (no schema declared); composition continues to rely on the orchestrator's reasoning surface for between-stage data shaping (per spike β's headline finding).
+
+### Scenario: `errors[]` populated on partial-failure dispatch
+**Given** an operator-deployed serve with ADR-024 active, and a multi-stage capability ensemble (e.g., a hypothetical `lit-review` composition) where one of three stages errors mid-dispatch
+**When** the dispatch returns
+**Then** `envelope.status: "partial"`, `envelope.errors: [{stage: <stage-name>, error_type: <typed-error-name>, message: <str>, recoverable: <bool>}]`. Stages that completed successfully populate `envelope.primary` / `envelope.structured` / `envelope.artifacts` as if they had completed in isolation; the partial-failure shape is observable from `status` + `errors[]`.
+
+### Scenario: `diagnostics.dispatch_id` correlates envelope to ADR-023 events
+**Given** a session producing a `code-generator` dispatch under ADR-023 + ADR-024 active
+**When** the dispatch's envelope is constructed and the session's events are written to `execution.json`
+**Then** `envelope.diagnostics.dispatch_id` matches the `dispatch_id` field on all ADR-023 events for that dispatch (`DispatchTiming(start)`, `TierSelection`, `CalibrationVerdict`, `DispatchTiming(end)`). Joining envelope and events on `dispatch_id` reconstructs the full dispatch context.
+
+### Preservation: ADR-021's per-capability dispatch contract is preserved at the contract level
+**Given** the ADR-021-shipped per-capability dispatch contract (the orchestrator returns the capability ensemble's output to the skill framework as the chat completion response)
+**When** ADR-024 codifies the typed envelope as the response shape
+**Then** ADR-021's substantive commitments (one capability sub-task per request; client-side state across sub-tasks; `invoke_ensemble`'s fresh-context property; Tier-Escalation Router pre-specified routing; Calibration Gate firing per sub-task) operate unchanged. The envelope is the structural shape the dispatch contract's response takes; the contract's behavior is preserved.
+
+### Preservation: `execution.json` artifact existing shape is preserved
+**Given** the Cycle 5 BUILD-shipped `execution.json` artifact shape with `metadata` field
+**When** ADR-024 introduces the `diagnostics` field-name at the envelope layer
+**Then** the `execution.json` artifact retains `metadata` (the rename is at the envelope layer only); readers parsing the existing artifact shape are not broken. Cycle 7+ may produce an artifact-shape ADR aligning artifact and envelope field names.
+
+---
+
+## Feature: Artifact-as-Substrate for Capability Ensemble Deliverables (ADR-025)
+
+### Scenario: Capability ensemble writes deliverable to session-dir artifact path
+**Given** an operator-deployed serve with ADR-025 active, a `code-generator` ensemble YAML carrying `output_substrate: artifact` (default for capability ensembles in Cycle 6), and a dispatch with `session_id = "2026-05-15T14:32:08Z-a7f3"`, `dispatch_id = "dispatch-001"`, deliverable name `circular_buffer`
+**When** the dispatch completes
+**Then** the deliverable is written to `.llm-orc/agentic-sessions/2026-05-15T14:32:08Z-a7f3/dispatch-001/circular_buffer.py`. The envelope's `primary` field carries a one-line summary referencing the artifact (e.g., *"Wrote class CircularBuffer to agentic-sessions/2026-05-15T14:32:08Z-a7f3/dispatch-001/circular_buffer.py (1.2 KB, application/python)"*). The envelope's `artifacts[0]` carries the typed reference: `{path: "agentic-sessions/2026-05-15T14:32:08Z-a7f3/dispatch-001/circular_buffer.py", content_type: "application/python", size_bytes: 1247, summary: "Class CircularBuffer with iter and len protocol; 24 lines.", retention: "session"}`.
+
+### Scenario: System ensemble produces inline-response envelope
+**Given** an operator-deployed serve with ADR-025 active, the system ensemble `agentic-calibration-checker` (internal infrastructure, not in capability scope), and a calibration check invocation
+**When** the dispatch completes
+**Then** the envelope's `primary` carries the verdict content directly (e.g., *"Verdict: Proceed; confidence: 0.87"*); `artifacts[]` is empty (`None` or `[]`). The system ensemble's response shape is inline per ADR-025's "system ensembles remain inline" scope.
+
+### Scenario: Substrate-routed dispatch's envelope is not passed through `agentic-result-summarizer`
+**Given** an operator-deployed serve with ADR-025 active, the AS-7 amendment in force, and a substrate-routed `code-generator` dispatch
+**When** the dispatch returns control to the orchestrator
+**Then** the orchestrator does NOT invoke `agentic-result-summarizer` for this dispatch. The envelope's `primary` (summary line) and `artifacts[0]` (typed reference) are already summary-shaped; AS-7's amended default-with-conditional-skip applies the skip. The orchestrator's context carries the envelope as observation per ADR-023; total context impact is small.
+
+### Scenario: Inline-response dispatch retains `agentic-result-summarizer` per AS-7 amended
+**Given** an operator-deployed serve with ADR-025 active, the AS-7 amendment in force, and an inline-response dispatch (e.g., a hypothetical capability ensemble declared `output_substrate: inline`, or a system ensemble)
+**When** the dispatch returns control to the orchestrator
+**Then** the orchestrator invokes `agentic-result-summarizer` per ADR-004 (mandate scope: inline-response path). AS-7's amended default applies — the mandate operates within the inline-response scope unchanged.
+
+### Scenario: Calibration gate evaluators receive `primary` + `artifacts[0].summary` by default
+**Given** an operator-deployed serve with ADR-025 active, a capability ensemble whose YAML does not declare `calibration_substrate_access: artifact`, and a calibration-gate-eligible dispatch
+**When** the calibration gate's critic agents evaluate the dispatch
+**Then** the evaluator agents receive the envelope's `primary` field and `artifacts[0].summary` field as their evaluation input. They do NOT read the artifact content at `artifacts[0].path`. The verdict produced is based on summary-line evaluation; for ensembles whose quality is reasonably inferrable from a one-line summary, this default suffices.
+
+### Scenario: Calibration gate reads artifact content for `code-generator` (opt-in)
+**Given** an operator-deployed serve with ADR-025 active, the `code-generator` ensemble YAML declaring `calibration_substrate_access: artifact`, and a calibration-gate-eligible code-generation dispatch
+**When** the calibration gate's critic agents evaluate the dispatch
+**Then** the evaluator agents receive a tool-call surface to read the artifact at `artifacts[0].path`; they read the code content and evaluate against the actual deliverable. The verdict produced reflects code-correctness analysis, not summary-line inference. This is the highest-cost evaluation path; only ensembles whose quality cannot be evaluated from summary alone opt in.
+
+### Scenario: Session-close cleanup removes `retention: session` artifacts
+**Given** a session with three substrate-routed dispatches producing artifacts with `retention: session`, and one dispatch producing an artifact with `retention: durable`
+**When** the session closes
+**Then** the serve removes the three session-retention artifacts (and the per-dispatch directories that contained them) under `.llm-orc/agentic-sessions/<session_id>/`. The durable artifact remains on disk. The session directory itself remains if any durable artifact persists; otherwise the directory is removed.
+
+### Scenario: Dial-back falsification indicator fires
+**Given** an operator-deployed serve where, during post-BUILD PLAY observation, three or more capability ensembles have been declared `output_substrate: inline` as substrate-opt-outs
+**When** the PLAY field-notes record the opt-out pattern
+**Then** the dial-back deliberation surfaces in the cycle observing the pattern — the substantive-deliverable scope (rejected at Cycle 6 DECIDE) is re-examined with the operator's per-ensemble opt-out evidence. The dial-back is fire-on-evidence rather than fire-on-discomfort per ADR-025's "Dial-back falsification criteria."
+
+### Preservation: ADR-007 Calibration Gate verdict trichotomy is unchanged
+**Given** the ADR-007-shipped Calibration Gate producing Proceed / Reflect / Abstain verdicts on dispatched ensemble outputs
+**When** Cycle 6 BUILD ships substrate-routing and the ADR-025 evaluation-surface specification
+**Then** the gate's verdict trichotomy (Proceed / Reflect / Abstain) is unchanged. The evaluation **surface** changes (summary-only / structured / artifact-content depending on per-ensemble configuration); the verdict **shape** is preserved. Downstream consumers (the Tier-Escalation Router per ADR-015; the audit per ADR-018) consume verdicts unchanged.
+
+### Preservation: ADR-014 Calibration Gate trajectory-level extension is unchanged
+**Given** the ADR-014-shipped trajectory feature extraction (HTC / AUQ) on dispatched-ensemble trajectories
+**When** Cycle 6 BUILD ships substrate-routing
+**Then** trajectory feature extraction operates unchanged on the dispatched ensemble's trajectory data (model output tokens, attention weights, decision confidence). Substrate-routing affects the **deliverable** location (artifact vs. inline); the **trajectory data** (the ensemble's reasoning surface during dispatch) is independent of substrate routing.
+
+### Preservation: ADR-004's per-invocation escape hatch within the inline-response scope is unchanged
+**Given** the ADR-004-shipped per-invocation `raw_output=True` escape hatch (small classifier outputs that pass through summarization)
+**When** ADR-025 amends AS-7 to default-with-conditional-skip
+**Then** within the inline-response scope (system ensembles; future ensembles opting out via `output_substrate: inline`), ADR-004's per-invocation escape hatch operates unchanged. The `raw_output=True` flag continues to bypass `agentic-result-summarizer` for classifier-shape inline-response dispatches. Substrate-routing is a separate, dispatch-shape-level decision; the two skip mechanisms compose without contradiction.
+
+### Preservation: `compose_ensemble` (ADR-006) scope is unchanged
+**Given** the ADR-006-shipped `compose_ensemble` scope (runtime composition of capability ensembles from existing library primitives)
+**When** ADR-025 introduces substrate-routing for capability ensembles
+**Then** `compose_ensemble`'s scope is unchanged — it composes capability ensembles from primitives; the composed ensemble is itself substrate-routed if it carries `output_substrate: artifact`. The composition mechanism does not change; the composed ensemble's response shape follows the same rule as any other capability ensemble.
+
+### Preservation: Existing `.llm-orc/artifacts/agentic-serving/<ensemble>/<timestamp>/` artifact tree is deprecated, not actively removed
+**Given** the Cycle 5 BUILD-shipped artifact path `.llm-orc/artifacts/agentic-serving/<ensemble>/<timestamp>/<dispatch>/execution.json`
+**When** Cycle 6 BUILD ships the new `.llm-orc/agentic-sessions/<session_id>/<dispatch_id>/` structure
+**Then** new dispatches write under the new structure; the old artifact tree is **deprecated** but not actively cleaned up by BUILD. Operators with pinned references to the old path migrate manually. The old path's existence does not affect new-dispatch behavior; the deprecation is structural rather than active removal.

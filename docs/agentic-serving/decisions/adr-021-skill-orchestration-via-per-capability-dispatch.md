@@ -1,6 +1,10 @@
 # ADR-021: Skill-Orchestration Composition via Per-Capability Dispatch
 
-**Status:** Proposed
+> **Updated by ADR-022 on 2026-05-15.** The "natural-language prompt" dispatch shape (§Decision §"Topaz-skill signal path: how the orchestrator identifies the right ensemble") is narrowed: "supported" now means "preferred when capability match exists, via the amended orchestrator system prompt." The permissive reading (supported as one option among several) is replaced by the amended commitment. The rest of this ADR (per-capability dispatch contract, `compose_ensemble` scope, cross-sub-task state, rejected alternatives, falsification trigger, consequences) remains current.
+
+> **Updated by ADR-024 and ADR-025 on 2026-05-15.** §Decision §"Per-capability dispatch contract" step 3 ("The orchestrator returns the capability ensemble's output (already summarized per AS-7) to the skill framework as the chat completion response") is updated: the response shape is now the typed envelope per ADR-024; summarization is conditional on substrate-routing per ADR-025 (substrate-routed ensembles' deliverables are not summarized at content level; inline-response ensembles retain summarization per amended AS-7). Substantive commitments of the per-capability dispatch contract are preserved.
+
+**Status:** Updated by ADR-022, ADR-024, ADR-025
 
 **Date:** 2026-05-12
 
