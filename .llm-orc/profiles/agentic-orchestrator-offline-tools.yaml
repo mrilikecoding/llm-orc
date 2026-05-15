@@ -1,0 +1,20 @@
+# Agentic-serving — offline-fallback orchestrator profile via OpenAI-compatible
+# adapter (Cycle 6 spike γ Cell B unblock).
+#
+# Local Ollama routed through Ollama's OpenAI-compatible /v1/chat/completions
+# endpoint. Uses the OpenAICompatibleModel adapter which declares
+# supports_tool_calling = True, satisfying the orchestrator's tool-calling
+# requirement (src/llm_orc/web/api/v1_chat_completions.py:_default_orchestrator_llm_loader).
+# The peer `agentic-orchestrator-offline.yaml` profile uses provider: ollama
+# which routes through OllamaModel (supports_tool_calling = False) and cannot
+# serve as an orchestrator under the current code — see ToolCallingNotSupportedError.
+#
+# To use this profile as the active orchestrator, edit the
+# `agentic_serving.orchestrator.model_profile` value in
+# `.llm-orc/config.yaml` to `agentic-orchestrator-offline-tools`.
+name: agentic-orchestrator-offline-tools
+model: qwen3:14b
+provider: openai-compatible/ollama
+base_url: http://localhost:11434/v1
+cost_per_token: 0.0
+timeout_seconds: 300

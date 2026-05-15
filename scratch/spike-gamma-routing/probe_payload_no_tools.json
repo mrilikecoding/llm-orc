@@ -1,0 +1,9 @@
+{
+  "model": "agentic-orchestrator",
+  "stream": false,
+  "user": "spike-gamma-cellC-notools",
+  "messages": [
+    {"role": "user", "content": "Write a Python function that reverses a string in place."}
+  ],
+  "tools": []
+}

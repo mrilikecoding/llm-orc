@@ -1,0 +1,39 @@
+{
+  "model": "agentic-orchestrator-offline-tools",
+  "stream": false,
+  "user": "spike-gamma-cellB-toolrich-offline-v2",
+  "messages": [
+    {"role": "user", "content": "Write a Python function that reverses a string in place."}
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "write_file",
+        "description": "Write content to a file on the user's filesystem.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {"type": "string", "description": "Filesystem path to write to."},
+            "content": {"type": "string", "description": "File contents."}
+          },
+          "required": ["path", "content"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "read_file",
+        "description": "Read a file from the user's filesystem.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {"type": "string", "description": "Filesystem path to read."}
+          },
+          "required": ["path"]
+        }
+      }
+    }
+  ]
+}
