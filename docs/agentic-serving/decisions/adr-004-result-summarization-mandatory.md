@@ -1,6 +1,8 @@
 # ADR-004: Result Summarization Is Mandatory Before Orchestrator Context
 
-**Status:** Accepted
+> **Updated by ADR-025 on 2026-05-15.** AS-7 amends to default-with-conditional-skip — substrate-routed ensembles per ADR-025 skip content summarization at the substrate layer (the envelope's `primary` and `artifacts[0]` already carry summary-shaped content). This ADR's mandate continues to operate over the inline-response path; the rationale (context rot prevention) and the decision text remain current within that scope. The mandate's scope narrows from "every ensemble invocation" to "every inline-response ensemble invocation."
+
+**Status:** Updated by ADR-025
 
 **Date:** 2026-04-17
 

@@ -1,6 +1,8 @@
 # ADR-019: Skill-Framework-Agnostic Orchestrator + Operation-Named Capability Ensemble Library
 
-**Status:** Proposed
+> **Updated by ADR-022 on 2026-05-15.** §Consequences §Positive's profile-portability claim is qualified — the library's portability across deployments is structural; the orchestrator's routing behavior across orchestrator profiles is empirically not uniform (per spike γ). See the inline qualification in §Consequences §Positive. The rest of this ADR (skill-framework-agnostic dispatch contract, operation-named library principle, three-layer separation, rejected alternatives, falsification trigger) remains current.
+
+**Status:** Updated by ADR-022
 
 **Date:** 2026-05-12
 
@@ -104,7 +106,7 @@ ADR-015 §Negative's "operator-driven library migration" stands literally: the c
 - **Operation-named library is reusable across skill frameworks.** Each capability ensemble serves multiple methodology consumers. Library investment compounds across deployments.
 - **Three-layer responsibility separation is debuggable.** A failed sub-task localizes to one of three layers: skill-framework decomposition (was the right capability requested?), capability dispatch (was the right ensemble routed?), or capability execution (did the ensemble execute correctly?). Each layer is independently diagnosable.
 - **Working defaults close the first-encounter gap.** Cycle 5 BUILD ships an operator-runnable deployment shape, not just mechanism architecture.
-- **Profile file isolates model swaps.** `.llm-orc/profiles/agentic-serving-profiles.yaml` makes model swaps a single-file edit. Cross-deployment portability improves.
+- **Profile file isolates model swaps.** `.llm-orc/profiles/agentic-serving-profiles.yaml` makes model swaps a single-file edit. Cross-deployment portability improves. *Cycle 6 qualification (per spike γ, 2026-05-15):* the **library's** portability across deployments is structural (any deployment-time profile swap operates on the same library). The **orchestrator's routing behavior** across orchestrator profiles is empirically **not** uniform — spike γ Cell A vs Cell B documented MiniMax M2.5-free under-delegating to direct completion while qwen3:14b over-delegating to client tools under identical NL framing. ADR-022's system-prompt amendment is the cycle's remediation; effectiveness is configuration-conditional per ADR-022's disposition (iii) framing. The portability-improvement claim above scopes to library shape and deployment-time model swaps, not to cross-orchestrator-profile routing-behavior uniformity.
 - **Subdirectory namespace clarifies extension.** Operators adding new capability ensembles know where they go; readers know what's in scope for agentic-serving versus the rest of the library.
 
 ### Negative
