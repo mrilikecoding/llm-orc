@@ -10,13 +10,13 @@
 
 **Cycle number:** 6
 **Started:** 2026-05-13
-**Current phase:** architect
-**In-progress phase:** architect
+**Current phase:** build
 **Cycle type:** mini-cycle
 **Plugin version:** v0.8.5
 **Artifact base:** `docs/agentic-serving/`
-**Skipped phases:** research, synthesize (model and architect both retained as likely-needed given the ensemble-contract cluster's vocabulary and module-shape implications — see MODEL and ARCHITECT notes below). SYNTHESIZE flagged as attractive at cycle close given the cross-cycle pattern-recognition character of the ensemble-contract proposal; remains optional per Mode D shape.
-**BUILD mode:** to be declared at BUILD entry (gated recommended given the design-alternative examination character of routing/observability work; auto mode appropriate only if BUILD reduces to mechanical wiring after DECIDE)
+**Skipped phases:** research, synthesize. SYNTHESIZE flagged as attractive at cycle close given the cross-cycle pattern-recognition character of the ensemble-contract proposal; remains optional per Mode D shape.
+**BUILD mode:** auto (declared at BUILD entry 2026-05-15; practitioner accepted the trade — auto mode does not catch design-alternative examination or scoping-judgment surfacing, which gated mode would; stewardship is self-administered, review concentrated at start and end of WPs; the four-module structural shape is treated as landed and BUILD is treated as wiring it together with the seven ARCHITECT commitments as constraints)
+**In-progress phase:** build
 
 **Origin:** Cycle 5 PLAY (2026-05-13) chose **Path 1** — Thread A defects (4 broken capability ensembles + result-summarizer compression + `code-generator` coder timeout) handled as normal llm-orc dev work outside the methodology cycle; routing + observability axes opened as Cycle 6 scoped mini-cycle. Practitioner verbatim: *"I think path 1 is the way forward. Routing + observability need to be addressed."* Cycle 5 status archived at `cycle-archive/cycle-5-agentic-serving-library-structure.md`.
 
@@ -46,8 +46,8 @@ The three clusters are linked: the operator cannot tell what routing decision ha
 | Spike β | ✅ Complete (2026-05-15) | `essays/research-logs/cycle-6-spike-beta-composition-predictability.md` | (substrate for T16; see Spike findings) |
 | Spike γ | ✅ Complete (2026-05-15, 4 cells) | `essays/research-logs/cycle-6-spike-gamma-routing-characterization.md` | (substrate for T14; see Spike findings) |
 | DECIDE | ✅ Complete (2026-05-15) | ADR-022/023/024/025 + scenarios + interaction-specs + argument-audit-cycle-6-decide(+round2) + conformance-scan-cycle-6-decide + susceptibility-snapshot-cycle-6-decide + gate reflection `housekeeping/gates/cycle-6-decide-gate.md` | "Engage the pre-mortem; absorbed two refinements ADR-025 didn't anticipate (Plexus-KG-as-substrate Cycle 7+ deliberation territory; cross-dispatch shared-substrate as Indicator 5); calibration concern softened Indicator 2; AS-7 amended per Step 3.7" |
-| ARCHITECT | ▶ Entry-ready | — | — |
-| BUILD | ☐ Pending | — | — |
+| ARCHITECT | ✅ Complete (2026-05-15) | `system-design.md` v4.0 + `system-design.agents.md` v4.0 (4 new modules, 5 extensions, 1 shared type, 13 new edges, 7 new fitness criteria FC-21..FC-27); `roadmap.md` v6.0 with 5 active WPs (WP-A..WP-E); `ORIENTATION.md` regenerated; `housekeeping/audits/susceptibility-snapshot-cycle-6-architect.md`; `housekeeping/gates/cycle-6-architect-gate.md` | "Probed via belief-mapping on two-module-vs-one decomposition for event sinks; user chose Proceed-as-is; contingent shift to Teach recorded the architectural argument inline (FC-4 / layering / dependency-direction); three architect-phase snapshot advisories closed inline before BUILD entry" |
+| BUILD | ▶ Entry-ready | — | — |
 | PLAY | ☐ Optional | — | — |
 | SYNTHESIZE | ☐ Optional | — | — |
 
@@ -201,6 +201,28 @@ All three spikes ran. Research logs preserved under `essays/research-logs/cycle-
 The existing `agentic-orchestrator-offline.yaml` profile cannot serve as an orchestrator under the current code (`OllamaModel.supports_tool_calling = False`). The unblock for spike γ Cell B was to author `.llm-orc/profiles/agentic-orchestrator-offline-tools.yaml` using `provider: openai-compatible/ollama` (`OpenAICompatibleModel.supports_tool_calling = True`) pointing to `http://localhost:11434/v1`. Working tree now has both profiles. The original profile remains useful for non-orchestrator roles where tool calling is not required (or where `OllamaModel` is preferred for some other reason). **DECIDE attends:** does Cycle 6 want to deprecate the original offline profile, keep both with documentation, or amend the original to use OpenAI-compatible routing? Not a primary T14/T15/T16 deliberation — a housekeeping question that can fold into BUILD if T14's intervention path requires offline-profile testing.
 
 ## Feed-Forward Signals
+
+### From Cycle 6 ARCHITECT (closed at gate 2026-05-15)
+
+The Cycle 6 ARCHITECT gate produced six advisory feed-forwards for BUILD, three closed inline (in `system-design.agents.md`) and three remaining as BUILD-territory signals:
+
+**Closed inline during ARCHITECT (in `system-design.agents.md`):**
+
+1. **Orchestrator-Context Event Sink module-separation justification** — the entry now documents that a Runtime-internal alternative was implicitly ruled out by FC-4 (Runtime's allowed-import set forbids direct substrate dependency); the separate-module shape preserves FC-4 and follows the existing arms-length pattern (analogous to Runtime invoking Conversation Compaction at turn boundaries without importing compaction internals).
+
+2. **Validate-once-at-load operator-affordance Direction-not-constraint note** — the Ensemble Engine Cycle 6 extension now carries an explicit Direction-not-constraint note naming the file-watch alternative and the deployment-predictability rationale for explicit-reload semantics (`SIGHUP` / admin endpoint / restart). Closes the operator-affordance examination target from Appendix A.5 brief.
+
+3. **ADR-016-style bounding mechanisms disposition** — the Fitness Criteria section now explicitly disposition this question: the Cycle 6 cross-module integration contracts were examined for ADR-016-style bounding-mechanism applicability and found structurally inapplicable (synchronous calls; typed-error boundaries; no long-horizon feedback accumulation). The substrate's single-source-of-truth pattern for `dispatch_id` is mechanism (a)-analog by construction; FC-22's typed-error infrastructure is mechanism (e)-analog. **Closes Cycle 4 OQ #14 for the Cycle 6 stage set explicitly.**
+
+**Remaining BUILD-territory signals:**
+
+4. **`web-searcher` early-migration sequencing** — DECIDE snapshot Finding 1 advisory: position `web-searcher` among the early per-ensemble migrations in WP-E so Indicator 1 (latency overhead for deliverables under 1 KB) and Indicator 4 (`output_substrate: inline` opt-out count) of ADR-025's dial-back falsification criteria are testable before the full migration commits. Encoded in `roadmap.md` WP-E.
+
+5. **`AuditDiagnostic` inclusion/exclusion at Orchestrator-Context Sink** — the exclusion-by-default policy for `CalibrationSignal` is specified; the analogous policy for `AuditDiagnostic` is unspecified at the architecture layer. BUILD's WP-C should resolve this when implementing the sink's `consume()` and `observations_for()` methods. Default recommendation (advisory): exclude by default (audit diagnostics are operator-tooling territory rather than in-turn orchestrator reasoning); opt-in available via `agentic_serving.observability.orchestrator_context_routes_audit_diagnostic: true`.
+
+6. **P2-E ADR-019 portability qualification** — verified applied at `adr-019:109` during ARCHITECT entry; carries forward as a confirm-not-removed check at BUILD entry.
+
+**Commitment-gating outputs from ARCHITECT gate** (recorded in `housekeeping/gates/cycle-6-architect-gate.md`): six settled premises (Inversion N+2 governs observability architecture; always-scope for ADR-025 substrate-routing; AS-7 amended is operationally honored; `dispatch_id` is single-source-of-truth correlation; `DispatchEnvelope` is typed return value; ADR-022 system-prompt amendment is the design-time intervention); five open questions (ADR-022 amendment effectiveness under qwen3:14b; `web-searcher` under always-scope substrate-routing; `AuditDiagnostic` policy at Orchestrator-Context Sink; Plexus-KG-as-substrate Cycle 7+ deliberation territory; `output_schema:` adoption pace + composition-substrate-replacement-vs-drift-detection scope); seven specific commitments carried forward to BUILD.
 
 ### From Cycle 6 MODEL (closed at gate 2026-05-14)
 
