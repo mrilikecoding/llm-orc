@@ -85,6 +85,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final, Literal, Protocol
 
 from llm_orc.agentic.calibration_gate import CalibrationVerdict
+from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
 from llm_orc.models.structural_errors import LlmOrcStructuralError
 
 __all__ = [
@@ -550,6 +551,7 @@ class CalibrationSignalChannel:
         window_signals: int = DEFAULT_WINDOW_SIGNALS,
         audit_thresholds: CalibrationChannelAuditThresholds | None = None,
         clock: ChannelClock | None = None,
+        event_substrate: DispatchEventSubstrate | None = None,
     ) -> None:
         if window_minutes <= 0.0:
             raise ValueError(
@@ -578,6 +580,18 @@ class CalibrationSignalChannel:
         self._diagnostics: list[CalibrationChannelAuditDiagnostic] = []
         self._fail_safe_active = False
         self._window_id = 0
+        self._event_substrate = event_substrate
+        """Dispatch Event Substrate (Cycle 6 WP-B carry-forward from WP-A).
+
+        When configured, every validated :class:`CalibrationSignal` flows
+        through the substrate at :meth:`record_signal` time so the
+        operator-terminal sink can log it at DEBUG per ADR-023
+        §Destination 1. ``None`` preserves the pre-Cycle-6 path. The
+        signal's ``dispatch_id`` field carries through whatever value
+        the L0 caller supplied — the L0 surface does not currently
+        track dispatch_id, so emitted signals carry ``dispatch_id=None``
+        until the L0 side is plumbed in a future cycle.
+        """
 
     # ----- L0 → L1 signal emission (mechanism (e) validation) -----
 
@@ -598,6 +612,11 @@ class CalibrationSignalChannel:
         coerced = self._validate_and_coerce(signal)
         self._signals.append(_StoredSignal(signal=coerced))
         self._prune_window(now_seconds=self._clock.now_seconds())
+        # ADR-023 WP-B (carry-forward from WP-A): emit through the
+        # Dispatch Event Substrate so the operator-terminal sink can
+        # surface the signal at DEBUG per §Destination 1.
+        if self._event_substrate is not None:
+            self._event_substrate.emit(coerced)
 
     def malformed_signal_count(self) -> int:
         """How many malformed signals have been rejected at the boundary.
