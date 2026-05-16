@@ -173,6 +173,13 @@ class TierSelection:
     Recorded for observability and so the (d)-analog audit (WP-G4-2)
     can correlate escalation rate against skill."""
 
+    dispatch_id: str | None = None
+    """ADR-023 correlation identifier (Cycle 6 WP-A — additive). Joins
+    this selection to the ``DispatchTiming`` start/end events and other
+    per-dispatch events emitted through the Dispatch Event Substrate.
+    ``None`` during the progressive conversion when the call site does
+    not yet pass the substrate's allocated identifier."""
+
 
 def _coerce_topaz_skill(raw: object) -> TopazSkill | None:
     """Return ``raw`` if it is a recognized Topaz skill, else ``None``.
