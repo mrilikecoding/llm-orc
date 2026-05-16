@@ -13,7 +13,9 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 >
 > **Cycle 6 BUILD-mode declaration**: to be set at BUILD entry per ADR-091 (gated recommended given the design-alternative examination character of ADR-022 routing-surface work + the cross-surface `dispatch_id` coupling per DECIDE snapshot Finding 2 advisory; auto mode appropriate only if BUILD reduces to mechanical wiring after the four-module structural shape is in place).
 
-### WP-A: Dispatch Event Substrate + `dispatch_id` correlation (ADR-023 emission substrate)
+### WP-A: Dispatch Event Substrate + `dispatch_id` correlation (ADR-023 emission substrate) — ✅ **Closed 2026-05-15** (commits `b944f0f` refactor + `0dc8b7f` feat)
+
+**Carry-forward to WP-B:** `CalibrationSignal` substrate emission deferred from WP-A producer migration. The signal originates at L0 (Ensemble Engine dispatch outputs) and flows through `CalibrationSignalChannel`'s read-only L0→L1 channel per ADR-016; wiring substrate emission requires channel-side plumbing that scopes naturally with WP-B's sink work. WP-B should land `CalibrationSignalChannel.record_signal(...)` substrate emission (with the additive `dispatch_id` field already on `CalibrationSignal`) so the operator-terminal sink observes calibration signals at DEBUG level per ADR-023 §Destination 1.
 
 **Objective:** Land the unified event-emission substrate per Inversion N+2 — one substrate that fans out to two destinations. Add `DispatchTiming` event type + `dispatch_id` correlation identifier across the four existing event types.
 
