@@ -741,3 +741,182 @@ Alias for `llm-orc web` — starts the same FastAPI app with
 agentic-serving-oriented CLI framing. Use `serve` for agentic-client
 deployments, `web` for browser UI. `llm-orc mcp serve` is unrelated
 (MCP server for direct tool use).
+
+---
+
+## Module: Dispatch Event Substrate *(Cycle 6 WP-A, ADR-023)*
+
+**Implementation state:** Complete (WP-A shipped 2026-05-15; WP-B
+producer-side migration for `CalibrationSignal` shipped 2026-05-15).
+**Code location:** `src/llm_orc/agentic/dispatch_event_substrate.py`.
+**Stability:** Settled.
+
+### Domain concepts in code
+
+| Concept | Code Manifestation | Location |
+|---------|-------------------|----------|
+| Dispatch timing | `DispatchTiming` frozen dataclass | `dispatch_event_substrate.py:55-79` |
+| Route event (action) | `DispatchEventSubstrate.emit(event)` | `dispatch_event_substrate.py:165-186` |
+| `dispatch_id` correlation | `new_dispatch_id(session_id, counter)` + `DispatchEventSubstrate.new_dispatch_id(session_id)` | `dispatch_event_substrate.py:109-117, 151-159` |
+| Event sink | `EventSink` Protocol | `dispatch_event_substrate.py:95-106` |
+
+### Design rationale
+
+The substrate is the unified event-emission surface per Inversion N+2:
+one substrate fans out to two routing destinations (operator-terminal
+sink at L3 ships in WP-B; orchestrator-context sink at L2 ships in
+WP-C). Producers (Calibration Gate, Tier-Escalation Router,
+Tier-Router-Audit, Calibration Signal Channel, Orchestrator Tool
+Dispatch) emit through one substrate rather than knowing about
+multiple destinations — the destinations register as sinks.
+`dispatch_id` is the single source-of-truth correlation identifier
+(format `<session_id>-dispatch-<counter:04d>`) joining events across
+the stream, the envelope's `diagnostics.dispatch_id` (WP-D), and the
+artifact filesystem path's `<dispatch_id>` segment (WP-E).
+`unregister_sink` (added in WP-B piece 5) supports per-request sink
+lifecycles (the inference-wait heartbeat scheduler registers at
+request open, unregisters at request close).
+
+### Key integration points
+
+- **Orchestrator Tool Dispatch** (L2) — allocates `dispatch_id` via
+  `substrate.new_dispatch_id` and emits `DispatchTiming(start)` /
+  `DispatchTiming(end)` bracketing every `invoke_ensemble` dispatch.
+- **Calibration Gate, Tier Router, Tier-Router-Audit, Calibration
+  Signal Channel** — emit verdict / selection / audit / signal events
+  through the substrate; sinks observe.
+- **Operator-Terminal Event Sink** (L3, WP-B) — registered sink;
+  formats each event into one operator-terminal log line.
+
+---
+
+## Module: Operator-Terminal Event Sink *(Cycle 6 WP-B, ADR-023)*
+
+**Implementation state:** Complete (pieces 1 + 2 shipped 2026-05-15;
+pieces 3-5 shipped 2026-05-15).
+**Code location:** `src/llm_orc/agentic/operator_terminal_event_sink.py`.
+**Stability:** Settled.
+
+### Domain concepts in code
+
+| Concept | Code Manifestation | Location |
+|---------|-------------------|----------|
+| Liveness signal | `emit_tool_call_log`, `emit_heartbeat` action surfaces | `operator_terminal_event_sink.py:108-141` |
+| Emit (tool call) (action) | `emit_tool_call_log(tool_name, dispatch_id)` | `operator_terminal_event_sink.py:108-125` |
+| Heartbeat (action) | `emit_heartbeat(session_id, elapsed_seconds)` | `operator_terminal_event_sink.py:127-141` |
+| Validate-once-at-load WARN surface | `emit_validation_warning`, `report_validation_results` | `operator_terminal_event_sink.py:143-179` |
+
+### Design rationale
+
+The sink owns per-event format strings and log-level discrimination
+per ADR-023 §Destination 1 — every event class formats to one or more
+human-readable lines at INFO level except `CalibrationSignal` at
+DEBUG (the cross-layer channel emits at high volume; DEBUG keeps the
+default-INFO terminal quiet). The sink does not start threads or
+schedule timers — it formats and emits via Python's `logging` module
+so operators control verbosity through standard logging configuration
+(`LOG_LEVEL` env var, `--verbose` flag wiring, etc.). Two routing
+paths arrive through different surfaces: substrate events arrive via
+the `EventSink.consume` Protocol; liveness signals (tool-call-emit,
+heartbeat) arrive via direct action calls because their natural
+trigger is timing in the Serving Layer, not a producer-emitted event.
+
+### Key integration points
+
+- **Dispatch Event Substrate** — registered consumer via
+  `register_with(substrate)`. The sink receives `DispatchTiming`,
+  `TierSelection`, `CalibrationVerdictEvent`, `AuditDiagnostic`, and
+  `CalibrationSignal` events.
+- **Orchestrator Tool Dispatch** (piece 4) — calls
+  `emit_tool_call_log(tool_name="invoke_ensemble", dispatch_id=...)`
+  via the optional `ToolCallEmitLogger` Protocol between
+  `new_dispatch_id` allocation and `DispatchTiming(start)` emission
+  (FC-23 chronological-ordering).
+- **Ensemble Engine** (piece 3) — `EnsembleLoader.validation_results()`
+  is drained through `sink.report_validation_results(results)` at
+  serve startup (validate-once-at-load noise-floor remediation).
+- **Serving Layer** — per-request `InferenceWaitHeartbeatScheduler`
+  calls `emit_heartbeat(session_id, elapsed_seconds)` after
+  `heartbeat_interval_seconds` of inference inactivity.
+
+---
+
+## Module: Inference Wait Heartbeat *(Cycle 6 WP-B piece 5, ADR-023)*
+
+**Implementation state:** Complete (shipped 2026-05-15).
+**Code location:** `src/llm_orc/agentic/inference_wait_heartbeat.py`.
+**Stability:** Settled.
+
+### Domain concepts in code
+
+| Concept | Code Manifestation | Location |
+|---------|-------------------|----------|
+| Heartbeat scheduler | `InferenceWaitHeartbeatScheduler` | `inference_wait_heartbeat.py:52-182` |
+| Activity reset | `_note_activity` + `check_and_emit_if_inactive` | `inference_wait_heartbeat.py:133-146, 181-182` |
+| Substrate observer | `consume(event)` (filters by session_id-matched DispatchTiming) | `inference_wait_heartbeat.py:83-98` |
+| Tool-call-emit forwarder | `emit_tool_call_log(tool_name, dispatch_id)` | `inference_wait_heartbeat.py:104-115` |
+
+### Design rationale
+
+One scheduler per open `/v1/chat/completions` request (C6-2 default —
+async background task tied to the open-request lifetime). The
+scheduler observes two activity-signal paths: substrate `DispatchTiming`
+events whose `dispatch_id` carries the scheduler's `session_id`
+prefix, and `emit_tool_call_log` calls (the scheduler also implements
+the `ToolCallEmitLogger` Protocol; injecting the scheduler as Tool
+Dispatch's emit-logger is supported but not used in the production
+wiring — Tool Dispatch uses the bare sink, and substrate-DispatchTiming
+events arrive shortly after tool-call-emits, so observation through
+the substrate alone is operationally sufficient). The
+`check_and_emit_if_inactive` tick logic is a sync surface tested
+directly under a controllable clock; the async `run` loop wraps it.
+
+### Key integration points
+
+- **Dispatch Event Substrate** — registered as an `EventSink` at
+  request open (`scheduler.register_with(substrate)`); unregistered
+  at request close (`scheduler.unregister_with(substrate)`).
+- **Operator-Terminal Event Sink** — emission target.
+  `scheduler.emit_heartbeat` calls `sink.emit_heartbeat` after
+  `heartbeat_interval_seconds` of inactivity.
+- **Serving Layer** — `chat_completions` constructs the scheduler per
+  request via `_build_heartbeat_scheduler(session_id=...)` and wraps
+  both streaming and non-streaming response paths in
+  `_stream_completion_with_heartbeat` /
+  `_build_completion_body_with_heartbeat` lifecycle managers that
+  cancel the asyncio task and unregister the sink in `try/finally`.
+
+---
+
+## Cycle 6 extensions to existing modules
+
+- **Orchestrator Tool Dispatch** (piece 4) — adds the optional
+  `ToolCallEmitLogger` Protocol slot
+  (`orchestrator_tool_dispatch.py:229-240`) that fires
+  `emit_tool_call_log` inside `_open_dispatch_event` between
+  `new_dispatch_id` allocation and `DispatchTiming(start)` emission.
+  L2 declares the Protocol locally so it does not import L3's sink —
+  FC-4 layering preserved.
+- **Ensemble Engine** (piece 3) — `EnsembleLoader` gains
+  `prime(directory)`, `reload(directory)`, `validation_results()`,
+  and a per-directory cache
+  (`core/config/ensemble_config.py:208-280`). Primed callers (the
+  agentic-serving startup wiring) pay validation cost once; un-primed
+  callers (CLI, MCP) keep on-demand validation with the existing
+  `Skipping invalid ensemble` log line preserved. The
+  `EnsembleValidationResult` dataclass is the validation-failure
+  carrier that flows through `OperatorTerminalEventSink.report_validation_results`.
+- **Serving Layer** (piece 5) — adds shared factories
+  `get_dispatch_event_substrate()` and `get_operator_terminal_event_sink()`
+  (`web/api/v1_chat_completions.py:88-149`). First sink construction
+  registers with the substrate, primes the shared `EnsembleLoader`
+  for each operator-configured ensemble directory, and reports
+  validation results. `get_orchestrator_tool_dispatch()` passes both
+  substrate and sink to `OrchestratorToolDispatch`. `chat_completions`
+  builds a per-request `InferenceWaitHeartbeatScheduler`, registers
+  it with the substrate, and wraps the response path with
+  lifecycle-managed wrappers that cancel the asyncio task and
+  unregister the sink.
+- **Orchestrator Configuration** — new
+  `ObservabilityDefaults.heartbeat_interval_seconds` (default 30s)
+  read from `agentic_serving.observability.heartbeat_interval_seconds`.
