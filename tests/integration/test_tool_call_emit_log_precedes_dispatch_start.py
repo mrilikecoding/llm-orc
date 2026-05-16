@@ -92,6 +92,27 @@ def _build_dispatch(
     )
 
 
+@pytest.fixture
+def _llm_orc_logger_propagation() -> Any:
+    """Ensure the ``llm_orc`` logger propagates while this test runs.
+
+    The ``llm-orc serve`` / ``web`` CLI commands disable propagation on
+    the ``llm_orc`` parent logger so server output is insulated from
+    uvicorn's root handler chain. When prior tests exercise those
+    commands the flag stays mutated, which breaks pytest's caplog
+    fixture (caplog hooks the root logger via propagation). Restoring
+    propagate=True for this test is a self-contained workaround.
+    """
+    orc_logger = logging.getLogger("llm_orc")
+    previous = orc_logger.propagate
+    orc_logger.propagate = True
+    try:
+        yield
+    finally:
+        orc_logger.propagate = previous
+
+
+@pytest.mark.usefixtures("_llm_orc_logger_propagation")
 @pytest.mark.asyncio
 async def test_tool_call_emit_log_precedes_dispatch_start(
     caplog: pytest.LogCaptureFixture,

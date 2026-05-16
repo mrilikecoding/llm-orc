@@ -66,6 +66,7 @@ _LAYER_MAP: dict[str, int] = {
     "llm_orc.agentic.session_artifacts": 3,  # WP-D4 per ADR-013
     "llm_orc.agentic.orchestrator_config": 3,
     "llm_orc.agentic.operator_terminal_event_sink": 3,  # WP-B6 per ADR-023
+    "llm_orc.agentic.inference_wait_heartbeat": 3,  # WP-B6 piece 5 per ADR-023
     # Serving Layer lives outside src/llm_orc/agentic/ (in web/api/)
     # and Bootstrapping Pipeline is deferred (WP-J); both omitted
     # from the scoped layer map.

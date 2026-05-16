@@ -173,6 +173,21 @@ class CalibrationDefaults:
 
 
 @dataclass(frozen=True)
+class ObservabilityDefaults:
+    """ADR-023 observability surface defaults (Cycle 6 WP-B piece 5).
+
+    The Serving Layer reads ``heartbeat_interval_seconds`` to size the
+    per-request inference-wait heartbeat scheduler (default 30s).
+    Operators override via ``agentic_serving.observability.heartbeat_interval_seconds``.
+    """
+
+    heartbeat_interval_seconds: float
+
+
+DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
+
+
+@dataclass(frozen=True)
 class OrchestratorConfig:
     """Immutable per-session configuration surface.
 
@@ -243,6 +258,17 @@ class OrchestratorConfig:
     ``per_skill_tier_defaults`` is configured); the defaults are
     still composed so consumers can read them unconditionally.
     """
+    observability: ObservabilityDefaults = field(
+        default_factory=lambda: ObservabilityDefaults(
+            heartbeat_interval_seconds=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+        )
+    )
+    """ADR-023 observability defaults (Cycle 6 WP-B piece 5).
+
+    Operator-tunable via ``agentic_serving.observability``. The Serving
+    Layer reads ``heartbeat_interval_seconds`` per request to size the
+    inference-wait heartbeat scheduler. Default 30s.
+    """
 
 
 class OrchestratorConfigResolver:
@@ -263,6 +289,7 @@ class OrchestratorConfigResolver:
         calibration = _as_mapping(orchestrator.get("calibration"))
         compaction = _as_mapping(orchestrator.get("compaction"))
         tier_audit = _as_mapping(orchestrator.get("tier_router_audit"))
+        observability = _as_mapping(raw.get("observability"))
         per_skill_raw = orchestrator.get("per_skill_tier_defaults")
 
         model_profile = str(orchestrator.get("model_profile", DEFAULT_MODEL_PROFILE))
@@ -362,6 +389,12 @@ class OrchestratorConfigResolver:
                 severe_drift_multiplier=_severe_multiplier(
                     tier_audit.get("severe_drift_multiplier"),
                     DEFAULT_TIER_AUDIT_SEVERE_DRIFT_MULTIPLIER,
+                ),
+            ),
+            observability=ObservabilityDefaults(
+                heartbeat_interval_seconds=_positive_float(
+                    observability.get("heartbeat_interval_seconds"),
+                    DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
                 ),
             ),
         )
