@@ -188,8 +188,78 @@ class EnsembleConfig:
     """
 
 
+@dataclass(frozen=True)
+class EnsembleValidationResult:
+    """One YAML that failed validation during ``EnsembleLoader.prime``.
+
+    Cycle 6 WP-B piece 3 — validate-once-at-load (ADR-023 §"Noise-floor
+    remediation"). The Operator-Terminal Event Sink consumes these
+    results at serve startup and emits one ``WARN`` line per failure
+    via :meth:`OperatorTerminalEventSink.emit_validation_warning`,
+    eliminating the per-``list_ensembles()`` re-validation noise that
+    Cycle 5 PLAY note 19 (sharpened by the Cycle 6 DISCOVER finding 7)
+    surfaced as the operator-experience baseline.
+    """
+
+    yaml_path: str
+    error: str
+
+
 class EnsembleLoader:
-    """Loads ensemble configurations from files."""
+    """Loads ensemble configurations from files.
+
+    Cycle 6 adds a stateful validate-once-at-load cache populated by
+    :meth:`prime`. Primed callers (the agentic-serving startup wiring)
+    pay the validation cost once at startup or library reload; subsequent
+    :meth:`list_ensembles` lookups hit the cache without re-walking the
+    directory. Un-primed callers (CLI, MCP, ad-hoc instantiations) keep
+    the existing on-demand validation behavior including the
+    ``Skipping invalid ensemble`` warning log line, preserving the
+    backward-compatible surface for non-serving entry points.
+    """
+
+    def __init__(self) -> None:
+        # Per-directory caches keyed by the resolved absolute path so
+        # ``a/b/`` and ``a/b`` (and chdir-relative variants) collapse onto
+        # a single entry. The cache is empty until :meth:`prime` runs.
+        self._cache: dict[str, list[EnsembleConfig]] = {}
+        self._validation_results: dict[str, list[EnsembleValidationResult]] = {}
+
+    def prime(self, directory: str) -> None:
+        """Walk the directory once, validate every YAML, populate the cache.
+
+        Successful loads land in the cache for subsequent
+        :meth:`list_ensembles` lookups. Failures land in
+        :meth:`validation_results` so the Operator-Terminal Event Sink
+        can emit one ``WARN`` line per failure at startup rather than
+        the loader re-emitting them on every enumeration.
+
+        A missing directory is a no-op — operators with partial
+        deployment shapes (e.g., no local ensembles directory yet) do
+        not get a startup crash.
+        """
+        key = self._cache_key(directory)
+        ensembles, results = self._walk_and_validate(directory, silent=True)
+        self._cache[key] = ensembles
+        self._validation_results[key] = results
+
+    def reload(self, directory: str) -> None:
+        """Re-prime a single directory, replacing its prior cached state.
+
+        Per ADR-023 Direction-not-constraint on operator affordance —
+        operators trigger reload via ``SIGHUP``, an admin endpoint, or a
+        full restart. File-watch auto-reload was rejected in favor of
+        explicit-reload semantics so silent background reloads do not
+        emit ``WARN`` lines mid-session.
+        """
+        self.prime(directory)
+
+    def validation_results(self) -> tuple[EnsembleValidationResult, ...]:
+        """Return every validation failure across all primed directories."""
+        results: list[EnsembleValidationResult] = []
+        for directory_results in self._validation_results.values():
+            results.extend(directory_results)
+        return tuple(results)
 
     def load_from_file(
         self,
@@ -239,16 +309,38 @@ class EnsembleLoader:
     def list_ensembles(self, directory: str) -> list[EnsembleConfig]:
         """List all ensemble configurations in a directory and subdirectories.
 
-        Each ensemble is loaded with ``search_dirs=[directory]`` so
-        cross-ensemble cycle detection fires during listing; cyclic
-        ensembles are logged-and-skipped by the existing invalid-ensemble
-        handling.
+        Primed callers hit the cache populated by :meth:`prime` and pay
+        zero validation cost on the lookup. Un-primed callers walk the
+        directory on demand and emit the existing
+        ``Skipping invalid ensemble`` log line per failure — preserving
+        backward compatibility for CLI and MCP entry points that have
+        not adopted the startup-prime pattern.
+        """
+        key = self._cache_key(directory)
+        if key in self._cache:
+            return list(self._cache[key])
+
+        ensembles, _results = self._walk_and_validate(directory, silent=False)
+        return ensembles
+
+    def _walk_and_validate(
+        self, directory: str, *, silent: bool
+    ) -> tuple[list[EnsembleConfig], list[EnsembleValidationResult]]:
+        """Walk ``directory`` and validate every YAML found.
+
+        When ``silent`` is ``True`` (the prime path), validation failures
+        are captured in the returned list rather than emitted to the
+        loader's ``logger.warning`` surface — the Operator-Terminal Event
+        Sink owns the visible WARN format. When ``silent`` is ``False``
+        (the fallback path for un-primed callers), the existing
+        per-failure log line is preserved for CLI / MCP compatibility.
         """
         dir_path = Path(directory)
         if not dir_path.exists():
-            return []
+            return [], []
 
-        ensembles = []
+        ensembles: list[EnsembleConfig] = []
+        failures: list[EnsembleValidationResult] = []
         for yaml_file in self._find_yaml_files(dir_path):
             try:
                 config = self.load_from_file(
@@ -263,10 +355,23 @@ class EnsembleLoader:
                 )
                 ensembles.append(config)
             except Exception as exc:
-                logger.warning("Skipping invalid ensemble %s: %s", yaml_file, exc)
+                failures.append(
+                    EnsembleValidationResult(yaml_path=str(yaml_file), error=str(exc))
+                )
+                if not silent:
+                    logger.warning("Skipping invalid ensemble %s: %s", yaml_file, exc)
                 continue
 
-        return ensembles
+        return ensembles, failures
+
+    @staticmethod
+    def _cache_key(directory: str) -> str:
+        """Normalize a directory string to its resolved absolute path."""
+        path = Path(directory)
+        try:
+            return str(path.resolve())
+        except OSError:
+            return str(path)
 
     @staticmethod
     def _find_yaml_files(dir_path: Path) -> list[Path]:

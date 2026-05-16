@@ -1112,3 +1112,244 @@ class TestSharedRoutineRegression:
             search_dirs=[str(tmp_path)],
         )
         validate_ensemble_reference_graph("ok", agents, [str(tmp_path)])
+
+
+class TestEnsembleLoaderValidateOnceAtLoad:
+    """Cycle 6 WP-B piece 3 — validate-once-at-load library cache.
+
+    Per ``docs/agentic-serving/scenarios.md`` §Observability Event Routing
+    scenario "Validate-once-at-load eliminates per-enumeration noise" and
+    `system-design.agents.md` §Ensemble Engine §Cycle 6 extensions.
+    Backward-compat fitness: un-primed callers (CLI, MCP) keep the
+    existing per-call on-demand validation path with its current
+    `logger.warning` emission.
+    """
+
+    @staticmethod
+    def _write_valid_ensemble(directory: Path, name: str) -> Path:
+        path = directory / f"{name}.yaml"
+        path.write_text(
+            yaml.dump(
+                {
+                    "name": name,
+                    "description": f"{name} description",
+                    "agents": [{"name": "a1", "script": "echo hi"}],
+                }
+            )
+        )
+        return path
+
+    @staticmethod
+    def _write_invalid_ensemble(directory: Path, name: str) -> Path:
+        """Write a YAML the schema rejects (`extra='forbid'` on agents)."""
+        path = directory / f"{name}.yaml"
+        path.write_text(
+            yaml.dump(
+                {
+                    "name": name,
+                    "description": f"{name} description",
+                    "agents": [
+                        {
+                            "name": "a1",
+                            "model_profile": "test",
+                            "synthesis_timeout_seconds": 90,
+                        }
+                    ],
+                }
+            )
+        )
+        return path
+
+    def test_validation_results_empty_before_prime(self, tmp_path: Path) -> None:
+        """A fresh loader has no validation results until prime runs."""
+        loader = EnsembleLoader()
+
+        assert loader.validation_results() == ()
+
+    def test_prime_caches_validated_ensembles_for_list_lookups(
+        self, tmp_path: Path
+    ) -> None:
+        """Prime walks the directory once; list_ensembles returns the cache."""
+        self._write_valid_ensemble(tmp_path, "alpha")
+        self._write_valid_ensemble(tmp_path, "beta")
+
+        loader = EnsembleLoader()
+        loader.prime(str(tmp_path))
+
+        cached = loader.list_ensembles(str(tmp_path))
+        names = sorted(e.name for e in cached)
+        assert names == ["alpha", "beta"]
+
+    def test_prime_records_invalid_yamls_in_validation_results(
+        self, tmp_path: Path
+    ) -> None:
+        """Invalid YAMLs flow to ``validation_results()``; the cache only
+        carries the valid subset."""
+        self._write_valid_ensemble(tmp_path, "good")
+        bad_path = self._write_invalid_ensemble(tmp_path, "bad")
+
+        loader = EnsembleLoader()
+        loader.prime(str(tmp_path))
+
+        cached = loader.list_ensembles(str(tmp_path))
+        assert [e.name for e in cached] == ["good"]
+
+        results = loader.validation_results()
+        assert len(results) == 1
+        (result,) = results
+        assert result.yaml_path == str(bad_path)
+        assert result.error  # non-empty rationale
+
+    def test_prime_path_is_silent_at_the_loader_logger(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Priming records failures in validation_results; the loader does
+        not emit its own ``logger.warning`` lines on the prime path —
+        emission is delegated to the operator-terminal sink."""
+        import logging as logging_module
+
+        self._write_invalid_ensemble(tmp_path, "bad")
+        loader = EnsembleLoader()
+
+        with caplog.at_level(
+            logging_module.WARNING, logger="llm_orc.core.config.ensemble_config"
+        ):
+            loader.prime(str(tmp_path))
+
+        loader_warnings = [
+            rec
+            for rec in caplog.records
+            if rec.name == "llm_orc.core.config.ensemble_config"
+            and rec.levelno >= logging_module.WARNING
+        ]
+        assert loader_warnings == []
+
+    def test_list_ensembles_after_prime_does_not_re_emit_warnings(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Eight enumerations after prime produce zero additional WARNs."""
+        import logging as logging_module
+
+        self._write_valid_ensemble(tmp_path, "good")
+        self._write_invalid_ensemble(tmp_path, "bad")
+
+        loader = EnsembleLoader()
+        loader.prime(str(tmp_path))
+
+        with caplog.at_level(
+            logging_module.WARNING, logger="llm_orc.core.config.ensemble_config"
+        ):
+            for _ in range(8):
+                loader.list_ensembles(str(tmp_path))
+
+        loader_warnings = [
+            rec
+            for rec in caplog.records
+            if rec.name == "llm_orc.core.config.ensemble_config"
+            and rec.levelno >= logging_module.WARNING
+        ]
+        assert loader_warnings == []
+
+    def test_reload_replaces_prior_cached_state_for_directory(
+        self, tmp_path: Path
+    ) -> None:
+        """Reload re-walks the directory; a newly-added ensemble surfaces."""
+        self._write_valid_ensemble(tmp_path, "alpha")
+
+        loader = EnsembleLoader()
+        loader.prime(str(tmp_path))
+        assert {e.name for e in loader.list_ensembles(str(tmp_path))} == {"alpha"}
+
+        self._write_valid_ensemble(tmp_path, "beta")
+        # Without reload, the cache still reflects only alpha.
+        assert {e.name for e in loader.list_ensembles(str(tmp_path))} == {"alpha"}
+
+        loader.reload(str(tmp_path))
+        assert {e.name for e in loader.list_ensembles(str(tmp_path))} == {
+            "alpha",
+            "beta",
+        }
+
+    def test_reload_clears_stale_validation_results_for_directory(
+        self, tmp_path: Path
+    ) -> None:
+        """When a previously invalid YAML is fixed, reload removes its entry."""
+        bad_path = self._write_invalid_ensemble(tmp_path, "drift")
+
+        loader = EnsembleLoader()
+        loader.prime(str(tmp_path))
+        assert len(loader.validation_results()) == 1
+
+        bad_path.unlink()
+        self._write_valid_ensemble(tmp_path, "drift")
+        loader.reload(str(tmp_path))
+
+        assert loader.validation_results() == ()
+        assert {e.name for e in loader.list_ensembles(str(tmp_path))} == {"drift"}
+
+    def test_unprimed_list_ensembles_keeps_on_demand_logging(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Backward-compat: a loader that was never primed continues to walk
+        the directory on demand and emits ``logger.warning`` per failure —
+        CLI and MCP callers depend on this surface."""
+        import logging as logging_module
+
+        self._write_valid_ensemble(tmp_path, "good")
+        self._write_invalid_ensemble(tmp_path, "bad")
+
+        loader = EnsembleLoader()
+
+        with caplog.at_level(
+            logging_module.WARNING, logger="llm_orc.core.config.ensemble_config"
+        ):
+            result = loader.list_ensembles(str(tmp_path))
+
+        assert [e.name for e in result] == ["good"]
+        loader_warnings = [
+            rec
+            for rec in caplog.records
+            if rec.name == "llm_orc.core.config.ensemble_config"
+            and rec.levelno >= logging_module.WARNING
+            and "bad.yaml" in rec.message
+        ]
+        assert len(loader_warnings) == 1
+
+    def test_prime_accepts_nonexistent_directory_without_raising(
+        self, tmp_path: Path
+    ) -> None:
+        """Priming a missing directory is a no-op — the orchestrator's
+        startup-prime path should not crash on operators with a partial
+        deployment shape."""
+        loader = EnsembleLoader()
+        missing = tmp_path / "does-not-exist"
+
+        loader.prime(str(missing))
+
+        assert loader.list_ensembles(str(missing)) == []
+        assert loader.validation_results() == ()
+
+    def test_prime_two_directories_keeps_results_per_directory(
+        self, tmp_path: Path
+    ) -> None:
+        """``OrchestraService`` walks local / global / library dirs; the
+        cache and validation_results must compose across primed dirs."""
+        dir_a = tmp_path / "a"
+        dir_b = tmp_path / "b"
+        dir_a.mkdir()
+        dir_b.mkdir()
+        self._write_valid_ensemble(dir_a, "alpha")
+        self._write_invalid_ensemble(dir_a, "bad_a")
+        self._write_valid_ensemble(dir_b, "beta")
+
+        loader = EnsembleLoader()
+        loader.prime(str(dir_a))
+        loader.prime(str(dir_b))
+
+        assert {e.name for e in loader.list_ensembles(str(dir_a))} == {"alpha"}
+        assert {e.name for e in loader.list_ensembles(str(dir_b))} == {"beta"}
+
+        # One failure spans both primed directories — the b directory has none.
+        results = loader.validation_results()
+        assert len(results) == 1
+        assert "bad_a.yaml" in results[0].yaml_path

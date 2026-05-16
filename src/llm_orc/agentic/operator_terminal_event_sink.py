@@ -27,6 +27,7 @@ threads or schedule tasks — it formats and emits lines via Python's
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from llm_orc.agentic.calibration_gate import CalibrationVerdictEvent
@@ -37,6 +38,7 @@ from llm_orc.agentic.tier_router_audit import AuditDiagnostic
 
 if TYPE_CHECKING:
     from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
+    from llm_orc.core.config.ensemble_config import EnsembleValidationResult
 
 __all__ = [
     "OperatorTerminalEventSink",
@@ -149,6 +151,21 @@ class OperatorTerminalEventSink:
         self._logger.warning(
             "invalid ensemble yaml: path=%s error=%s", yaml_path, error
         )
+
+    def report_validation_results(
+        self, results: Iterable[EnsembleValidationResult]
+    ) -> None:
+        """Drain a loader's validation results into one WARN line per failure.
+
+        Convenience wiring for the serve startup site. The serve hook
+        calls :meth:`EnsembleLoader.prime` once at startup (or library
+        reload) and then hands the resulting
+        :meth:`~llm_orc.core.config.ensemble_config.EnsembleLoader.validation_results`
+        tuple to this method. Each entry produces one WARN line via the
+        existing :meth:`emit_validation_warning` action surface.
+        """
+        for result in results:
+            self.emit_validation_warning(yaml_path=result.yaml_path, error=result.error)
 
     def register_with(self, substrate: DispatchEventSubstrate) -> None:
         """Register this sink with a Dispatch Event Substrate.
