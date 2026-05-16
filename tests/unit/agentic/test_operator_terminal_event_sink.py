@@ -346,3 +346,54 @@ class TestUnknownEventTolerance:
 
         sink.consume(_UnknownEvent())
         assert caplog.records == []
+
+
+# ---------------------------------------------------------------------------
+# Validation-results consumption (Cycle 6 WP-B piece 3)
+# ---------------------------------------------------------------------------
+
+
+class TestReportValidationResults:
+    """Cycle 6 WP-B piece 3 — startup wiring helper.
+
+    The sink consumes the loader's ``validation_results()`` at serve
+    startup and emits one ``WARN`` line per failure through the existing
+    :meth:`emit_validation_warning` action surface. The helper exists
+    so callers do not need to iterate by hand at the wiring site.
+    """
+
+    def test_report_iterates_results_and_emits_one_warn_per_failure(
+        self,
+        sink_and_caplog: tuple[OperatorTerminalEventSink, pytest.LogCaptureFixture],
+    ) -> None:
+        sink, caplog = sink_and_caplog
+        from llm_orc.core.config.ensemble_config import EnsembleValidationResult
+
+        sink.report_validation_results(
+            (
+                EnsembleValidationResult(
+                    yaml_path="/path/to/fan-out-test.yaml",
+                    error="extra field rejected",
+                ),
+                EnsembleValidationResult(
+                    yaml_path="/path/to/plexus-graph-analysis.yaml",
+                    error="type=script rejected on ScriptAgentConfig",
+                ),
+            )
+        )
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 2
+        joined = " | ".join(r.message for r in warnings)
+        assert "fan-out-test.yaml" in joined
+        assert "plexus-graph-analysis.yaml" in joined
+
+    def test_report_with_empty_iterable_is_a_no_op(
+        self,
+        sink_and_caplog: tuple[OperatorTerminalEventSink, pytest.LogCaptureFixture],
+    ) -> None:
+        sink, caplog = sink_and_caplog
+
+        sink.report_validation_results(())
+
+        assert caplog.records == []
