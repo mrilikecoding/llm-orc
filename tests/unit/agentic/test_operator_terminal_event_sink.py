@@ -175,7 +175,7 @@ class TestAuditDiagnosticFormatting:
         sink, caplog = sink_and_caplog
         diagnostic = AuditDiagnostic(
             window_id=7,
-            verdict="warn",
+            verdict="advisory",
             timestamp_seconds=1700000000.0,
             consumption_count=42,
             criteria_findings=(
