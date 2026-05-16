@@ -240,6 +240,20 @@ class PlexusAccess(Protocol):
     async def record(self, arguments: dict[str, Any]) -> dict[str, Any]: ...
 
 
+class ToolCallEmitLogger(Protocol):
+    """Minimum tool-call-emit logging surface Tool Dispatch consults.
+
+    Cycle 6 WP-B piece 4 (ADR-023 §"Liveness signals"). The
+    :class:`~llm_orc.agentic.operator_terminal_event_sink.OperatorTerminalEventSink`
+    satisfies this structurally via :meth:`emit_tool_call_log`. The
+    Protocol stays L2-local so Tool Dispatch does not import the L3
+    sink — FC-4 layering preserved (the wiring at the serve layer
+    composes the two).
+    """
+
+    def emit_tool_call_log(self, *, tool_name: str, dispatch_id: str) -> None: ...
+
+
 class OrchestratorToolDispatch:
     """Closed five-tool dispatch surface (ADR-003, FC-5)."""
 
@@ -257,6 +271,7 @@ class OrchestratorToolDispatch:
         tier_router: TierRouter | None = None,
         tier_router_audit: TierEscalationAuditor | None = None,
         event_substrate: DispatchEventSubstrate | None = None,
+        tool_call_emit_logger: ToolCallEmitLogger | None = None,
     ) -> None:
         if tier_router is not None and calibration_gate is None:
             raise ValueError(
@@ -315,6 +330,17 @@ class OrchestratorToolDispatch:
         per WP-B; orchestrator-context per WP-C). ``None`` preserves
         the pre-Cycle-6 dispatch path for existing tests and call
         sites that have not been migrated.
+        """
+        self._tool_call_emit_logger = tool_call_emit_logger
+        """Tool-call-emit liveness logger (Cycle 6 WP-B piece 4, ADR-023).
+
+        When configured alongside ``event_substrate``, the logger fires
+        ``emit_tool_call_log(tool_name="invoke_ensemble", dispatch_id=...)``
+        between :meth:`new_dispatch_id` allocation and
+        ``DispatchTiming(start)`` emission — the chronological-ordering
+        property FC-23 verifies. Argument-validation failures and the
+        no-substrate path both skip the call (no dispatch_id exists in
+        either case). ``None`` preserves the pre-piece-4 dispatch path.
         """
 
     def validate_response(
@@ -705,11 +731,21 @@ class OrchestratorToolDispatch:
         the interposition order); the start event carries
         ``model_profile=None`` and the subsequent ``TierSelection`` event
         carries the selected profile.
+
+        Cycle 6 WP-B piece 4: when a :class:`ToolCallEmitLogger` is also
+        configured, the tool-call-emit liveness anchor fires after
+        ``dispatch_id`` allocation and before ``DispatchTiming(start)``
+        emission so the operator-terminal log stream observes the
+        ``tool-call emit`` line first (FC-23).
         """
         start_timestamp = time.time()
         if self._event_substrate is None:
             return None, start_timestamp
         dispatch_id = self._event_substrate.new_dispatch_id(session_id)
+        if self._tool_call_emit_logger is not None:
+            self._tool_call_emit_logger.emit_tool_call_log(
+                tool_name="invoke_ensemble", dispatch_id=dispatch_id
+            )
         self._event_substrate.emit(
             DispatchTiming(
                 phase="start",

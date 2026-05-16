@@ -208,6 +208,7 @@ def _build_dispatch(
     tier_router: Any = None,
     tier_router_audit: Any = None,
     event_substrate: Any = None,
+    tool_call_emit_logger: Any = None,
 ) -> OrchestratorToolDispatch:
     """Construct a dispatch with sensible test defaults.
 
@@ -247,6 +248,7 @@ def _build_dispatch(
         tier_router=tier_router,
         tier_router_audit=tier_router_audit,
         event_substrate=event_substrate,
+        tool_call_emit_logger=tool_call_emit_logger,
     )
 
 
@@ -2503,3 +2505,185 @@ class TestDispatchEventSubstrateIntegration:
             session_id="session-A",
         )
         assert isinstance(result, ToolCallSuccess)
+
+
+# ---------------------------------------------------------------------------
+# Cycle 6 WP-B piece 4 — Tool-call-emit logging (ADR-023 liveness signal)
+# ---------------------------------------------------------------------------
+
+
+class _RecordingToolCallEmitLogger:
+    """Captures emit_tool_call_log calls for ordering / argument assertions."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str]] = []
+
+    def emit_tool_call_log(self, *, tool_name: str, dispatch_id: str) -> None:
+        self.calls.append({"tool_name": tool_name, "dispatch_id": dispatch_id})
+
+
+class _OrderingSink:
+    """Sink that appends a sentinel after each event so ordering is observable
+    when interleaved with logger calls captured elsewhere."""
+
+    def __init__(self, ledger: list[object]) -> None:
+        self._ledger = ledger
+
+    def consume(self, event: object) -> None:
+        self._ledger.append(event)
+
+
+class TestToolCallEmitLogger:
+    """Cycle 6 WP-B piece 4 — tool-call-emit logging precedes dispatch.
+
+    Per ADR-023 §"Liveness signals" and scenarios.md "Tool-call-emit log
+    line precedes dispatch" — the log line fires with the same
+    ``dispatch_id`` BEFORE ``DispatchTiming(start)`` is emitted. FC-23
+    anchor lives in the integration suite; these unit tests cover the
+    Tool Dispatch interposition contract.
+    """
+
+    @pytest.mark.asyncio
+    async def test_emit_tool_call_log_fires_before_dispatch_start_event(
+        self,
+    ) -> None:
+        """Logger call is recorded; the first substrate event observed
+        afterward is ``DispatchTiming(start)`` — the timing-order
+        property the operator-terminal log stream depends on."""
+        substrate = DispatchEventSubstrate()
+        ledger: list[object] = []
+        substrate.register_sink(_OrderingSink(ledger))
+        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        logger = _RecordingToolCallEmitLogger()
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=substrate,
+            tool_call_emit_logger=logger,
+        )
+
+        await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "code-generator", "input": "task"},
+            ),
+            session_id="session-A",
+        )
+
+        assert len(logger.calls) == 1
+        # The emit logger call records BEFORE the first DispatchTiming(start)
+        # event is observed by the sink — the logger captures one call, then
+        # the sink's first DispatchTiming entry follows.
+        first_timing = next(
+            event for event in ledger if isinstance(event, DispatchTiming)
+        )
+        assert first_timing.phase == "start"
+        assert first_timing.dispatch_id == logger.calls[0]["dispatch_id"]
+
+    @pytest.mark.asyncio
+    async def test_emit_tool_call_log_carries_dispatch_id_and_tool_name(
+        self,
+    ) -> None:
+        """The log line carries the substrate-allocated ``dispatch_id`` and
+        the literal ``invoke_ensemble`` tool name."""
+        substrate = DispatchEventSubstrate()
+        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        logger = _RecordingToolCallEmitLogger()
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=substrate,
+            tool_call_emit_logger=logger,
+        )
+
+        await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "code-generator", "input": "task"},
+            ),
+            session_id="session-A",
+        )
+
+        assert logger.calls == [
+            {
+                "tool_name": "invoke_ensemble",
+                "dispatch_id": "session-A-dispatch-0001",
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_emit_tool_call_log_skipped_when_logger_not_configured(
+        self,
+    ) -> None:
+        """Tool Dispatch works as before when the optional logger is None."""
+        substrate = DispatchEventSubstrate()
+        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=substrate,
+            tool_call_emit_logger=None,
+        )
+
+        # No logger configured — dispatch path proceeds without raising.
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "code-generator", "input": "task"},
+            ),
+            session_id="session-A",
+        )
+        assert isinstance(result, ToolCallSuccess)
+
+    @pytest.mark.asyncio
+    async def test_emit_tool_call_log_skipped_when_substrate_not_configured(
+        self,
+    ) -> None:
+        """Without a substrate there is no dispatch_id to log — the logger
+        is not called even when configured. Symmetric with the
+        ``DispatchTiming`` emission contract."""
+        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        logger = _RecordingToolCallEmitLogger()
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=None,
+            tool_call_emit_logger=logger,
+        )
+
+        await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "code-generator", "input": "task"},
+            ),
+            session_id="session-A",
+        )
+
+        assert logger.calls == []
+
+    @pytest.mark.asyncio
+    async def test_emit_tool_call_log_skipped_when_arguments_invalid(
+        self,
+    ) -> None:
+        """Argument-validation failures do not count as dispatch attempts;
+        the logger is not called for a dispatch that never opens."""
+        substrate = DispatchEventSubstrate()
+        ops = _ScriptedOperations()
+        logger = _RecordingToolCallEmitLogger()
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=substrate,
+            tool_call_emit_logger=logger,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "", "input": "task"},
+            ),
+            session_id="session-A",
+        )
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "invalid_arguments"
+        assert logger.calls == []
