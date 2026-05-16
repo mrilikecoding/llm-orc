@@ -21,6 +21,7 @@ override via ``monkeypatch.setattr``.
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -43,6 +44,11 @@ from llm_orc.agentic.composition_validator import (
     ConfigManagerPrimitiveRegistry,
 )
 from llm_orc.agentic.conversation_compaction import ConversationCompaction
+from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
+from llm_orc.agentic.inference_wait_heartbeat import (
+    InferenceWaitHeartbeatScheduler,
+)
+from llm_orc.agentic.operator_terminal_event_sink import OperatorTerminalEventSink
 from llm_orc.agentic.orchestrator_chunk import (
     ClientToolCall,
     Completion,
@@ -85,6 +91,8 @@ _SHARED_REGISTRY = SessionRegistry()
 _SHARED_SESSION_START_CACHE = SessionStartCache()
 _SHARED_TOOL_DISPATCH: OrchestratorToolDispatch | None = None
 _SHARED_CONVERSATION_COMPACTION: ConversationCompaction | None = None
+_SHARED_DISPATCH_EVENT_SUBSTRATE: DispatchEventSubstrate | None = None
+_SHARED_OPERATOR_TERMINAL_SINK: OperatorTerminalEventSink | None = None
 
 
 def get_session_registry() -> SessionRegistry:
@@ -98,6 +106,47 @@ def get_session_registry() -> SessionRegistry:
 def get_session_start_cache() -> SessionStartCache:
     """Return the process-scoped session-start cache."""
     return _SHARED_SESSION_START_CACHE
+
+
+def get_dispatch_event_substrate() -> DispatchEventSubstrate:
+    """Return the process-scoped Dispatch Event Substrate (Cycle 6 WP-A).
+
+    Tool Dispatch emits ``DispatchTiming``, ``TierSelection``,
+    ``CalibrationVerdictEvent``, and ``CalibrationSignal`` events
+    through this substrate. WP-B's operator-terminal sink is registered
+    via :func:`get_operator_terminal_event_sink`; WP-C's orchestrator-
+    context sink and per-request inference-wait heartbeat schedulers
+    (Cycle 6 WP-B piece 5) register on top of the same shared instance.
+    """
+    global _SHARED_DISPATCH_EVENT_SUBSTRATE
+    if _SHARED_DISPATCH_EVENT_SUBSTRATE is None:
+        _SHARED_DISPATCH_EVENT_SUBSTRATE = DispatchEventSubstrate()
+    return _SHARED_DISPATCH_EVENT_SUBSTRATE
+
+
+def get_operator_terminal_event_sink() -> OperatorTerminalEventSink:
+    """Return the process-scoped Operator-Terminal Event Sink (Cycle 6 WP-B).
+
+    On first construction the sink registers with the shared dispatch
+    event substrate, primes the shared :class:`EnsembleLoader` for each
+    operator-configured ensemble directory, and emits one ``WARN`` line
+    per validation failure via
+    :meth:`OperatorTerminalEventSink.report_validation_results` —
+    closing the validate-once-at-load scenario per ADR-023 §"Noise-floor
+    remediation". Subsequent ``list_ensembles`` calls on the shared
+    loader return the cached validated subset without re-emitting
+    warnings.
+    """
+    global _SHARED_OPERATOR_TERMINAL_SINK
+    if _SHARED_OPERATOR_TERMINAL_SINK is None:
+        sink = OperatorTerminalEventSink()
+        sink.register_with(get_dispatch_event_substrate())
+        service = get_orchestra_service()
+        for dir_path in service.config_manager.get_ensembles_dirs():
+            service.ensemble_loader.prime(str(dir_path))
+        sink.report_validation_results(service.ensemble_loader.validation_results())
+        _SHARED_OPERATOR_TERMINAL_SINK = sink
+    return _SHARED_OPERATOR_TERMINAL_SINK
 
 
 def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
@@ -139,6 +188,8 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
         tier_router, tier_router_audit = _build_tier_router_and_audit(
             service=service, config=config
         )
+        substrate = get_dispatch_event_substrate()
+        sink = get_operator_terminal_event_sink()
         _SHARED_TOOL_DISPATCH = OrchestratorToolDispatch(
             operations=service,
             harness=harness,
@@ -150,6 +201,8 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
             tool_call_validation_patterns=config.tool_call_validation_patterns,
             tier_router=tier_router,
             tier_router_audit=tier_router_audit,
+            event_substrate=substrate,
+            tool_call_emit_logger=sink,
         )
     return _SHARED_TOOL_DISPATCH
 
@@ -295,17 +348,53 @@ class _ChatCompletionsRequest(BaseModel):
 async def chat_completions(
     request: _ChatCompletionsRequest,
 ) -> dict[str, Any] | StreamingResponse:
-    """Resolve session, build Runtime, then stream or return a body."""
+    """Resolve session, build Runtime, then stream or return a body.
+
+    Per Cycle 6 WP-B piece 5 a per-request
+    :class:`InferenceWaitHeartbeatScheduler` is registered with the
+    shared dispatch event substrate at request open and unregistered
+    after the response stream (streaming) or body (non-streaming)
+    completes. The scheduler emits one
+    ``INFO: inference wait: elapsed=<sec> session_id=<id>`` line per
+    ``heartbeat_interval_seconds`` (default 30s) of cloud-LLM
+    inference inactivity, giving operators liveness signal during
+    long-inference waits.
+    """
     context = _resolve_context(request)
     runtime = await _build_runtime()
+    scheduler = _build_heartbeat_scheduler(session_id=context.state.identity.value)
 
     if request.stream:
         return StreamingResponse(
-            _stream_completion(context, runtime, model=request.model),
+            _stream_completion_with_heartbeat(
+                context, runtime, model=request.model, scheduler=scheduler
+            ),
             media_type="text/event-stream",
         )
 
-    return await _build_completion_body(context, runtime, model=request.model)
+    return await _build_completion_body_with_heartbeat(
+        context, runtime, model=request.model, scheduler=scheduler
+    )
+
+
+def _build_heartbeat_scheduler(*, session_id: str) -> InferenceWaitHeartbeatScheduler:
+    """Construct a per-request heartbeat scheduler.
+
+    The scheduler uses ``observability.heartbeat_interval_seconds`` from
+    the operator config (default 30s) and the shared operator-terminal
+    sink as its emission target. Reads via ``resolve_validated`` mirrors
+    :func:`_build_runtime` — the model-profile validation that runs at
+    session start has already succeeded by the time chat_completions
+    constructs the scheduler.
+    """
+    resolver = get_orchestrator_config_resolver()
+    config = resolver.resolve_validated()
+    sink = get_operator_terminal_event_sink()
+    return InferenceWaitHeartbeatScheduler(
+        sink=sink,
+        session_id=session_id,
+        interval_seconds=config.observability.heartbeat_interval_seconds,
+    )
 
 
 def _reject_reserved_tool_names(tools: list[dict[str, Any]]) -> None:
@@ -464,6 +553,58 @@ async def _stream_completion(
         if framed:
             yield framed
     yield formatter.done()
+
+
+async def _stream_completion_with_heartbeat(
+    context: SessionContext,
+    runtime: OrchestratorRuntime,
+    *,
+    model: str,
+    scheduler: InferenceWaitHeartbeatScheduler,
+) -> AsyncIterator[bytes]:
+    """Wrap :func:`_stream_completion` with heartbeat scheduler lifecycle.
+
+    The scheduler registers with the shared substrate, starts its async
+    background loop, and is unregistered after the stream finishes
+    (normal completion, exception, or client disconnect). FastAPI's
+    streaming response runtime invokes the cleanup branch when the
+    underlying async generator's ``aclose`` runs.
+    """
+    substrate = get_dispatch_event_substrate()
+    scheduler.register_with(substrate)
+    heartbeat_task = asyncio.create_task(scheduler.run())
+    try:
+        async for chunk in _stream_completion(context, runtime, model=model):
+            yield chunk
+    finally:
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
+        scheduler.unregister_with(substrate)
+
+
+async def _build_completion_body_with_heartbeat(
+    context: SessionContext,
+    runtime: OrchestratorRuntime,
+    *,
+    model: str,
+    scheduler: InferenceWaitHeartbeatScheduler,
+) -> dict[str, Any]:
+    """Wrap :func:`_build_completion_body` with heartbeat scheduler lifecycle."""
+    substrate = get_dispatch_event_substrate()
+    scheduler.register_with(substrate)
+    heartbeat_task = asyncio.create_task(scheduler.run())
+    try:
+        return await _build_completion_body(context, runtime, model=model)
+    finally:
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except asyncio.CancelledError:
+            pass
+        scheduler.unregister_with(substrate)
 
 
 async def _build_completion_body(

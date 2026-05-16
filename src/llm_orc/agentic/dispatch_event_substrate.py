@@ -162,6 +162,21 @@ class DispatchEventSubstrate:
         """Register a sink to receive every subsequent emission."""
         self._sinks.append(sink)
 
+    def unregister_sink(self, sink: EventSink) -> None:
+        """Remove a previously-registered sink (per-request lifecycle).
+
+        Per-request consumers like Cycle 6 WP-B piece 5's inference-wait
+        heartbeat scheduler register at request open and unregister at
+        request close so the substrate's sink list does not grow
+        unboundedly across requests. Removing a sink that is not
+        registered is a no-op so call sites do not need to track
+        registration state defensively.
+        """
+        try:
+            self._sinks.remove(sink)
+        except ValueError:
+            pass
+
     def emit(self, event: object) -> None:
         """Fan out one event to every registered sink.
 
