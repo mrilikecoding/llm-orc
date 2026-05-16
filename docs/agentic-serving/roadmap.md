@@ -1,13 +1,178 @@
 # Roadmap: Agentic Serving
 
-**Generated:** 2026-04-20; **last amended:** 2026-05-08 (Cycle 4 ARCHITECT close)
-**Derived from:** `system-design.md` (v3.0), ADRs 001-017 + adr-deferred-005, scenarios.md, interaction-specs.md
+**Generated:** 2026-04-20; **last amended:** 2026-05-15 (Cycle 6 ARCHITECT close)
+**Derived from:** `system-design.md` (v4.0), ADRs 001-025 + adr-deferred-005, scenarios.md (Cycle 6 additions), interaction-specs.md (Cycle 6 additions)
 
 This roadmap expresses the sequencing landscape for building agentic serving — what depends on what, where the builder has a choice, and which coherent intermediates are worth pausing at. It does not prescribe a build order. Work package order within each dependency band is a build-time decision.
 
 ---
 
-## Work Packages — Cycle 4 (active)
+## Work Packages — Cycle 6 (active)
+
+> **Cycle 6 BUILD shapes as 5 work packages (WP-A through WP-E).** Identifiers reset for the new active cycle per the methodology — Cycle 4 BUILD's WP-A4..WP-H4 closures and Cycle 5's library-reshape work are documented in system-design.md Amendment Log entries #7 (2026-05-08) and #8 (2026-05-12); the Cycle 4 (deferred) section below preserves WP-K and WP-J as deferred carry-forwards.
+>
+> **Cycle 6 BUILD-mode declaration**: to be set at BUILD entry per ADR-091 (gated recommended given the design-alternative examination character of ADR-022 routing-surface work + the cross-surface `dispatch_id` coupling per DECIDE snapshot Finding 2 advisory; auto mode appropriate only if BUILD reduces to mechanical wiring after the four-module structural shape is in place).
+
+### WP-A: Dispatch Event Substrate + `dispatch_id` correlation (ADR-023 emission substrate)
+
+**Objective:** Land the unified event-emission substrate per Inversion N+2 — one substrate that fans out to two destinations. Add `DispatchTiming` event type + `dispatch_id` correlation identifier across the four existing event types.
+
+**Changes:**
+- New module `agentic/dispatch_event_substrate.py` with `DispatchTiming` event type (`phase: Literal["start","end"]`, `dispatch_id`, `ensemble_name`, `model_profile`, `timestamp`; `phase="end"` adds `duration_seconds` + `exit_status`); `new_dispatch_id(session_id) -> str` generator; `emit(event)` fan-out dispatcher; `register_sink(sink_instance)` registration; `events_for(dispatch_id) -> list[Event]` post-hoc query
+- Extend `TierSelection`, `CalibrationVerdict`, `AuditDiagnostic`, `CalibrationSignal` with optional `dispatch_id: str | None` field (additive, `None` allowed during transition)
+- Producer-side migration — Calibration Gate, Tier-Escalation Router, Tier-Router-Audit, Calibration Signal Channel emit through `dispatch_event_substrate.emit()`
+- Orchestrator Tool Dispatch — call `new_dispatch_id` at `invoke_ensemble` entry; emit `DispatchTiming(phase="start")` before tier selection; emit `DispatchTiming(phase="end")` after harness/substrate-write; substrate-emit happens regardless of sink registration
+
+**Scenarios covered:** scenarios.md §Observability Event Routing — `DispatchTiming` event carries start and end phases; `dispatch_id` correlation joins events; preservation scenarios for ADR-018 / ADR-016 (additive `dispatch_id` does not change semantics).
+
+**Participating modules:** Dispatch Event Substrate (new), Calibration Gate (extended), Tier-Escalation Router (extended), Tier-Router-Audit (extended), Calibration Signal Channel (extended), Orchestrator Tool Dispatch (extended).
+
+**Dependencies:** Hard on **WP-A4** (typed errors substrate from Cycle 4 BUILD — already shipped).
+
+---
+
+### WP-B: Operator-Terminal Event Sink + Liveness signals + Validate-once-at-load (ADR-023 destination 1)
+
+**Objective:** Land the operator-terminal destination as a registered sink consuming from the Dispatch Event Substrate. Ship the line-oriented log surface, tool-call-emit logging, inference-wait heartbeats, and the noise-floor remediation (validate-once-at-load).
+
+**Changes:**
+- New module `agentic/operator_terminal_event_sink.py` with per-event format strings (one line per event type at INFO; `CalibrationSignal` at DEBUG); registers with Dispatch Event Substrate at serve startup
+- Tool-call-emit logging: Serving Layer detects `invoke_ensemble` tool-call structure in the SSE stream and emits `INFO: tool-call emit: tool=invoke_ensemble dispatch_id=<id>` before dispatching
+- Inference-wait heartbeat: open-request inactivity timer in Serving Layer fires `INFO: inference wait: elapsed=<seconds> session_id=<id>` after `heartbeat_interval_seconds` (default 30s) and recurs at the interval while inactivity continues
+- Library validation moves to startup (or library reload via `SIGHUP` / admin endpoint / restart) — `EnsembleLoader.load_from_file` invoked once per ensemble at startup; `list_ensembles()` returns the cached validated subset without re-validation
+- Operator-Terminal Event Sink consumes Ensemble Engine's `validation_results()` at startup and emits one `WARN` line per invalid YAML
+- The existing `INFO: tool dispatch: result kind=success` line is **replaced** by the new per-event lines carrying ensemble identification, duration, verdict, and `dispatch_id` correlation
+
+**Scenarios covered:** scenarios.md §Observability Event Routing — Operator-terminal per-event INFO lines; Tool-call-emit log precedes dispatch; Inference-wait heartbeat fires after `heartbeat_interval_seconds`; Validate-once-at-load eliminates per-enumeration noise; preservation scenarios for ADR-019 library schema.
+
+**Participating modules:** Operator-Terminal Event Sink (new), Serving Layer (extended for tool-call-emit + heartbeat timer), Ensemble Engine L0 (extended for validate-once-at-load library cache).
+
+**Dependencies:** Hard on **WP-A** (sink consumes from substrate; sink registration requires substrate's `register_sink()` API). Open choice with **WP-C** at architecture level (the two sinks are independent consumers of the substrate).
+
+---
+
+### WP-C: Orchestrator-Context Event Sink (ADR-023 destination 2)
+
+**Objective:** Land the orchestrator-context destination as a registered sink — structured observations between turns + end-of-session summary.
+
+**Changes:**
+- New module `agentic/orchestrator_context_event_sink.py` with structured-observation construction (JSON-shaped block per `dispatch_id`); `consume(event)` (substrate-registered) + `observations_for(dispatch_id) -> Observation` (query surface for Runtime); end-of-session summary writing the `dispatch_log` key to `execution.json`
+- `CalibrationSignal` excluded from orchestrator-context routing by default; operator opt-in via `agentic_serving.observability.orchestrator_context_routes_calibration_signal: true`
+- Orchestrator Runtime extension: at each turn boundary (after a dispatch returns control and before assembling the next turn's context), call `orchestrator_context_event_sink.observations_for(last_dispatch_id)` and prepend the returned observation block to the next turn's messages
+- Session Registry → Orchestrator-Context Event Sink: end-of-session hook triggers the `dispatch_log` write to the session's `execution.json`
+- Final-dispatch-before-session-close handling: in-turn routing is skipped (no next turn); end-of-session summary captures the events
+
+**Scenarios covered:** scenarios.md §Observability Event Routing — Orchestrator-context destination prepends structured observation between turns; Final dispatch routes to end-of-session summary; preservation scenarios for `execution.json` existing fields.
+
+**Participating modules:** Orchestrator-Context Event Sink (new), Orchestrator Runtime (extended for turn-boundary query), Session Registry (extended for end-of-session callback to write `dispatch_log`).
+
+**Dependencies:** Hard on **WP-A**. Open choice with **WP-B** (sinks are mutually independent).
+
+---
+
+### WP-D: ADR-024 typed `DispatchEnvelope` + `output_schema:` per-ensemble declaration
+
+**Objective:** Codify the `invoke_ensemble` response shape as the typed `DispatchEnvelope` dataclass; add optional per-ensemble `output_schema:` declaration; populate `structured` payload when declared.
+
+**Changes:**
+- New shared type `agentic/dispatch_envelope.py` with `DispatchEnvelope` frozen dataclass (`status`, `primary`, `structured?`, `diagnostics`, `errors?`, `artifacts?`) — lives alongside `LlmOrcStructuralError`
+- Orchestrator Tool Dispatch: `invoke_ensemble` returns `DispatchEnvelope` instead of the existing `ToolCallResult` shape; envelope construction reads dispatch events from Dispatch Event Substrate via `events_for(dispatch_id)` to populate `diagnostics`
+- Ensemble Engine L0 extension: optional `output_schema: dict | None` YAML field on `EnsembleConfig`; when declared, the synthesizer agent (or post-dispatch processing) populates `envelope.structured` with the typed payload
+- Migration of representative ensembles to declare `output_schema:` — recommended starters: `claim-extractor`, `text-summarizer`, `web-searcher` (their `default_task` already specifies structured output)
+- The Cycle 5 `execution.json` artifact retains `metadata` field name; the rename to `diagnostics` is at the envelope layer only (Cycle 7+ artifact-shape ADR territory)
+
+**Scenarios covered:** scenarios.md §Common I/O Envelope — `invoke_ensemble` returns typed `DispatchEnvelope`; `output_schema:` populates `envelope.structured`; capability ensemble without `output_schema:` produces `envelope.structured = None`; `errors[]` populated on partial-failure; `diagnostics.dispatch_id` correlates envelope to ADR-023 events; preservation scenarios for ADR-021 + `execution.json`.
+
+**Participating modules:** Orchestrator Tool Dispatch (extended, owns the shared type as producer), Ensemble Engine L0 (extended for `output_schema:` field), Dispatch Event Substrate (envelope construction reads events).
+
+**Dependencies:** Hard on **WP-A** (envelope's `diagnostics` populated from substrate events). Open choice with **WP-B** + **WP-C** (envelope construction does not depend on sink registration; sinks observe the events the substrate emits).
+
+---
+
+### WP-E: ADR-022 system-prompt amendment + ADR-025 Session Artifact Store + AS-7 amendment
+
+**Objective:** Land the routing-surface intervention (ADR-022 system-prompt amendment) **plus** the artifact-as-substrate always-scope (ADR-025) **plus** the AS-7 amendment that ties them together. Capability ensembles substrate-route; system ensembles remain inline; the result-summarizer ensemble is not invoked for substrate-routed dispatches.
+
+**Changes:**
+- ADR-022 system-prompt amendment in `agentic/orchestrator_config.py::DEFAULT_ORCHESTRATOR_SYSTEM_PROMPT` — insert the new paragraph between the existing "Do not pick a client-declared tool for questions about llm-orc's own state" paragraph and the "When you need a client-declared tool, emit it alone in a single assistant turn" paragraph; verbatim per ADR-022 §"Amendment to the system prompt"
+- New module `agentic/session_artifact_store.py` owning the `.llm-orc/agentic-sessions/<session_id>/<dispatch_id>/<deliverable>.<ext>` path layout; `<session_id>` format (`<iso-8601-datetime>-<short-uuid>`); retention semantics enforcement (`session` / `durable` / `ephemeral`); `write_deliverable(dispatch_id, deliverable_name, content, content_type) -> ArtifactReference` API
+- Ensemble Engine L0 extension: optional `output_substrate: Literal["artifact","inline"] | None` (default — capability ensembles `artifact`, system ensembles `inline`); optional `output_retention` field (default `session`); optional `calibration_substrate_access` field (default `summary`)
+- Orchestrator Tool Dispatch substrate-routing path: when dispatched ensemble's `output_substrate == "artifact"`, write deliverable via Session Artifact Store; construct `envelope.primary` as summary line; `envelope.artifacts[0]` as typed `ArtifactReference`; **skip Result Summarizer Harness** per AS-7 amended
+- Result Summarizer Harness — no harness-internal changes; the skip is enforced at Tool Dispatch's interposition order; ADR-004's `raw_output=True` escape hatch operates unchanged within the inline-response scope
+- Calibration Gate extension: three evaluation surfaces — summary-only (default — critic agents receive `envelope.primary` + `artifacts[0].summary`); `structured`-augmented (when `output_schema:` declared); artifact-content (when `calibration_substrate_access: artifact` declared — critic agents receive an `ArtifactReadTool`)
+- Session Registry → Session Artifact Store: `on_session_close(session_id)` callback for `retention: session` cleanup; orphaned-session warnings at next startup
+- Capability ensemble migration: 6 capability ensembles default `output_substrate: artifact` in Cycle 6 BUILD (with `code-generator` declaring `calibration_substrate_access: artifact`); `web-searcher` migrated **early** per DECIDE snapshot Finding 1 advisory to expose Indicator 1 (latency overhead) and Indicator 4 (opt-out count)
+- Backward-deprecated `.llm-orc/artifacts/agentic-serving/<ensemble>/<timestamp>/` path: new dispatches write under the new structure; the old tree is deprecated but not actively removed
+- AS-7 amendment: already recorded in `domain-model.md` Amendment Log entry #11 at DECIDE close; this WP operationalizes the amendment in code
+
+**Scenarios covered:** scenarios.md §Routing Surface Behavior — NL request matching capability ensemble dispatches via `invoke_ensemble`; Client-tool verb-match does not displace capability-match; Direct completion residual when no capability match; ADR-022 effectiveness is per-orchestrator-profile-conditional; preservation scenarios for ADR-021 + ADR-003. scenarios.md §Artifact-as-Substrate — Capability ensemble writes deliverable to session-dir artifact path; System ensemble produces inline-response envelope; Substrate-routed dispatch's envelope is not passed through `agentic-result-summarizer`; Inline-response dispatch retains `agentic-result-summarizer`; Calibration gate evaluators receive `primary` + `artifacts[0].summary` by default; Calibration gate reads artifact content for `code-generator` (opt-in); Session-close cleanup removes `retention: session` artifacts; Dial-back falsification indicator fires; preservation scenarios for ADR-007 / ADR-014 / ADR-004 / ADR-006.
+
+**Participating modules:** Session Artifact Store (new), Orchestrator Configuration (extended), Orchestrator Tool Dispatch (extended — substrate-routing path + envelope construction), Result Summarizer Harness (extended — substrate-conditional skip enforced upstream), Calibration Gate (extended — three evaluation surfaces), Ensemble Engine L0 (extended — three new YAML fields), Session Registry (extended — `on_session_close` callback for substrate cleanup).
+
+**Dependencies:** Hard on **WP-A** (uses `dispatch_id` for path construction). Hard on **WP-D** (envelope shape is the substrate's structural home for `artifacts[]`). Implied logic with **WP-B + WP-C** — substrate-routed dispatches still emit events through the substrate; observability operates with or without artifact-routing, so WP-B + WP-C can ship first or after WP-E.
+
+**Cross-surface `dispatch_id` consistency** (per DECIDE snapshot Finding 2 advisory): BUILD includes `test_dispatch_id_consistency_across_events_envelope_artifact_path` as an integration test asserting the same `dispatch_id` value across the event stream, the envelope's `diagnostics.dispatch_id`, and the artifact path's `<dispatch_id>` segment. FC-22 is the verification anchor.
+
+---
+
+## Dependency Graph (Cycle 6)
+
+```
+WP-A (Dispatch Event Substrate + dispatch_id correlation)
+   │
+   ├─ hard ─▶ WP-B (Operator-Terminal Event Sink + liveness + validate-once-at-load)
+   ├─ hard ─▶ WP-C (Orchestrator-Context Event Sink)
+   ├─ hard ─▶ WP-D (DispatchEnvelope + output_schema)
+   └─ hard ─▶ WP-E (Session Artifact Store + AS-7 amendment + ADR-022 system-prompt amendment)
+
+WP-D (DispatchEnvelope)
+   │
+   └─ hard ─▶ WP-E (envelope's artifacts[] is substrate's structural home)
+
+WP-B ─ open choice with WP-C (mutually independent — both consume from substrate)
+WP-B ─ open choice with WP-D (envelope construction does not depend on sink registration)
+WP-C ─ open choice with WP-D (same rationale)
+WP-B + WP-C ─ implied with WP-E (substrate-routed dispatches still emit events; observability operates independently — but operators benefit from observability while migrating ensembles to substrate-routing)
+```
+
+**Classification key:**
+- **Hard dependency:** structural necessity — the downstream WP's code imports, extends, or requires the upstream WP's output.
+- **Implied logic:** suggested ordering — building the upstream first is simpler, but a skilled builder can stub the references.
+- **Open choice:** genuinely independent — build either first.
+
+---
+
+## Transition States (Cycle 6)
+
+### TS-8: Dispatch event substrate operational with both destinations (after WP-A + WP-B + WP-C)
+
+The unified event-emission substrate fans out to operator-terminal and orchestrator-context destinations; operators see per-event log lines with `dispatch_id` correlation; the orchestrator's reasoning surface receives structured observations between turns answering PLAY note 12's load-bearing dispatch-graph questions; liveness signals fire during in-flight states; validate-once-at-load eliminates per-enumeration noise. The typed envelope and substrate-routing have not yet shipped; `invoke_ensemble` continues to return its v3.0 shape. This is a coherent intermediate where the Cycle 6 observability story stands on its own.
+
+### TS-9: Cycle 6 complete (after all 5 WPs)
+
+Typed `DispatchEnvelope` is the `invoke_ensemble` response shape; capability ensembles substrate-route; system ensembles remain inline; AS-7 amendment operates — `agentic-result-summarizer` skipped for substrate-routed dispatches, mandatory for inline. The ADR-022 system-prompt amendment is active; capability-matched NL framing routes to `invoke_ensemble` under the MiniMax M2.5-free profile (effectiveness under other profiles characterized at post-BUILD PLAY per ADR-022 disposition (iii)). The cycle's structural ship is complete; per-profile effectiveness, dial-back falsification indicators (ADR-025), and qwen3:14b over-delegation remain PLAY-phase observational concerns.
+
+---
+
+## Open Decision Points (Cycle 6)
+
+**C6-1. `dispatch_id` generation strategy** — monotonic counter (per-session) vs. UUID4. ADR-023 §"Event-emission substrate" leaves this implementation-level. Default for BUILD: monotonic counter (simpler; observably ordered; aligns with the `<dispatch_id>` filesystem path's lexicographic-sortability for operator review). Affects WP-A.
+
+**C6-2. Heartbeat timer mechanism** — separate thread vs. async background task. The serving layer's existing async/await structure may make async background task the natural choice; thread-based avoids interaction with the serving layer's request loop. Default: async background task tied to the open-request lifetime; auto-cancelled on request close. Affects WP-B.
+
+**C6-3. `web-searcher` migration sequencing** — per DECIDE snapshot Finding 1 advisory carry-forward: migrate `web-searcher` to `output_substrate: artifact` **early** in WP-E's per-ensemble migration so that Indicator 1 (latency overhead for deliverables under 1 KB) and Indicator 4 (`output_substrate: inline` opt-out count) are testable before the migration commits. The recommendation is structural (sequencing within WP-E), not a separate decision point — but flagged here so BUILD does not deprioritize it.
+
+**C6-4. Orchestrator-context routing default** — ADR-023 specifies default `enabled` for `agentic_serving.observability.orchestrator_context_routing`. Context-budget impact on long-dispatch-count sessions is bounded by ADR-012 compaction but operationally untested. Default holds; operators with strict context budgets may disable via config. Revisit at post-BUILD PLAY if context-rot patterns surface.
+
+**C6-5. Old artifact path (`.llm-orc/artifacts/agentic-serving/<ensemble>/<timestamp>/`) deprecation pace** — ADR-025 declares the old tree deprecated-but-not-actively-removed. BUILD does not ship cleanup tooling for the old tree. Operators decide when to remove the old tree manually; the `llm-orc agentic-sessions prune` command (mentioned out-of-scope in ADR-025) is operator-tooling territory for a follow-on cycle.
+
+**C6-6. ADR-022 effectiveness across orchestrator profiles** — ADR-022 disposition (iii) defers per-profile characterization to BUILD or follow-on PLAY. The cycle's post-BUILD PLAY re-runs the spike γ probe across at least Cells A (MiniMax M2.5-free) and B (qwen3:14b local via `agentic-orchestrator-offline-tools`) with the amended prompt active; if qwen3:14b continues to over-delegate, per-profile system-prompt overrides become Cycle 7+ territory.
+
+---
+
+## Work Packages — Cycle 4 (deferred carry-forwards)
+
+> **Closed Cycle 4 work (WP-A4 through WP-H4) is recorded in `system-design.md` Amendment Log entries #7 (Cycle 4 ARCHITECT, 2026-05-08) and Cycle 4 BUILD subsequent closure dates.** The two carry-forwards below remain deferred from Cycle 1.
 
 > **Cycle 1 WPs (WP-A through WP-I) are complete and migrated to the Completed Work Log.** TS-1 (stateless orchestrator serving OpenCode) reached at WP-F close (2026-04-22); TS-2 (stateless baseline) reached at WP-H close (2026-04-24); Plexus Adapter skeleton landed at WP-I close (2026-04-24). The active section below lists Cycle 4 work plus deferred Cycle 1 work (WP-K, WP-J).
 >
