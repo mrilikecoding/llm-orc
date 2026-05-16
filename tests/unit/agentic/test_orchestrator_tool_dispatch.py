@@ -27,12 +27,20 @@ from llm_orc.agentic.autonomy_policy import (
     AutonomyPolicy,
     Deny,
 )
-from llm_orc.agentic.calibration_gate import CalibrationVerdict, QualitySignal
+from llm_orc.agentic.calibration_gate import (
+    CalibrationVerdict,
+    CalibrationVerdictEvent,
+    QualitySignal,
+)
 from llm_orc.agentic.composition_validator import (
     CompositionAccepted,
     CompositionOutcome,
     CompositionRejected,
     CompositionRequest,
+)
+from llm_orc.agentic.dispatch_event_substrate import (
+    DispatchEventSubstrate,
+    DispatchTiming,
 )
 from llm_orc.agentic.orchestrator_chunk import VisibilityEvent
 from llm_orc.agentic.orchestrator_tool_dispatch import (
@@ -199,6 +207,7 @@ def _build_dispatch(
     plexus_adapter: Any = None,
     tier_router: Any = None,
     tier_router_audit: Any = None,
+    event_substrate: Any = None,
 ) -> OrchestratorToolDispatch:
     """Construct a dispatch with sensible test defaults.
 
@@ -237,6 +246,7 @@ def _build_dispatch(
         plexus_adapter=plexus_adapter,
         tier_router=tier_router,
         tier_router_audit=tier_router_audit,
+        event_substrate=event_substrate,
     )
 
 
@@ -2305,3 +2315,191 @@ class TestDAnalogAuditDispatchFiresAtTriggerAndSevereDriftActivatesFailSafe:
             )
         )
         assert ops.invoke_calls[0]["model_profile_override"] == "escalated-code-gen"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 6 WP-A — Dispatch Event Substrate integration (FC-21 anchor)
+# ---------------------------------------------------------------------------
+
+
+class _RecordingEventSink:
+    """Captures every event the substrate fans out — exercises FC-21."""
+
+    def __init__(self) -> None:
+        self.events: list[object] = []
+
+    def consume(self, event: object) -> None:
+        self.events.append(event)
+
+
+class TestDispatchEventSubstrateIntegration:
+    """FC-21 — every event emitted during one invoke_ensemble dispatch
+    carries the same dispatch_id value.
+
+    Per ``docs/agentic-serving/system-design.agents.md`` §Module:
+    Dispatch Event Substrate (Cycle 6 WP-A, ADR-023). The integration
+    test asserts the cross-event correlation that operator-terminal
+    (WP-B) and orchestrator-context (WP-C) sinks depend on.
+    """
+
+    @pytest.mark.asyncio
+    async def test_invoke_ensemble_emits_paired_dispatch_timing_events(self) -> None:
+        """Smallest case — no tier router, no calibration; only DispatchTiming
+        events are emitted. Both share the same dispatch_id and the end
+        event carries duration_seconds + exit_status=success.
+        """
+        substrate = DispatchEventSubstrate()
+        sink = _RecordingEventSink()
+        substrate.register_sink(sink)
+        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        dispatch = _build_dispatch(operations=ops, event_substrate=substrate)
+
+        await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "code-generator", "input": "task"},
+            ),
+            session_id="session-A",
+        )
+
+        timing_events = [e for e in sink.events if isinstance(e, DispatchTiming)]
+        assert len(timing_events) == 2
+        start, end = timing_events
+        assert start.phase == "start"
+        assert end.phase == "end"
+        assert start.dispatch_id == end.dispatch_id
+        assert start.ensemble_name == "code-generator"
+        assert end.duration_seconds is not None
+        assert end.duration_seconds >= 0.0
+        assert end.exit_status == "success"
+
+    @pytest.mark.asyncio
+    async def test_dispatch_events_share_dispatch_id_within_one_invoke(
+        self,
+    ) -> None:
+        """FC-21 — full integration with tier router + calibration gate.
+
+        With a calibration gate producing a verdict and a tier router
+        consuming it, the substrate observes DispatchTiming(start) +
+        CalibrationVerdictEvent + TierSelection + DispatchTiming(end)
+        in dispatch order. Every event carries the same dispatch_id
+        value; substrate.events_for(dispatch_id) reconstructs the full
+        log in emission order.
+        """
+        substrate = DispatchEventSubstrate()
+        sink = _RecordingEventSink()
+        substrate.register_sink(sink)
+        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        gate = _ScriptedCalibrationGate(verdict="proceed")
+        router = TestTierEscalationRouterInterposition._build_router_with_skill(
+            "code-generator",
+            "code_generation",
+            cheap="cheap-code-gen",
+            escalated="escalated-code-gen",
+        )
+        dispatch = _build_dispatch(
+            operations=ops,
+            calibration_gate=gate,
+            tier_router=router,
+            event_substrate=substrate,
+        )
+
+        await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "code-generator", "input": "task"},
+            ),
+            session_id="session-A",
+        )
+
+        # Every emitted event with a dispatch_id shares one value.
+        dispatch_ids = {getattr(e, "dispatch_id", None) for e in sink.events} - {None}
+        assert len(dispatch_ids) == 1
+        (the_dispatch_id,) = dispatch_ids
+        assert the_dispatch_id == "session-A-dispatch-0001"
+
+        # The substrate's log reconstructs the dispatch in emission order:
+        # start → calibration verdict → tier selection → end.
+        log = substrate.events_for(the_dispatch_id)
+        kinds = [type(e).__name__ for e in log]
+        assert kinds == [
+            "DispatchTiming",  # phase=start
+            "CalibrationVerdictEvent",
+            "TierSelection",
+            "DispatchTiming",  # phase=end
+        ]
+        assert isinstance(log[0], DispatchTiming)
+        assert log[0].phase == "start"
+        assert isinstance(log[1], CalibrationVerdictEvent)
+        assert log[1].verdict == "proceed"
+        assert log[1].ensemble_name == "code-generator"
+        assert isinstance(log[3], DispatchTiming)
+        assert log[3].phase == "end"
+
+    @pytest.mark.asyncio
+    async def test_end_event_fires_on_invocation_failure(self) -> None:
+        """DispatchTiming(end) emits even when invoke raises — try/finally
+        discipline. exit_status is ``error`` in that case.
+        """
+        substrate = DispatchEventSubstrate()
+        sink = _RecordingEventSink()
+        substrate.register_sink(sink)
+        ops = _ScriptedOperations(invoke_raises=ValueError("ensemble not found"))
+        dispatch = _build_dispatch(operations=ops, event_substrate=substrate)
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "missing", "input": "task"},
+            ),
+            session_id="session-A",
+        )
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "invocation_failed"
+
+        timing_events = [e for e in sink.events if isinstance(e, DispatchTiming)]
+        assert [e.phase for e in timing_events] == ["start", "end"]
+        end = timing_events[1]
+        assert end.exit_status == "error"
+
+    @pytest.mark.asyncio
+    async def test_invalid_arguments_do_not_open_a_dispatch(self) -> None:
+        """Argument-validation errors before dispatch_id allocation do not
+        produce DispatchTiming events. The substrate is not consulted.
+        """
+        substrate = DispatchEventSubstrate()
+        sink = _RecordingEventSink()
+        substrate.register_sink(sink)
+        ops = _ScriptedOperations()
+        dispatch = _build_dispatch(operations=ops, event_substrate=substrate)
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "", "input": "task"},
+            ),
+            session_id="session-A",
+        )
+        assert isinstance(result, ToolCallError)
+        assert result.kind == "invalid_arguments"
+        assert sink.events == []
+
+    @pytest.mark.asyncio
+    async def test_substrate_absent_preserves_pre_cycle_6_path(self) -> None:
+        """No event_substrate configured — invoke_ensemble works as before."""
+        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        dispatch = _build_dispatch(operations=ops)
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "code-generator", "input": "task"},
+            ),
+            session_id="session-A",
+        )
+        assert isinstance(result, ToolCallSuccess)
