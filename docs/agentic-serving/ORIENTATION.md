@@ -47,6 +47,16 @@ Drawn from `domain-model.md` (AS-1 through AS-8) and project-level Invariants 1-
 
 ## Current state
 
+### Cycle 6 BUILD WP-B close (2026-05-15)
+
+**WP-B (Operator-Terminal Event Sink + Liveness signals + Validate-once-at-load) is closed.** Five pieces shipped across five commits — `62dccbf` piece 1 (operator-terminal sink module + per-event format strings + log-level discrimination + action surfaces); `cb9142a` piece 2 (`CalibrationSignalChannel.record_signal` substrate emission, closing the WP-A carry-forward); `6bad830` verdict-literal fix; `f1a2d16` piece 3 (`EnsembleLoader.prime`/`reload`/`validation_results()` per-directory cache; un-primed callers keep on-demand validation with the existing `Skipping invalid ensemble` log line preserved); `bb04dbb` piece 4 (`OrchestratorToolDispatch.ToolCallEmitLogger` Protocol slot firing `emit_tool_call_log` between `new_dispatch_id` allocation and `DispatchTiming(start)` emission — FC-23 chronological-ordering); `8fe63b0` piece 5 (`InferenceWaitHeartbeatScheduler` new L3 module + `DispatchEventSubstrate.unregister_sink` + `OrchestratorConfig.observability.heartbeat_interval_seconds` default 30s + serve-layer wiring with per-request scheduler lifecycle).
+
+Two integration anchors landed: **FC-23** at `tests/integration/test_tool_call_emit_log_precedes_dispatch_start.py` verifies the tool-call-emit-precedes-dispatch-start chronological ordering against the real `OperatorTerminalEventSink` + real `DispatchEventSubstrate`; **FC-27** at `tests/integration/test_validate_once_at_load.py` verifies that eight `list_ensembles` calls after `prime` emit zero additional `WARN` lines. Cycle Acceptance Criterion (Step 5.5): the WP-B-applicable criterion "Liveness signals fire during in-flight states before completion events" (Layer-match `no`) is verified at the layers BUILD can address — FC-23 anchor for the tool-call-emit precedence + unit-level heartbeat scheduler logic under controllable clock. The live timed-dispatch leg (heartbeat fires under a >30s real-clock wait) is appropriately PLAY-phase observational territory.
+
+Test suite: **2727 passing under `make test`** (parallel via `pytest -n auto`); coverage 92.18% (above the 90% threshold).
+
+The Cycle 6 BUILD remainder is WP-C (Orchestrator-Context Event Sink), WP-D (typed `DispatchEnvelope` + `output_schema:`), and WP-E (Session Artifact Store + AS-7 amendment + ADR-022 system-prompt amendment). WP-B / WP-C / WP-D are mutually independent given WP-A; WP-E hard-depends on WP-A and WP-D.
+
 ### Cycle 6 ARCHITECT close (2026-05-15)
 
 Cycle 6 (Mode D mini-cycle on routing + observability + ensemble contract) closed ARCHITECT with four new ADRs (022 / 023 / 024 / 025) integrated into the system design.
