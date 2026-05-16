@@ -33,7 +33,17 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ---
 
-### WP-B: Operator-Terminal Event Sink + Liveness signals + Validate-once-at-load (ADR-023 destination 1)
+### WP-B: Operator-Terminal Event Sink + Liveness signals + Validate-once-at-load (ADR-023 destination 1) — 🟡 **Partial (2/5 pieces shipped 2026-05-15)**
+
+**Status:**
+
+- ✅ **Piece 1 — Operator-Terminal Event Sink module** (commit `62dccbf` + `6bad830` fix) — new L3 module `agentic/operator_terminal_event_sink.py` with per-event format strings + log-level discrimination (`CalibrationSignal` at DEBUG, others at INFO) + action surfaces (`emit_tool_call_log`, `emit_heartbeat`, `emit_validation_warning`); registers with substrate via `register_with()`; 13 unit tests
+- ✅ **Piece 2 — CalibrationSignal substrate emission** (commit `cb9142a`) — closes the WP-A carry-forward; `CalibrationSignalChannel.record_signal` emits validated signals through optional `event_substrate`; 3 unit tests
+- ▶ **Piece 3 — Validate-once-at-load** — stateful cache on `EnsembleLoader.list_ensembles`, `validation_results()` surface for the sink, reload mechanism via `SIGHUP`/admin/restart (per ADR-023 §"Noise-floor remediation"); touches `src/llm_orc/core/config/ensemble_config.py` which is used widely by CLI / MCP / services / agentic / web entry points
+- ☐ **Piece 4 — Tool-call-emit logging in Serving Layer** — detect `invoke_ensemble` tool-call structure in `src/llm_orc/web/api/v1_chat_completions.py`'s SSE stream and call `sink.emit_tool_call_log(...)` before dispatch (FC-23 anchor: `test_tool_call_emit_log_precedes_dispatch_start`)
+- ☐ **Piece 5 — Inference-wait heartbeat in Serving Layer** — async background timer tied to open-request lifetime (per C6-2 default), fires `INFO: inference wait:` after `heartbeat_interval_seconds` (default 30s) and recurs until tool activity resumes
+
+Pieces 3–5 resume in a fresh session per the build skill's session-scoping guidance (context-window + cross-module reach favor a clean orientation start; pieces 3 and 4 touch core/ and web/api/ respectively, requiring fresh module reads).
 
 **Objective:** Land the operator-terminal destination as a registered sink consuming from the Dispatch Event Substrate. Ship the line-oriented log surface, tool-call-emit logging, inference-wait heartbeats, and the noise-floor remediation (validate-once-at-load).
 
