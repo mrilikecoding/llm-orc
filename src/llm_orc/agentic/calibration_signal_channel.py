@@ -205,6 +205,16 @@ class CalibrationSignal:
     configurations per ADR-016 §"Mechanism (c)" §"Ensemble-composition-
     conditional applicability"."""
 
+    dispatch_id: str | None = None
+    """ADR-023 correlation identifier (Cycle 6 WP-A — additive). Joins
+    this signal to the ``DispatchTiming`` start/end events and other
+    per-dispatch events emitted through the Dispatch Event Substrate.
+    ``None`` during the progressive conversion when the L0 emission
+    site does not yet pass the substrate's allocated identifier. The
+    cross-layer channel's bounding mechanisms (a)–(e) and read-only
+    scope are unchanged by this additive field (preservation scenario
+    in scenarios.md §Observability Event Routing)."""
+
 
 # ----------------------------------------------------------------------------
 # Mechanism (e) — typed-error surface (FC-17 8 of 8)

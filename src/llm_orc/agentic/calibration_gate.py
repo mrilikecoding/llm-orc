@@ -221,6 +221,32 @@ _SECONDS_PER_MINUTE: Final[float] = 60.0
 
 
 @dataclass(frozen=True)
+class CalibrationVerdictEvent:
+    """Routed event carrying one :data:`CalibrationVerdict` per ADR-023.
+
+    The :data:`CalibrationVerdict` literal carries only the verdict value;
+    routing it to either ADR-023 destination requires call-site composition
+    (per ADR-023 §"`CalibrationVerdict` call-site composition"). This event
+    wraps the verdict with the ``dispatch_id`` correlation identifier and
+    the call-site context (ensemble name, timestamp) so operator-terminal
+    and orchestrator-context sinks can format and structure the verdict
+    without a cross-stream join.
+
+    The verdict :data:`CalibrationVerdict` literal is unchanged — code that
+    consumes verdicts as values continues to use the literal. This event is
+    the *emission* form on the Dispatch Event Substrate.
+    """
+
+    verdict: CalibrationVerdict
+    ensemble_name: str
+    timestamp_seconds: float
+    dispatch_id: str | None = None
+    """ADR-023 correlation identifier (Cycle 6 WP-A — additive). ``None``
+    during the progressive conversion when the gate's caller does not yet
+    pass the substrate's allocated identifier."""
+
+
+@dataclass(frozen=True)
 class TrajectoryFeatures:
     """Per-dispatch HTC-derived trajectory features per ADR-014.
 

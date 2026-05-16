@@ -226,6 +226,15 @@ class AuditDiagnostic:
     """One :class:`CriterionFinding` per drift criterion, in the
     order declared by :data:`_CRITERION_NAMES`."""
 
+    dispatch_id: str | None = None
+    """ADR-023 correlation identifier (Cycle 6 WP-A — additive). Joins
+    this audit verdict to the ``DispatchTiming`` start/end events and
+    other per-dispatch events emitted through the Dispatch Event
+    Substrate. ``None`` during the progressive conversion when the
+    consumption call site does not yet pass the substrate's allocated
+    identifier; the audit's drift-criteria semantics are unchanged
+    (preservation scenario in scenarios.md §Observability Event Routing)."""
+
 
 @dataclass
 class _WindowAccumulator:
