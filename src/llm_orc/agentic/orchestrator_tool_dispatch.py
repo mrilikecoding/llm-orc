@@ -40,7 +40,9 @@ closed-set property holds from WP-C onward.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
@@ -48,6 +50,7 @@ from llm_orc.agentic.autonomy_policy import Allow, AutonomyDecision, Deny
 from llm_orc.agentic.calibration_gate import (
     CalibrationGate,
     CalibrationVerdict,
+    CalibrationVerdictEvent,
     DispatchContext,
     QualitySignal,
 )
@@ -58,6 +61,11 @@ from llm_orc.agentic.composition_validator import (
     CompositionRequest,
     EnsembleWriteError,
     LocalEnsembleWriter,
+)
+from llm_orc.agentic.dispatch_event_substrate import (
+    DispatchEventSubstrate,
+    DispatchTiming,
+    ExitStatus,
 )
 from llm_orc.agentic.orchestrator_chunk import VisibilityEvent
 from llm_orc.agentic.result_summarizer_harness import (
@@ -248,6 +256,7 @@ class OrchestratorToolDispatch:
         tool_call_validation_patterns: tuple[str, ...] = (),
         tier_router: TierRouter | None = None,
         tier_router_audit: TierEscalationAuditor | None = None,
+        event_substrate: DispatchEventSubstrate | None = None,
     ) -> None:
         if tier_router is not None and calibration_gate is None:
             raise ValueError(
@@ -294,6 +303,18 @@ class OrchestratorToolDispatch:
         (route-all-to-escalated until operator review). Requires
         ``tier_router`` to be configured (the audit observes the
         router's interposition point).
+        """
+        self._event_substrate = event_substrate
+        """Dispatch Event Substrate (Cycle 6 WP-A, ADR-023).
+
+        When configured, ``invoke_ensemble`` allocates a ``dispatch_id``
+        at entry and emits ``DispatchTiming(start)`` before tier
+        selection and ``DispatchTiming(end)`` after the harness (or
+        substrate-write per ADR-025 when WP-E ships). The substrate
+        fans these events out to registered sinks (operator-terminal
+        per WP-B; orchestrator-context per WP-C). ``None`` preserves
+        the pre-Cycle-6 dispatch path for existing tests and call
+        sites that have not been migrated.
         """
 
     def validate_response(
@@ -420,6 +441,13 @@ class OrchestratorToolDispatch:
         composed ensembles still in calibration. Calibration failures
         **do not** fail invocation (ADR-007 clause 2) — exceptions are
         swallowed so the orchestrator's loop continues unimpeded.
+
+        Per ADR-023 (Cycle 6 WP-A): when an event substrate is configured,
+        a ``dispatch_id`` is allocated at entry, ``DispatchTiming(start)``
+        is emitted before tier selection, and ``DispatchTiming(end)`` is
+        emitted in a ``finally`` block so the operator-terminal and
+        orchestrator-context destinations observe every dispatch
+        regardless of exit path.
         """
         name = arguments.get("name")
         input_data = arguments.get("input", "")
@@ -438,75 +466,96 @@ class OrchestratorToolDispatch:
                 reason="invoke_ensemble 'input' must be a string",
             )
 
-        # WP-G4-1, ADR-015: tier-escalation router interposes between
-        # the autonomy gate (applied in ``dispatch``) and the actual
-        # ensemble execution. When configured, the router consumes the
-        # Calibration Gate's verdict for this dispatch and selects a
-        # per-skill Model Profile (cheap or escalated). Abstain
-        # verdicts and missing-metadata cases surface as typed
-        # ToolCallErrors so the ReAct loop continues with the failure
-        # as an observation rather than a crash.
-        selection = self._select_tier_for(
-            session_id=session_id, ensemble_name=name, call_id=id_
+        # ADR-023 WP-A: allocate dispatch_id and emit DispatchTiming(start)
+        # before tier selection. Argument-validation failures above do not
+        # constitute a dispatch attempt and do not produce events.
+        dispatch_id, start_timestamp = self._open_dispatch_event(
+            ensemble_name=name, session_id=session_id
         )
-        if isinstance(selection, ToolCallError):
-            return selection
-
-        invocation_args: dict[str, Any] = {
-            "ensemble_name": name,
-            "input": input_data,
-        }
-        if selection is not None:
-            invocation_args["model_profile_override"] = selection.model_profile
-
+        exit_status: ExitStatus = "success"
         try:
-            result = await self._operations.invoke(invocation_args)
-        except ValueError as exc:
-            # ADR-018: record dispatch outcome as failure for the
-            # escalation-vs-outcome correlation criterion.
-            self._record_dispatch_outcome(
-                ensemble_name=name, selection=selection, success=False
+            # WP-G4-1, ADR-015: tier-escalation router interposes between
+            # the autonomy gate (applied in ``dispatch``) and the actual
+            # ensemble execution. When configured, the router consumes the
+            # Calibration Gate's verdict for this dispatch and selects a
+            # per-skill Model Profile (cheap or escalated). Abstain
+            # verdicts and missing-metadata cases surface as typed
+            # ToolCallErrors so the ReAct loop continues with the failure
+            # as an observation rather than a crash.
+            selection = self._select_tier_for(
+                session_id=session_id,
+                ensemble_name=name,
+                call_id=id_,
+                dispatch_id=dispatch_id,
             )
-            return ToolCallError(
-                id=id_,
-                name="invoke_ensemble",
-                kind="invocation_failed",
-                reason=str(exc),
-            )
+            if isinstance(selection, ToolCallError):
+                exit_status = "error"
+                return selection
 
-        # ADR-018: record dispatch outcome as success for the
-        # escalation-vs-outcome correlation criterion. Outcome maps
-        # to dispatch-completion-without-exception per WP-G4-2 scope;
-        # a richer outcome signal (e.g., calibration quality signal)
-        # is Cycle 5+ territory.
-        self._record_dispatch_outcome(
-            ensemble_name=name, selection=selection, success=True
-        )
+            invocation_args: dict[str, Any] = {
+                "ensemble_name": name,
+                "input": input_data,
+            }
+            if selection is not None:
+                invocation_args["model_profile_override"] = selection.model_profile
 
-        await self._calibration_check_safe(
-            session_id=session_id, ensemble_name=name, raw_result=result
-        )
-
-        raw_output = bool(result.get("raw_output", False))
-        summarization = await self._harness.summarize(result, raw_output=raw_output)
-        match summarization:
-            case SummarizationSuccess(summary=summary):
-                return ToolCallSuccess(
-                    id=id_,
-                    name="invoke_ensemble",
-                    content={"summary": summary},
+            try:
+                result = await self._operations.invoke(invocation_args)
+            except ValueError as exc:
+                # ADR-018: record dispatch outcome as failure for the
+                # escalation-vs-outcome correlation criterion.
+                self._record_dispatch_outcome(
+                    ensemble_name=name, selection=selection, success=False
                 )
-            case RawOutputPassthrough(content=passthrough):
-                return ToolCallSuccess(
-                    id=id_, name="invoke_ensemble", content=passthrough
-                )
-            case SummarizationFailure(reason=reason):
+                exit_status = "error"
                 return ToolCallError(
                     id=id_,
                     name="invoke_ensemble",
-                    kind="summarization_failed",
-                    reason=reason,
+                    kind="invocation_failed",
+                    reason=str(exc),
                 )
+
+            # ADR-018: record dispatch outcome as success for the
+            # escalation-vs-outcome correlation criterion. Outcome maps
+            # to dispatch-completion-without-exception per WP-G4-2 scope;
+            # a richer outcome signal (e.g., calibration quality signal)
+            # is Cycle 5+ territory.
+            self._record_dispatch_outcome(
+                ensemble_name=name, selection=selection, success=True
+            )
+
+            await self._calibration_check_safe(
+                session_id=session_id, ensemble_name=name, raw_result=result
+            )
+
+            raw_output = bool(result.get("raw_output", False))
+            summarization = await self._harness.summarize(result, raw_output=raw_output)
+            match summarization:
+                case SummarizationSuccess(summary=summary):
+                    return ToolCallSuccess(
+                        id=id_,
+                        name="invoke_ensemble",
+                        content={"summary": summary},
+                    )
+                case RawOutputPassthrough(content=passthrough):
+                    return ToolCallSuccess(
+                        id=id_, name="invoke_ensemble", content=passthrough
+                    )
+                case SummarizationFailure(reason=reason):
+                    exit_status = "error"
+                    return ToolCallError(
+                        id=id_,
+                        name="invoke_ensemble",
+                        kind="summarization_failed",
+                        reason=reason,
+                    )
+        finally:
+            self._close_dispatch_event(
+                ensemble_name=name,
+                dispatch_id=dispatch_id,
+                start_timestamp=start_timestamp,
+                exit_status=exit_status,
+            )
 
     async def compose_ensemble(
         self, id_: str, arguments: dict[str, Any], session_id: str = ""
@@ -642,8 +691,68 @@ class OrchestratorToolDispatch:
         result = await self._plexus_adapter.record(arguments)
         return ToolCallSuccess(id=id_, name="record_outcome", content=result)
 
+    def _open_dispatch_event(
+        self, *, ensemble_name: str, session_id: str
+    ) -> tuple[str | None, float]:
+        """Allocate a dispatch_id and emit DispatchTiming(start) per ADR-023.
+
+        Returns ``(dispatch_id, start_timestamp)``. When no event substrate
+        is configured, ``dispatch_id`` is ``None`` (the close helper then
+        skips end emission). ``start_timestamp`` is the wall-clock anchor
+        for ``duration_seconds`` on the matching end event.
+
+        ``model_profile`` is unknown at start (tier selection follows in
+        the interposition order); the start event carries
+        ``model_profile=None`` and the subsequent ``TierSelection`` event
+        carries the selected profile.
+        """
+        start_timestamp = time.time()
+        if self._event_substrate is None:
+            return None, start_timestamp
+        dispatch_id = self._event_substrate.new_dispatch_id(session_id)
+        self._event_substrate.emit(
+            DispatchTiming(
+                phase="start",
+                dispatch_id=dispatch_id,
+                ensemble_name=ensemble_name,
+                timestamp_seconds=start_timestamp,
+            )
+        )
+        return dispatch_id, start_timestamp
+
+    def _close_dispatch_event(
+        self,
+        *,
+        ensemble_name: str,
+        dispatch_id: str | None,
+        start_timestamp: float,
+        exit_status: ExitStatus,
+    ) -> None:
+        """Emit DispatchTiming(end) per ADR-023 — runs in invoke_ensemble's
+        ``finally`` block so the operator-terminal and orchestrator-context
+        destinations observe every dispatch regardless of exit path.
+        """
+        if self._event_substrate is None or dispatch_id is None:
+            return
+        end_timestamp = time.time()
+        self._event_substrate.emit(
+            DispatchTiming(
+                phase="end",
+                dispatch_id=dispatch_id,
+                ensemble_name=ensemble_name,
+                timestamp_seconds=end_timestamp,
+                duration_seconds=end_timestamp - start_timestamp,
+                exit_status=exit_status,
+            )
+        )
+
     def _select_tier_for(
-        self, *, session_id: str, ensemble_name: str, call_id: str
+        self,
+        *,
+        session_id: str,
+        ensemble_name: str,
+        call_id: str,
+        dispatch_id: str | None = None,
     ) -> TierSelection | ToolCallError | None:
         """Consult the Tier-Escalation Router for this dispatch.
 
@@ -672,6 +781,14 @@ class OrchestratorToolDispatch:
             ensemble_name=ensemble_name,
             dispatch_context=DispatchContext(),
         )
+        # ADR-023 WP-A: emit the verdict event through the substrate so the
+        # registered sinks (operator-terminal per WP-B; orchestrator-context
+        # per WP-C) see the verdict alongside the DispatchTiming events.
+        self._emit_calibration_verdict_event(
+            verdict=verdict,
+            ensemble_name=ensemble_name,
+            dispatch_id=dispatch_id,
+        )
         fail_safe = (
             self._tier_router_audit is not None
             and self._tier_router_audit.fail_safe_active
@@ -692,6 +809,7 @@ class OrchestratorToolDispatch:
                 selection=None,
                 ensemble_name=ensemble_name,
                 bypassed=True,
+                dispatch_id=dispatch_id,
             )
             return ToolCallError(
                 id=call_id,
@@ -708,6 +826,13 @@ class OrchestratorToolDispatch:
                 kind="missing_skill_metadata",
                 reason=exc.operator_diagnostic,
             )
+        # Stamp dispatch_id on the selection (ADR-023 WP-A) and emit the
+        # event through the substrate. dataclasses.replace produces a new
+        # frozen instance with the correlation identifier populated.
+        if dispatch_id is not None:
+            selection = dataclasses.replace(selection, dispatch_id=dispatch_id)
+        if self._event_substrate is not None:
+            self._event_substrate.emit(selection)
         # Successful selection (cheap or escalated tier). Record the
         # original verdict so the audit's verdict-distribution
         # criterion measures actual gate output, not fail-safe-coerced
@@ -717,8 +842,33 @@ class OrchestratorToolDispatch:
             selection=selection,
             ensemble_name=ensemble_name,
             bypassed=False,
+            dispatch_id=dispatch_id,
         )
         return selection
+
+    def _emit_calibration_verdict_event(
+        self,
+        *,
+        verdict: CalibrationVerdict,
+        ensemble_name: str,
+        dispatch_id: str | None,
+    ) -> None:
+        """Emit a CalibrationVerdictEvent through the substrate (ADR-023 WP-A).
+
+        ``CalibrationVerdict`` is a literal; routing it requires the
+        :class:`CalibrationVerdictEvent` wrapper carrying ``dispatch_id``
+        and call-site context. No-op when no substrate is configured.
+        """
+        if self._event_substrate is None:
+            return
+        self._event_substrate.emit(
+            CalibrationVerdictEvent(
+                verdict=verdict,
+                ensemble_name=ensemble_name,
+                timestamp_seconds=time.time(),
+                dispatch_id=dispatch_id,
+            )
+        )
 
     def _record_audit_consumption(
         self,
@@ -727,16 +877,28 @@ class OrchestratorToolDispatch:
         selection: TierSelection | None,
         ensemble_name: str,
         bypassed: bool,
+        dispatch_id: str | None = None,
     ) -> None:
-        """Record a verdict consumption into the audit window (if configured)."""
+        """Record a verdict consumption into the audit window (if configured).
+
+        Per ADR-023 WP-A: when the consumption causes an audit window to
+        close, the returned :class:`AuditDiagnostic` is stamped with the
+        current dispatch_id (the dispatch that crossed the trigger) and
+        emitted through the substrate.
+        """
         if self._tier_router_audit is None:
             return
-        self._tier_router_audit.record_consumption(
+        diagnostic = self._tier_router_audit.record_consumption(
             verdict=verdict,
             selection=selection,
             ensemble_name=ensemble_name,
             bypassed=bypassed,
         )
+        if diagnostic is None or self._event_substrate is None:
+            return
+        if dispatch_id is not None:
+            diagnostic = dataclasses.replace(diagnostic, dispatch_id=dispatch_id)
+        self._event_substrate.emit(diagnostic)
 
     def _record_dispatch_outcome(
         self,
