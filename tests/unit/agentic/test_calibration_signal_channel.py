@@ -25,6 +25,7 @@ from llm_orc.agentic.calibration_signal_channel import (
     MalformedSignalError,
     WindowedSignalFeatures,
 )
+from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
 from llm_orc.models.structural_errors import LlmOrcStructuralError
 
 
@@ -990,3 +991,72 @@ class TestSignalVerdictCorrelationCriterion:
             if f.name == "signal_verdict_correlation_drift"
         )
         assert corr.exceeds is False
+
+
+# ---------------------------------------------------------------------------
+# Cycle 6 WP-B: substrate emission (WP-A carry-forward)
+# ---------------------------------------------------------------------------
+
+
+class _RecordingSink:
+    def __init__(self) -> None:
+        self.events: list[object] = []
+
+    def consume(self, event: object) -> None:
+        self.events.append(event)
+
+
+class TestDispatchEventSubstrateEmission:
+    """Per ADR-023 §Destination 1 — CalibrationSignal at DEBUG.
+
+    The channel emits each validated signal through the configured
+    substrate at ``record_signal`` time. ``None`` substrate preserves
+    the pre-Cycle-6 path (no emission, no test impact).
+    """
+
+    def test_signal_flows_through_substrate_when_configured(self) -> None:
+        substrate = DispatchEventSubstrate()
+        sink = _RecordingSink()
+        substrate.register_sink(sink)
+        channel = CalibrationSignalChannel(event_substrate=substrate)
+
+        signal = CalibrationSignal(
+            timestamp_seconds=1700000000.0,
+            ensemble_name="code-generator",
+            dispatch_success=True,
+            recent_token_entropy=2.345,
+        )
+        channel.record_signal(signal)
+
+        assert sink.events == [signal]
+
+    def test_substrate_absent_preserves_pre_cycle_6_path(self) -> None:
+        """The channel works as before when no substrate is configured."""
+        clock = _ScriptedClock(start_seconds=1000.0)
+        channel = CalibrationSignalChannel(clock=clock)
+        signal = CalibrationSignal(
+            timestamp_seconds=1000.0,
+            ensemble_name="code-generator",
+            dispatch_success=True,
+        )
+        # Must not raise.
+        channel.record_signal(signal)
+        # Channel still accumulates internally per ADR-016.
+        features = channel.windowed_features(
+            now_seconds=1000.0, ensemble_name="code-generator"
+        )
+        assert features.in_window_count == 1
+
+    def test_malformed_signals_are_not_emitted(self) -> None:
+        """Per mechanism (e) — malformed signals are rejected at the boundary;
+        nothing flows through the substrate either.
+        """
+        substrate = DispatchEventSubstrate()
+        sink = _RecordingSink()
+        substrate.register_sink(sink)
+        channel = CalibrationSignalChannel(event_substrate=substrate)
+
+        with pytest.raises(MalformedSignalError):
+            channel.record_signal({"ensemble_name": "x"})  # missing required fields
+
+        assert sink.events == []
