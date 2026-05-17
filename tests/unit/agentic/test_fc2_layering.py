@@ -78,6 +78,7 @@ _CONTRACT_MODULES: frozenset[str] = frozenset(
     {
         "llm_orc.agentic.orchestrator_chunk",
         "llm_orc.agentic.session_start",
+        "llm_orc.agentic.dispatch_envelope",  # WP-D6 per ADR-024
     }
 )
 """Layer-neutral value-type / contract modules.
