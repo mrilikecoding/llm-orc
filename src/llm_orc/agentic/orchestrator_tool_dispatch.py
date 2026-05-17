@@ -722,10 +722,6 @@ class OrchestratorToolDispatch:
                 ensemble_name=name, selection=selection, success=True
             )
 
-            await self._calibration_check_safe(
-                session_id=session_id, ensemble_name=name, raw_result=result
-            )
-
             raw_output = bool(result.get("raw_output", False))
 
             # ADR-025 WP-E: substrate-routing branch. The substrate
@@ -746,7 +742,14 @@ class OrchestratorToolDispatch:
                 # allocated a concrete ``dispatch_id`` string (its
                 # ``None`` return is only the no-substrate path).
                 assert dispatch_id is not None
-                substrate_success = self._route_dispatch_to_substrate(
+                # ADR-025 §"Calibration-gate evaluation surface": the
+                # substrate path runs calibration AFTER the artifact
+                # write so the gate's evaluation input can reference
+                # the artifact (summary line, artifact summary, opt-in
+                # artifact content). The inline path's calibration
+                # check fires below over the raw result, preserving the
+                # WP-D ordering for non-substrate dispatches.
+                substrate_success = await self._route_dispatch_to_substrate(
                     id_=id_,
                     ensemble_name=name,
                     session_id=session_id,
@@ -757,6 +760,10 @@ class OrchestratorToolDispatch:
                 )
                 dispatch_event_closed = True
                 return substrate_success
+
+            await self._calibration_check_safe(
+                session_id=session_id, ensemble_name=name, raw_result=result
+            )
 
             summarization = await self._harness.summarize(result, raw_output=raw_output)
             match summarization:
@@ -1251,7 +1258,7 @@ class OrchestratorToolDispatch:
             return None
         return config
 
-    def _route_dispatch_to_substrate(
+    async def _route_dispatch_to_substrate(
         self,
         *,
         id_: str,
@@ -1271,6 +1278,14 @@ class OrchestratorToolDispatch:
         ``envelope.primary`` carries a one-line summary referencing the
         artifact; ``envelope.artifacts[0]`` carries the typed
         :class:`ArtifactReference`.
+
+        Calibration runs with a payload shaped per ADR-025 §"Calibration-
+        gate evaluation surface under substrate-routing" — summary-only
+        is the default; ``output_schema:`` (ADR-024) adds ``structured``;
+        ``calibration_substrate_access: artifact`` adds the deliverable
+        content. The check fires AFTER the artifact write so the
+        evaluator can reference the typed :class:`ArtifactReference`'s
+        summary line.
 
         Order mirrors the WP-D inline path's success-leg: close the
         dispatch event BEFORE envelope construction so
@@ -1298,14 +1313,29 @@ class OrchestratorToolDispatch:
             content_type=content_type,
             retention=retention,
         )
+        primary = _build_substrate_summary_line(
+            deliverable_name=ensemble_name, reference=reference
+        )
+        structured = self._maybe_extract_structured(
+            ensemble_name=ensemble_name, raw_result=raw_result
+        )
+        calibration_payload = _shape_calibration_evaluation_input(
+            substrate_config=substrate_config,
+            raw_result=raw_result,
+            reference=reference,
+            primary=primary,
+            structured=structured,
+        )
+        await self._calibration_check_safe(
+            session_id=session_id,
+            ensemble_name=ensemble_name,
+            raw_result=calibration_payload,
+        )
         self._close_dispatch_event(
             ensemble_name=ensemble_name,
             dispatch_id=dispatch_id,
             start_timestamp=start_timestamp,
             exit_status="success",
-        )
-        primary = _build_substrate_summary_line(
-            deliverable_name=ensemble_name, reference=reference
         )
         envelope = self._build_envelope(
             ensemble_name=ensemble_name,
@@ -1642,6 +1672,51 @@ def _format_size_bytes(size_bytes: int) -> str:
     if size_bytes < 1024 * 1024:
         return f"{size_bytes / 1024:.1f} KB"
     return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
+def _shape_calibration_evaluation_input(
+    *,
+    substrate_config: SubstrateRoutingConfig,
+    raw_result: dict[str, Any],
+    reference: ArtifactReference,
+    primary: str,
+    structured: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Compose the substrate-routed dispatch's calibration evaluation input.
+
+    Per ADR-025 §"Calibration-gate evaluation surface under substrate-
+    routing", three surfaces compose:
+
+    * **summary-only (default)** — the payload carries the envelope's
+      ``primary`` summary line and the artifact's ``summary`` field.
+      Lowest-cost evaluation path; sufficient for ensembles whose
+      quality is reasonably inferrable from one-line summaries.
+    * **`structured`-augmented** — when ADR-024's ``output_schema:`` is
+      declared and the synthesizer's response parses as JSON, the
+      typed payload is included alongside the summary surfaces.
+    * **artifact-content (opt-in)** — when
+      ``calibration_substrate_access: artifact`` is declared, the
+      deliverable content (extracted from ``raw_result``) is included
+      so the evaluator can inspect the actual deliverable. Cycle 6
+      BUILD MVP bundles the content into the evaluation payload; an
+      ``ArtifactReadTool`` tool-call surface that lets the evaluator
+      fetch the artifact on demand is Cycle 7+ territory per ADR-025.
+
+    The three surfaces compose additively — declaring
+    ``calibration_substrate_access: artifact`` AND ``output_schema:``
+    produces a payload with summary + structured + artifact_content.
+    """
+    payload: dict[str, Any] = {
+        "primary": primary,
+        "artifact_summary": reference.summary,
+    }
+    if structured is not None:
+        payload["structured"] = structured
+    if substrate_config.calibration_substrate_access == "artifact":
+        deliverable = _extract_synthesizer_text(raw_result)
+        if deliverable is not None:
+            payload["artifact_content"] = deliverable
+    return payload
 
 
 def _extract_synthesizer_text(raw_result: dict[str, Any]) -> str | None:
