@@ -62,6 +62,7 @@ from llm_orc.agentic.composition_validator import (
     EnsembleWriteError,
     LocalEnsembleWriter,
 )
+from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
 from llm_orc.agentic.dispatch_event_substrate import (
     DispatchEventSubstrate,
     DispatchTiming,
@@ -162,6 +163,15 @@ class ToolCallSuccess:
     do not allocate a dispatch_id) and for legacy / no-substrate
     paths. The Runtime uses this to query the Orchestrator-Context
     Event Sink at the next turn boundary for a structured observation.
+
+    ``envelope`` is the ADR-024 typed :class:`DispatchEnvelope` when
+    this result is the return of ``invoke_ensemble`` on a successful
+    dispatch — ``None`` for the other four tools and for legacy
+    no-substrate ``invoke_ensemble`` call sites. Same additive
+    pattern as ``dispatch_id``: the closed-five-tool
+    :class:`ToolCallResult` union remains the uniform dispatch return
+    type; the envelope is the typed structural contract on the
+    ``invoke_ensemble`` slot per ADR-024 (Cycle 6 WP-D).
     """
 
     id: str
@@ -169,6 +179,7 @@ class ToolCallSuccess:
     content: Any
     events: tuple[VisibilityEvent, ...] = field(default_factory=tuple)
     dispatch_id: str | None = None
+    envelope: DispatchEnvelope | None = None
 
 
 @dataclass(frozen=True)
@@ -1034,6 +1045,11 @@ def _with_events(
     :func:`dataclasses.replace` so the union stays type-narrowed through
     mypy strict. No-op when ``events`` is empty (the Allow-without-events
     path on every dispatch), keeping the common case allocation-free.
+
+    Preserves the WP-C ``dispatch_id`` and WP-D ``envelope`` correlations
+    so an Allow-with-events Autonomy decision composing with an
+    ``invoke_ensemble`` dispatch does not drop the typed ADR-023 /
+    ADR-024 correlation surfaces.
     """
     if not events:
         return result
@@ -1043,6 +1059,8 @@ def _with_events(
             name=result.name,
             content=result.content,
             events=events,
+            dispatch_id=result.dispatch_id,
+            envelope=result.envelope,
         )
     return ToolCallError(
         id=result.id,
@@ -1050,4 +1068,5 @@ def _with_events(
         kind=result.kind,
         reason=result.reason,
         events=events,
+        dispatch_id=result.dispatch_id,
     )
