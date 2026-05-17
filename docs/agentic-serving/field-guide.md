@@ -920,3 +920,85 @@ directly under a controllable clock; the async `run` loop wraps it.
 - **Orchestrator Configuration** — new
   `ObservabilityDefaults.heartbeat_interval_seconds` (default 30s)
   read from `agentic_serving.observability.heartbeat_interval_seconds`.
+
+---
+
+## Shared type: `DispatchEnvelope` *(Cycle 6 WP-D, ADR-024)*
+
+**Implementation state:** Complete. The typed envelope is the
+structural return shape of `invoke_ensemble` on every successful
+dispatch — attached to `ToolCallSuccess.envelope` as an additive field
+following the WP-C `dispatch_id` precedent. The closed-five-tool
+`ToolCallResult` union remains the uniform dispatch return type; the
+envelope is the typed contract on the `invoke_ensemble` slot.
+**Code location:** `src/llm_orc/agentic/dispatch_envelope.py` (the
+shared type itself, sibling to `LlmOrcStructuralError`'s structural
+status); construction site at
+`src/llm_orc/agentic/orchestrator_tool_dispatch.py::_build_envelope`.
+**Stability:** Settled on the six-field shape per ADR-024. WP-E
+repurposes `primary` / `artifacts[]` for substrate-routed dispatches
+without changing the envelope shape.
+
+### Concepts in code
+
+| Concept | Code manifestation | Location |
+|---------|-------------------|----------|
+| DispatchEnvelope (frozen dataclass) | `@dataclass(frozen=True)` with six fields per ADR-024 §Decision | `dispatch_envelope.py` |
+| Status discriminator | `Literal["success", "error", "timeout", "partial"]` | `dispatch_envelope.py::EnvelopeStatus` |
+| `diagnostics` (not `metadata`) | Field-name alignment with Cycle 6 MODEL vocabulary | `dispatch_envelope.py::DispatchEnvelope.diagnostics` |
+| `output_schema:` YAML field | Optional `dict | None` on `EnsembleConfig` | `core/config/ensemble_config.py::EnsembleConfig.output_schema` |
+| OutputSchemaReader Protocol | L2-local lookup surface for `output_schema:` | `orchestrator_tool_dispatch.py::OutputSchemaReader` |
+| Envelope construction | `_build_envelope` reads substrate events + raw result + reader | `orchestrator_tool_dispatch.py::_build_envelope` |
+| Advisory JSON parse for `structured` | `_maybe_extract_structured` attempts `json.loads`, returns None on failure | `orchestrator_tool_dispatch.py::_maybe_extract_structured` |
+| Synthesizer text extraction | `_extract_synthesizer_text` — mirrors harness's forgiving contract | `orchestrator_tool_dispatch.py::_extract_synthesizer_text` |
+| `events_for(dispatch_id)` projection | Diagnostics populated from emitted events | `orchestrator_tool_dispatch.py::_populate_from_events` |
+
+### Design rationale
+
+The envelope is a **layer-neutral contract module** (same status as
+`orchestrator_chunk`, `session_start`) — registered in the FC-2
+layer-coverage map as a `_CONTRACT_MODULES` entry rather than at a
+specific layer. Producers (Tool Dispatch L2) and consumers
+(Orchestrator-Context Event Sink L2, Serving Layer L3, future
+calibration-gate evaluators) all import the type freely.
+
+**WP-D ordering refactor.** `invoke_ensemble`'s `finally`-block
+pattern from WP-A emitted `DispatchTiming(end)` after the success
+return; WP-D requires envelope construction to read the end event's
+`duration_seconds` from the substrate's event log. The refactor moves
+the close-event emission to *before* envelope construction on the
+success/raw-output paths, then guards the `finally` block with a
+`dispatch_event_closed` flag so error / exception paths still emit
+the end event exactly once. This preserves the WP-A invariant (every
+dispatch emits both `DispatchTiming` phases) while admitting WP-D's
+read-after-emit ordering requirement.
+
+**Advisory schema parsing.** When the dispatched ensemble's YAML
+declares `output_schema:`, the dispatch attempts `json.loads` on the
+synthesizer's response. Parse success → `envelope.structured = parsed`.
+Parse failure (non-JSON, type error) → `envelope.structured = None`
+without raising. Per ADR-024 §"BUILD-assumption note": schema
+validation is advisory because spike β established that output-spec
+drift's actual mechanism is the orchestrator's `input.data` override,
+not synthesizer non-compliance — enforcement at the synthesizer would
+catch the wrong thing.
+
+### Integration points
+
+- **← Orchestrator Tool Dispatch (producer):** `_build_envelope`
+  constructs an envelope on every successful `invoke_ensemble` return
+  (both summarization-success and raw-output-passthrough paths).
+- **→ Orchestrator Runtime (consumer):** `result.envelope` flows
+  through to the ReAct loop as the typed contract on the tool-call
+  observation. Runtime continues to serialize `result.content` for
+  the LLM tool message — the envelope is the structural surface for
+  downstream consumers (orchestrator-context sink, FC-22 tests).
+- **→ Orchestrator-Context Event Sink (cross-surface consumer):** the
+  sink composes its structured observation with envelope diagnostics —
+  same `dispatch_id` correlation identifier as the substrate events
+  the sink already consumes (FC-22 envelope-leg).
+- **→ Serving Layer (chat-completion response):** `dataclasses.asdict`
+  serializes cleanly to JSON for the skill-framework response shape.
+- **WP-E will extend:** for substrate-routed capability ensembles,
+  `primary` becomes a summary line referencing `artifacts[0]`;
+  `artifacts[0]` carries the typed `ArtifactReference` shape.

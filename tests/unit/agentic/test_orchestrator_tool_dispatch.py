@@ -209,6 +209,7 @@ def _build_dispatch(
     tier_router_audit: Any = None,
     event_substrate: Any = None,
     tool_call_emit_logger: Any = None,
+    output_schema_reader: Any = None,
 ) -> OrchestratorToolDispatch:
     """Construct a dispatch with sensible test defaults.
 
@@ -249,6 +250,7 @@ def _build_dispatch(
         tier_router_audit=tier_router_audit,
         event_substrate=event_substrate,
         tool_call_emit_logger=tool_call_emit_logger,
+        output_schema_reader=output_schema_reader,
     )
 
 
@@ -2687,3 +2689,424 @@ class TestToolCallEmitLogger:
         assert isinstance(result, ToolCallError)
         assert result.kind == "invalid_arguments"
         assert logger.calls == []
+
+
+class _RecordingOutputSchemaReader:
+    """``OutputSchemaReader`` double scripted with per-ensemble schemas.
+
+    Mirrors :class:`_RecordingToolCallEmitLogger`'s pattern — records
+    the lookups it serviced so tests can assert the dispatch consulted
+    the reader exactly when expected.
+    """
+
+    def __init__(self, schemas: dict[str, dict[str, Any]] | None = None) -> None:
+        self._schemas = dict(schemas or {})
+        self.calls: list[str] = []
+
+    def output_schema_for(self, ensemble_name: str) -> dict[str, Any] | None:
+        self.calls.append(ensemble_name)
+        return self._schemas.get(ensemble_name)
+
+
+class TestInvokeEnsembleReturnsTypedEnvelope:
+    """Scenario: ``invoke_ensemble`` returns typed ``DispatchEnvelope``.
+
+    Per ADR-024 (Cycle 6 WP-D) and ``system-design.agents.md`` §Module:
+    Orchestrator Tool Dispatch §Fitness (additions per Cycle 6) —
+    ``invoke_ensemble`` returns a ``DispatchEnvelope`` dataclass instance
+    with ``status``, ``primary``, and ``diagnostics`` populated for
+    every successful dispatch. The envelope rides on
+    ``ToolCallSuccess.envelope`` (additive field per WP-D refactor); the
+    ``ToolCallResult`` union remains the uniform dispatch return type.
+    """
+
+    @pytest.mark.asyncio
+    async def test_envelope_attached_with_status_primary_diagnostics(
+        self,
+    ) -> None:
+        """The envelope's status/primary/diagnostics carry the dispatch outcome."""
+        substrate = DispatchEventSubstrate()
+        ops = _ScriptedOperations(
+            invoke_result={"synthesis": "the text-summarizer's deliverable"}
+        )
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=substrate,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "text-summarizer", "input": "source text"},
+            ),
+            session_id="session-A",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        envelope = result.envelope
+        assert envelope.status == "success"
+        # AS-7 unchanged for WP-D: primary carries the summarized
+        # deliverable (the summary string from the result-summarizer
+        # harness). WP-E will repurpose primary for substrate-routed
+        # dispatches.
+        assert envelope.primary == "summary text"
+        assert envelope.diagnostics["ensemble"] == "text-summarizer"
+        assert envelope.diagnostics["dispatch_id"] == "session-A-dispatch-0001"
+
+    @pytest.mark.asyncio
+    async def test_envelope_diagnostics_dispatch_id_matches_event_stream(
+        self,
+    ) -> None:
+        """envelope.diagnostics.dispatch_id == event stream's dispatch_id.
+
+        FC-22 cross-surface consistency: the envelope's correlation
+        identifier matches the same identifier the substrate emits on
+        every dispatch event. The integration anchor lives in
+        ``test_integration_envelope_diagnostics``; this unit verifies
+        the construction-site contract.
+        """
+        substrate = DispatchEventSubstrate()
+        ledger: list[object] = []
+        substrate.register_sink(_OrderingSink(ledger))
+        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        dispatch = _build_dispatch(operations=ops, event_substrate=substrate)
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "claim-extractor", "input": "source"},
+            ),
+            session_id="session-A",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        envelope_dispatch_id = result.envelope.diagnostics["dispatch_id"]
+        event_dispatch_ids = {getattr(event, "dispatch_id", None) for event in ledger}
+        event_dispatch_ids.discard(None)
+        assert event_dispatch_ids == {envelope_dispatch_id}
+
+    @pytest.mark.asyncio
+    async def test_envelope_diagnostics_carry_duration_seconds_from_dispatch_timing(
+        self,
+    ) -> None:
+        """The DispatchTiming(end) event's duration_seconds projects to envelope."""
+        substrate = DispatchEventSubstrate()
+        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        dispatch = _build_dispatch(operations=ops, event_substrate=substrate)
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "claim-extractor", "input": "source"},
+            ),
+            session_id="session-A",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        # duration_seconds is non-negative wall-clock interval between
+        # DispatchTiming(start) and DispatchTiming(end). The exact value
+        # depends on test runtime; the property is "present and a float".
+        assert "duration_seconds" in result.envelope.diagnostics
+        duration = result.envelope.diagnostics["duration_seconds"]
+        assert isinstance(duration, float)
+        assert duration >= 0.0
+
+    @pytest.mark.asyncio
+    async def test_envelope_diagnostics_carry_tier_and_profile_when_router_fires(
+        self,
+    ) -> None:
+        """TierSelection event projects model_profile, tier, topaz_skill."""
+        substrate = DispatchEventSubstrate()
+        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+
+        # A real TierRouter wiring would be heavy for this test — emit
+        # a TierSelection event directly to verify the projection logic.
+        # The integration anchor exercises the full router path.
+        from llm_orc.agentic.tier_router import TierSelection
+
+        # Construct a dispatch without a router, then synthesize a
+        # TierSelection event in the substrate keyed to the dispatch_id
+        # we know the substrate will allocate.
+        dispatch = _build_dispatch(operations=ops, event_substrate=substrate)
+        # Pre-populate the dispatch_id's event log with a TierSelection.
+        # The dispatch will append its own DispatchTiming events to the
+        # same log. The envelope-construction step reads them all.
+        anticipated_dispatch_id = "session-A-dispatch-0001"
+        substrate.emit(
+            TierSelection(
+                model_profile="agentic-tier-cheap-general",
+                tier="cheap",
+                topaz_skill="factual_knowledge",
+                dispatch_id=anticipated_dispatch_id,
+            )
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "claim-extractor", "input": "source"},
+            ),
+            session_id="session-A",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        diagnostics = result.envelope.diagnostics
+        assert diagnostics["model_profile"] == "agentic-tier-cheap-general"
+        assert diagnostics["tier"] == "cheap"
+        assert diagnostics["topaz_skill"] == "factual_knowledge"
+
+    @pytest.mark.asyncio
+    async def test_envelope_attached_on_raw_output_passthrough(self) -> None:
+        """raw_output=True path also surfaces an envelope.
+
+        The escape hatch keeps the existing passthrough behavior (content
+        is the raw dict) AND attaches an envelope whose primary carries
+        a deterministic one-line representation. This honors the
+        "envelope on every successful dispatch" fitness criterion.
+        """
+        substrate = DispatchEventSubstrate()
+        ops = _ScriptedOperations(
+            invoke_result={
+                "raw_output": True,
+                "synthesis": "irrelevant",
+                "results": {"agent": {"response": "passthrough"}},
+            }
+        )
+        dispatch = _build_dispatch(operations=ops, event_substrate=substrate)
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "claim-extractor", "input": "source"},
+            ),
+            session_id="session-A",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert isinstance(result.content, dict)
+        assert result.envelope is not None
+        assert result.envelope.status == "success"
+        # primary is a deterministic JSON one-liner of the passthrough
+        # content; the operator-readable summary-line slot.
+        assert "passthrough" in result.envelope.primary
+
+    @pytest.mark.asyncio
+    async def test_envelope_attached_on_no_substrate_path_with_sparse_diagnostics(
+        self,
+    ) -> None:
+        """Legacy / no-substrate path produces a sparse envelope.
+
+        Pre-WP-A call sites that have not been migrated to inject a
+        DispatchEventSubstrate still receive the envelope shape — just
+        without dispatch_id correlation or event-projected diagnostics.
+        ``diagnostics['ensemble']`` is always populated;
+        ``diagnostics['metadata']`` mirrors the raw result's metadata
+        when present. The envelope shape is invariant; only its
+        diagnostics density varies.
+        """
+        ops = _ScriptedOperations(
+            invoke_result={
+                "synthesis": "ok",
+                "metadata": {"tokens": 42, "model": "qwen3:8b"},
+            }
+        )
+        dispatch = _build_dispatch(operations=ops, event_substrate=None)
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "claim-extractor", "input": "source"},
+            ),
+            session_id="session-A",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        assert result.envelope.diagnostics["ensemble"] == "claim-extractor"
+        assert result.envelope.diagnostics.get("metadata") == {
+            "tokens": 42,
+            "model": "qwen3:8b",
+        }
+        # No substrate → no dispatch_id correlation.
+        assert "dispatch_id" not in result.envelope.diagnostics
+
+
+class TestEnvelopeStructuredPopulation:
+    """Scenario: ``output_schema:`` declaration populates ``envelope.structured``.
+
+    Per ADR-024 §Decision §"``output_schema:`` per-ensemble declaration"
+    — when the dispatched ensemble's YAML declares ``output_schema:``,
+    the dispatch attempts a JSON parse of the synthesizer's response
+    and populates ``envelope.structured`` advisorily. Schema validation
+    is **not enforced** at the synthesizer's output per spike β's
+    reframing of output-spec drift as ``input.data`` override.
+    """
+
+    @pytest.mark.asyncio
+    async def test_structured_populated_when_schema_declared_and_response_is_json(
+        self,
+    ) -> None:
+        """JSON synthesis text parses into envelope.structured."""
+        substrate = DispatchEventSubstrate()
+        # claim-extractor under output_schema declaration: synthesizer
+        # would emit a JSON document conforming to the schema.
+        ops = _ScriptedOperations(
+            invoke_result={
+                "synthesis": (
+                    '{"claims": [{"text": "x", "label": "established"}, '
+                    '{"text": "y", "label": "contested"}]}'
+                )
+            }
+        )
+        reader = _RecordingOutputSchemaReader(
+            schemas={
+                "claim-extractor": {
+                    "type": "object",
+                    "properties": {
+                        "claims": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": ["text", "label"],
+                            },
+                        }
+                    },
+                }
+            }
+        )
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=substrate,
+            output_schema_reader=reader,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "claim-extractor", "input": "source"},
+            ),
+            session_id="session-A",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        assert result.envelope.structured == {
+            "claims": [
+                {"text": "x", "label": "established"},
+                {"text": "y", "label": "contested"},
+            ]
+        }
+        assert reader.calls == ["claim-extractor"]
+
+    @pytest.mark.asyncio
+    async def test_structured_stays_none_when_schema_declared_but_response_is_prose(
+        self,
+    ) -> None:
+        """Advisory parsing: non-JSON responses leave structured = None.
+
+        Per ADR-024 §"BUILD-assumption note": schema validation is
+        advisory; non-JSON synthesizer output does NOT raise — the
+        envelope's structured field is simply absent. The operator
+        observes the prose deliverable in primary and parses nothing
+        structurally downstream.
+        """
+        substrate = DispatchEventSubstrate()
+        # claim-extractor's current default_task emits prose bullets,
+        # not JSON. With output_schema declared but synthesis text not
+        # JSON, structured stays None — the advisory-parsing contract.
+        ops = _ScriptedOperations(
+            invoke_result={
+                "synthesis": (
+                    "- Claim 1 about the source (established)\n"
+                    "- Claim 2 about the source (contested)"
+                )
+            }
+        )
+        reader = _RecordingOutputSchemaReader(
+            schemas={"claim-extractor": {"type": "object"}}
+        )
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=substrate,
+            output_schema_reader=reader,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "claim-extractor", "input": "source"},
+            ),
+            session_id="session-A",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        assert result.envelope.structured is None
+        assert reader.calls == ["claim-extractor"]
+
+    @pytest.mark.asyncio
+    async def test_structured_stays_none_when_ensemble_has_no_schema(self) -> None:
+        """No schema declared → no structured population, reader still consulted."""
+        substrate = DispatchEventSubstrate()
+        ops = _ScriptedOperations(invoke_result={"synthesis": '{"k": "v"}'})
+        reader = _RecordingOutputSchemaReader(schemas={})  # no ensemble keyed
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=substrate,
+            output_schema_reader=reader,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "prose-improver", "input": "source"},
+            ),
+            session_id="session-A",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        assert result.envelope.structured is None
+        assert reader.calls == ["prose-improver"]
+
+    @pytest.mark.asyncio
+    async def test_structured_stays_none_when_no_reader_configured(self) -> None:
+        """Pre-WP-D path: no reader injected → structured stays None.
+
+        Backward compatibility — call sites without an
+        OutputSchemaReader still receive envelopes; the structured
+        field is just unconditionally None.
+        """
+        substrate = DispatchEventSubstrate()
+        ops = _ScriptedOperations(invoke_result={"synthesis": '{"k": "v"}'})
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=substrate,
+            output_schema_reader=None,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-1",
+                name="invoke_ensemble",
+                arguments={"name": "claim-extractor", "input": "source"},
+            ),
+            session_id="session-A",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        assert result.envelope.structured is None

@@ -159,6 +159,95 @@ class TestEnsembleLoader:
         finally:
             Path(yaml_path).unlink()
 
+    def test_load_ensemble_reads_output_schema_when_present(self) -> None:
+        """ADR-024 (Cycle 6 WP-D): output_schema declared in YAML becomes
+        the loaded config's output_schema dict. The schema is opaque to
+        the loader — it's a JSON-Schema-shaped dict the dispatch site
+        consults to advisorily populate envelope.structured."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "claims": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["text", "label"],
+                        "properties": {
+                            "text": {"type": "string"},
+                            "label": {
+                                "type": "string",
+                                "enum": ["established", "contested"],
+                            },
+                        },
+                    },
+                }
+            },
+        }
+        ensemble_yaml = {
+            "name": "claim_extractor",
+            "description": "Extracts factual claims",
+            "output_schema": schema,
+            "agents": [
+                {"name": "extractor", "model": "sonnet", "provider": "anthropic"},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            config = EnsembleLoader().load_from_file(yaml_path)
+            assert config.output_schema == schema
+        finally:
+            Path(yaml_path).unlink()
+
+    def test_load_ensemble_defaults_output_schema_to_none_when_absent(self) -> None:
+        """Backward compat: pre-WP-D ensembles without output_schema load
+        with the field set to None; downstream code reads it as 'no
+        schema declared' and leaves envelope.structured unpopulated."""
+        ensemble_yaml = {
+            "name": "no_schema_ensemble",
+            "description": "Pre-WP-D ensemble",
+            "agents": [
+                {"name": "agent", "model": "sonnet", "provider": "anthropic"},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            config = EnsembleLoader().load_from_file(yaml_path)
+            assert config.output_schema is None
+        finally:
+            Path(yaml_path).unlink()
+
+    def test_load_ensemble_ignores_non_dict_output_schema_values(self) -> None:
+        """A malformed output_schema entry (string, list, scalar) loads
+        as None rather than raising. The loader is tolerant; schema
+        validity is the dispatch site's advisory concern, not the
+        loader's structural enforcement."""
+        ensemble_yaml = {
+            "name": "malformed_schema_ensemble",
+            "description": "Test malformed output_schema",
+            "output_schema": "this is not a dict",
+            "agents": [
+                {"name": "agent", "model": "sonnet", "provider": "anthropic"},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            config = EnsembleLoader().load_from_file(yaml_path)
+            assert config.output_schema is None
+        finally:
+            Path(yaml_path).unlink()
+
     def test_list_ensembles_in_directory(self) -> None:
         """Test listing available ensembles in a directory."""
         with tempfile.TemporaryDirectory() as temp_dir:

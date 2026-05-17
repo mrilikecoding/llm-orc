@@ -21,6 +21,29 @@ description: |
 
 topaz_skill: factual_knowledge
 
+# ADR-024 (Cycle 6 WP-D): operator-declared shape for envelope.structured.
+# The dispatch site advisorily attempts to populate envelope.structured
+# from the synthesizer's response when the response parses as JSON. The
+# current default_task asks for prose bullets, so structured stays None
+# at dispatch time; the declaration documents the canonical typed shape
+# for operators who later migrate the task wording to request JSON
+# output (e.g., adding "Output as JSON matching the schema:" guidance).
+output_schema:
+  type: object
+  properties:
+    claims:
+      type: array
+      items:
+        type: object
+        required: [text, label]
+        properties:
+          text:
+            type: string
+          label:
+            type: string
+            enum: [established, contested]
+  required: [claims]
+
 default_task: |
   Extract the factual claims from the provided text. List each claim
   on its own line as a bullet. After each claim, label it in
