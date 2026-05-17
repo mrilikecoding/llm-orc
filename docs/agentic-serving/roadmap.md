@@ -82,7 +82,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ---
 
-### WP-D: ADR-024 typed `DispatchEnvelope` + `output_schema:` per-ensemble declaration
+### WP-D: ADR-024 typed `DispatchEnvelope` + `output_schema:` per-ensemble declaration — ✅ **Closed 2026-05-16** (commits `18a3230` refactor + `98696a4` feat)
 
 **Objective:** Codify the `invoke_ensemble` response shape as the typed `DispatchEnvelope` dataclass; add optional per-ensemble `output_schema:` declaration; populate `structured` payload when declared.
 
