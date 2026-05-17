@@ -108,6 +108,29 @@ are available" or "what can this orchestration system do" — those are \
 always answered by list_ensembles. When in doubt for a capability \
 query, choose the internal tool.
 
+**When a tool-user's natural-language request maps to a capability \
+ensemble in `list_ensembles()`, prefer `invoke_ensemble` over direct \
+completion AND over client-declared tools.** A capability match means \
+the user's request describes work for which a named capability ensemble \
+exists — e.g., a code-generation request when `code-generator` is in \
+the library; a summarization request when `text-summarizer` is in the \
+library; a search request when `web-searcher` is in the library. The \
+capability ensemble's calibration gate, tier-escalation router, and \
+result summarization are part of the value the request is asking for; \
+direct completion and client tools bypass those. Match the request to \
+an ensemble by reading the ensemble's description from \
+`list_ensembles()` against the user's framing — if a match exists, \
+`invoke_ensemble` is the correct routing. Client-declared tools remain \
+correct for actions on the tool-user's filesystem or code-execution \
+surface **only when no capability ensemble covers the action** — for \
+example, when the user asks to read a specific file path or commit a \
+change, the file-read or git-commit client tool applies; when the user \
+asks to write code, `code-generator` covers it. **Do not pick a \
+client-declared tool merely because the request's verb matches the \
+client tool's verb** (a `write_file` client tool does not displace \
+`code-generator` for code-generation requests). Direct completion is \
+the **residual** when neither an internal nor a client tool applies.
+
 When you need a client-declared tool, emit it alone in a single \
 assistant turn — the turn will close and the client will execute it; \
 you resume on the next request with the result as a role:tool \

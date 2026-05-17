@@ -588,6 +588,56 @@ class TestOrchestratorConfigResolver:
         assert "client-declared" in prompt or "client tool" in prompt.lower()
         assert "needs_client_tool" in prompt
 
+    def test_default_orchestrator_system_prompt_contains_adr_022_clause(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """ADR-022 elevates invoke_ensemble under capability-matched NL framing.
+
+        Per Cycle 6 ADR-022 §"Amendment to the system prompt": the default
+        prompt commits the orchestrator to prefer ``invoke_ensemble`` over
+        direct completion AND over client-declared tools when a capability
+        ensemble in ``list_ensembles()`` matches the user's NL request.
+        Spike γ's data showed that without this commitment, MiniMax
+        M2.5-free routes NL requests to direct LLM completion (Cell A)
+        and qwen3:14b routes to client ``write_file`` (Cell B); neither
+        reaches ``invoke_ensemble`` under capability-matched NL framing.
+
+        The clause's textual anchors verified here:
+        - "natural-language request maps to a capability ensemble" — the
+          capability-match framing the model is asked to recognize.
+        - "prefer ``invoke_ensemble``" — the elevation commitment.
+        - "Do not pick a client-declared tool merely because the
+          request's verb matches" — the verb-displacement disambiguation
+          (the Cell B failure mode under qwen3:14b).
+        - "residual" — direct completion as the residual when neither
+          internal nor client tool applies.
+
+        FC: per system-design.agents.md §Orchestrator Configuration
+        Cycle 6 fitness — "The default
+        DEFAULT_ORCHESTRATOR_SYSTEM_PROMPT contains the ADR-022
+        capability-match clause verbatim".
+        """
+        cm = _make_config_manager(tmp_path, monkeypatch)
+        resolver = OrchestratorConfigResolver(cm)
+
+        config = resolver.resolve()
+
+        prompt = config.orchestrator_system_prompt
+        # The capability-match framing the amendment introduces.
+        assert "natural-language request maps to a capability ensemble" in prompt
+        # The elevation commitment — prefer over both direct completion
+        # and client-declared tools.
+        assert "prefer `invoke_ensemble`" in prompt or (
+            "prefer invoke_ensemble" in prompt
+        )
+        # The verb-displacement disambiguation — Cell B's failure mode
+        # under qwen3:14b (client write_file beating code-generator).
+        assert "verb matches" in prompt
+        # Direct completion as the residual when neither internal nor
+        # client tool applies — preserves the rest of the routing surface
+        # in the prompt's commitment.
+        assert "residual" in prompt
+
     def test_default_orchestrator_system_prompt_biases_toward_internal_tools(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
