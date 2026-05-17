@@ -16,7 +16,9 @@ enforcement.
 from __future__ import annotations
 
 import hashlib
+import logging
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -27,6 +29,20 @@ if TYPE_CHECKING:
     # import: session_start imports SessionIdentity and SessionState
     # from here for its SessionContext definition.
     from llm_orc.agentic.session_start import ChatMessage
+
+_logger = logging.getLogger(__name__)
+
+SessionCloseCallback = Callable[["SessionIdentity"], None]
+"""Lifecycle hook signature for ``SessionRegistry.close_session``.
+
+Per system-design.agents.md §Session Registry → Session Artifact Store
+(Cycle 6 WP-E): ``on_session_close`` fires once per close with the
+closed session's identity. Consumers (Session Artifact Store cleanup,
+future lifecycle-coupled L1 / L2 modules) register via
+:meth:`SessionRegistry.register_close_callback`. Exceptions raised by
+one callback do not prevent subsequent callbacks from firing — the
+close lifecycle is best-effort fan-out.
+"""
 
 IdentityMethod = Literal["user_field", "message_prefix", "cold_start"]
 Cluster = Literal["cluster_1", "cluster_2", "cluster_3"]
@@ -127,6 +143,45 @@ class SessionRegistry:
 
     def __init__(self) -> None:
         self._states: dict[SessionIdentity, SessionState] = {}
+        self._close_callbacks: list[SessionCloseCallback] = []
+
+    def register_close_callback(self, callback: SessionCloseCallback) -> None:
+        """Register a hook fired by :meth:`close_session`.
+
+        Per Cycle 6 WP-E (ADR-025): Session Artifact Store cleanup is
+        the first consumer — it removes ``retention: session`` artifacts
+        under the closed session's directory. Callbacks fire in
+        registration order; a raising callback is logged at WARN and
+        does not block subsequent callbacks (best-effort fan-out
+        consistent with the serve-layer's other lifecycle cleanups).
+        """
+        self._close_callbacks.append(callback)
+
+    def close_session(self, identity: SessionIdentity) -> None:
+        """End the session's lifetime — fire close callbacks + clear state.
+
+        Per system-design.agents.md §Session Registry → Session Artifact
+        Store: the close trigger drives ``cleanup_session(session_id)``
+        on the artifact store. Callbacks fire FIRST (so they observe
+        the still-attached state if they need it); state removal
+        happens after. Calling on an identity that was never resolved
+        is not an error — the close lifecycle contract is "end of
+        session"; callbacks fire even when no state was accumulated so
+        the serve layer can always fire close at request-lifecycle
+        boundaries without an existence check.
+        """
+        for callback in self._close_callbacks:
+            try:
+                callback(identity)
+            except Exception:  # noqa: BLE001 — best-effort lifecycle fan-out
+                _logger.warning(
+                    "session-close callback raised for identity=%s; "
+                    "subsequent callbacks still fire per the close-"
+                    "lifecycle fan-out contract",
+                    identity.value,
+                    exc_info=True,
+                )
+        self._states.pop(identity, None)
 
     def resolve_identity(
         self,
