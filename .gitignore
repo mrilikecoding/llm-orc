@@ -81,6 +81,7 @@ credentials.enc
 # LLM Orchestra - Execution Artifacts
 # Execution results and artifacts should not be committed
 .llm-orc/artifacts/
+.llm-orc/agentic-sessions/
 
 # Uncomment to ignore project config variations per developer
 # .llm-orc/config.yaml

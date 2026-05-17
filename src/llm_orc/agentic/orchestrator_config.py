@@ -174,14 +174,23 @@ class CalibrationDefaults:
 
 @dataclass(frozen=True)
 class ObservabilityDefaults:
-    """ADR-023 observability surface defaults (Cycle 6 WP-B piece 5).
+    """ADR-023 observability surface defaults (Cycle 6 WP-B + WP-C).
 
     The Serving Layer reads ``heartbeat_interval_seconds`` to size the
-    per-request inference-wait heartbeat scheduler (default 30s).
-    Operators override via ``agentic_serving.observability.heartbeat_interval_seconds``.
+    per-request inference-wait heartbeat scheduler (default 30s),
+    ``orchestrator_context_routes_calibration_signal`` to decide
+    whether the orchestrator-context sink includes
+    :class:`CalibrationSignal` events in its end-of-session summary
+    (default ``False``), and ``agentic_sessions_root`` for the per-
+    session dispatch_log filesystem destination (default
+    ``.llm-orc/agentic-sessions/``).
+
+    Operators override via ``agentic_serving.observability.*``.
     """
 
     heartbeat_interval_seconds: float
+    orchestrator_context_routes_calibration_signal: bool = False
+    agentic_sessions_root: str = ".llm-orc/agentic-sessions/"
 
 
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30.0
@@ -395,6 +404,16 @@ class OrchestratorConfigResolver:
                 heartbeat_interval_seconds=_positive_float(
                     observability.get("heartbeat_interval_seconds"),
                     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+                ),
+                orchestrator_context_routes_calibration_signal=bool(
+                    observability.get(
+                        "orchestrator_context_routes_calibration_signal", False
+                    )
+                ),
+                agentic_sessions_root=str(
+                    observability.get(
+                        "agentic_sessions_root", ".llm-orc/agentic-sessions/"
+                    )
                 ),
             ),
         )
