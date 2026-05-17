@@ -186,3 +186,98 @@ class TestSessionRegistryLookup:
 
         assert state.turn_count == 0
         assert state.token_spend == 0
+
+
+class TestSessionCloseCallbacks:
+    """Cycle 6 WP-E (ADR-025): Session Registry fires close-callbacks.
+
+    Per system-design.agents.md §Session Registry → Session Artifact
+    Store: ``on_session_close(identity)`` triggers retention cleanup of
+    ``session``-retention artifacts. The dependency direction is L3 →
+    L1; Session Registry owns the lifecycle hook surface and consumers
+    (Session Artifact Store; future cycles' lifecycle-coupled L1 / L2
+    modules) register a callback to be fired at close.
+    """
+
+    def test_register_close_callback_then_close_fires_with_identity(self) -> None:
+        registry = SessionRegistry()
+        identity = SessionIdentity(value="sess-1", method="user_field")
+        registry.get_or_create_state(identity)
+
+        fired: list[str] = []
+        registry.register_close_callback(lambda i: fired.append(i.value))
+        registry.close_session(identity)
+
+        assert fired == ["sess-1"]
+
+    def test_multiple_callbacks_fire_in_registration_order(self) -> None:
+        """All registered callbacks fire on close, in registration order —
+        Session Artifact Store cleanup and future lifecycle hooks
+        compose without ordering surprise."""
+        registry = SessionRegistry()
+        identity = SessionIdentity(value="sess-2", method="user_field")
+        registry.get_or_create_state(identity)
+
+        log: list[str] = []
+        registry.register_close_callback(lambda i: log.append(f"first:{i.value}"))
+        registry.register_close_callback(lambda i: log.append(f"second:{i.value}"))
+        registry.close_session(identity)
+
+        assert log == ["first:sess-2", "second:sess-2"]
+
+    def test_close_session_removes_state(self) -> None:
+        """After close, ``get_or_create_state`` on the same identity
+        produces a fresh state — turn_count and token_spend reset.
+        The contract is "close ends the session's lifetime"; subsequent
+        requests under the same identity start a new accumulation."""
+        registry = SessionRegistry()
+        identity = SessionIdentity(value="sess-3", method="user_field")
+        state = registry.get_or_create_state(identity)
+        state.record_iteration(tokens=99)
+        assert state.turn_count == 1
+
+        registry.close_session(identity)
+
+        # New state allocated; prior accounting cleared.
+        fresh = registry.get_or_create_state(identity)
+        assert fresh.turn_count == 0
+        assert fresh.token_spend == 0
+
+    def test_close_session_for_unregistered_identity_is_noop(self) -> None:
+        """Closing an identity that was never resolved is a no-op —
+        callbacks fire with the identity (the contract is "close means
+        end-of-session lifecycle"; the registry does not gate on prior
+        state existence). The call does not raise so the serve layer
+        can always fire close at request lifecycle boundaries."""
+        registry = SessionRegistry()
+        identity = SessionIdentity(value="never-seen", method="user_field")
+
+        fired: list[str] = []
+        registry.register_close_callback(lambda i: fired.append(i.value))
+        registry.close_session(identity)  # no raise
+
+        # Callback still fires per the close-lifecycle contract — the
+        # registry does not gate the hook on prior state existence.
+        assert fired == ["never-seen"]
+
+    def test_callback_exceptions_do_not_block_subsequent_callbacks(self) -> None:
+        """A failing callback (e.g., Session Artifact Store filesystem
+        error) does not prevent later callbacks from firing — the
+        Registry's close contract is best-effort fan-out, mirroring the
+        operator-resilience pattern used elsewhere (heartbeat scheduler
+        cleanup, dispatch-log write)."""
+        registry = SessionRegistry()
+        identity = SessionIdentity(value="sess-4", method="user_field")
+        registry.get_or_create_state(identity)
+
+        fired: list[str] = []
+
+        def boom(i: SessionIdentity) -> None:
+            raise RuntimeError("filesystem unavailable")
+
+        registry.register_close_callback(boom)
+        registry.register_close_callback(lambda i: fired.append(i.value))
+        registry.close_session(identity)
+
+        # Despite the first callback raising, the second still fires.
+        assert fired == ["sess-4"]
