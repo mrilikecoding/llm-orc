@@ -15,6 +15,7 @@ Covers scenarios:
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -47,10 +48,20 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     TOOL_NAMES,
     InternalToolCall,
     OrchestratorToolDispatch,
+    SubstrateRoutingConfig,
     ToolCallError,
     ToolCallSuccess,
+    _build_substrate_summary_line,
+    _coerce_retention_or_default,
+    _effective_output_substrate,
+    _format_size_bytes,
+    _resolve_substrate_content_type,
 )
 from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
+from llm_orc.agentic.session_artifact_store import (
+    ArtifactReference,
+    SessionArtifactStore,
+)
 from llm_orc.agentic.tier_router import TopazSkill
 from llm_orc.core.config.ensemble_config import EnsembleConfig
 
@@ -210,6 +221,8 @@ def _build_dispatch(
     event_substrate: Any = None,
     tool_call_emit_logger: Any = None,
     output_schema_reader: Any = None,
+    ensemble_substrate_reader: Any = None,
+    session_artifact_store: Any = None,
 ) -> OrchestratorToolDispatch:
     """Construct a dispatch with sensible test defaults.
 
@@ -251,6 +264,8 @@ def _build_dispatch(
         event_substrate=event_substrate,
         tool_call_emit_logger=tool_call_emit_logger,
         output_schema_reader=output_schema_reader,
+        ensemble_substrate_reader=ensemble_substrate_reader,
+        session_artifact_store=session_artifact_store,
     )
 
 
@@ -3110,3 +3125,511 @@ class TestEnvelopeStructuredPopulation:
         assert isinstance(result, ToolCallSuccess)
         assert result.envelope is not None
         assert result.envelope.structured is None
+
+
+# ---------------------------------------------------------------------------
+# Cycle 6 WP-E (ADR-025) — substrate-routing branch tests
+# ---------------------------------------------------------------------------
+
+
+class _RecordingSubstrateReader:
+    """``EnsembleSubstrateReader`` double scripted with per-ensemble configs.
+
+    Records the lookups it serviced so tests can assert the dispatch
+    consulted the reader exactly when expected. Mirrors the
+    :class:`_RecordingOutputSchemaReader` pattern.
+    """
+
+    def __init__(
+        self,
+        configs: dict[str, SubstrateRoutingConfig] | None = None,
+    ) -> None:
+        self._configs = dict(configs or {})
+        self.calls: list[str] = []
+
+    def substrate_config_for(self, ensemble_name: str) -> SubstrateRoutingConfig | None:
+        self.calls.append(ensemble_name)
+        return self._configs.get(ensemble_name)
+
+
+class TestSubstrateRoutingBranch:
+    """ADR-025 substrate-routing for capability-ensemble deliverables.
+
+    Covers Cycle 6 WP-E scenarios from ``scenarios.md`` §Feature:
+    Artifact-as-Substrate for Capability Ensemble Deliverables —
+    capability ensembles substrate-route by default; system ensembles
+    remain inline; the harness is skipped per AS-7 amended; the ADR-004
+    raw_output escape hatch composes with substrate-routing without
+    contradiction.
+    """
+
+    @pytest.mark.asyncio
+    async def test_capability_ensemble_routes_to_substrate_and_skips_harness(
+        self, tmp_path: Path
+    ) -> None:
+        """Capability ensemble writes deliverable to session-dir artifact path.
+
+        Scenarios.md §"Capability ensemble writes deliverable to session-dir
+        artifact path" + §"Substrate-routed dispatch's envelope is not
+        passed through agentic-result-summarizer".
+        """
+        substrate_events = DispatchEventSubstrate()
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        reader = _RecordingSubstrateReader(
+            configs={
+                "code-generator": SubstrateRoutingConfig(
+                    output_substrate="artifact",
+                    output_retention=None,
+                    calibration_substrate_access="artifact",
+                    topaz_skill="code_generation",
+                )
+            }
+        )
+        loud_harness = _build_harness(
+            raises=AssertionError(
+                "harness must not be invoked for substrate-routed dispatches"
+            )
+        )
+        ops = _ScriptedOperations(
+            invoke_result={
+                "results": {"coder": {"response": "def reverse(s): ..."}},
+                "synthesis": "def reverse_string(s):\n    return s[::-1]\n",
+            }
+        )
+        dispatch = _build_dispatch(
+            operations=ops,
+            harness=loud_harness,
+            event_substrate=substrate_events,
+            ensemble_substrate_reader=reader,
+            session_artifact_store=store,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-substrate",
+                name="invoke_ensemble",
+                arguments={"name": "code-generator", "input": "reverse a string"},
+            ),
+            session_id="2026-05-16T01:00:00Z-test",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        assert result.envelope.artifacts is not None
+        assert len(result.envelope.artifacts) == 1
+        artifact = result.envelope.artifacts[0]
+        assert artifact["content_type"] == "application/python"
+        assert artifact["retention"] == "session"
+        assert artifact["path"].startswith(
+            "agentic-sessions/2026-05-16T01:00:00Z-test/"
+        )
+        assert artifact["path"].endswith("/code-generator.py")
+        assert "code-generator" in result.envelope.primary
+        assert artifact["path"] in result.envelope.primary
+        assert result.content == {"summary": result.envelope.primary}
+        assert reader.calls == ["code-generator"]
+
+    @pytest.mark.asyncio
+    async def test_system_ensemble_stays_inline_when_no_topaz_skill(
+        self, tmp_path: Path
+    ) -> None:
+        """Scenarios.md §"System ensemble produces inline-response envelope".
+
+        ``agentic-calibration-checker`` has no ``topaz_skill`` declared
+        per ADR-025 §"System ensembles remain inline"; substrate-routing
+        decision is inline; the harness IS invoked; ``artifacts`` is
+        absent.
+        """
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        reader = _RecordingSubstrateReader(
+            configs={
+                "agentic-calibration-checker": SubstrateRoutingConfig(
+                    output_substrate=None,
+                    output_retention=None,
+                    calibration_substrate_access=None,
+                    topaz_skill=None,
+                )
+            }
+        )
+        ops = _ScriptedOperations(
+            invoke_result={"synthesis": "Verdict: Proceed; confidence: 0.91"}
+        )
+        dispatch = _build_dispatch(
+            operations=ops,
+            harness=_build_harness(returns={"synthesis": "summarized verdict"}),
+            event_substrate=DispatchEventSubstrate(),
+            ensemble_substrate_reader=reader,
+            session_artifact_store=store,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-sys",
+                name="invoke_ensemble",
+                arguments={
+                    "name": "agentic-calibration-checker",
+                    "input": "evaluate",
+                },
+            ),
+            session_id="session-sys",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        assert result.envelope.primary == "summarized verdict"
+        assert result.envelope.artifacts is None
+        assert result.content == {"summary": "summarized verdict"}
+
+    @pytest.mark.asyncio
+    async def test_capability_default_when_yaml_omits_output_substrate(
+        self, tmp_path: Path
+    ) -> None:
+        """topaz_skill presence + output_substrate absent → artifact default.
+
+        Per ADR-025 §"Scope: always, for capability ensembles" — when
+        the YAML omits ``output_substrate``, the dispatch site applies
+        the category default. Presence of ``topaz_skill`` identifies
+        a capability ensemble; the default is ``artifact``.
+        """
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        reader = _RecordingSubstrateReader(
+            configs={
+                "claim-extractor": SubstrateRoutingConfig(
+                    output_substrate=None,
+                    output_retention=None,
+                    calibration_substrate_access=None,
+                    topaz_skill="factual_knowledge",
+                )
+            }
+        )
+        ops = _ScriptedOperations(
+            invoke_result={
+                "synthesis": "- claim 1 (established)\n- claim 2 (contested)"
+            }
+        )
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=DispatchEventSubstrate(),
+            ensemble_substrate_reader=reader,
+            session_artifact_store=store,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-default",
+                name="invoke_ensemble",
+                arguments={"name": "claim-extractor", "input": "source"},
+            ),
+            session_id="session-default",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        assert result.envelope.artifacts is not None
+        assert result.envelope.artifacts[0]["content_type"] == "text/markdown"
+
+    @pytest.mark.asyncio
+    async def test_yaml_inline_opt_out_skips_substrate(self, tmp_path: Path) -> None:
+        """Explicit YAML ``output_substrate: inline`` opt-out is honored.
+
+        Per ADR-025 the operator may opt a capability ensemble out of
+        substrate-routing by declaring ``output_substrate: inline``;
+        the harness IS invoked and ``artifacts`` is absent.
+        """
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        reader = _RecordingSubstrateReader(
+            configs={
+                "prose-improver": SubstrateRoutingConfig(
+                    output_substrate="inline",
+                    output_retention=None,
+                    calibration_substrate_access=None,
+                    topaz_skill="writing_quality",
+                )
+            }
+        )
+        ops = _ScriptedOperations(
+            invoke_result={"synthesis": "improved prose paragraph"}
+        )
+        dispatch = _build_dispatch(
+            operations=ops,
+            harness=_build_harness(returns={"synthesis": "Concise prose summary."}),
+            event_substrate=DispatchEventSubstrate(),
+            ensemble_substrate_reader=reader,
+            session_artifact_store=store,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-optout",
+                name="invoke_ensemble",
+                arguments={"name": "prose-improver", "input": "rough draft"},
+            ),
+            session_id="session-optout",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        assert result.envelope.artifacts is None
+        assert result.envelope.primary == "Concise prose summary."
+
+    @pytest.mark.asyncio
+    async def test_raw_output_escape_hatch_dominates_substrate_routing(
+        self, tmp_path: Path
+    ) -> None:
+        """ADR-004 raw_output escape hatch composes with substrate-routing.
+
+        Per ADR-025 §"Relationship to ADR-004's existing per-invocation
+        escape hatch" — when ``raw_output=True`` the harness passthrough
+        path operates; substrate-routing is suppressed for that
+        invocation. The two mechanisms compose without contradiction.
+        """
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        reader = _RecordingSubstrateReader(
+            configs={
+                "code-generator": SubstrateRoutingConfig(
+                    output_substrate="artifact",
+                    output_retention=None,
+                    calibration_substrate_access=None,
+                    topaz_skill="code_generation",
+                )
+            }
+        )
+        raw_result_dict = {
+            "results": {"classifier": {"intent": "refactor"}},
+            "synthesis": None,
+            "raw_output": True,
+        }
+        ops = _ScriptedOperations(invoke_result=raw_result_dict)
+        dispatch = _build_dispatch(
+            operations=ops,
+            harness=_build_harness(),
+            event_substrate=DispatchEventSubstrate(),
+            ensemble_substrate_reader=reader,
+            session_artifact_store=store,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-raw-substrate",
+                name="invoke_ensemble",
+                arguments={"name": "code-generator", "input": "x"},
+            ),
+            session_id="session-raw",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.content == raw_result_dict
+        assert result.envelope is not None
+        assert result.envelope.artifacts is None
+
+    @pytest.mark.asyncio
+    async def test_no_reader_or_store_preserves_legacy_inline_path(self) -> None:
+        """Pre-WP-E call sites (no reader, no store) stay inline.
+
+        Production wiring without ``ensemble_substrate_reader`` or
+        ``session_artifact_store`` preserves the WP-D inline-response
+        behavior — substrate branch is inert; harness fires per ADR-004.
+        """
+        ops = _ScriptedOperations(invoke_result={"synthesis": "x", "raw_output": False})
+        dispatch = _build_dispatch(
+            operations=ops,
+            harness=_build_harness(returns={"synthesis": "summary"}),
+            event_substrate=DispatchEventSubstrate(),
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-legacy",
+                name="invoke_ensemble",
+                arguments={"name": "anything", "input": "x"},
+            ),
+            session_id="session-legacy",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        assert result.envelope.artifacts is None
+        assert result.envelope.primary == "summary"
+
+    @pytest.mark.asyncio
+    async def test_dispatch_id_consistency_across_event_envelope_artifact(
+        self, tmp_path: Path
+    ) -> None:
+        """FC-22 unit-level anchor: cross-surface ``dispatch_id`` consistency.
+
+        The same ``dispatch_id`` value appears on the substrate's
+        emitted events (queryable via ``events_for``), on
+        ``envelope.diagnostics.dispatch_id``, and as the
+        ``<dispatch_id>`` segment in the artifact's filesystem path.
+        Three surfaces, one identifier.
+        """
+        substrate_events = DispatchEventSubstrate()
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        reader = _RecordingSubstrateReader(
+            configs={
+                "code-generator": SubstrateRoutingConfig(
+                    output_substrate="artifact",
+                    output_retention=None,
+                    calibration_substrate_access=None,
+                    topaz_skill="code_generation",
+                )
+            }
+        )
+        ops = _ScriptedOperations(invoke_result={"synthesis": "def f(): pass\n"})
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=substrate_events,
+            ensemble_substrate_reader=reader,
+            session_artifact_store=store,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-fc22",
+                name="invoke_ensemble",
+                arguments={"name": "code-generator", "input": "x"},
+            ),
+            session_id="session-fc22",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        envelope_dispatch_id = result.envelope.diagnostics["dispatch_id"]
+        assert envelope_dispatch_id == result.dispatch_id
+        events = substrate_events.events_for(envelope_dispatch_id)
+        assert len(events) >= 2
+        assert result.envelope.artifacts is not None
+        artifact_path = result.envelope.artifacts[0]["path"]
+        assert f"/{envelope_dispatch_id}/" in artifact_path
+
+
+# ---------------------------------------------------------------------------
+# Module-level helper tests (substrate-routing decision plumbing)
+# ---------------------------------------------------------------------------
+
+
+class TestEffectiveOutputSubstrate:
+    """Cycle 6 WP-E (ADR-025) — substrate decision defaulting."""
+
+    def test_explicit_artifact_wins(self) -> None:
+        config = SubstrateRoutingConfig(
+            output_substrate="artifact",
+            output_retention=None,
+            calibration_substrate_access=None,
+            topaz_skill=None,
+        )
+        assert _effective_output_substrate(config) == "artifact"
+
+    def test_explicit_inline_wins(self) -> None:
+        config = SubstrateRoutingConfig(
+            output_substrate="inline",
+            output_retention=None,
+            calibration_substrate_access=None,
+            topaz_skill="code_generation",
+        )
+        assert _effective_output_substrate(config) == "inline"
+
+    def test_capability_ensemble_defaults_artifact(self) -> None:
+        """topaz_skill present + output_substrate absent → artifact default."""
+        config = SubstrateRoutingConfig(
+            output_substrate=None,
+            output_retention=None,
+            calibration_substrate_access=None,
+            topaz_skill="summarization",
+        )
+        assert _effective_output_substrate(config) == "artifact"
+
+    def test_system_ensemble_defaults_inline(self) -> None:
+        """topaz_skill absent + output_substrate absent → inline default."""
+        config = SubstrateRoutingConfig(
+            output_substrate=None,
+            output_retention=None,
+            calibration_substrate_access=None,
+            topaz_skill=None,
+        )
+        assert _effective_output_substrate(config) == "inline"
+
+    def test_unknown_ensemble_defaults_inline(self) -> None:
+        """``None`` config (reader not configured or ensemble unknown) → inline."""
+        assert _effective_output_substrate(None) == "inline"
+
+    def test_typo_value_falls_through_to_category_default(self) -> None:
+        """Unrecognised ``output_substrate`` defers to category default.
+
+        Matches the EnsembleConfig loader's tolerant posture — typos
+        load as ``None`` rather than crashing; the dispatch site applies
+        the category default the same way as an absent value.
+        """
+        config = SubstrateRoutingConfig(
+            output_substrate="artifct",  # typo
+            output_retention=None,
+            calibration_substrate_access=None,
+            topaz_skill="code_generation",
+        )
+        assert _effective_output_substrate(config) == "artifact"
+
+
+class TestResolveSubstrateContentType:
+    """Cycle 6 WP-E content-type best-effort detection."""
+
+    def test_code_generation_routes_to_python(self) -> None:
+        assert (
+            _resolve_substrate_content_type(topaz_skill="code_generation")
+            == "application/python"
+        )
+
+    def test_other_skills_default_to_markdown(self) -> None:
+        assert (
+            _resolve_substrate_content_type(topaz_skill="summarization")
+            == "text/markdown"
+        )
+
+    def test_no_skill_defaults_to_markdown(self) -> None:
+        assert _resolve_substrate_content_type(topaz_skill=None) == "text/markdown"
+
+
+class TestCoerceRetentionOrDefault:
+    """Cycle 6 WP-E retention narrowing."""
+
+    @pytest.mark.parametrize("value", ["session", "durable", "ephemeral"])
+    def test_recognised_values_pass_through(self, value: str) -> None:
+        assert _coerce_retention_or_default(value, default="session") == value
+
+    def test_none_returns_default(self) -> None:
+        assert _coerce_retention_or_default(None, default="session") == "session"
+
+    def test_unrecognised_returns_default(self) -> None:
+        assert _coerce_retention_or_default("forever", default="durable") == "durable"
+
+
+class TestFormatSizeBytes:
+    """Substrate-summary-line human-readable size formatting."""
+
+    def test_under_kilobyte_reports_bytes(self) -> None:
+        assert _format_size_bytes(987) == "987 B"
+
+    def test_under_megabyte_reports_kilobytes_one_decimal(self) -> None:
+        assert _format_size_bytes(1247) == "1.2 KB"
+
+    def test_above_megabyte_reports_megabytes_one_decimal(self) -> None:
+        assert _format_size_bytes(2_500_000) == "2.4 MB"
+
+
+class TestBuildSubstrateSummaryLine:
+    """``envelope.primary`` composition for substrate-routed dispatches."""
+
+    def test_summary_includes_path_size_and_content_type(self) -> None:
+        reference = ArtifactReference(
+            path="agentic-sessions/sess-1/dispatch-1/code-generator.py",
+            content_type="application/python",
+            size_bytes=1247,
+            summary="raw deliverable summary",
+            retention="session",
+        )
+        line = _build_substrate_summary_line(
+            deliverable_name="code-generator", reference=reference
+        )
+        assert "code-generator" in line
+        assert reference.path in line
+        assert "1.2 KB" in line
+        assert "application/python" in line
