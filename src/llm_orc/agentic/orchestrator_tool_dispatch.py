@@ -155,12 +155,20 @@ class ToolCallSuccess:
     :class:`VisibilityEvent` chunks so the Serving Layer can surface
     composition-related narration to the tool user (ADR-008 tightened
     levels). An empty tuple is the baseline — silent operation.
+
+    ``dispatch_id`` is the ADR-023 correlation identifier when this
+    result is the return of ``invoke_ensemble`` with an event
+    substrate configured — ``None`` for the other four tools (which
+    do not allocate a dispatch_id) and for legacy / no-substrate
+    paths. The Runtime uses this to query the Orchestrator-Context
+    Event Sink at the next turn boundary for a structured observation.
     """
 
     id: str
     name: str
     content: Any
     events: tuple[VisibilityEvent, ...] = field(default_factory=tuple)
+    dispatch_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -173,6 +181,12 @@ class ToolCallError:
     ``events`` mirrors the ``ToolCallSuccess`` field so visibility is
     surfaced consistently regardless of the dispatch outcome — an
     Autonomy Policy decision may attach events to either path.
+
+    ``dispatch_id`` is the ADR-023 correlation identifier when this
+    error is the return of ``invoke_ensemble`` after dispatch_id
+    allocation (e.g., post-tier-selection invocation failure or
+    summarization failure). Pre-dispatch errors (argument validation,
+    no-such-ensemble) leave it ``None`` — no dispatch occurred.
     """
 
     id: str
@@ -180,6 +194,7 @@ class ToolCallError:
     kind: ToolErrorKind
     reason: str
     events: tuple[VisibilityEvent, ...] = field(default_factory=tuple)
+    dispatch_id: str | None = None
 
 
 ToolCallResult = ToolCallSuccess | ToolCallError
@@ -516,7 +531,7 @@ class OrchestratorToolDispatch:
             )
             if isinstance(selection, ToolCallError):
                 exit_status = "error"
-                return selection
+                return dataclasses.replace(selection, dispatch_id=dispatch_id)
 
             invocation_args: dict[str, Any] = {
                 "ensemble_name": name,
@@ -539,6 +554,7 @@ class OrchestratorToolDispatch:
                     name="invoke_ensemble",
                     kind="invocation_failed",
                     reason=str(exc),
+                    dispatch_id=dispatch_id,
                 )
 
             # ADR-018: record dispatch outcome as success for the
@@ -562,10 +578,14 @@ class OrchestratorToolDispatch:
                         id=id_,
                         name="invoke_ensemble",
                         content={"summary": summary},
+                        dispatch_id=dispatch_id,
                     )
                 case RawOutputPassthrough(content=passthrough):
                     return ToolCallSuccess(
-                        id=id_, name="invoke_ensemble", content=passthrough
+                        id=id_,
+                        name="invoke_ensemble",
+                        content=passthrough,
+                        dispatch_id=dispatch_id,
                     )
                 case SummarizationFailure(reason=reason):
                     exit_status = "error"
@@ -574,6 +594,7 @@ class OrchestratorToolDispatch:
                         name="invoke_ensemble",
                         kind="summarization_failed",
                         reason=reason,
+                        dispatch_id=dispatch_id,
                     )
         finally:
             self._close_dispatch_event(
