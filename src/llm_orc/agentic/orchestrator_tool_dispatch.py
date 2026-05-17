@@ -539,22 +539,10 @@ class OrchestratorToolDispatch:
         orchestrator-context destinations observe every dispatch
         regardless of exit path.
         """
-        name = arguments.get("name")
-        input_data = arguments.get("input", "")
-        if not isinstance(name, str) or not name:
-            return ToolCallError(
-                id=id_,
-                name="invoke_ensemble",
-                kind="invalid_arguments",
-                reason="invoke_ensemble requires 'name' (non-empty string)",
-            )
-        if not isinstance(input_data, str):
-            return ToolCallError(
-                id=id_,
-                name="invoke_ensemble",
-                kind="invalid_arguments",
-                reason="invoke_ensemble 'input' must be a string",
-            )
+        validated = _validate_invoke_arguments(id_=id_, arguments=arguments)
+        if isinstance(validated, ToolCallError):
+            return validated
+        name, input_data = validated
 
         # ADR-023 WP-A: allocate dispatch_id and emit DispatchTiming(start)
         # before tier selection. Argument-validation failures above do not
@@ -1252,6 +1240,38 @@ class OrchestratorToolDispatch:
             )
         except Exception:  # noqa: BLE001 — ADR-007 clause 2: never block invocation
             return None
+
+
+def _validate_invoke_arguments(
+    *, id_: str, arguments: dict[str, Any]
+) -> tuple[str, str] | ToolCallError:
+    """Validate ``invoke_ensemble`` arguments and project the typed pair.
+
+    Returns ``(name, input)`` on success, a typed
+    :class:`ToolCallError` (kind ``invalid_arguments``) on failure.
+    Extracted from :meth:`OrchestratorToolDispatch.invoke_ensemble` so
+    the surrounding method's cyclomatic complexity stays within the
+    project's ruff C901 ceiling — the argument-validation step holds
+    no dispatch state of its own (no events emitted, no calibration
+    consulted) and reads naturally as a free function.
+    """
+    name = arguments.get("name")
+    input_data = arguments.get("input", "")
+    if not isinstance(name, str) or not name:
+        return ToolCallError(
+            id=id_,
+            name="invoke_ensemble",
+            kind="invalid_arguments",
+            reason="invoke_ensemble requires 'name' (non-empty string)",
+        )
+    if not isinstance(input_data, str):
+        return ToolCallError(
+            id=id_,
+            name="invoke_ensemble",
+            kind="invalid_arguments",
+            reason="invoke_ensemble 'input' must be a string",
+        )
+    return name, input_data
 
 
 def _extract_synthesizer_text(raw_result: dict[str, Any]) -> str | None:
