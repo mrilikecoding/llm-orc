@@ -56,6 +56,7 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     _effective_output_substrate,
     _format_size_bytes,
     _resolve_substrate_content_type,
+    _shape_calibration_evaluation_input,
 )
 from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
 from llm_orc.agentic.session_artifact_store import (
@@ -3633,3 +3634,317 @@ class TestBuildSubstrateSummaryLine:
         assert reference.path in line
         assert "1.2 KB" in line
         assert "application/python" in line
+
+
+# ---------------------------------------------------------------------------
+# Cycle 6 WP-E piece 6 — Calibration Gate three evaluation surfaces (ADR-025)
+# ---------------------------------------------------------------------------
+
+
+class TestShapeCalibrationEvaluationInput:
+    """ADR-025 §"Calibration-gate evaluation surface" payload shaping.
+
+    The three surfaces (summary-only / structured / artifact-content)
+    compose additively. The helper produces a checker-facing dict from
+    the substrate_config, raw_result, reference, primary line, and
+    optional structured payload.
+    """
+
+    @staticmethod
+    def _reference() -> ArtifactReference:
+        return ArtifactReference(
+            path="agentic-sessions/sess-1/dispatch-1/code-generator.py",
+            content_type="application/python",
+            size_bytes=1247,
+            summary="Class CircularBuffer; 24 lines.",
+            retention="session",
+        )
+
+    def test_summary_only_is_default_when_yaml_omits_access(self) -> None:
+        """Default: payload carries primary + artifact_summary only."""
+        config = SubstrateRoutingConfig(
+            output_substrate="artifact",
+            output_retention=None,
+            calibration_substrate_access=None,
+            topaz_skill="code_generation",
+        )
+        payload = _shape_calibration_evaluation_input(
+            substrate_config=config,
+            raw_result={"synthesis": "def reverse(s): return s[::-1]"},
+            reference=self._reference(),
+            primary="Wrote code-generator to ... (1.2 KB, application/python).",
+            structured=None,
+        )
+        assert set(payload.keys()) == {"primary", "artifact_summary"}
+        assert payload["artifact_summary"] == "Class CircularBuffer; 24 lines."
+        assert "code-generator" in payload["primary"]
+
+    def test_structured_augments_summary_when_output_schema_declared(self) -> None:
+        """ADR-024 output_schema → structured added alongside summary surfaces."""
+        config = SubstrateRoutingConfig(
+            output_substrate="artifact",
+            output_retention=None,
+            calibration_substrate_access=None,
+            topaz_skill="factual_knowledge",
+        )
+        structured = {
+            "claims": [
+                {"text": "claim 1", "label": "established"},
+                {"text": "claim 2", "label": "contested"},
+            ]
+        }
+        payload = _shape_calibration_evaluation_input(
+            substrate_config=config,
+            raw_result={"synthesis": "..."},
+            reference=self._reference(),
+            primary="summary line",
+            structured=structured,
+        )
+        assert payload["structured"] == structured
+        assert "artifact_content" not in payload
+
+    def test_artifact_access_includes_deliverable_content(self) -> None:
+        """calibration_substrate_access: artifact → artifact_content added.
+
+        Cycle 6 BUILD MVP bundles the deliverable content in the
+        payload rather than exposing a tool-call surface; Cycle 7+
+        adds the ArtifactReadTool per ADR-025.
+        """
+        config = SubstrateRoutingConfig(
+            output_substrate="artifact",
+            output_retention=None,
+            calibration_substrate_access="artifact",
+            topaz_skill="code_generation",
+        )
+        payload = _shape_calibration_evaluation_input(
+            substrate_config=config,
+            raw_result={"synthesis": "def f(): return 42"},
+            reference=self._reference(),
+            primary="summary line",
+            structured=None,
+        )
+        assert payload["artifact_content"] == "def f(): return 42"
+        # Summary surfaces are always included; artifact_content adds.
+        assert payload["primary"] == "summary line"
+        assert payload["artifact_summary"] == "Class CircularBuffer; 24 lines."
+
+    def test_artifact_access_with_structured_composes_all_three(self) -> None:
+        """All three surfaces compose additively per ADR-025."""
+        config = SubstrateRoutingConfig(
+            output_substrate="artifact",
+            output_retention=None,
+            calibration_substrate_access="artifact",
+            topaz_skill="code_generation",
+        )
+        payload = _shape_calibration_evaluation_input(
+            substrate_config=config,
+            raw_result={"synthesis": "deliverable text"},
+            reference=self._reference(),
+            primary="primary",
+            structured={"k": "v"},
+        )
+        assert set(payload.keys()) == {
+            "primary",
+            "artifact_summary",
+            "structured",
+            "artifact_content",
+        }
+
+
+class TestSubstrateCalibrationInterposition:
+    """ADR-025 §"Calibration-gate evaluation surface" — interposition order.
+
+    Substrate-routed dispatches run calibration AFTER the artifact write
+    so the gate's evaluator can reference the typed
+    :class:`ArtifactReference`. The inline path retains the WP-D
+    ordering (calibration over raw_result before harness summarize).
+    """
+
+    @pytest.mark.asyncio
+    async def test_substrate_path_calibration_receives_summary_only_by_default(
+        self, tmp_path: Path
+    ) -> None:
+        """Default calibration_substrate_access produces summary-only payload."""
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        reader = _RecordingSubstrateReader(
+            configs={
+                "claim-extractor": SubstrateRoutingConfig(
+                    output_substrate="artifact",
+                    output_retention=None,
+                    calibration_substrate_access=None,
+                    topaz_skill="factual_knowledge",
+                )
+            }
+        )
+        gate = _RecordingCalibrationGate()
+        # claim-extractor in calibration — mark composed so check fires.
+        gate.mark_composed(session_id="session-calib", ensemble_name="claim-extractor")
+        ops = _ScriptedOperations(invoke_result={"synthesis": "- claim 1\n- claim 2"})
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=DispatchEventSubstrate(),
+            ensemble_substrate_reader=reader,
+            session_artifact_store=store,
+            calibration_gate=gate,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-calib",
+                name="invoke_ensemble",
+                arguments={"name": "claim-extractor", "input": "source"},
+            ),
+            session_id="session-calib",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        # Calibration fired with the shaped substrate-evaluation payload,
+        # not the raw_result dict the inline path passes.
+        assert len(gate.check_calls) == 1
+        _session, _ensemble, payload = gate.check_calls[0]
+        assert set(payload.keys()) == {"primary", "artifact_summary"}
+        assert "claim-extractor" in payload["primary"]
+
+    @pytest.mark.asyncio
+    async def test_substrate_path_calibration_includes_artifact_content_when_opted_in(
+        self, tmp_path: Path
+    ) -> None:
+        """code-generator opt-in: calibration receives deliverable content."""
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        reader = _RecordingSubstrateReader(
+            configs={
+                "code-generator": SubstrateRoutingConfig(
+                    output_substrate="artifact",
+                    output_retention=None,
+                    calibration_substrate_access="artifact",
+                    topaz_skill="code_generation",
+                )
+            }
+        )
+        gate = _RecordingCalibrationGate()
+        gate.mark_composed(session_id="session-codegen", ensemble_name="code-generator")
+        deliverable = "def reverse(s):\n    return s[::-1]\n"
+        ops = _ScriptedOperations(invoke_result={"synthesis": deliverable})
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=DispatchEventSubstrate(),
+            ensemble_substrate_reader=reader,
+            session_artifact_store=store,
+            calibration_gate=gate,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-codegen",
+                name="invoke_ensemble",
+                arguments={"name": "code-generator", "input": "reverse"},
+            ),
+            session_id="session-codegen",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert len(gate.check_calls) == 1
+        _session, _ensemble, payload = gate.check_calls[0]
+        assert payload["artifact_content"] == deliverable
+        assert "primary" in payload
+        assert "artifact_summary" in payload
+
+    @pytest.mark.asyncio
+    async def test_inline_path_calibration_still_uses_raw_result(
+        self, tmp_path: Path
+    ) -> None:
+        """Inline path preserves the pre-WP-E calibration payload shape.
+
+        WP-D ordering: calibration_check_safe runs over raw_result
+        before harness.summarize. Piece 6 changes the substrate path
+        only; inline must continue with the existing payload shape.
+        """
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        reader = _RecordingSubstrateReader(
+            configs={
+                "agentic-calibration-checker": SubstrateRoutingConfig(
+                    output_substrate=None,
+                    output_retention=None,
+                    calibration_substrate_access=None,
+                    topaz_skill=None,
+                )
+            }
+        )
+        gate = _RecordingCalibrationGate()
+        gate.mark_composed(
+            session_id="session-inline",
+            ensemble_name="agentic-calibration-checker",
+        )
+        raw = {"synthesis": "Verdict: Proceed"}
+        ops = _ScriptedOperations(invoke_result=raw)
+        dispatch = _build_dispatch(
+            operations=ops,
+            harness=_build_harness(returns={"synthesis": "summarized"}),
+            event_substrate=DispatchEventSubstrate(),
+            ensemble_substrate_reader=reader,
+            session_artifact_store=store,
+            calibration_gate=gate,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-inline-calib",
+                name="invoke_ensemble",
+                arguments={
+                    "name": "agentic-calibration-checker",
+                    "input": "evaluate",
+                },
+            ),
+            session_id="session-inline",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert len(gate.check_calls) == 1
+        _session, _ensemble, payload = gate.check_calls[0]
+        # Inline path passes the raw_result dict directly (unchanged).
+        assert payload == raw
+
+    @pytest.mark.asyncio
+    async def test_substrate_calibration_failure_does_not_block_dispatch(
+        self, tmp_path: Path
+    ) -> None:
+        """ADR-007 clause 2: calibration check failures never block invocation.
+
+        Even when the substrate-path checker raises, the dispatch still
+        returns ToolCallSuccess with the substrate envelope.
+        """
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        reader = _RecordingSubstrateReader(
+            configs={
+                "claim-extractor": SubstrateRoutingConfig(
+                    output_substrate="artifact",
+                    output_retention=None,
+                    calibration_substrate_access=None,
+                    topaz_skill="factual_knowledge",
+                )
+            }
+        )
+        gate = _RecordingCalibrationGate(check_raises=RuntimeError("checker exploded"))
+        gate.mark_composed(session_id="session-fail", ensemble_name="claim-extractor")
+        ops = _ScriptedOperations(invoke_result={"synthesis": "- claim"})
+        dispatch = _build_dispatch(
+            operations=ops,
+            event_substrate=DispatchEventSubstrate(),
+            ensemble_substrate_reader=reader,
+            session_artifact_store=store,
+            calibration_gate=gate,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-fail",
+                name="invoke_ensemble",
+                arguments={"name": "claim-extractor", "input": "src"},
+            ),
+            session_id="session-fail",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        assert result.envelope.artifacts is not None
+        assert len(gate.check_calls) == 1
