@@ -76,6 +76,11 @@ from llm_orc.agentic.result_summarizer_harness import (
     SummarizationFailure,
     SummarizationSuccess,
 )
+from llm_orc.agentic.session_artifact_store import (
+    ArtifactReference,
+    Retention,
+    SessionArtifactStore,
+)
 from llm_orc.agentic.tier_router import (
     EscalationBypassError,
     MissingSkillMetadataError,
@@ -89,10 +94,12 @@ from llm_orc.agentic.tool_call_validation_guard import (
 )
 
 __all__ = [
+    "EnsembleSubstrateReader",
     "InternalToolCall",
     "OrchestratorToolDispatch",
     "OutputSchemaReader",
     "PhantomToolCallError",
+    "SubstrateRoutingConfig",
     "TOOL_NAMES",
     "ToolCallError",
     "ToolCallResult",
@@ -305,6 +312,69 @@ class OutputSchemaReader(Protocol):
     def output_schema_for(self, ensemble_name: str) -> dict[str, Any] | None: ...
 
 
+@dataclass(frozen=True)
+class SubstrateRoutingConfig:
+    """Ensemble-config slice Tool Dispatch needs for substrate-routing decisions.
+
+    Cycle 6 WP-E (ADR-025). The four fields are read from the operator-
+    authored :class:`~llm_orc.core.config.ensemble_config.EnsembleConfig`
+    at the Serving Layer (L3) and projected into this slim L2-local
+    shape so Tool Dispatch does not depend on the full L0 config
+    surface. Mirrors the slim-Protocol pattern :class:`OutputSchemaReader`
+    establishes — Tool Dispatch consumes only what the substrate-routing
+    branch needs.
+
+    ``topaz_skill`` carries the ADR-015 capability marker. Per ADR-025
+    §"Scope: always, for capability ensembles" the capability/system
+    distinction maps onto ``topaz_skill`` presence: the six current
+    capability ensembles carry one, the two system ensembles
+    (``agentic-calibration-checker``, ``agentic-result-summarizer``) do
+    not. The dispatch-time default applier reads this field to decide
+    ``artifact`` vs ``inline`` when the YAML omits ``output_substrate``.
+    """
+
+    output_substrate: str | None
+    """Explicit YAML value: ``"artifact"``, ``"inline"``, or ``None``
+    (apply category default at dispatch time)."""
+
+    output_retention: str | None
+    """Explicit YAML value: ``"session"``, ``"durable"``, ``"ephemeral"``,
+    or ``None`` (Session Artifact Store default ``"session"`` applies)."""
+
+    calibration_substrate_access: str | None
+    """Explicit YAML value: ``"summary"`` (the default at dispatch time
+    when absent — Calibration Gate critic agents receive envelope
+    summary surfaces only) or ``"artifact"`` (opt-in for ensembles
+    whose quality cannot be evaluated from summary alone — critics
+    receive deliverable content). Cycle 6 WP-E piece 6 wires the
+    evaluation surface; piece 5 captures the value at dispatch time."""
+
+    topaz_skill: str | None
+    """ADR-015 per-skill metadata — presence identifies a capability
+    ensemble (substrate-routed by default), absence identifies a system
+    ensemble (inline-response by default)."""
+
+
+class EnsembleSubstrateReader(Protocol):
+    """Substrate-config lookup surface Tool Dispatch consults.
+
+    Cycle 6 WP-E (ADR-025). Production wiring at the Serving Layer (L3)
+    constructs a reader backed by
+    :meth:`~llm_orc.services.orchestra_service.OrchestraService.find_ensemble_by_name`.
+    Returns the substrate-routing slice of the operator-authored
+    EnsembleConfig, or ``None`` when the ensemble is not registered with
+    the reader (the missing-ensemble error surfaces via the invoke step
+    itself; the substrate branch treats unknown as inline). The Protocol
+    stays L2-local — Tool Dispatch does not import the L0 config module
+    directly, mirroring the :class:`OutputSchemaReader` and
+    :class:`~llm_orc.agentic.tier_router.TopazSkillReader` patterns.
+    """
+
+    def substrate_config_for(
+        self, ensemble_name: str
+    ) -> SubstrateRoutingConfig | None: ...
+
+
 class OrchestratorToolDispatch:
     """Closed five-tool dispatch surface (ADR-003, FC-5)."""
 
@@ -324,6 +394,8 @@ class OrchestratorToolDispatch:
         event_substrate: DispatchEventSubstrate | None = None,
         tool_call_emit_logger: ToolCallEmitLogger | None = None,
         output_schema_reader: OutputSchemaReader | None = None,
+        ensemble_substrate_reader: EnsembleSubstrateReader | None = None,
+        session_artifact_store: SessionArtifactStore | None = None,
     ) -> None:
         if tier_router is not None and calibration_gate is None:
             raise ValueError(
@@ -405,6 +477,35 @@ class OrchestratorToolDispatch:
         reader configured) and ``None`` (reader returns no schema for
         the ensemble) both leave ``envelope.structured`` as ``None``
         without raising.
+        """
+        self._ensemble_substrate_reader = ensemble_substrate_reader
+        """Per-ensemble substrate-routing lookup (Cycle 6 WP-E, ADR-025).
+
+        When configured alongside ``session_artifact_store``, the
+        ``invoke_ensemble`` success path consults the reader to decide
+        whether the dispatched ensemble routes its deliverable through
+        Session Artifact Store (``output_substrate: artifact``) or
+        retains the inline-response path with ``agentic-result-summarizer``
+        (``output_substrate: inline``). YAML-absent values resolve via
+        category default — presence of ``topaz_skill`` on the
+        :class:`SubstrateRoutingConfig` identifies capability ensembles
+        (``artifact`` default); absence identifies system ensembles
+        (``inline`` default). ``None`` here (and ``None`` returned for
+        a specific ensemble) preserves the pre-Cycle-6-WP-E dispatch
+        path — all dispatches stay inline, the AS-7 unconditional
+        scope holds. Production wiring activates substrate-routing.
+        """
+        self._session_artifact_store = session_artifact_store
+        """Session Artifact Store dependency (Cycle 6 WP-E, ADR-025).
+
+        When configured alongside ``ensemble_substrate_reader``, the
+        substrate-routing branch writes the dispatched ensemble's
+        deliverable to ``.llm-orc/agentic-sessions/<session_id>/
+        <dispatch_id>/<deliverable>.<ext>`` and skips the Result
+        Summarizer Harness per AS-7 amended. ``None`` (production
+        wiring not yet present, or operator-deployed legacy mode)
+        preserves the pre-Cycle-6-WP-E inline path; the substrate
+        branch stays inert.
         """
 
     def validate_response(
@@ -626,6 +727,37 @@ class OrchestratorToolDispatch:
             )
 
             raw_output = bool(result.get("raw_output", False))
+
+            # ADR-025 WP-E: substrate-routing branch. The substrate
+            # routes the deliverable to a session-dir artifact path and
+            # SKIPS the result-summarizer harness per AS-7 amended. The
+            # routing-decision helper collapses four gating conditions
+            # (substrate decision, raw_output composition with ADR-004,
+            # session_artifact_store wiring, substrate_config resolution)
+            # into one branch so the invoke_ensemble complexity budget
+            # stays within ruff's C901 threshold.
+            substrate_config = self._route_substrate_or_none(
+                ensemble_name=name, raw_output=raw_output
+            )
+            if substrate_config is not None:
+                # ``_route_substrate_or_none`` returned non-None, which
+                # implies ``self._event_substrate is not None`` per the
+                # helper's gating set; ``_open_dispatch_event`` therefore
+                # allocated a concrete ``dispatch_id`` string (its
+                # ``None`` return is only the no-substrate path).
+                assert dispatch_id is not None
+                substrate_success = self._route_dispatch_to_substrate(
+                    id_=id_,
+                    ensemble_name=name,
+                    session_id=session_id,
+                    dispatch_id=dispatch_id,
+                    raw_result=result,
+                    substrate_config=substrate_config,
+                    start_timestamp=start_timestamp,
+                )
+                dispatch_event_closed = True
+                return substrate_success
+
             summarization = await self._harness.summarize(result, raw_output=raw_output)
             match summarization:
                 case SummarizationSuccess(summary=summary):
@@ -1070,6 +1202,132 @@ class OrchestratorToolDispatch:
             success=success,
         )
 
+    def _resolve_substrate_routing_config(
+        self, ensemble_name: str
+    ) -> SubstrateRoutingConfig | None:
+        """Look up the per-ensemble substrate config via the reader.
+
+        Cycle 6 WP-E (ADR-025). Returns ``None`` when the reader is
+        not configured (pre-Cycle-6-WP-E dispatch path) or returns
+        ``None`` for the named ensemble (unknown to the reader —
+        substrate branch falls through to inline). The reader's
+        contract treats absence conservatively; the missing-ensemble
+        error surfaces via the invoke step itself, not via substrate
+        routing.
+        """
+        if self._ensemble_substrate_reader is None:
+            return None
+        return self._ensemble_substrate_reader.substrate_config_for(ensemble_name)
+
+    def _route_substrate_or_none(
+        self, *, ensemble_name: str, raw_output: bool
+    ) -> SubstrateRoutingConfig | None:
+        """Decide whether this invocation routes to substrate; return config.
+
+        Cycle 6 WP-E (ADR-025). Returns the
+        :class:`SubstrateRoutingConfig` when the substrate-routing
+        branch fires (the caller uses the same value for downstream
+        substrate-write configuration); returns ``None`` when the
+        dispatch should follow the inline path.
+
+        The five gating conditions — ``raw_output`` ADR-004 escape
+        hatch active, ``session_artifact_store`` not wired,
+        ``event_substrate`` not wired (the substrate path needs the
+        substrate's ``dispatch_id`` for the artifact path's
+        ``<dispatch_id>`` segment per FC-22's cross-surface coupling),
+        ensemble unknown to the reader, effective decision
+        ``"inline"`` — all produce the same ``None`` outcome, so
+        collapsing them at this helper keeps the ``invoke_ensemble``
+        complexity budget within the project's ruff C901 ceiling.
+        """
+        if (
+            raw_output
+            or self._session_artifact_store is None
+            or self._event_substrate is None
+        ):
+            return None
+        config = self._resolve_substrate_routing_config(ensemble_name)
+        if _effective_output_substrate(config) != "artifact":
+            return None
+        return config
+
+    def _route_dispatch_to_substrate(
+        self,
+        *,
+        id_: str,
+        ensemble_name: str,
+        session_id: str,
+        dispatch_id: str,
+        raw_result: dict[str, Any],
+        substrate_config: SubstrateRoutingConfig,
+        start_timestamp: float,
+    ) -> ToolCallSuccess:
+        """Write the deliverable to the substrate and build the envelope.
+
+        Cycle 6 WP-E (ADR-025). Replaces the harness invocation per
+        AS-7 amended — substrate-routed dispatches do not flow through
+        ``agentic-result-summarizer``. The deliverable lands at the
+        session-dir artifact path owned by :class:`SessionArtifactStore`;
+        ``envelope.primary`` carries a one-line summary referencing the
+        artifact; ``envelope.artifacts[0]`` carries the typed
+        :class:`ArtifactReference`.
+
+        Order mirrors the WP-D inline path's success-leg: close the
+        dispatch event BEFORE envelope construction so
+        ``envelope.diagnostics`` projects from the substrate's
+        ``DispatchTiming(end)`` event. The caller sets
+        ``dispatch_event_closed = True`` after this method returns; the
+        ``invoke_ensemble`` ``finally`` block then skips the close
+        because this success path explicitly closed.
+        """
+        assert self._session_artifact_store is not None  # narrowed by caller
+        deliverable_text = _extract_synthesizer_text(raw_result) or json.dumps(
+            raw_result, default=str
+        )
+        content_type = _resolve_substrate_content_type(
+            topaz_skill=substrate_config.topaz_skill
+        )
+        retention = _coerce_retention_or_default(
+            substrate_config.output_retention, default="session"
+        )
+        reference = self._session_artifact_store.write_deliverable(
+            session_id=session_id,
+            dispatch_id=dispatch_id,
+            deliverable_name=ensemble_name,
+            content=deliverable_text,
+            content_type=content_type,
+            retention=retention,
+        )
+        self._close_dispatch_event(
+            ensemble_name=ensemble_name,
+            dispatch_id=dispatch_id,
+            start_timestamp=start_timestamp,
+            exit_status="success",
+        )
+        primary = _build_substrate_summary_line(
+            deliverable_name=ensemble_name, reference=reference
+        )
+        envelope = self._build_envelope(
+            ensemble_name=ensemble_name,
+            dispatch_id=dispatch_id,
+            raw_result=raw_result,
+            primary=primary,
+            artifact_reference=reference,
+        )
+        # ``content`` shape mirrors the inline-response WP-D pattern:
+        # the orchestrator-LLM observes a compact ``{"summary": ...}``
+        # dict in its tool-message context. The typed envelope rides
+        # along on the additive ``envelope`` field for downstream
+        # consumers (Orchestrator-Context Event Sink; chat-completion
+        # response serialization).
+        return ToolCallSuccess(
+            id=id_,
+            name="invoke_ensemble",
+            content={"summary": primary},
+            dispatch_id=dispatch_id,
+            envelope=envelope,
+        )
+
     def _build_envelope(
         self,
         *,
@@ -1077,6 +1335,7 @@ class OrchestratorToolDispatch:
         dispatch_id: str | None,
         raw_result: dict[str, Any],
         primary: str,
+        artifact_reference: ArtifactReference | None = None,
     ) -> DispatchEnvelope:
         """Construct an ADR-024 envelope for a successful dispatch.
 
@@ -1086,6 +1345,13 @@ class OrchestratorToolDispatch:
         operator-authored ``output_schema:`` via :attr:`_output_schema_reader`
         and advisorily parses the synthesizer response as JSON to
         populate ``structured``.
+
+        Cycle 6 WP-E. ``artifact_reference`` populates
+        ``envelope.artifacts[0]`` for substrate-routed dispatches per
+        ADR-025; ``None`` (inline-response path) leaves ``artifacts``
+        as ``None``. The slot order is per ADR-024 — substrate-routed
+        envelopes carry exactly one entry in WP-E scope (one deliverable
+        per dispatch).
 
         Legacy / no-substrate paths produce an envelope with sparse
         diagnostics (just ``ensemble`` and what the ``raw_result``
@@ -1100,11 +1366,17 @@ class OrchestratorToolDispatch:
         structured = self._maybe_extract_structured(
             ensemble_name=ensemble_name, raw_result=raw_result
         )
+        artifacts = (
+            [dataclasses.asdict(artifact_reference)]
+            if artifact_reference is not None
+            else None
+        )
         return DispatchEnvelope(
             status="success",
             primary=primary,
             structured=structured,
             diagnostics=diagnostics,
+            artifacts=artifacts,
         )
 
     def _collect_diagnostics(
@@ -1272,6 +1544,104 @@ def _validate_invoke_arguments(
             reason="invoke_ensemble 'input' must be a string",
         )
     return name, input_data
+
+
+def _effective_output_substrate(
+    config: SubstrateRoutingConfig | None,
+) -> Literal["artifact", "inline"]:
+    """Apply ADR-025 category default when ``output_substrate`` is absent.
+
+    Explicit YAML ``"artifact"`` or ``"inline"`` wins. When the field
+    is absent (``None``) the dispatch site applies the category default:
+    presence of ``topaz_skill`` identifies a capability ensemble
+    (default ``"artifact"`` per ADR-025 §"Scope: always, for capability
+    ensembles"); absence identifies a system ensemble (default
+    ``"inline"`` — system ensembles remain inline per the same
+    §"Scope" clause).
+
+    ``config=None`` (the substrate reader is not configured, or returned
+    ``None`` for this ensemble) defaults to ``"inline"`` so the path
+    stays conservative for unknown ensembles — the invoke step itself
+    surfaces missing-ensemble errors before substrate routing applies.
+
+    Values outside ``{"artifact", "inline"}`` fall through to the
+    category default — matches the
+    :class:`~llm_orc.core.config.ensemble_config.EnsembleConfig` loader's
+    tolerant posture where typos become ``None`` rather than crashing.
+    """
+    if config is None:
+        return "inline"
+    if config.output_substrate == "artifact":
+        return "artifact"
+    if config.output_substrate == "inline":
+        return "inline"
+    return "artifact" if config.topaz_skill else "inline"
+
+
+def _resolve_substrate_content_type(*, topaz_skill: str | None) -> str:
+    """Pick a content_type for a substrate-written deliverable.
+
+    Cycle 6 WP-E BUILD MVP. The detection is best-effort and reads
+    from ADR-015's ``topaz_skill`` capability tag — the only
+    operator-authored signal available at dispatch time without
+    inspecting the deliverable content. ``code_generation`` deliverables
+    open naturally as ``.py`` files; everything else defaults to
+    ``text/markdown`` so prose-rich deliverables open as Markdown.
+    Per-ensemble ``content_type:`` declarations in YAML are Cycle 7+
+    territory; the rougher detection is the right shape for the
+    first deployment.
+    """
+    if topaz_skill == "code_generation":
+        return "application/python"
+    return "text/markdown"
+
+
+def _coerce_retention_or_default(value: str | None, *, default: Retention) -> Retention:
+    """Narrow YAML-loaded retention to a :data:`Retention` literal.
+
+    Cycle 6 WP-E (ADR-025). Mirrors the tolerant posture of the
+    :class:`~llm_orc.core.config.ensemble_config.EnsembleConfig` loader:
+    unrecognised values fall back to ``default`` rather than raising.
+    """
+    if value == "session":
+        return "session"
+    if value == "durable":
+        return "durable"
+    if value == "ephemeral":
+        return "ephemeral"
+    return default
+
+
+def _build_substrate_summary_line(
+    *, deliverable_name: str, reference: ArtifactReference
+) -> str:
+    """Compose the substrate-routed dispatch's ``envelope.primary``.
+
+    Cycle 6 WP-E (ADR-025). Per scenarios.md §"Capability ensemble
+    writes deliverable to session-dir artifact path" — a one-line
+    summary the operator (and the orchestrator's reasoning surface)
+    reads as the deliverable reference. Size and content-type come
+    directly off the :class:`ArtifactReference` so the line stays
+    consistent with the artifact's metadata on disk.
+    """
+    size_label = _format_size_bytes(reference.size_bytes)
+    return (
+        f"Wrote {deliverable_name} to {reference.path} "
+        f"({size_label}, {reference.content_type})."
+    )
+
+
+def _format_size_bytes(size_bytes: int) -> str:
+    """Format ``size_bytes`` human-readably for substrate summary lines.
+
+    Sub-1024 bytes report exact byte count; sub-1MB report kilobytes
+    at one decimal; larger report megabytes at one decimal.
+    """
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    return f"{size_bytes / (1024 * 1024):.1f} MB"
 
 
 def _extract_synthesizer_text(raw_result: dict[str, Any]) -> str | None:
