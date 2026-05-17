@@ -28,6 +28,20 @@ description: |
 # Model Profile per the operator's per_skill_tier_defaults.
 topaz_skill: code_generation
 
+# ADR-025 §"Scope: always, for capability ensembles" — deliverable
+# routes through SessionArtifactStore; envelope.primary carries a
+# summary line referencing the artifact; envelope.artifacts[0] carries
+# the typed ArtifactReference. AS-7 amended: result-summarizer is
+# skipped for substrate-routed dispatches.
+output_substrate: artifact
+
+# ADR-025 §"Calibration-gate evaluation surface" opt-in: code-generator
+# is the canonical opt-in per the ADR (code correctness cannot be
+# evaluated from a one-line summary alone). The Calibration Gate's
+# critic agents receive the deliverable content as part of the
+# evaluation input.
+calibration_substrate_access: artifact
+
 default_task: |
   Help with a coding task from the client. Produce a clear,
   correct, and focused response. Prefer concrete code or specific

@@ -20,6 +20,11 @@ description: |
 
 topaz_skill: logical_reasoning
 
+# ADR-025 §"Scope: always, for capability ensembles" — deliverable
+# routes through SessionArtifactStore; envelope.artifacts[0] carries
+# the typed reference. AS-7 amended: result-summarizer is skipped.
+output_substrate: artifact
+
 default_task: |
   Map the logical structure of the argument in the provided text.
   Produce a structured analysis with these sections (in this order):

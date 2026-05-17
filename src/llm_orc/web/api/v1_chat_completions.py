@@ -26,6 +26,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -64,10 +65,13 @@ from llm_orc.agentic.orchestrator_runtime import (
 )
 from llm_orc.agentic.orchestrator_tool_dispatch import (
     TOOL_NAMES,
+    EnsembleConfigOutputSchemaReader,
+    EnsembleConfigSubstrateReader,
     OrchestratorToolDispatch,
 )
 from llm_orc.agentic.plexus_adapter import PlexusAdapter
 from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
+from llm_orc.agentic.session_artifact_store import SessionArtifactStore
 from llm_orc.agentic.session_registry import SessionRegistry
 from llm_orc.agentic.session_start import ChatMessage, SessionContext, SessionStartCache
 from llm_orc.agentic.tier_router import (
@@ -96,6 +100,7 @@ _SHARED_TOOL_DISPATCH: OrchestratorToolDispatch | None = None
 _SHARED_CONVERSATION_COMPACTION: ConversationCompaction | None = None
 _SHARED_DISPATCH_EVENT_SUBSTRATE: DispatchEventSubstrate | None = None
 _SHARED_OPERATOR_TERMINAL_SINK: OperatorTerminalEventSink | None = None
+_SHARED_SESSION_ARTIFACT_STORE: SessionArtifactStore | None = None
 
 
 def get_session_registry() -> SessionRegistry:
@@ -152,6 +157,38 @@ def get_operator_terminal_event_sink() -> OperatorTerminalEventSink:
     return _SHARED_OPERATOR_TERMINAL_SINK
 
 
+def get_session_artifact_store() -> SessionArtifactStore:
+    """Return the process-scoped Session Artifact Store (Cycle 6 WP-E).
+
+    Per ADR-025 §"Session-dir location" the store owns the
+    ``.llm-orc/agentic-sessions/<session_id>/<dispatch_id>/<deliverable>.<ext>``
+    layout. Construction reads the operator-configured
+    ``observability.agentic_sessions_root`` (default
+    ``.llm-orc/agentic-sessions/``) and resolves it to an absolute
+    :class:`~pathlib.Path` rooted at the current working directory so
+    operator overrides flow through.
+
+    On first construction the store registers its
+    :meth:`~llm_orc.agentic.session_artifact_store.SessionArtifactStore.cleanup_session`
+    bound method as a close callback on the shared Session Registry
+    per ADR-025 §"Cleanup" + ``system-design.agents.md`` §"Session
+    Registry → Session Artifact Store" — session close drives
+    cleanup of ``retention: session`` artifacts.
+    """
+    global _SHARED_SESSION_ARTIFACT_STORE
+    if _SHARED_SESSION_ARTIFACT_STORE is None:
+        resolver = get_orchestrator_config_resolver()
+        config = resolver.resolve()
+        root = Path(config.observability.agentic_sessions_root)
+        store = SessionArtifactStore(agentic_sessions_root=root)
+        registry = get_session_registry()
+        registry.register_close_callback(
+            lambda identity: store.cleanup_session(identity.value)
+        )
+        _SHARED_SESSION_ARTIFACT_STORE = store
+    return _SHARED_SESSION_ARTIFACT_STORE
+
+
 def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
     """Return the process-scoped Tool Dispatch.
 
@@ -193,6 +230,19 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
         )
         substrate = get_dispatch_event_substrate()
         sink = get_operator_terminal_event_sink()
+        # Cycle 6 WP-E (ADR-025) production wiring: SessionArtifactStore
+        # at the substrate slot; EnsembleConfigSubstrateReader bridges
+        # to OrchestraService.find_ensemble_by_name for per-ensemble
+        # output_substrate / output_retention / calibration_substrate_access
+        # lookup; EnsembleConfigOutputSchemaReader activates the ADR-024
+        # advisory JSON-parse path the WP-D envelope construction reads.
+        artifact_store = get_session_artifact_store()
+        substrate_reader = EnsembleConfigSubstrateReader(
+            find_ensemble=service.find_ensemble_by_name
+        )
+        output_schema_reader = EnsembleConfigOutputSchemaReader(
+            find_ensemble=service.find_ensemble_by_name
+        )
         _SHARED_TOOL_DISPATCH = OrchestratorToolDispatch(
             operations=service,
             harness=harness,
@@ -214,6 +264,9 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
             # exists for testability and as a future composition
             # surface; it is dead in this wiring path.
             tool_call_emit_logger=sink,
+            output_schema_reader=output_schema_reader,
+            ensemble_substrate_reader=substrate_reader,
+            session_artifact_store=artifact_store,
         )
     return _SHARED_TOOL_DISPATCH
 
@@ -692,8 +745,6 @@ def _write_dispatch_log_safe(
     response-time error to the client. The operator-terminal sink
     surfaces the failure separately.
     """
-    from pathlib import Path
-
     try:
         resolver = get_orchestrator_config_resolver()
         config = resolver.resolve_validated()

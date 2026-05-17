@@ -21,6 +21,11 @@ description: |
 
 topaz_skill: factual_knowledge
 
+# ADR-025 §"Scope: always, for capability ensembles" — deliverable
+# routes through SessionArtifactStore; envelope.artifacts[0] carries
+# the typed reference. AS-7 amended: result-summarizer is skipped.
+output_substrate: artifact
+
 # ADR-024 (Cycle 6 WP-D): operator-declared shape for envelope.structured.
 # The dispatch site advisorily attempts to populate envelope.structured
 # from the synthesizer's response when the response parses as JSON. The
@@ -28,6 +33,14 @@ topaz_skill: factual_knowledge
 # at dispatch time; the declaration documents the canonical typed shape
 # for operators who later migrate the task wording to request JSON
 # output (e.g., adding "Output as JSON matching the schema:" guidance).
+# Per Cycle 6 WP-E entry decision (WP-D snapshot moderate advisory 1 —
+# YAML default_task rewrite fork resolution): schema is preserved as
+# documentation; default_task remains unchanged. Spike β's reframing
+# of output-spec drift as orchestrator input.data override means
+# rewriting default_task to request JSON would address the wrong
+# mechanism (the drift is upstream at the orchestrator's reasoning
+# surface, not at the synthesizer's compliance). The structured field
+# populates only when the synthesizer naturally emits JSON.
 output_schema:
   type: object
   properties:

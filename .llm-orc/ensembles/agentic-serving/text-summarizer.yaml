@@ -22,11 +22,24 @@ description: |
 
 topaz_skill: summarization
 
+# ADR-025 §"Scope: always, for capability ensembles" — deliverable
+# routes through SessionArtifactStore; envelope.artifacts[0] carries
+# the typed reference. AS-7 amended: result-summarizer is skipped.
+# (Cycle 6 size-floor tradeoff: short text-summarizer outputs accept
+# substrate overhead deliberately; the dial-back falsification
+# indicators in ADR-025 §"Dial-back falsification criteria" cover
+# the operational-friction case.)
+output_substrate: artifact
+
 # ADR-024 (Cycle 6 WP-D): operator-declared shape for envelope.structured.
 # Documents the canonical typed shape — main_claim, key_points, caveats —
-# without changing the current prose default_task. Dispatch populates
-# envelope.structured advisorily when the synthesizer's response is JSON
-# matching the schema; otherwise structured stays None.
+# without changing the current prose default_task. Per Cycle 6 WP-E
+# entry decision (WP-D snapshot moderate advisory 1 resolution): the
+# schema stays documentary; default_task is preserved. Spike β's
+# reframing places drift at the orchestrator's input.data override,
+# not at the synthesizer's compliance — rewriting default_task would
+# address the wrong layer. Dispatch populates envelope.structured
+# advisorily when the synthesizer naturally emits JSON.
 output_schema:
   type: object
   properties:

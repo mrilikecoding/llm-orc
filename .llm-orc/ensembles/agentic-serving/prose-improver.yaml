@@ -17,6 +17,11 @@ description: |
 
 topaz_skill: writing_quality
 
+# ADR-025 §"Scope: always, for capability ensembles" — deliverable
+# routes through SessionArtifactStore; envelope.artifacts[0] carries
+# the typed reference. AS-7 amended: result-summarizer is skipped.
+output_substrate: artifact
+
 default_task: |
   Improve the clarity and structure of the provided prose. Preserve
   the author's voice, tone, and intent. Improvements should target:

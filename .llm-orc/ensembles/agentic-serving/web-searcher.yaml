@@ -31,13 +31,31 @@ description: |
 
 topaz_skill: tool_use
 
+# ADR-025 §"Scope: always, for capability ensembles" — deliverable
+# routes through SessionArtifactStore; envelope.artifacts[0] carries
+# the typed reference. AS-7 amended: result-summarizer is skipped.
+#
+# Per Cycle 6 DECIDE snapshot Finding 1 advisory carry-forward: this
+# ensemble is migrated EARLY in Cycle 6 WP-E's per-ensemble migration
+# specifically so ADR-025's dial-back falsification Indicator 1
+# (latency overhead for deliverables under 1 KB) and Indicator 4
+# (output_substrate: inline opt-out count) are testable before the
+# rest of the library migrates. The size-floor tradeoff is most
+# pronounced for web-searcher (already-handle-shaped JSON records);
+# operational evidence here is load-bearing for the dial-back
+# deliberation triggered by Indicator firing.
+output_substrate: artifact
+
 # ADR-024 (Cycle 6 WP-D): operator-declared shape for envelope.structured.
 # The script agent already returns structured JSON shaped per the
 # adapter's response contract (results array; each entry carries
 # url + title + snippet). Dispatch attempts JSON parse advisorily;
 # when the script's response is the JSON document it natively returns,
 # envelope.structured carries the typed shape downstream consumers can
-# parse without re-parsing the prose primary.
+# parse without re-parsing the prose primary. Per Cycle 6 WP-E entry
+# decision (WP-D snapshot moderate advisory 1 resolution): schema is
+# documentary; the script's native JSON output already produces
+# structured envelopes when parsed.
 output_schema:
   type: object
   properties:
