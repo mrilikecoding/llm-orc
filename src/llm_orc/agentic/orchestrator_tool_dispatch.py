@@ -41,6 +41,7 @@ closed-set property holds from WP-C onward.
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -90,6 +91,7 @@ from llm_orc.agentic.tool_call_validation_guard import (
 __all__ = [
     "InternalToolCall",
     "OrchestratorToolDispatch",
+    "OutputSchemaReader",
     "PhantomToolCallError",
     "TOOL_NAMES",
     "ToolCallError",
@@ -280,6 +282,29 @@ class ToolCallEmitLogger(Protocol):
     def emit_tool_call_log(self, *, tool_name: str, dispatch_id: str) -> None: ...
 
 
+class OutputSchemaReader(Protocol):
+    """Minimum ``output_schema:`` lookup surface Tool Dispatch consults.
+
+    Cycle 6 WP-D (ADR-024). Production wiring at the Serving Layer (L3)
+    constructs a reader backed by ``EnsembleLoader.find_ensemble`` (or
+    ``OrchestraService.find_ensemble_by_name``) and passes it at
+    construction time. The reader returns the operator-authored
+    ``output_schema:`` dict for the named ensemble, or ``None`` when
+    the field is absent. The Protocol stays L2-local — Tool Dispatch
+    does not import the L0 config module directly, mirroring the
+    pattern :class:`~llm_orc.agentic.tier_router.TopazSkillReader`
+    establishes for tier-routing metadata.
+
+    The schema lookup is advisory at dispatch time per ADR-024 §"Out
+    of scope" — when a schema is declared, ``invoke_ensemble`` attempts
+    to populate ``envelope.structured`` from the synthesizer's response
+    via JSON parse; when the response is not JSON, ``structured``
+    stays ``None`` without raising.
+    """
+
+    def output_schema_for(self, ensemble_name: str) -> dict[str, Any] | None: ...
+
+
 class OrchestratorToolDispatch:
     """Closed five-tool dispatch surface (ADR-003, FC-5)."""
 
@@ -298,6 +323,7 @@ class OrchestratorToolDispatch:
         tier_router_audit: TierEscalationAuditor | None = None,
         event_substrate: DispatchEventSubstrate | None = None,
         tool_call_emit_logger: ToolCallEmitLogger | None = None,
+        output_schema_reader: OutputSchemaReader | None = None,
     ) -> None:
         if tier_router is not None and calibration_gate is None:
             raise ValueError(
@@ -367,6 +393,18 @@ class OrchestratorToolDispatch:
         property FC-23 verifies. Argument-validation failures and the
         no-substrate path both skip the call (no dispatch_id exists in
         either case). ``None`` preserves the pre-piece-4 dispatch path.
+        """
+        self._output_schema_reader = output_schema_reader
+        """Per-ensemble ``output_schema:`` lookup (Cycle 6 WP-D, ADR-024).
+
+        When configured, ``invoke_ensemble``'s envelope-construction
+        step consults the reader for the dispatched ensemble's
+        declared schema. A non-``None`` schema triggers advisory
+        JSON-parse of the synthesizer's response; on parse success the
+        parsed payload becomes ``envelope.structured``. ``None`` (no
+        reader configured) and ``None`` (reader returns no schema for
+        the ensemble) both leave ``envelope.structured`` as ``None``
+        without raising.
         """
 
     def validate_response(
@@ -525,6 +563,24 @@ class OrchestratorToolDispatch:
             ensemble_name=name, session_id=session_id
         )
         exit_status: ExitStatus = "success"
+        # WP-D: end event closes BEFORE envelope construction on success
+        # paths so envelope.diagnostics can project from the emitted
+        # DispatchTiming(end). ``dispatch_event_closed`` guards the
+        # ``finally`` close so it only fires on exception / error paths
+        # where the success path did not explicitly close.
+        #
+        # Invariant: every path through this function emits exactly one
+        # DispatchTiming(end) event. The flag is set immediately after
+        # an explicit close call; the ``finally`` block consults it and
+        # only emits when the success path did not. A future edit that
+        # adds a new return path (e.g., a new typed error post-tier-
+        # selection) MUST either (a) set ``exit_status`` and rely on
+        # the ``finally`` block (most error paths today), or (b) call
+        # ``_close_dispatch_event`` explicitly and set the flag to True
+        # (the WP-D success-path pattern). Adding a return without
+        # either honors-the-invariant pattern would silently break
+        # FC-23's "paired DispatchTiming events per dispatch" property.
+        dispatch_event_closed = False
         try:
             # WP-G4-1, ADR-015: tier-escalation router interposes between
             # the autonomy gate (applied in ``dispatch``) and the actual
@@ -585,18 +641,50 @@ class OrchestratorToolDispatch:
             summarization = await self._harness.summarize(result, raw_output=raw_output)
             match summarization:
                 case SummarizationSuccess(summary=summary):
+                    # WP-D: close the dispatch event BEFORE envelope
+                    # construction so envelope.diagnostics can read
+                    # DispatchTiming(end)'s duration_seconds from the
+                    # substrate's event log.
+                    self._close_dispatch_event(
+                        ensemble_name=name,
+                        dispatch_id=dispatch_id,
+                        start_timestamp=start_timestamp,
+                        exit_status="success",
+                    )
+                    dispatch_event_closed = True
+                    envelope = self._build_envelope(
+                        ensemble_name=name,
+                        dispatch_id=dispatch_id,
+                        raw_result=result,
+                        primary=summary,
+                    )
                     return ToolCallSuccess(
                         id=id_,
                         name="invoke_ensemble",
                         content={"summary": summary},
                         dispatch_id=dispatch_id,
+                        envelope=envelope,
                     )
                 case RawOutputPassthrough(content=passthrough):
+                    self._close_dispatch_event(
+                        ensemble_name=name,
+                        dispatch_id=dispatch_id,
+                        start_timestamp=start_timestamp,
+                        exit_status="success",
+                    )
+                    dispatch_event_closed = True
+                    envelope = self._build_envelope(
+                        ensemble_name=name,
+                        dispatch_id=dispatch_id,
+                        raw_result=result,
+                        primary=_passthrough_primary(passthrough),
+                    )
                     return ToolCallSuccess(
                         id=id_,
                         name="invoke_ensemble",
                         content=passthrough,
                         dispatch_id=dispatch_id,
+                        envelope=envelope,
                     )
                 case SummarizationFailure(reason=reason):
                     exit_status = "error"
@@ -608,12 +696,13 @@ class OrchestratorToolDispatch:
                         dispatch_id=dispatch_id,
                     )
         finally:
-            self._close_dispatch_event(
-                ensemble_name=name,
-                dispatch_id=dispatch_id,
-                start_timestamp=start_timestamp,
-                exit_status=exit_status,
-            )
+            if not dispatch_event_closed:
+                self._close_dispatch_event(
+                    ensemble_name=name,
+                    dispatch_id=dispatch_id,
+                    start_timestamp=start_timestamp,
+                    exit_status=exit_status,
+                )
 
     async def compose_ensemble(
         self, id_: str, arguments: dict[str, Any], session_id: str = ""
@@ -993,6 +1082,155 @@ class OrchestratorToolDispatch:
             success=success,
         )
 
+    def _build_envelope(
+        self,
+        *,
+        ensemble_name: str,
+        dispatch_id: str | None,
+        raw_result: dict[str, Any],
+        primary: str,
+    ) -> DispatchEnvelope:
+        """Construct an ADR-024 envelope for a successful dispatch.
+
+        Cycle 6 WP-D. Reads dispatch events from the Dispatch Event
+        Substrate (when configured) to populate ``diagnostics`` per
+        the system-design interposition order step (10); reads the
+        operator-authored ``output_schema:`` via :attr:`_output_schema_reader`
+        and advisorily parses the synthesizer response as JSON to
+        populate ``structured``.
+
+        Legacy / no-substrate paths produce an envelope with sparse
+        diagnostics (just ``ensemble`` and what the ``raw_result``
+        ``metadata`` dict carries) — the envelope shape is preserved
+        across both substrate-configured and legacy call sites.
+        """
+        diagnostics = self._collect_diagnostics(
+            ensemble_name=ensemble_name,
+            dispatch_id=dispatch_id,
+            raw_result=raw_result,
+        )
+        structured = self._maybe_extract_structured(
+            ensemble_name=ensemble_name, raw_result=raw_result
+        )
+        return DispatchEnvelope(
+            status="success",
+            primary=primary,
+            structured=structured,
+            diagnostics=diagnostics,
+        )
+
+    def _collect_diagnostics(
+        self,
+        *,
+        ensemble_name: str,
+        dispatch_id: str | None,
+        raw_result: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Compose the envelope's ``diagnostics`` dict.
+
+        Substrate-configured path: reads emitted events for
+        ``dispatch_id`` and projects them into the envelope's
+        diagnostic fields (``duration_seconds``, ``model_profile``,
+        ``tier``, ``topaz_skill``, ``calibration_verdict``,
+        ``audit_findings``). Legacy / no-substrate path: best-effort
+        from ``raw_result['metadata']`` (the existing execution.json
+        shape) with ``dispatch_id=None``.
+        """
+        diagnostics: dict[str, Any] = {"ensemble": ensemble_name}
+        if dispatch_id is not None:
+            diagnostics["dispatch_id"] = dispatch_id
+        if self._event_substrate is not None and dispatch_id is not None:
+            self._populate_from_events(diagnostics, dispatch_id)
+        else:
+            metadata = raw_result.get("metadata")
+            if isinstance(metadata, dict):
+                diagnostics["metadata"] = dict(metadata)
+        return diagnostics
+
+    def _populate_from_events(
+        self, diagnostics: dict[str, Any], dispatch_id: str
+    ) -> None:
+        """Project the dispatch's emitted events into ``diagnostics``.
+
+        Reads :meth:`DispatchEventSubstrate.events_for` and discriminates
+        by ``isinstance`` — the substrate does not type-discriminate,
+        so consumers do. Only the success-relevant fields are
+        projected; audit findings accumulate as a list (zero or more
+        per dispatch).
+        """
+        assert self._event_substrate is not None  # narrowed by caller
+        events = self._event_substrate.events_for(dispatch_id)
+        audit_findings: list[dict[str, Any]] = []
+        for event in events:
+            self._project_event(event, diagnostics, audit_findings)
+        diagnostics["audit_findings"] = audit_findings
+
+    @staticmethod
+    def _project_event(
+        event: object,
+        diagnostics: dict[str, Any],
+        audit_findings: list[dict[str, Any]],
+    ) -> None:
+        """Discriminate one event and project it into the diagnostics dict.
+
+        Extracted from :meth:`_populate_from_events` to keep the
+        iteration loop's cognitive complexity within the project's
+        complexipy gate (15). Each branch projects a single event type
+        onto the envelope's diagnostics surface.
+        """
+        if isinstance(event, DispatchTiming) and event.phase == "end":
+            if event.duration_seconds is not None:
+                diagnostics["duration_seconds"] = event.duration_seconds
+            if event.exit_status is not None:
+                diagnostics["exit_status"] = event.exit_status
+        elif isinstance(event, TierSelection):
+            diagnostics["model_profile"] = event.model_profile
+            diagnostics["tier"] = event.tier
+            diagnostics["topaz_skill"] = event.topaz_skill
+        elif isinstance(event, CalibrationVerdictEvent):
+            diagnostics["calibration_verdict"] = event.verdict
+        elif type(event).__name__ == "AuditDiagnostic":
+            # Collect by name rather than direct import so the L2
+            # dependency surface stays narrow (audit module is imported
+            # transitively through tier_router_audit).
+            audit_findings.append(
+                {
+                    "kind": getattr(event, "kind", None),
+                    "ensemble_name": getattr(event, "ensemble_name", None),
+                    "detail": getattr(event, "detail", None),
+                }
+            )
+
+    def _maybe_extract_structured(
+        self, *, ensemble_name: str, raw_result: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Populate ``envelope.structured`` advisorily per ADR-024.
+
+        Returns ``None`` when no schema is declared for the ensemble.
+        When a schema is declared, attempts a JSON parse of the
+        synthesizer's response text; on parse success returns the
+        parsed dict (the synthesizer produced JSON conforming to the
+        declared schema). On parse failure returns ``None`` without
+        raising — schema validation is advisory at dispatch time per
+        spike β's reframing of output-spec drift as ``input.data``
+        override.
+        """
+        if self._output_schema_reader is None:
+            return None
+        schema = self._output_schema_reader.output_schema_for(ensemble_name)
+        if schema is None:
+            return None
+        response_text = _extract_synthesizer_text(raw_result)
+        if response_text is None:
+            return None
+        try:
+            parsed = json.loads(response_text)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if isinstance(parsed, dict):
+            return parsed
+        return None
+
     async def _calibration_check_safe(
         self, *, session_id: str, ensemble_name: str, raw_result: dict[str, Any]
     ) -> QualitySignal | None:
@@ -1014,6 +1252,44 @@ class OrchestratorToolDispatch:
             )
         except Exception:  # noqa: BLE001 — ADR-007 clause 2: never block invocation
             return None
+
+
+def _extract_synthesizer_text(raw_result: dict[str, Any]) -> str | None:
+    """Pull the synthesizer's response text from the execution result.
+
+    Mirrors :func:`~llm_orc.agentic.result_summarizer_harness._extract_summary`'s
+    forgiving contract: prefer ``synthesis`` when populated, otherwise
+    use the single-agent ensemble's lone ``response`` field. Returns
+    ``None`` when neither shape applies — multi-agent ensembles without
+    a synthesizer carry per-agent responses that an envelope-time JSON
+    parse cannot meaningfully unify.
+    """
+    synthesis = raw_result.get("synthesis")
+    if isinstance(synthesis, str) and synthesis:
+        return synthesis
+    results = raw_result.get("results")
+    if isinstance(results, dict) and len(results) == 1:
+        only_result = next(iter(results.values()))
+        if isinstance(only_result, dict):
+            response = only_result.get("response")
+            if isinstance(response, str) and response:
+                return response
+    return None
+
+
+def _passthrough_primary(passthrough: Any) -> str:
+    """Compose ``envelope.primary`` for the raw-output passthrough path.
+
+    ADR-004's ``raw_output=True`` escape hatch lets the orchestrator
+    observe the raw result dict; the envelope still needs a string
+    ``primary``. ``json.dumps(default=str)`` produces a deterministic
+    one-line representation suitable for the operator-readable
+    summary-line slot. Non-serializable members fall back to their
+    ``repr`` via ``default=str``.
+    """
+    if isinstance(passthrough, str):
+        return passthrough
+    return json.dumps(passthrough, default=str)
 
 
 def _log_dispatch_result(tool_name: str, result: ToolCallResult) -> None:

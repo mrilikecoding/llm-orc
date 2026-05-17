@@ -22,6 +22,26 @@ description: |
 
 topaz_skill: summarization
 
+# ADR-024 (Cycle 6 WP-D): operator-declared shape for envelope.structured.
+# Documents the canonical typed shape — main_claim, key_points, caveats —
+# without changing the current prose default_task. Dispatch populates
+# envelope.structured advisorily when the synthesizer's response is JSON
+# matching the schema; otherwise structured stays None.
+output_schema:
+  type: object
+  properties:
+    main_claim:
+      type: string
+    key_points:
+      type: array
+      items:
+        type: string
+    caveats:
+      type: array
+      items:
+        type: string
+  required: [main_claim, key_points]
+
 default_task: |
   Produce a summary of the provided text. The summary should:
 

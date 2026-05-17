@@ -187,6 +187,25 @@ class EnsembleConfig:
     against the closed Topaz taxonomy at dispatch time.
     """
 
+    output_schema: dict[str, Any] | None = None
+    """ADR-024 optional JSON-Schema-shaped description of the typed
+    payload the synthesizer agent (or post-dispatch processing) writes
+    to ``DispatchEnvelope.structured`` (Cycle 6 WP-D).
+
+    When declared, ``invoke_ensemble`` attempts a JSON-parse of the
+    synthesizer's response and, on success, populates
+    ``envelope.structured`` with the parsed payload. Schema validation
+    is **advisory** at dispatch time per spike β's reframing of
+    output-spec drift as ``input.data`` override (the synthesizer is
+    not the drift source; enforcement at the synthesizer would catch
+    the wrong thing). The schema's value is enabling downstream
+    consumers (composing ensembles; the orchestrator's reasoning
+    surface; calibration-gate critics under ``structured``-augmented
+    evaluation) to parse the structured payload predictably when
+    present. ``None`` (the field missing in YAML) means
+    ``envelope.structured`` stays ``None``.
+    """
+
 
 @dataclass(frozen=True)
 class EnsembleValidationResult:
@@ -285,6 +304,11 @@ class EnsembleLoader:
             str(topaz_skill_raw) if topaz_skill_raw is not None else None
         )
 
+        output_schema_raw = data.get("output_schema")
+        output_schema: dict[str, Any] | None = (
+            dict(output_schema_raw) if isinstance(output_schema_raw, dict) else None
+        )
+
         config = EnsembleConfig(
             name=data["name"],
             description=data["description"],
@@ -295,6 +319,7 @@ class EnsembleLoader:
             test_mode=data.get("test_mode"),
             raw_output=bool(data.get("raw_output", False)),
             topaz_skill=topaz_skill,
+            output_schema=output_schema,
         )
 
         # Validate agent dependencies

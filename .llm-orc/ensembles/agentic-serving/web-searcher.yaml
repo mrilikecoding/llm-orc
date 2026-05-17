@@ -31,6 +31,36 @@ description: |
 
 topaz_skill: tool_use
 
+# ADR-024 (Cycle 6 WP-D): operator-declared shape for envelope.structured.
+# The script agent already returns structured JSON shaped per the
+# adapter's response contract (results array; each entry carries
+# url + title + snippet). Dispatch attempts JSON parse advisorily;
+# when the script's response is the JSON document it natively returns,
+# envelope.structured carries the typed shape downstream consumers can
+# parse without re-parsing the prose primary.
+output_schema:
+  type: object
+  properties:
+    results:
+      type: array
+      items:
+        type: object
+        required: [url]
+        properties:
+          url:
+            type: string
+          title:
+            type: string
+          snippet:
+            type: string
+    error:
+      type: object
+      properties:
+        kind:
+          type: string
+        message:
+          type: string
+
 default_task: |
   Search the web for the provided query. Return top results with
   URLs and snippets.
