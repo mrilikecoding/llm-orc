@@ -114,6 +114,35 @@ class Compaction(Protocol):
     ) -> CompactedContext: ...
 
 
+class ContextObservationSink(Protocol):
+    """Orchestrator-Context Event Sink surface the Runtime queries at turn boundary.
+
+    Per ADR-023 §"Destination 2 — Orchestrator-context" and
+    system-design.agents.md §"Orchestrator Runtime → Orchestrator-
+    Context Event Sink": at each turn boundary (after a dispatch
+    returns control, before the next ``generate_with_tools`` call),
+    the Runtime calls ``observation_message_for(dispatch_id)`` and
+    appends the returned message dict to ``messages``. Returning
+    ``None`` indicates no observation to prepend (the dispatch's
+    events were filtered out — e.g., cross-session bleed-through —
+    or the sink was wired but the dispatch_id is unknown).
+
+    The Protocol keeps the Runtime decoupled from
+    :class:`OrchestratorContextEventSink` per FC-4. The sink owns
+    the observation shape (role, content format); Runtime owns only
+    the timing (when to inject) and the dispatch_id (which dispatch
+    to inject for).
+
+    Final-dispatch handling: when Runtime returns before the next
+    iteration's top (LLM emitted no tool calls; session closes), the
+    observation for the final dispatch is never queried via this
+    Protocol — the sink's :meth:`dispatch_log_entries` captures it
+    for the end-of-session summary instead.
+    """
+
+    def observation_message_for(self, dispatch_id: str) -> dict[str, Any] | None: ...
+
+
 def _build_tool_schemas() -> list[dict[str, Any]]:
     """OpenAI-compatible tool schemas for the closed five-tool set.
 
@@ -183,6 +212,7 @@ class OrchestratorRuntime:
         tool_dispatch: ToolDispatcher,
         system_prompt: str = "",
         compaction: Compaction | None = None,
+        context_sink: ContextObservationSink | None = None,
     ) -> None:
         """Construct a Runtime for one session turn.
 
@@ -204,12 +234,23 @@ class OrchestratorRuntime:
         ``CompactedContext`` becomes the messages array the LLM
         sees. ``None`` disables compaction — used by tests that do
         not need it and by deployments that defer the feature.
+
+        ``context_sink`` is the optional Orchestrator-Context Event
+        Sink interposer (WP-C, ADR-023 §Destination 2). When
+        supplied, after each ``invoke_ensemble`` dispatch completes,
+        the Runtime queries the sink at the top of the *next*
+        iteration (before ``generate_with_tools``) for a structured
+        observation message and appends it to ``messages``. The
+        final dispatch (no next iteration) is naturally excluded —
+        the end-of-session summary captures those events. ``None``
+        disables observation injection.
         """
         self._llm = llm
         self._budget = budget
         self._tool_dispatch = tool_dispatch
         self._system_prompt = system_prompt
         self._compaction = compaction
+        self._context_sink = context_sink
 
     async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
         """Run the ReAct loop for this session turn.
@@ -230,6 +271,11 @@ class OrchestratorRuntime:
         if self._system_prompt:
             messages.insert(0, {"role": "system", "content": self._system_prompt})
         tools = _build_tool_schemas() + list(context.tools)
+        # ADR-023 §Destination 2 — last dispatch_id pending observation
+        # injection at the next turn boundary. Cleared after injection.
+        # Final dispatch (no next iteration) leaves this set but never
+        # consumes it; the sink's dispatch_log captures those events.
+        pending_dispatch_id: str | None = None
         # Client-declared tool names — only these route to ClientToolCall.
         # Names that appear in neither ``TOOL_NAMES`` nor ``client_tool_names``
         # fall through to Tool Dispatch, which returns ``unknown_tool`` — so
@@ -244,18 +290,10 @@ class OrchestratorRuntime:
                 yield exhaustion_chunks[1]
                 return
 
-            # WP-E4 / ADR-012: invoke Conversation Compaction at the
-            # turn boundary per system-design.agents.md §"Orchestrator
-            # Runtime → Conversation Compaction" (line 612). The
-            # compacted messages array is what flows into the next LLM
-            # call; below-threshold inputs are returned untouched
-            # (``triggered=False``).
-            if self._compaction is not None:
-                compacted = self._compaction.compact(
-                    messages, session_id=state.identity.value
-                )
-                if compacted.triggered:
-                    messages = compacted.messages
+            messages = self._prepare_iteration_messages(
+                messages, pending_dispatch_id, state.identity.value
+            )
+            pending_dispatch_id = None
 
             response = await self._llm.generate_with_tools(
                 messages=messages, tools=tools
@@ -267,13 +305,61 @@ class OrchestratorRuntime:
             ):
                 continue
 
-            chunks, signal = await self._chunks_for_response(
+            chunks, signal, last_dispatch_id = await self._chunks_for_response(
                 messages, response, client_tool_names, state.identity.value
             )
             for chunk in chunks:
                 yield chunk
+            if last_dispatch_id is not None:
+                pending_dispatch_id = last_dispatch_id
             if signal == "return":
                 return
+
+    def _prepare_iteration_messages(
+        self,
+        messages: list[dict[str, Any]],
+        pending_dispatch_id: str | None,
+        session_id: str,
+    ) -> list[dict[str, Any]]:
+        """Apply pre-LLM turn-boundary mutations: observation + compaction.
+
+        WP-C / ADR-023 Destination 2: query the orchestrator-context
+        sink for a pending observation first, so the observation enters
+        the compaction's input array. WP-E4 / ADR-012: invoke
+        Conversation Compaction at the turn boundary; below-threshold
+        inputs are returned untouched. Returns the (possibly compacted)
+        messages array the next ``generate_with_tools`` call should see.
+        """
+        self._maybe_inject_observation(messages, pending_dispatch_id)
+        if self._compaction is None:
+            return messages
+        compacted = self._compaction.compact(messages, session_id=session_id)
+        if compacted.triggered:
+            return compacted.messages
+        return messages
+
+    def _maybe_inject_observation(
+        self,
+        messages: list[dict[str, Any]],
+        pending_dispatch_id: str | None,
+    ) -> None:
+        """Append the orchestrator-context observation for a pending dispatch.
+
+        No-ops when no sink is configured, no dispatch is pending, or
+        the sink returns ``None`` (unknown / filtered dispatch_id).
+        Mutates ``messages`` in place — same convention as the other
+        turn-boundary message-appends in :meth:`run`. Compaction may
+        then summarize the appended observation alongside other prior
+        content; the observation is just another message at the turn
+        boundary.
+        """
+        if pending_dispatch_id is None or self._context_sink is None:
+            return
+        observation_message = self._context_sink.observation_message_for(
+            pending_dispatch_id
+        )
+        if observation_message is not None:
+            messages.append(observation_message)
 
     async def _chunks_for_response(
         self,
@@ -281,15 +367,19 @@ class OrchestratorRuntime:
         response: ToolCallingResponse,
         client_tool_names: frozenset[str],
         session_id: str,
-    ) -> tuple[list[OrchestratorChunk], Literal["return", "continue"]]:
-        """Compute chunks + control signal for a (non-phantom) LLM response.
+    ) -> tuple[list[OrchestratorChunk], Literal["return", "continue"], str | None]:
+        """Compute chunks + control signal + last dispatch_id for an LLM response.
 
-        Returns ``(chunks, "return")`` for terminal cases — bare stop
-        response or pure client-tool delegation — so the caller's
+        Returns ``(chunks, "return", None)`` for terminal cases — bare
+        stop response or pure client-tool delegation — so the caller's
         ``run`` loop yields the chunks then returns. Returns
-        ``(chunks, "continue")`` for the in-loop cases (mixed batch
-        rejection or internal-tool dispatch); the caller yields and
-        loops to the next iteration.
+        ``(chunks, "continue", last_dispatch_id)`` for the in-loop cases
+        (mixed batch rejection or internal-tool dispatch). The
+        ``last_dispatch_id`` is the dispatch_id of the most recent
+        ``invoke_ensemble`` call in this iteration (``None`` if no
+        ``invoke_ensemble`` ran or the substrate is not configured) —
+        the caller updates its pending-observation tracker so the next
+        iteration's top injects the structured observation per ADR-023.
 
         Buffering chunks (rather than yielding directly) keeps the
         outer ``run`` method's cognitive complexity below the
@@ -301,7 +391,7 @@ class OrchestratorRuntime:
             chunks.append(ContentDelta(content=response.content))
         if not response.tool_calls:
             chunks.append(Completion(finish_reason="stop"))
-            return chunks, "return"
+            return chunks, "return", None
         client_calls, internal_calls = _split_tool_calls(
             response.tool_calls, client_tool_names
         )
@@ -310,20 +400,20 @@ class OrchestratorRuntime:
             # violated. Reject all; the LLM retries with a pure batch
             # on the next iteration. See ``_record_mixed_batch_rejection``.
             _record_mixed_batch_rejection(messages, response)
-            return chunks, "continue"
+            return chunks, "continue", None
         if client_calls:
             # Option C: pure client-declared batch closes the turn.
             # DAG engine runs atomically (ADR-001/002); no mid-turn
             # callback. The client executes the tools and resumes the
             # Session on the next ``/v1/chat/completions`` request.
             chunks.append(_client_delegation_chunk(client_calls))
-            return chunks, "return"
+            return chunks, "return", None
         messages.append(_assistant_message(response))
-        async for chunk in self._dispatch_internal_calls(
+        dispatch_chunks, last_dispatch_id = await self._dispatch_internal_calls(
             response.tool_calls, messages, session_id
-        ):
-            chunks.append(chunk)
-        return chunks, "continue"
+        )
+        chunks.extend(dispatch_chunks)
+        return chunks, "continue", last_dispatch_id
 
     def _budget_exhaustion_chunks(
         self, state: Any
@@ -376,8 +466,8 @@ class OrchestratorRuntime:
         tool_calls: list[ToolCall],
         messages: list[dict[str, Any]],
         session_id: str,
-    ) -> AsyncIterator[OrchestratorChunk]:
-        """Dispatch a pure-internal batch and yield observation chunks.
+    ) -> tuple[list[OrchestratorChunk], str | None]:
+        """Dispatch a pure-internal batch and return chunks + last dispatch_id.
 
         Each call flows through Tool Dispatch, which interposes Autonomy
         Policy (WP-E), the Calibration Gate (WP-H), and the Result
@@ -390,12 +480,19 @@ class OrchestratorRuntime:
         dispatch-side per-session state (Calibration Gate records for
         composed ensembles under calibration) keys correctly.
 
-        Extracting this loop out of :meth:`run` keeps that method's
-        complexity under the project's cyclomatic ceiling while
-        preserving the ReAct loop's readability at the outer level.
+        Returns a tuple of (chunks_in_emission_order, last_dispatch_id).
+        ``last_dispatch_id`` is the ADR-023 correlation identifier of
+        the most recent ``invoke_ensemble`` in this batch (``None`` if
+        none of the calls were ``invoke_ensemble`` or the substrate is
+        not configured). The caller threads it back to ``run`` so the
+        next iteration's top injects the structured observation.
         """
+        chunks: list[OrchestratorChunk] = []
+        last_dispatch_id: str | None = None
         for tool_call in tool_calls:
-            yield InternalToolCallInFlight(id=tool_call.id, name=tool_call.name)
+            chunks.append(
+                InternalToolCallInFlight(id=tool_call.id, name=tool_call.name)
+            )
             parsed = InternalToolCall(
                 id=tool_call.id,
                 name=tool_call.name,
@@ -403,11 +500,16 @@ class OrchestratorRuntime:
             )
             result = await self._tool_dispatch.dispatch(parsed, session_id=session_id)
             for event in result.events:
-                yield event
-            yield InternalToolCallResult(
-                id=result.id, summary=_tool_result_summary(result)
+                chunks.append(event)
+            chunks.append(
+                InternalToolCallResult(
+                    id=result.id, summary=_tool_result_summary(result)
+                )
             )
             messages.append(_tool_result_message(result))
+            if result.dispatch_id is not None:
+                last_dispatch_id = result.dispatch_id
+        return chunks, last_dispatch_id
 
 
 def _session_message_to_llm(message: ChatMessage) -> dict[str, Any]:

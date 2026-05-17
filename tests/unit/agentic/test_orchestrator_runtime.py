@@ -977,3 +977,256 @@ class TestRuntimeCompactionInvocation:
         completions = [c for c in chunks if isinstance(c, Completion)]
         assert len(completions) == 1
         assert completions[0].finish_reason == "stop"
+
+
+class TestContextObservationSink:
+    """WP-C — orchestrator-context sink integration at turn boundaries.
+
+    Per ADR-023 §Destination 2: after each ``invoke_ensemble`` dispatch,
+    the Runtime queries the sink at the next iteration top and appends
+    the returned observation message to ``messages``. The final dispatch
+    is excluded naturally — Runtime returns before the next iteration.
+    """
+
+    @staticmethod
+    def _two_iter_responses(
+        call_id: str = "call_inv", call_name: str = "invoke_ensemble"
+    ) -> list[ToolCallingResponse]:
+        return [
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(id=call_id, name=call_name, arguments_json="{}"),
+                ],
+                usage=ToolCallUsage(
+                    prompt_tokens=20, completion_tokens=5, total_tokens=25
+                ),
+                finish_reason="tool_calls",
+            ),
+            ToolCallingResponse(
+                content="done.",
+                tool_calls=[],
+                usage=ToolCallUsage(
+                    prompt_tokens=40, completion_tokens=4, total_tokens=44
+                ),
+                finish_reason="stop",
+            ),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_observation_message_prepended_at_next_turn_boundary(
+        self,
+    ) -> None:
+        """Per FC §Destination 2: after a dispatch, the next LLM call
+        sees the observation message appended to ``messages``."""
+        llm = _ScriptedLLM(responses=self._two_iter_responses())
+        dispatch_id = "test-session-dispatch-0001"
+        tool_dispatch = _StubToolDispatch(
+            results={
+                "call_inv": ToolCallSuccess(
+                    id="call_inv",
+                    name="invoke_ensemble",
+                    content={"summary": "ok"},
+                    dispatch_id=dispatch_id,
+                )
+            }
+        )
+
+        class _StubContextSink:
+            def __init__(self) -> None:
+                self.queried_ids: list[str] = []
+
+            def observation_message_for(
+                self, dispatch_id: str
+            ) -> dict[str, Any] | None:
+                self.queried_ids.append(dispatch_id)
+                return {
+                    "role": "user",
+                    "content": '{"dispatched": "code-generator"}',
+                }
+
+        sink = _StubContextSink()
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=BudgetController(turn_limit=10, token_limit=1000),
+            tool_dispatch=tool_dispatch,
+            context_sink=sink,
+        )
+
+        await _collect(runtime.run(_make_session_context()))
+
+        assert sink.queried_ids == [dispatch_id]
+        assert len(llm.calls) == 2
+        second_messages = llm.calls[1][0]
+        observation_messages = [
+            m
+            for m in second_messages
+            if m.get("role") == "user"
+            and isinstance(m.get("content"), str)
+            and '"dispatched"' in m["content"]
+        ]
+        assert len(observation_messages) == 1
+
+    @pytest.mark.asyncio
+    async def test_final_dispatch_observation_not_injected(self) -> None:
+        """No next iteration means no observation injection — the
+        end-of-session dispatch_log captures those events instead."""
+        llm = _ScriptedLLM(
+            responses=[
+                ToolCallingResponse(
+                    content="",
+                    tool_calls=[
+                        ToolCall(
+                            id="call_inv",
+                            name="invoke_ensemble",
+                            arguments_json="{}",
+                        ),
+                    ],
+                    usage=ToolCallUsage(
+                        prompt_tokens=50, completion_tokens=50, total_tokens=100
+                    ),
+                    finish_reason="tool_calls",
+                ),
+            ]
+        )
+        dispatch_id = "test-session-dispatch-0001"
+        tool_dispatch = _StubToolDispatch(
+            results={
+                "call_inv": ToolCallSuccess(
+                    id="call_inv",
+                    name="invoke_ensemble",
+                    content={"summary": "ok"},
+                    dispatch_id=dispatch_id,
+                )
+            }
+        )
+        sink_queries: list[str] = []
+
+        class _StubContextSink:
+            def observation_message_for(
+                self, dispatch_id: str
+            ) -> dict[str, Any] | None:
+                sink_queries.append(dispatch_id)
+                return {"role": "user", "content": "{}"}
+
+        context = _make_session_context()
+        budget = BudgetController(turn_limit=100, token_limit=100)
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=budget,
+            tool_dispatch=tool_dispatch,
+            context_sink=_StubContextSink(),
+        )
+
+        await _collect(runtime.run(context))
+
+        assert len(llm.calls) == 1
+        assert sink_queries == []
+
+    @pytest.mark.asyncio
+    async def test_context_sink_returning_none_does_not_break_runtime(
+        self,
+    ) -> None:
+        """Sink may return ``None`` (unknown dispatch_id, cross-session
+        bleed-through filtered out). Runtime continues without appending."""
+        llm = _ScriptedLLM(responses=self._two_iter_responses())
+        tool_dispatch = _StubToolDispatch(
+            results={
+                "call_inv": ToolCallSuccess(
+                    id="call_inv",
+                    name="invoke_ensemble",
+                    content={"summary": "ok"},
+                    dispatch_id="test-session-dispatch-0001",
+                )
+            }
+        )
+
+        class _NoneSink:
+            def observation_message_for(
+                self, dispatch_id: str
+            ) -> dict[str, Any] | None:
+                return None
+
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=BudgetController(turn_limit=10, token_limit=1000),
+            tool_dispatch=tool_dispatch,
+            context_sink=_NoneSink(),
+        )
+
+        await _collect(runtime.run(_make_session_context()))
+
+        assert len(llm.calls) == 2
+        second_messages = llm.calls[1][0]
+        for message in second_messages:
+            content = message.get("content")
+            if isinstance(content, str):
+                assert '"dispatched"' not in content
+
+    @pytest.mark.asyncio
+    async def test_without_context_sink_runtime_works_unchanged(self) -> None:
+        """``context_sink=None`` is the pre-WP-C behavior."""
+        llm = _ScriptedLLM(responses=self._two_iter_responses())
+        tool_dispatch = _StubToolDispatch(
+            results={
+                "call_inv": ToolCallSuccess(
+                    id="call_inv",
+                    name="invoke_ensemble",
+                    content={"summary": "ok"},
+                    dispatch_id="test-session-dispatch-0001",
+                )
+            }
+        )
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=BudgetController(turn_limit=10, token_limit=1000),
+            tool_dispatch=tool_dispatch,
+        )
+
+        await _collect(runtime.run(_make_session_context()))
+
+        assert len(llm.calls) == 2
+        second_messages = llm.calls[1][0]
+        for message in second_messages:
+            content = message.get("content")
+            if isinstance(content, str) and message.get("role") == "user":
+                assert '"dispatched"' not in content
+
+    @pytest.mark.asyncio
+    async def test_observation_not_queried_for_non_invoke_ensemble_dispatches(
+        self,
+    ) -> None:
+        """Other tools do not allocate a dispatch_id; sink is never queried."""
+        llm = _ScriptedLLM(
+            responses=self._two_iter_responses(
+                call_id="call_list", call_name="list_ensembles"
+            )
+        )
+        tool_dispatch = _StubToolDispatch(
+            results={
+                "call_list": ToolCallSuccess(
+                    id="call_list",
+                    name="list_ensembles",
+                    content=[{"name": "a"}],
+                )
+            }
+        )
+        sink_queries: list[str] = []
+
+        class _StubContextSink:
+            def observation_message_for(
+                self, dispatch_id: str
+            ) -> dict[str, Any] | None:
+                sink_queries.append(dispatch_id)
+                return {"role": "user", "content": "{}"}
+
+        runtime = OrchestratorRuntime(
+            llm=llm,
+            budget=BudgetController(turn_limit=10, token_limit=1000),
+            tool_dispatch=tool_dispatch,
+            context_sink=_StubContextSink(),
+        )
+
+        await _collect(runtime.run(_make_session_context()))
+
+        assert sink_queries == []

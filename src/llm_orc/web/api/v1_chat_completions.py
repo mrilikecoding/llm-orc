@@ -55,6 +55,9 @@ from llm_orc.agentic.orchestrator_chunk import (
     ContentDelta,
     VisibilityEvent,
 )
+from llm_orc.agentic.orchestrator_context_event_sink import (
+    OrchestratorContextEventSink,
+)
 from llm_orc.agentic.orchestrator_runtime import (
     OrchestratorLLM,
     OrchestratorRuntime,
@@ -202,6 +205,14 @@ def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
             tier_router=tier_router,
             tier_router_audit=tier_router_audit,
             event_substrate=substrate,
+            # WP-B feed-forward advisory 2: in production wiring this
+            # logger slot is the bare operator-terminal sink (not the
+            # heartbeat scheduler). The scheduler observes dispatch
+            # activity via the substrate's DispatchTiming fan-out
+            # filtered by session_id prefix — NOT via this emit-logger
+            # slot. The scheduler's ``emit_tool_call_log`` method
+            # exists for testability and as a future composition
+            # surface; it is dead in this wiring path.
             tool_call_emit_logger=sink,
         )
     return _SHARED_TOOL_DISPATCH
@@ -361,19 +372,29 @@ async def chat_completions(
     long-inference waits.
     """
     context = _resolve_context(request)
-    runtime = await _build_runtime()
-    scheduler = _build_heartbeat_scheduler(session_id=context.state.identity.value)
+    session_id = context.state.identity.value
+    context_sink = _build_context_sink(session_id=session_id)
+    runtime = await _build_runtime(context_sink=context_sink)
+    scheduler = _build_heartbeat_scheduler(session_id=session_id)
 
     if request.stream:
         return StreamingResponse(
             _stream_completion_with_heartbeat(
-                context, runtime, model=request.model, scheduler=scheduler
+                context,
+                runtime,
+                model=request.model,
+                scheduler=scheduler,
+                context_sink=context_sink,
             ),
             media_type="text/event-stream",
         )
 
     return await _build_completion_body_with_heartbeat(
-        context, runtime, model=request.model, scheduler=scheduler
+        context,
+        runtime,
+        model=request.model,
+        scheduler=scheduler,
+        context_sink=context_sink,
     )
 
 
@@ -394,6 +415,28 @@ def _build_heartbeat_scheduler(*, session_id: str) -> InferenceWaitHeartbeatSche
         sink=sink,
         session_id=session_id,
         interval_seconds=config.observability.heartbeat_interval_seconds,
+    )
+
+
+def _build_context_sink(*, session_id: str) -> OrchestratorContextEventSink:
+    """Construct a per-request Orchestrator-Context Event Sink (Cycle 6 WP-C).
+
+    Per ADR-023 §Destination 2: each request has its own sink so the
+    session-prefix filter cleanly isolates dispatches from cross-session
+    traffic — same pattern as :func:`_build_heartbeat_scheduler` per
+    WP-B feed-forward advisory 3. Reads
+    ``observability.orchestrator_context_routes_calibration_signal``
+    (default ``False``) to decide whether to include
+    :class:`CalibrationSignal` events in the end-of-session
+    ``dispatch_log`` summary.
+    """
+    resolver = get_orchestrator_config_resolver()
+    config = resolver.resolve_validated()
+    return OrchestratorContextEventSink(
+        session_id=session_id,
+        routes_calibration_signal=(
+            config.observability.orchestrator_context_routes_calibration_signal
+        ),
     )
 
 
@@ -465,12 +508,20 @@ def _resolve_context(request: _ChatCompletionsRequest) -> SessionContext:
     return context
 
 
-async def _build_runtime() -> OrchestratorRuntime:
+async def _build_runtime(
+    *, context_sink: OrchestratorContextEventSink | None = None
+) -> OrchestratorRuntime:
     """Construct a per-session Runtime from the resolved orchestrator config.
 
     ``resolve_validated`` raises if the operator-configured Model
     Profile is absent from the library, so session start fails loudly
     rather than booting with a profile that cannot be loaded.
+
+    ``context_sink`` (Cycle 6 WP-C, ADR-023 §Destination 2) is the
+    per-request orchestrator-context sink, when supplied. Runtime
+    queries it at each turn boundary after an ``invoke_ensemble``
+    dispatch and prepends the structured observation to the next
+    LLM call's messages.
     """
     resolver = get_orchestrator_config_resolver()
     config = resolver.resolve_validated()
@@ -486,6 +537,7 @@ async def _build_runtime() -> OrchestratorRuntime:
         tool_dispatch=get_orchestrator_tool_dispatch(),
         system_prompt=config.orchestrator_system_prompt,
         compaction=get_conversation_compaction(),
+        context_sink=context_sink,
     )
 
 
@@ -561,17 +613,22 @@ async def _stream_completion_with_heartbeat(
     *,
     model: str,
     scheduler: InferenceWaitHeartbeatScheduler,
+    context_sink: OrchestratorContextEventSink,
 ) -> AsyncIterator[bytes]:
-    """Wrap :func:`_stream_completion` with heartbeat scheduler lifecycle.
+    """Wrap :func:`_stream_completion` with heartbeat + context-sink lifecycle.
 
-    The scheduler registers with the shared substrate, starts its async
-    background loop, and is unregistered after the stream finishes
-    (normal completion, exception, or client disconnect). FastAPI's
-    streaming response runtime invokes the cleanup branch when the
-    underlying async generator's ``aclose`` runs.
+    The scheduler and the orchestrator-context sink both register with
+    the shared substrate at request open; the scheduler starts its
+    async heartbeat loop; the response stream runs; on completion (or
+    exception, or client disconnect) the heartbeat task is cancelled,
+    the context sink writes its end-of-session ``dispatch_log`` to
+    the per-session path, and both register/unregister handshakes
+    reverse. FastAPI's streaming response runtime invokes the cleanup
+    branch when the underlying async generator's ``aclose`` runs.
     """
     substrate = get_dispatch_event_substrate()
     scheduler.register_with(substrate)
+    context_sink.register_with(substrate)
     heartbeat_task = asyncio.create_task(scheduler.run())
     try:
         async for chunk in _stream_completion(context, runtime, model=model):
@@ -582,6 +639,8 @@ async def _stream_completion_with_heartbeat(
             await heartbeat_task
         except asyncio.CancelledError:
             pass
+        _write_dispatch_log_safe(context_sink, session_id=context.state.identity.value)
+        context_sink.unregister_with(substrate)
         scheduler.unregister_with(substrate)
 
 
@@ -591,10 +650,16 @@ async def _build_completion_body_with_heartbeat(
     *,
     model: str,
     scheduler: InferenceWaitHeartbeatScheduler,
+    context_sink: OrchestratorContextEventSink,
 ) -> dict[str, Any]:
-    """Wrap :func:`_build_completion_body` with heartbeat scheduler lifecycle."""
+    """Wrap :func:`_build_completion_body` with heartbeat + context-sink lifecycle.
+
+    Mirrors :func:`_stream_completion_with_heartbeat` for non-streaming
+    requests — both lifecycles wrap the body-construction call.
+    """
     substrate = get_dispatch_event_substrate()
     scheduler.register_with(substrate)
+    context_sink.register_with(substrate)
     heartbeat_task = asyncio.create_task(scheduler.run())
     try:
         return await _build_completion_body(context, runtime, model=model)
@@ -604,7 +669,43 @@ async def _build_completion_body_with_heartbeat(
             await heartbeat_task
         except asyncio.CancelledError:
             pass
+        _write_dispatch_log_safe(context_sink, session_id=context.state.identity.value)
+        context_sink.unregister_with(substrate)
         scheduler.unregister_with(substrate)
+
+
+def _write_dispatch_log_safe(
+    context_sink: OrchestratorContextEventSink, *, session_id: str
+) -> None:
+    """Write the orchestrator-context sink's dispatch_log to per-session path.
+
+    Per ADR-023 §"end-of-session summary" — the path is
+    ``<agentic_sessions_root>/<session_id>/dispatch_log.json`` (default
+    root ``.llm-orc/agentic-sessions/`` per config). WP-E lands the
+    broader agentic-sessions tree (per-dispatch directories per
+    ADR-025); WP-C writes a standalone dispatch_log.json under the
+    session-scoped subdirectory so the integration composes when WP-E
+    arrives.
+
+    Exceptions during the write are caught and logged at WARN — a
+    filesystem failure at request close must not propagate as a
+    response-time error to the client. The operator-terminal sink
+    surfaces the failure separately.
+    """
+    from pathlib import Path
+
+    try:
+        resolver = get_orchestrator_config_resolver()
+        config = resolver.resolve_validated()
+        root = Path(config.observability.agentic_sessions_root)
+        path = root / session_id / "dispatch_log.json"
+        context_sink.write_dispatch_log(path)
+    except Exception:  # noqa: BLE001 — close-time IO failure must not propagate
+        import logging
+
+        logging.getLogger("llm_orc.agentic.orchestrator_context").warning(
+            "dispatch_log write failed for session_id=%s", session_id, exc_info=True
+        )
 
 
 async def _build_completion_body(
