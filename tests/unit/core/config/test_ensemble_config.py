@@ -248,6 +248,235 @@ class TestEnsembleLoader:
         finally:
             Path(yaml_path).unlink()
 
+    def test_load_ensemble_reads_output_substrate_when_present(self) -> None:
+        """ADR-025 (Cycle 6 WP-E): output_substrate declared in YAML
+        becomes the loaded config's output_substrate string. The loader
+        accepts either ``artifact`` or ``inline`` verbatim; downstream
+        dispatch reads this to route the deliverable through
+        SessionArtifactStore vs. the inline-response path."""
+        ensemble_yaml = {
+            "name": "code_gen",
+            "description": "Capability ensemble — substrate-routed",
+            "output_substrate": "artifact",
+            "agents": [
+                {"name": "coder", "model": "sonnet", "provider": "anthropic"},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            config = EnsembleLoader().load_from_file(yaml_path)
+            assert config.output_substrate == "artifact"
+        finally:
+            Path(yaml_path).unlink()
+
+    def test_load_ensemble_defaults_output_substrate_to_none_when_absent(self) -> None:
+        """Backward compat: pre-WP-E ensembles without output_substrate
+        load with the field set to None. ADR-025's "default per ensemble
+        category" defaulting (capability ensembles → artifact; system
+        ensembles → inline) is the dispatch-site's concern when the YAML
+        declaration is absent — the loader stays a faithful YAML→dataclass
+        translator without baking in category judgments."""
+        ensemble_yaml = {
+            "name": "no_substrate_ensemble",
+            "description": "Pre-WP-E ensemble",
+            "agents": [
+                {"name": "agent", "model": "sonnet", "provider": "anthropic"},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            config = EnsembleLoader().load_from_file(yaml_path)
+            assert config.output_substrate is None
+        finally:
+            Path(yaml_path).unlink()
+
+    def test_load_ensemble_ignores_invalid_output_substrate_values(self) -> None:
+        """An output_substrate value outside the closed set
+        (``artifact``, ``inline``) loads as None rather than raising.
+        Operators using a typo or future-extension keyword get the
+        documented default behavior; dispatch logs an advisory when the
+        absence shows up at a substrate-routing decision point."""
+        ensemble_yaml = {
+            "name": "typo_substrate_ensemble",
+            "description": "Test typo output_substrate",
+            "output_substrate": "artefact",  # British spelling — typo
+            "agents": [
+                {"name": "agent", "model": "sonnet", "provider": "anthropic"},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            config = EnsembleLoader().load_from_file(yaml_path)
+            assert config.output_substrate is None
+        finally:
+            Path(yaml_path).unlink()
+
+    def test_load_ensemble_reads_output_retention_when_present(self) -> None:
+        """ADR-025 (Cycle 6 WP-E): output_retention declared in YAML
+        becomes the loaded config's output_retention string. Accepted
+        values are ``session`` / ``durable`` / ``ephemeral`` per ADR-025
+        §"Retention semantics"; the loader translates verbatim."""
+        ensemble_yaml = {
+            "name": "durable_ensemble",
+            "description": "Capability ensemble whose deliverables persist",
+            "output_substrate": "artifact",
+            "output_retention": "durable",
+            "agents": [
+                {"name": "agent", "model": "sonnet", "provider": "anthropic"},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            config = EnsembleLoader().load_from_file(yaml_path)
+            assert config.output_retention == "durable"
+        finally:
+            Path(yaml_path).unlink()
+
+    def test_load_ensemble_defaults_output_retention_to_none_when_absent(self) -> None:
+        """Backward compat + default-at-dispatch posture: pre-WP-E
+        ensembles load with output_retention = None; the dispatch path
+        applies the documented default (``session`` for substrate-routed
+        ensembles per ADR-025)."""
+        ensemble_yaml = {
+            "name": "no_retention_ensemble",
+            "description": "Pre-WP-E ensemble",
+            "agents": [
+                {"name": "agent", "model": "sonnet", "provider": "anthropic"},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            config = EnsembleLoader().load_from_file(yaml_path)
+            assert config.output_retention is None
+        finally:
+            Path(yaml_path).unlink()
+
+    def test_load_ensemble_ignores_invalid_output_retention_values(self) -> None:
+        """An output_retention value outside ``session`` / ``durable`` /
+        ``ephemeral`` loads as None rather than raising. Same tolerant
+        posture as output_substrate — typos and future keywords surface
+        as ``defaults applied`` at dispatch time, not loader crashes."""
+        ensemble_yaml = {
+            "name": "typo_retention_ensemble",
+            "description": "Test typo output_retention",
+            "output_substrate": "artifact",
+            "output_retention": "forever",  # not a valid retention literal
+            "agents": [
+                {"name": "agent", "model": "sonnet", "provider": "anthropic"},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            config = EnsembleLoader().load_from_file(yaml_path)
+            assert config.output_retention is None
+        finally:
+            Path(yaml_path).unlink()
+
+    def test_load_ensemble_reads_calibration_substrate_access_when_present(
+        self,
+    ) -> None:
+        """ADR-025 §"Calibration-gate evaluation surface" (Cycle 6 WP-E):
+        calibration_substrate_access declared in YAML becomes the loaded
+        config's field. ``artifact`` opts the ensemble into critic-agent
+        file-read of the deliverable; the default (absent or ``summary``)
+        keeps critics evaluating envelope.primary + artifacts[0].summary
+        only."""
+        ensemble_yaml = {
+            "name": "code_generator",
+            "description": "Code generation — calibration reads artifact content",
+            "output_substrate": "artifact",
+            "calibration_substrate_access": "artifact",
+            "agents": [
+                {"name": "coder", "model": "sonnet", "provider": "anthropic"},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            config = EnsembleLoader().load_from_file(yaml_path)
+            assert config.calibration_substrate_access == "artifact"
+        finally:
+            Path(yaml_path).unlink()
+
+    def test_load_ensemble_defaults_calibration_substrate_access_to_none(
+        self,
+    ) -> None:
+        """Backward compat: pre-WP-E ensembles without
+        calibration_substrate_access load with the field set to None; the
+        Calibration Gate applies summary-only evaluation as documented."""
+        ensemble_yaml = {
+            "name": "no_calibration_access_ensemble",
+            "description": "Pre-WP-E ensemble",
+            "agents": [
+                {"name": "agent", "model": "sonnet", "provider": "anthropic"},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            config = EnsembleLoader().load_from_file(yaml_path)
+            assert config.calibration_substrate_access is None
+        finally:
+            Path(yaml_path).unlink()
+
+    def test_load_ensemble_ignores_invalid_calibration_substrate_access(
+        self,
+    ) -> None:
+        """A calibration_substrate_access value outside ``summary`` /
+        ``artifact`` loads as None rather than raising; the gate applies
+        summary-only evaluation per the documented default. Mirrors the
+        tolerant load posture used for output_substrate / output_retention.
+        """
+        ensemble_yaml = {
+            "name": "typo_calibration_access_ensemble",
+            "description": "Test typo calibration_substrate_access",
+            "output_substrate": "artifact",
+            "calibration_substrate_access": "summery",  # typo
+            "agents": [
+                {"name": "agent", "model": "sonnet", "provider": "anthropic"},
+            ],
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            yaml.dump(ensemble_yaml, f)
+            yaml_path = f.name
+
+        try:
+            config = EnsembleLoader().load_from_file(yaml_path)
+            assert config.calibration_substrate_access is None
+        finally:
+            Path(yaml_path).unlink()
+
     def test_list_ensembles_in_directory(self) -> None:
         """Test listing available ensembles in a directory."""
         with tempfile.TemporaryDirectory() as temp_dir:
