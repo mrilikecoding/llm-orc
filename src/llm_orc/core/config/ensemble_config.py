@@ -97,6 +97,23 @@ def detect_cycle(agents: list[AgentConfig]) -> list[str] | None:
     return None
 
 
+def _validated_literal(raw: Any, allowed: set[str]) -> str | None:
+    """Return ``raw`` if it is one of ``allowed``; otherwise ``None``.
+
+    Used by :meth:`EnsembleLoader.load_from_file` to load ADR-025's
+    Cycle 6 WP-E optional YAML fields (``output_substrate``,
+    ``output_retention``, ``calibration_substrate_access``) tolerantly:
+    values inside the closed set load verbatim; values outside it (or
+    of the wrong type) collapse to ``None`` so the dispatch site
+    applies its documented default rather than the session failing to
+    start on an operator typo. Matches the established loader posture
+    on ``output_schema`` (non-dict → ``None`` rather than raise).
+    """
+    if isinstance(raw, str) and raw in allowed:
+        return raw
+    return None
+
+
 def assert_no_cycles(agents: list[AgentConfig]) -> None:
     """Raise ValueError if any cycle exists in agent dependencies.
 
@@ -206,6 +223,76 @@ class EnsembleConfig:
     ``envelope.structured`` stays ``None``.
     """
 
+    output_substrate: str | None = None
+    """ADR-025 optional substrate-routing declaration (Cycle 6 WP-E).
+
+    Accepted values ``"artifact"`` and ``"inline"``. The dispatch path
+    reads this field to decide whether the dispatched ensemble's
+    deliverable routes through SessionArtifactStore (``artifact`` —
+    writes to ``.llm-orc/agentic-sessions/<session_id>/<dispatch_id>/``;
+    envelope.primary carries a summary line; envelope.artifacts[0]
+    carries the typed ArtifactReference; agentic-result-summarizer
+    is skipped per AS-7 amended) or remains inline (``inline`` —
+    envelope.primary carries the summarized content; agentic-result-
+    summarizer fires per ADR-004 within the inline scope).
+
+    ``None`` (the field missing in YAML) means the dispatch path
+    applies its category default — capability ensembles default to
+    ``artifact``; system ensembles default to ``inline``. The loader
+    stays a faithful YAML→dataclass translator; category-defaulting
+    is the dispatch site's concern. Values outside the closed pair
+    load as ``None`` rather than raising so a typo surfaces as
+    ``defaults applied`` at dispatch time, not a session-start crash.
+    """
+
+    output_retention: str | None = None
+    """ADR-025 optional retention semantics for substrate-routed
+    deliverables (Cycle 6 WP-E).
+
+    Accepted values ``"session"`` / ``"durable"`` / ``"ephemeral"``
+    per ADR-025 §"Retention semantics":
+
+    * ``session`` — retained for the session's lifetime; cleaned up
+      when the session closes. The dispatch-site default for
+      substrate-routed deliverables that are substantive but not
+      promoted.
+    * ``durable`` — retained indefinitely; survives session close.
+      Used when the operator (or downstream skill framework) requests
+      preservation.
+    * ``ephemeral`` — retained only until the orchestrator's next
+      turn; cleaned up after. Used for intermediate-stage deliverables
+      that downstream stages consume immediately.
+
+    ``None`` (the field missing in YAML) means the dispatch site
+    applies ``session`` as the documented default for substrate-routed
+    ensembles. Values outside the closed triple load as ``None``
+    rather than raising — same tolerant posture as ``output_substrate``.
+    """
+
+    calibration_substrate_access: str | None = None
+    """ADR-025 §"Calibration-gate evaluation surface" optional opt-in
+    (Cycle 6 WP-E).
+
+    Accepted values ``"summary"`` and ``"artifact"``:
+
+    * ``summary`` (default at dispatch site when absent) — Calibration
+      Gate critic agents evaluate envelope.primary + artifacts[0].summary
+      only. Lowest-cost evaluation path; sufficient for ensembles whose
+      quality is reasonably inferrable from a summary line
+      (web-searcher URL-snippet records, text-summarizer paragraph
+      summaries).
+    * ``artifact`` — critic agents receive a tool-call surface to read
+      ``artifacts[0].path`` and evaluate against actual deliverable
+      content. Highest-cost evaluation path; required for ensembles
+      whose quality cannot be evaluated from summary alone (notably
+      ``code-generator`` — code correctness needs the code).
+
+    ``None`` (the field missing in YAML) means the gate applies
+    summary-only evaluation per the documented default. Values outside
+    the closed pair load as ``None`` — typos surface as ``default
+    applied`` rather than session-start crashes.
+    """
+
 
 @dataclass(frozen=True)
 class EnsembleValidationResult:
@@ -309,6 +396,19 @@ class EnsembleLoader:
             dict(output_schema_raw) if isinstance(output_schema_raw, dict) else None
         )
 
+        output_substrate = _validated_literal(
+            data.get("output_substrate"),
+            {"artifact", "inline"},
+        )
+        output_retention = _validated_literal(
+            data.get("output_retention"),
+            {"session", "durable", "ephemeral"},
+        )
+        calibration_substrate_access = _validated_literal(
+            data.get("calibration_substrate_access"),
+            {"summary", "artifact"},
+        )
+
         config = EnsembleConfig(
             name=data["name"],
             description=data["description"],
@@ -320,6 +420,9 @@ class EnsembleLoader:
             raw_output=bool(data.get("raw_output", False)),
             topaz_skill=topaz_skill,
             output_schema=output_schema,
+            output_substrate=output_substrate,
+            output_retention=output_retention,
+            calibration_substrate_access=calibration_substrate_access,
         )
 
         # Validate agent dependencies
