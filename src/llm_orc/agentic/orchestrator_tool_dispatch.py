@@ -44,8 +44,9 @@ import dataclasses
 import json
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from llm_orc.agentic.autonomy_policy import Allow, AutonomyDecision, Deny
 from llm_orc.agentic.calibration_gate import (
@@ -93,7 +94,16 @@ from llm_orc.agentic.tool_call_validation_guard import (
     scan_response_for_phantom_claims,
 )
 
+if TYPE_CHECKING:
+    # L2 → L0 read for the concrete reader bridges that the Serving
+    # Layer (L3) instantiates against EnsembleConfig. TYPE_CHECKING-only
+    # because the Protocols above keep the runtime coupling narrow —
+    # only the bridge classes need to know EnsembleConfig's shape.
+    from llm_orc.core.config.ensemble_config import EnsembleConfig
+
 __all__ = [
+    "EnsembleConfigOutputSchemaReader",
+    "EnsembleConfigSubstrateReader",
     "EnsembleSubstrateReader",
     "InternalToolCall",
     "OrchestratorToolDispatch",
@@ -373,6 +383,70 @@ class EnsembleSubstrateReader(Protocol):
     def substrate_config_for(
         self, ensemble_name: str
     ) -> SubstrateRoutingConfig | None: ...
+
+
+class EnsembleConfigOutputSchemaReader:
+    """Default :class:`OutputSchemaReader` backed by EnsembleConfig.
+
+    Production wiring at the Serving Layer (L3) constructs this with
+    a ``find_ensemble`` callable that resolves a name to an
+    :class:`~llm_orc.core.config.ensemble_config.EnsembleConfig` (via
+    :meth:`~llm_orc.services.orchestra_service.OrchestraService.find_ensemble_by_name`).
+    Mirrors the :class:`EnsembleConfigTopazSkillReader` pattern at the
+    Tier-Escalation Router seam.
+
+    Returns the operator-authored ``output_schema:`` dict, or ``None``
+    when the ensemble is unknown or declares no schema — both cases
+    leave ``envelope.structured`` as ``None`` per ADR-024's advisory-
+    parsing contract.
+    """
+
+    def __init__(
+        self,
+        find_ensemble: Callable[[str], EnsembleConfig | None],
+    ) -> None:
+        self._find_ensemble = find_ensemble
+
+    def output_schema_for(self, ensemble_name: str) -> dict[str, Any] | None:
+        config = self._find_ensemble(ensemble_name)
+        if config is None:
+            return None
+        return config.output_schema
+
+
+class EnsembleConfigSubstrateReader:
+    """Default :class:`EnsembleSubstrateReader` backed by EnsembleConfig.
+
+    Production wiring at the Serving Layer (L3) constructs this with
+    a ``find_ensemble`` callable that resolves a name to an
+    :class:`~llm_orc.core.config.ensemble_config.EnsembleConfig`. The
+    reader projects the four substrate-routing-relevant fields
+    (``output_substrate``, ``output_retention``,
+    ``calibration_substrate_access``, ``topaz_skill``) into the L2-local
+    :class:`SubstrateRoutingConfig` so Tool Dispatch consumes only what
+    the substrate branch needs.
+
+    Returns ``None`` when the ensemble is unknown — the dispatch
+    branch defers to the inline path for unknown ensembles; the
+    invoke step itself surfaces missing-ensemble errors.
+    """
+
+    def __init__(
+        self,
+        find_ensemble: Callable[[str], EnsembleConfig | None],
+    ) -> None:
+        self._find_ensemble = find_ensemble
+
+    def substrate_config_for(self, ensemble_name: str) -> SubstrateRoutingConfig | None:
+        config = self._find_ensemble(ensemble_name)
+        if config is None:
+            return None
+        return SubstrateRoutingConfig(
+            output_substrate=config.output_substrate,
+            output_retention=config.output_retention,
+            calibration_substrate_access=config.calibration_substrate_access,
+            topaz_skill=config.topaz_skill,
+        )
 
 
 class OrchestratorToolDispatch:
