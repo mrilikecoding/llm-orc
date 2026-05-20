@@ -54,8 +54,73 @@ The three clusters are linked: the operator cannot tell what routing decision ha
 | BUILD WP-E (pieces 1-4) | ✅ Partial (2026-05-16, commits `302bb5d` piece 1 + `4deb536` piece 2 + `2cc2847` piece 3 + `5ec7a6f` piece 4) | Piece 1: ADR-022 system-prompt amendment in `DEFAULT_ORCHESTRATOR_SYSTEM_PROMPT` (`src/llm_orc/agentic/orchestrator_config.py`); 4 textual anchors verified by unit test (capability-match framing, prefer-invoke_ensemble commitment, verb-displacement disambiguation, direct-completion-as-residual). Piece 2: `EnsembleConfig` gains 3 optional fields (`output_substrate`, `output_retention`, `calibration_substrate_access`); tolerant load posture matches `output_schema` precedent (typos and invalid values → `None`, dispatch applies documented defaults). Piece 3: new L1 module `src/llm_orc/agentic/session_artifact_store.py` (`ArtifactReference` frozen dataclass + `SessionArtifactStore` + `new_session_id`) owns ADR-025 path layout, retention semantics enforcement (`session`/`durable`/`ephemeral`), per-artifact `.retention` marker file for restart-survivability. Piece 4: Session Registry gains `register_close_callback` + `close_session(identity)` (L3 → L1 lifecycle hook); best-effort fan-out (callback raise → WARN, subsequent callbacks still fire); integration test wires `SessionArtifactStore.cleanup_session` as a real callback consumer end-to-end. 2812 tests passing (+34 new). Each piece committed independently per WP-D snapshot moderate-advisory-2 (commit discipline). The folded WP-D cleanup (YAML `default_task` rewrites for 3 already-migrated YAMLs) is queued for session 2's YAML migration piece. | "Session-1 scoped to foundational pieces — schema fields, module addition, lifecycle hook — all structure-vs-behavior clean (piece 2 is pure `refactor:`; pieces 1, 3, 4 are pure `feat:` adding new capability surfaces with no production behavior shifts to existing dispatch). No vacuous-pass tests introduced (third signal from WP-D snapshot still at two instances)." |
 | BUILD WP-E (pieces 5-8) | ✅ Complete (2026-05-16, commits `54ed9e0` complexity-budget refactor + `425edb0` piece 5 + `995d66a` piece 6 + `f6fa4a3` piece 7 + `c4c3698` piece 8) | **Refactor** `54ed9e0`: extracted `_validate_invoke_arguments` from `invoke_ensemble` to free complexity budget for the substrate branch (no behavior change; structure-vs-behavior discipline honored per WP-D moderate advisory 2). **Piece 5** `425edb0`: substrate-routing branch on `OrchestratorToolDispatch` — new `SubstrateRoutingConfig` dataclass + `EnsembleSubstrateReader` Protocol (L2-local); optional `session_artifact_store` and `ensemble_substrate_reader` init slots; `_route_substrate_or_none` gating helper (collapses five conditions); `_route_dispatch_to_substrate` executes substrate write + envelope construction; module-level helpers `_effective_output_substrate`, `_resolve_substrate_content_type`, `_coerce_retention_or_default`, `_build_substrate_summary_line`, `_format_size_bytes`; `_build_envelope` gains `artifact_reference` parameter. AS-7 amended: harness skipped for substrate path. 25 new unit tests including FC-22 unit-level anchor. **Piece 6** `995d66a`: Calibration Gate three evaluation surfaces — `_shape_calibration_evaluation_input` produces summary-only (default) / structured-augmented / artifact-content opt-in payloads per `calibration_substrate_access`; `_route_dispatch_to_substrate` becomes async, runs calibration AFTER artifact write with shaped payload; ADR-007 clause 2 preserved. 8 new unit tests. **Piece 7** `f6fa4a3`: capability YAML migration (6 ensembles declare `output_substrate: artifact`; `code-generator` opt-in `calibration_substrate_access: artifact`; `web-searcher` migrated early per DECIDE Finding 1 advisory); WP-D advisory 1 resolved as option (b) — schemas stay documentary, `default_task` preserved per spike β's reframing of drift mechanism. Tool Dispatch concrete reader bridges (`EnsembleConfigSubstrateReader`, `EnsembleConfigOutputSchemaReader`) and serve-layer `get_session_artifact_store` factory wire the production path; SessionArtifactStore.cleanup_session registered as Session Registry close callback. **Piece 8** `c4c3698`: FC-22 three-surface integration test (event stream ↔ envelope.diagnostics ↔ artifact filesystem path) + FC-26 substrate-path-skips-harness / inline-path-invokes-once / mixed-mode session tests. 2849 tests passing under `make test`. Susceptibility snapshot at `housekeeping/audits/susceptibility-snapshot-cycle-6-build-wp-e.md` (combined session 1 + session 2 work). | "WP-E closed. Auto-mode self-administered. Refactor-then-feat discipline cleanly honored per WP-D advisory 2: the complexity-budget extraction landed as a separate `refactor:` commit BEFORE the substrate-branch `feat:` commit; FC-8's structural floor (every ToolCallSuccess in invoke_ensemble's AST dominated by summarize-match) is preserved because the substrate-routed ToolCallSuccess lives in `_route_dispatch_to_substrate`, a helper FC-8 does not walk. Vacuous-pass accumulator from WP-D held at two instances — no new vacuous tests introduced in session 2 (FC-22 + FC-26 integration tests use real components end-to-end). WP-D advisory 1 (YAML default_task rewrite fork) resolved as option (b) — schema-as-documentary preserves spike β's drift-mechanism finding; rewriting default_task would target the wrong layer." |
 | BUILD | ✅ Complete (2026-05-16) | All 5 WPs (WP-A through WP-E) closed; ADR-022/023/024/025 fully realized in code; AS-7 amended structurally enforced in production wiring; 2849 tests passing under `make test`. Architectural floor in place for ADR-025 always-scope substrate routing; the dial-back falsification indicators (per ADR-025 §"Dial-back falsification criteria") become live in PLAY observation. | (build-phase epistemic close — see WP-E entry's Auto-mode commentary; phase boundary susceptibility snapshot at `housekeeping/audits/susceptibility-snapshot-cycle-6-build-wp-e.md` captures combined session 1 + session 2 BUILD work) |
-| PLAY | ☐ Optional | — | — |
+| PLAY | ☐ Pending (practitioner-selected next; see PLAY-entry context below) | — | — |
 | SYNTHESIZE | ☐ Optional | — | — |
+
+## PLAY-entry context (BUILD close 2026-05-16 → PLAY entry)
+
+A fresh session entering Cycle 6 PLAY should read in this order:
+
+1. This file (Cycle 6 cycle-status.md) — current state.
+2. `housekeeping/audits/susceptibility-snapshot-cycle-6-build-wp-e.md` — the BUILD-phase boundary snapshot. **Four advisory feed-forwards for PLAY** are recorded there; they are the structural reading of "what PLAY should attend to that BUILD's empirical floor could not reach."
+3. `essays/research-logs/cycle-6-spike-gamma-routing-characterization.md` — the four-cell baseline that ADR-022's amendment is meant to shift. Cells A and B are the canonical re-runs.
+4. `essays/reflections/field-notes.md` Cycle 5 PLAY section — the prior observational baseline the user explicitly wants to compare against ("taking another whirl through previous play scenarios to compare results"). Notes 1–9, 13–15, 19, 20 are the most relevant routing/observability/AS-7-stripping baselines.
+5. `decisions/adr-022-*.md`, `adr-023-*.md`, `adr-024-*.md`, `adr-025-*.md` — the four ADRs whose effectiveness PLAY characterizes.
+6. `roadmap.md` WP-E §"Dial-back falsification indicators" — the ADR-025 falsification criteria PLAY observation is meant to feed.
+
+### PLAY agenda (provisional — refine in /rdd-play entry)
+
+**Spike γ re-runs (ADR-022 amendment effectiveness):**
+
+- **Cell A re-run** (MiniMax M2.5-free + OpenCode tool-rich + NL framing): does the amendment shift routing from direct LLM completion to `invoke_ensemble`? The probe prompt held constant from Cycle 6 spike γ (*"Write a Python function that reverses a string in place."*). Disposition (i)/(ii)/(iii) outcome is recorded.
+- **Cell B re-run** (qwen3:14b via `agentic-orchestrator-offline-tools` + OpenCode tool-rich + NL): the harder case. Spike γ's data weakened the prompt's effectiveness under qwen3:14b; ADR-022 §"Effectiveness is configuration-conditional" deferred the cross-profile characterization to BUILD or follow-on PLAY. This is that characterization.
+- **Optional Cell A-explicit re-run** to verify the explicit-naming dispatch path still routes cleanly under the amended prompt (regression check).
+
+**ADR-025 substrate-routing in operational use:**
+
+- **Code-generator dispatch** — does the substrate-routing path produce an artifact at `.llm-orc/agentic-sessions/<session_id>/<dispatch_id>/code-generator.py`? Does `agentic-result-summarizer` stay un-invoked? Does the **orchestrator-narration substitution** failure mode (spike γ's fourth-defect surface, Cell A-explicit) actually dissolve as predicted?
+- **Composition pipeline** (`web-searcher` → `claim-extractor` → `argument-mapper`): does spike β's reframing hold operationally? The drift mechanism is orchestrator `input.data` override; substrate routing doesn't address that directly. PLAY observes whether the orchestrator-narration substitution dissolves while `input.data` drift persists (the spike β-vs-spike γ split).
+- **AS-7 stripping** (Cycle 5 PLAY note 6 baseline) — does the failure mode disappear for substrate-routed dispatches?
+
+**ADR-025 dial-back falsification indicators (live-observation):**
+
+- **Indicator 1** — Latency overhead for deliverables under 1 KB. `web-searcher` is the canonical probe (migrated early per DECIDE snapshot Finding 1).
+- **Indicator 4** — Opt-out counter (current count: 0 capability ensembles declared `output_substrate: inline`; threshold: three or more).
+- **Indicator 5** — Cross-dispatch shared-substrate references (added at DECIDE gate). Three deliberate references emerging would fire dial-back.
+- **Indicator 2** is preserved but with reduced load-bearing status per DECIDE gate calibration note.
+
+**ADR-023 observability surface in operational use:**
+
+- **Per-event log lines** — does the operator-terminal sink emit the per-event INFO lines (dispatch start, tier selection, calibration verdict, dispatch end) for substrate-routed dispatches? Are they readable?
+- **Inference-wait heartbeat** (WP-B advisory 4 carry-forward) — does the heartbeat fire during real cloud-LLM inference waits >30s?
+- **Validate-once-at-load** — does the noise floor stay quiet across a multi-`list_ensembles()` session (zero re-validation warnings)?
+- **Orchestrator-context observation** (WP-C) — does the orchestrator's reasoning surface receive structured observations between turns? Can it answer Cycle 5 PLAY note 12's question (*"What was the total run-time of the ensemble?"*) from the observation block?
+- **Compaction-observation interaction** (WP-C advisory carry-forward) — does the observation survive the compaction step at high turn counts?
+- **End-to-end `dispatch_log.json`** (WP-C advisory carry-forward) — verify the per-session log lands on disk at request close.
+
+### Active BUILD-snapshot advisories carrying into PLAY (from `susceptibility-snapshot-cycle-6-build-wp-e.md`)
+
+1. Field-guide annotation for `envelope.structured = None` by design across migrated ensembles — prevents false-negative PLAY findings (low-moderate). Worth a small field-guide note before PLAY's observation pass.
+2. FC-8 docstring note naming FC-26 as the substrate-path sibling floor (low).
+3. `web-searcher` content-type label mismatch note for PLAY artifact observers (low) — the script emits JSON but the substrate writes the artifact with `application/python` if mistakenly routed; verify the label resolution for `tool_use` topaz_skill.
+4. Active WP-B/C carry-forwards: heartbeat live-deployment, compaction-observation interaction, serve-close end-to-end path, web-searcher ADR-025 falsification indicators.
+
+### Settled premises going into PLAY
+
+1. **ADR-025 substrate routing is wired and tested** — 6 capability ensembles substrate-route; 2 system ensembles remain inline; harness skip is structurally enforced; FC-22 three-surface property verified end-to-end.
+2. **AS-7 amended is in force** — substrate-routed dispatches do not invoke `agentic-result-summarizer`; the inline-response path retains ADR-004's mandate.
+3. **ADR-022 amendment is in force** — `DEFAULT_ORCHESTRATOR_SYSTEM_PROMPT` carries the `prefer invoke_ensemble` clause; effectiveness is per-orchestrator-profile-conditional per disposition (iii); PLAY's spike γ re-runs characterize this.
+4. **ADR-023 observability surface is wired** — operator-terminal sink + orchestrator-context sink registered; substrate-routed dispatches emit through the same shared `DispatchEventSubstrate`.
+5. **ADR-024 typed envelope is the return shape** — `DispatchEnvelope` rides on `ToolCallSuccess.envelope` for every successful `invoke_ensemble` dispatch.
+
+### Open questions PLAY should address
+
+1. **Does the ADR-022 amendment shift routing under MiniMax M2.5-free?** Cell A re-run is the empirical test. If yes → disposition (ii) lands. If no → disposition (iii) becomes load-bearing.
+2. **Does the orchestrator-narration substitution surface (spike γ's fourth-defect) actually dissolve under substrate routing?** PLAY's code-generator probe is the test.
+3. **Does the operator experience the substrate-routing latency overhead as "in the way" for `web-searcher`?** ADR-025 Indicator 2 (operator-experience friction) is preserved but with reduced load-bearing status per DECIDE gate; PLAY observation provides the operator-voice data.
+4. **What does the operator-terminal log read like during a multi-dispatch session under the new event surface?** This is the qualitative readability check Cycle 5 PLAY note 19 ("infrastructure-complete / routing-incomplete") was the negation of — PLAY observes whether the new routing produces operator-readable signal.
+
+---
 
 ## DISCOVER-entry context (carry-forwards from Cycle 5 PLAY close)
 
