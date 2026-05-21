@@ -425,7 +425,12 @@ agentic_serving:
     # defined in agentic-serving-profiles.yaml as `agentic-orchestrator`.
     # Swap to `agentic-orchestrator-offline` (local qwen3:14b) for
     # fully-offline deployments.
-    model_profile: agentic-orchestrator
+    # Cycle 6 PLAY 2026-05-20: temporary swap to paid MiniMax M2.5 profile
+    # to unblock curl-side characterization while the free-tier quota
+    # window is exhausted by the OpenCode session that ran probe 1.
+    # Revert to `agentic-orchestrator` (free tier) when paid tier is no
+    # longer needed.
+    model_profile: agentic-orchestrator-minimax-m25
 
     # ADR-007/014 Calibration Gate (verdict producer + first-N post-hoc
     # result-check). Defaults: N=3 invocations before trust transition;
