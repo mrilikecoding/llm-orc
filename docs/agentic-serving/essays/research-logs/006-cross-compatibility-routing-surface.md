@@ -394,3 +394,35 @@ The original Spike ε (routing-planner ensemble) becomes the candidate for optio
 **This is a substantial revision.** The cycle's research is converging on a richer answer than either the original framing OR the reframe predicted: the architecture needs BOTH the OpenAI tool_choice contract conformance (for clients/models that honor it, like qwen3:14b) AND a server-side mechanism (for clients/models that don't, like paid MiniMax M2.5 via Zen).
 
 ---
+
+## Step 4c — Validation-Spike Decision (ADR-087, recorded 2026-05-21)
+
+**Decision:** RAN prototypes — two validation spikes were invoked in-loop during RESEARCH Phase A.
+
+**Spike 1 — Spike λ (cost-free, qwen3:14b via local Ollama OpenAI-compat):**
+- **Spec design:** Four cells (λ.1 auto-baseline, λ.3 force-invoke_ensemble + tool-rich, λ.4 force-invoke_ensemble + tool-less, λ.5 required + tool-rich) testing the chat-completions handler's `tool_choice` parameter behavior under a tool-calling-capable orchestrator
+- **Time-box:** ~30 minutes
+- **Specific Essay-Outline claim tested:** Phase A reframe's hypothesis that the OpenAI `tool_choice` contract is the existing forced-routing mechanism (Q1 reduces to contract conformance)
+- **What it surfaced:** F1 — `tool_choice={"name":"invoke_ensemble"}` honored correctly under qwen3:14b + tool-rich (dispatch fires, framework synthesizes clean NL response); F3 — silent failure mode under tool-less + force-invoke_ensemble (worth follow-up but production impact low)
+- **What it updates in the Essay-Outline:** Phase A reframe partially validated; mechanism exists in codebase
+
+**Spike 2 — Spike λ-paid (user-authorized cost ~$0.05-0.30; paid MiniMax M2.5 via OpenCode Zen):**
+- **Spec design:** Three cells (λ.3-paid, λ.4-paid, λ.5-paid) replicating the qwen3:14b probes under the cross-compatibility-relevant production model
+- **Time-box:** ~15 minutes
+- **Specific Essay-Outline claim tested:** Whether the qwen3:14b validation generalizes to the production model
+- **What it surfaced:** F-paid-1 — paid MiniMax M2.5 IGNORES `tool_choice={"name":"invoke_ensemble"}` under tool-rich (counter-finding to reframe); F-paid-2 — `tool_choice="required"` produces dispatch but broken composition tail; F-paid-3 — malformed MiniMax-native XML under tool-less force-invoke; F-paid-4 — orchestrator's substrate-path-as-deliverable composition pattern fails at production client interface
+- **What it updates in the Essay-Outline:** Phase A reframe partially CONTRADICTED at production-model layer; C2 model-portability gap finding; C3 server-side mechanism motivation; C4 framework-driven composition continuation motivation
+
+**Rationale for running both spikes (rather than rejecting prototyping):**
+
+The Phase A finding (NL-routing fraction approximately zero under production tool-rich clients) was itself a refinement of the original Cycle 7 question framing. The Phase A reframe proposed that this fraction-zero finding made the cycle's Q1 mechanism work redundant — *"the OpenAI tool_choice contract already provides forced ensemble routing."* Without validation, the reframe would have crystallized into the Essay-Outline as the cycle's central recommendation, propagating downstream into DECIDE / ARCHITECT / BUILD on a hypothesis the production deployment surface might not support.
+
+The validation spike's anticipated value (per ADR-087 felt-trigger): *"Would interaction-grounding (testing the cycle's claims against an actual built slice) surface real additional questions or directions that lit-review and methods alone cannot reach?"* — YES. Spike λ-paid surfaced the model-portability gap that neither the lit-review nor the methods-reviewer audits could have predicted. The resulting C7 hybrid-architecture recommendation is materially richer than the pre-spike reframe.
+
+**Anti-elaboration positioning honored:** the spike work pruned speculative claims at source. Without Spike λ-paid, the Essay-Outline would have committed to *"tool_choice is the answer"* — a speculative claim that ADRs and system-design in DECIDE/ARCHITECT would have elaborated on. The spike's empirical evidence forced the more honest, conditional C7 recommendation.
+
+**Cost honesty:** Spike λ-paid was the cycle's first cost-incurring action. The user authorized it explicitly at ~$0.05-0.30 estimated; actual cost was within budget (~37,685 completion tokens + uncounted prompt tokens). This is recorded for downstream cycles' calibration of when paid-tier probes are justified.
+
+**Recorded for future-cycle review:** Validation-spike investment in RESEARCH is a known-effective method for the agentic-serving corpus. Cycle 6 PLAY established the precedent (Spike δ framework-driven chaining ran in-loop during PLAY and produced the carry-forward finding that motivated Cycle 7). Cycle 7 extended this: validation spikes can run during RESEARCH itself, not just during BUILD or PLAY. Future cycles should treat ADR-087 validation spikes as a standard research-method when a reframe or design hypothesis touches the production deployment surface.
+
+---
