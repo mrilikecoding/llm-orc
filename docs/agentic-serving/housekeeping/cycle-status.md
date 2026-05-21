@@ -10,8 +10,8 @@
 
 **Cycle number:** 7
 **Started:** 2026-05-20 (cycle prepared; RESEARCH not yet entered)
-**Current phase:** research
-**In-progress phase:** research
+**Current phase:** discover
+**In-progress phase:** discover
 **Cycle type:** standard (full pipeline)
 **Plugin version:** v0.8.6
 **Artifact base:** `docs/agentic-serving/`
@@ -61,8 +61,8 @@ These three questions are linked: the routing-decision mechanism + the contract-
 
 | Phase | Status | Artifact | Key Epistemic Response |
 |-------|--------|----------|----------------------|
-| RESEARCH | ▶ In Progress | — | — |
-| DISCOVER | ☐ Pending | — | — |
+| RESEARCH | ✅ Complete | `essays/essay-outline-006-cross-compatibility-routing-surface.md` + reflection `essays/reflections/006-cross-compatibility-routing-surface.md` + research log `essays/research-logs/006-cross-compatibility-routing-surface.md` | Practitioner pushed back on hybrid framing in favor of ADR-027 stronger stance at the gate; cycle responded with tiered-architecture revision (hybrid as starting commitment + ADR-027 as structurally pre-committed escalation). 5 audit rounds verified P1-clean. Susceptibility snapshot surfaced 2 Grounding Reframes (GT-1 C6 elevation; GT-2 hybrid-first ordering language drift). Practitioner authorized pursuing both grounding actions in DISCOVER/DECIDE. |
+| DISCOVER | ▶ In Progress (next) | — | — |
 | MODEL | ☐ Pending | — | — |
 | DECIDE | ☐ Pending | — | — |
 | ARCHITECT | ☐ Pending | — | — |
@@ -82,6 +82,33 @@ To be ordered after RESEARCH establishes the question shape, but pre-named for o
 - **Spike κ (alternative-architecture):** `tool_choice` constrained decoding probe under Zen + MiniMax M2.5 — does Zen support the parameter? Does the model honor it? Latency + reliability shape?
 
 ## Feed-Forward Signals
+
+### From Cycle 7 RESEARCH (closed at gate 2026-05-21)
+
+1. **NL-routing fraction under production tool-rich clients is empirically ~0.** Empirically established across Cycle 6 Spike γ + Cycle 6 PLAY notes 1-25 + Spike λ (qwen3:14b) + Spike λ-paid (paid MiniMax M2.5). ADR-022 amendment effectiveness is bounded to bare-endpoint mode; production tool-rich clients (OpenCode confirmed; Aider/Cursor/Cline inferred) all suppress the amendment. Empirically settled.
+
+2. **OpenAI `tool_choice` mechanism is model-portability-gapped.** The framework implements `tool_choice` correctly (validated under qwen3:14b — Spike λ Cell λ.3 dispatched ensemble + clean NL synthesis). The cross-compatibility-relevant production model (paid MiniMax M2.5 via OpenCode Zen) does NOT honor `tool_choice={"name":"invoke_ensemble"}` under tool-rich conditions (Spike λ-paid Cell λ.3-paid). Three candidate diagnoses (Zen proxy stripping; MiniMax non-conformance; framework tool-list interaction) are unresolved — disambiguation is C2 follow-up.
+
+3. **Tiered architecture is the cycle's DECIDE input.** Hybrid (C3 server-side `tool_choice` interception + C4 framework-driven composition continuation + C5 form-drift enforcement at ensemble-authoring layer + C6 fallback design) as starting commitment, ADR-027 framework-driven dispatch pipeline (orchestrator-LLM removed from dispatch path entirely) as structurally pre-committed escalation triggered by hybrid-effectiveness measurement during BUILD/PLAY. Operational measurement criteria are DECIDE-phase work; the cycle commits to criteria existing.
+
+4. **Orchestrator-LLM is the consistent failure surface across three distinct failure modes.** Composition confabulation (Cycle 6 PLAY note 22 — 8 cache-hit web-searcher dispatches + 0 claim-extractor + fabricated final response); positive control (Spike δ — framework-driven chaining produces faithful citations when orchestrator-LLM is removed); post-dispatch protocol-format failure (Spike λ-paid F-paid-4 — substrate-path file-read attempts in XML or as unreachable client-tool calls). The three modes share the orchestrator-LLM as locus; this is the structural finding motivating the ADR-027 escalation path.
+
+5. **Direct-completion fallback is in tension with the project's value proposition.** Practitioner's RESEARCH-gate stance (2026-05-21): *"llm-orc's stance is that ensembles are used to distribute costs and token to distribute, declarative orchestrations of smaller models. So the orchestrator NEEDs to do that. Otherwise we'd simply use the frontier model."* C6 elevates capability-list discovery to first-order requirement (not documentation work), names structured advisory for Population B, and surfaces operator-observable degradation signaling as a deployment concern.
+
+6. **GROUNDING REFRAME GT-1 (DISCOVER entry):** C6's "first-order requirement" elevation was driven by practitioner stance + one PLAY-constructed stakeholder persona (Skill Orchestration User). Independent product-discovery validation is needed before DECIDE treats the value-misalignment framing as load-bearing. DISCOVER should: (a) treat "capability-list discovery is first-order" as a hypothesis for product-discovery examination, not as inherited commitment; (b) apply Population A / Population B belief-mapping (tool-call-aware OpenAI-family clients vs. developer/script clients); (c) cross-reference Cycle 6 PLAY notes 1/18 (direct-completion quality on string-reverse task) vs. note 7 (code-generator ensemble multi-agent run) for empirical quality contrast.
+
+7. **GROUNDING REFRAME GT-2 (DISCOVER→DECIDE boundary):** C7's "hybrid as starting commitment" ordering is asserted to rest on architectural-continuity cost but the cost differential is not quantified. The Abstract's "structurally pre-committed" language slightly overstates the practitioner's verbatim "if hybrid doesn't work empirically → stronger measures" conditional formulation. At the DISCOVER→DECIDE boundary, produce: (a) explicit build-complexity comparison between Tier 1 hybrid implementation and ADR-027-direct implementation; if costs are within same order of magnitude, ADR-027 as primary recommendation; (b) C2 diagnosis disambiguation BEFORE BUILD (Zen-proxy-specific vs. model-specific vs. framework-interaction) — mechanism design for C3 should be conditional on which diagnosis holds.
+
+8. **Empirical-grounding cluster (four working-inference nodes).** E3.1.1 (server-side `tool_choice` interception preserves client-facing API contract); E4.2.1 (production-client filesystem scope is disjoint from agentic-serving deployment's filesystem); E5.3.3 (framework-driven composition continuation eliminates the orchestrator-narration substitution surface); E6.2.1 (project value-proposition centers on ensemble-distributed orchestration such that direct-completion fallback is a value misalignment). Each needs DECIDE-phase corroboration or explicit residual-uncertainty acceptance before BUILD work proceeds.
+
+9. **Validation-spike-as-research-method precedent extended.** Cycle 6 PLAY ran Spike δ in-loop during PLAY; Cycle 7 RESEARCH extended this to Phase A. Two spikes ran during RESEARCH itself (Spike λ cost-free; Spike λ-paid user-authorized ~$0.05-0.30). The anti-elaboration positioning honored — spikes pruned speculative claims at source rather than allowing them to elaborate downstream into ADRs. Future cycles should treat ADR-087 validation spikes as standard RESEARCH method when reframes or design hypotheses touch the production deployment surface.
+
+10. **Stakeholder model shifts for DISCOVER to surface:**
+    - **Tool User / Population A (tool-call-aware client without alternative-surface access)** — receives current direct-completion behavior; under C6 framing this is a degradation surface, not a satisfactory default
+    - **Tool User / Population B (developer/script client with alternative-surface access)** — can be redirected to `llm-orc invoke` via structured advisory
+    - **Skill Orchestration User (Cycle 6 PLAY stakeholder)** — super-objective "Compose a skill framework against the orchestrator's capability library; expect dispatch when a capability slot fits" was empirically unmet; expectation now mediated by `tool_choice` mechanism + capability-list discovery
+    - **Orchestrator LLM (as actor)** — role constrained in Tier 1 (routing potentially intercepted server-side; composition continuation removed); removed from dispatch path entirely in Tier 2 (ADR-027)
+    - **Ensemble Author / Operator** — new authoring surfaces: routing-planner ensemble (Tier 1 (i') option (i)); synthesizer ensemble (Tier 2 ADR-027); tool-call-as-output-format authoring (Q2 (b))
 
 ### From Cycle 6 PLAY (closed at gate 2026-05-20)
 
@@ -106,13 +133,15 @@ See `cycle-archive/cycle-{1..6}-*.md` for prior-cycle feed-forward signals.
 
 Anyone resuming this cycle in a new session should read in this order:
 
-1. This file (Cycle 7 cycle-status.md) — current state and framing.
-2. `cycle-archive/cycle-6-ensemble-contract-observability-routing.md` — what closed Cycle 6 and what carries forward.
-3. `essays/research-logs/cycle-6-play-grounding.md` — PLAY-tail grounding work that bounded the Cycle 7 premises.
-4. `essays/research-logs/cycle-6-spike-delta-framework-chaining.md` — Spike δ writeup (the empirical foundation for the chain-handling claim).
-5. `housekeeping/audits/susceptibility-snapshot-cycle-6-play.md` — the PLAY-boundary snapshot that triggered the grounding work.
-6. `essays/reflections/field-notes.md` Cycle 6 PLAY section (notes 11-25 + Spike δ + BUILD verdicts table) — the empirical substrate.
-7. `system-design.md` + `roadmap.md` — Cycle 6 close state of the architecture (Cycle 7 will update substantially).
-8. `ORIENTATION.md` — high-level system framing.
+1. This file (Cycle 7 cycle-status.md) — current state and framing. The Feed-Forward Signals From Cycle 7 RESEARCH section above is the most consequential carry-forward.
+2. `essays/essay-outline-006-cross-compatibility-routing-surface.md` — the Cycle 7 RESEARCH Essay-Outline (P1-clean across 5 audit rounds). The structural input to DISCOVER.
+3. `essays/reflections/006-cross-compatibility-routing-surface.md` — Cycle 7 RESEARCH reflection (narrative form per ADR-092 §8). Captures the two reframings (Phase A agent-initiated; RESEARCH-gate user-initiated), the validation-spike methodology observation, and the conditional-vs-pre-commitment language-drift finding.
+4. `housekeeping/audits/susceptibility-snapshot-cycle-7-research.md` — phase-boundary snapshot with GT-1 (C6 elevation) + GT-2 (hybrid-first ordering language drift) Grounding Reframes the practitioner authorized pursuing in DISCOVER/DECIDE.
+5. `essays/research-logs/006-cross-compatibility-routing-surface.md` — Cycle 7 RESEARCH research log (archived). Records Phase A grounding + question-set revision history + Spike λ + Spike λ-paid syntheses + Validation-Spike Decision recording.
+6. `essays/research-logs/cycle-7-spike-lambda-tool-choice.md` — Spike λ + Spike λ-paid empirical writeup. The two probe sequences that produced the model-portability finding.
+7. `cycle-archive/cycle-6-ensemble-contract-observability-routing.md` — what closed Cycle 6 and what carries forward.
+8. `essays/reflections/field-notes.md` Cycle 6 PLAY section (notes 1-25) — the empirical substrate Cycle 7 inherited.
+9. `system-design.md` + `roadmap.md` — Cycle 6 close state of the architecture (Cycle 7 ARCHITECT will update substantially).
+10. `ORIENTATION.md` — high-level system framing.
 
-When ready to enter RESEARCH, `/rdd-research` with the Cycle 7 question framing above as the entry topic.
+When ready to enter DISCOVER, `/rdd-discover` with the Cycle 7 RESEARCH artifacts above as the entry input. The DISCOVER phase should attend specifically to the GT-1 Grounding Reframe (treat C6 "first-order requirement" elevation as a hypothesis for product-discovery examination; apply Population A / Population B belief-mapping) and prepare the GT-2 follow-up (build-complexity comparison + C2 diagnosis disambiguation) as DECIDE-phase work items.
