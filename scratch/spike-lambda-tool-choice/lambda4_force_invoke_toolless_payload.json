@@ -1,0 +1,14 @@
+{
+  "model": "agentic-orchestrator",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Write a Python function that reverses a string in place."
+    }
+  ],
+  "tools": [],
+  "tool_choice": {
+    "type": "function",
+    "function": {"name": "invoke_ensemble"}
+  }
+}

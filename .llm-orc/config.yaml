@@ -427,6 +427,12 @@ agentic_serving:
     # fully-offline deployments. The `agentic-orchestrator-minimax-m25`
     # profile (paid tier, same provider) is available for endpoint
     # characterization when the free-tier quota window is exhausted.
+    # Note (2026-05-20): MiniMax M2.5 free promotion has ended on Zen
+    # (returns 401 with FreeUsageLimitError suggesting OpenCode Go
+    # subscription); the `agentic-orchestrator` profile is currently
+    # blocked. Use `agentic-orchestrator-offline-tools` for cost-free
+    # local operation, or `agentic-orchestrator-minimax-m25` (paid) for
+    # production-shape characterization.
     model_profile: agentic-orchestrator
 
     # ADR-007/014 Calibration Gate (verdict producer + first-N post-hoc

@@ -1,0 +1,5 @@
+{"id":"chatcmpl-9ba2e81534844dc58ebcc68d3408ef47","object":"chat.completion","created":1779331813,"model":"agentic-orchestrator","choices":[{"index":0,"message":{"role":"assistant","content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":1823,"total_tokens":1823}}
+
+---CURL_META---
+http_code: 200
+time_total: 41.928168
