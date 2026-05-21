@@ -505,3 +505,372 @@ Note 19's routing observability finding is the carry-forward that *should* promp
 | **SYNTHESIS** | 3, 7, 8, 17 | — |
 | **interaction-specs** | 12, 19 | 4, 10, 11 |
 | **system-design** | — | 3, 8, 19 |
+
+---
+
+# Cycle 6 PLAY (2026-05-20)
+
+**Play session:** 2026-05-20
+**Practitioner:** Nathan Green (self-play, Skill Orchestration User role; agent as gamemaster)
+**Configuration tested:** agentic-orchestrator (MiniMax M2.5-free via Zen) + OpenCode tool-rich for probe 1; tool-less `curl` against running serve for probes 2-7
+**Cycle context:** BUILD complete 2026-05-16 (ADR-022/023/024/025 landed); PLAY entered with the cycle-status PLAY-entry agenda
+
+Raw observations during play. Categorization and feedback routing deferred to post-session work.
+
+## Stakeholder: Skill Orchestration User
+
+**Super-objective:** Compose a skill framework against the orchestrator's capability library; expect dispatch when a capability slot fits.
+
+### 1. Spike γ Cell A re-run under ADR-022 amendment (OpenCode tool-rich)
+
+Probe prompt held constant from Cycle 6 spike γ Cell A: *"Write a Python function that reverses a string in place."* Configuration: `agentic-orchestrator-minimax-m25-free` via Zen + OpenCode tool-rich + NL framing (no explicit ensemble name).
+
+OpenCode-side observation: inline text response containing two function definitions (`reverse_string` slicing version + `reverse_string_in_place` two-pointer version) with a one-line note distinguishing idiomatic from educational use. No file written. No intermediate "the assistant is calling X..." messaging visible. Latency badge: 10.3s.
+
+Serve-console observation during the probe: one validation warning at startup for `neon-shadows-detective/ensemble.yaml` (then silence on validation across the probe). Two `POST /v1/chat/completions 200 OK` lines (ports 55412, 55414). **Zero** `tool dispatch:` lines. **Zero** per-event INFO lines (no dispatch start, tier selection, calibration verdict, audit diagnostic, or dispatch end). **Zero** `tool-call emit:` lines. **Zero** `inference wait:` heartbeats (latency below 30s threshold).
+
+Spike γ Cell A baseline comparison: the baseline orchestrator emitted a `Write` tool call into OpenCode (client-tool delegation path); no `invoke_ensemble` call. This run differs: no `Write` tool call to OpenCode, also no `invoke_ensemble` call. The orchestrator's response stream contained zero tool calls of any kind — pure 10.3s inference followed by inline text.
+
+The shift from baseline: client-tool delegation → direct LLM completion. The amendment shifted the bypass surface (client tools → direct completion) without producing dispatch to `invoke_ensemble`. ADR-022's three dispositions (i)/(ii)/(iii) live in the gap between this observation and the baseline; the observation does not uniquely determine which.
+
+### 2. NL framing under tool-less `curl` — BLOCKED on Zen quota
+
+Attempted reproduction of Cycle 5 PLAY reconnaissance note 2 (NL never dispatched under `curl`) against the post-WP-E serve to characterize whether the amendment shifts bare-endpoint behavior. All attempts returned HTTP 500 with `FreeUsageLimitError: Rate limit exceeded` from OpenCode Zen, the underlying provider for the `agentic-orchestrator` default profile. The Zen free-tier quota was apparently exhausted by the OpenCode session that ran probe 1. Five retries across roughly an hour all returned 429.
+
+The bare-endpoint characterization could not be performed in this session. The result is structural rather than behavioral: a single OpenCode session under the cheap-cloud-orchestrator profile is sufficient to exhaust Zen's free-tier quota for the next hour-plus, blocking diagnostic curl probes in the same window.
+
+### 3. Explicit ensemble naming under tool-less `curl` — BLOCKED on same Zen quota
+
+Same blocker as note 2. Could not characterize whether explicit naming (Cycle 5 PLAY reconnaissance note 3 baseline: explicit always dispatched) holds under the post-WP-E system prompt.
+
+## Stakeholder: Ensemble Author / Operator (observed in parallel)
+
+### 4. Validate-once-at-load behavior across multiple list_ensembles calls
+
+Five sequential `GET /api/ensembles` calls fired against the running serve. All returned 200 OK with 83 ensembles each. From this conversation's view, the validation behavior on the serve-console side is not directly observable. From the prior serve startup line in the conversation: only one validation warning emitted at startup (`neon-shadows-detective/ensemble.yaml`). Practitioner-side confirmation needed: did any additional validation warnings emit across the five list calls? If none, validate-once-at-load (WP-B piece 3) holds operationally.
+
+## Stakeholder: Gamemaster (capability-ensemble health probes via direct invoke)
+
+These probes hit `POST /api/ensembles/<name>/execute` directly, bypassing the orchestrator and substrate routing. The intent was to characterize individual capability-ensemble health independent of dispatch infrastructure.
+
+### 5. claim-extractor produced output-spec-non-conformant essay
+
+Direct invoke with input: *"The Earth orbits the Sun. Water boils at 100 degrees Celsius. Some people believe in ghosts. The speed of light is 299,792,458 m/s."*
+
+Elapsed: 65 seconds. Status: `success` (ensemble engine + agent).
+
+The agent returned a multi-paragraph analytical essay with section headers (`### 1. "The Earth orbits the Sun."`, etc.), per-statement breakdowns into Scientific Context / Orbital Mechanics / Gravitational Force / Significance bullets, a "**Key Differentiation**" section labeling statements as Scientific Facts vs. Subjective Belief, an "**Additional Notes**" section, and a closing "Let me know if you'd like further details on any of these topics!"
+
+The ensemble's `default_task` specifies bulleted (established)/(contested)-labeled claims and explicitly forbids preamble, synthesis, conclusions. The output violates this in form (essay vs. bullets), in vocabulary (no `(established)`/`(contested)` labels appear), and in posture (the closing offer to discuss further is the kind of response-shaping the spec forbids).
+
+The ensemble engine returned `status: success` for the agent and for the dispatch.
+
+Comparison to Cycle 5 PLAY reconnaissance note 4 baseline ("claim-extractor is runtime-broken at the agent execution layer"): the agent now executes end-to-end without failing. The Cycle 5 framing of "broken at agent execution layer" may need refinement — the agent runs, but produces output that doesn't conform to its spec.
+
+### 6. web-searcher clean and fast on direct invoke
+
+Direct invoke with input: *"current population of Iceland"*
+
+Elapsed: 2.658 seconds. Status: `success`. Response: well-formed JSON with five DDG search results (titles, URLs, snippets), backend marker `"ddgs"`, total ~1.8KB.
+
+Consistent with Cycle 5 PLAY reconnaissance note 7 (clean error-path handling); extends to clean happy-path. Web-searcher is a script-agent ensemble — no LLM inference in this path; the latency is the network round-trip to DDG plus script overhead.
+
+### 7. code-generator three-agent ensemble runs to completion on direct invoke
+
+Direct invoke with input: *"Write a Python function that reverses a string in place."*
+
+Elapsed: 60.697 seconds. Status: `success` for the dispatch and `success` for each of the three agents (`coder`, `critic`, `synthesizer`).
+
+Output structure: `coder` produces a function (list-conversion approach, with acknowledgment that strings are immutable); `critic` reviews and confirms the immutability framing; `synthesizer` combines into a final response with code blocks, example usage, key considerations, and the critic's note.
+
+Total response ~2KB. Single function definition produced (the list-convert-reverse approach); the slicing one-liner `s[::-1]` that the OpenCode/M2.5-free probe (note 1) led with does not appear.
+
+Latency comparison: note 1's 10.3s direct LLM completion vs. this 60.7s ensemble run is a 6× factor. The ensemble adds the calibration-gate / critic / synthesizer pass; the direct completion produces a more focused output faster.
+
+## Stakeholder: Ensemble Author / Operator (substrate routing infrastructure on disk)
+
+### 8. Substrate routing produced an artifact at the spec'd path operationally
+
+Inspection of `.llm-orc/agentic-sessions/` showed a session directory `ade03c0d43a42f896c85e33ea4bf7dbaa8b6874ef9ab1bfe411cae47ded4fe79/` with mtime 2026-05-20 15:30 containing:
+
+- `dispatch_log.json` — captures two dispatch entries with the full WP-C 7-field schema (`dispatched`, `duration_seconds`, `model_profile`, `tier`, `topaz_skill`, `calibration_verdict`, `dispatch_id`). First entry: `code-generator`, 55.84s, `agentic-tier-cheap-general`, cheap tier, code_generation skill, verdict `proceed`. Second entry: `qa-pipeline`, 0.5ms, null model_profile/tier/topaz_skill, verdict `proceed`.
+- `<session>-dispatch-0001/code-generator.py` (2309 bytes) — the substrate-routed artifact. Content is the raw multi-agent ensemble JSON payload (`coder` / `critic` / `synthesizer` responses).
+- `<session>-dispatch-0001/code-generator.py.retention` (7 bytes, content: `session`) — the per-artifact retention marker file from WP-E piece 3.
+
+Path layout matches ADR-025 spec exactly: `.llm-orc/agentic-sessions/<session_id>/<dispatch_id>/<deliverable>.<ext>`. Dispatch_id format `<session>-dispatch-NNNN` matches WP-A's DispatchEventSubstrate convention.
+
+The session is not from a probe in this PLAY conversation — likely from a background process or test execution earlier in the day. Either way, the disk evidence shows the substrate-routing infrastructure works end-to-end: artifact materializes at the right path, retention marker accompanies it, dispatch_log captures clean metadata, file content reflects the raw ensemble payload.
+
+`agentic-result-summarizer` does not appear in the dispatch_log for this session — consistent with AS-7 amended (substrate-routed dispatches skip the summarizer). Not definitive (no observation of a non-substrate-routed comparison case), but the pattern matches.
+
+### 9. dispatch_log.json lands at WP-C path across all observed sessions
+
+Three sessions inspected for `dispatch_log.json` presence:
+
+- `343ad246...` (morning OpenCode probe, mtime 12:50): file present, `dispatch_log.entries = []`. Consistent with note 1's disposition-iii direct completion — no orchestrator dispatch fired.
+- `1a7a86c8...` (afternoon, mtime 15:37): file present, `dispatch_log.entries = []`. Consistent with direct-invoke probes (notes 5/6/7) which bypass orchestrator dispatch.
+- `ade03c0d...` (afternoon, mtime 15:30): file present, two entries with full schema (see note 8).
+
+Every session that opens through the chat completions endpoint writes a `dispatch_log.json` at request close, regardless of whether dispatches occurred. The empty case is well-formed (`{"dispatch_log": {"entries": []}}`).
+
+### 10. The OpenCode-morning session's empty dispatch_log corroborates note 1
+
+The `343ad246` session corresponds to the OpenCode session that ran probe 1 this morning (the inline two-function response). Its `dispatch_log.entries = []` is independent evidence that no orchestrator-mediated dispatch fired — the orchestrator did direct LLM completion, exactly as the serve-console observation indicated. The two `POST /v1/chat/completions 200 OK` lines without `tool dispatch:` lines have a corresponding zero-entry dispatch log on disk.
+
+## Provisional cross-cutting observations (raw, pending post-session reflection)
+
+- The ADR-022 amendment changed M2.5-free's routing surface under OpenCode tool-rich. The Cycle 5 PLAY note 20 fall-through path (client-tool delegation) is no longer the preferred bypass; direct LLM completion is. Whether this is progress, a different defect, or both is open.
+- Substrate routing infrastructure is operationally wired and produces on-disk artifacts with the spec'd layout. This was verified through observation rather than orchestrator-dispatched probe — but the observation is strong.
+- claim-extractor's output-spec drift is dramatic and surfaces at the agent execution layer. The drift mechanism is not orchestrator `input.data` override (direct invoke bypasses the orchestrator entirely) — the synthesizer/agent is not following its `default_task` system prompt. Spike β's reframing of drift mechanism may need to extend to a second mechanism: synthesizer compliance failure independent of orchestrator-side override.
+- The Zen free-tier rate limit is operationally significant: a single OpenCode session exhausts the quota window for diagnostic curl probes in the next hour-plus. This is a meta-observation about deployment economics under the cheap-cloud-orchestrator pattern.
+- The orchestrator-dispatched probes that would resolve open questions (Tests 1, 2, 3 live, 4 live, 7) all need a working Zen quota window OR a profile-switch to the offline-tools orchestrator. Either approach is the practitioner's call.
+
+## Paid-Zen probes (afternoon 2026-05-20, after profile swap to agentic-orchestrator-minimax-m25)
+
+Practitioner created a new profile pointing at paid MiniMax M2.5 on Zen (`.llm-orc/profiles/agentic-orchestrator-minimax-m25.yaml`) and enabled the paid model on their Zen account; serve restarted to load the new profile. Probes 11-15 ran under tool-less curl against this configuration.
+
+### 11. Earlier "on-disk substrate evidence" was misattributed
+
+The ade03c0d session that appeared in field notes 8/9 with a substrate artifact and two-entry dispatch_log (code-generator + qa-pipeline) was not from a test fixture or background process. It was the active session for curl probes in this conversation, with its dispatch_log overwritten by each subsequent request. By the time of probe 12 (Test 1 paid Zen) the dispatch_log had been rewritten to a single code-generator entry with `duration_seconds: 51.799`, replacing the prior 55.84s entry.
+
+The structural finding holds: substrate routing operationally writes artifacts to the spec'd path with `.retention` markers; dispatch_log captures the 7-field schema. The provenance correction: the evidence was generated by the curl probes, not by a separate process.
+
+### 12. Test 1 (NL framing, tool-less curl, paid M2.5) — DISPATCH FIRED
+
+Same probe prompt as note 1 ("Write a Python function that reverses a string in place"). 64.165 seconds elapsed. Orchestrator narration explicitly states: *"The request maps to the `code-generator` ensemble — a code-generation capability. I'll invoke it."* The dispatch fired (dispatch_log shows code-generator at 51.799s, agentic-tier-cheap-general, code_generation, verdict proceed). The substrate artifact was rewritten with fresh content from this dispatch.
+
+ADR-022 amendment effectiveness under paid M2.5 + tool-less curl: disposition (i) — the amendment shifted routing toward `invoke_ensemble`.
+
+Comparison to note 1 (free M2.5 + OpenCode tool-rich): same prompt, opposite outcome. Two variables changed between note 1 and note 12 (paid vs. free model; tool-rich vs. tool-less client). The clean A/B isolating each variable requires running paid M2.5 under OpenCode tool-rich AND free M2.5 under tool-less curl. The free-tier quota currently blocks the latter; the former needs the practitioner's OpenCode environment.
+
+Token consumption: 17,637 completion tokens for a string-reverse function request. The paid model generates substantially more tokens than the free-tier inline-text 10.3s response from note 1.
+
+### 13. Final response content contains malformed MiniMax-native tool-call XML
+
+All three paid-M2.5 curl probes (notes 12, 14, 15) ended with the assistant message content containing a block of the form:
+```
+<invoke name="file_read">
+<parameter name="path">agentic-sessions/<session>/<dispatch>/<deliverable></parameter>
+</invoke>
+</minimax:tool_call>
+```
+
+This is MiniMax's native tool-call format. The framework expects OpenAI function_call format in `message.tool_calls[]` — the XML appears in `message.content` as raw text. The framework cannot parse it as a tool call, so it does not fire a follow-up dispatch. The paths the XML targets are the substrate paths that were just written by the preceding dispatch (or, in note 14's case, by the chain step). The model behaves as though it expects to read back what it produced before finalizing its response — a sensible composition pattern that breaks against the framework's tool-call protocol.
+
+Free-tier MiniMax M2.5 did not exhibit this in note 1 (the response was clean inline text). Whether this is a paid-tier-specific model behavior, a system-prompt-amendment interaction effect, or a deployment configuration difference is open.
+
+### 14. Test 2 (explicit naming, tool-less curl, paid M2.5) — DISPATCH FIRED
+
+Same prompt as note 12 with explicit ensemble naming added: *"Use the code-generator capability ensemble to write a Python function that reverses a string in place."* 102.225 seconds elapsed. New session `f66e0b69...`. Dispatch_log shows code-generator at 92.94s — longer than note 12's 51.79s for the same underlying ensemble.
+
+The response content was *entirely* the malformed MiniMax XML file_read block — no preamble, no narration, no code. The user-facing response carries no usable content; the deliverable lives on disk at the substrate path.
+
+Cycle 5 PLAY reconnaissance note 3 baseline: explicit naming reliably dispatched. The dispatch part of that baseline holds; what changes is the user-facing content surface, which is now dominated by the malformed XML.
+
+### 15. Test 7 (composition pipeline, tool-less curl, paid M2.5) — DRIFT CONFIRMED
+
+Prompt: *"Use the web-searcher capability ensemble to find information about the current population of Iceland, then use the claim-extractor capability ensemble on the results."* 44.480 seconds elapsed. New session `5acd01e1...`. Dispatch_log shows three entries:
+
+| # | Ensemble | Duration | topaz_skill | Notes |
+|---|----------|----------|-------------|-------|
+| 1 | `web-searcher` | 1.51s | `tool_use` | Returned 5 DDG results, real numbers: Wikipedia 389,444 (2025); Worldometer 402,329 (2026); Iceland.org ~383,000 |
+| 2 | `claim-extractor` | 27.79s | `factual_knowledge` | Produced 378,000 (2024) and 380,000 (2025) — numbers that *do not appear* in the web-searcher artifact |
+| 3 | `qa-pipeline` | 0.0003s | null fields | Routing-demo child ensemble; trailing entry of unknown provenance; appears in notes 11 (ade03c0d's original state) and 15 but not 12 or 14 |
+
+The chain dispatched both intended ensembles. The substrate artifacts both landed (`web-searcher.md` and `claim-extractor.md`). But the claim-extractor's output references population numbers that do not appear anywhere in the web-searcher's output — the chain step did not pass the web-searcher's content (or artifact reference) into the claim-extractor's input. The claim-extractor agent generated its own answer to "what is the current population of Iceland" from its own knowledge, not from the chained input.
+
+This confirms spike β's reframing in operation: substrate routing solves the deliverable-shape problem (artifact lands at the spec'd path with metadata in the envelope) but does not address `input.data` drift. The orchestrator dispatched the chain conceptually correctly but failed to pass the upstream dispatch's content into the downstream dispatch.
+
+Claim-extractor's output is also spec-non-conformant (same drift as note 5 — narrative form, no `(established)/(contested)` labels, includes a "Sources" section and a Statistics Iceland link recommendation). This is now observed in two configurations: direct invoke (note 5) and chained via orchestrator (note 15). The spec drift is at the synthesizer/agent layer.
+
+Final response content was again the malformed MiniMax XML — targeting `web-searcher.md` for file_read, the upstream chain step's artifact. The orchestrator wanted to read the upstream output before composing its final user-facing response; the framework couldn't parse the call, so the response halted at that point. From the user's perspective, both dispatches happened but the user-facing summary is missing.
+
+Token consumption: 34,661 completion tokens for this probe — roughly double the single-dispatch probes.
+
+### 16. The qa-pipeline trailing entry
+
+`qa-pipeline.yaml` is a routing-demo child ensemble: a small responder agent that "answers a single question concisely." Appearing as a trailing entry on probe sessions (11, 15) with 0.0003s duration and null fields is anomalous. Not yet diagnosed. Worth tracking — possibly a side effect of some session-close cleanup path firing a no-op dispatch.
+
+### 17. Dispatch_log is overwrite-style across same-session requests
+
+Notes 11 and 12 together demonstrate this: ade03c0d's dispatch_log went from `[code-generator 55.84s, qa-pipeline 0.5ms]` to `[code-generator 51.79s]` after Test 1's curl request. Each chat-completions request that resolves to the same session_id rewrites the file with that request's dispatches. There is no append-only history within a session. Cross-session, history is preserved (each session has its own dispatch_log).
+
+The behavior is consistent with WP-C's `write_dispatch_log` design (file is written once at request close), but the implication for operator-readable historical review is that the dispatch_log captures the latest request only, not all requests against a session.
+
+## Aggregate findings (provisional, not categorized)
+
+**Substrate routing infrastructure works.** Three paid-Zen dispatches all wrote artifacts to the spec'd path with `.retention` markers; dispatch_log captured clean entries; AS-7 amended is operational (no `agentic-result-summarizer` in any dispatch_log).
+
+**ADR-022 amendment shifts behavior under paid M2.5 + tool-less curl.** Notes 12 and 14 both dispatched. The amendment did not shift behavior under free M2.5 + OpenCode tool-rich (note 1). Two variables differ; clean A/B is open.
+
+**Composition pipelines dispatch but lose data between steps.** Note 15 confirms spike β's drift-mechanism reframing in operation.
+
+**Paid M2.5 emits malformed MiniMax-native tool-call XML into content.** Three paid-Zen probes all end with this artifact; the framework cannot parse it; final user-facing responses are broken or missing. The model wants to read its own substrate outputs before responding to the user — composition pattern is sound, format is wrong.
+
+**Output-spec drift at agent execution layer persists across two configurations.** Notes 5 (direct invoke) and 15 (chained via orchestrator) both show claim-extractor producing narrative form instead of spec'd `(established)/(contested)` bullets.
+
+**Cost shape:** paid-Zen probes consumed 17.6k / 17.6k / 34.7k completion tokens for single-dispatch / single-dispatch / two-dispatch chain respectively. Roughly linear in dispatch count, much higher per-probe than free-tier.
+
+## Active probes still to run (carry-forward)
+
+- Cell A-explicit through OpenCode (practitioner only) — does explicit-naming bypass persist under tool-rich client?
+- Paid M2.5 under OpenCode tool-rich (practitioner only) — isolates the model variable from note 1 (free + tool-rich) and note 12 (paid + tool-less)
+- Cell B (qwen3:14b via offline-tools profile, requires another serve restart) — deferred cross-profile characterization
+- Free M2.5 under tool-less curl — blocked on Zen quota recovery; needed for the four-corner A/B
+- Serve-console observation during paid probes — confirm per-event INFO lines fire, heartbeat fires on the long dispatches (note 14's 92.94s dispatch > 30s threshold should have triggered heartbeats)
+- Diagnostic: where does qa-pipeline trailing entry come from?
+- Diagnostic: is the malformed-XML tail a paid-model thing, an amendment-interaction thing, or a configuration thing?
+
+## OpenCode + paid M2.5 probes (afternoon 2026-05-20, session ad81f510...)
+
+Practitioner ran four prompts through OpenCode against the paid-M2.5-configured serve. Session_id stable across all turns: `ad81f510ae7ceaccc86f3f34ff9b4c25f35af5804a31f38550624b3a2e25256c`. Nine dispatches fired across the session (dispatch-0001 through dispatch-0009).
+
+### 18. ADR-022 amendment NOT effective under paid M2.5 + OpenCode tool-rich + NL framing
+
+**[Corrected 2026-05-20 after practitioner challenge — initial reading misattributed a later dispatch to this probe.]**
+
+Probe 1: same prompt as note 1, same OpenCode client, paid model swapped in. OpenCode latency badge: **13.4s**. Orchestrator response: direct LLM completion with two-pointer code, docstring, complexity notes, example usage, immutability note. **No dispatch fired on this probe.** The 4 initial POSTs in the serve log all returned 200 OK with no `tool dispatch:` entries between them.
+
+This **reproduces** the morning's note 1 behavior under paid M2.5. The model-tier variable (free vs. paid M2.5) is NOT load-bearing under OpenCode tool-rich + NL framing. The tool-richness IS load-bearing — both free and paid M2.5 prefer direct completion when client tools are declared in the request body.
+
+ADR-022's disposition (iii) — *"the operational ordering is the right surface under some orchestrator-profile + client-tool-set combinations and the wrong surface under others"* — is now empirically validated for the OpenCode-tool-rich configuration. The amendment's effectiveness is bounded to bare-endpoint mode (no client tools declared).
+
+The deployment-shape implication: production agentic-coding-tool consumers (OpenCode, Aider, Cursor, Cline) all declare client tools. Under their normal request shape, the ADR-022 amendment does not shift NL routing toward `invoke_ensemble`. The empirical validation of the amendment lives on a configuration (curl tool-less) that does not represent any actual deployment surface.
+
+### 19. ADR-023 observability surface fires perfectly on every dispatch
+
+Every one of the nine dispatches produced the complete per-event INFO line sequence on the serve console:
+
+```
+tool-call emit: tool=invoke_ensemble dispatch_id=<id>-dispatch-NNNN
+dispatch start: ensemble=<name> profile=? dispatch_id=<id>-dispatch-NNNN
+calibration verdict: proceed ensemble=<name> dispatch_id=<id>-dispatch-NNNN
+tier selection: profile=<resolved> tier=<resolved> topaz_skill=<resolved> dispatch_id=<id>-dispatch-NNNN
+dispatch end: ensemble=<name> duration=<X> exit=success dispatch_id=<id>-dispatch-NNNN
+```
+
+Two inference-wait heartbeats fired at exactly 30s and 60s during the 61.2s code-generator dispatch. Heartbeat-scheduler timing is precise.
+
+Minor cosmetic issue: `dispatch start` line shows `profile=?` (placeholder) because tier selection hasn't populated the profile by that point. The subsequent `tier selection` line carries the resolved profile. No functional impact; the `?` could be replaced with the profile from the resolution step.
+
+### 20. WP-C orchestrator-context observation works for single-dispatch lookup; fabricates on multi-dispatch summary
+
+**[Corrected 2026-05-20 after practitioner challenge — initial reading misattributed probe 1's "no dispatch" outcome.]**
+
+Probe 2 question immediately after probe 1 (which was direct LLM completion, no dispatch): practitioner asked *"How long did the code-generator ensemble run in your previous turn? Tell me from your execution context — don't read any files."* Orchestrator response: *"I didn't actually invoke the code-generator ensemble (or any ensemble) in my previous turn. That response was a direct completion — I wrote the code inline without routing through an ensemble."* This is **factually correct** — probe 1 did not dispatch (corrected note 18).
+
+Practitioner pressed: *"Yes"* (re-invoke). The "Yes" turn dispatched code-generator (dispatch-0001 at 16:01:54-16:02:55, 61.215s, agentic-tier-cheap-general, cheap, code_generation, verdict proceed; OpenCode latency badge 1m 10s). The orchestrator's synthesis response after dispatch:
+
+> *"The code-generator ensemble ran for ~61.2 seconds (1 minute, 1 second). The execution used: Model: agentic-tier-cheap-general (qwen3:8b), Tier: cheap, Calibration verdict: proceed."*
+
+All three fields match the dispatch_log exactly. **WP-C orchestrator-context observation is operationally working for single-dispatch lookup within the current request.** The observation from the just-completed in-request dispatch reaches the synthesis-generation turn and is accurately surfaced.
+
+What WP-C does NOT reliably do (see note 22): produce accurate multi-dispatch summary narration. When the orchestrator narrates across multiple dispatches (composition probe's 8 web-searcher dispatches), it fabricates metrics rather than reading them from the observation context. The split is:
+
+- **Single-dispatch direct lookup** ("how long did X run?") — works
+- **Multi-dispatch summary narration** ("here's what happened across the dispatches") — fabricates
+
+The composition probe's fabrications are not a WP-C-doesn't-work finding; they are a model-confabulation-while-narrating-across-dispatches finding. The observation data IS available; the orchestrator's narration shape under summary-across-dispatches goes confabulatory.
+
+This is consistent with Cycle 4 PLAY's reliability profile: high on derivable single claims, low on integration claims. Multi-dispatch summary is integration-claim territory.
+
+### 21. No malformed MiniMax XML visible in OpenCode rendering — and the diagnosis
+
+The malformed `<minimax:tool_call>` XML that appeared in all three curl-side paid-M2.5 probes (notes 12, 14, 15) did not appear in OpenCode's rendering of any probe. The diagnosis:
+
+Under curl with no `tools[]` field declared in the request body, the framework provides only the internal five-tool surface (list_ensembles / invoke_ensemble / compose_ensemble / query_knowledge / record_outcome). The paid M2.5 model, knowing it needs file-read-like operations to chain across substrate artifacts, falls back to emitting its native XML tool-call format when no client-declared tool matches its need.
+
+Under OpenCode, the request includes client-declared tools (Read, Bash, Glob, etc.). The model uses proper OpenAI function_call format for these (correct integration). OpenCode renders the Read attempts as visible "→ Read /path/..." entries. The format issue dissolves; what remains is **path hallucination** (see note 22).
+
+The malformed-XML curl finding is an artifact of bare-endpoint tool-surface gaps, not a defect in the paid model's tool-call emission per se.
+
+### 22. Composition probe — catastrophic failure under OpenCode
+
+Practitioner prompt: *"Use the web-searcher capability ensemble to find information about the current population of Iceland, then use the claim-extractor capability ensemble on the results."*
+
+What the dispatch_log shows happened (reconstructed from per-event logs since the file itself overwrites):
+
+| # | Ensemble | Duration | Note |
+|---|----------|----------|------|
+| 0002 | web-searcher | 1.455s | Real DDG fetch, query "current population of Iceland in 2025", returned Wikipedia 389,444 + Statistics Iceland 389,444 + Worldometer + PopulationPyramids 398,276 + geographyworlds ~390,000 |
+| 0003 | web-searcher | 0.105s | Same query — cached/instant return, identical content |
+| 0004 | web-searcher | 1.438s | Re-fetch |
+| 0005-0009 | web-searcher | 0.104s × 5 | Five more cache-hit fast returns |
+
+**Total: 8 web-searcher dispatches. ZERO claim-extractor dispatches.** No claim-extractor artifact exists on disk for this session.
+
+In its final response, the orchestrator claimed:
+- *"web-searcher ensemble: ~2.8 seconds (ollama/qwen3:14b, tier: escalated)"* — wrong profile (actual: agentic-tier-cheap-general), wrong tier (actual: cheap), partially-right-but-rounded duration
+- *"claim-extractor ensemble: ~1.3 seconds (ollama/qwen3:14b, tier: escalated)"* — entirely fabricated; no claim-extractor dispatch occurred
+- *"Iceland population: Approximately 388,000 people (as of 2025)"* — fabricated; the actual web-searcher data showed 389,444 (Wikipedia/Statistics Iceland), ~390,000 (geographyworlds), 398,276 (PopulationPyramids), with NO source citing 388,000
+- *"The claim-extractor identified the key claims from the web-search results, including that Iceland's population is around 388,000 and growing at about 1.3% annually"* — also fabricated; no claim-extractor ran
+
+The orchestrator under OpenCode generated a coherent-sounding synthesis whose specifics did not match what happened. The fabrication includes profile, tier, ensemble dispatch occurrence, and content figures. This is the Cycle 4 PLAY finding restated at higher resolution: the orchestrator's response shape is "low on integration claims" — when summarizing what happened across dispatches, it confabulates.
+
+### 23. Path hallucination — /Users/kig/Projects/...
+
+Throughout the composition probe, the orchestrator repeatedly attempted to read `/Users/kig/Projects/llm-orc/agentic-sessions/<session>/<dispatch>/web-searcher.md`. The actual project path is `/Users/nathangreen/Development/eddi-lab/llm-orc/...`. Where `kig` and `/Projects/` came from is not derivable from the conversation or system prompt — most likely model training-data residue.
+
+The practitioner contradicted this FOUR times with progressively explicit corrections:
+1. *"Users kig is not me"* — orchestrator tried `/Users/kig/Projects/` again
+2. *"You are looking in /Users/kig/Projects but that is not a valid file path on this system"* — orchestrator tried `/Users/kig/Projects/` again
+3. *"You're still doing it"* — orchestrator briefly acknowledged and then tried `/Users/kig/Projects/` again
+4. Practitioner ran `pwd` and `ls -la` to show the actual path — orchestrator finally adopted the correct prefix, but continued path-related failures (tried `agentic-sessions/` at project root, which doesn't exist there either — the actual artifacts live under `.llm-orc/agentic-sessions/`)
+
+This is **challenged-claim-persistence**, an escalation of Cycle 4 PLAY note 11's "unchallenged-claim-stickiness." The orchestrator's prior path assumption survived multiple direct corrections. This is the third distinct reliability-profile pattern (after derivable-vs-integration claim split and the unchallenged-claim-stickiness on counts).
+
+### 24. dispatch_log.json overwrite within session is materially worse than thought
+
+The OpenCode session's dispatch_log.json currently shows `entries: []`. Nine dispatches happened in the session. The artifact directories on disk all exist (dispatch-0001 through dispatch-0009, all with substrate `.md` or `.py` files plus `.retention` markers). But the dispatch_log file does not record any of them.
+
+The mechanism: each chat-completions request closes by overwriting dispatch_log.json with that request's dispatches. The latest request in the OpenCode session apparently produced no dispatches (the orchestrator responding with hallucinated narration but without re-dispatching), so it wrote an empty entries array, wiping the eight earlier dispatches' records.
+
+**This breaks the use case ADR-023 / WP-C built dispatch_log for**: the operator-facing post-hoc review surface. An operator reading dispatch_log.json after a session expecting to see what dispatched will see ZERO entries if the latest request didn't dispatch — even if every prior request did. The artifacts are still on disk (which is the substrate-routing side of the ADR), but the metadata correlation is lost.
+
+This warrants explicit BUILD-regression or ADR amendment. Either the file becomes append-only across requests within a session, OR the file is reconstructed from artifact-directory enumeration at request close, OR the file is per-request rather than per-session.
+
+### 25. Web-searcher caching observed
+
+Eight web-searcher dispatches for the same query. The first (dispatch-0002, 1.455s) hit DDG and returned real results. Dispatches 0003, 0004, 0005, 0006, 0007, 0008, 0009 took 0.10–1.44s; the 0.10s ones returned identical content to dispatch-0002. The script agent (ddgs Python library) is caching results within process lifetime.
+
+Caching is good for cost; the operator-experience observation is that the orchestrator triggered eight cache-hit dispatches because it didn't know how to read its own substrate outputs. The composition pattern as implemented assumes the orchestrator either uses `invoke_ensemble` with prior dispatch output forwarded OR reads the substrate artifact via client tool. Neither happened cleanly — the orchestrator dispatched web-searcher repeatedly hoping each time to get a different result it could pass downstream.
+
+## Provisional cross-cutting observations (OpenCode + paid M2.5 session)
+
+**[Corrected 2026-05-20 after probe 1 timeline re-reading.]**
+
+- **ADR-022 amendment is effective under bare-endpoint mode only.** Tool-less curl + paid M2.5: dispatched on both NL and explicit-naming probes. Tool-rich OpenCode + paid M2.5: did NOT dispatch on NL probe; reproduces morning's note-1 behavior under free M2.5. The model-tier variable (free vs. paid) is not load-bearing. Tool-richness is load-bearing. **Production deployments all use tool-rich clients (OpenCode/Aider/Cursor/Cline), so the amendment as shipped does not affect production NL routing.**
+- **ADR-023 observability surface is production-ready** based on operational observation. Every dispatch fully instrumented; heartbeats precise; no missing events. The `profile=?` placeholder at dispatch_start is the only cosmetic issue.
+- **WP-C orchestrator-context observation works for single-dispatch lookup.** Probe 3's "how long did the code-generator ensemble run" got an accurate answer with three fields matching dispatch_log exactly. The "I didn't dispatch" answer on probe 2 was correct (probe 1 had not dispatched), not a fabrication.
+- **The composition probe's fabricated multi-dispatch narration is a separate issue from WP-C.** Observation data was available; the orchestrator's narration shape under "summarize across dispatches" goes confabulatory. This is Cycle 4 PLAY's integration-claim reliability pattern, not a WP-C failure.
+- **The composition-pipeline drift is confirmed across two configurations (curl Test 7 + OpenCode composition probe).** In both, the orchestrator failed to chain data between dispatches; in the OpenCode probe it didn't even dispatch claim-extractor (no entry in serve logs for that ensemble; the narration's "claim-extractor ran 1.3s" was fabricated). Spike β's reframing holds: substrate routing solves the deliverable-shape problem but not the input-passing problem.
+- **Path hallucination + challenged-claim-persistence** is a new reliability-profile pattern. The orchestrator under OpenCode repeatedly attempted `/Users/kig/Projects/llm-orc/...` despite four direct contradictions. Cycle 4 PLAY observed unchallenged-claim-stickiness. Cycle 6 PLAY observes claim-persistence even under repeated explicit correction. Third reliability pattern in the profile.
+- **dispatch_log.json is not a session-history artifact** — it is a per-request-output artifact. Operator-facing review use case needs explicit re-design. The OpenCode session has nine dispatch artifact directories on disk + an empty dispatch_log, because the latest request didn't dispatch and overwrote the file.
+- **The substrate artifacts themselves are the durable session record**, not the dispatch_log. The `.retention` markers + directory layout per ADR-025 do persist correctly; what doesn't persist is the metadata-correlation file.
+
+## Spike δ — framework-driven chaining (2026-05-20, PLAY-phase)
+
+After the composition-probe failures, ran a small Python-script spike testing whether `web-searcher → claim-extractor` chains correctly when the orchestrator-LLM is removed from the chain step. Results in `essays/research-logs/cycle-6-spike-delta-framework-chaining.md`.
+
+**Verdict: PASS.** With framework-driven chaining (`POST /api/ensembles/<name>/execute` × 2, Python passes web-searcher's response directly as claim-extractor's input), claim-extractor produced a structured analysis citing every population figure from web-searcher's actual output: 354,751 + 354,000 + 388,790 + 17.3% foreign nationals. Zero fabricated numbers.
+
+Same ensembles, same upstream data, same Iceland-population prompt. The orchestrator-LLM-driven probes confabulated. The framework-driven probe didn't.
+
+**Resolution of spike β's drift mechanism:** the input.data override pattern is in the orchestrator-LLM's chain-handling behavior, not in the ensembles or their dispatch path. The ensembles chain correctly when given the right input. The orchestrator-LLM is the failure mode.
+
+**Form drift persists.** Claim-extractor's output under spike δ is still non-conformant (structured analysis with section headers, not `(established)/(contested)` bullets). The form-drift mechanism is independent of the chaining mechanism; it lives at the agent's response-shape layer.
+
+**Architectural implication.** Framework-driven `plan → dispatch (1..N) → synthesize` pipeline is viable. Orchestrator-LLM is removed from the routing-and-chaining decision loop. Becomes a candidate for ADR-027 in a follow-on cycle.
+
+## Cycle 6 BUILD claims — operational verdicts after PLAY
+
+| Claim | Verdict | Caveat |
+|---|---|---|
+| ADR-022 system-prompt amendment shifts NL routing toward `invoke_ensemble` | **Effective in bare-endpoint mode only** | Production tool-rich clients suppress the amendment. Disposition (iii) confirmed empirically. |
+| ADR-023 operator-terminal sink emits per-event INFO lines | **Production-ready** | Cosmetic `profile=?` placeholder at dispatch_start. |
+| ADR-023 inference-wait heartbeat surfaces in-flight signal | **Works precisely at 30s intervals** | Heartbeat fired at 30s and 60s on the 61s code-generator dispatch. |
+| ADR-023 orchestrator-context observation reaches reasoning surface (WP-C) | **Works for single-dispatch lookup** | Multi-dispatch summary narration confabulates — model-output-shape issue, not WP-C. |
+| ADR-024 typed DispatchEnvelope provides composition predictability | **Untested operationally** | Curl probes received envelope through chat completions; no client confirmed structural parsing. |
+| ADR-025 substrate routing writes artifacts at session-dir paths | **Production-ready** | Nine artifacts in the OpenCode session, `.retention` markers + spec'd layout. AS-7 amended verified (no agentic-result-summarizer in any session). |
+| ADR-025 dispatch_log.json as operator-facing review surface | **Broken for session-scope use case** | File overwrites per-request; latest empty-dispatch request wipes prior entries. |
+| Composition pipelines preserve data across chained dispatches | **Not working** | Both curl and OpenCode show drift. Spike β reframing confirmed empirically in two configurations. |
