@@ -10,11 +10,13 @@
 
 **Cycle number:** 7
 **Started:** 2026-05-20 (cycle prepared; RESEARCH not yet entered)
-**Current phase:** discover (next; not yet entered — paused between RESEARCH close and DISCOVER entry as of 2026-05-21)
+**Current phase:** discover
+**In-progress phase:** discover
 **Cycle type:** standard (full pipeline)
 **Plugin version:** v0.8.6
 **Artifact base:** `docs/agentic-serving/`
 **BUILD mode:** gated (declared at cycle preparation; this cycle is design-alternative-heavy — auto mode would miss surfacing trade-offs between routing-planner ensemble, `tool_choice` constrained decoding, and hybrid approaches; gated stewardship reviews are appropriate)
+**DISCOVER entered:** 2026-05-21
 
 **Origin:** Cycle 6 PLAY (2026-05-20) surfaced that the orchestrator-LLM's chain-handling behavior is the load-bearing failure for composition pipelines; ADR-022 amendment is empirically bounded to bare-endpoint mode and does not shift NL routing under tool-rich production clients. Spike δ confirmed that framework-driven Python chaining preserves data correctly across the same `web-searcher → claim-extractor` composition that failed under orchestrator-LLM routing. PLAY-tail grounding work (per susceptibility-snapshot recommendation) softened the initial "framework-driven pipeline" framing into bounded claims:
 
@@ -61,7 +63,7 @@ These three questions are linked: the routing-decision mechanism + the contract-
 | Phase | Status | Artifact | Key Epistemic Response |
 |-------|--------|----------|----------------------|
 | RESEARCH | ✅ Complete | `essays/essay-outline-006-cross-compatibility-routing-surface.md` + reflection `essays/reflections/006-cross-compatibility-routing-surface.md` + research log `essays/research-logs/006-cross-compatibility-routing-surface.md` | Practitioner pushed back on hybrid framing in favor of ADR-027 stronger stance at the gate; cycle responded with tiered-architecture revision (hybrid as starting commitment + ADR-027 as structurally pre-committed escalation). 5 audit rounds verified P1-clean. Susceptibility snapshot surfaced 2 Grounding Reframes (GT-1 C6 elevation; GT-2 hybrid-first ordering language drift). Practitioner authorized pursuing both grounding actions in DISCOVER/DECIDE. |
-| DISCOVER | ▶ In Progress (next) | — | — |
+| DISCOVER | ▶ In Progress (paused 2026-05-21 after Spike ζ) | partial — see In-Progress DISCOVER state below | — (gate not yet run) |
 | MODEL | ☐ Pending | — | — |
 | DECIDE | ☐ Pending | — | — |
 | ARCHITECT | ☐ Pending | — | — |
@@ -128,12 +130,58 @@ To be ordered after RESEARCH establishes the question shape, but pre-named for o
 
 See `cycle-archive/cycle-{1..6}-*.md` for prior-cycle feed-forward signals.
 
+## In-Progress DISCOVER state (2026-05-21 session pause)
+
+DISCOVER entered 2026-05-21. Substantial product-thinking work completed in conversation; session paused mid-spike-sequence. Resumption picks up at Spike ε.
+
+**Completed in 2026-05-21 session:**
+
+1. **Phase 1: C6 hypothesis examination** — Population A/B mapping confirmed; "degradation surface" framing sharpened to cost-distribution from project-developer perspective (not per-task quality from user perspective); ensemble design declared orthogonal (Cycle 7 ships delegation reliability as prerequisite); north star framed (orchestrator-designs-ensembles long-horizon vision) as context that stays in product-discovery without expanding Essay-Outline scope.
+
+2. **Phase 2 section walk** — Stakeholder Map, Jobs and Mental Models, Value Tensions, Assumption Inversions, Product Vocabulary all walked. Practitioner reactions integrated: Population A primary; Population B important-but-not-Cycle-7-focus; transparent OpenAI-compatible endpoint as project identity ("skills authored without llm-orc knowledge"); latency as tuning concern not structural blocker.
+
+3. **Spike ζ — routing-planner reliability** — completed. 20-prompt battery against qwen3:8b routing-planner ensemble. **100% JSON conformance + 100% schema validity + 90% strict capability-match (100% with defensible judgment).** Latency p50=10s, p90=13s, mean=10s. Mechanism viability confirmed. Writeup at `essays/research-logs/cycle-7-spike-zeta-routing-planner.md`. Spike ensemble + scratch artifacts retained per `feedback_spike_artifact_retention` directive.
+
+**Pending in next DISCOVER session:**
+
+4. **Spike ε** — end-to-end plan→dispatch→synthesize pipeline. Python harness wrapping (Spike ζ planner) + dispatch execution + response-synthesizer ensemble. Run against PLAY note 22's Iceland composition prompt (the historical confabulation case) + Spike δ's web-searcher → claim-extractor chain (the positive-control comparison). Free-tier; ~60-90min agent work.
+
+5. **Spike κ** — C2 diagnosis disambiguation. Three diagnostic probes (Zen direct; MiniMax direct; framework-side payload inspection). Paid κ probes authorized by practitioner 2026-05-21 (~$0.05 estimated). Addresses GT-2(b) from RESEARCH gate.
+
+6. **Section walk integration with spike findings** — Spike ζ findings already lightly anticipated in Section additions; ε and κ findings may revise specific items.
+
+7. **Write updated product-discovery.md** — assemble all Cycle 7 additions with attribution markers per the existing Cycle 4/5/6 update pattern.
+
+8. **Backward-propagation drafts for Essay-Outline §C6, §C7, §C3** — captured during DISCOVER as feed-forward; needs explicit edit draft before DECIDE inherits.
+
+9. **EPISTEMIC GATE (reflection time)** — belief-mapping conversation at DISCOVER → MODEL boundary. Compose against specific DISCOVER artifact content.
+
+10. **Susceptibility snapshot dispatch** — phase-boundary subagent at `docs/agentic-serving/housekeeping/audits/susceptibility-snapshot-cycle-7-discover.md` (per agentic-serving convention).
+
+11. **Gate reflection note** — `.rdd/gates/cycle-7-discover-model-gate.md`. Then phase exit (remove `**In-progress phase:**`; advance Current phase only after manifest check clean).
+
+**Key conversational reframings to preserve (not yet in product-discovery.md):**
+
+- **Cost-distribution framing for "degradation":** the value-misalignment claim is about cost-distribution from the project-developer perspective, not per-task quality from the user perspective. The user is correctly outcome-focused.
+- **Ensemble design orthogonality:** Cycle 7 ships delegation reliability; ensemble quality work iterates independently. "If we can effectively delegate to ensembles every time, then we can figure out how to make the ensembles better."
+- **Transparent OpenAI-compatible endpoint as project identity:** "The point is to make llm-orc agentic-serving compatible with any tool that would want to use an OpenAI-compatible chat completions endpoint. The user trusts that llm-orc would use / create ensembles effectively. Full stop."
+- **North star** (lives in product-discovery, not Essay-Outline): orchestrator-designs-ensembles future; long-horizon agentic coding via skill frameworks; meta-ensembles + ensemble primitives + specialist substrate ensembles. Cycle 7 is the prerequisite, not the destination.
+- **Skill Orchestration User sharpening:** client-side skill framework; orchestrator sees only the resulting chat-completion requests; capability matching must work from request content alone with no client-side opt-in.
+- **C3 mechanism priority FLIPPED from RESEARCH framing:** routing-planner ensemble (or equivalent NL→capability inference) is PRIMARY (not residual); explicit-naming extractor and tool_choice interception are bonus paths layered onto NL inference.
+
+## Pause Log
+
+| # | Paused | Resumed | Reason |
+|---|--------|---------|--------|
+| 1 | 2026-05-21 (mid-DISCOVER, after Spike ζ) | — | Practitioner pause after foundational spike; resume with Spike ε in next session |
+
 ## Context for Resumption
 
 Anyone resuming this cycle in a new session should read in this order:
 
-1. This file (Cycle 7 cycle-status.md) — current state and framing. The Feed-Forward Signals From Cycle 7 RESEARCH section above is the most consequential carry-forward.
-2. `essays/essay-outline-006-cross-compatibility-routing-surface.md` — the Cycle 7 RESEARCH Essay-Outline (P1-clean across 5 audit rounds). The structural input to DISCOVER.
+1. This file (Cycle 7 cycle-status.md) — current state and framing. **For resumption of paused DISCOVER work**, the "In-Progress DISCOVER state (2026-05-21 session pause)" section above is the load-bearing entry point.
+2. `essays/research-logs/cycle-7-spike-zeta-routing-planner.md` — Spike ζ findings (foundational; mechanism viability confirmed). Most consequential DISCOVER-phase finding so far.
+3. `essays/essay-outline-006-cross-compatibility-routing-surface.md` — the Cycle 7 RESEARCH Essay-Outline (P1-clean across 5 audit rounds). The structural input to DISCOVER.
 3. `essays/reflections/006-cross-compatibility-routing-surface.md` — Cycle 7 RESEARCH reflection (narrative form per ADR-092 §8). Captures the two reframings (Phase A agent-initiated; RESEARCH-gate user-initiated), the validation-spike methodology observation, and the conditional-vs-pre-commitment language-drift finding.
 4. `housekeeping/audits/susceptibility-snapshot-cycle-7-research.md` — phase-boundary snapshot with GT-1 (C6 elevation) + GT-2 (hybrid-first ordering language drift) Grounding Reframes the practitioner authorized pursuing in DISCOVER/DECIDE.
 5. `essays/research-logs/006-cross-compatibility-routing-surface.md` — Cycle 7 RESEARCH research log (archived). Records Phase A grounding + question-set revision history + Spike λ + Spike λ-paid syntheses + Validation-Spike Decision recording.

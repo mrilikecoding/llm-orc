@@ -1,0 +1,157 @@
+{
+  "spike": "cycle-7-zeta-routing-planner",
+  "date": "2026-05-21",
+  "model": "qwen3:8b",
+  "ensemble": "spike-cycle7-zeta-routing-planner",
+  "prompts": [
+    {
+      "id": "P01-explicit-web-searcher",
+      "shape": "explicit-naming",
+      "expected_action": "dispatch",
+      "expected_ensemble": "web-searcher",
+      "input": "Use the web-searcher ensemble to find the current population of Iceland"
+    },
+    {
+      "id": "P02-explicit-claim-extractor",
+      "shape": "explicit-naming",
+      "expected_action": "dispatch",
+      "expected_ensemble": "claim-extractor",
+      "input": "Invoke claim-extractor on this text: 'The Earth orbits the Sun. Some believe in ghosts.'"
+    },
+    {
+      "id": "P03-nl-web-search-clear",
+      "shape": "nl-clear-match",
+      "expected_action": "dispatch",
+      "expected_ensemble": "web-searcher",
+      "input": "What's the latest news about quantum computing breakthroughs in 2026?"
+    },
+    {
+      "id": "P04-nl-summarize-clear",
+      "shape": "nl-clear-match",
+      "expected_action": "dispatch",
+      "expected_ensemble": "text-summarizer",
+      "input": "Please summarize this article for me: 'Climate models predict that global temperatures will continue to rise due to greenhouse gas emissions. The IPCC report indicates that without significant intervention, warming could exceed 2 degrees Celsius by 2050. Mitigation strategies include renewable energy adoption, carbon capture technology, and policy reforms. Adaptation efforts are equally important as some climate change is now unavoidable.'"
+    },
+    {
+      "id": "P05-nl-code-clear",
+      "shape": "nl-clear-match",
+      "expected_action": "dispatch",
+      "expected_ensemble": "code-generator",
+      "input": "Write a Python function that takes a list of integers and returns a new list with only the prime numbers."
+    },
+    {
+      "id": "P06-nl-claim-extract-clear",
+      "shape": "nl-clear-match",
+      "expected_action": "dispatch",
+      "expected_ensemble": "claim-extractor",
+      "input": "Extract the factual claims from this passage and label which are established vs contested: 'Vaccines have saved millions of lives. Some people believe vaccines cause autism. The MMR vaccine is recommended at 12 months.'"
+    },
+    {
+      "id": "P07-nl-argument-map-clear",
+      "shape": "nl-clear-match",
+      "expected_action": "dispatch",
+      "expected_ensemble": "argument-mapper",
+      "input": "Map the logical structure of this argument: 'Free will cannot exist if determinism is true. Quantum mechanics shows determinism is false at the fundamental level. Therefore, free will is possible.'"
+    },
+    {
+      "id": "P08-nl-prose-improve-clear",
+      "shape": "nl-clear-match",
+      "expected_action": "dispatch",
+      "expected_ensemble": "prose-improver",
+      "input": "Could you improve the clarity of this paragraph? 'The thing is when we like try to do stuff with the data it kinda gets confusing because there's so many fields and you don't really know what they all mean and so it makes the whole process pretty hard to like figure out.'"
+    },
+    {
+      "id": "P09-nl-ambiguous-help-understand",
+      "shape": "nl-ambiguous-match",
+      "expected_action": "dispatch",
+      "expected_ensemble": "text-summarizer",
+      "input": "Help me understand this article about cellular respiration: 'Cellular respiration is the process by which cells convert glucose into ATP. It involves glycolysis in the cytoplasm, the citric acid cycle in the mitochondrial matrix, and oxidative phosphorylation across the inner mitochondrial membrane. Each glucose molecule yields approximately 30-32 ATP molecules through this process.'",
+      "note": "Could plausibly be text-summarizer, claim-extractor, or argument-mapper; text-summarizer is the most natural for 'understand'"
+    },
+    {
+      "id": "P10-nl-ambiguous-process",
+      "shape": "nl-ambiguous-match",
+      "expected_action": "dispatch",
+      "expected_ensemble": null,
+      "input": "Process this text and tell me what's important.",
+      "note": "Highly ambiguous; could match summarizer (most likely), claim-extractor, or argument-mapper. Accept any of these as correct; flag if planner picks 'direct'."
+    },
+    {
+      "id": "P11-nl-composition",
+      "shape": "nl-multi-capability",
+      "expected_action": "dispatch",
+      "expected_ensemble": "web-searcher",
+      "input": "Find recent research on climate models and then extract the main claims from what you find.",
+      "note": "Composition (search-then-extract); first capability is web-searcher per rule 3"
+    },
+    {
+      "id": "P12-nl-direct-weather",
+      "shape": "nl-no-match",
+      "expected_action": "direct",
+      "expected_ensemble": null,
+      "input": "What's the weather like today in Reykjavik?",
+      "note": "Could plausibly be web-searcher (fresh info), but conversational shape suggests direct; either answer is defensible. Flagged as direct because tone is casual conversational."
+    },
+    {
+      "id": "P13-nl-direct-opinion",
+      "shape": "nl-no-match",
+      "expected_action": "direct",
+      "expected_ensemble": null,
+      "input": "What do you think about the trolley problem in ethics?"
+    },
+    {
+      "id": "P14-nl-direct-greeting",
+      "shape": "nl-no-match",
+      "expected_action": "direct",
+      "expected_ensemble": null,
+      "input": "Hi, how are you doing today?"
+    },
+    {
+      "id": "P15-nl-direct-explain-concept",
+      "shape": "nl-no-match-or-borderline",
+      "expected_action": "direct",
+      "expected_ensemble": null,
+      "input": "Can you explain how photosynthesis works at a high level?",
+      "note": "Borderline; could be text-summarizer (if treating as 'summarize concept') or direct (general explanation). Direct is more natural here since no source text is provided to summarize."
+    },
+    {
+      "id": "P16-adversarial-empty",
+      "shape": "adversarial",
+      "expected_action": "direct",
+      "expected_ensemble": null,
+      "input": ""
+    },
+    {
+      "id": "P17-adversarial-pure-code",
+      "shape": "adversarial",
+      "expected_action": "dispatch",
+      "expected_ensemble": "code-generator",
+      "input": "def fibonacci(n):\n    if n < 2:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n\n# Make this iterative",
+      "note": "Pure code with a brief comment-request; should map to code-generator"
+    },
+    {
+      "id": "P18-adversarial-json-in-prompt",
+      "shape": "adversarial",
+      "expected_action": "direct",
+      "expected_ensemble": null,
+      "input": "Here is some JSON: {\"name\": \"test\", \"value\": 42}. Just acknowledge you see it.",
+      "note": "JSON in the prompt could confuse the planner. Should still parse to a direct/conversational decision."
+    },
+    {
+      "id": "P19-nl-iceland-composition-play22",
+      "shape": "nl-multi-capability-historical",
+      "expected_action": "dispatch",
+      "expected_ensemble": "web-searcher",
+      "input": "Use the web-searcher capability ensemble to find information about the current population of Iceland, then use the claim-extractor capability ensemble on the results.",
+      "note": "Exact prompt from Cycle 6 PLAY note 22 that produced confabulation under orchestrator-LLM-driven composition. Explicit-naming-with-composition. First capability is web-searcher."
+    },
+    {
+      "id": "P20-nl-string-reverse-task1",
+      "shape": "nl-clear-match",
+      "expected_action": "dispatch",
+      "expected_ensemble": "code-generator",
+      "input": "Write a Python function that reverses a string in place.",
+      "note": "Cycle 6 PLAY note 1 / note 18 prompt. The C1 empirical observation case; direct completion historically dominates under orchestrator-LLM routing."
+    }
+  ]
+}
