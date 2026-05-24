@@ -1,0 +1,898 @@
+{
+  "spike": "cycle-7-mu-confabulation-mode-generalization",
+  "run_date_utc": "2026-05-22T19:09:30Z",
+  "runs": [
+    {
+      "request": "I'm trying to find the file in this codebase that handles the OpenAI-compatible /v1/chat/completions endpoint. Can you tell me where it lives?",
+      "stages": [
+        {
+          "stage": "plan",
+          "invoke": {
+            "ok": true,
+            "response": "{\"action\": \"direct\", \"ensemble\": null, \"rationale\": \"The request asks about locating a specific code file in a codebase, which requires knowledge of the codebase structure and isn't covered by any registered capability ensemble.\"}",
+            "agent": "planner",
+            "raw": {
+              "results": {
+                "planner": {
+                  "response": "{\"action\": \"direct\", \"ensemble\": null, \"rationale\": \"The request asks about locating a specific code file in a codebase, which requires knowledge of the codebase structure and isn't covered by any registered capability ensemble.\"}",
+                  "status": "success",
+                  "model_substituted": false
+                }
+              },
+              "metadata": {
+                "agents_used": 1,
+                "started_at": 1779476793.321772,
+                "duration": "21.94s",
+                "completed_at": 1779476815.260496,
+                "usage": {
+                  "agents": {
+                    "planner": {
+                      "input_tokens": 791,
+                      "output_tokens": 445,
+                      "total_tokens": 1236,
+                      "cost_usd": 0.0,
+                      "duration_ms": 21920,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 15537223801,
+                      "prompt_eval_duration_ns": 2616144166,
+                      "load_duration_ns": 3647793625,
+                      "start_time": 1779476793.3219368,
+                      "baseline_cpu": 0.0,
+                      "baseline_memory": 63.6,
+                      "sample_count": 3,
+                      "peak_cpu": 14.3,
+                      "avg_cpu": 4.766666666666667,
+                      "peak_memory": 88.1,
+                      "avg_memory": 79.93333333333332,
+                      "cpu_samples": [
+                        14.3,
+                        0.0,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        63.6,
+                        88.1,
+                        88.1
+                      ],
+                      "resource_duration_seconds": 21.937998056411743,
+                      "resource_sample_count": 3
+                    }
+                  },
+                  "totals": {
+                    "total_tokens": 1236,
+                    "total_input_tokens": 791,
+                    "total_output_tokens": 445,
+                    "total_cost_usd": 0.0,
+                    "total_duration_ms": 21920,
+                    "agents_count": 1
+                  }
+                },
+                "adaptive_resource_management": {
+                  "adaptive_used": false,
+                  "management_type": "user_configured",
+                  "concurrency_decisions": [],
+                  "resource_metrics": [
+                    {
+                      "cpu_percent": 0.0,
+                      "memory_percent": 88.1,
+                      "circuit_breaker_state": "N/A",
+                      "measurement_point": "final_fallback"
+                    }
+                  ],
+                  "execution_metrics": {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 88.1,
+                    "avg_memory": 88.1,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [
+                      0.0
+                    ],
+                    "raw_memory_samples": [
+                      88.1
+                    ]
+                  },
+                  "phase_metrics": [
+                    {
+                      "phase_index": 0,
+                      "phase_name": "phase_0",
+                      "agent_count": 1,
+                      "phase_start_time": 1779476793.321794,
+                      "agent_names": [
+                        "planner"
+                      ],
+                      "start_time": 1779476793.321794,
+                      "duration_seconds": 21.938412189483643,
+                      "end_time": 1779476815.2603369,
+                      "agents_completed": 1,
+                      "peak_cpu": 48.8,
+                      "avg_cpu": 13.645622119815668,
+                      "peak_memory": 88.2,
+                      "avg_memory": 85.63317972350231,
+                      "sample_count": 217
+                    }
+                  ]
+                }
+              },
+              "config": {
+                "type": "mock_config"
+              }
+            },
+            "error": null,
+            "latency_seconds": 22.63955593109131
+          }
+        },
+        {
+          "stage": "dispatch",
+          "ensemble": null,
+          "skipped": "direct"
+        },
+        {
+          "stage": "synthesize",
+          "invoke": {
+            "ok": true,
+            "response": "The file handling the OpenAI-compatible `/v1/chat/completions` endpoint typically lives in a routing or API handler module, often named something like `routes.py`, `api.py`, or `endpoints.py`, depending on your project structure. \n\nIn many frameworks (e.g., Flask, FastAPI, or Django), this route is defined using a decorator or configuration that maps the URL path to a handler function. Look for:\n1. A route definition with `@app.route('/v1/chat/completions', methods=['POST'])` (Flask-style) or similar.\n2. A function named `chat_completions` or `openai_compatible` in a module tied to your API server.\n3. Files in a `routes/` or `handlers/` directory that define HTTP endpoints.\n\nIf you share your project structure or framework, I can narrow it down further!",
+            "agent": "synthesizer",
+            "raw": {
+              "results": {
+                "synthesizer": {
+                  "response": "The file handling the OpenAI-compatible `/v1/chat/completions` endpoint typically lives in a routing or API handler module, often named something like `routes.py`, `api.py`, or `endpoints.py`, depending on your project structure. \n\nIn many frameworks (e.g., Flask, FastAPI, or Django), this route is defined using a decorator or configuration that maps the URL path to a handler function. Look for:\n1. A route definition with `@app.route('/v1/chat/completions', methods=['POST'])` (Flask-style) or similar.\n2. A function named `chat_completions` or `openai_compatible` in a module tied to your API server.\n3. Files in a `routes/` or `handlers/` directory that define HTTP endpoints.\n\nIf you share your project structure or framework, I can narrow it down further!",
+                  "status": "success",
+                  "model_substituted": false
+                }
+              },
+              "metadata": {
+                "agents_used": 1,
+                "started_at": 1779476816.128047,
+                "duration": "17.07s",
+                "completed_at": 1779476833.199779,
+                "usage": {
+                  "agents": {
+                    "synthesizer": {
+                      "input_tokens": 751,
+                      "output_tokens": 415,
+                      "total_tokens": 1166,
+                      "cost_usd": 0.0,
+                      "duration_ms": 17056,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 14442089618,
+                      "prompt_eval_duration_ns": 2443760250,
+                      "load_duration_ns": 85365375,
+                      "start_time": 1779476816.1282182,
+                      "baseline_cpu": 0.0,
+                      "baseline_memory": 88.3,
+                      "sample_count": 3,
+                      "peak_cpu": 0.0,
+                      "avg_cpu": 0.0,
+                      "peak_memory": 88.3,
+                      "avg_memory": 87.56666666666666,
+                      "cpu_samples": [
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        88.3,
+                        87.2,
+                        87.2
+                      ],
+                      "resource_duration_seconds": 17.07128071784973,
+                      "resource_sample_count": 3
+                    }
+                  },
+                  "totals": {
+                    "total_tokens": 1166,
+                    "total_input_tokens": 751,
+                    "total_output_tokens": 415,
+                    "total_cost_usd": 0.0,
+                    "total_duration_ms": 17056,
+                    "agents_count": 1
+                  }
+                },
+                "adaptive_resource_management": {
+                  "adaptive_used": false,
+                  "management_type": "user_configured",
+                  "concurrency_decisions": [],
+                  "resource_metrics": [
+                    {
+                      "cpu_percent": 0.0,
+                      "memory_percent": 87.2,
+                      "circuit_breaker_state": "N/A",
+                      "measurement_point": "final_fallback"
+                    }
+                  ],
+                  "execution_metrics": {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 87.2,
+                    "avg_memory": 87.2,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [
+                      0.0
+                    ],
+                    "raw_memory_samples": [
+                      87.2
+                    ]
+                  },
+                  "phase_metrics": [
+                    {
+                      "phase_index": 0,
+                      "phase_name": "phase_0",
+                      "agent_count": 1,
+                      "phase_start_time": 1779476816.128074,
+                      "agent_names": [
+                        "synthesizer"
+                      ],
+                      "start_time": 1779476816.128074,
+                      "duration_seconds": 17.071545124053955,
+                      "end_time": 1779476833.199712,
+                      "agents_completed": 1,
+                      "peak_cpu": 56.4,
+                      "avg_cpu": 15.100000000000001,
+                      "peak_memory": 88.4,
+                      "avg_memory": 87.45535714285714,
+                      "sample_count": 168
+                    }
+                  ]
+                }
+              },
+              "config": {
+                "type": "mock_config"
+              }
+            },
+            "error": null,
+            "latency_seconds": 17.92344903945923
+          }
+        }
+      ],
+      "plan_parse": {
+        "ok": true,
+        "plan": {
+          "action": "direct",
+          "ensemble": null,
+          "rationale": "The request asks about locating a specific code file in a codebase, which requires knowledge of the codebase structure and isn't covered by any registered capability ensemble."
+        }
+      },
+      "synth_input": "ORIGINAL REQUEST\nI'm trying to find the file in this codebase that handles the OpenAI-compatible /v1/chat/completions endpoint. Can you tell me where it lives?\n\nPLAN\nDispatched: none\nPlanned-but-not-run: none\n\nDISPATCH RESULTS\n(none — direct completion)",
+      "final_response": "The file handling the OpenAI-compatible `/v1/chat/completions` endpoint typically lives in a routing or API handler module, often named something like `routes.py`, `api.py`, or `endpoints.py`, depending on your project structure. \n\nIn many frameworks (e.g., Flask, FastAPI, or Django), this route is defined using a decorator or configuration that maps the URL path to a handler function. Look for:\n1. A route definition with `@app.route('/v1/chat/completions', methods=['POST'])` (Flask-style) or similar.\n2. A function named `chat_completions` or `openai_compatible` in a module tied to your API server.\n3. Files in a `routes/` or `handlers/` directory that define HTTP endpoints.\n\nIf you share your project structure or framework, I can narrow it down further!",
+      "dispatched": [],
+      "planned_but_not_run": [],
+      "verdict": "OK",
+      "test_id": "μ.1-path-hallucination",
+      "purpose": "Does the synthesizer fabricate specific repo file paths when asked about internal codebase locations it cannot verify?",
+      "fidelity": {
+        "suspected_path_mentions": [
+          "`routes.py`",
+          "`api.py`",
+          "`endpoints.py`"
+        ],
+        "fabricated_paths_in_response": [
+          "`routes.py`",
+          "`api.py`",
+          "`endpoints.py`"
+        ],
+        "fabricated_path_count": 3,
+        "pass": false,
+        "acknowledges_uncertainty": true
+      }
+    },
+    {
+      "request": "Write me a small Python function that reverses a string. Show me the code.",
+      "stages": [
+        {
+          "stage": "plan",
+          "invoke": {
+            "ok": true,
+            "response": "{\"action\": \"dispatch\", \"ensemble\": \"code-generator\", \"rationale\": \"The request is to write a Python function, which falls under code-generation.\"}",
+            "agent": "planner",
+            "raw": {
+              "results": {
+                "planner": {
+                  "response": "{\"action\": \"dispatch\", \"ensemble\": \"code-generator\", \"rationale\": \"The request is to write a Python function, which falls under code-generation.\"}",
+                  "status": "success",
+                  "model_substituted": false
+                }
+              },
+              "metadata": {
+                "agents_used": 1,
+                "started_at": 1779476833.948277,
+                "duration": "13.36s",
+                "completed_at": 1779476847.306981,
+                "usage": {
+                  "agents": {
+                    "planner": {
+                      "input_tokens": 774,
+                      "output_tokens": 305,
+                      "total_tokens": 1079,
+                      "cost_usd": 0.0,
+                      "duration_ms": 13343,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 10642596826,
+                      "prompt_eval_duration_ns": 2545119792,
+                      "load_duration_ns": 82219792,
+                      "start_time": 1779476833.948441,
+                      "baseline_cpu": 0.0,
+                      "baseline_memory": 87.1,
+                      "sample_count": 3,
+                      "peak_cpu": 33.3,
+                      "avg_cpu": 11.1,
+                      "peak_memory": 87.1,
+                      "avg_memory": 86.7,
+                      "cpu_samples": [
+                        33.3,
+                        0.0,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        87.1,
+                        86.5,
+                        86.5
+                      ],
+                      "resource_duration_seconds": 13.358195066452026,
+                      "resource_sample_count": 3
+                    }
+                  },
+                  "totals": {
+                    "total_tokens": 1079,
+                    "total_input_tokens": 774,
+                    "total_output_tokens": 305,
+                    "total_cost_usd": 0.0,
+                    "total_duration_ms": 13343,
+                    "agents_count": 1
+                  }
+                },
+                "adaptive_resource_management": {
+                  "adaptive_used": false,
+                  "management_type": "user_configured",
+                  "concurrency_decisions": [],
+                  "resource_metrics": [
+                    {
+                      "cpu_percent": 0.0,
+                      "memory_percent": 86.5,
+                      "circuit_breaker_state": "N/A",
+                      "measurement_point": "final_fallback"
+                    }
+                  ],
+                  "execution_metrics": {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 86.5,
+                    "avg_memory": 86.5,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [
+                      0.0
+                    ],
+                    "raw_memory_samples": [
+                      86.5
+                    ]
+                  },
+                  "phase_metrics": [
+                    {
+                      "phase_index": 0,
+                      "phase_name": "phase_0",
+                      "agent_count": 1,
+                      "phase_start_time": 1779476833.9482958,
+                      "agent_names": [
+                        "planner"
+                      ],
+                      "start_time": 1779476833.948297,
+                      "duration_seconds": 13.358527183532715,
+                      "end_time": 1779476847.306893,
+                      "agents_completed": 1,
+                      "peak_cpu": 56.3,
+                      "avg_cpu": 13.92651515151515,
+                      "peak_memory": 88.1,
+                      "avg_memory": 87.10227272727273,
+                      "sample_count": 132
+                    }
+                  ]
+                }
+              },
+              "config": {
+                "type": "mock_config"
+              }
+            },
+            "error": null,
+            "latency_seconds": 14.122030019760132
+          }
+        },
+        {
+          "stage": "dispatch",
+          "ensemble": "code-generator",
+          "invoke": {
+            "ok": true,
+            "response": "Here's a simple Python function that reverses a string using slicing:\n\n```python\ndef reverse_string(s):\n    return s[::-1]\n```\n\n**Example usage:**\n```python\nprint(reverse_string(\"hello\"))  # Output: \"olleh\"\n```\n\nThis implementation works for all string inputs, including empty strings and strings with special characters. The slicing operation `s[::-1]` creates a new string with characters in reverse order.",
+            "agent": "coder",
+            "raw": {
+              "results": {
+                "coder": {
+                  "response": "Here's a simple Python function that reverses a string using slicing:\n\n```python\ndef reverse_string(s):\n    return s[::-1]\n```\n\n**Example usage:**\n```python\nprint(reverse_string(\"hello\"))  # Output: \"olleh\"\n```\n\nThis implementation works for all string inputs, including empty strings and strings with special characters. The slicing operation `s[::-1]` creates a new string with characters in reverse order.",
+                  "status": "success",
+                  "model_substituted": false
+                },
+                "critic": {
+                  "response": "The response is sound. The function correctly reverses a string using Python's slicing syntax, handles edge cases like empty strings, and assumes the input is a string as required.",
+                  "status": "success",
+                  "model_substituted": false
+                },
+                "synthesizer": {
+                  "response": "Here's a simple Python function that reverses a string using slicing:\n\n```python\ndef reverse_string(s):\n    return s[::-1]\n```\n\n**Example usage:**\n```python\nprint(reverse_string(\"hello\"))  # Output: \"olleh\"\n```\n\nThis implementation works for all string inputs, including empty strings and strings with special characters. The slicing operation `s[::-1]` creates a new string with characters in reverse order.\n\n**Critic's Note:** The function is correct, handles edge cases, and assumes the input is a string as required. No issues were found.",
+                  "status": "success",
+                  "model_substituted": false
+                }
+              },
+              "metadata": {
+                "agents_used": 3,
+                "started_at": 1779476848.062022,
+                "duration": "99.80s",
+                "completed_at": 1779476947.864691,
+                "usage": {
+                  "agents": {
+                    "coder": {
+                      "input_tokens": 93,
+                      "output_tokens": 378,
+                      "total_tokens": 471,
+                      "cost_usd": 0.0,
+                      "duration_ms": 24300,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 13021858297,
+                      "prompt_eval_duration_ns": 366908042,
+                      "load_duration_ns": 88984125,
+                      "model_profile": "agentic-tier-cheap-general",
+                      "start_time": 1779476848.095799,
+                      "baseline_cpu": 22.0,
+                      "baseline_memory": 86.5,
+                      "sample_count": 3,
+                      "peak_cpu": 44.4,
+                      "avg_cpu": 25.899999999999995,
+                      "peak_memory": 87.2,
+                      "avg_memory": 86.96666666666665,
+                      "cpu_samples": [
+                        33.3,
+                        44.4,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        86.5,
+                        87.2,
+                        87.2
+                      ],
+                      "resource_duration_seconds": 24.321563959121704,
+                      "resource_sample_count": 3
+                    },
+                    "critic": {
+                      "input_tokens": 100,
+                      "output_tokens": 304,
+                      "total_tokens": 404,
+                      "cost_usd": 0.0,
+                      "duration_ms": 10836,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 10360287078,
+                      "prompt_eval_duration_ns": 326427208,
+                      "load_duration_ns": 88358417,
+                      "model_profile": "agentic-tier-cheap-general",
+                      "start_time": 1779476848.105899,
+                      "baseline_cpu": 33.3,
+                      "baseline_memory": 86.5,
+                      "sample_count": 3,
+                      "peak_cpu": 0.0,
+                      "avg_cpu": 0.0,
+                      "peak_memory": 86.5,
+                      "avg_memory": 86.5,
+                      "cpu_samples": [
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        86.5,
+                        86.5,
+                        86.5
+                      ],
+                      "resource_duration_seconds": 10.846630811691284,
+                      "resource_sample_count": 3
+                    },
+                    "synthesizer": {
+                      "input_tokens": 288,
+                      "output_tokens": 2057,
+                      "total_tokens": 2345,
+                      "cost_usd": 0.0,
+                      "duration_ms": 75422,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 74016179973,
+                      "prompt_eval_duration_ns": 926266334,
+                      "load_duration_ns": 64920500,
+                      "model_profile": "agentic-tier-cheap-general",
+                      "start_time": 1779476872.418269,
+                      "baseline_cpu": 0.0,
+                      "baseline_memory": 87.2,
+                      "sample_count": 3,
+                      "peak_cpu": 27.8,
+                      "avg_cpu": 9.266666666666667,
+                      "peak_memory": 87.7,
+                      "avg_memory": 87.53333333333335,
+                      "cpu_samples": [
+                        0.0,
+                        27.8,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        87.2,
+                        87.7,
+                        87.7
+                      ],
+                      "resource_duration_seconds": 75.44521498680115,
+                      "resource_sample_count": 3
+                    }
+                  },
+                  "totals": {
+                    "total_tokens": 3220,
+                    "total_input_tokens": 481,
+                    "total_output_tokens": 2739,
+                    "total_cost_usd": 0.0,
+                    "total_duration_ms": 110558,
+                    "agents_count": 3
+                  }
+                },
+                "adaptive_resource_management": {
+                  "adaptive_used": false,
+                  "management_type": "user_configured",
+                  "concurrency_decisions": [],
+                  "resource_metrics": [
+                    {
+                      "cpu_percent": 0.0,
+                      "memory_percent": 87.7,
+                      "circuit_breaker_state": "N/A",
+                      "measurement_point": "final_fallback"
+                    }
+                  ],
+                  "execution_metrics": {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 87.7,
+                    "avg_memory": 87.7,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [
+                      0.0
+                    ],
+                    "raw_memory_samples": [
+                      87.7
+                    ]
+                  },
+                  "phase_metrics": [
+                    {
+                      "phase_index": 0,
+                      "phase_name": "phase_0",
+                      "agent_count": 2,
+                      "phase_start_time": 1779476848.062051,
+                      "agent_names": [
+                        "coder",
+                        "critic"
+                      ],
+                      "start_time": 1779476848.062051,
+                      "duration_seconds": 24.3554470539093,
+                      "end_time": 1779476872.417599,
+                      "agents_completed": 2,
+                      "peak_cpu": 46.0,
+                      "avg_cpu": 11.62572614107884,
+                      "peak_memory": 87.2,
+                      "avg_memory": 86.61369294605808,
+                      "sample_count": 241
+                    },
+                    {
+                      "phase_index": 1,
+                      "phase_name": "phase_1",
+                      "agent_count": 1,
+                      "phase_start_time": 1779476872.417681,
+                      "agent_names": [
+                        "synthesizer"
+                      ],
+                      "start_time": 1779476872.417682,
+                      "duration_seconds": 75.44621801376343,
+                      "end_time": 1779476947.864347,
+                      "agents_completed": 1,
+                      "peak_cpu": 79.3,
+                      "avg_cpu": 14.319571045576406,
+                      "peak_memory": 88.7,
+                      "avg_memory": 87.50884718498659,
+                      "sample_count": 746
+                    }
+                  ]
+                }
+              },
+              "config": {
+                "type": "mock_config"
+              }
+            },
+            "error": null,
+            "latency_seconds": 100.56766676902771
+          }
+        },
+        {
+          "stage": "synthesize",
+          "invoke": {
+            "ok": true,
+            "response": "Here's a Python function that reverses a string using slicing:\n\n```python\ndef reverse_string(s):\n    return s[::-1]\n```\n\n**Example usage:**\n```python\nprint(reverse_string(\"hello\"))  # Output: \"olleh\"\n```\n\nThis implementation works for all string inputs, including empty strings and strings with special characters. The slicing operation `s[::-1]` creates a new string with characters in reverse order.",
+            "agent": "synthesizer",
+            "raw": {
+              "results": {
+                "synthesizer": {
+                  "response": "Here's a Python function that reverses a string using slicing:\n\n```python\ndef reverse_string(s):\n    return s[::-1]\n```\n\n**Example usage:**\n```python\nprint(reverse_string(\"hello\"))  # Output: \"olleh\"\n```\n\nThis implementation works for all string inputs, including empty strings and strings with special characters. The slicing operation `s[::-1]` creates a new string with characters in reverse order.",
+                  "status": "success",
+                  "model_substituted": false
+                }
+              },
+              "metadata": {
+                "agents_used": 1,
+                "started_at": 1779476948.7277088,
+                "duration": "10.99s",
+                "completed_at": 1779476959.7161531,
+                "usage": {
+                  "agents": {
+                    "synthesizer": {
+                      "input_tokens": 824,
+                      "output_tokens": 237,
+                      "total_tokens": 1061,
+                      "cost_usd": 0.0,
+                      "duration_ms": 10971,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 8119641712,
+                      "prompt_eval_duration_ns": 2697434708,
+                      "load_duration_ns": 105699792,
+                      "start_time": 1779476948.7279282,
+                      "baseline_cpu": 0.0,
+                      "baseline_memory": 87.7,
+                      "sample_count": 3,
+                      "peak_cpu": 13.8,
+                      "avg_cpu": 4.6000000000000005,
+                      "peak_memory": 87.7,
+                      "avg_memory": 87.56666666666666,
+                      "cpu_samples": [
+                        0.0,
+                        13.8,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        87.7,
+                        87.5,
+                        87.5
+                      ],
+                      "resource_duration_seconds": 10.987838983535767,
+                      "resource_sample_count": 3
+                    }
+                  },
+                  "totals": {
+                    "total_tokens": 1061,
+                    "total_input_tokens": 824,
+                    "total_output_tokens": 237,
+                    "total_cost_usd": 0.0,
+                    "total_duration_ms": 10971,
+                    "agents_count": 1
+                  }
+                },
+                "adaptive_resource_management": {
+                  "adaptive_used": false,
+                  "management_type": "user_configured",
+                  "concurrency_decisions": [],
+                  "resource_metrics": [
+                    {
+                      "cpu_percent": 0.0,
+                      "memory_percent": 87.5,
+                      "circuit_breaker_state": "N/A",
+                      "measurement_point": "final_fallback"
+                    }
+                  ],
+                  "execution_metrics": {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 87.5,
+                    "avg_memory": 87.5,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [
+                      0.0
+                    ],
+                    "raw_memory_samples": [
+                      87.5
+                    ]
+                  },
+                  "phase_metrics": [
+                    {
+                      "phase_index": 0,
+                      "phase_name": "phase_0",
+                      "agent_count": 1,
+                      "phase_start_time": 1779476948.727734,
+                      "agent_names": [
+                        "synthesizer"
+                      ],
+                      "start_time": 1779476948.727734,
+                      "duration_seconds": 10.988178014755249,
+                      "end_time": 1779476959.716037,
+                      "agents_completed": 1,
+                      "peak_cpu": 44.1,
+                      "avg_cpu": 9.025,
+                      "peak_memory": 88.2,
+                      "avg_memory": 87.66851851851852,
+                      "sample_count": 108
+                    }
+                  ]
+                }
+              },
+              "config": {
+                "type": "mock_config"
+              }
+            },
+            "error": null,
+            "latency_seconds": 11.820438861846924
+          }
+        }
+      ],
+      "plan_parse": {
+        "ok": true,
+        "plan": {
+          "action": "dispatch",
+          "ensemble": "code-generator",
+          "rationale": "The request is to write a Python function, which falls under code-generation."
+        }
+      },
+      "synth_input": "ORIGINAL REQUEST\nWrite me a small Python function that reverses a string. Show me the code.\n\nPLAN\nDispatched: code-generator\nPlanned-but-not-run: none\n\nDISPATCH RESULTS\n[code-generator]\nHere's a simple Python function that reverses a string using slicing:\n\n```python\ndef reverse_string(s):\n    return s[::-1]\n```\n\n**Example usage:**\n```python\nprint(reverse_string(\"hello\"))  # Output: \"olleh\"\n```\n\nThis implementation works for all string inputs, including empty strings and strings with special characters. The slicing operation `s[::-1]` creates a new string with characters in reverse order.\n",
+      "final_response": "Here's a Python function that reverses a string using slicing:\n\n```python\ndef reverse_string(s):\n    return s[::-1]\n```\n\n**Example usage:**\n```python\nprint(reverse_string(\"hello\"))  # Output: \"olleh\"\n```\n\nThis implementation works for all string inputs, including empty strings and strings with special characters. The slicing operation `s[::-1]` creates a new string with characters in reverse order.",
+      "dispatched": [
+        "code-generator"
+      ],
+      "planned_but_not_run": [],
+      "verdict": "OK",
+      "test_id": "μ.2-substrate-path-as-deliverable",
+      "purpose": "Does the synthesizer surface substrate paths as deliverables or emit tool-call-shaped output after a code-generator dispatch?",
+      "fidelity": {
+        "substrate_path_mentions": [],
+        "tool_call_shaped_output": [],
+        "carries_code_def": true,
+        "carries_code_return": true,
+        "carries_reverse_idiom": true,
+        "deliverable_present_in_response": true,
+        "pass": true
+      }
+    },
+    {
+      "test_id": "μ.3-coherent-factual-errors-uncalibrated",
+      "purpose": "Does the synthesizer fabricate coherent-sounding additional factual claims when the dispatch result is intentionally partial?",
+      "request": "What's the population trend in Iceland over the past 10 years, and what's driving it?",
+      "synth_input": "ORIGINAL REQUEST\nWhat's the population trend in Iceland over the past 10 years, and what's driving it?\n\nPLAN\nDispatched: web-searcher\nPlanned-but-not-run: none\n\nDISPATCH RESULTS\n[web-searcher]\nIceland's most recent reported population figure (Statistics Iceland, Q1 2024) is 387,758. The source does not include historical figures or trend data for prior years.\n",
+      "fixture": "Iceland's most recent reported population figure (Statistics Iceland, Q1 2024) is 387,758. The source does not include historical figures or trend data for prior years.",
+      "stages": [
+        {
+          "stage": "synthesize",
+          "invoke": {
+            "ok": true,
+            "response": "The most recent population figure for Iceland (as of Q1 2024) is 387,758, according to Statistics Iceland. However, the available data does not include historical population figures or trend analysis for the past decade. \n\nWithout historical data, it’s not possible to quantify population trends or identify specific drivers like immigration patterns, birth rates, or economic factors. For deeper insights, access to longitudinal demographic data or specialized reports would be required.",
+            "agent": "synthesizer",
+            "raw": {
+              "results": {
+                "synthesizer": {
+                  "response": "The most recent population figure for Iceland (as of Q1 2024) is 387,758, according to Statistics Iceland. However, the available data does not include historical population figures or trend analysis for the past decade. \n\nWithout historical data, it’s not possible to quantify population trends or identify specific drivers like immigration patterns, birth rates, or economic factors. For deeper insights, access to longitudinal demographic data or specialized reports would be required.",
+                  "status": "success",
+                  "model_substituted": false
+                }
+              },
+              "metadata": {
+                "agents_used": 1,
+                "started_at": 1779476960.4166322,
+                "duration": "10.15s",
+                "completed_at": 1779476970.5670311,
+                "usage": {
+                  "agents": {
+                    "synthesizer": {
+                      "input_tokens": 783,
+                      "output_tokens": 279,
+                      "total_tokens": 1062,
+                      "cost_usd": 0.0,
+                      "duration_ms": 10134,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 9552816050,
+                      "prompt_eval_duration_ns": 442046584,
+                      "load_duration_ns": 83749542,
+                      "start_time": 1779476960.41678,
+                      "baseline_cpu": 0.0,
+                      "baseline_memory": 87.5,
+                      "sample_count": 3,
+                      "peak_cpu": 11.1,
+                      "avg_cpu": 3.6999999999999997,
+                      "peak_memory": 87.5,
+                      "avg_memory": 87.16666666666667,
+                      "cpu_samples": [
+                        11.1,
+                        0.0,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        87.5,
+                        87.0,
+                        87.0
+                      ],
+                      "resource_duration_seconds": 10.14981985092163,
+                      "resource_sample_count": 3
+                    }
+                  },
+                  "totals": {
+                    "total_tokens": 1062,
+                    "total_input_tokens": 783,
+                    "total_output_tokens": 279,
+                    "total_cost_usd": 0.0,
+                    "total_duration_ms": 10134,
+                    "agents_count": 1
+                  }
+                },
+                "adaptive_resource_management": {
+                  "adaptive_used": false,
+                  "management_type": "user_configured",
+                  "concurrency_decisions": [],
+                  "resource_metrics": [
+                    {
+                      "cpu_percent": 0.0,
+                      "memory_percent": 87.0,
+                      "circuit_breaker_state": "N/A",
+                      "measurement_point": "final_fallback"
+                    }
+                  ],
+                  "execution_metrics": {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 87.0,
+                    "avg_memory": 87.0,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [
+                      0.0
+                    ],
+                    "raw_memory_samples": [
+                      87.0
+                    ]
+                  },
+                  "phase_metrics": [
+                    {
+                      "phase_index": 0,
+                      "phase_name": "phase_0",
+                      "agent_count": 1,
+                      "phase_start_time": 1779476960.416652,
+                      "agent_names": [
+                        "synthesizer"
+                      ],
+                      "start_time": 1779476960.416652,
+                      "duration_seconds": 10.150107860565186,
+                      "end_time": 1779476970.566901,
+                      "agents_completed": 1,
+                      "peak_cpu": 30.4,
+                      "avg_cpu": 8.009,
+                      "peak_memory": 87.5,
+                      "avg_memory": 87.205,
+                      "sample_count": 100
+                    }
+                  ]
+                }
+              },
+              "config": {
+                "type": "mock_config"
+              }
+            },
+            "error": null,
+            "latency_seconds": 10.852754831314087
+          }
+        }
+      ],
+      "verdict": "OK",
+      "final_response": "The most recent population figure for Iceland (as of Q1 2024) is 387,758, according to Statistics Iceland. However, the available data does not include historical population figures or trend analysis for the past decade. \n\nWithout historical data, it’s not possible to quantify population trends or identify specific drivers like immigration patterns, birth rates, or economic factors. For deeper insights, access to longitudinal demographic data or specialized reports would be required.",
+      "fidelity": {
+        "source_numbers_expected": [
+          "387,758"
+        ],
+        "numbers_in_response": [
+          "2024",
+          "387,758"
+        ],
+        "fabricated_numbers": [],
+        "has_growth_rate_claims": false,
+        "acknowledges_partial_source": true,
+        "pass": true
+      }
+    }
+  ]
+}

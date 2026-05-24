@@ -264,3 +264,120 @@ The Cycle 5 path `.llm-orc/artifacts/agentic-serving/<ensemble>/<timestamp>/` is
 4. **Three or more capability ensembles declaring `output_substrate: inline`** as opt-outs (a pattern signaling the always-scope is producing the boundary judgments substantive-deliverable scope would have made at DECIDE).
 
 If any indicator fires, the operator surfaces the finding in the cycle observing it; a follow-on cycle re-examines the substantive-deliverable scope (rejected at Cycle 6 DECIDE) with the empirical evidence.
+
+---
+
+## Cycle 7 interaction-spec additions (per ADR-026 + ADR-027 + ADR-028 + ADR-029 + ADR-030 + ADR-031 + ADR-032)
+
+Cycle 7 introduces the framework-driven dispatch pipeline on the chat-completions surface (per ADR-027), bounded by two new constitutional invariants — AS-9 (structurally-bounded LLM roles; codified at MODEL boundary) and AS-10 (capability matching from request content alone; codified in ADR-026). The new interaction shapes for existing stakeholders, plus three new role-stakeholders introduced by the pipeline, are specified below. The updates complement (not replace) the existing interaction specifications above; the new shapes apply to the agentic-serving chat-completions surface specifically (per AS-10's scope), with non-chat-completions surfaces continuing to operate per the existing specifications.
+
+### Stakeholder: Tool User — Cycle 7 task refinements
+
+Cycle 7 partitions the Tool User into Population A (tool-call-aware OpenAI-family clients without alternative llm-orc surface access — Aider, Cline, OpenCode, Cursor with base-URL override) and Population B (developer/script clients with alternative-surface access). The existing tasks (Configure the agentic coding tool; Complete a coding task; Observe what the orchestrator is doing; Experience budget exhaustion cleanly) remain operative; the Cycle 7 refinements affect how those tasks manifest under ADR-027's pipeline.
+
+#### Task: Configure the agentic coding tool to use llm-orc as its backend (Cycle 7 refinement — Population A path)
+
+**Interaction mechanics:** Population A (Aider, Cline, OpenCode, Cursor) configures the tool's API endpoint to llm-orc's base URL and selects a model. The `/v1/models` list now surfaces both the configured orchestrator model profiles AND the capability ensembles loaded in the framework's registry (per ADR-032 capability-list discovery; surface candidate (a)). The Tool User does not need to know which list entries are ensembles vs. underlying models — the framework's transparent-endpoint promise (per AS-10) ensures any model identifier the client sends in the request flows through ADR-027's pipeline consistently. Tier B clients (Cline) require operator-side tuning of `requestTimeoutMs` per ADR-031 §Tier B with smoke test verification before deployment.
+
+#### Task: Complete a coding task through the tool's normal workflow (Cycle 7 refinement)
+
+**Interaction mechanics:** The Tool User interacts with their agentic coding tool exactly as they would with any other LLM backend. Behind the endpoint, ADR-027's three-stage pipeline (plan → dispatch → synthesize) runs for each chat-completions request — the routing-planner determines whether to dispatch a capability ensemble or fall through to direct-completion via the synthesizer; the framework executes the plan deterministically; the response-synthesizer produces the user-facing response. The Tool User does not see the pipeline stages directly; the response shape conforms to OpenAI chat-completions semantics. Latency floor at qwen3:8b is ~36s single-step / ~64s chained (per ADR-031); streaming-default clients (OpenCode, Aider, Cline-tuned) experience first-token latency at ~2-3s after synthesizer invocation.
+
+#### Task: Receive honest response labeling (Cycle 7 new task)
+
+**Interaction mechanics:** Each chat-completion response carries honest labeling at three layers (per ADR-032): response header `X-LLM-Orc-Served-By: <ensemble:<name> | direct | direct_fallback>`; body metadata `metadata.served_by: <value>`; content-layer Rule 5 framing on direct-completion responses per ADR-029. The labeling enables the Tool User (or operator inspecting their tool's request history) to verify which path served each request. Population A's degradation signal (configuration dishonesty per Cline #10551 + OpenCode #20859) is structurally prevented — the framework cannot silently disguise direct-completion as ensemble-dispatched. Population A clients that don't surface response headers/metadata see only the content-layer Rule 5 framing on direct-completion responses; clients that do surface metadata see the full three-layer signal.
+
+#### Task: Send `tool_choice` and receive bridge advisory (Cycle 7 new task; Population A `tool_choice`-aware sub-segment)
+
+**Interaction mechanics:** A Population A client (e.g., a client-side skill framework that constructs `tool_choice` shapes) sends a chat-completions request with `tool_choice: {"name": "<ensemble>"}` (or function-call shape). The framework's bridge mechanism per ADR-030 observes the parameter and emits a three-layer advisory: header `X-LLM-Orc-Tool-Choice-Handling: deferred`; body metadata `tool_choice_handling: "deferred"`; on `action: "direct"` responses, content-layer acknowledgment per Rule 5-adjacent. The Tool User (or operator) sees the deferred state honestly; the parameter is not silently stripped (the Cycle 6 footgun is removed). Disposition (i) full implementation lands in a follow-on cycle per ADR-030 §Follow-on trigger.
+
+#### Task: Population B receives structured advisory toward alternative surfaces (Cycle 7 new task)
+
+**Interaction mechanics:** A Population B client (a developer/script using e.g., `requests` library payloads) sending a chat-completions request whose content shape matches Population-B-style patterns receives the response with an additional metadata field: `metadata.population_b_advisory: "<advisory-content>"` pointing toward `llm-orc invoke` or the direct ensemble HTTP API. The advisory is informational; the chat-completions response content carries the synthesizer's normal output. Population B clients can choose to migrate to the alternative surface or continue using chat-completions (the chat-completions surface remains transparent per AS-10).
+
+### Stakeholder: Ensemble Author / Operator — Cycle 7 task additions
+
+The existing tasks remain operative. Cycle 7 adds operator interaction surfaces specific to the framework-driven pipeline and its observability.
+
+#### Task: Deploy and configure routing-planner + response-synthesizer system ensembles
+
+**Interaction mechanics:** Cycle 7 BUILD ships two new system ensembles under the `agentic-` prefix convention (per ADR-019): `agentic-routing-planner.yaml` (per ADR-028) and `agentic-response-synthesizer.yaml` (per ADR-029). Both ship with qwen3:8b model profile as the cheap-tier default. The operator may override the model profile via the ensemble's YAML (per ADR-011's session-boundary config discipline) for deployments where the default does not suit. Operator override risks are operator-borne; the framework's empirical-grounding scope is the default profile (Spike ζ + Spike ε + Spike ε' + Spike μ at qwen3:8b).
+
+#### Task: Configure capability-list discovery surface
+
+**Interaction mechanics:** The operator decides which of ADR-032's three candidate surfaces the deployment exposes for capability-list discovery: `/v1/models` extension (the lowest-cost candidate; capability ensembles appear as model entries with a type marker); sibling endpoint (e.g., `/v1/ensembles`); response metadata (capability list included in chat-completion response metadata for clients that opt in via a request flag). Multiple surfaces may coexist. The operator updates the framework's loaded-ensemble registry (by adding/removing ensemble YAML files); the discovery surfaces reflect the registry dynamically.
+
+#### Task: Monitor `direct_completion_rate` and capability-routing degradation signaling
+
+**Interaction mechanics:** The operator's dashboards / logs surface two new event types from the dispatch event substrate per ADR-032: `direct_completion_fallback` (fires on `action: "direct"`); rolling `direct_completion_rate` metric (percentage of chat-completions requests resulting in `action: "direct"` over a sliding window). High rates surface in operator-terminal destination per ADR-023; the operator interprets them — high rate + Population A-heavy deployment → either the capability library is too narrow for client request shapes (expand the library) or the routing-planner is missing capability matches (tune the planner; check Tier-Router Audit drift criteria per ADR-018).
+
+#### Task: Run Cline integration smoke test before deploying to Tier B clients (Cycle 7 new task)
+
+**Interaction mechanics:** Per ADR-031 §Tier B, before deploying llm-orc agentic-serving against Cline users, the operator runs the integration smoke test specified in ADR-031: send a single-capability NL request matching an installed capability ensemble; verify the response arrives within the operator's configured `requestTimeoutMs` minus 5s headroom; confirm the response includes the expected ensemble output or a direct-completion framing per Rule 5. Repeat for a chained-composition request with `requestTimeoutMs` minus 10s headroom. If the smoke test fails, the operator investigates Cline issue #4308 in their specific Cline build before relying on the tuning. Cursor users on the agentic path are structurally outside scope (plan-mode chat-panel only).
+
+#### Task: Configure tier escalation policy for direct-completion responses (Cycle 7 new task)
+
+**Interaction mechanics:** The operator configures the direct-completion path's tier escalation per ADR-031 §"Tier escalation policy for direct-completion." Default tier is cheap-tier (qwen3:8b empirical baseline). The operator may configure: a deployment-level escalation target (e.g., gpt-4o-mini, Claude Haiku 4.5) for direct-completion responses; Calibration Gate Reflect-trigger criteria thresholds (Rule 1 fabrication signal; Rule 4 rounding-drift; Rule 5 framing absence per ADR-029). Production traffic determines which triggers apply for the deployment.
+
+#### Task: Configure response labeling header conventions (Cycle 7 new task)
+
+**Interaction mechanics:** The operator may configure the response labeling header naming per ADR-032 (e.g., `X-LLM-Orc-Served-By` vs. `Served-By` vs. another framework-chosen convention). The header field name is conventional, not load-bearing — operators with existing observability conventions may choose to align llm-orc's labeling with their deployment patterns. The body metadata and content-layer Rule 5 framing are not operator-tunable (they are structurally specified by ADR-029 + ADR-032).
+
+### Stakeholder: Orchestrator LLM — Cycle 7 role contraction
+
+The Orchestrator LLM's role on the chat-completions surface contracts substantially under ADR-027. The existing tasks (Receive a task; Route an existing ensemble; Compose a new ensemble; Record outcomes; Stay within Budget; Terminate the task cleanly; Receive calibration verdicts; Recover from typed errors) **do not apply to the chat-completions surface under Cycle 7 BUILD**. They continue to apply to any future surface that adopts `OrchestratorRuntime` per ADR-001 + ADR-011's continuing architectural commitment.
+
+The Tranche 4 conformance scan (Finding 2) established that `OrchestratorRuntime` currently has no production caller other than the chat-completions handler being replaced by ADR-027. Under ADR-027's three deferred-to-ARCHITECT dispositions (preserve / wire-CLI / remove), the Orchestrator LLM stakeholder's tasks have:
+- **Disposition (a) preserve as architecture-for-future-surfaces:** tasks remain documented capabilities available for any future surface; no active interaction surface.
+- **Disposition (b) wire `llm-orc invoke` to use `OrchestratorRuntime`:** tasks become operative on the CLI surface (currently the CLI uses `OrchestraService` directly without an LLM-mediated execution model).
+- **Disposition (c) mark for removal as unused code:** tasks become dormant in the live codebase; ADR-001 + ADR-011's commitments preserve them as architectural options for re-introduction in a future cycle.
+
+ARCHITECT selects the disposition; the interaction specification updates accordingly when the disposition is named.
+
+### Stakeholder: Skill Orchestration User — Cycle 7 task validation
+
+The Skill Orchestration User (Cycle 5 introduction) composes a client-side skill framework against the orchestrator's capability library; expects dispatch when a capability slot fits (per product-discovery). Cycle 7 validates this stakeholder's super-objective structurally via ADR-027 + ADR-028.
+
+#### Task: Compose a skill framework against the orchestrator's capability library (Cycle 7 refinement)
+
+**Interaction mechanics:** The Skill Orchestration User authors a client-side skill framework that decomposes higher-level workflows into capability-typed sub-tasks; each sub-task becomes a chat-completions request to the agentic-serving endpoint. Per ADR-027 + ADR-028, the routing-planner ensemble routes each request based on its content alone (AS-10); capability matches dispatch to the matching capability ensemble; non-capability-match requests fall through to direct-completion. The Skill Orchestration User does not configure routing on the framework side (per AS-10's no-client-side-opt-in rule); the planner's routing is the dispatch surface. If the planner systematically misses capability matches the skill framework expects, the operator-observable degradation signaling per ADR-032 surfaces the gap.
+
+#### Task: Discover available capabilities (Cycle 7 new task)
+
+**Interaction mechanics:** The Skill Orchestration User calls the operator-configured capability-list discovery surface (per ADR-032: `/v1/models` extension, sibling endpoint, or response metadata) to discover the deployment's available capability ensembles. Each capability is named (e.g., `code-generator`, `text-summarizer`, `claim-extractor`) with `topaz_skill` metadata. The skill framework's decomposition logic uses the capability list to map workflow sub-tasks to dispatchable capabilities — either by sending NL requests the planner routes (transparent path) or by including explicit ensemble names in request content (the planner honors explicit naming when present).
+
+### New stakeholder: Routing-Planner Ensemble (Cycle 7 introduction; per ADR-028)
+
+**Super-Objective:** Produce a deterministic JSON dispatch plan from chat-completions request content + framework's capability list, such that the framework can execute the plan without further LLM reasoning.
+
+#### Task: Read request content and capability list
+
+**Interaction mechanics:** The Routing-Planner Ensemble receives input of the form `(ORIGINAL REQUEST: messages[], model, tools[]) + (CAPABILITY LIST: ensemble names + descriptions + topaz_skill tags from the framework's loaded-ensemble registry)`. Per AS-10 (ADR-026), the planner does not consume client-side opt-in signals beyond OpenAI-protocol-native fields. The planner reads only the supplied input; it does not query the framework's registry or perform retrieval beyond the supplied capability list.
+
+#### Task: Emit a JSON dispatch plan conforming to the schema
+
+**Interaction mechanics:** The Routing-Planner Ensemble emits JSON conforming to the dispatch-plan schema: `{"action": "dispatch" | "direct", "ensemble": "<name>" | null, "input": "<input string for the dispatched ensemble; required when action=dispatch>", "rationale": "<one-sentence explanation>"}`. Per Spike ζ's empirical floor at qwen3:8b (100% JSON conformance + 100% schema validity), the planner produces conformant JSON across diverse request shapes. The planner does not chain through tool calls, multi-step reasoning, or narration — the role is bounded to producing JSON from a given input (AS-9 structural-bounding property).
+
+#### Task: Defer multi-step composition to the framework chain-heuristic
+
+**Interaction mechanics:** For requests that involve multi-step composition (e.g., search-then-extract chains), the planner emits a single dispatch step; the framework's chain-heuristic (Spike δ's `resolve_input(step.input, results)` pattern) handles the chaining. Production traffic diversity may surface composition shapes the single-step planner + framework chain-heuristic default does not handle; per OQ #21, multi-step planner alternatives are deferred to BUILD/PLAY-informed downstream-phase work.
+
+### New stakeholder: Response-Synthesizer Ensemble (Cycle 7 introduction; per ADR-029)
+
+**Super-Objective:** Produce the user-facing chat-completion response from structured `(ORIGINAL REQUEST + PLAN + DISPATCH RESULTS)` input under strict-fidelity rules, such that the response correctly represents the dispatched work (or honest direct-completion fallback) without confabulation.
+
+#### Task: Read structured input
+
+**Interaction mechanics:** The Response-Synthesizer Ensemble receives input of the form: ORIGINAL REQUEST (full `messages[]` + `model`); PLAN (the routing-planner's emitted `{action, ensemble, input, rationale}`); DISPATCH RESULTS (when `action: "dispatch"` and dispatch succeeded: structured representation of the dispatched ensemble's envelope per ADR-024; when dispatch failed: structured error from the dispatch; when `action: "direct"`: empty/null). The synthesizer does not access dispatched ensemble's substrate paths directly — substrate routing per ADR-025 produces summary-shaped content in the envelope; the synthesizer reads `primary` + `artifacts[0].summary` fields.
+
+#### Task: Produce the chat-completion response under six strict-fidelity rules
+
+**Interaction mechanics:** The Response-Synthesizer Ensemble produces `message.content` + `finish_reason: stop` under the six rules per ADR-029: Rule 1 (use only DISPATCH RESULTS for substantive claims); Rule 2 (do not fabricate Planned-but-not-run results); Rule 3 (do not invent operational metadata); Rule 4 (cite figures verbatim; rounding-drift mitigation per the playbook applies); Rule 5 (honest direct-completion framing when DISPATCH RESULTS is empty); Rule 6 (framework-convention enumeration with hedging in direct-completion mode). Per Spike ε + ε' + μ's n=13 empirical floor at qwen3:8b, 0 fabrications across 4 confabulation modes.
+
+#### Task: Defer to Calibration Gate Reflect on rule-violation signals
+
+**Interaction mechanics:** The Calibration Gate within the response-synthesizer ensemble monitors three Reflect-trigger criteria per ADR-029: Rule 5 framing absence (on `action: "direct"`); Rule 4 rounding-drift (when runtime fidelity check detects drift); Rule 1 fabrication signal (when post-hoc audit detects unsourced content). On Reflect verdict, the Tier-Escalation Router per ADR-015 may escalate the synthesizer to a higher-tier model for retry; the audit per ADR-018 tracks drift for operator visibility.
+
+#### Task: Handle multi-turn continuity via prior-turns-in-input
+
+**Interaction mechanics:** When the chat-completions request includes multi-turn `messages[]`, the framework serializes prior turns into the synthesizer's ORIGINAL REQUEST input. The synthesizer reads the full conversation history and produces responses that correctly reference prior-turn content. Per Spike ε' C1 + C2, multi-turn continuity is preserved when prior turns are in input; native `messages[]` handling at the framework layer is mechanical ARCHITECT-phase work.
