@@ -1,13 +1,228 @@
 # Roadmap: Agentic Serving
 
-**Generated:** 2026-04-20; **last amended:** 2026-05-15 (Cycle 6 ARCHITECT close)
-**Derived from:** `system-design.md` (v4.0), ADRs 001-025 + adr-deferred-005, scenarios.md (Cycle 6 additions), interaction-specs.md (Cycle 6 additions)
+**Generated:** 2026-04-20; **last amended:** 2026-05-22 (Cycle 7 ARCHITECT close)
+**Derived from:** `system-design.md` (v5.0), ADRs 001-032, scenarios.md (Cycle 7 additions), interaction-specs.md (Cycle 7 additions)
 
 This roadmap expresses the sequencing landscape for building agentic serving — what depends on what, where the builder has a choice, and which coherent intermediates are worth pausing at. It does not prescribe a build order. Work package order within each dependency band is a build-time decision.
 
 ---
 
-## Work Packages — Cycle 6 (active)
+## Work Packages — Cycle 7 (active)
+
+> **Cycle 7 BUILD shapes as 5 work packages (WP-A through WP-E) + 2 Track A `refactor:` commits.** Identifiers reset for the new active cycle per the methodology — Cycle 6 BUILD's WP-A/WP-B/WP-D closed; WP-C/WP-E carry-forward with status updates noted below.
+>
+> **Cycle 7 BUILD-mode declaration**: to be set at BUILD entry per ADR-091. Recommended **gated** given the central architectural pivot character (replacing `OrchestratorRuntime` as the chat-completions caller; AS-9 + AS-10 universally satisfied as constitutional commitments; design-alternative surfaces in `tool_choice` disposition + multi-step composition mechanism + capability-list discovery surface choice). Auto mode appropriate only after WP-A structural shape is in place + the remaining WPs reduce to mechanical wiring.
+
+### Track A — `refactor:` commits + architect-build boundary spike (precede WP-A / WP-B / WP-C)
+
+The first two entries are `refactor:` commits that extend Spike artifacts to match the production contracts ADR-028 + ADR-029 specify. The third entry is an architect-build boundary spike that gates WP-A entry — per the EPISTEMIC GATE conversation (architect→build boundary, 2026-05-23), the long-horizon capability ceiling question identified at gate is load-bearing for the structural-bounding generalization AS-9 + ADR-027 rest on. The spike's results determine whether WP-A proceeds as designed or triggers architecture revision via Design Amendment.
+
+- **A.1 — Routing-planner spike output schema `input` field** (conformance Finding 4). Edit `spike-cycle7-zeta-routing-planner.yaml` system prompt to specify the `"input"` field per ADR-028 §Output contract. The 20-prompt battery continues to pass with the added field populated. Single YAML system-prompt edit; precedes WP-B.
+- **A.2 — Response-synthesizer spike Rule 6 codification** (conformance Finding 6). Edit `spike-cycle7-epsilon-response-synthesizer.yaml` system prompt to add Rule 6 (framework-convention enumeration in direct-completion mode) per ADR-029 §"Strict-fidelity rule set". Single YAML system-prompt addition; precedes WP-C.
+- **A.3 — Spike ν: long-horizon capability ceiling probe** (architect→build boundary; **gates WP-A entry**). Cheap-tier qwen3:8b via local Ollama; $0 cost (per `feedback_free_options_preference`). Tests the three surfaces the cycle's existing Spike battery (ζ, ε, ε', μ) did not exercise — multi-step composition (per OQ #21), production-scale numerical content (per ADR-027 §Negative plausible-but-untested), adversarial routing (per OQ #25 production traffic diversity).
+
+  **Pre-specified qualitative criteria** (per MODEL snapshot Advisory A — pre-specify before running):
+
+  | Surface | Pass criterion (supports ADR-027 commitment) | Fail criterion (triggers architecture revision) | Intermediate (caveat-with-deployment-policy) |
+  |---|---|---|---|
+  | Multi-step composition (2-step + 3-step chains) | ≥80% successful end-to-end completion; structural-bounding holds at each step | <50% successful completion; structural-bounding does not extend to multi-step shapes | 50-80% completion → operator-deployment tier-escalation policy for multi-step workloads (extend ADR-031) |
+  | Production-scale numerical content (100-figure + structured tables) | ≥95% fidelity (no rounding drift exceeding Spike ε' Mode 1/2 baseline) | <80% fidelity (cheap-tier numerical-fidelity floor too low for production) | 80-95% fidelity → runtime fidelity check load-bearing in ADR-029 §"Rounding-drift mitigation playbook" |
+  | Adversarial routing (40-prompt adversarial battery extending Spike ζ's 20-prompt battery) | 100% JSON conformance + ≥80% defensible-judgment-match | <80% JSON conformance (planner reliability collapses under adversarial pressure) | 80-95% conformance → classifier pre-filter + caching tuning axes elevated from optional to recommended (ADR-031) |
+
+  **Trigger conditions:**
+  - **All three surfaces Pass** → WP-A proceeds as designed; spike findings recorded as empirical-floor strengthening; ADR-027 commitment stands.
+  - **Any surface Fail** → trigger Design Amendment process per system-design.md §Design Amendment Log; architecture re-opens between ADR-027 framework-driven pipeline as PRIMARY vs. Tier 1 hybrid as PRIMARY vs. multi-mechanism architecture; user authorizes the next step before WP-A resumes.
+  - **Single-surface Intermediate** → record finding as caveat-with-deployment-policy; update ADR-029 or ADR-031 per the relevant playbook; WP-A proceeds with the updated deployment policy as a constraint.
+  - **Two or three surfaces Intermediate simultaneously** *(per architect-snapshot Advisory B carry-forward, 2026-05-23)* → treat as a candidate ceiling signal. Each surface in isolation is non-fatal, but two or three surfaces landing in the Intermediate band collectively suggest the structural-bounding generalization may not hold at the breadth ADR-027 commits to. Action: present the Intermediate cluster to the practitioner before WP-A proceeds; the practitioner authorizes one of (a) WP-A proceeds with the cluster of caveats stacked and an explicit Cycle 7 BUILD/PLAY ceiling-validation focus; (b) trigger Design Amendment per the Fail path; (c) run Spike ν follow-up tests narrowing the Intermediate surfaces to Pass or Fail before WP-A. The rule prevents the "many non-fatal results collectively mask a ceiling" failure mode that single-surface evaluation does not catch.
+
+  **Methodology note (per MODEL snapshot Advisory A):** the pre-specified criteria above lock in *before* the spike runs, so the analysis avoids the Spike μ.1 procedural gap where qualitative criteria were articulated only after the pattern detector flagged a fail. The post-spike writeup records the pre-specified criteria + the actual outcome + the analysis of any criterion-boundary edge cases.
+
+  **Empirical scope honesty:** Spike ν cannot exercise production-scale traffic volume or operator-deployment hardware diversity. The spike is a structural-bounding generalization test at qwen3:8b across the three named surfaces. Production-scale validation remains PLAY-phase + first-deployment-evidence territory.
+
+  Writeup target path: `essays/research-logs/cycle-7-spike-nu-long-horizon-ceiling.md`.
+
+---
+
+### WP-A: Dispatch Pipeline + Plan→InternalToolCall adapter + pipeline-stage event types (ADR-027)
+
+**Objective:** Land the framework-driven dispatch pipeline (plan → dispatch → synthesize) as the chat-completions caller. Introduce the new Dispatch Pipeline module at L2, the Plan→`InternalToolCall` adapter inside the pipeline (per ARCHITECT Finding 11 disposition), and the four new pipeline-stage event types (`PlanEmitted`, `DispatchFired`, `SynthesizerCompleted`, `DirectCompletionFallback`) emitted through the existing Dispatch Event Substrate.
+
+**Changes:**
+- New module `agentic/dispatch_pipeline.py` owning the three-stage orchestration. The pipeline's public surface yields the existing chunk vocabulary (`ContentDelta | VisibilityEvent | ClientToolCall | Completion`) so `OpenAiSseFormatter` consumes it unchanged per ARCHITECT Finding 8 disposition. The Plan → `InternalToolCall` adapter lives inside the pipeline module as a pure function.
+- New event dataclasses for pipeline-stage events (Cycle 7 additions to the event vocabulary): `PlanEmitted(dispatch_id, plan)`, `DispatchFired(dispatch_id, ensemble_name)`, `SynthesizerCompleted(dispatch_id, finish_reason)`, `DirectCompletionFallback(dispatch_id, request_shape_category, planner_rationale)`. The Dispatch Event Substrate is structurally extensible (Protocol-based per FC-24) — additive new event types only.
+- Serving Layer extension: `chat_completions()` handler at `src/llm_orc/web/api/v1_chat_completions.py` replaces the `_build_runtime()` + `runtime.run(context)` path with `dispatch_pipeline.run(context)`. The existing heartbeat scheduler + orchestrator-context sink lifecycle per Cycle 6 WP-B / WP-C is preserved structurally; both continue to register with the substrate.
+- `OrchestratorRuntime` class remains in the codebase per ARCHITECT Finding 2 disposition (a) — preserved as architectural option; no production caller on chat-completions surface post-BUILD; ADR-001 + ADR-011 + ADR-022 system-prompt amendment retained as architectural commitments.
+
+**Scenarios covered:** scenarios.md §"Framework-Driven Dispatch Pipeline (ADR-027)" — Chat-completions request flows through plan → dispatch → synthesize pipeline; No-capability-match request flows through plan → direct-completion synthesize path; (integration) Plan-stage output is a typed `InternalToolCall`-compatible shape; `OrchestratorRuntime` is not invoked on the chat-completions surface; Preservation: `OrchestratorToolDispatch.dispatch()` contract is unchanged; Preservation: ADR-021's per-capability dispatch contract structural commitments unchanged; Preservation: `llm-orc invoke` CLI surface is unaffected by ADR-027.
+
+**Participating modules:** Dispatch Pipeline (new), Serving Layer (extended — handler invokes Dispatch Pipeline; preserves existing heartbeat + context-sink lifecycle), Orchestrator Tool Dispatch (existing — Stage 2 dispatch via Plan→InternalToolCall adapter; same chokepoint preserves calibration gate + tier router + autonomy interpositions), Dispatch Event Substrate (existing — extended with four new event types).
+
+**Dependencies:** None — WP-A is the structural entry point. WP-B and WP-C depend on WP-A (the pipeline must exist before it can invoke planner and synthesizer). WP-D and WP-E have implied-logic dependencies on WP-A (their work landing without the pipeline has no host).
+
+---
+
+### WP-B: Routing Planner production ensemble + Routing Planner module (ADR-028)
+
+**Objective:** Land the routing-planner system ensemble (`agentic-routing-planner.yaml`) as a production ensemble + the Routing Planner module that wraps invocation through `OrchestratorToolDispatch.dispatch()`. The 20-prompt regression battery from Spike ζ becomes the integration test fixture per FC-31.
+
+**Changes:**
+- New production ensemble YAML `.llm-orc/ensembles/agentic-serving/agentic-routing-planner.yaml` (promoted from `spike-cycle7-zeta-routing-planner.yaml` after Track A.1 refactor). `topaz_skill: tool_use` per ADR-028 §"Ensemble structure" (classification pragmatic, not load-bearing per ADR-028); cheap-tier model profile (qwen3:8b empirical baseline per Spike ζ).
+- New module `agentic/routing_planner.py` owning the planner invocation surface — constructs `InternalToolCall(name="invoke_ensemble", arguments={"ensemble_name": "agentic-routing-planner", "input": <serialized REQUEST + CAPABILITY LIST>})`, calls `OrchestratorToolDispatch.dispatch()`, parses JSON output into typed `DispatchPlan(action, ensemble, input, rationale)` dataclass.
+- 20-prompt regression battery (from Spike ζ) ported as integration test fixture.
+- Bonus-path hooks (explicit-naming extractor pre-filter; `tool_choice` interception pre-filter) defined as optional pre-stage in Dispatch Pipeline — Cycle 7 ships the planner-only path; bonus paths layer in follow-on cycles per ADR-028.
+
+**Scenarios covered:** scenarios.md §"Routing-Planner Ensemble (ADR-028)" — Explicit-naming NL request produces dispatch action; NL clear-match request produces dispatch; No-capability-match produces direct action; Adversarial/ambiguous request produces defensible-judgment dispatch; (integration) Routing-planner output feeds OrchestratorToolDispatch with real types; Preservation: planner operates within AS-9's structural-bounding property; Preservation: planner operates within AS-10's request-content-alone scope. Plus Track A.1 scenario: planner output schema includes `input` field.
+
+**Participating modules:** Routing Planner (new), Orchestrator Tool Dispatch (existing — dispatch chokepoint), Capability List Builder (new — supplies CAPABILITY LIST input; ships in WP-D but the planner is testable in isolation against a stub list until WP-D's builder is wired).
+
+**Dependencies:** Hard on **WP-A** (Dispatch Pipeline invokes the planner). Hard on **Track A.1** (planner spike YAML's output schema must include the `input` field before promotion). Implied logic with **WP-D** — Capability List Builder supplies CAPABILITY LIST input; the planner is testable with a stub list, but production wiring needs the builder.
+
+---
+
+### WP-C: Response Synthesizer production ensemble + Response Synthesizer module (ADR-029)
+
+**Objective:** Land the response-synthesizer system ensemble (`agentic-response-synthesizer.yaml`) as a production ensemble + the Response Synthesizer module that wraps invocation. The 13-test + 4-confabulation-mode battery from Spike ε + ε' + μ becomes the integration test fixture per FC-32. Streaming support — synthesizer LLM streams tokens via the existing `OpenAiSseFormatter` per ADR-031 §"Streaming as a load-bearing surface".
+
+**Changes:**
+- New production ensemble YAML `.llm-orc/ensembles/agentic-serving/agentic-response-synthesizer.yaml` (promoted from `spike-cycle7-epsilon-response-synthesizer.yaml` after Track A.2 refactor adds Rule 6). `topaz_skill: summarization` per ADR-029 §"Neutral consequences"; cheap-tier model profile (qwen3:8b empirical baseline per Spike ε + ε' + μ); strict-fidelity Rules 1-6 in the ensemble's system prompt.
+- New module `agentic/response_synthesizer.py` owning the synthesizer invocation surface — constructs `InternalToolCall` for the synthesizer ensemble; serializes structured input (`ORIGINAL REQUEST` + `PLAN` + `DISPATCH RESULTS`); calls `OrchestratorToolDispatch.dispatch()`; for streaming requests, dispatches in streaming mode and yields `ContentDelta` chunks.
+- Calibration Gate Reflect-trigger criteria extension (per ADR-029 §"Calibration Gate integration"): Rule 5 framing absence on direct-completion responses; Rule 4 rounding-drift via runtime fidelity check (BUILD-phase mitigation playbook design); Rule 1 fabrication signal via post-hoc DISPATCH RESULTS-vs-content cross-check.
+- Spike ε + Spike ε' + Spike μ battery (13 tests total + 4 confabulation modes) ported as integration test fixture (regression battery).
+- Multi-turn continuity: pipeline serializes `messages[]` into the synthesizer's ORIGINAL REQUEST input per Spike ε' C1/C2.
+
+**Scenarios covered:** scenarios.md §"Response-Synthesizer Ensemble (ADR-029)" — Synthesizer reads structured input; Rule 1 uses only DISPATCH RESULTS; Rule 2 reports Planned-but-not-run honestly; Rule 4 cites figures verbatim; Rule 5 honest direct-completion framing; Rule 6 framework-convention enumeration; Multi-turn continuity preserved; Calibration Gate Reflect fires on Rule 5 absence; Preservation: synthesizer prevents C4 substrate-path-file-read failure mode; Preservation: AS-7 amended summarization rules unchanged. Plus Track A.2 scenario: synthesizer YAML carries Rule 6.
+
+**Participating modules:** Response Synthesizer (new), Orchestrator Tool Dispatch (existing — dispatch chokepoint), Calibration Gate (extended — three new Reflect-trigger criteria), `OpenAiSseFormatter` (existing — consumes synthesizer's `ContentDelta` chunks unchanged).
+
+**Dependencies:** Hard on **WP-A** (Dispatch Pipeline invokes the synthesizer). Hard on **Track A.2** (synthesizer spike YAML must carry Rule 6 before promotion). Open choice with **WP-B** — planner and synthesizer can be built in either order once WP-A's pipeline is in place (the pipeline calls both modules independently).
+
+---
+
+### WP-D: Capability List Builder + Capability Discovery Endpoint (ADR-026 + ADR-028 + ADR-032)
+
+**Objective:** Land the canonical Capability List Builder at L1 + the Capability Discovery Endpoint at L3. The builder produces the single source of truth for capability ensembles per AS-10 (no client-side opt-in mechanism per ADR-026); the discovery endpoint advertises capabilities via OpenAI-protocol-compatible mechanism per ADR-032 §Capability-list discovery.
+
+**Changes:**
+- New module `agentic/capability_list.py` owning the `CapabilityRegistry` Protocol + `CapabilityListBuilder.list_capabilities() -> list[CapabilityEntry]`. Filter logic: include ensembles declaring `output_substrate: artifact` + `topaz_skill` per ADR-019 + ADR-025; exclude system ensembles (`agentic-routing-planner`, `agentic-response-synthesizer`, `agentic-result-summarizer`, `agentic-calibration-checker`). New `CapabilityEntry` dataclass (`name`, `description`, `topaz_skill`).
+- Concrete `CapabilityRegistry` implementation reads through the validate-once-at-load library cache established Cycle 6 (FC-27); existing `EnsembleLoader` cached `EnsembleConfig` collection is the data source.
+- **BUILD picks one of three candidate surfaces per ADR-032 §Capability-list discovery** (Open Decision Point — see below): (a) extend `/v1/models` to list capability ensembles with a `type: "ensemble"` marker distinguishing them from model profiles; (b) add sibling endpoint `/v1/ensembles`; (c) response-metadata-only (capability list in chat-completion response metadata under a request flag). Recommended starting point: (a) `/v1/models` extension as lowest-cost candidate; (b) and (c) can layer later if operator evidence warrants.
+- Dispatch Pipeline wires `CapabilityListBuilder.list_capabilities()` for the Routing Planner's CAPABILITY LIST input (per WP-A integration).
+
+**Scenarios covered:** scenarios.md §"Honest Response Labeling and Capability-List Discovery (ADR-032)" — `/v1/models` advertises capability ensembles with topaz_skill metadata; Capability list updates reflect ensemble add/remove events. §"Capability Matching from Request Content Alone (ADR-026 / AS-10)" — Routing decision uses only request body + capability list; Population B accommodation via alternative surfaces, not via chat-completions opt-in; Preservation: `llm-orc invoke` CLI accepts explicit capability identifiers; Preservation: ADR-019 skill-framework-agnostic commitment unchanged.
+
+**Participating modules:** Capability List Builder (new), Capability Discovery Endpoint (new), Ensemble Engine (existing — Protocol consumer reads cached registry per FC-27), Dispatch Pipeline (extended — calls builder for planner input — already covered in WP-A).
+
+**Dependencies:** Open choice with **WP-B** and **WP-C** (capability list source is independent of planner/synthesizer modules). Hard on **WP-A** for Dispatch Pipeline integration (the pipeline wires the builder's output to the planner's input).
+
+---
+
+### WP-E: Response Labeling + `tool_choice` bridge + degradation event sink consumption (ADR-030 + ADR-032)
+
+**Objective:** Land the three-layer honest response labeling mechanism at L3 (headers + body metadata; content-layer Rule 5 framing delegated to Response Synthesizer per WP-C) + the `tool_choice` bridge advisory per ADR-030 + the sink consumers for `DirectCompletionFallback` event including the `direct_completion_rate` rolling-window aggregator per ADR-032 §"Operator-observable degradation signaling".
+
+**Changes:**
+- New module `agentic/response_labeling.py` owning the three-layer decoration logic. Stateless decorator function `decorate(response_body, response_headers, plan, envelope, tool_choice_present) -> (response_body, response_headers)`. Headers: `X-LLM-Orc-Served-By: ensemble:<name> | direct | direct_fallback | tool_choice:<ensemble>` per ADR-032 §Sub-promise (1); `X-LLM-Orc-Tool-Choice-Handling: deferred` on `tool_choice`-bearing requests per ADR-030 §Bridge advisory specification. Body metadata: `metadata.served_by`, `metadata.tool_choice_handling`, `metadata.population_b_advisory`, `metadata.dispatch_failed` (when relevant).
+- `_ChatCompletionsRequest` Pydantic model extension at `src/llm_orc/web/api/v1_chat_completions.py`: add `tool_choice: dict | str | None = None` field. Pydantic no longer silently strips the parameter; handler propagates it to Response Labeling for bridge advisory emission.
+- Population B structured advisory content design: BUILD picks careful wording for the `metadata.population_b_advisory` field on `action: "direct"` responses with Population-B-style request patterns. The advisory is universally safe to send (Population A clients that don't surface metadata are unaffected per ADR-032).
+- Operator-Terminal Event Sink extension: `isinstance(event, DirectCompletionFallback)` arm emitting line-oriented `key=value` log entry; rolling-window aggregator (`direct_completion_rate`) producing the metric over a configurable window (default 24-hour per ADR-032 §"Refutation threshold"); refutation-threshold detection (sustained `direct_completion_rate` > ~15pp above operator-estimated baseline) fires operator notification.
+- Orchestrator-Context Event Sink extension: `isinstance(event, DirectCompletionFallback)` arm appending the event to the structured-observation block. Note (per ADR-027 + ARCHITECT disposition (a)): on the chat-completions surface, the orchestrator-context destination's consumer (`OrchestratorRuntime`) is structurally dormant — the sink consumes without error; the observation surface is reserved for future surfaces adopting `OrchestratorRuntime`.
+- Three-layer signaling regression test: each response path (dispatch, direct, dispatch_fallback, tool_choice) produces expected three-layer signaling per FC-38; tool_choice bridge advisory conditional content-layer per FC-39.
+
+**Scenarios covered:** scenarios.md §"`tool_choice` Disposition with Bridge Mechanism (ADR-030)" — Bridge advisory at three layers; `tool_choice: "auto"` treated as absent; Preservation: requests without `tool_choice` flow unchanged; Preservation: ADR-001 + ADR-011 ReAct model remains operative. §"Honest Response Labeling and Capability-List Discovery (ADR-032)" — Dispatch response declares served_by:ensemble at three layers; Direct-completion declares served_by:direct + Rule 5; Dispatch failure declares served_by:direct_fallback; action=direct emits direct_completion_fallback event; direct_completion_rate computable from events; Population B advisory at metadata layer; Preservation: OpenAI chat-completions API contract unchanged.
+
+**Participating modules:** Response Labeling (new), Serving Layer (extended — Pydantic model adds `tool_choice` field; composes Response Labeling decoration), Operator-Terminal Event Sink (extended — `DirectCompletionFallback` consumer + rolling aggregator), Orchestrator-Context Event Sink (extended — `DirectCompletionFallback` isinstance arm), Response Synthesizer (existing from WP-C — content-layer Rule 5 framing).
+
+**Dependencies:** Hard on **WP-A** (Response Labeling decorates pipeline output; the pipeline's `DispatchPlan` and `DispatchEnvelope` outputs drive the decoration). Hard on **WP-C** (content-layer Rule 5 framing is the synthesizer's commitment). Implied logic with **WP-D** (Population B advisory content; the same capability-list source the discovery endpoint exposes informs the advisory). Open choice with **WP-B** (Response Labeling does not depend directly on planner module internals).
+
+---
+
+## Dependency Graph (Cycle 7)
+
+```
+Track A.1 (planner schema input field refactor)
+   │
+   └─ hard ─▶ WP-B (Routing Planner promotion)
+
+Track A.2 (synthesizer Rule 6 refactor)
+   │
+   └─ hard ─▶ WP-C (Response Synthesizer promotion)
+
+WP-A (Dispatch Pipeline + adapter + pipeline-stage events)
+   │
+   ├─ hard ─▶ WP-B (pipeline invokes planner)
+   ├─ hard ─▶ WP-C (pipeline invokes synthesizer)
+   ├─ implied ─▶ WP-D (pipeline wires capability list to planner; builder works without pipeline but needs it for production integration)
+   └─ hard ─▶ WP-E (Response Labeling decorates pipeline output; depends on DispatchPlan + DispatchEnvelope shapes the pipeline produces)
+
+WP-C (Response Synthesizer)
+   │
+   └─ hard ─▶ WP-E (content-layer Rule 5 framing is the synthesizer's commitment)
+
+WP-B ─ open choice with WP-C (planner and synthesizer build in either order once WP-A is in place)
+WP-D ─ open choice with WP-B + WP-C (capability list source is independent of planner/synthesizer modules)
+WP-D ─ implied with WP-E (Population B advisory content; the same capability list source informs the advisory)
+```
+
+**Classification key:**
+- **Hard dependency:** structural necessity — the downstream WP's code imports, extends, or requires the upstream WP's output.
+- **Implied logic:** suggested ordering — building the upstream first is simpler, but a skilled builder can stub the references.
+- **Open choice:** genuinely independent — build either first.
+
+---
+
+## Transition States (Cycle 7)
+
+### TS-10: Dispatch Pipeline operational on chat-completions surface (after WP-A + WP-B + WP-C)
+
+When WP-A + WP-B + WP-C land, the framework-driven dispatch pipeline is operational on the chat-completions surface. Every request flows through plan → dispatch (when applicable) → synthesize; the orchestrator-LLM is removed from the routing-decision and post-dispatch-synthesis surfaces; AS-9 is satisfied universally on the chat-completions surface. This is the **central architectural pivot of Cycle 7** — the configuration the corpus has been engineering toward across Cycles 4-7. Capability list (WP-D) and honest response labeling (WP-E) can ship before or after; TS-10 is independently meaningful because the architectural state is observable from any request the operator sends.
+
+### TS-11: Cycle 7 complete (after all 5 WPs)
+
+All Cycle 7 BUILD deliverables shipped: Dispatch Pipeline + Plan→InternalToolCall adapter + pipeline-stage events; Routing Planner production ensemble + module; Response Synthesizer production ensemble + module; Capability List Builder + Capability Discovery Endpoint; Response Labeling + `tool_choice` bridge + degradation event sink consumption. The `direct_completion_rate` rolling metric is operational; honest response labeling fires three layers per response; bridge advisory addresses the AS-10 configuration-honesty footgun without blocking on follow-on cycle's full disposition (i) implementation per ADR-030. The 13 conformance findings from the Cycle 7 DECIDE scan are remediated (2 Track A refactors + 8 BUILD findings + 3 ARCHITECT-phase deferrals).
+
+---
+
+## Open Decision Points (Cycle 7)
+
+### 1. Capability Discovery Endpoint surface choice (ADR-032 §Capability-list discovery)
+
+ADR-032 names three candidate surfaces; BUILD picks one (or more). The trade-offs:
+
+- **(a) `/v1/models` extension** — lowest-cost candidate; reuses existing endpoint. Capability ensembles appear alongside model profiles with a `type: "ensemble"` marker. Risk: clients that strictly enforce OpenAI schema may reject the `type` field on response entries; OpenAI's actual response shape includes other free-form fields so this is unlikely but possible.
+- **(b) Sibling endpoint `/v1/ensembles`** — dedicated endpoint; new HTTP surface. Cleaner separation; capability ensembles' metadata can be richer (`calibration status`, `topaz_skill`, ensemble-specific properties). Cost: new endpoint + client documentation; clients have to know about it.
+- **(c) Response metadata** — capability list in chat-completion response metadata under a request flag. Lowest bandwidth; relevant for clients that don't pre-discover. Cost: requires per-request flag detection; the discovery surface is post-hoc.
+
+Recommended starting point: **(a)** as lowest-cost. (b) and (c) can layer later as deployment evidence warrants — multiple surfaces may coexist.
+
+### 2. `direct_completion_rate` refutation-threshold default
+
+ADR-032 §"Refutation threshold for the cost-distribution accountability sub-promise" names a starting heuristic — sustained `direct_completion_rate` > ~15 percentage points above operator-estimated baseline over a 24-hour rolling window. The threshold is a starting point; production evidence calibrates. BUILD picks the default + makes the threshold operator-configurable. Open decision: should the default fire an operator-notification at threshold (push) or only surface in dashboard logs (pull)?
+
+### 3. Population B advisory wording
+
+ADR-032 §"Mechanism: Structured advisory for Population B" names that the advisory is universally safe to send but BUILD picks the wording. The advisory must (a) be useful to Population B (clear pointer to `llm-orc invoke` and direct ensemble HTTP API), (b) be non-confusing to Population A users whose deployment configured the chat-completions surface for capability dispatch — Population A users may not need or want the advisory rendered, but it appears in metadata they don't necessarily surface. BUILD picks careful wording.
+
+### 4. Multi-step composition mechanism (OQ #21)
+
+Cycle 7 BUILD adopts single-step planner + framework chain-heuristic per Spike δ pattern as default per ADR-027 §"Open as downstream-phase design questions". Production traffic diversity may surface composition shapes the heuristic does not handle; BUILD/PLAY characterization informs whether multi-step planner output or planner-loops-with-context architecture warrants. Open decision deferred to BUILD/PLAY findings.
+
+### 5. Rounding-drift mitigation playbook (OQ #24)
+
+ADR-029 §"Rounding-drift mitigation playbook" names the three-mechanism hierarchy (system-prompt sharpening → tier escalation → runtime fidelity check). BUILD's initial default is system-prompt sharpening + tier escalation per Calibration Gate Reflect; runtime fidelity check is the load-bearing fallback if system-prompt + tier-escalation does not bound drift to acceptable rates. The fidelity check threshold (exact match vs. tolerance for last-digit rounding vs. semantic equivalence) is BUILD-phase design. Open decision deferred to BUILD signal.
+
+### 6. Operator-deployment tier escalation policy for direct-completion (ADR-031 §"Tier escalation policy for direct-completion")
+
+Cheap-tier qwen3:8b has documented domain-specific training-data error patterns (Spike ε' A2 "Urga / Khovd" data point); operators with reasoning-heavy direct-completion patterns may want a higher-tier escalation target configured. BUILD ships the default cheap-tier behavior with operator-configurable escalation target; operators bear the configuration burden for non-obvious failure surfaces. Open decision: does the default operator-config include a recommended escalation target (e.g., `agentic-tier-escalated-general` profile) or stay empty?
+
+---
+
+## Work Packages — Cycle 6 (status update at Cycle 7 entry)
+
+> **Cycle 6 BUILD shipped 3 of 5 WPs.** WP-A, WP-B, WP-D closed (see commits referenced inline below — sketches preserved here pending migration to Completed Work Log).
+> **Carry-forward to Cycle 7:** WP-C (Orchestrator-Context Event Sink) — surface defined per ADR-023; under ADR-027 + ARCHITECT disposition (a) the orchestrator-context destination's consumer (`OrchestratorRuntime`) is structurally dormant on chat-completions; the sink consumes without error; observation surface reserved for future surfaces. Production work to fully wire the sink remains a BUILD opportunity if a future surface adopts `OrchestratorRuntime`.
+> **Carry-forward to Cycle 7:** WP-E (Session Artifact Store + AS-7 amendment + ADR-022 system-prompt amendment) — partially superseded. ADR-022 system-prompt amendment is structurally moot for chat-completions under ADR-027 (per ADR-022 partial-update header + ADR-027 §"Relationship to ADR-022"). Session Artifact Store + AS-7 amendment in code remain meaningful BUILD work for capability ensembles' substrate routing — these survive Cycle 7's pivot and warrant BUILD continuation per the capability-ensemble substrate-routing scope per ADR-025.
+
+### WP-A: Dispatch Event Substrate + `dispatch_id` correlation (ADR-023 emission substrate) — ✅ **Closed 2026-05-15** (commits `b944f0f` refactor + `0dc8b7f` feat)
 
 > **Cycle 6 BUILD shapes as 5 work packages (WP-A through WP-E).** Identifiers reset for the new active cycle per the methodology — Cycle 4 BUILD's WP-A4..WP-H4 closures and Cycle 5's library-reshape work are documented in system-design.md Amendment Log entries #7 (2026-05-08) and #8 (2026-05-12); the Cycle 4 (deferred) section below preserves WP-K and WP-J as deferred carry-forwards.
 >
