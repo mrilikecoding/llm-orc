@@ -893,3 +893,328 @@ The Layer-match "no" entries fire BUILD Step 5.5 work for integration tests or h
 **Given** the Cycle 5 BUILD-shipped artifact path `.llm-orc/artifacts/agentic-serving/<ensemble>/<timestamp>/<dispatch>/execution.json`
 **When** Cycle 6 BUILD ships the new `.llm-orc/agentic-sessions/<session_id>/<dispatch_id>/` structure
 **Then** new dispatches write under the new structure; the old artifact tree is **deprecated** but not actively cleaned up by BUILD. Operators with pinned references to the old path migrate manually. The old path's existence does not affect new-dispatch behavior; the deprecation is structural rather than active removal.
+
+---
+
+## Cycle 7 Acceptance Criteria Table additions (per ADR-027 + ADR-028 + ADR-029 + ADR-030 + ADR-031 + ADR-032 + AS-10)
+
+The following Cycle 7 acceptance criteria are emergent (observable only at integration), aggregate (covered by multiple scenarios composing), or specify an integration layer that individual scenarios stub out. BUILD Step 5.5 (when BUILD runs on the Cycle 7 ADRs) verifies each entry at its specified layer.
+
+| Criterion | Specified layer | Verification method | Layer-match check |
+|-----------|----------------|--------------------|-----|
+| Framework-driven dispatch pipeline satisfies AS-9 universally on chat-completions surface | Integration (end-to-end chat-completions request through plan → dispatch → synthesize) | Composes scenarios "Routing-planner emits action=dispatch on capability-matched request" + "Framework executes plan via OrchestratorToolDispatch.dispatch()" + "Response-synthesizer produces user-facing response from structured input" with real-type wiring (no stubs at stage boundaries) | no — individual scenarios exercise each stage in isolation; integration test verifies the three-stage composition produces a chat-completion response where no orchestrator-LLM is in the routing-decision or post-dispatch-synthesis surface |
+| Configuration-honesty sub-promise delivered at three signal layers consistently | Integration (chat-completions response shape inspection across action=dispatch, action=direct, dispatch-failure paths) | Composes scenarios "Dispatch response carries served_by:ensemble:<name> at header + body metadata layers" + "Direct-completion response carries served_by:direct at header + body metadata + content layers" + "Dispatch failure response carries served_by:direct_fallback;dispatch_failed:<type>" — verified across all three paths | no — individual scenarios exercise per-path labeling; integration verifies the three-layer consistency across all paths (e.g., dispatch responses do NOT carry content-layer Rule 5 noise; direct-completion responses do) |
+| Cost-distribution-accountability rate metric is computable from dispatch events | Integration (rolling window over emitted dispatch events) | Composes scenarios "action=direct emits direct_completion_fallback event" + "Routing-planner emission rate is observable from event substrate" with a rolling-window aggregation in the operator-terminal destination per ADR-023 | no — individual scenarios exercise event emission; integration test or live operator-deployment evidence verifies the rolling metric is computable and meaningful |
+| `tool_choice` bridge signal delivered consistently across all response paths | Integration (chat-completions responses on action=dispatch and action=direct paths with tool_choice present in request) | Composes scenarios "tool_choice present + action=direct emits three-layer advisory including content-layer" + "tool_choice present + action=dispatch emits headers + body metadata, no content-layer noise" + "tool_choice='auto' is treated as absent (no advisory fires)" | no — individual scenarios exercise per-action-path advisory shape; integration test verifies the conditional-content-layer behavior holds across both paths |
+| Population A tier coverage operates within deployment-specific timeout constraints | Live deployment against Population A clients with operator-tuning applied | Operator-deployment-specific verification using the smoke test specified in ADR-031 §Tier B (single-capability NL request within requestTimeoutMs minus 5s headroom; chained-composition request within requestTimeoutMs minus 10s headroom; both within Tier B operator's Cline configuration after tuning) | no — synthetic test cannot exercise Population A client behavior; operator-deployed smoke test against operator-configured Cline (or other Tier B client) is the verification layer |
+| Capability-list discovery surfaces the framework's loaded ensembles via OpenAI-protocol-compatible mechanism | Integration (/v1/models endpoint extension or sibling endpoint) | Composes scenario "/v1/models lists capability ensembles with topaz_skill metadata" + "Capability list reflects framework's loaded-ensemble registry" with framework reload event | no — individual scenarios exercise endpoint shape; integration test verifies endpoint reflects the live registry under ensemble add/remove events |
+
+The Layer-match "no" entries are not failures — they are the table working as designed, surfacing where BUILD Step 5.5 closes integration verification gaps with dedicated tests or harness work, and where live operator-deployment evidence is the natural verification surface.
+
+---
+
+## Feature: Framework-Driven Dispatch Pipeline (ADR-027)
+
+### Scenario: Chat-completions request flows through plan → dispatch → synthesize pipeline
+**Given** an operator-deployed serve with ADR-027 active, a deployment-loaded routing-planner ensemble (per ADR-028) and response-synthesizer ensemble (per ADR-029), a chat-completions request with a capability-matched NL prompt
+**When** the chat-completions handler processes the request
+**Then** the framework invokes the routing-planner ensemble first (producing a JSON dispatch plan with `action: "dispatch"`), then dispatches the named capability ensemble via `OrchestratorToolDispatch.dispatch()`, then invokes the response-synthesizer ensemble with `(ORIGINAL REQUEST + PLAN + DISPATCH RESULTS)` as structured input, then returns the synthesizer's `message.content` as the chat-completion response with `finish_reason: stop`. No `OrchestratorRuntime` ReAct loop fires for the request; the orchestrator-LLM is not in the routing-decision or post-dispatch-synthesis surface.
+
+### Scenario: No-capability-match request flows through plan → direct-completion synthesize path
+**Given** an operator-deployed serve with ADR-027 active and a chat-completions request whose content has no capability match in the framework's loaded-ensemble registry
+**When** the chat-completions handler processes the request
+**Then** the routing-planner ensemble emits `action: "direct"` with `ensemble: null`; the framework skips the dispatch stage; the response-synthesizer is invoked with `(ORIGINAL REQUEST + PLAN + DISPATCH RESULTS=empty)` and produces a useful response from the request content alone, applying Rule 5 framing (per ADR-029).
+
+### Scenario (integration): Plan-stage output is a typed `InternalToolCall`-compatible shape
+**Given** an operator-deployed serve with ADR-027 active and a request that produces `action: "dispatch"` from the routing-planner
+**When** the framework translates the planner's `{"action", "ensemble", "input", "rationale"}` JSON into the existing `OrchestratorToolDispatch.dispatch()` input shape
+**Then** the adapter constructs an `InternalToolCall` (or its equivalent for the dispatch surface) with `name="invoke_ensemble"` and `arguments={"name": <plan.ensemble>, "input": <plan.input>}`; the dispatch proceeds via the existing `OrchestratorToolDispatch` machinery without re-implementing the dispatch contract.
+
+### Scenario: `OrchestratorRuntime` is not invoked on the chat-completions surface
+**Given** an operator-deployed serve with ADR-027 active and any chat-completions request (capability-matched, no-capability-match, or explicit-naming)
+**When** the chat-completions handler runs
+**Then** no instance of `OrchestratorRuntime` is constructed during request handling; the handler's runtime use of `OrchestratorRuntime.run()` from Cycle 6 is replaced by the framework-driven pipeline. The `OrchestratorRuntime` class remains in the codebase per ADR-027 §Decision §"OrchestratorRuntime status under ADR-027" (the ARCHITECT-deferred disposition decides between preserve / wire-CLI / remove).
+
+### Scenario: Plan with invalid action or unregistered ensemble is rejected → direct completion (Spike ν)
+**Given** an operator-deployed serve with ADR-027 active and a routing-planner that emits a plan whose `action` is not in `{"dispatch", "direct"}` (e.g., an injected `"action": "launch"`) or whose `ensemble` names a capability not in the framework's loaded-ensemble registry (e.g., an injected `"oracle"`)
+**When** the Dispatch Pipeline validates the plan before the dispatch stage
+**Then** the invalid plan is rejected; no dispatch fires against an unregistered ensemble and no non-`{dispatch,direct}` action is executed; the request falls to the direct-completion synthesize path (`DISPATCH RESULTS=empty`, Rule 5 framing per ADR-029); a `DirectCompletionFallback` event is emitted with the rejected-plan rationale. Driver: Spike ν Surface 3 cases E1 (injection obeyed) + E3 (fabricated ensemble trusted), both neutralized by pipeline plan validation. Plan validation is a non-optional pipeline stage, not an operator tuning option.
+
+### Scenario: Empty or unparseable planner output → direct completion (Spike ν)
+**Given** an operator-deployed serve with ADR-027 active and a routing-planner that returns an empty response, a response containing only a `<think>` block with no JSON object, or otherwise unparseable output
+**When** the Dispatch Pipeline's plan-parsing stage cannot extract a conformant plan
+**Then** the pipeline treats the unparseable plan as a defined path (not an exception): it routes to the direct-completion synthesize path (`DISPATCH RESULTS=empty`, Rule 5 framing per ADR-029) and emits a `DirectCompletionFallback` event noting the parse failure. Driver: Spike ν Surface 3 case A6 (cheap-tier empty-response reliability miss). The safe default for an absent plan is direct completion, consistent with the planner's `direct` fallback semantics.
+
+### Preservation: `OrchestratorToolDispatch.dispatch()` contract is unchanged
+**Given** the existing `OrchestratorToolDispatch.dispatch()` mechanism shipped at Cycle 6 with the `InternalToolCall` input shape and dispatch envelope output shape (per ADR-024)
+**When** ADR-027 routes the planner's dispatch action through the same machinery
+**Then** the dispatch mechanism's contract is unchanged: same input shape, same envelope output shape, same calibration-gate firing within the dispatched ensemble (per ADR-007, ADR-014), same tier-router behavior (per ADR-015), same audit dispatch (per ADR-018). ADR-027 changes only the *caller* of `dispatch()`, not the dispatch mechanism itself.
+
+### Preservation: ADR-021's per-capability dispatch contract structural commitments unchanged
+**Given** ADR-021's per-capability dispatch contract (one capability sub-task per request; client-side workflow state; fresh-context property; calibration-gate-per-sub-task) on the chat-completions surface
+**When** ADR-027 ships and the routing-planner takes over the routing decision
+**Then** all four structural commitments are preserved. The planner emits one dispatch action per chat-completions request; cross-request state remains client-side (the synthesizer reads multi-turn `messages[]` per ADR-029 but does not maintain server-side workflow state); the dispatched ensemble runs in a fresh context (no orchestrator-context bleeds into it); the calibration gate fires per dispatch.
+
+### Preservation: `llm-orc invoke` CLI surface is unaffected by ADR-027
+**Given** an operator using the `llm-orc invoke` CLI to execute a named ensemble directly
+**When** ADR-027 ships and replaces the chat-completions handler's runtime
+**Then** the CLI's execution path (via `OrchestraService` directly per `cli_commands.py:28`) is unchanged. The CLI does not currently use `OrchestratorRuntime` (per Tranche 4 conformance scan Finding 2); ADR-027's changes do not affect it. ADR-021's original dispatch shapes continue to apply on the CLI surface.
+
+---
+
+## Feature: Routing-Planner Ensemble (ADR-028)
+
+### Scenario: Explicit-naming NL request produces dispatch action with the named ensemble
+**Given** a deployed routing-planner ensemble (cheap-tier qwen3:8b empirical baseline) and a chat-completions request whose user message names a specific ensemble (e.g., *"use the code-generator ensemble to write a sorting function"*) where `code-generator` is in the framework's loaded capability list
+**When** the framework invokes the routing-planner with `(ORIGINAL REQUEST + CAPABILITY LIST)`
+**Then** the planner emits JSON conforming to the dispatch-plan schema: `action: "dispatch"`, `ensemble: "code-generator"`, `input: <derived from user message>`, `rationale: <one-sentence>`. Per Spike ζ's 20-prompt battery, explicit-naming shape produces 100% strict capability-match.
+
+### Scenario: NL clear-match request produces dispatch action without explicit naming
+**Given** a deployed routing-planner ensemble and a chat-completions request whose user message describes a task matching a capability (e.g., *"summarize this paper into bullet points"* with `text-summarizer` in the capability list)
+**When** the framework invokes the routing-planner
+**Then** the planner emits `action: "dispatch"`, `ensemble: "text-summarizer"`, `input: <task content>`, `rationale: <match reasoning>`. The structural-bounding property (per AS-9) ensures the cheap-tier model produces conformant JSON on this single-decision task.
+
+### Scenario: No-capability-match request produces direct action
+**Given** a deployed routing-planner ensemble and a chat-completions request whose user message has no capability match (e.g., *"what's the weather in Reykjavik?"* with no weather-capability ensemble in the list)
+**When** the framework invokes the routing-planner
+**Then** the planner emits `action: "direct"`, `ensemble: null`, `rationale: <no-match reasoning>`. The `input` field is omitted (not required when `action: "direct"`).
+
+### Scenario: Adversarial / ambiguous request produces defensible-judgment dispatch
+**Given** a deployed routing-planner ensemble and a chat-completions request that could plausibly match multiple capabilities (e.g., *"help me write a script"* with both `code-generator` and `script-builder` in the capability list)
+**When** the framework invokes the routing-planner
+**Then** the planner emits `action: "dispatch"` with one of the defensibly-matched ensembles; the `rationale` field explains the choice; per Spike ζ's 100% defensible-judgment-match across the 20-prompt battery, the choice is reasonable even if not the single ideal answer. The Calibration Gate within the planner ensemble may emit Reflect verdicts on persistently ambiguous patterns, feeding the Tier-Router Audit per ADR-018.
+
+### Scenario: Planner output schema includes `input` field for dispatch actions (Track A refactor before BUILD)
+**Given** the Spike ζ scratch routing-planner ensemble YAML at the BUILD-phase starting point
+**When** the YAML is updated to add the `input` field to the output JSON schema per ADR-028 §Output contract
+**Then** the planner produces `{"action", "ensemble", "input", "rationale"}` instead of the spike's `{"action", "ensemble", "rationale"}`. This is a `refactor:` commit on the spike artifact (per Tranche 4 conformance-scan Finding 4), not a behavioral change; the 20-prompt battery continues to pass with the added field populated.
+
+### Scenario (integration): Routing-planner output feeds OrchestratorToolDispatch.dispatch() with real types
+**Given** an operator-deployed serve with the production routing-planner ensemble + the existing `OrchestratorToolDispatch.dispatch()` machinery (not stubbed)
+**When** the planner emits a dispatch plan and the framework translates it into the dispatch call
+**Then** `OrchestratorToolDispatch.dispatch()` receives the translated input without type errors; the dispatch fires against the named capability ensemble in the framework's registry; envelope content returns per ADR-024.
+
+### Preservation: Routing-planner ensemble operates within AS-9's structural-bounding property
+**Given** the routing-planner ensemble specified per ADR-028 (cheap-tier; single-decision-shaped task; no multi-step reasoning or tool calls)
+**When** the planner produces a dispatch plan
+**Then** the structural-bounding property (per AS-9) is preserved: the planner's role is constrained to producing JSON from a given input; it does not chain through tool calls, file reads, or multi-step reasoning. The empirical floor (Spike ζ — 100% JSON conformance + 90% strict capability-match) holds.
+
+### Preservation: Routing-planner operates within AS-10's request-content-alone scope
+**Given** the routing-planner's input contract (`ORIGINAL REQUEST + CAPABILITY LIST`) per ADR-028
+**When** the planner reads the request content
+**Then** no client-side opt-in signals are consumed (no HTTP headers, no skill-framework manifest fields, no metadata convention). The planner operates on chat-completions request body content (`messages[]`, `model`, optional `tools[]`, optional `tool_choice` per ADR-030) and the framework's loaded-ensemble registry alone. AS-10 (per ADR-026) is satisfied structurally.
+
+---
+
+## Feature: Response-Synthesizer Ensemble (ADR-029)
+
+### Scenario: Synthesizer reads structured input and produces user-facing response
+**Given** a deployed response-synthesizer ensemble (cheap-tier qwen3:8b empirical baseline) and a completed dispatch where the routing-planner produced `action: "dispatch"` and the framework executed the dispatch successfully
+**When** the framework invokes the synthesizer with `(ORIGINAL REQUEST + PLAN + DISPATCH RESULTS)` where DISPATCH RESULTS carries the envelope's `primary` and `artifacts[0].summary` per ADR-024
+**Then** the synthesizer produces `message.content` as a string conforming to OpenAI chat-completion semantics + `finish_reason: stop`. No tool calls are emitted; the response carries content only.
+
+### Scenario: Rule 1 — synthesizer uses only DISPATCH RESULTS for substantive claims
+**Given** a deployed response-synthesizer and a dispatch where the dispatched ensemble's envelope contains specific numerical figures (e.g., "Iceland population 389,444 as of latest count")
+**When** the synthesizer composes the user-facing response
+**Then** numerical claims in the response cite figures from DISPATCH RESULTS verbatim; the synthesizer does not invent or substitute figures from training data. Per Spike ε ε.1 + Spike μ.3, the rule holds at qwen3:8b across the n=13 test battery.
+
+### Scenario: Rule 2 — synthesizer reports Planned-but-not-run honestly
+**Given** a deployed response-synthesizer and a PLAN that named two dispatch steps, where the second step failed irrecoverably (e.g., schema-non-conformance after Calibration Gate retries)
+**When** the synthesizer composes the user-facing response
+**Then** the response declares that the second ensemble was "Planned but not run" rather than fabricating output the missing ensemble would have produced. Per Spike ε ε.1's PLAY-note-22 test case (the historical confabulation pattern), the structurally-bounded synthesizer correctly reports the missing dispatch.
+
+### Scenario: Rule 4 — synthesizer cites figures verbatim (no rounding drift)
+**Given** a deployed response-synthesizer and a dispatch where the envelope contains precise figures (e.g., 402,329)
+**When** the synthesizer composes the response referencing the figure
+**Then** the response uses the source figure verbatim. *Empirical note:* Spike ε T3 + Spike ε' Finding ε'.2 characterized two distinct rounding-drift modes (Mode 1 precise-figure rounding; Mode 2 large-number millions rendering); Rule 4 reduces but does not eliminate drift. The mitigation playbook per ADR-029 §"Rounding-drift mitigation playbook" (system-prompt sharpening → tier escalation → runtime fidelity check) addresses production-traffic drift.
+
+### Scenario: Rule 5 — synthesizer applies honest direct-completion framing when DISPATCH RESULTS is empty
+**Given** a deployed response-synthesizer and an `action: "direct"` invocation where DISPATCH RESULTS is empty
+**When** the synthesizer produces the user-facing response
+**Then** the response includes Rule 5 framing ("this answer was generated directly without dispatching a specialist ensemble" or framework-determined equivalent). Per ADR-029 §"Rule 5 framing requirement scope (OQ #23)" — load-bearing-default for Cycle 7 BUILD; runtime validation checks for the framing marker; absence triggers Calibration Gate Reflect.
+
+### Scenario: Rule 6 — synthesizer enumerates framework conventions with hedging in direct-completion mode
+**Given** a deployed response-synthesizer and a direct-completion request asking about file paths, framework conventions, or implementation specifics (e.g., *"where do API routes live in this project?"*)
+**When** the synthesizer composes the response
+**Then** the response enumerates generic conventions (e.g., *"common conventions include `routes.py`, `api.py`, `endpoints.py`"*) with explicit hedging + uncertainty acknowledgment + clarification request rather than fabricating confident-specific paths. Per Spike μ.1, the pattern emerges naturally under Rules 1 + 5 at qwen3:8b; Rule 6 codifies it for model-substitution robustness.
+
+### Scenario: Multi-turn continuity preserved when prior turns are in input
+**Given** a deployed response-synthesizer and a chat-completions request with multi-turn `messages[]` (e.g., prior assistant response + new user turn referencing it)
+**When** the framework serializes the prior turns into the synthesizer's ORIGINAL REQUEST input
+**Then** the synthesizer's response correctly references prior-turn content; the continuity is preserved across turns. Per Spike ε' C1 + C2, native `messages[]` handling is mechanical ARCHITECT-phase work; the structural-bounding property holds across multi-turn shapes.
+
+### Scenario: Calibration Gate Reflect fires on Rule 5 framing absence
+**Given** a deployed response-synthesizer with the three Reflect-trigger criteria per ADR-029 active and an `action: "direct"` invocation where the synthesizer's output lacks Rule 5 framing marker
+**When** the runtime validation runs against the response
+**Then** the Calibration Gate Reflect verdict fires; the Tier-Escalation Router per ADR-015 may escalate the synthesizer to a higher-tier model for the retry; the audit per ADR-018 records the criterion firing for drift analysis.
+
+### Scenario: Synthesizer's Rule 6 codification is in the BUILD-phase ensemble YAML (Track A refactor)
+**Given** the Spike ε scratch response-synthesizer ensemble YAML at the BUILD-phase starting point
+**When** the YAML is updated to add Rule 6 to the system prompt per ADR-029 §"Rule 6" codification (per Tranche 4 conformance-scan Finding 6)
+**Then** the synthesizer's system prompt enumerates all six rules. This is a `refactor:` commit on the spike artifact, not a behavioral change at qwen3:8b (Rule 6 codifies the emergent pattern); the production ensemble carries the explicit rule for model-substitution robustness.
+
+### Preservation: Synthesizer's structural-bounding property prevents C4 failure mode
+**Given** the response-synthesizer's input contract (structured `REQUEST + PLAN + DISPATCH RESULTS`; no tool-call surface in synthesizer's context)
+**When** the synthesizer encounters a dispatch with substrate-routed deliverable artifact paths in the envelope
+**Then** the synthesizer cannot issue file-read tool calls (the output surface is text content alone). The orchestrator-LLM's emergent "chain through file-read of substrate path" failure mode (Spike λ-paid F-paid-4; PLAY note 22) is structurally prevented. The synthesizer reads `artifacts[0].summary` from the envelope (per ADR-024) but does not access `artifacts[0].path` directly.
+
+### Preservation: AS-7 amended summarization rules apply unchanged to substrate-routed dispatches
+**Given** ADR-025-shipped substrate routing + ADR-029-shipped response-synthesizer
+**When** a substrate-routed capability ensemble dispatch returns its envelope and the synthesizer reads it as DISPATCH RESULTS
+**Then** AS-7's amended default-with-conditional-skip rule applies unchanged — substrate-routed dispatches skip content-level result-summarizer invocation; the envelope's `primary` + `artifacts[0].summary` already carry summary-shaped content; the synthesizer consumes those fields. The synthesizer does NOT re-summarize the envelope; AS-7's skip is preserved.
+
+---
+
+## Feature: `tool_choice` Disposition with Bridge Mechanism (ADR-030)
+
+### Scenario: Chat-completions request with `tool_choice: {"name": "<ensemble>"}` triggers bridge advisory
+**Given** an operator-deployed serve with ADR-030's bridge mechanism active and a chat-completions request including `tool_choice: {"type": "function", "function": {"name": "code-generator"}}`
+**When** the framework parses the request
+**Then** the `_ChatCompletionsRequest` Pydantic model observes the `tool_choice` field (newly added per Track B BUILD work; per ADR-030 §Bridge advisory specification); the framework processes the request via ADR-027's pipeline normally (does NOT use `tool_choice` for routing); the response carries the bridge signal at three layers per the conditional shape (headers + body metadata on all responses; content-layer Rule 5-adjacent acknowledgment on `action: "direct"` responses only).
+
+### Scenario: Bridge advisory present at headers layer on all `tool_choice`-bearing requests
+**Given** a chat-completions request with `tool_choice` set (any non-default value) and the bridge mechanism active
+**When** the response is returned
+**Then** the response includes header `X-LLM-Orc-Tool-Choice-Handling: deferred` (or the framework's chosen `served-by` header family per BUILD design). The header fires on both `action: "dispatch"` and `action: "direct"` paths.
+
+### Scenario: Bridge advisory present at body metadata layer on all `tool_choice`-bearing requests
+**Given** a chat-completions request with `tool_choice` set and the bridge mechanism active
+**When** the response is returned
+**Then** the response includes `metadata.tool_choice_handling: "deferred"` (or equivalent within the response shape ADR-032's body-metadata mechanism establishes). The metadata fires on both `action: "dispatch"` and `action: "direct"` paths.
+
+### Scenario: Bridge advisory content-layer acknowledgment fires only on `action: "direct"` responses
+**Given** a chat-completions request with `tool_choice` set and the bridge mechanism active
+**When** the framework processes the request and the routing-planner emits `action: "direct"`
+**Then** the synthesizer's response content includes the Rule 5-adjacent acknowledgment ("this answer was generated directly without dispatching a specialist ensemble; `tool_choice` was received but not honored for routing in this build"). When the planner emits `action: "dispatch"`, the response content does NOT carry the bridge acknowledgment (headers + metadata layers are sufficient; no content-layer noise per ADR-030 §Bridge advisory specification).
+
+### Scenario: `tool_choice: "auto"` is treated as equivalent to absent `tool_choice` (no bridge advisory)
+**Given** a chat-completions request with `tool_choice: "auto"` (the OpenAI default value) and the bridge mechanism active
+**When** the framework processes the request
+**Then** the request flows through ADR-027's pipeline normally; no bridge advisory fires at any layer; the response is standard OpenAI-compatible per ADR-032's honest response labeling for the appropriate path (dispatch or direct). Per ADR-030 §Bridge advisory specification, the advisory fires only on non-default `tool_choice` values.
+
+### Preservation: Requests without `tool_choice` flow unchanged through ADR-027 pipeline
+**Given** a chat-completions request with no `tool_choice` field and the bridge mechanism active
+**When** the framework processes the request
+**Then** the bridge mechanism does not fire; the request flows through ADR-027's three-stage pipeline; the response carries standard ADR-032 honest response labeling (without `tool_choice_handling` field). Existing client behavior is unaffected.
+
+### Preservation: ADR-001 + ADR-011 ReAct execution model remains operative architecturally
+**Given** ADR-001 + ADR-011 as architectural commitments to the ReAct execution model + ADR-030's deferred disposition (i) implementation
+**When** future cycles consider re-introducing ReAct-loop components for non-chat-completions surfaces (or implementing disposition (i) full `tool_choice` honoring via server-side dispatch path)
+**Then** ADR-001 + ADR-011's commitments remain operative as architectural options. ADR-030's deferred disposition (i) does not deprecate the ReAct model; it defers the full implementation while shipping the bridge in Cycle 7 BUILD.
+
+---
+
+## Feature: Latency and Streaming (ADR-031)
+
+### Scenario: Streaming-default request streams synthesizer output token-by-token
+**Given** an operator-deployed serve with ADR-027 + ADR-031 active and a chat-completions request from a streaming-default client (OpenCode, Aider, Cline-when-tuned) with `stream: true`
+**When** the framework executes the pipeline
+**Then** the response is delivered as SSE chunks per OpenAI chat-completions semantics. The routing-planner + dispatch stages run synchronously upstream of the synthesizer (no streaming during plan or dispatch); the synthesizer's output streams token-by-token to the client as the synthesizer LLM generates. First-token latency to the client is approximately synthesizer-first-token time (~2-3s at qwen3:8b), not the full pipeline end-to-end latency.
+
+### Scenario: Non-streaming request returns full response after pipeline completes
+**Given** an operator-deployed serve and a chat-completions request with `stream: false` (or no stream field)
+**When** the framework executes the pipeline
+**Then** the response is delivered as a single complete chat-completion object after the synthesizer completes. End-to-end latency is the full pipeline floor (~36s single-step at qwen3:8b per Spike ε).
+
+### Scenario: Tier escalation policy fires on Rule 4 rounding-drift Reflect verdict
+**Given** an operator-deployed serve with ADR-029's rounding-drift mitigation playbook active (Calibration Gate Reflect-trigger criterion for Rule 4) and a synthesizer response where runtime fidelity check detects rounding drift exceeding threshold
+**When** the Calibration Gate emits Reflect verdict
+**Then** the Tier-Escalation Router per ADR-015 escalates the synthesizer to the operator-configured higher-tier model for the retry; the retry's response is checked again; the audit per ADR-018 records the escalation event.
+
+### Scenario: Tier escalation policy fires on Rule 1 fabrication signal
+**Given** an operator-deployed serve and a synthesizer response where post-hoc audit detects substantive content not sourced from DISPATCH RESULTS
+**When** the Calibration Gate emits Reflect verdict on Rule 1 fabrication signal
+**Then** the Tier-Escalation Router escalates per ADR-015; the retry's response is checked; recurring Rule 1 Reflect verdicts feed the Tier-Router Audit drift criteria per ADR-018.
+
+### Preservation: Existing Calibration Gate + Tier-Router + Audit infrastructure operates unchanged
+**Given** ADR-007 + ADR-014 + ADR-015 + ADR-018-shipped Calibration Gate + Tier-Escalation Router + Audit Dispatch infrastructure
+**When** ADR-031's three new Calibration Gate Reflect-trigger criteria (Rule 5 framing absence; Rule 4 rounding-drift; Rule 1 fabrication) are added
+**Then** the existing infrastructure operates unchanged. The new criteria are additive — they feed the same Reflect verdict; the same Tier-Escalation Router consumes the verdict; the same Audit Dispatch tracks drift. No structural changes to ADR-007/014/015/018.
+
+### Preservation: ADR-022 system-prompt amendment does not affect chat-completions surface latency
+**Given** ADR-022's system-prompt amendment (under ADR-027 update: structurally moot for chat-completions; operative for any future surface adopting `OrchestratorRuntime`)
+**When** ADR-031's latency floor applies to chat-completions requests under ADR-027
+**Then** the system-prompt amendment's token cost has no effect on chat-completions latency (the amendment is not loaded on this surface). The ~36s floor is a function of routing-planner + dispatched capability ensemble + response-synthesizer latencies, not orchestrator-LLM context.
+
+---
+
+## Feature: Honest Response Labeling and Capability-List Discovery (ADR-032)
+
+### Scenario: Dispatch response declares served_by:ensemble:<name> at all three layers
+**Given** an operator-deployed serve with ADR-032's honest response labeling active and a chat-completions request producing `action: "dispatch"` with successful dispatch
+**When** the response is returned
+**Then** the response carries: header `X-LLM-Orc-Served-By: ensemble:<name>` (or the framework's chosen header family); body metadata `metadata.served_by: "ensemble:<name>"`; no content-layer Rule 5 framing (the response content carries the dispatched ensemble's deliverable via the synthesizer, not a direct-completion declaration).
+
+### Scenario: Direct-completion response declares served_by:direct at all three layers + Rule 5 framing
+**Given** an operator-deployed serve and a chat-completions request producing `action: "direct"`
+**When** the response is returned
+**Then** the response carries: header `X-LLM-Orc-Served-By: direct`; body metadata `metadata.served_by: "direct"`; synthesizer's content includes Rule 5 framing per ADR-029. Population A's degradation signal (configuration dishonesty per Cline #10551 + OpenCode #20859) is structurally prevented at three layers.
+
+### Scenario: Dispatch failure response declares served_by:direct_fallback with failure type
+**Given** an operator-deployed serve and a chat-completions request where dispatch was planned but failed irrecoverably (infrastructure error, schema-non-conformance after Calibration Gate retries)
+**When** the framework falls back to direct-completion via the synthesizer
+**Then** the response carries: header `X-LLM-Orc-Served-By: direct_fallback`; body metadata `metadata.served_by: "direct_fallback"; metadata.dispatch_failed: "<failure-type>"`; synthesizer's content includes Rule 5 framing acknowledging the fallback path.
+
+### Scenario: `/v1/models` advertises capability ensembles with topaz_skill metadata
+**Given** an operator-deployed serve with capability-list discovery via `/v1/models` extension per ADR-032 candidate surface (a) and a framework loaded-ensemble registry containing capability ensembles (e.g., `code-generator`, `text-summarizer`, `claim-extractor`)
+**When** a client calls `GET /v1/models`
+**Then** the response includes the capability ensembles as model entries, each with a capability-marker field distinguishing them from underlying models (e.g., `type: "ensemble"`) and their `topaz_skill` metadata. The endpoint reflects the framework's live registry.
+
+### Scenario: Capability list updates reflect ensemble add/remove events
+**Given** an operator-deployed serve with the capability-list endpoint active and a framework that re-loads its ensemble registry after the operator adds or removes an ensemble YAML
+**When** the registry is reloaded and a client calls `GET /v1/models` (or the chosen discovery endpoint)
+**Then** the response reflects the new registry contents; added ensembles appear, removed ensembles do not. The discovery surface is dynamic, not statically configured.
+
+### Scenario: action=direct emits direct_completion_fallback event
+**Given** an operator-deployed serve with ADR-023 observability event routing + ADR-032 degradation signaling event types active and a chat-completions request producing `action: "direct"`
+**When** the response completes
+**Then** the framework emits a `direct_completion_fallback` event on the dispatch event substrate with fields: request shape category (NL prose, script-shaped, mixed, ambiguous); routing-planner rationale; detected client population signals (if available). The event routes to operator-terminal and orchestrator-context destinations per ADR-023.
+
+### Scenario: direct_completion_rate rolling metric is computable from emitted events
+**Given** an operator-deployed serve with degradation signaling events emitted over time and an operator dashboard / log consumer that aggregates events
+**When** the consumer computes the rolling rate over a sliding window (e.g., 1-hour or 1-day window)
+**Then** the `direct_completion_rate` metric is computable as `count(direct_completion_fallback events) / count(all chat-completions requests)` over the window. High rates surface for operator action (capability library expansion or planner tuning).
+
+### Scenario: Population B advisory present as metadata on direct-completion responses
+**Given** an operator-deployed serve and a chat-completions request producing `action: "direct"` where the request content shape matches Population-B-style patterns (script-shaped, programmatic content, explicit naming attempts the planner couldn't bind)
+**When** the response is returned
+**Then** the response includes `metadata.population_b_advisory: "<advisory-content>"` pointing toward `llm-orc invoke` or the direct ensemble HTTP API. The advisory is at the metadata layer (safe-to-send-universally); Population A clients that don't surface metadata are unaffected.
+
+### Preservation: OpenAI chat-completions API contract unchanged
+**Given** an operator-deployed serve with ADR-032 honest response labeling active and a Population A client that does not surface custom response headers or metadata
+**When** the client receives a chat-completion response
+**Then** the response's `message.content`, `finish_reason`, `model`, `choices` fields conform to OpenAI chat-completions semantics. The honest-response-labeling additions are at non-content layers (headers + metadata); clients ignoring these layers see standard OpenAI-compatible responses.
+
+### Preservation: ADR-023 observability event routing unchanged in mechanism
+**Given** ADR-023-shipped observability event substrate routing typed events to operator-terminal and orchestrator-context destinations
+**When** ADR-032 adds new event types (`direct_completion_fallback`, `direct_completion_rate` rolling metric source events)
+**Then** the routing mechanism is unchanged; the new event types are additive — they route through the same infrastructure to the same destinations. ADR-023's destination behavior tables are extended (not modified) to specify the new event types' default routing.
+
+---
+
+## Feature: Capability Matching from Request Content Alone (ADR-026 / AS-10)
+
+### Scenario: Routing decision uses only request body + capability list
+**Given** an operator-deployed serve with AS-10 (per ADR-026) active and a chat-completions request with custom HTTP headers (e.g., `X-Skill-Framework: rdd`, `X-Capability-Hint: code-generator`)
+**When** the framework parses the request and invokes the routing-planner
+**Then** the planner receives only the request body content (`messages[]`, `model`, optional `tools[]`, optional OpenAI-protocol-native `tool_choice`) and the framework's capability list. Custom headers are not consumed for routing. The transparent-endpoint promise is preserved: the routing decision is identical regardless of which Population A client sent the request.
+
+### Scenario: Population B accommodation via alternative surfaces, not via chat-completions opt-in
+**Given** an operator-deployed serve and a Population B client (a developer/script client) needing capability dispatch
+**When** the client requests a capability
+**Then** the client uses `llm-orc invoke` CLI or the direct ensemble HTTP API where explicit capability identifiers are the normal mode. The chat-completions surface does not provide a Population-B-only opt-in path (AS-10 forbids client-side opt-in to llm-orc-specific mechanisms). The structured advisory in chat-completions responses per ADR-032 informs Population B clients of the alternative surface availability.
+
+### Scenario: OpenAI-protocol-native `tool_choice` is permitted (not a llm-orc-specific opt-in)
+**Given** an operator-deployed serve with ADR-030's bridge mechanism active and a chat-completions request with `tool_choice: {"name": "code-generator"}`
+**When** the framework parses the request
+**Then** the `tool_choice` field is observed (per ADR-030's bridge mechanism). Per AS-10 §Operational consequences, `tool_choice` is permitted because it is an OpenAI-protocol-native field; sending `tool_choice` is not opting into a llm-orc-specific mechanism. The framework's interpretation of `tool_choice` (disposition (i) full honoring under follow-on cycle; bridge mechanism in Cycle 7 BUILD) is the framework's design choice per ADR-030, not a client-side opt-in.
+
+### Preservation: `llm-orc invoke` CLI accepts explicit capability identifiers per ADR-021's original contract
+**Given** AS-10 scoped to the agentic-serving chat-completions surface and the `llm-orc invoke` CLI accepting explicit ensemble names per ADR-021
+**When** an operator uses `llm-orc invoke code-generator --input "..."` on the CLI
+**Then** the CLI accepts the explicit identifier; this is consistent with ADR-021's preferred dispatch shape (explicit ensemble naming via `OrchestraService.find_ensemble_by_name`). AS-10 does not govern the CLI surface; the CLI's normal mode of operation is explicit identifiers.
+
+### Preservation: ADR-019 skill-framework-agnostic commitment unchanged
+**Given** ADR-019's skill-framework-agnostic library shape (skill orchestration is client-side; operation-named library entries; no methodology-shaped ensembles in the library)
+**When** ADR-026 codifies AS-10 (capability matching from request content alone)
+**Then** the skill-framework-agnostic commitment is preserved structurally. AS-10 prevents the framework from learning skill-framework identifiers via client-side opt-in; this aligns with ADR-019's commitment that the orchestrator routes by capability without knowing which skill framework is composing against it.
