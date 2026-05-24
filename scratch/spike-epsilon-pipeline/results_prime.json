@@ -1,0 +1,1139 @@
+{
+  "spike": "cycle-7-epsilon-prime-bounds-closing",
+  "run_date_utc": "2026-05-22T16:57:35Z",
+  "runs": [
+    {
+      "request": "Hi! What's a fun fact about octopuses?",
+      "stages": [
+        {
+          "stage": "plan",
+          "invoke": {
+            "ok": true,
+            "response": "{\"action\": \"direct\", \"ensemble\": null, \"rationale\": \"The question asks for a general fun fact about octopuses, which can be answered without external information.\"}",
+            "agent": "planner",
+            "raw": {
+              "results": {
+                "planner": {
+                  "response": "{\"action\": \"direct\", \"ensemble\": null, \"rationale\": \"The question asks for a general fun fact about octopuses, which can be answered without external information.\"}",
+                  "status": "success",
+                  "model_substituted": false
+                }
+              },
+              "metadata": {
+                "agents_used": 1,
+                "started_at": 1779468782.158123,
+                "duration": "15.70s",
+                "completed_at": 1779468797.8534248,
+                "usage": {
+                  "agents": {
+                    "planner": {
+                      "input_tokens": 769,
+                      "output_tokens": 250,
+                      "total_tokens": 1019,
+                      "cost_usd": 0.0,
+                      "duration_ms": 15669,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 8509589996,
+                      "prompt_eval_duration_ns": 2556953042,
+                      "load_duration_ns": 4526745666,
+                      "start_time": 1779468782.1583,
+                      "baseline_cpu": 0.0,
+                      "baseline_memory": 65.1,
+                      "sample_count": 3,
+                      "peak_cpu": 0.0,
+                      "avg_cpu": 0.0,
+                      "peak_memory": 87.7,
+                      "avg_memory": 80.16666666666667,
+                      "cpu_samples": [
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        65.1,
+                        87.7,
+                        87.7
+                      ],
+                      "resource_duration_seconds": 15.6940279006958,
+                      "resource_sample_count": 3
+                    }
+                  },
+                  "totals": {
+                    "total_tokens": 1019,
+                    "total_input_tokens": 769,
+                    "total_output_tokens": 250,
+                    "total_cost_usd": 0.0,
+                    "total_duration_ms": 15669,
+                    "agents_count": 1
+                  }
+                },
+                "adaptive_resource_management": {
+                  "adaptive_used": false,
+                  "management_type": "user_configured",
+                  "concurrency_decisions": [],
+                  "resource_metrics": [
+                    {
+                      "cpu_percent": 0.0,
+                      "memory_percent": 87.7,
+                      "circuit_breaker_state": "N/A",
+                      "measurement_point": "final_fallback"
+                    }
+                  ],
+                  "execution_metrics": {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 87.7,
+                    "avg_memory": 87.7,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [
+                      0.0
+                    ],
+                    "raw_memory_samples": [
+                      87.7
+                    ]
+                  },
+                  "phase_metrics": [
+                    {
+                      "phase_index": 0,
+                      "phase_name": "phase_0",
+                      "agent_count": 1,
+                      "phase_start_time": 1779468782.158144,
+                      "agent_names": [
+                        "planner"
+                      ],
+                      "start_time": 1779468782.1581461,
+                      "duration_seconds": 15.694707155227661,
+                      "end_time": 1779468797.85305,
+                      "agents_completed": 1,
+                      "peak_cpu": 60.7,
+                      "avg_cpu": 16.199354838709677,
+                      "peak_memory": 88.2,
+                      "avg_memory": 85.56064516129032,
+                      "sample_count": 155
+                    }
+                  ]
+                }
+              },
+              "config": {
+                "type": "mock_config"
+              }
+            },
+            "error": null,
+            "latency_seconds": 16.579282999038696
+          }
+        },
+        {
+          "stage": "dispatch",
+          "ensemble": null,
+          "skipped": "direct"
+        },
+        {
+          "stage": "synthesize",
+          "invoke": {
+            "ok": true,
+            "response": "Octopuses have three hearts! Two pump blood to the gills, while the third sends blood to the rest of the body. Even cooler: their blood is blue because it uses hemocyanin (a copper-based protein) instead of hemoglobin. They can also change color and texture to blend into their surroundings in seconds\u2014nature\u2019s ultimate stealth mode! \ud83d\udc19",
+            "agent": "synthesizer",
+            "raw": {
+              "results": {
+                "synthesizer": {
+                  "response": "Octopuses have three hearts! Two pump blood to the gills, while the third sends blood to the rest of the body. Even cooler: their blood is blue because it uses hemocyanin (a copper-based protein) instead of hemoglobin. They can also change color and texture to blend into their surroundings in seconds\u2014nature\u2019s ultimate stealth mode! \ud83d\udc19",
+                  "status": "success",
+                  "model_substituted": false
+                }
+              },
+              "metadata": {
+                "agents_used": 1,
+                "started_at": 1779468798.8289971,
+                "duration": "10.26s",
+                "completed_at": 1779468809.086845,
+                "usage": {
+                  "agents": {
+                    "synthesizer": {
+                      "input_tokens": 729,
+                      "output_tokens": 227,
+                      "total_tokens": 956,
+                      "cost_usd": 0.0,
+                      "duration_ms": 10239,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 7773778376,
+                      "prompt_eval_duration_ns": 2300406500,
+                      "load_duration_ns": 80005834,
+                      "start_time": 1779468798.8291981,
+                      "baseline_cpu": 0.0,
+                      "baseline_memory": 87.9,
+                      "sample_count": 3,
+                      "peak_cpu": 0.0,
+                      "avg_cpu": 0.0,
+                      "peak_memory": 87.9,
+                      "avg_memory": 87.43333333333334,
+                      "cpu_samples": [
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        87.9,
+                        87.2,
+                        87.2
+                      ],
+                      "resource_duration_seconds": 10.257209777832031,
+                      "resource_sample_count": 3
+                    }
+                  },
+                  "totals": {
+                    "total_tokens": 956,
+                    "total_input_tokens": 729,
+                    "total_output_tokens": 227,
+                    "total_cost_usd": 0.0,
+                    "total_duration_ms": 10239,
+                    "agents_count": 1
+                  }
+                },
+                "adaptive_resource_management": {
+                  "adaptive_used": false,
+                  "management_type": "user_configured",
+                  "concurrency_decisions": [],
+                  "resource_metrics": [
+                    {
+                      "cpu_percent": 0.0,
+                      "memory_percent": 87.2,
+                      "circuit_breaker_state": "N/A",
+                      "measurement_point": "final_fallback"
+                    }
+                  ],
+                  "execution_metrics": {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 87.2,
+                    "avg_memory": 87.2,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [
+                      0.0
+                    ],
+                    "raw_memory_samples": [
+                      87.2
+                    ]
+                  },
+                  "phase_metrics": [
+                    {
+                      "phase_index": 0,
+                      "phase_name": "phase_0",
+                      "agent_count": 1,
+                      "phase_start_time": 1779468798.829018,
+                      "agent_names": [
+                        "synthesizer"
+                      ],
+                      "start_time": 1779468798.829018,
+                      "duration_seconds": 10.257606029510498,
+                      "end_time": 1779468809.08674,
+                      "agents_completed": 1,
+                      "peak_cpu": 72.0,
+                      "avg_cpu": 11.785148514851485,
+                      "peak_memory": 88.6,
+                      "avg_memory": 87.82574257425742,
+                      "sample_count": 101
+                    }
+                  ]
+                }
+              },
+              "config": {
+                "type": "mock_config"
+              }
+            },
+            "error": null,
+            "latency_seconds": 11.215897798538208
+          }
+        }
+      ],
+      "plan_parse": {
+        "ok": true,
+        "plan": {
+          "action": "direct",
+          "ensemble": null,
+          "rationale": "The question asks for a general fun fact about octopuses, which can be answered without external information."
+        }
+      },
+      "synth_input": "ORIGINAL REQUEST\nHi! What's a fun fact about octopuses?\n\nPLAN\nDispatched: none\nPlanned-but-not-run: none\n\nDISPATCH RESULTS\n(none \u2014 direct completion)",
+      "final_response": "Octopuses have three hearts! Two pump blood to the gills, while the third sends blood to the rest of the body. Even cooler: their blood is blue because it uses hemocyanin (a copper-based protein) instead of hemoglobin. They can also change color and texture to blend into their surroundings in seconds\u2014nature\u2019s ultimate stealth mode! \ud83d\udc19",
+      "dispatched": [],
+      "planned_but_not_run": [],
+      "verdict": "OK",
+      "test_id": "A1-direct-simple-conversational",
+      "purpose": "Does the planner route to direct + does the synthesizer answer honestly with Rule 5 framing?",
+      "fidelity": {
+        "final_numbers": [],
+        "source_numbers": [],
+        "overlap": [],
+        "fabricated_in_final": [],
+        "fidelity_pass": true
+      }
+    },
+    {
+      "request": "What's the capital of Mongolia, and roughly when was it founded?",
+      "stages": [
+        {
+          "stage": "plan",
+          "invoke": {
+            "ok": true,
+            "response": "{\"action\": \"direct\", \"ensemble\": null, \"rationale\": \"The question asks for factual information that can be answered without external data or specialized processing.\"}",
+            "agent": "planner",
+            "raw": {
+              "results": {
+                "planner": {
+                  "response": "{\"action\": \"direct\", \"ensemble\": null, \"rationale\": \"The question asks for factual information that can be answered without external data or specialized processing.\"}",
+                  "status": "success",
+                  "model_substituted": false
+                }
+              },
+              "metadata": {
+                "agents_used": 1,
+                "started_at": 1779468809.846974,
+                "duration": "10.48s",
+                "completed_at": 1779468820.327023,
+                "usage": {
+                  "agents": {
+                    "planner": {
+                      "input_tokens": 771,
+                      "output_tokens": 232,
+                      "total_tokens": 1003,
+                      "cost_usd": 0.0,
+                      "duration_ms": 10462,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 7935922163,
+                      "prompt_eval_duration_ns": 2402049000,
+                      "load_duration_ns": 77169458,
+                      "start_time": 1779468809.847192,
+                      "baseline_cpu": 0.0,
+                      "baseline_memory": 87.2,
+                      "sample_count": 3,
+                      "peak_cpu": 0.0,
+                      "avg_cpu": 0.0,
+                      "peak_memory": 87.2,
+                      "avg_memory": 87.13333333333333,
+                      "cpu_samples": [
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        87.2,
+                        87.1,
+                        87.1
+                      ],
+                      "resource_duration_seconds": 10.479274034500122,
+                      "resource_sample_count": 3
+                    }
+                  },
+                  "totals": {
+                    "total_tokens": 1003,
+                    "total_input_tokens": 771,
+                    "total_output_tokens": 232,
+                    "total_cost_usd": 0.0,
+                    "total_duration_ms": 10462,
+                    "agents_count": 1
+                  }
+                },
+                "adaptive_resource_management": {
+                  "adaptive_used": false,
+                  "management_type": "user_configured",
+                  "concurrency_decisions": [],
+                  "resource_metrics": [
+                    {
+                      "cpu_percent": 0.0,
+                      "memory_percent": 87.1,
+                      "circuit_breaker_state": "N/A",
+                      "measurement_point": "final_fallback"
+                    }
+                  ],
+                  "execution_metrics": {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 87.1,
+                    "avg_memory": 87.1,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [
+                      0.0
+                    ],
+                    "raw_memory_samples": [
+                      87.1
+                    ]
+                  },
+                  "phase_metrics": [
+                    {
+                      "phase_index": 0,
+                      "phase_name": "phase_0",
+                      "agent_count": 1,
+                      "phase_start_time": 1779468809.847014,
+                      "agent_names": [
+                        "planner"
+                      ],
+                      "start_time": 1779468809.847015,
+                      "duration_seconds": 10.479660987854004,
+                      "end_time": 1779468820.326834,
+                      "agents_completed": 1,
+                      "peak_cpu": 56.0,
+                      "avg_cpu": 12.797087378640775,
+                      "peak_memory": 87.2,
+                      "avg_memory": 87.07087378640776,
+                      "sample_count": 103
+                    }
+                  ]
+                }
+              },
+              "config": {
+                "type": "mock_config"
+              }
+            },
+            "error": null,
+            "latency_seconds": 11.226463079452515
+          }
+        },
+        {
+          "stage": "dispatch",
+          "ensemble": null,
+          "skipped": "direct"
+        },
+        {
+          "stage": "synthesize",
+          "invoke": {
+            "ok": true,
+            "response": "The capital of Mongolia is **Ulaanbaatar**, and it was founded in **1924** when Mongolia became a republic. The city was established as the capital during the early 20th century, replacing the previous capital, Urga (now known as Khovd).",
+            "agent": "synthesizer",
+            "raw": {
+              "results": {
+                "synthesizer": {
+                  "response": "The capital of Mongolia is **Ulaanbaatar**, and it was founded in **1924** when Mongolia became a republic. The city was established as the capital during the early 20th century, replacing the previous capital, Urga (now known as Khovd).",
+                  "status": "success",
+                  "model_substituted": false
+                }
+              },
+              "metadata": {
+                "agents_used": 1,
+                "started_at": 1779468821.1015959,
+                "duration": "14.46s",
+                "completed_at": 1779468835.565467,
+                "usage": {
+                  "agents": {
+                    "synthesizer": {
+                      "input_tokens": 731,
+                      "output_tokens": 348,
+                      "total_tokens": 1079,
+                      "cost_usd": 0.0,
+                      "duration_ms": 14448,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 11990152924,
+                      "prompt_eval_duration_ns": 2308679042,
+                      "load_duration_ns": 77368375,
+                      "start_time": 1779468821.101774,
+                      "baseline_cpu": 0.0,
+                      "baseline_memory": 87.2,
+                      "sample_count": 3,
+                      "peak_cpu": 33.3,
+                      "avg_cpu": 11.1,
+                      "peak_memory": 87.2,
+                      "avg_memory": 86.8,
+                      "cpu_samples": [
+                        0.0,
+                        33.3,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        87.2,
+                        86.6,
+                        86.6
+                      ],
+                      "resource_duration_seconds": 14.46313190460205,
+                      "resource_sample_count": 3
+                    }
+                  },
+                  "totals": {
+                    "total_tokens": 1079,
+                    "total_input_tokens": 731,
+                    "total_output_tokens": 348,
+                    "total_cost_usd": 0.0,
+                    "total_duration_ms": 14448,
+                    "agents_count": 1
+                  }
+                },
+                "adaptive_resource_management": {
+                  "adaptive_used": false,
+                  "management_type": "user_configured",
+                  "concurrency_decisions": [],
+                  "resource_metrics": [
+                    {
+                      "cpu_percent": 0.0,
+                      "memory_percent": 86.6,
+                      "circuit_breaker_state": "N/A",
+                      "measurement_point": "final_fallback"
+                    }
+                  ],
+                  "execution_metrics": {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 86.6,
+                    "avg_memory": 86.6,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [
+                      0.0
+                    ],
+                    "raw_memory_samples": [
+                      86.6
+                    ]
+                  },
+                  "phase_metrics": [
+                    {
+                      "phase_index": 0,
+                      "phase_name": "phase_0",
+                      "agent_count": 1,
+                      "phase_start_time": 1779468821.101622,
+                      "agent_names": [
+                        "synthesizer"
+                      ],
+                      "start_time": 1779468821.101622,
+                      "duration_seconds": 14.463474988937378,
+                      "end_time": 1779468835.5652869,
+                      "agents_completed": 1,
+                      "peak_cpu": 85.6,
+                      "avg_cpu": 16.927272727272726,
+                      "peak_memory": 87.2,
+                      "avg_memory": 86.96153846153847,
+                      "sample_count": 143
+                    }
+                  ]
+                }
+              },
+              "config": {
+                "type": "mock_config"
+              }
+            },
+            "error": null,
+            "latency_seconds": 15.244027137756348
+          }
+        }
+      ],
+      "plan_parse": {
+        "ok": true,
+        "plan": {
+          "action": "direct",
+          "ensemble": null,
+          "rationale": "The question asks for factual information that can be answered without external data or specialized processing."
+        }
+      },
+      "synth_input": "ORIGINAL REQUEST\nWhat's the capital of Mongolia, and roughly when was it founded?\n\nPLAN\nDispatched: none\nPlanned-but-not-run: none\n\nDISPATCH RESULTS\n(none \u2014 direct completion)",
+      "final_response": "The capital of Mongolia is **Ulaanbaatar**, and it was founded in **1924** when Mongolia became a republic. The city was established as the capital during the early 20th century, replacing the previous capital, Urga (now known as Khovd).",
+      "dispatched": [],
+      "planned_but_not_run": [],
+      "verdict": "OK",
+      "test_id": "A2-direct-factual-question",
+      "purpose": "Direct-completion path on a factual question; check for fidelity to known answers.",
+      "fidelity": {
+        "final_numbers": [
+          "1924"
+        ],
+        "source_numbers": [],
+        "overlap": [],
+        "fabricated_in_final": [
+          "1924"
+        ],
+        "fidelity_pass": false
+      }
+    },
+    {
+      "request": "I'm not sure how to approach this \u2014 any thoughts on writing a good commit message?",
+      "stages": [
+        {
+          "stage": "plan",
+          "invoke": {
+            "ok": true,
+            "response": "{\"action\": \"direct\", \"ensemble\": null, \"rationale\": \"The request seeks general advice on writing commit messages, which doesn't align with any registered capability's specific function.\"}",
+            "agent": "planner",
+            "raw": {
+              "results": {
+                "planner": {
+                  "response": "{\"action\": \"direct\", \"ensemble\": null, \"rationale\": \"The request seeks general advice on writing commit messages, which doesn't align with any registered capability's specific function.\"}",
+                  "status": "success",
+                  "model_substituted": false
+                }
+              },
+              "metadata": {
+                "agents_used": 1,
+                "started_at": 1779468836.36224,
+                "duration": "11.67s",
+                "completed_at": 1779468848.0359318,
+                "usage": {
+                  "agents": {
+                    "planner": {
+                      "input_tokens": 775,
+                      "output_tokens": 262,
+                      "total_tokens": 1037,
+                      "cost_usd": 0.0,
+                      "duration_ms": 11657,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 9009422582,
+                      "prompt_eval_duration_ns": 2512291292,
+                      "load_duration_ns": 83329041,
+                      "start_time": 1779468836.36241,
+                      "baseline_cpu": 100.0,
+                      "baseline_memory": 86.6,
+                      "sample_count": 3,
+                      "peak_cpu": 0.0,
+                      "avg_cpu": 0.0,
+                      "peak_memory": 86.7,
+                      "avg_memory": 86.66666666666667,
+                      "cpu_samples": [
+                        0.0,
+                        0.0,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        86.6,
+                        86.7,
+                        86.7
+                      ],
+                      "resource_duration_seconds": 11.673115730285645,
+                      "resource_sample_count": 3
+                    }
+                  },
+                  "totals": {
+                    "total_tokens": 1037,
+                    "total_input_tokens": 775,
+                    "total_output_tokens": 262,
+                    "total_cost_usd": 0.0,
+                    "total_duration_ms": 11657,
+                    "agents_count": 1
+                  }
+                },
+                "adaptive_resource_management": {
+                  "adaptive_used": false,
+                  "management_type": "user_configured",
+                  "concurrency_decisions": [],
+                  "resource_metrics": [
+                    {
+                      "cpu_percent": 0.0,
+                      "memory_percent": 86.7,
+                      "circuit_breaker_state": "N/A",
+                      "measurement_point": "final_fallback"
+                    }
+                  ],
+                  "execution_metrics": {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 86.7,
+                    "avg_memory": 86.7,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [
+                      0.0
+                    ],
+                    "raw_memory_samples": [
+                      86.7
+                    ]
+                  },
+                  "phase_metrics": [
+                    {
+                      "phase_index": 0,
+                      "phase_name": "phase_0",
+                      "agent_count": 1,
+                      "phase_start_time": 1779468836.362262,
+                      "agent_names": [
+                        "planner"
+                      ],
+                      "start_time": 1779468836.362263,
+                      "duration_seconds": 11.673410177230835,
+                      "end_time": 1779468848.0358038,
+                      "agents_completed": 1,
+                      "peak_cpu": 40.2,
+                      "avg_cpu": 12.881739130434783,
+                      "peak_memory": 86.8,
+                      "avg_memory": 86.66521739130435,
+                      "sample_count": 115
+                    }
+                  ]
+                }
+              },
+              "config": {
+                "type": "mock_config"
+              }
+            },
+            "error": null,
+            "latency_seconds": 12.466310977935791
+          }
+        },
+        {
+          "stage": "dispatch",
+          "ensemble": null,
+          "skipped": "direct"
+        },
+        {
+          "stage": "synthesize",
+          "invoke": {
+            "ok": true,
+            "response": "Writing a good commit message is about clarity and precision. Here's a simple framework to follow:\n\n1. **Start with a type** (e.g., `feat`, `fix`, `docs`, `refactor`) to categorize the change.  \n2. **Use a concise subject line** (50 characters or less) that summarizes the change.  \n   - Good: `Fix bug in login flow`  \n   - Bad: `Fixed something`  \n3. **Add a body (optional)** to explain *why* the change was made, not just what was done.  \n\nExample:  \n`feat(auth): Allow password reset via email  \nAdds a new endpoint for initiating password resets using the user's email address.`  \n\nAvoid vague terms like \"update\" or \"fix.\" Focus on the *impact* of the change. This helps teammates understand the context quickly!",
+            "agent": "synthesizer",
+            "raw": {
+              "results": {
+                "synthesizer": {
+                  "response": "Writing a good commit message is about clarity and precision. Here's a simple framework to follow:\n\n1. **Start with a type** (e.g., `feat`, `fix`, `docs`, `refactor`) to categorize the change.  \n2. **Use a concise subject line** (50 characters or less) that summarizes the change.  \n   - Good: `Fix bug in login flow`  \n   - Bad: `Fixed something`  \n3. **Add a body (optional)** to explain *why* the change was made, not just what was done.  \n\nExample:  \n`feat(auth): Allow password reset via email  \nAdds a new endpoint for initiating password resets using the user's email address.`  \n\nAvoid vague terms like \"update\" or \"fix.\" Focus on the *impact* of the change. This helps teammates understand the context quickly!",
+                  "status": "success",
+                  "model_substituted": false
+                }
+              },
+              "metadata": {
+                "agents_used": 1,
+                "started_at": 1779468848.761579,
+                "duration": "15.73s",
+                "completed_at": 1779468864.489258,
+                "usage": {
+                  "agents": {
+                    "synthesizer": {
+                      "input_tokens": 735,
+                      "output_tokens": 384,
+                      "total_tokens": 1119,
+                      "cost_usd": 0.0,
+                      "duration_ms": 15710,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 13252618412,
+                      "prompt_eval_duration_ns": 2301160334,
+                      "load_duration_ns": 80321208,
+                      "start_time": 1779468848.7617621,
+                      "baseline_cpu": 0.0,
+                      "baseline_memory": 86.8,
+                      "sample_count": 3,
+                      "peak_cpu": 25.0,
+                      "avg_cpu": 8.333333333333334,
+                      "peak_memory": 86.8,
+                      "avg_memory": 86.8,
+                      "cpu_samples": [
+                        0.0,
+                        25.0,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        86.8,
+                        86.8,
+                        86.8
+                      ],
+                      "resource_duration_seconds": 15.727073907852173,
+                      "resource_sample_count": 3
+                    }
+                  },
+                  "totals": {
+                    "total_tokens": 1119,
+                    "total_input_tokens": 735,
+                    "total_output_tokens": 384,
+                    "total_cost_usd": 0.0,
+                    "total_duration_ms": 15710,
+                    "agents_count": 1
+                  }
+                },
+                "adaptive_resource_management": {
+                  "adaptive_used": false,
+                  "management_type": "user_configured",
+                  "concurrency_decisions": [],
+                  "resource_metrics": [
+                    {
+                      "cpu_percent": 0.0,
+                      "memory_percent": 86.8,
+                      "circuit_breaker_state": "N/A",
+                      "measurement_point": "final_fallback"
+                    }
+                  ],
+                  "execution_metrics": {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 86.8,
+                    "avg_memory": 86.8,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [
+                      0.0
+                    ],
+                    "raw_memory_samples": [
+                      86.8
+                    ]
+                  },
+                  "phase_metrics": [
+                    {
+                      "phase_index": 0,
+                      "phase_name": "phase_0",
+                      "agent_count": 1,
+                      "phase_start_time": 1779468848.761604,
+                      "agent_names": [
+                        "synthesizer"
+                      ],
+                      "start_time": 1779468848.761605,
+                      "duration_seconds": 15.727428913116455,
+                      "end_time": 1779468864.489153,
+                      "agents_completed": 1,
+                      "peak_cpu": 61.9,
+                      "avg_cpu": 14.109677419354838,
+                      "peak_memory": 86.9,
+                      "avg_memory": 86.78645161290322,
+                      "sample_count": 155
+                    }
+                  ]
+                }
+              },
+              "config": {
+                "type": "mock_config"
+              }
+            },
+            "error": null,
+            "latency_seconds": 16.465636253356934
+          }
+        }
+      ],
+      "plan_parse": {
+        "ok": true,
+        "plan": {
+          "action": "direct",
+          "ensemble": null,
+          "rationale": "The request seeks general advice on writing commit messages, which doesn't align with any registered capability's specific function."
+        }
+      },
+      "synth_input": "ORIGINAL REQUEST\nI'm not sure how to approach this \u2014 any thoughts on writing a good commit message?\n\nPLAN\nDispatched: none\nPlanned-but-not-run: none\n\nDISPATCH RESULTS\n(none \u2014 direct completion)",
+      "final_response": "Writing a good commit message is about clarity and precision. Here's a simple framework to follow:\n\n1. **Start with a type** (e.g., `feat`, `fix`, `docs`, `refactor`) to categorize the change.  \n2. **Use a concise subject line** (50 characters or less) that summarizes the change.  \n   - Good: `Fix bug in login flow`  \n   - Bad: `Fixed something`  \n3. **Add a body (optional)** to explain *why* the change was made, not just what was done.  \n\nExample:  \n`feat(auth): Allow password reset via email  \nAdds a new endpoint for initiating password resets using the user's email address.`  \n\nAvoid vague terms like \"update\" or \"fix.\" Focus on the *impact* of the change. This helps teammates understand the context quickly!",
+      "dispatched": [],
+      "planned_but_not_run": [],
+      "verdict": "OK",
+      "test_id": "A3-direct-ambiguous-no-capability",
+      "purpose": "Ambiguous NL request; planner likely routes direct (no clear capability slot).",
+      "fidelity": {
+        "final_numbers": [],
+        "source_numbers": [],
+        "overlap": [],
+        "fabricated_in_final": [],
+        "fidelity_pass": true
+      }
+    },
+    {
+      "test_id": "B1-numerical-density",
+      "purpose": "Rounding/restatement-drift base rate over a many-figure dispatch result.",
+      "request": "Summarize the European country statistics for me, focusing on the most populous and the wealthiest.",
+      "synth_input": "ORIGINAL REQUEST\nSummarize the European country statistics for me, focusing on the most populous and the wealthiest.\n\nPLAN\nDispatched: text-summarizer\nPlanned-but-not-run: none\n\nDISPATCH RESULTS\n[text-summarizer]\n\nCOUNTRY STATISTICS REPORT (synthetic fixture for spike \u03b5' B1)\n\nPopulation figures across selected European nations (2024 estimates):\n- France: 68,374,591 (2024-01-01); 67,656,682 (2023-01-01); 65,273,511 (2020-01-01)\n- Germany: 84,358,845 (2024-01-01); 84,358,845 (2023-12-31); 83,166,711 (2020-12-31)\n- Italy: 58,761,146 (2024-01-01); 58,853,482 (2023-01-01); 60,317,116 (2019-12-31)\n- Spain: 48,946,035 (2024-01-01); 48,345,223 (2023-01-01); 47,332,614 (2020-01-01)\n- Poland: 37,636,508 (2024-01-01); 37,766,327 (2023-01-01); 38,265,013 (2019-12-31)\n\nPopulation density (per km\u00b2):\n- France: 124.7; Germany: 235.2; Italy: 194.8; Spain: 96.7; Poland: 120.3\n\nGDP per capita (USD, 2023):\n- France: $44,460; Germany: $52,746; Italy: $38,373; Spain: $32,677; Poland: $22,113\n\nNote: figures are synthetic for spike testing and may not match real-world data.\n\n",
+      "fixture": "\nCOUNTRY STATISTICS REPORT (synthetic fixture for spike \u03b5' B1)\n\nPopulation figures across selected European nations (2024 estimates):\n- France: 68,374,591 (2024-01-01); 67,656,682 (2023-01-01); 65,273,511 (2020-01-01)\n- Germany: 84,358,845 (2024-01-01); 84,358,845 (2023-12-31); 83,166,711 (2020-12-31)\n- Italy: 58,761,146 (2024-01-01); 58,853,482 (2023-01-01); 60,317,116 (2019-12-31)\n- Spain: 48,946,035 (2024-01-01); 48,345,223 (2023-01-01); 47,332,614 (2020-01-01)\n- Poland: 37,636,508 (2024-01-01); 37,766,327 (2023-01-01); 38,265,013 (2019-12-31)\n\nPopulation density (per km\u00b2):\n- France: 124.7; Germany: 235.2; Italy: 194.8; Spain: 96.7; Poland: 120.3\n\nGDP per capita (USD, 2023):\n- France: $44,460; Germany: $52,746; Italy: $38,373; Spain: $32,677; Poland: $22,113\n\nNote: figures are synthetic for spike testing and may not match real-world data.\n",
+      "stages": [
+        {
+          "stage": "synthesize",
+          "invoke": {
+            "ok": true,
+            "response": "The most populous European country is **Germany** with approximately 84.4 million people (2024 estimate), followed by **France** (68.4 million) and **Italy** (58.8 million).  \n\nThe wealthiest nation by GDP per capita (2023) is **Germany** at $52,746, surpassing **France** ($44,460) and **Italy** ($38,373). Spain and Poland trail at $32,677 and $22,113 respectively.  \n\n*Note: These figures are synthetic fixtures for testing and may not reflect real-world data.*",
+            "agent": "synthesizer",
+            "raw": {
+              "results": {
+                "synthesizer": {
+                  "response": "The most populous European country is **Germany** with approximately 84.4 million people (2024 estimate), followed by **France** (68.4 million) and **Italy** (58.8 million).  \n\nThe wealthiest nation by GDP per capita (2023) is **Germany** at $52,746, surpassing **France** ($44,460) and **Italy** ($38,373). Spain and Poland trail at $32,677 and $22,113 respectively.  \n\n*Note: These figures are synthetic fixtures for testing and may not reflect real-world data.*",
+                  "status": "success",
+                  "model_substituted": false
+                }
+              },
+              "metadata": {
+                "agents_used": 1,
+                "started_at": 1779468865.234834,
+                "duration": "14.19s",
+                "completed_at": 1779468879.422821,
+                "usage": {
+                  "agents": {
+                    "synthesizer": {
+                      "input_tokens": 1259,
+                      "output_tokens": 348,
+                      "total_tokens": 1607,
+                      "cost_usd": 0.0,
+                      "duration_ms": 14172,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 12132726589,
+                      "prompt_eval_duration_ns": 1891658250,
+                      "load_duration_ns": 79317958,
+                      "start_time": 1779468865.235042,
+                      "baseline_cpu": 0.0,
+                      "baseline_memory": 86.8,
+                      "sample_count": 3,
+                      "peak_cpu": 44.4,
+                      "avg_cpu": 21.133333333333333,
+                      "peak_memory": 86.9,
+                      "avg_memory": 86.90000000000002,
+                      "cpu_samples": [
+                        44.4,
+                        19.0,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        86.9,
+                        86.9,
+                        86.9
+                      ],
+                      "resource_duration_seconds": 14.187558889389038,
+                      "resource_sample_count": 3
+                    }
+                  },
+                  "totals": {
+                    "total_tokens": 1607,
+                    "total_input_tokens": 1259,
+                    "total_output_tokens": 348,
+                    "total_cost_usd": 0.0,
+                    "total_duration_ms": 14172,
+                    "agents_count": 1
+                  }
+                },
+                "adaptive_resource_management": {
+                  "adaptive_used": false,
+                  "management_type": "user_configured",
+                  "concurrency_decisions": [],
+                  "resource_metrics": [
+                    {
+                      "cpu_percent": 0.0,
+                      "memory_percent": 86.9,
+                      "circuit_breaker_state": "N/A",
+                      "measurement_point": "final_fallback"
+                    }
+                  ],
+                  "execution_metrics": {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 86.9,
+                    "avg_memory": 86.9,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [
+                      0.0
+                    ],
+                    "raw_memory_samples": [
+                      86.9
+                    ]
+                  },
+                  "phase_metrics": [
+                    {
+                      "phase_index": 0,
+                      "phase_name": "phase_0",
+                      "agent_count": 1,
+                      "phase_start_time": 1779468865.2348642,
+                      "agent_names": [
+                        "synthesizer"
+                      ],
+                      "start_time": 1779468865.234865,
+                      "duration_seconds": 14.187829971313477,
+                      "end_time": 1779468879.422765,
+                      "agents_completed": 1,
+                      "peak_cpu": 44.4,
+                      "avg_cpu": 11.562142857142858,
+                      "peak_memory": 87.0,
+                      "avg_memory": 86.85,
+                      "sample_count": 140
+                    }
+                  ]
+                }
+              },
+              "config": {
+                "type": "mock_config"
+              }
+            },
+            "error": null,
+            "latency_seconds": 14.916681051254272
+          }
+        }
+      ],
+      "final_response": "The most populous European country is **Germany** with approximately 84.4 million people (2024 estimate), followed by **France** (68.4 million) and **Italy** (58.8 million).  \n\nThe wealthiest nation by GDP per capita (2023) is **Germany** at $52,746, surpassing **France** ($44,460) and **Italy** ($38,373). Spain and Poland trail at $32,677 and $22,113 respectively.  \n\n*Note: These figures are synthetic fixtures for testing and may not reflect real-world data.*",
+      "fidelity": {
+        "source_numbers_count": 27,
+        "final_numbers_count": 7,
+        "overlap": [
+          "2023",
+          "2024",
+          "22,113",
+          "32,677",
+          "38,373",
+          "44,460",
+          "52,746"
+        ],
+        "fabricated_in_final": [],
+        "fidelity_pass": true,
+        "drift_rate": 0.0
+      },
+      "verdict": "OK"
+    },
+    {
+      "test_id": "B2-precise-roundable",
+      "purpose": "Does the synthesizer round precise figures (e.g., 388,790 \u2192 388,000)?",
+      "request": "What are the populations of the smaller European countries?",
+      "synth_input": "ORIGINAL REQUEST\nWhat are the populations of the smaller European countries?\n\nPLAN\nDispatched: web-searcher\nPlanned-but-not-run: none\n\nDISPATCH RESULTS\n[web-searcher]\nCountry populations (precise): Iceland 388,790; Luxembourg 660,809; Malta 542,051; San Marino 33,581; Liechtenstein 39,580.\n",
+      "fixture": "Country populations (precise): Iceland 388,790; Luxembourg 660,809; Malta 542,051; San Marino 33,581; Liechtenstein 39,580.",
+      "stages": [
+        {
+          "stage": "synthesize",
+          "invoke": {
+            "ok": true,
+            "response": "Here are the populations of several smaller European countries based on the latest data:\n\n- **San Marino**: ~33,581  \n- **Liechtenstein**: ~39,580  \n- **Iceland**: ~388,790  \n- **Malta**: ~542,051  \n- **Luxembourg**: ~660,809  \n\nThese figures reflect the most recent population estimates for these smaller European nations.",
+            "agent": "synthesizer",
+            "raw": {
+              "results": {
+                "synthesizer": {
+                  "response": "Here are the populations of several smaller European countries based on the latest data:\n\n- **San Marino**: ~33,581  \n- **Liechtenstein**: ~39,580  \n- **Iceland**: ~388,790  \n- **Malta**: ~542,051  \n- **Luxembourg**: ~660,809  \n\nThese figures reflect the most recent population estimates for these smaller European nations.",
+                  "status": "success",
+                  "model_substituted": false
+                }
+              },
+              "metadata": {
+                "agents_used": 1,
+                "started_at": 1779468880.148053,
+                "duration": "11.03s",
+                "completed_at": 1779468891.176694,
+                "usage": {
+                  "agents": {
+                    "synthesizer": {
+                      "input_tokens": 785,
+                      "output_tokens": 302,
+                      "total_tokens": 1087,
+                      "cost_usd": 0.0,
+                      "duration_ms": 11012,
+                      "model": "qwen3:8b",
+                      "eval_duration_ns": 10423301785,
+                      "prompt_eval_duration_ns": 443005542,
+                      "load_duration_ns": 85289000,
+                      "start_time": 1779468880.148267,
+                      "baseline_cpu": 0.0,
+                      "baseline_memory": 86.9,
+                      "sample_count": 3,
+                      "peak_cpu": 75.0,
+                      "avg_cpu": 25.0,
+                      "peak_memory": 86.9,
+                      "avg_memory": 86.83333333333333,
+                      "cpu_samples": [
+                        0.0,
+                        75.0,
+                        0.0
+                      ],
+                      "memory_samples": [
+                        86.9,
+                        86.8,
+                        86.8
+                      ],
+                      "resource_duration_seconds": 11.028057098388672,
+                      "resource_sample_count": 3
+                    }
+                  },
+                  "totals": {
+                    "total_tokens": 1087,
+                    "total_input_tokens": 785,
+                    "total_output_tokens": 302,
+                    "total_cost_usd": 0.0,
+                    "total_duration_ms": 11012,
+                    "agents_count": 1
+                  }
+                },
+                "adaptive_resource_management": {
+                  "adaptive_used": false,
+                  "management_type": "user_configured",
+                  "concurrency_decisions": [],
+                  "resource_metrics": [
+                    {
+                      "cpu_percent": 0.0,
+                      "memory_percent": 86.8,
+                      "circuit_breaker_state": "N/A",
+                      "measurement_point": "final_fallback"
+                    }
+                  ],
+                  "execution_metrics": {
+                    "peak_cpu": 0.0,
+                    "avg_cpu": 0.0,
+                    "peak_memory": 86.8,
+                    "avg_memory": 86.8,
+                    "sample_count": 1,
+                    "raw_cpu_samples": [
+                      0.0
+                    ],
+                    "raw_memory_samples": [
+                      86.8
+                    ]
+                  },
+                  "phase_metrics": [
+                    {
+                      "phase_index": 0,
+                      "phase_name": "phase_0",
+                      "agent_count": 1,
+                      "phase_start_time": 1779468880.1480892,
+                      "agent_names": [
+                        "synthesizer"
+                      ],
+                      "start_time": 1779468880.1480901,
+                      "duration_seconds": 11.028377294540405,
+                      "end_time": 1779468891.1765811,
+                      "agents_completed": 1,
+                      "peak_cpu": 46.7,
+                      "avg_cpu": 10.124770642201835,
+                      "peak_memory": 86.9,
+                      "avg_memory": 86.8302752293578,
+                      "sample_count": 109
+                    }
+                  ]
+                }
+              },
+              "config": {
+                "type": "mock_config"
+              }
+            },
+            "error": null,
+            "latency_seconds": 11.772152185440063
+          }
+        }
+      ],
+      "final_response": "Here are the populations of several smaller European countries based on the latest data:\n\n- **San Marino**: ~33,581  \n- **Liechtenstein**: ~39,580  \n- **Iceland**: ~388,790  \n- **Malta**: ~542,051  \n- **Luxembourg**: ~660,809  \n\nThese figures reflect the most recent population estimates for these smaller European nations.",
+      "fidelity": {
+        "source_numbers": [
+          "33,581",
+          "388,790",
+          "39,580",
+          "542,051",
+          "660,809"
+        ],
+        "final_numbers": [
+          "33,581",
+          "388,790",
+          "39,580",
+          "542,051",
+          "660,809"
+        ],
+        "fabricated_in_final": [],
+        "fidelity_pass": true
+      },
+      "verdict": "OK"
+    },
+    {
+      "test_id": "C1-multi-turn-context-dependent",
+      "purpose": "Does the synthesizer-only architecture handle multi-turn context when history is passed in the request?",
+      "turn1_request": "I'm planning a trip to Reykjavik next month.",
+      "turn1_response": "Reykjavik is a fantastic destination! Since your trip is in November, be prepared for cooler temperatures\u2014pack warm layers and waterproof gear. Prioritize experiences like the Northern Lights (if timing aligns), the Golden Circle route (Geysir, Gullfoss, and \u00deingvellir National Park), and local culture spots like the Icelandic Punk Museum or Harpa Concert Hall. Consider booking guided tours for hidden gems like secret lagoons or lava fields. Safe travels and enjoy the unique vibe of Iceland! \ud83c\udf0c\ud83c\uddee\ud83c\uddf8",
+      "turn2_user_message": "What's the weather like there?",
+      "turn2_request_with_history": "[Prior conversation: user said: \"I'm planning a trip to Reykjavik next month.\". Assistant responded: \"Reykjavik is a fantastic destination! Since your trip is in November, be prepared for cooler temperatures\u2014pack warm layers and waterproof gear. Prioritize experiences like the Northern Lights (if timing aligns), the Golden Circle route (Geysir, Gullfoss, and \u00deingvellir National Park), and local culture spots like the Icelandic Punk Museum or Harpa Concert Hall. Consider booking guided tours for hidden gems like secret lagoons or lava fields. Safe travels and enjoy the unique vibe of Iceland! \ud83c\udf0c\ud83c\uddee\ud83c\uddf8\"]\n\nCurrent user message: What's the weather like there?",
+      "turn2_response": "The web search didn't find current weather information for Reykjavik, but based on typical November conditions in Iceland, expect cool temperatures (around 3-6\u00b0C or 37-43\u00b0F) with potential for rain or overcast skies. Pack warm layers, waterproof clothing, and be prepared for variable weather! For real-time updates, consider checking a weather service like Weather.com or the Icelandic Meteorological Office closer to your travel date. Safe travels! \ud83c\udf2b\ufe0f\ud83c\uddee\ud83c\uddf8",
+      "turn2_plan": {
+        "action": "dispatch",
+        "ensemble": "web-searcher",
+        "rationale": "The user is asking for current weather information in Reykjavik, which requires fresh data from the web."
+      },
+      "verdict": "OK",
+      "fidelity": {
+        "references_reykjavik": true,
+        "references_iceland": true,
+        "references_weather": true,
+        "context_preserved": true
+      }
+    },
+    {
+      "test_id": "C2-multi-turn-dispatch-referenced",
+      "purpose": "Does the synthesizer correctly use prior dispatch-result content when answering a follow-up?",
+      "turn1_request": "What's the current population of Iceland?",
+      "turn1_response": "The current population of Iceland is approximately **402,042** according to Worldometers (as of 2026). Another source, Worldpopulationreview, cites **402.3 thousand** people. While some estimates suggest slightly lower figures (e.g., 397,129 or 386,506), the most recent data points to around **402,000 residents**. Population numbers can vary slightly depending on the source and estimation methods.",
+      "turn2_user_message": "How does that compare to Luxembourg's population?",
+      "turn2_request_with_history": "[Prior conversation: user said: \"What's the current population of Iceland?\". Assistant responded: \"The current population of Iceland is approximately **402,042** according to Worldometers (as of 2026). Another source, Worldpopulationreview, cites **402.3 thousand** people. While some estimates suggest slightly lower figures (e.g., 397,129 or 386,506), the most recent data points to around **402,000 residents**. Population numbers can vary slightly depending on the source and estimation methods.\"]\n\nCurrent user message: How does that compare to Luxembourg's population?",
+      "turn2_response": "Luxembourg's population is significantly higher than Iceland's. While the exact current population isn't directly provided in the search results, one source mentions Luxembourg reached a peak population of **677,717 in 2024**, with growth rates averaging 1.92% over the past decade (as of 2026). This suggests Luxembourg's population is roughly **1.7 times larger** than Iceland's ~402,000 residents. Growth rates also indicate Luxembourg has experienced more rapid population expansion compared to Iceland's trends.",
+      "turn2_plan": {
+        "action": "dispatch",
+        "ensemble": "web-searcher",
+        "rationale": "The request requires comparing current population data between two countries, which necessitates fresh factual information from the web."
+      },
+      "verdict": "OK",
+      "fidelity": {
+        "references_iceland": true,
+        "references_luxembourg": true,
+        "comparison_attempted": true
+      }
+    }
+  ]
+}
