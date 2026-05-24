@@ -1,22 +1,27 @@
 """Serving Layer ``/v1/chat/completions`` endpoint.
 
-Per ``docs/agentic-serving/system-design.md`` §Serving Layer (L3),
-§Integration Contracts, and roadmap WP-C. The endpoint:
+Per ``docs/agentic-serving/system-design.md`` §Serving Layer (L3) and
+ADR-027 (Framework-Driven Dispatch Pipeline). Cycle 7 WP-A replaced the
+``OrchestratorRuntime`` ReAct loop on this surface with the framework-
+driven :class:`DispatchPipeline`. The endpoint:
 
 1. Parses the OpenAI-compatible request.
 2. Resolves a Session via :class:`SessionRegistry`.
 3. Runs :func:`resolve_session_start_context` exactly once per session
    (FC-9); Phase 1 returns an empty list.
-4. Constructs an :class:`OrchestratorRuntime` from the resolved
-   Model Profile's LLM, a :class:`BudgetController` sized from the
-   session's configured Budget, and a shared Tool Dispatch wrapping
-   :class:`OrchestraService`.
-5. Drives the Runtime to produce either a non-streaming
+4. Constructs a :class:`DispatchPipeline` over a routing-planner
+   ensemble (Stage 1), the shared Tool Dispatch wrapping
+   :class:`OrchestraService` (Stage 2), and a response-synthesizer
+   ensemble (Stage 3). The orchestrator-LLM is not in the routing-
+   decision or post-dispatch-synthesis surface (AS-9 + ADR-027).
+5. Drives the pipeline to produce either a non-streaming
    ``chat.completion`` body or an SSE stream.
 
-The Runtime is constructed per request. The Tool Dispatch facade
-and the LLM loader are process-scoped factories module-level tests
-override via ``monkeypatch.setattr``.
+The pipeline is constructed per request. The Tool Dispatch facade and
+the pipeline factory are process-scoped factories module-level tests
+override via ``monkeypatch.setattr``. ``OrchestratorRuntime`` remains in
+the codebase per ADR-027 §"OrchestratorRuntime status" disposition (a)
+(preserved as architecture-for-future-surfaces) but has no caller here.
 """
 
 from __future__ import annotations
@@ -24,17 +29,16 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass, field
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from llm_orc.agentic.autonomy_policy import AutonomyPolicy
-from llm_orc.agentic.budget_controller import BudgetController
 from llm_orc.agentic.calibration_gate import (
     CalibrationGate,
     EnsembleBackedChecker,
@@ -44,24 +48,23 @@ from llm_orc.agentic.composition_validator import (
     ConfigManagerEnsembleWriter,
     ConfigManagerPrimitiveRegistry,
 )
-from llm_orc.agentic.conversation_compaction import ConversationCompaction
 from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
+from llm_orc.agentic.dispatch_pipeline import DispatchPipeline
+from llm_orc.agentic.ensemble_backed_roles import (
+    EnsembleResponseSynthesizer,
+    EnsembleRoutingPlanner,
+)
 from llm_orc.agentic.inference_wait_heartbeat import (
     InferenceWaitHeartbeatScheduler,
 )
 from llm_orc.agentic.operator_terminal_event_sink import OperatorTerminalEventSink
 from llm_orc.agentic.orchestrator_chunk import (
-    ClientToolCall,
     Completion,
     ContentDelta,
-    VisibilityEvent,
+    OrchestratorChunk,
 )
 from llm_orc.agentic.orchestrator_context_event_sink import (
     OrchestratorContextEventSink,
-)
-from llm_orc.agentic.orchestrator_runtime import (
-    OrchestratorLLM,
-    OrchestratorRuntime,
 )
 from llm_orc.agentic.orchestrator_tool_dispatch import (
     TOOL_NAMES,
@@ -80,24 +83,23 @@ from llm_orc.agentic.tier_router import (
     TierRouterDefaults,
 )
 from llm_orc.agentic.tier_router_audit import TierEscalationAuditor
-from llm_orc.core.auth.authentication import CredentialStorage
-from llm_orc.core.models.model_factory import ModelFactory
-from llm_orc.models.base import ToolCallingNotSupportedError
 from llm_orc.web.api import get_orchestra_service
-from llm_orc.web.api.sse_format import (
-    OpenAiSseFormatter,
-    encode_tool_call_for_message,
-    render_visibility_narration,
-)
+from llm_orc.web.api.sse_format import OpenAiSseFormatter
 from llm_orc.web.api.v1_models import get_orchestrator_config_resolver
 
 router = APIRouter(prefix="/v1", tags=["openai-compat"])
+
+# System-ensemble names for the WP-A dispatch pipeline (ADR-028 / ADR-029).
+# WP-B and WP-C ship the production ensembles under these names; WP-D's
+# Capability List Builder formalizes the capability source. Held as module
+# constants until that work makes them operator-configurable.
+ROUTING_PLANNER_ENSEMBLE = "agentic-routing-planner"
+RESPONSE_SYNTHESIZER_ENSEMBLE = "agentic-response-synthesizer"
 
 
 _SHARED_REGISTRY = SessionRegistry()
 _SHARED_SESSION_START_CACHE = SessionStartCache()
 _SHARED_TOOL_DISPATCH: OrchestratorToolDispatch | None = None
-_SHARED_CONVERSATION_COMPACTION: ConversationCompaction | None = None
 _SHARED_DISPATCH_EVENT_SUBSTRATE: DispatchEventSubstrate | None = None
 _SHARED_OPERATOR_TERMINAL_SINK: OperatorTerminalEventSink | None = None
 _SHARED_SESSION_ARTIFACT_STORE: SessionArtifactStore | None = None
@@ -307,76 +309,60 @@ def _build_tier_router_and_audit(
     return router, auditor
 
 
-def get_conversation_compaction() -> ConversationCompaction:
-    """Return the process-scoped Conversation Compaction module.
+async def _build_capability_names() -> frozenset[str]:
+    """Build the registered capability-ensemble name set (interim — WP-A).
 
-    Per ADR-012 and system-design.agents.md §"Orchestrator Runtime →
-    Conversation Compaction" — invoked at every orchestrator turn
-    boundary; per-session state (circuit-breaker, tool first-seen
-    timestamps, nine-section session notes) is keyed by session_id
-    inside the instance so a singleton serves all in-flight sessions.
+    The Dispatch Pipeline validates ``plan.ensemble`` against this set
+    before dispatching (the Spike ν E1/E3 backstop). A capability
+    ensemble is one that carries ADR-015's ``topaz_skill`` marker;
+    system ensembles (planner, synthesizer, summarizer, checker) carry
+    no ``topaz_skill`` and are excluded.
 
-    The persistence root is rooted under the operator's global
-    configuration directory (``~/.config/llm-orc/compaction-artifacts/``
-    on a typical XDG setup); created lazily on first Layer 0 persist.
-
-    The Layer 4 summarizer is left unconfigured by default —
-    operators who want LLM-based semantic summary opt in by setting
-    ``orchestrator.compaction.summarizer_ensemble`` in config.yaml
-    and wiring a summarizer adapter. WP-E4 ships Layers 0–3 as the
-    primary value; Layer 4 wiring lands when an operator-facing
-    summarizer-ensemble convention exists.
-
-    Tests override this factory to inject a stub or a tmp-rooted
-    compaction.
-    """
-    global _SHARED_CONVERSATION_COMPACTION
-    if _SHARED_CONVERSATION_COMPACTION is None:
-        service = get_orchestra_service()
-        resolver = get_orchestrator_config_resolver()
-        config = resolver.resolve()
-        persistence_root = (
-            service.config_manager.global_config_dir / "compaction-artifacts"
-        )
-        _SHARED_CONVERSATION_COMPACTION = ConversationCompaction(
-            defaults=config.compaction,
-            persistence_root=persistence_root,
-            summarizer=None,
-        )
-    return _SHARED_CONVERSATION_COMPACTION
-
-
-async def _default_orchestrator_llm_loader(model_profile: str) -> OrchestratorLLM:
-    """Load the orchestrator LLM from a Model Profile via existing ModelFactory.
-
-    Uses the project's multi-provider machinery so any provider whose
-    ``ModelInterface`` implementation overrides ``generate_with_tools``
-    (currently :class:`OpenAICompatibleModel`; others land in
-    follow-up WPs) works as the orchestrator. Fails fast if the
-    resolved model does not support tool calling so misconfiguration
-    surfaces at session start rather than mid-loop.
+    ``read_ensembles`` returns name/source/path metadata without
+    ``topaz_skill``, so the marker is read per name via
+    ``find_ensemble_by_name`` — the same EnsembleConfig surface the
+    tier-router's skill reader uses. WP-D's Capability List Builder
+    formalizes this as the single source of truth.
     """
     service = get_orchestra_service()
-    credential_storage = CredentialStorage(service.config_manager)
-    factory = ModelFactory(service.config_manager, credential_storage)
-    model = await factory.load_model_from_agent_config({"model_profile": model_profile})
-    if not model.supports_tool_calling:
-        raise ToolCallingNotSupportedError(
-            f"Orchestrator model_profile '{model_profile}' resolves to "
-            f"'{model.name}' which does not support tool calling. Configure "
-            "a profile with an OpenAI-compatible provider (Ollama, OpenAI, "
-            "OpenRouter, LM Studio, vLLM, etc.)."
-        )
-    return model
+    entries = await service.read_ensembles()
+    names: set[str] = set()
+    for entry in entries:
+        name = entry.get("name")
+        if not isinstance(name, str):
+            continue
+        config = service.find_ensemble_by_name(name)
+        if config is not None and getattr(config, "topaz_skill", None):
+            names.add(name)
+    return frozenset(names)
 
 
-def get_orchestrator_llm_loader() -> Callable[[str], Awaitable[OrchestratorLLM]]:
-    """Return the LLM loader callable.
+async def get_dispatch_pipeline() -> DispatchPipeline:
+    """Construct a per-request framework-driven Dispatch Pipeline (ADR-027).
+
+    Stage 1 (Routing Planner) and Stage 3 (Response Synthesizer) are
+    ensemble-backed adapters over ``OrchestraService.invoke``; Stage 2
+    reuses the shared Tool Dispatch chokepoint so the calibration gate,
+    tier router, and autonomy interpositions fire unchanged (per the
+    "OrchestratorToolDispatch.dispatch() contract is unchanged"
+    preservation scenario). Capability names gate plan validation.
 
     Tests override this factory via ``monkeypatch.setattr`` to inject a
-    scripted :class:`OrchestratorLLM` double.
+    stub pipeline (shape/streaming tests) or a real pipeline wired to
+    stub ports (acceptance tests).
     """
-    return _default_orchestrator_llm_loader
+    service = get_orchestra_service()
+    return DispatchPipeline(
+        planner=EnsembleRoutingPlanner(
+            invoker=service, ensemble_name=ROUTING_PLANNER_ENSEMBLE
+        ),
+        synthesizer=EnsembleResponseSynthesizer(
+            invoker=service, ensemble_name=RESPONSE_SYNTHESIZER_ENSEMBLE
+        ),
+        tool_dispatch=get_orchestrator_tool_dispatch(),
+        capability_names=await _build_capability_names(),
+        event_substrate=get_dispatch_event_substrate(),
+    )
 
 
 class _ChatCompletionMessage(BaseModel):
@@ -412,7 +398,7 @@ class _ChatCompletionsRequest(BaseModel):
 async def chat_completions(
     request: _ChatCompletionsRequest,
 ) -> dict[str, Any] | StreamingResponse:
-    """Resolve session, build Runtime, then stream or return a body.
+    """Resolve session, build the Dispatch Pipeline, then stream or return a body.
 
     Per Cycle 6 WP-B piece 5 a per-request
     :class:`InferenceWaitHeartbeatScheduler` is registered with the
@@ -423,18 +409,23 @@ async def chat_completions(
     ``heartbeat_interval_seconds`` (default 30s) of cloud-LLM
     inference inactivity, giving operators liveness signal during
     long-inference waits.
+
+    The per-request context sink (Cycle 6 WP-C) keeps its substrate-
+    registration + end-of-session ``dispatch_log`` role under ADR-027;
+    its turn-boundary observation injection is moot because the
+    pipeline is single-turn (no orchestrator-LLM loop to inject into).
     """
     context = _resolve_context(request)
     session_id = context.state.identity.value
     context_sink = _build_context_sink(session_id=session_id)
-    runtime = await _build_runtime(context_sink=context_sink)
+    pipeline = await get_dispatch_pipeline()
     scheduler = _build_heartbeat_scheduler(session_id=session_id)
 
     if request.stream:
         return StreamingResponse(
             _stream_completion_with_heartbeat(
                 context,
-                runtime,
+                pipeline,
                 model=request.model,
                 scheduler=scheduler,
                 context_sink=context_sink,
@@ -444,7 +435,7 @@ async def chat_completions(
 
     return await _build_completion_body_with_heartbeat(
         context,
-        runtime,
+        pipeline,
         model=request.model,
         scheduler=scheduler,
         context_sink=context_sink,
@@ -456,10 +447,8 @@ def _build_heartbeat_scheduler(*, session_id: str) -> InferenceWaitHeartbeatSche
 
     The scheduler uses ``observability.heartbeat_interval_seconds`` from
     the operator config (default 30s) and the shared operator-terminal
-    sink as its emission target. Reads via ``resolve_validated`` mirrors
-    :func:`_build_runtime` — the model-profile validation that runs at
-    session start has already succeeded by the time chat_completions
-    constructs the scheduler.
+    sink as its emission target. The config has already resolved
+    successfully by the time chat_completions constructs the scheduler.
     """
     resolver = get_orchestrator_config_resolver()
     config = resolver.resolve_validated()
@@ -496,14 +485,13 @@ def _build_context_sink(*, session_id: str) -> OrchestratorContextEventSink:
 def _reject_reserved_tool_names(tools: list[dict[str, Any]]) -> None:
     """Reject client-declared tools that shadow llm-orc's internal surface.
 
-    The five ``TOOL_NAMES`` (ADR-003) are the orchestrator's closed action
-    set. A request that declares a client tool sharing one of those names
-    would silently misroute: the Runtime classifies by ``context.tools``
-    membership, so a shadowed internal call would be emitted as a
-    :class:`ClientToolCall` delegation instead of running in-process.
-    Rejecting at the Serving Layer with HTTP 400 surfaces the conflict
-    immediately rather than as a mysterious stream of
-    ``finish_reason: tool_calls``.
+    The five ``TOOL_NAMES`` (ADR-003) are llm-orc's closed internal
+    action set. Rejecting a client tool that reuses one of those names
+    preserves the Cycle 1 reserved-name commitment ("reserved TOOL_NAMES
+    enforced") and surfaces the collision at the Serving Layer with
+    HTTP 400 rather than letting a confusingly-named tool through. Under
+    ADR-027 the pipeline does not route by ``tools`` membership, so the
+    guard is a defensive input check rather than a misrouting backstop.
     """
     collisions: list[str] = []
     for tool in tools:
@@ -561,99 +549,62 @@ def _resolve_context(request: _ChatCompletionsRequest) -> SessionContext:
     return context
 
 
-async def _build_runtime(
-    *, context_sink: OrchestratorContextEventSink | None = None
-) -> OrchestratorRuntime:
-    """Construct a per-session Runtime from the resolved orchestrator config.
+class _ChatCompletionsCaller(Protocol):
+    """The chat-completions request driver.
 
-    ``resolve_validated`` raises if the operator-configured Model
-    Profile is absent from the library, so session start fails loudly
-    rather than booting with a profile that cannot be loaded.
-
-    ``context_sink`` (Cycle 6 WP-C, ADR-023 §Destination 2) is the
-    per-request orchestrator-context sink, when supplied. Runtime
-    queries it at each turn boundary after an ``invoke_ensemble``
-    dispatch and prepends the structured observation to the next
-    LLM call's messages.
+    Both :class:`DispatchPipeline` (the ADR-027 caller on this surface)
+    and :class:`OrchestratorRuntime` (preserved for future surfaces per
+    ADR-027 disposition (a)) satisfy this structurally — ``run`` yields
+    the shared :class:`OrchestratorChunk` vocabulary the SSE formatter
+    and non-streaming collector consume.
     """
-    resolver = get_orchestrator_config_resolver()
-    config = resolver.resolve_validated()
-    loader = get_orchestrator_llm_loader()
-    llm = await loader(config.model_profile)
-    budget = BudgetController(
-        turn_limit=config.budget.turn_limit,
-        token_limit=config.budget.token_limit,
-    )
-    return OrchestratorRuntime(
-        llm=llm,
-        budget=budget,
-        tool_dispatch=get_orchestrator_tool_dispatch(),
-        system_prompt=config.orchestrator_system_prompt,
-        compaction=get_conversation_compaction(),
-        context_sink=context_sink,
-    )
+
+    def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]: ...
 
 
 @dataclass(frozen=True)
 class _NonStreamingResult:
-    """Collected chunk output shaped for the non-streaming response body.
-
-    ``tool_calls`` is non-None when the Runtime closed the turn with a
-    :class:`ClientToolCall` (Option C) — the client-declared tool
-    delegations are carried on the response's ``message.tool_calls``
-    field, and ``finish_reason`` is ``"tool_calls"`` per OpenAI shape.
-    """
+    """Collected chunk output shaped for the non-streaming response body."""
 
     content: str
     finish_reason: str
-    tool_calls: list[dict[str, Any]] | None = field(default=None)
 
 
 async def _collect_non_streaming(
-    context: SessionContext, runtime: OrchestratorRuntime
+    context: SessionContext, caller: _ChatCompletionsCaller
 ) -> _NonStreamingResult:
-    """Drive the Runtime and flatten its chunks to the non-streaming shape.
+    """Drive the caller and flatten its chunks to the non-streaming shape.
 
-    VisibilityEvent chunks render as inline narration using the same
-    helper the SSE formatter uses, so non-streaming response bodies
-    carry the same Autonomy Policy visibility the streaming path emits —
-    tool-user observability does not depend on transport.
-
-    A :class:`ClientToolCall` chunk terminates the Runtime's generator
-    and is shaped into ``message.tool_calls`` per OpenAI's chat-
-    completion schema (Option C, Client Tool Surface Commitment).
+    The Dispatch Pipeline (ADR-027) yields ``ContentDelta`` text and a
+    terminal ``Completion``; the synthesizer's composed response is the
+    concatenation of the content deltas. The orchestrator-LLM's
+    ``VisibilityEvent`` narration and ``ClientToolCall`` delegation
+    chunks are not part of this surface's vocabulary under ADR-027.
     """
     content_parts: list[str] = []
     finish_reason = "stop"
-    tool_calls: list[dict[str, Any]] | None = None
-    async for chunk in runtime.run(context):
+    async for chunk in caller.run(context):
         if isinstance(chunk, ContentDelta):
             content_parts.append(chunk.content)
-        elif isinstance(chunk, VisibilityEvent):
-            content_parts.append(render_visibility_narration(chunk.kind, chunk.payload))
-        elif isinstance(chunk, ClientToolCall):
-            tool_calls = [encode_tool_call_for_message(tc) for tc in chunk.tool_calls]
-            finish_reason = "tool_calls"
         elif isinstance(chunk, Completion):
             finish_reason = chunk.finish_reason
     return _NonStreamingResult(
         content="".join(content_parts),
         finish_reason=finish_reason,
-        tool_calls=tool_calls,
     )
 
 
 async def _stream_completion(
-    context: SessionContext, runtime: OrchestratorRuntime, *, model: str
+    context: SessionContext, caller: _ChatCompletionsCaller, *, model: str
 ) -> AsyncIterator[bytes]:
-    """Drive the Runtime's chunk stream through the OpenAI SSE formatter."""
+    """Drive the caller's chunk stream through the OpenAI SSE formatter."""
     formatter = OpenAiSseFormatter(
         stream_id=f"chatcmpl-{uuid.uuid4().hex}",
         model=model,
         created=int(time.time()),
     )
     yield formatter.start_assistant_turn()
-    async for chunk in runtime.run(context):
+    async for chunk in caller.run(context):
         framed = formatter.format(chunk)
         if framed:
             yield framed
@@ -662,7 +613,7 @@ async def _stream_completion(
 
 async def _stream_completion_with_heartbeat(
     context: SessionContext,
-    runtime: OrchestratorRuntime,
+    caller: _ChatCompletionsCaller,
     *,
     model: str,
     scheduler: InferenceWaitHeartbeatScheduler,
@@ -684,7 +635,7 @@ async def _stream_completion_with_heartbeat(
     context_sink.register_with(substrate)
     heartbeat_task = asyncio.create_task(scheduler.run())
     try:
-        async for chunk in _stream_completion(context, runtime, model=model):
+        async for chunk in _stream_completion(context, caller, model=model):
             yield chunk
     finally:
         heartbeat_task.cancel()
@@ -699,7 +650,7 @@ async def _stream_completion_with_heartbeat(
 
 async def _build_completion_body_with_heartbeat(
     context: SessionContext,
-    runtime: OrchestratorRuntime,
+    caller: _ChatCompletionsCaller,
     *,
     model: str,
     scheduler: InferenceWaitHeartbeatScheduler,
@@ -715,7 +666,7 @@ async def _build_completion_body_with_heartbeat(
     context_sink.register_with(substrate)
     heartbeat_task = asyncio.create_task(scheduler.run())
     try:
-        return await _build_completion_body(context, runtime, model=model)
+        return await _build_completion_body(context, caller, model=model)
     finally:
         heartbeat_task.cancel()
         try:
@@ -760,27 +711,21 @@ def _write_dispatch_log_safe(
 
 
 async def _build_completion_body(
-    context: SessionContext, runtime: OrchestratorRuntime, *, model: str
+    context: SessionContext, caller: _ChatCompletionsCaller, *, model: str
 ) -> dict[str, Any]:
-    """Shape the non-streaming response body from the Runtime's chunks.
+    """Shape the non-streaming response body from the caller's chunks.
 
     ``usage`` carries the Session's cumulative accounting ---
     ``SessionState.token_spend`` is the sum over every LLM call in the
-    session, and ``turn_count`` is the number of ReAct iterations. Per-
-    request delta accounting can land in a follow-up when clients need
-    it; the cumulative shape is what agentic coding tools display
-    today.
+    session. Per-request delta accounting can land in a follow-up when
+    clients need it; the cumulative shape is what agentic coding tools
+    display today. The pipeline's per-dispatch token accounting is WP-C
+    work, so ``token_spend`` is unchanged by the pipeline in WP-A.
     """
     pre_token_spend = context.state.token_spend
-    result = await _collect_non_streaming(context, runtime)
+    result = await _collect_non_streaming(context, caller)
     turn_tokens = max(0, context.state.token_spend - pre_token_spend)
-    message: dict[str, Any] = {"role": "assistant"}
-    if result.tool_calls is not None:
-        # OpenAI convention: content is null on a pure tool_calls turn.
-        message["content"] = None
-        message["tool_calls"] = result.tool_calls
-    else:
-        message["content"] = result.content
+    message: dict[str, Any] = {"role": "assistant", "content": result.content}
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex}",
         "object": "chat.completion",
