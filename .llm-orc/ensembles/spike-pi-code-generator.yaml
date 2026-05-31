@@ -1,0 +1,20 @@
+name: spike-pi-code-generator
+description: |
+  Spike π — minimal code-generation ensemble for the OpenCode round-trip spike.
+  Single cheap-tier agent (qwen3:8b/ollama) that emits raw file content for a
+  requested file. The spike server post-processes (strips <think> blocks and
+  markdown fences) before applying the content. Free-tier; $0. Retained until
+  agentic-serving corpus close per spike-artifact retention directive.
+default_task: |
+  Generate the complete contents of the requested file. Output ONLY the raw
+  file contents — no explanation, no markdown code fences.
+agents:
+  - name: code-generator
+    model: qwen3:8b
+    provider: ollama
+    system_prompt: |
+      You are a code generator. Given a request describing a file to create,
+      output ONLY the complete raw contents of that file. No explanation, no
+      commentary, no markdown code fences, no backticks. Just the file body.
+      Do not think out loud. Respond with the file contents directly.
+    output_format: text
