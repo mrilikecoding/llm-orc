@@ -10,7 +10,7 @@
 
 **Cycle number:** 7
 **Started:** 2026-05-20 (cycle prepared; RESEARCH not yet entered)
-**Current phase:** model (next — DISCOVER loop-back closed at gate 2026-06-01; awaiting practitioner confirmation to enter MODEL [fold 6 new vocab terms + AS-9 scope note] or fold minimal vocab and proceed to DECIDE per the original loop-back path sketch)
+**Current phase:** decide (next — MODEL loop-back closed at gate 2026-06-01; brief pass folded 6 vocab terms + AS-9 two-axis scope-fence + invariant check [no amendment]; awaiting practitioner confirmation to enter DECIDE)
 **Cycle type:** standard (full pipeline)
 **Plugin version:** v0.8.6
 **Artifact base:** `docs/agentic-serving/`
@@ -79,6 +79,7 @@ These three questions are linked: the routing-decision mechanism + the contract-
 | SYNTHESIZE | ☐ Optional | — | — |
 | RESEARCH (loop from BUILD) | ✅ Complete (gate closed 2026-05-30) | Essay-Outline 006 Amendment B (C8 added + W8.1–W8.6 + Section 9 + 2 new References) + research-log 006b + 4 spikes (π/ρ/σ.1/σ.2; all $0 local) + 4 argument-audit rounds (R4 clean at P1/P2) + 2 citation-audit rounds (R2 clean) + susceptibility snapshot (No Grounding Reframe; 3 advisories) + reflection `006b-client-tool-action-terminal.md` + gate note `.rdd/gates/cycle-7-loopback-research-discover-gate.md` | **C8 added:** client-tool-action terminal necessary for parity (execution-model, not filesystem geography); **layer A** named as a *role* no current ADR-027 component holds; 3 candidate seat-fillers + grounded-loop hypothesis as **working inference (NOT a spike finding)**; F-ρ.1 artifact-bridge as the designed-in disjoint-filesystem; F-ρ.2 retracted by isolated citation audit. Practitioner reflection caught agent over-extrapolation at gate-time ("orchestrator-LLM returns in a grounded seat"), producing the post-gate W8.6 refinement with load-bearing scope flags. |
 | DISCOVER (loop from RESEARCH re-entry) | ✅ Complete (gate closed 2026-06-01) | `product-discovery.md` Cycle 7 loop-back update (Tool User + Skill Orchestration User mental-model refinements; Value Tensions 21–22; 2 new Assumption Inversion rows; 6 new Vocabulary terms + disposition note) + gate note `.rdd/gates/cycle-7-loopback-discover-model-gate.md` + susceptibility snapshot `housekeeping/audits/susceptibility-snapshot-cycle-7-loopback-discover.md` (**No Grounding Reframe; 4 advisories**) | All 5 carry-forward commitments addressed. Commitment #3 (LOAD-BEARING) honored substantively per snapshot: agent led with an independent "middle" framing (ADR-027 sound for **layer-B generation** but mis-identified as *the* architecture; the real open question is **wrapper-vs-callee**, layer A is a control structure no ADR-027 component holds), rejecting both the "incomplete, not wrong" pole and the "solved the wrong problem" pole. Practitioner loosened his own earlier binary ("Perhaps I made it too binary") and held the fork genuinely open: *"no preconceived notion... I want the effective path to win, which we need to ground with evidence."* Agent protected this from callee-skew by surfacing the **evidence-availability asymmetry** (only σ.2 multi-turn evidence exists, and it is callee-shaped; no wrapper-as-loop was ever spiked) → DECIDE-entry wrapper-shaped probe + named discriminating criteria. Grounded-loop falsification probe deferred to DECIDE entry (practitioner prior: reasonably solid; ADR-097 Conditional Acceptance backstop). |
+| MODEL (loop from RESEARCH re-entry) | ✅ Complete (gate closed 2026-06-01) | `domain-model.md` Cycle 7 loop-back update (6 vocab terms [2 settled §Concepts, 4 §Methodology Vocab with 3 DECIDE-pending]; **AS-9 §Scope boundary annotation**; 2 Open Questions #26-27; Amendment Log #15) + gate note `.rdd/gates/cycle-7-loopback-model-decide-gate.md` + susceptibility snapshot `housekeeping/audits/susceptibility-snapshot-cycle-7-loopback-model.md` (**No Grounding Reframe; 5 advisories — "cleanest gate in the Cycle 7 trajectory"**) | Brief bounded pass. **No invariant amendment** (conservative scope-fence only; AS-10 reaffirmed by Spike ρ as evidence-reinforcement). Substantive gate event: agent self-flagged that its initial AS-9 reopening was narrowed to grounding-vs-ungrounded (the minimize-disruption pull, one level up) and named a hidden second failure axis (sequential composition / error-accumulation across many decisions, even with grounding intact — a regime AS-9's single-decision basis never tested). Warrant-elicitation question on the narrow-vs-broad reopening; practitioner **widened**: *"we're here in a complex systems place, so I'm withholding judgment... not narrow in to bias our solutioning."* AS-9 annotation + OQ #27 widened to two axes; short DECIDE probe targets axis 1, axis 2 is BUILD-phase (short probe cannot settle it). |
 
 ## BUILD-surfaced finding: client-tool-action terminal gap (2026-05-24)
 
@@ -135,6 +136,18 @@ To be ordered after RESEARCH establishes the question shape, but pre-named for o
 - **Spike μ (MODEL-boundary; ran 2026-05-22):** confabulation-mode generalization — tests whether Spike ε ε.1's structural-bounding finding generalizes from PLAY note 22 to three other documented confabulation modes. Free-tier; $0 cost; ~3 min wall-clock. Findings: μ.1 path hallucination transforms (confident-specific fabrication → honest-generic-conventions with explicit hedging); μ.2 substrate-path-as-deliverable structurally avoided (text-only synthesizer surface); μ.3 coherent factual errors uncalibrated bounded by Rule 1 + Rule 5. Extended combined audit depth to 4 confabulation modes + 13 tests at qwen3:8b. Writeup at `essays/research-logs/cycle-7-spike-mu-confabulation-generalization.md`. Practitioner-authorized AS-9 codification followed.
 
 ## Feed-Forward Signals
+
+### From Cycle 7 loop-back MODEL (closed at gate 2026-06-01)
+
+1. **AS-9 scope-fence (no invariant amendment).** Per-turn agentic-loop-driving is held OUTSIDE AS-9's validated single-decision scope until validated. AS-9's claim is unchanged; the §Scope boundary annotation fences out the new role-shape (layer-A loop-driver). The grounded-loop hypothesis is a working inference (Spike σ, n=1). DECIDE must not treat the loop-driver as covered by AS-9's reliability finding.
+
+2. **AS-9 reopening is TWO-AXIS, not pre-narrowed (widened at the MODEL gate).** If the grounded-loop hypothesis fails, AS-9 reopens along two axes the single-decision basis cannot discriminate: **(1) grounding** — driver slips into ungrounded batch planning; **(2) sequential composition** — trajectory drifts/accumulates error across many decisions even with per-turn grounding intact (the regime AS-9 never tested; an axis-2 failure impugns AS-9's "single-decision-shaped" qualifier itself). **DECIDE-entry falsification probe targets axis 1 only** (cheap, short un-batchable chain); **axis 2 needs a long horizon = BUILD-phase target — the short probe cannot settle it.** A clean short-probe result is an axis-1 pass, NOT full validation; codify as Conditional Acceptance (ADR-097) with axis 2 designated BUILD-phase. **`domain-model.md` OQ #27 is the authoritative two-axis version; the product-discovery grounded-loop inversion is single-axis — read OQ #27, not the inversion, when structuring the probe plan** (snapshot Advisory 1).
+
+3. **AS-10 reaffirmed by Spike ρ (no text change).** A real tool-rich OpenCode client routed correctly via the planner; the prior tool-rich-client routing suppression did NOT recur. Recorded as evidence-reinforcement in Amendment Log #15, not an amendment.
+
+4. **Consolidated DECIDE advisory list** (from MODEL snapshot; 5 advisories): (1) read OQ #27 as authoritative two-axis; (2) short probe settles axis 1 only; (3) **wrapper-shaped probe must be a named deliverable** in the evidence plan, not residual (else OQ #26 settles by callee-skew); (4) three active DISCOVER advisories unchanged — OQ #18 (cost-distribution lens grounding: user-voice vs project-developer-voice), OQ #19 (Tier-1-hybrid vs ADR-027-direct build-complexity comparison before locking PRIMARY), OQ #20 (Population A tool-family timeout research before the latency ADR); (5) ARCHITECT naming-collision flag — "artifact-bridge" (F-ρ.1) ≠ ADR-030 "Bridge mechanism" (`tool_choice`-deferred).
+
+5. **Vocabulary disposition.** 6 terms folded; the 3 DECIDE-pending terms (layer-A loop-driver, layer-B generation, grounded loop) are NOT settled domain vocabulary — disposition resolves when DECIDE selects a layer-A seat-filler.
 
 ### From Cycle 7 loop-back DISCOVER (closed at gate 2026-06-01)
 
@@ -503,7 +516,27 @@ The conformance-scan Finding 2 (CLI uses `OrchestraService` directly, not `Orche
 
 ## Context for Resumption
 
-> **CURRENT STATE (2026-05-24): Cycle 7 looped back BUILD → RESEARCH.** All of RESEARCH→ARCHITECT closed; BUILD reached WP-A (handler swap landed, `e538264` + `0a7a822`) then **paused**. A BUILD reflection-gate surfaced the **client-tool-action terminal gap** — read §"BUILD-surfaced finding" + §"Path forward" near the top of this file first; they are the load-bearing entry point now. The RESEARCH re-entry runs the OpenCode client-tool round-trip spike. The DECIDE-era reading order below is retained as historical context for the prior phases.
+> **CURRENT STATE (2026-06-01): Cycle 7 loop-back — DISCOVER + MODEL closed; DECIDE is next (not yet entered).** The BUILD → RESEARCH → DISCOVER → MODEL loop-back has run. RESEARCH (loop) closed 2026-05-30 (Essay-Outline 006 Amendment B: C8 client-tool-action terminal, layer-A loop-driver, F-ρ.1 artifact-bridge, grounded-loop hypothesis; spikes π/ρ/σ). DISCOVER (update) + MODEL (brief) closed 2026-06-01. **The load-bearing open question is wrapper-vs-callee (OQ #26): is the layer-A loop-driver a wrapper *around* ADR-027's single-turn pipeline, or is the pipeline a callee *of* the loop (or, per σ.2, not the per-turn primitive at all)? Held open for DECIDE — do NOT inherit the "incomplete, not wrong" wrapper framing as the default.** WP-A stands committed (`e538264` + `0a7a822`); WP-B/WP-C remain paused until the terminal shape is settled.
+
+**Loop-back resumption reading order (2026-06-01) — read these first:**
+
+1. This file — §Feed-Forward "From Cycle 7 loop-back MODEL" + "From Cycle 7 loop-back DISCOVER" (current state + the DECIDE work list) + the Phase Status table's two loop-back rows.
+2. `.rdd/gates/cycle-7-loopback-model-decide-gate.md` + `.rdd/gates/cycle-7-loopback-discover-model-gate.md` — the two loop-back gate notes (settled/open splits; the wrapper-vs-callee fork; the AS-9 two-axis widening).
+3. `housekeeping/audits/susceptibility-snapshot-cycle-7-loopback-model.md` + `...-loopback-discover.md` — both **No Grounding Reframe**; together the 5 DECIDE advisories.
+4. `domain-model.md` — **AS-9 §Scope boundary** (two-axis fence: per-turn loop-driving held outside AS-9 until validated) + **OQ #26** (wrapper-vs-callee, authoritative) + **OQ #27** (grounded-loop, authoritative two-axis) + Amendment Log #15.
+5. `product-discovery.md` — Tensions 21 (wrapper-vs-callee) + 22 (artifact-bridge); the two new inversions; the 6 loop-back vocab terms.
+6. `essays/research-logs/006b-client-tool-action-terminal.md` — spikes π/ρ/σ (parity necessity; planner-delegation + terminal together; layer-A loop-driving feasibility; F-ρ.1) + `essays/essay-outline-006-...md` Amendment B (C8 + W8.1–W8.6 + Section 9) + reflection `essays/reflections/006b-client-tool-action-terminal.md`.
+
+**When ready to enter DECIDE (loop-back),** `/rdd-decide`. DECIDE-entry work, in order:
+
+- **Run two probes first.** (a) Grounded-loop **falsification probe** (OQ #27, axis 1 — short un-batchable chain, free local qwen3:14b/Ollama ~$0; a clean result is an axis-1 pass ONLY → codify with ADR-097 Conditional Acceptance, axis 2 = BUILD-phase). (b) **Wrapper-shaped probe** (OQ #26 — pipeline as per-turn generation subroutine under a loop-driver; a *named deliverable*, NOT residual, so the fork does not settle by callee-skew).
+- **Three carried preconditions:** OQ #18 (cost-distribution lens grounding — user-voice vs project-developer-voice), OQ #19 (Tier-1-hybrid vs ADR-027-direct build-complexity comparison before locking PRIMARY), OQ #20 (Population A tool-family timeout research before the latency ADR).
+- **Then ADR work:** amend ADR-027 or write a companion ADR for the layer-A loop-driver + client-tool-action terminal + multi-turn loop participation + artifact-bridge (F-ρ.1; **distinct from the ADR-030 "Bridge mechanism"**). Resolve OQ #26 on named discriminating criteria (reliability/grounded-loop; build-complexity; latency-over-turns; operator-mental-model fit), not by default-pull. New scenarios + interaction-specs for the terminal/bridge/loop/parity.
+- **In BUILD, re-introduce `ClientToolCall` emission** — the `0a7a822` removal comes back cleanly; the `OrchestratorChunk` union still includes `ClientToolCall`.
+
+---
+
+*The reading order below is the **first-DECIDE-pass background** (2026-05-22 framing). The spike/research detail (items 9–20) is still useful reference, but the loop-back resumption block above supersedes its current-state framing (e.g., item 1's "current phase is RESEARCH" and the #16–25 Open-Question count are pre-loop-back).*
 
 Anyone resuming this cycle in a new session should read in this order:
 
@@ -528,7 +561,9 @@ Anyone resuming this cycle in a new session should read in this order:
 19. `system-design.md` + `roadmap.md` — Cycle 6 close state of the architecture (Cycle 7 ARCHITECT will update substantially).
 20. `ORIENTATION.md` — high-level system framing.
 
-**When ready to enter DECIDE,** `/rdd-decide` with the Cycle 7 MODEL artifacts above as the entry input. DECIDE should attend specifically to:
+*(Historical — first-DECIDE-pass entry framing, 2026-05-22. Superseded by the loop-back DECIDE-entry block near the top of this section. Retained for the original DECIDE rationale.)*
+
+**When ready to enter DECIDE [first pass, historical],** `/rdd-decide` with the Cycle 7 MODEL artifacts above as the entry input. DECIDE should attend specifically to:
 
 - **AS-9 binds DECIDE artifacts.** ADRs drafted after this gate must use AS-9's structural-property framing as binding terminology; mechanism-choice ADRs (ADR-027 candidate; potential Tier 1 hybrid candidate; `tool_choice` disposition per Tension 19) draft within AS-9's scope.
 - **Three DECIDE-entry preconditions** (DISCOVER snapshot advisories preserved active per MODEL snapshot evaluation): OQ #18 cost-distribution lens validation against Population A voice; OQ #19 explicit build-complexity comparison between Tier 1 hybrid and ADR-027-direct per GT-2(a); OQ #20 Population A tool-family timeout research. These gate the mechanism-choice ADR drafting.
