@@ -1218,3 +1218,110 @@ The Layer-match "no" entries are not failures — they are the table working as 
 **Given** ADR-019's skill-framework-agnostic library shape (skill orchestration is client-side; operation-named library entries; no methodology-shaped ensembles in the library)
 **When** ADR-026 codifies AS-10 (capability matching from request content alone)
 **Then** the skill-framework-agnostic commitment is preserved structurally. AS-10 prevents the framework from learning skill-framework identifiers via client-side opt-in; this aligns with ADR-019's commitment that the orchestrator routes by capability without knowing which skill framework is composing against it.
+
+---
+
+## Cycle 7 loop-back Acceptance Criteria Table additions (per ADR-033 + ADR-034)
+
+The following loop-back acceptance criteria are emergent, aggregate, or specify an integration layer individual scenarios stub out. BUILD Step 5.5 verifies each at its specified layer. The loop-back covers the multi-turn tool-driven surface (layer-A loop-driver + client-tool-action terminal); ADR-027's single-turn pipeline surface is unchanged.
+
+| Criterion | Specified layer | Verification method | Layer-match check |
+|-----------|----------------|--------------------|-----|
+| A tool-driven client driven against agentic-serving gets a parity session (executes + observes its own tool calls; permission gate, diff, tool-result feedback intact) | Live end-to-end (real client, e.g. OpenCode, against a real loop-driver + terminal + ensemble) | Composes "Surface engages loop-driver when client tools present" + "Loop-driver delegates per-turn generation to a single ensemble" + "Terminal emits finish_reason=tool_calls the client executes" + "Surface consumes the tool-result follow-up and continues" with a real client and a real ensemble (no stubs at the client boundary) | no — unit/integration scenarios exercise each stage with stubs; parity is only observable when a real client executes the synthesized tool calls and the loop closes. This is the Spike π/ρ/σ verdict, to be re-confirmed against the built (not stand-in) terminal |
+| Grounded driving holds: no turn commits an action to an unobserved value | Integration (multi-turn loop over an un-batchable task where a later step depends on an earlier step's observed tool result) | Composes "Single-action-per-turn enforcement truncates a driver batch" + "Grounded-carry guard: a tool-call argument referencing an unobserved output is not dispatched" with the Spike τ un-batchable probe shape (a value present only in a prior tool result) | no — individual scenarios exercise enforcement and the guard in isolation; the grounded-carry property is emergent over a multi-turn un-batchable chain. Axis 2 (long-horizon drift) is BUILD/PLAY, not closable by a short integration test (ADR-033 Conditional Acceptance) |
+| Artifact-bridge delivers ensemble output to the client with fidelity, including large/complex deliverables | Integration (loop-driver → ensemble with output_substrate:artifact → SessionArtifactStore → terminal → tool-call content) | Composes "Loop-driver delegates write generation to a substrate-routed ensemble" + "Artifact-bridge reads the deliverable from SessionArtifactStore and marshals it into tool-call content" + a large-file case (deliverable beyond the trivially-small spike content) | no — spike evidence is trivially-small content only; the fidelity FC requires a large-deliverable integration test BUILD must add |
+| Long-horizon driver coherence (axis 2) | PLAY / first-deployment (a real multi-step, many-turn task: e.g. drive a short RDD-style or multi-file build session) | PLAY-phase experiential run against the built loop-driver + terminal; observe whether the trajectory holds or drifts/accumulates error across many turns | no — no synthetic test reaches axis 2; this is the recorded load-bearing risk (ADR-033 §Decision ¶5), validated in PLAY/first-deployment, ADR-097 Conditional Acceptance as the backstop |
+
+These Layer-match "no" entries are the table working as designed: they mark where BUILD Step 5.5 adds integration/large-deliverable tests and where PLAY/first-deployment is the natural verification surface for the axis-2 risk.
+
+---
+
+## Feature: Layer-A Loop-Driver and Surface-Mode Discrimination (ADR-033)
+
+### Scenario: Surface engages the loop-driver when the request carries client tools
+**Given** an operator-deployed serve with ADR-033 active and a chat-completions request that carries client `tools[]` (a tool-driven client, e.g. OpenCode's build agent declaring `write`/`edit`/`bash`/`read`) with `tool_choice: "auto"`
+**When** the chat-completions handler processes the request
+**Then** the surface engages the layer-A loop-driver (not ADR-027's single-turn `plan → dispatch → synthesize` pipeline as the terminal). The discriminator is the presence of client tools in the request.
+
+### Scenario: Surface uses the single-turn pipeline when no client tools are present
+**Given** an operator-deployed serve with ADR-033 active and a chat-completions request carrying no client `tools[]` (a non-agentic answer-a-question request)
+**When** the handler processes the request
+**Then** the surface routes through ADR-027's `plan → dispatch → synthesize` single-turn pipeline and returns a synthesized text response; the layer-A loop-driver is not engaged.
+
+### Scenario: Loop-driver delegates per-turn generation to a single capability ensemble (callee, not the pipeline)
+**Given** the loop-driver engaged on a tool-driven request, and a turn whose action requires generated content (e.g. file content for a `write`)
+**When** the loop-driver produces the content for that turn's tool call
+**Then** generation is delegated to a single capability ensemble invocation (the callee), not routed through the full `plan → dispatch → synthesize` pipeline (no per-turn routing-planner stage, no per-turn response-synthesizer stage). Refutable: a per-turn generation that invokes the routing-planner + synthesizer stages violates ADR-033's callee FC.
+
+### Scenario: Single-action-per-turn enforcement truncates a driver batch
+**Given** the loop-driver engaged, and a turn in which the driver proposes more than one client tool call at once (a batch)
+**When** the framework dispatches the turn's tool calls
+**Then** the framework dispatches at most one client tool call, returns its result to the loop-driver, and forces re-planning before any subsequent action; the additional proposed tool calls in the same turn are not dispatched until the first call's result is observed. Refutable: a turn that dispatches two client tool calls before returning the first's result violates the single-step FC. (Enforcement technique — batch-truncation per Spike τ′ evidence, or a re-planning prompt, or a one-tool `tool_choice` constraint — is ARCHITECT/BUILD selection; the FC constrains the observable behavior, not the technique.)
+
+### Scenario: Grounded carry — an action depending on a prior observed result uses the observed value
+**Given** the loop-driver engaged on an un-batchable task where a turn's correct action depends on a value present only in a prior turn's observed tool result (the Spike τ probe shape: a random value printed to stdout, not in any file, not recomputable)
+**When** the loop-driver, under single-action-per-turn enforcement, observes the prior tool result and then decides the dependent action
+**Then** the dependent tool-call argument uses the observed value, not a placeholder or fabricated value. Refutable: a tool-call argument containing an unresolved template reference to an unobserved output (the Spike τ `${bash_output}` failure signature) or a fabricated stand-in value violates the grounded-carry FC.
+
+### Scenario: Loop-driver finishes with a text completion when no further action is needed
+**Given** the loop-driver engaged and a turn at which the task is complete (no further tool call is warranted)
+**When** the loop-driver decides the turn's action
+**Then** the surface returns a text completion (`finish_reason: "stop"`), closing the loop; a tool-capable client that asked for a plain answer is served correctly via this path (the surface-mode discriminator engaging the driver when tools are present is safe because the driver can finish with text).
+
+### Preservation: the single-turn pipeline surface (ADR-027) is unchanged for non-tool requests
+**Given** ADR-027's `plan → dispatch → synthesize` pipeline serving non-tool-driven chat-completions requests
+**When** ADR-033 adds the loop-driver for tool-driven requests
+**Then** a request carrying no client tools behaves exactly as before ADR-033: routed through the single-turn pipeline, synthesized text response, response-synthesizer strict-fidelity rules (ADR-029) applied. ADR-033 adds a surface-mode branch; it does not change the non-tool path.
+
+### Preservation: AS-10 capability matching from request content alone is unchanged
+**Given** AS-10 (capability matching from request content alone; no client-side opt-in) and Spike ρ's reaffirmation that the planner routes on request content indifferent to declared client tools
+**When** the loop-driver delegates per-turn generation to a capability ensemble
+**Then** the per-turn ensemble selection is a function of the turn's task content, not of any client-supplied routing signal; the presence of client `tools[]` is used only as the surface-mode discriminator, not as a capability-routing input. Refutable: routing the per-turn generation by a client-supplied capability identifier (not the task content) violates AS-10.
+
+---
+
+## Feature: Client-Tool-Action Terminal and Artifact-Bridge (ADR-034)
+
+### Scenario: Terminal emits finish_reason=tool_calls carrying the deliverable
+**Given** the loop-driver decides a turn's action is to apply work to the client (e.g. write a file) and the generating ensemble has produced a deliverable
+**When** the terminal builds the response
+**Then** the surface emits a streamed assistant response with `finish_reason: "tool_calls"` carrying the appropriate client tool call (e.g. `write({filePath, content})`) in the OpenAI streaming tool-call delta shape (`delta.tool_calls[].function.arguments` fragments). Refutable: such a turn returning only `ContentDelta` + `Completion` (a text-only terminal) violates ADR-034's tool-call-terminal FC.
+
+### Scenario (integration): Artifact-bridge reads the substrate-routed deliverable and marshals it into tool-call content
+**Given** a capability ensemble with `output_substrate: artifact` (per ADR-025) whose deliverable routed to the server-side `SessionArtifactStore` (`envelope.primary` is a summary + `ArtifactReference`, not inline content)
+**When** the terminal builds the `write` tool call for that deliverable
+**Then** the artifact-bridge reads the deliverable from the `SessionArtifactStore` (via a `read_deliverable(reference)` accessor BUILD adds — the store currently has `write_deliverable` only) and marshals the artifact content into the tool-call `content` argument; the content equals the stored deliverable, not a summary or paraphrase. Refutable: a `write` whose content is `envelope.primary`'s summary rather than the artifact content violates the artifact-bridge fidelity FC.
+
+### Scenario (integration): Inline-substrate deliverable skips the bridge step
+**Given** an inline-response ensemble (`output_substrate: inline`) whose deliverable is in `envelope.primary` directly
+**When** the terminal builds the tool call
+**Then** the deliverable is read from `envelope.primary` and the artifact-store read is a no-op; the marshalled content equals the inline deliverable.
+
+### Scenario: Surface consumes the tool-result follow-up and continues the loop
+**Given** the surface emitted a `write` tool call, the client executed it locally and returned the result in a follow-up request carrying a `role: "tool"` message
+**When** the surface processes the follow-up
+**Then** the surface routes the tool result to the loop-driver (the follow-up's `role: "tool"` message is not dropped), and the loop-driver decides the next action or finishes. Refutable: a surface that ignores the `role: "tool"` follow-up, or whose request extraction drops tool messages (the current `_extract_request` reads only the last user message), violates the loop-participation FC.
+
+### Scenario: Terminal never writes to the client's filesystem directly
+**Given** the loop-driver decides to apply work to the client
+**When** the deliverable reaches the client
+**Then** the deliverable reaches the client only via a client-executed tool call, never via a server-side write to a client workspace path (the Spike π Phase A rejected shape). Refutable: any server-side write to a client filesystem path violates the no-server-side-write FC. (Satisfied by absence in current code; the FC guards against future re-introduction.)
+
+### Preservation: the SSE formatter's existing ClientToolCall handling is reused, not rebuilt
+**Given** the SSE formatter already formats `ClientToolCall` chunks correctly (`sse_format.py`) and the `OrchestratorChunk` union still includes `ClientToolCall` (the `0a7a822` removal took the handler emission, not the type or formatter)
+**When** ADR-034 re-introduces tool-call emission on the terminal
+**Then** the terminal yields `ClientToolCall` chunks that the existing SSE formatter consumes unchanged; no streaming-formatter changes are required. The re-introduction restores the `ClientToolCall` import, the `tool_calls` field on `_NonStreamingResult`, the `isinstance(chunk, ClientToolCall)` branch in `_collect_non_streaming`, and the `tool_calls` shaping in `_build_completion_body` (the four pieces `0a7a822` removed).
+
+### Preservation: ADR-025 artifact-as-substrate routing is unchanged
+**Given** ADR-025's substrate routing (capability deliverables route to the `SessionArtifactStore` by design)
+**When** the artifact-bridge reads a deliverable to marshal it into a tool call
+**Then** the bridge adds a read-and-marshal step; it does not change how deliverables are routed to the store, and it does not summarize the deliverable (AS-7 result-summarization is unaffected — the bridge marshals content, it does not summarize). The store remains the canonical deliverable location until the bridge marshals a copy into the client surface.
+
+---
+
+## Feature: Loop-back Structural Debt Remediation (from conformance-scan-cycle-7-loopback-decide)
+
+### Scenario (refactor, before BUILD): remove the stale ClientToolCall docstring comment
+**Given** the conformance scan found a docstring comment at `v1_chat_completions.py:581–583` stating that `ClientToolCall` chunks "are not part of this surface's vocabulary under ADR-027" — a comment that now contradicts ADR-034
+**When** the loop-back BUILD begins (before the tool-call terminal is built)
+**Then** the misleading comment is removed as a `refactor:` commit so BUILD implementors are not misled; this is the one refactor-now item from the loop-back conformance scan (the other 11 findings are BUILD-work or ARCHITECT-deferral, tracked as the loop-back BUILD load).
