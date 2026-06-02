@@ -57,6 +57,7 @@ from llm_orc.agentic.ensemble_backed_roles import (
 from llm_orc.agentic.inference_wait_heartbeat import (
     InferenceWaitHeartbeatScheduler,
 )
+from llm_orc.agentic.loop_driver import LoopDriver, SeatFiller
 from llm_orc.agentic.operator_terminal_event_sink import OperatorTerminalEventSink
 from llm_orc.agentic.orchestrator_chunk import (
     Completion,
@@ -77,12 +78,15 @@ from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
 from llm_orc.agentic.session_artifact_store import SessionArtifactStore
 from llm_orc.agentic.session_registry import SessionRegistry
 from llm_orc.agentic.session_start import ChatMessage, SessionContext, SessionStartCache
+from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
 from llm_orc.agentic.tier_router import (
     EnsembleConfigTopazSkillReader,
     TierRouter,
     TierRouterDefaults,
 )
 from llm_orc.agentic.tier_router_audit import TierEscalationAuditor
+from llm_orc.core.auth.authentication import CredentialStorage
+from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.web.api import get_orchestra_service
 from llm_orc.web.api.sse_format import OpenAiSseFormatter
 from llm_orc.web.api.v1_models import get_orchestrator_config_resolver
@@ -365,39 +369,59 @@ async def get_dispatch_pipeline() -> DispatchPipeline:
     )
 
 
-class _StubLoopDriver:
-    """Placeholder layer-A loop-driver for WP-LB-A (ADR-033).
+async def _resolve_seat_filler() -> SeatFiller:
+    """Resolve the loop-driver's seat-filler LLM from the Model Profile.
 
-    WP-LB-A lands only the surface-mode discriminator that branches
-    tool-driven requests (client ``tools[]`` present) to the loop-driver
-    surface. The real layer-A control structure — per-turn next-action
-    decision, framework-enforced single-action-per-turn, callee ensemble
-    delegation, ``TurnDecision`` diagnostics — is WP-LB-B's
-    ``agentic/loop_driver.py``. Until then this stub satisfies
-    :class:`_ChatCompletionsCaller` by finishing immediately with a text
-    completion. That is the safe terminal ADR-033 §Decision 1 names: a
-    tool-capable client routed to the driver but wanting a plain answer
-    on this turn is served correctly because the driver can finish with
-    text, which is why engaging the driver on tools presence is safe.
+    The seat-filler fills the client's "model" seat (ADR-033 §Decision 5):
+    the Serving Layer resolves the orchestrator's configured Model Profile
+    (ADR-011) to a tool-calling ``ModelInterface``, mirroring how the
+    Orchestrator Runtime is handed its orchestrator-LLM. Swapping the driver
+    model (cheap-tier ↔ frontier-tier — the named axis-2 fallback) is a
+    config edit to the profile, never a change to the Loop Driver (FC-46).
+
+    The model must support tool calling — the loop-driver decides each turn
+    via ``generate_with_tools``. A profile resolving to a non-tool-calling
+    model is an operator misconfiguration surfaced as a clear error rather
+    than a silent failure at the first turn. Tests override this seam to
+    inject a seat-filler double without standing up model resolution.
     """
-
-    async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
-        del context
-        yield Completion(finish_reason="stop")
+    service = get_orchestra_service()
+    config_manager = service.config_manager
+    config = get_orchestrator_config_resolver().resolve()
+    profile = config_manager.get_model_profiles().get(config.model_profile)
+    if profile is None or not profile.get("model"):
+        raise RuntimeError(
+            f"Seat-filler Model Profile '{config.model_profile}' is not "
+            "configured with a model in ConfigurationManager.get_model_profiles()"
+        )
+    credential_storage = CredentialStorage(config_manager)
+    model_factory = ModelFactory(config_manager, credential_storage)
+    model = await model_factory.load_model(profile["model"], profile.get("provider"))
+    if not model.supports_tool_calling:
+        raise RuntimeError(
+            f"Seat-filler Model Profile '{config.model_profile}' resolves to a "
+            "model that does not support tool calling; the loop-driver decides "
+            "each turn via generate_with_tools"
+        )
+    return model
 
 
 async def get_loop_driver() -> _ChatCompletionsCaller:
-    """Construct the layer-A loop-driver caller for tool-driven requests.
+    """Construct the layer-A Loop Driver caller for tool-driven requests.
 
-    Parallel to :func:`get_dispatch_pipeline`. WP-LB-A returns the
-    :class:`_StubLoopDriver` placeholder; WP-LB-B swaps the body to build
-    the real Loop Driver (seat-filler Model Profile per ADR-011, Single-
-    Step Enforcer, callee ensemble delegation) without changing this call
-    site or the surface-mode branch. Tests override it via
-    ``monkeypatch.setattr`` the same way they override the pipeline
-    factory.
+    Parallel to :func:`get_dispatch_pipeline`. Builds the real Loop Driver
+    (ADR-033): the seat-filler resolved from the Model Profile, the
+    Single-Step Enforcer (batch-truncation grounding guarantee), the shared
+    Tool Dispatch chokepoint for per-turn callee generation, and the shared
+    Dispatch Event Substrate for ``TurnDecision`` diagnostics. Tests override
+    this factory (or :func:`_resolve_seat_filler`) via ``monkeypatch.setattr``.
     """
-    return _StubLoopDriver()
+    return LoopDriver(
+        seat_filler=await _resolve_seat_filler(),
+        enforcer=SingleStepEnforcer(),
+        tool_dispatch=get_orchestrator_tool_dispatch(),
+        event_substrate=get_dispatch_event_substrate(),
+    )
 
 
 class _ChatCompletionMessage(BaseModel):

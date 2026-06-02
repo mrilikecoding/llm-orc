@@ -25,7 +25,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
 from llm_orc.agentic.dispatch_pipeline import DispatchPipeline, DispatchPlan
+from llm_orc.agentic.loop_driver import LoopDriver, TurnDecision
 from llm_orc.agentic.orchestrator_chunk import (
     Completion,
     ContentDelta,
@@ -49,6 +51,8 @@ from llm_orc.agentic.session_start import (
     SessionContext,
     SessionStartCache,
 )
+from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
+from llm_orc.models.base import ToolCallingResponse
 from llm_orc.web.api import v1_chat_completions
 from llm_orc.web.server import create_app
 
@@ -72,6 +76,55 @@ class _StubPipeline:
         self.contexts.append(context)
         for chunk in self._chunks:
             yield chunk
+
+
+class _FakeSeatFiller:
+    """Seat-filler double returning a fixed tool-calling response.
+
+    Stands in for the resolved Model Profile so loop-driver wiring tests do
+    not stand up real model resolution.
+    """
+
+    def __init__(self, response: ToolCallingResponse) -> None:
+        self._response = response
+
+    async def generate_with_tools(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> ToolCallingResponse:
+        return self._response
+
+
+class _NoToolDispatch:
+    """Tool-dispatch double that must not be called (finish-with-text paths)."""
+
+    async def dispatch(
+        self, call: InternalToolCall, *, session_id: str = ""
+    ) -> ToolCallResult:
+        raise AssertionError("the finish-with-text path should not dispatch")
+
+
+class _CapturingSink:
+    """Event sink recording every event the substrate fans out."""
+
+    def __init__(self) -> None:
+        self.events: list[object] = []
+
+    def consume(self, event: object) -> None:
+        self.events.append(event)
+
+
+def _real_loop_driver(
+    seat_filler: _FakeSeatFiller, substrate: DispatchEventSubstrate
+) -> LoopDriver:
+    return LoopDriver(
+        seat_filler=seat_filler,
+        enforcer=SingleStepEnforcer(),
+        tool_dispatch=_NoToolDispatch(),
+        event_substrate=substrate,
+    )
 
 
 class _StubPlanner:
@@ -195,7 +248,7 @@ def _build_client(
     registry: SessionRegistry | None = None,
     session_start_spy: (Callable[[SessionContext], list[PromptFragment]] | None) = None,
     pipeline: "_StubPipeline | DispatchPipeline | None" = None,
-    loop_driver: "_StubPipeline | None" = None,
+    loop_driver: "_StubPipeline | LoopDriver | None" = None,
     config: OrchestratorConfig | None = None,
 ) -> tuple[TestClient, SessionRegistry, SessionStartCache]:
     """Wire a TestClient with isolated Registry, cache, and Dispatch Pipeline.
@@ -230,9 +283,9 @@ def _build_client(
 
     monkeypatch.setattr(v1_chat_completions, "get_dispatch_pipeline", _pipeline_factory)
 
-    stub_loop_driver: _StubPipeline = loop_driver or _StubPipeline()
+    stub_loop_driver: _StubPipeline | LoopDriver = loop_driver or _StubPipeline()
 
-    async def _loop_driver_factory() -> _StubPipeline:
+    async def _loop_driver_factory() -> _StubPipeline | LoopDriver:
         return stub_loop_driver
 
     monkeypatch.setattr(v1_chat_completions, "get_loop_driver", _loop_driver_factory)
@@ -469,26 +522,101 @@ class TestSurfaceModeDiscrimination:
         assert loop_driver_caller.contexts
         assert not pipeline_caller.contexts
 
-    async def test_get_loop_driver_returns_caller_that_finishes_with_text(self) -> None:
-        """The production factory returns a drivable caller (seam, not test-only).
+    async def test_get_loop_driver_builds_the_real_loop_driver(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """WP-LB-B swap: the production factory builds the real Loop Driver.
 
-        The WP-LB-A stub finishes with a stop completion — the safe
-        terminal ADR-033 §Decision 1 names. WP-LB-B swaps the body for the
-        real Loop Driver without changing this contract.
+        The seat-filler is resolved via the overridable
+        :func:`_resolve_seat_filler` seam (a double here, so the test does not
+        stand up model resolution); the factory wires the real LoopDriver, not
+        a stub. Its driving behavior is covered by the loop-driver unit tests.
         """
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(content="ok", tool_calls=[], finish_reason="stop")
+        )
+
+        async def _resolve() -> _FakeSeatFiller:
+            return seat_filler
+
+        monkeypatch.setattr(v1_chat_completions, "_resolve_seat_filler", _resolve)
+        monkeypatch.setattr(
+            v1_chat_completions,
+            "get_orchestrator_tool_dispatch",
+            lambda: _NoToolDispatch(),
+        )
+
         caller = await v1_chat_completions.get_loop_driver()
+
+        assert isinstance(caller, LoopDriver)
         registry = SessionRegistry()
         state = registry.get_or_create_state(
             SessionIdentity(value="seam-test", method="user_field")
         )
         context = SessionContext(messages=[], tools=[], state=state)
-
         chunks = [chunk async for chunk in caller.run(context)]
-
         assert any(
             isinstance(chunk, Completion) and chunk.finish_reason == "stop"
             for chunk in chunks
         )
+
+    def test_tool_request_drives_real_loop_driver_emitting_turn_decision(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """FC-42 (event-based): a ``tools[]`` request drives the real driver.
+
+        WP-LB-A verified routing via distinguishable callers; the FC-42 event
+        assertion deferred to WP-LB-B verifies the discrimination engages the
+        *real* Loop Driver, which emits a ``TurnDecision`` diagnostic — not
+        faked against a stub.
+        """
+        substrate = DispatchEventSubstrate()
+        sink = _CapturingSink()
+        substrate.register_sink(sink)
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(content="ack", tool_calls=[], finish_reason="stop")
+        )
+        client, _, _ = _build_client(
+            monkeypatch, loop_driver=_real_loop_driver(seat_filler, substrate)
+        )
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "hello"}],
+                "tools": [{"type": "function", "function": {"name": "write"}}],
+            },
+        )
+
+        assert response.status_code == 200
+        turn_decisions = [e for e in sink.events if isinstance(e, TurnDecision)]
+        assert len(turn_decisions) == 1
+        assert turn_decisions[0].action == "finish"
+
+    def test_non_tool_request_emits_no_turn_decision(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The non-tool surface routes to the pipeline, not the loop-driver."""
+        substrate = DispatchEventSubstrate()
+        sink = _CapturingSink()
+        substrate.register_sink(sink)
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(content="ack", tool_calls=[], finish_reason="stop")
+        )
+        client, _, _ = _build_client(
+            monkeypatch, loop_driver=_real_loop_driver(seat_filler, substrate)
+        )
+
+        client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "what is a monad?"}],
+            },
+        )
+
+        assert not [e for e in sink.events if isinstance(e, TurnDecision)]
 
 
 class TestStreamingPath:
