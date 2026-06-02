@@ -195,6 +195,7 @@ def _build_client(
     registry: SessionRegistry | None = None,
     session_start_spy: (Callable[[SessionContext], list[PromptFragment]] | None) = None,
     pipeline: "_StubPipeline | DispatchPipeline | None" = None,
+    loop_driver: "_StubPipeline | None" = None,
     config: OrchestratorConfig | None = None,
 ) -> tuple[TestClient, SessionRegistry, SessionStartCache]:
     """Wire a TestClient with isolated Registry, cache, and Dispatch Pipeline.
@@ -228,6 +229,13 @@ def _build_client(
         return stub_pipeline
 
     monkeypatch.setattr(v1_chat_completions, "get_dispatch_pipeline", _pipeline_factory)
+
+    stub_loop_driver: _StubPipeline = loop_driver or _StubPipeline()
+
+    async def _loop_driver_factory() -> _StubPipeline:
+        return stub_loop_driver
+
+    monkeypatch.setattr(v1_chat_completions, "get_loop_driver", _loop_driver_factory)
 
     resolver = _FakeConfigResolver(config or _default_orchestrator_config())
     monkeypatch.setattr(
@@ -317,7 +325,14 @@ class TestChatCompletionsRequestParsing:
     """The endpoint accepts optional ``tools`` and ``user`` fields."""
 
     def test_accepts_tools_array(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Client-declared tools are received but not yet routed (WP-F)."""
+        """Client-declared tools parse; under ADR-033 they engage the loop-driver.
+
+        WP-LB-A routes a ``tools[]`` request to the loop-driver surface
+        (here the default :class:`_StubPipeline` loop-driver double), which
+        finishes with a stop completion — the request still returns 200.
+        Surface-mode discrimination itself is asserted in
+        :class:`TestSurfaceModeDiscrimination`.
+        """
         client, _, _ = _build_client(monkeypatch)
 
         response = client.post(
@@ -350,6 +365,130 @@ class TestChatCompletionsRequestParsing:
         )
 
         assert response.status_code == 200
+
+
+class TestSurfaceModeDiscrimination:
+    """``POST /v1/chat/completions`` routes by client-tools presence (ADR-033 D1).
+
+    A request carrying client ``tools[]`` engages the layer-A loop-driver;
+    a request with no client tools continues through ADR-027's single-turn
+    Dispatch Pipeline. The discriminator is the presence of client tools.
+    Each surface is injected as a distinguishable :class:`_StubPipeline`
+    caller so the route is observable in the response content at the HTTP
+    boundary.
+    """
+
+    @staticmethod
+    def _scripted(label: str) -> "_StubPipeline":
+        return _StubPipeline(
+            [ContentDelta(content=label), Completion(finish_reason="stop")]
+        )
+
+    def test_tool_request_engages_loop_driver(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pipeline_caller = self._scripted("PIPELINE")
+        loop_driver_caller = self._scripted("LOOPDRIVER")
+        client, _, _ = _build_client(
+            monkeypatch, pipeline=pipeline_caller, loop_driver=loop_driver_caller
+        )
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "write the config file"}],
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {"name": "write", "description": "write a file"},
+                    }
+                ],
+            },
+        )
+
+        body = response.json()
+        assert body["choices"][0]["message"]["content"] == "LOOPDRIVER"
+        assert loop_driver_caller.contexts, "loop-driver should be driven"
+        assert not pipeline_caller.contexts, "pipeline should not be driven"
+
+    def test_non_tool_request_uses_single_turn_pipeline(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pipeline_caller = self._scripted("PIPELINE")
+        loop_driver_caller = self._scripted("LOOPDRIVER")
+        client, _, _ = _build_client(
+            monkeypatch, pipeline=pipeline_caller, loop_driver=loop_driver_caller
+        )
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "what is a monad?"}],
+            },
+        )
+
+        body = response.json()
+        assert body["choices"][0]["message"]["content"] == "PIPELINE"
+        assert pipeline_caller.contexts, "pipeline should be driven"
+        assert not loop_driver_caller.contexts, "loop-driver should not be driven"
+
+    def test_tool_request_engages_loop_driver_on_streaming_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Discrimination happens before the stream/non-stream branch (wiring)."""
+        pipeline_caller = self._scripted("PIPELINE")
+        loop_driver_caller = self._scripted("LOOPDRIVER")
+        client, _, _ = _build_client(
+            monkeypatch, pipeline=pipeline_caller, loop_driver=loop_driver_caller
+        )
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "edit the parser"}],
+                "stream": True,
+                "tools": [
+                    {
+                        "type": "function",
+                        "function": {"name": "edit", "description": "edit a file"},
+                    }
+                ],
+            },
+        )
+
+        frames = _parse_sse_frames(response.content)
+        deltas = [
+            frame["choices"][0]["delta"].get("content", "")
+            for frame in frames
+            if not frame.get("__done__")
+        ]
+        assert "".join(deltas) == "LOOPDRIVER"
+        assert loop_driver_caller.contexts
+        assert not pipeline_caller.contexts
+
+    async def test_get_loop_driver_returns_caller_that_finishes_with_text(self) -> None:
+        """The production factory returns a drivable caller (seam, not test-only).
+
+        The WP-LB-A stub finishes with a stop completion — the safe
+        terminal ADR-033 §Decision 1 names. WP-LB-B swaps the body for the
+        real Loop Driver without changing this contract.
+        """
+        caller = await v1_chat_completions.get_loop_driver()
+        registry = SessionRegistry()
+        state = registry.get_or_create_state(
+            SessionIdentity(value="seam-test", method="user_field")
+        )
+        context = SessionContext(messages=[], tools=[], state=state)
+
+        chunks = [chunk async for chunk in caller.run(context)]
+
+        assert any(
+            isinstance(chunk, Completion) and chunk.finish_reason == "stop"
+            for chunk in chunks
+        )
 
 
 class TestStreamingPath:
