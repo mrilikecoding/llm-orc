@@ -41,7 +41,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from llm_orc.models.structural_errors import LlmOrcStructuralError
+
 __all__ = [
+    "ArtifactNotFoundError",
     "ArtifactReference",
     "Retention",
     "SessionArtifactStore",
@@ -154,6 +157,31 @@ class ArtifactReference:
     ``cleanup_ephemeral`` behavior per ADR-025 §"Cleanup"."""
 
 
+class ArtifactNotFoundError(LlmOrcStructuralError):
+    """Raised when ``read_deliverable`` cannot resolve a reference to a
+    file on disk.
+
+    The deliverable's :class:`ArtifactReference` points at a path that
+    is absent under the store root — typically because the artifact's
+    retention window closed (it was cleaned up) or the reference is
+    stale. The Client-Tool-Action Terminal (ADR-034 / WP-LB-C) catches
+    this and degrades to a dispatch-failure text completion rather than
+    emit a malformed tool call (system-design.agents.md
+    §Client-Tool-Action Terminal error handling).
+    """
+
+    def __init__(self, *, path: str) -> None:
+        super().__init__(
+            f"deliverable not found at reference path {path!r}",
+            error_kind="artifact_not_found",
+            recovery_action_required="operator_intervention_required",
+            operator_diagnostic=(
+                f"No deliverable on disk for reference path {path!r}; the "
+                "artifact may have been cleaned up or the reference is stale."
+            ),
+        )
+
+
 class SessionArtifactStore:
     """Substrate-routing store for capability-ensemble deliverables.
 
@@ -232,6 +260,56 @@ class SessionArtifactStore:
             summary=summary or f"{filename}: {size_bytes} bytes",
             retention=retention,
         )
+
+    def read_deliverable(self, reference: ArtifactReference) -> str | bytes:
+        """Read a substrate-routed deliverable's content (read-side accessor).
+
+        The first read-side API on the formerly write-only store (ADR-034
+        §Decision 3; conformance-scan advisory #4). Resolves
+        ``reference.path`` to its on-disk location — the structural
+        inverse of :meth:`write_deliverable`'s path construction — and
+        returns the deliverable content. UTF-8-decodable content returns
+        as ``str`` (the common case: code, markdown, JSON); content that
+        is not valid UTF-8 returns as ``bytes`` (binary deliverables).
+
+        The content is byte-faithful to what was written: the artifact-
+        bridge marshals it into a client tool-call ``content`` argument
+        with fidelity, NOT a summary or paraphrase (the FC-49 contract;
+        AS-7 result-summarization is upstream and does not apply here).
+
+        Raises :class:`ArtifactNotFoundError` when the reference does not
+        resolve to a file on disk (the artifact was cleaned up or the
+        reference is stale).
+        """
+        disk_path = self._resolve_disk_path(reference.path)
+        if not disk_path.is_file():
+            raise ArtifactNotFoundError(path=reference.path)
+        raw = disk_path.read_bytes()
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return raw
+
+    def _resolve_disk_path(self, envelope_path: str) -> Path:
+        """Map an ``ArtifactReference.path`` back to its on-disk location.
+
+        :meth:`write_deliverable` constructs the envelope path by
+        prefixing the session-relative segments with
+        :data:`_ARTIFACT_ROOT_PREFIX` (``agentic-sessions``) — the
+        ``.llm-orc/``-relative shape consumers see at
+        ``envelope.artifacts[0]``. The store root already points at the
+        ``agentic-sessions`` directory, so resolution strips the prefix
+        segment and rejoins the remainder under the root (rather than a
+        naive ``self._root / envelope_path``, which would double the
+        prefix segment).
+        """
+        prefix = f"{_ARTIFACT_ROOT_PREFIX}/"
+        relative = (
+            envelope_path[len(prefix) :]
+            if envelope_path.startswith(prefix)
+            else envelope_path
+        )
+        return self._root / relative
 
     def cleanup_session(self, session_id: str) -> None:
         """Remove ``retention: session`` artifacts under the session-dir.

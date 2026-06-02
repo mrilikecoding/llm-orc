@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from llm_orc.agentic.session_artifact_store import (
+    ArtifactNotFoundError,
     ArtifactReference,
     SessionArtifactStore,
     new_session_id,
@@ -345,3 +346,65 @@ class TestCleanupEphemeral:
         store.cleanup_ephemeral("sess-keep-session")
         # Session-retention artifact is NOT touched by cleanup_ephemeral.
         assert (tmp_path / "sess-keep-session" / "dispatch-001" / "x.txt").exists()
+
+
+class TestReadDeliverable:
+    """``read_deliverable`` — the read-side accessor (Cycle 7 loop-back,
+    ADR-034 §Decision 3 / WP-LB-D).
+
+    The first read-side API on the formerly write-only store (advisory
+    #4 — the highest-priority BUILD design dependency; the artifact-
+    bridge terminal chain cannot close without it). Resolution is the
+    structural inverse of ``write_deliverable``'s path construction:
+    ``ArtifactReference.path`` carries the ``agentic-sessions/``-prefixed,
+    ``.llm-orc/``-relative shape, so the accessor strips the prefix and
+    rejoins under the store root.
+    """
+
+    def test_read_deliverable_round_trips_text_content(self, tmp_path: Path) -> None:
+        """A text deliverable reads back byte-identical to what was
+        written — full fidelity, the FC-49 contract at the store layer."""
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        content = "def add(a: int, b: int) -> int:\n    return a + b\n"
+        ref = store.write_deliverable(
+            session_id="2026-06-02T10:00:00Z-aa11",
+            dispatch_id="dispatch-001",
+            deliverable_name="calc",
+            content=content,
+            content_type="application/python",
+        )
+        assert store.read_deliverable(ref) == content
+
+    def test_read_deliverable_round_trips_binary_content(self, tmp_path: Path) -> None:
+        """Non-UTF-8 bytes read back as ``bytes`` (the decode-probe falls
+        back to raw bytes), so the accessor is faithful for binary
+        deliverables, not only text."""
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        content = b"\xff\xfe\xfd\x00\x01"
+        ref = store.write_deliverable(
+            session_id="sess-bin",
+            dispatch_id="dispatch-001",
+            deliverable_name="blob",
+            content=content,
+            content_type="application/octet-stream",
+        )
+        assert store.read_deliverable(ref) == content
+
+    def test_read_deliverable_raises_artifact_not_found_for_missing_path(
+        self, tmp_path: Path
+    ) -> None:
+        """An unresolvable reference raises the typed structural error so
+        the terminal (WP-LB-C) can degrade to a dispatch-failure text
+        completion rather than emit a malformed tool call (FC-48 /
+        integration-contract error handling)."""
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        dangling = ArtifactReference(
+            path="agentic-sessions/sess-x/dispatch-001/gone.py",
+            content_type="application/python",
+            size_bytes=10,
+            summary="missing",
+            retention="session",
+        )
+        with pytest.raises(ArtifactNotFoundError) as exc_info:
+            store.read_deliverable(dangling)
+        assert exc_info.value.error_kind == "artifact_not_found"
