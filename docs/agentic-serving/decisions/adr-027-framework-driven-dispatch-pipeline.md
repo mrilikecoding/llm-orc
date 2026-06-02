@@ -1,6 +1,8 @@
 # ADR-027: Framework-Driven Dispatch Pipeline as Primary Direction for the Chat-Completions Surface
 
-**Status:** Proposed
+> **Updated by ADR-033 on 2026-06-01.** Scopes this ADR's `plan → dispatch → synthesize` pipeline to the single-turn (non-tool-driven) answer-a-question surface and the layer-B generation role. The multi-turn agentic (tool-driven client) surface is centered on the layer-A loop-driver per ADR-033, which delegates per-turn generation to a single capability ensemble (callee) rather than running this pipeline per turn. The rest of this ADR remains current.
+
+**Status:** Accepted (Cycle 7 DECIDE first pass, 2026-05-22); Updated by ADR-033
 
 **Date:** 2026-05-22
 
