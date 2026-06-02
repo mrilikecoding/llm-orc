@@ -1,11 +1,182 @@
 # Roadmap: Agentic Serving
 
-**Generated:** 2026-04-20; **last amended:** 2026-05-22 (Cycle 7 ARCHITECT close)
-**Derived from:** `system-design.md` (v5.0), ADRs 001-032, scenarios.md (Cycle 7 additions), interaction-specs.md (Cycle 7 additions)
+**Generated:** 2026-04-20; **last amended:** 2026-06-02 (Cycle 7 loop-back ARCHITECT close)
+**Derived from:** `system-design.md` (v6.0), ADRs 001-034, scenarios.md (Cycle 7 + loop-back additions), interaction-specs.md (Cycle 7 + loop-back additions)
 
 This roadmap expresses the sequencing landscape for building agentic serving — what depends on what, where the builder has a choice, and which coherent intermediates are worth pausing at. It does not prescribe a build order. Work package order within each dependency band is a build-time decision.
 
+> **Cycle 7 has two surfaces after the loop-back.** The first-pass Cycle 7 ARCHITECT designed the **single-turn (answer-a-question) surface** (Dispatch Pipeline plan → dispatch → synthesize). The BUILD reflection-gate then surfaced that this surface cannot deliver work to a tool-driven client's filesystem, triggering the loop-back. The loop-back ARCHITECT (this close) adds the **tool-driven multi-turn surface** (layer-A Loop Driver + client-tool-action Terminal + Artifact Bridge). **Both surfaces are Cycle 7 BUILD scope.** The loop-back tool-driven WPs are in the new section immediately below; the single-turn WPs are the section after it (first-pass WP-A landed; WP-B/C/D/E remain pending and valid). A surface-mode discriminator on the Serving Layer routes each request to the right surface; the **Capability List Builder (single-turn WP-D) is shared by both surfaces**.
+
 ---
+
+## Work Packages — Cycle 7 loop-back (active; tool-driven multi-turn surface)
+
+> **Six loop-back work packages (WP-LB-A through WP-LB-F).** They build the ADR-033 layer-A Loop Driver + ADR-034 client-tool-action Terminal + Artifact Bridge surface. Identifiers are `WP-LB-*` to avoid collision with the first-pass Cycle 7 `WP-A..E` (single-turn surface, below). **BUILD-mode declaration:** to be set at BUILD entry per ADR-091; recommended **gated** — the loop-back carries the cycle's load-bearing open risk (axis-2 long-horizon driver coherence, ADR-033 §Decision ¶5) and a drafting-time-synthesized surface-mode discriminator (validate-not-assume), both of which want practitioner-in-the-loop stewardship; auto mode is appropriate only once the surface-mode shape + Loop Driver structure are in place and the remaining WPs reduce to mechanical wiring.
+
+### Track A-LB — `refactor:` commit (precedes WP-LB-A)
+
+- **A-LB.1 — Remove the stale `ClientToolCall` docstring** (conformance Finding 5 refactor-now; advisory #6). The comment at `v1_chat_completions.py:581-583` documents `ClientToolCall` chunks as "not part of this surface's vocabulary under ADR-027" — it now contradicts ADR-034 and would mislead BUILD implementors re-introducing the terminal. Remove it as a standalone `refactor:` commit before the loop-back feature work begins (the one refactor-now item from the loop-back conformance scan; scenarios.md §"Loop-back Structural Debt Remediation"). Behavior-neutral; precedes WP-LB-A.
+
+### WP-LB-A: Surface-mode discrimination (ADR-033 §Decision 1; D1)
+
+**Objective:** Add the surface-mode discriminator to the Serving Layer so tool-driven requests (client `tools[]` present) engage the Loop Driver and non-tool requests continue through the Dispatch Pipeline. This re-scopes the first-pass WP-A handler swap (`0a7a822`), which currently routes every request through the pipeline.
+
+**Changes:**
+- Serving Layer extension at `web/api/v1_chat_completions.py`: a named discriminator (`len(request.tools) > 0`) selecting the surface; tool-driven requests delegate to the Loop Driver (WP-LB-B), non-tool requests continue to `dispatch_pipeline.run(context)`. **D1 resolution:** the branch lives in the Serving Layer as a named function (not a separate module — one branch coupled to request parsing the Serving Layer already owns).
+- **Validate-not-assume (advisory #2):** the discriminator's signal validity — whether `tools[]` presence is the right surface discriminator (a tool-capable client might send `tools[]` for bookkeeping without expecting an agentic loop) — is flagged for production-traffic confirmation, not assumed from one spike client. The safe edge case (a tool-capable client wanting a plain answer) is handled by the Loop Driver finishing with text.
+
+**Scenarios covered:** scenarios.md §"Layer-A Loop-Driver and Surface-Mode Discrimination (ADR-033)" — Surface engages the loop-driver when the request carries client tools; Surface uses the single-turn pipeline when no client tools are present; Preservation: the single-turn pipeline surface (ADR-027) is unchanged for non-tool requests.
+
+**Participating modules:** Serving Layer (extended — surface-mode discriminator). FC-42.
+
+**Dependencies:** Hard on first-pass **WP-A** (the handler the discriminator branches; landed `0a7a822`). Hard on **Track A-LB.1** (remove the stale docstring first). Gates **WP-LB-B** (the tool-driven branch needs a Loop Driver to delegate to) — but the branch can land routing tool-driven requests to a stub Loop Driver first.
+
+---
+
+### WP-LB-B: Loop Driver + Single-Step Enforcer + per-turn callee + axis-2 diagnostics (ADR-033)
+
+**Objective:** Land the layer-A control structure — the Loop Driver (per-turn next-action decision, tool-mapping, swappable seat-filler LLM, per-turn callee delegation to a single capability ensemble) + the Single-Step Enforcer (batch-truncation grounding guarantee) + per-turn `TurnDecision` diagnostic events for axis-2 split-vs-callee diagnosis.
+
+**Changes:**
+- New module `agentic/loop_driver.py` (L2) owning the multi-turn control structure; invokes the seat-filler LLM (injected by the Serving Layer from the resolved Model Profile, ADR-011 — swappable; cheap-tier default, frontier-tier the named axis-2 fallback); maps the deliverable to a client tool (`write`/`edit`/`bash`/`read`); delegates per-turn generation to a single capability ensemble via `OrchestratorToolDispatch.dispatch()` (the callee — not the pipeline); emits `TurnDecision` events through the Dispatch Event Substrate.
+- New module `agentic/single_step_enforcer.py` (L2) — a stateless batch-truncation policy (D2-selected technique; the only candidate with τ′ evidence + model-independence). The two untested candidates (re-planning prompt; one-tool `tool_choice`) remain tunable behind this boundary.
+- New `TurnDecision` event dataclass (turn index, action, delegated-ensemble, grounded-carry-held, re-plan-after-truncation) — additive to the Dispatch Event Substrate per FC-24 extensibility.
+- The Loop Driver delegates capability selection using the **Capability List Builder** (single-turn WP-D — shared).
+
+**Scenarios covered:** scenarios.md §ADR-033 — Loop-driver delegates per-turn generation to a single capability ensemble (callee, not the pipeline); Single-action-per-turn enforcement truncates a driver batch; Grounded carry — an action depending on a prior observed result uses the observed value; Loop-driver finishes with a text completion when no further action is needed; Preservation: AS-10 capability matching from request content alone is unchanged. FC-43, FC-44, FC-45, FC-46, FC-51.
+
+**Participating modules:** Loop Driver (new), Single-Step Enforcer (new), Orchestrator Tool Dispatch (existing — callee dispatch chokepoint), Capability List Builder (single-turn WP-D — shared), Budget Controller (existing — per-turn enforcement), Dispatch Event Substrate (existing — `TurnDecision` events), Serving Layer (seat-filler injection).
+
+**Dependencies:** Hard on **WP-LB-A** (the surface-mode branch engages the Loop Driver). Implied on single-turn **WP-D** (Capability List Builder — shared; the Loop Driver is testable against a stub list until WP-D lands). Open choice with **WP-LB-C** / **WP-LB-D** internals, but the end-to-end loop needs all three.
+
+---
+
+### WP-LB-C: Client-Tool-Action Terminal + multi-turn loop participation (ADR-034)
+
+**Objective:** Land the terminal that emits `finish_reason: "tool_calls"` carrying the deliverable, and the multi-turn loop participation (consume the incoming `role: "tool"` result, route it to the Loop Driver). Re-introduce the four `ClientToolCall` pieces commit `0a7a822` removed, on the tool-driven path.
+
+**Changes:**
+- New module `agentic/client_tool_action_terminal.py` (L3) — emits the streamed `ClientToolCall` (OpenAI streaming tool-call delta shape) via the existing `OpenAiSseFormatter` (the formatter's `ClientToolCall` case was retained by `0a7a822` — reused, not rebuilt); for the non-streaming path, re-introduces the `tool_calls` field on `_NonStreamingResult`, the `isinstance(chunk, ClientToolCall)` branch in `_collect_non_streaming`, and the `message["tool_calls"]` + `content: null` shaping in `_build_completion_body`.
+- **Loop participation:** consumes the incoming request's trailing `role: "tool"` message and surfaces it to the Loop Driver. The current `_extract_request` (`dispatch_pipeline.py:325-335`) reads only the last `role: "user"` message and drops tool results — the terminal's message routing must not call it or must extend it (conformance Finding 6).
+- Re-add the `ClientToolCall` import to `v1_chat_completions.py` (removed by `0a7a822`; conformance Finding 10).
+
+**Scenarios covered:** scenarios.md §"Client-Tool-Action Terminal and Artifact-Bridge (ADR-034)" — Terminal emits finish_reason=tool_calls carrying the deliverable; Surface consumes the tool-result follow-up and continues the loop; Terminal never writes to the client's filesystem directly; Preservation: the SSE formatter's existing ClientToolCall handling is reused, not rebuilt. FC-47, FC-48, FC-50.
+
+**Participating modules:** Client-Tool-Action Terminal (new), Serving Layer (composes the terminal), Artifact Bridge (WP-LB-D — resolves deliverable content), `OpenAiSseFormatter` (existing — reused).
+
+**Dependencies:** Hard on **WP-LB-B** (the terminal emits the Loop Driver's decision). Hard on **WP-LB-D** (the terminal calls the Artifact Bridge to resolve deliverable content). Hard on **Track A-LB.1** (the stale docstring removed first).
+
+---
+
+### WP-LB-D: Artifact Bridge + `SessionArtifactStore.read_deliverable()` (ADR-034 §Decision 3)
+
+**Objective:** Land the artifact-bridge marshalling step + the first read-side API on the Session Artifact Store. This is the highest-priority BUILD design dependency (conformance scan: the terminal chain cannot close without `read_deliverable`).
+
+**Changes:**
+- Session Artifact Store extension: `read_deliverable(reference: ArtifactReference) -> str | bytes` — resolves `reference.path` relative to the store root and returns content. First read-side API on the formerly write-only store (advisory #4).
+- New module `agentic/artifact_bridge.py` (L2) — reads the deliverable (substrate-routed via `read_deliverable`; inline via `envelope.primary`) and marshals content into the tool-call `content` argument with fidelity (not a summary). Deterministic framework code, not an LLM generation.
+- **Fidelity-at-scale (advisory #4 scope):** spike evidence used trivially small content; BUILD adds a large-deliverable integration test (scenarios.md Cycle 7 loop-back Acceptance Criteria Table row 3).
+
+**Scenarios covered:** scenarios.md §ADR-034 — Artifact-bridge reads the substrate-routed deliverable and marshals it into tool-call content; Inline-substrate deliverable skips the bridge step; Preservation: ADR-025 artifact-as-substrate routing is unchanged. FC-49.
+
+**Participating modules:** Artifact Bridge (new), Session Artifact Store (extended — `read_deliverable`), Client-Tool-Action Terminal (consumer from WP-LB-C).
+
+**Dependencies:** Open choice with **WP-LB-B** (the bridge is testable in isolation against a fixture artifact). Hard prerequisite for **WP-LB-C**'s end-to-end terminal (the terminal calls the bridge).
+
+---
+
+### WP-LB-E: Wrapper-contingency accessibility + fallback ordering (ADR-033 §Rejected; advisory #1)
+
+**Objective:** Make the per-turn generation delegation target a swappable strategy so the wrapper-contingency fallback is architecturally accessible without re-architecture, and record the fallback ordering. This is a structural-affordance WP, not a feature the callee design exercises — it keeps F3-1's recorded concession honest.
+
+**Changes:**
+- Structure the Loop Driver's per-turn delegation (WP-LB-B) so the generation target is a strategy: single-ensemble (callee — default) or `DispatchPipeline.run()` (wrapper — second-order fallback). The switch requires no change to the control structure, Single-Step Enforcer, or Terminal (FC-52).
+- Document the fallback ordering in code + the field guide: **(1)** frontier-tier driver (a Model Profile swap, FC-46 — preferred first fallback if axis-2 validation shows the cheap driver cannot hold the horizon); **(2)** wrapper reversion (second-order, only if a frontier driver also fails).
+
+**Scenarios covered:** No new behavior scenario (the callee path is the active behavior; this WP is the accessibility affordance). FC-52 verifies the swap touches only the delegation-target selection.
+
+**Participating modules:** Loop Driver (the delegation-target strategy seam).
+
+**Dependencies:** Hard on **WP-LB-B** (the delegation path it makes swappable). Low-cost — largely a structural-seam discipline applied when WP-LB-B lands; can fold into WP-LB-B if the builder prefers.
+
+---
+
+### WP-LB-F: Axis-2 diagnostic instrumentation surfacing (advisory #5; OQ #27 axis 2)
+
+**Objective:** Surface the per-turn `TurnDecision` events (emitted by WP-LB-B) through the operator-terminal + orchestrator-context sinks so a failing long-horizon (axis-2) run in PLAY/first-deployment is diagnosable as split-incorrect vs. callee-incorrect. The recorded load-bearing risk (ADR-033 §Decision ¶5) gets its observation surface.
+
+**Changes:**
+- Operator-Terminal Event Sink extension: `isinstance(event, TurnDecision)` arm emitting a line-oriented `key=value` entry (turn index, action, delegated-ensemble, grounded-carry-held, re-plan-after-truncation).
+- A trajectory-reconstruction helper (offline or dashboard) that distinguishes a wrong-action turn (driver/split) from a wrong-content turn (callee) from the event stream.
+
+**Scenarios covered:** scenarios.md Cycle 7 loop-back Acceptance Criteria Table row 4 (axis-2 long-horizon coherence — PLAY/first-deployment surface). FC-51.
+
+**Participating modules:** Operator-Terminal Event Sink (extended), Loop Driver (the `TurnDecision` producer from WP-LB-B).
+
+**Dependencies:** Hard on **WP-LB-B** (the `TurnDecision` events it surfaces). Open choice with WP-LB-C/D. This is the BUILD-side preparation for the PLAY/first-deployment axis-2 validation — it does not itself validate axis 2 (no synthetic test reaches it; ADR-097 Conditional Acceptance).
+
+---
+
+## Dependency Graph (Cycle 7 loop-back)
+
+```
+Track A-LB.1 (remove stale ClientToolCall docstring)
+   │
+   └─ hard ─▶ WP-LB-A, WP-LB-C (terminal re-introduction)
+
+WP-LB-A (surface-mode discrimination)
+   │
+   └─ hard ─▶ WP-LB-B (tool-driven branch engages the Loop Driver)
+
+WP-LB-B (Loop Driver + Single-Step Enforcer + per-turn callee + TurnDecision events)
+   │
+   ├─ hard ─▶ WP-LB-C (terminal emits the Loop Driver's decision)
+   ├─ hard ─▶ WP-LB-E (wrapper-contingency seam on the delegation path)
+   └─ hard ─▶ WP-LB-F (surfaces the TurnDecision events)
+
+WP-LB-D (Artifact Bridge + read_deliverable)
+   │
+   └─ hard ─▶ WP-LB-C (terminal calls the bridge to resolve deliverable content)
+
+WP-LB-B ─ implied ─▶ single-turn WP-D (Capability List Builder — shared; Loop Driver selects from it)
+WP-LB-D ─ open choice with WP-LB-B (bridge testable in isolation)
+```
+
+**Classification key:** Hard = structural necessity; Implied = simpler-first but stub-able; Open choice = genuinely independent.
+
+---
+
+## Transition States (Cycle 7 loop-back)
+
+### TS-12: Tool-driven surface delivers a parity round-trip (after WP-LB-A + WP-LB-B + WP-LB-C + WP-LB-D)
+
+When the surface-mode discriminator, Loop Driver + Single-Step Enforcer, Client-Tool-Action Terminal, and Artifact Bridge land, a tool-driven client (e.g. OpenCode) driven against agentic-serving gets a single-turn parity round-trip: the loop-driver decides an action, delegates generation to a capability ensemble, the artifact-bridge marshals the deliverable, the terminal emits `finish_reason: "tool_calls"`, the client executes the write locally, and the tool result feeds back. This is the **north-star "delegate work, apply locally" surface** the loop-back exists to deliver. The multi-turn loop is observable from a real client; long-horizon coherence (axis 2) is not yet validated (PLAY/first-deployment, ADR-097 Conditional Acceptance).
+
+### TS-13: Cycle 7 fully complete — both surfaces (after both surface WP sets)
+
+Both Cycle 7 surfaces shipped: the single-turn answer-a-question surface (first-pass WP-A landed + WP-B/C/D/E) and the tool-driven multi-turn surface (WP-LB-A..F). The surface-mode discriminator routes each request; the Capability List Builder serves both. Axis-2 long-horizon driver coherence is carried into PLAY/first-deployment as the recorded load-bearing risk under ADR-097 Conditional Acceptance, with the seat-filler swappable (cheap ↔ frontier) as the testable lever and FC-51 instrumentation making a failure diagnosable.
+
+---
+
+## Open Decision Points (Cycle 7 loop-back)
+
+### LB-1. Single-step enforcement technique tuning (D2 selected: batch-truncation)
+
+ARCHITECT selected **batch-truncation** (the only candidate with τ′ evidence + model-independence). FC-43 constrains the observable single-action behavior, not the technique, so BUILD may tune to a re-planning prompt or a one-tool `tool_choice` constraint behind the Single-Step Enforcer boundary if truncation surfaces issues. Open decision deferred to BUILD signal (`tool_choice` is the weakest candidate — Spike κ showed the framework does not forward it and MiniMax did not honor it).
+
+### LB-2. Seat-filler driver model (cheap-tier default; the load-bearing axis-2 bet)
+
+The Loop Driver's seat-filler is a swappable Model Profile (FC-46). Cheap-tier is the default (preserving the cost-distribution value proposition); frontier-tier is the named axis-2 fallback. The cheap-vs-capable bet is the recorded load-bearing risk (ADR-033 §Decision ¶5), resolved by outcome in PLAY/first-deployment via a config change, not re-architecture. Open decision deferred to axis-2 evidence.
+
+### LB-3. `edit`/`bash`/multi-file/streaming-token coverage (ADR-034 §Negative)
+
+Spike π/ρ validated the `write` round-trip for a single new file. `edit`-in-place (needs a `read` first), `bash` command execution, multi-file deliverables, and token-streaming the synthesized content are BUILD scope. Open decision: which of these land in Cycle 7 loop-back BUILD vs. defer to a follow-on cycle — the file-action `write` path is the BUILD focus; the richer surface is north-star context (ADR-033 §Decision 6(c)).
+
+---
+
+## Work Packages — Cycle 7 single-turn surface (active; carried across the loop-back)
+
+> **Status at loop-back close (2026-06-02):** First-pass **WP-A landed** (commits `e538264` + `0a7a822`; closed — status updated in-place below); the loop-back **WP-LB-A re-scopes its handler** via the surface-mode branch (WP-A made the pipeline the only surface; WP-LB-A adds the discriminator so tool-driven requests route to the Loop Driver instead). **WP-B / WP-C / WP-D / WP-E remain pending and valid** — they build the single-turn (non-tool) answer-a-question surface, which ADR-027 is now scoped to. The **Capability List Builder (WP-D) is shared** with the loop-back tool-driven surface (the Loop Driver selects per-turn capabilities from it). Sequence these alongside or after the loop-back tool-driven WPs at the builder's discretion; both surfaces are Cycle 7 BUILD scope. Track A.1 / A.2 (single-turn spike refactors) and Spike ν (A.3, complete) are unchanged.
 
 ## Work Packages — Cycle 7 (active)
 
@@ -43,7 +214,9 @@ The first two entries are `refactor:` commits that extend Spike artifacts to mat
 
 ---
 
-### WP-A: Dispatch Pipeline + Plan→InternalToolCall adapter + pipeline-stage event types (ADR-027)
+### WP-A: Dispatch Pipeline + Plan→InternalToolCall adapter + pipeline-stage event types (ADR-027) — ✅ **Closed 2026-05-24** (commits `e538264` feat + `0a7a822` handler swap)
+
+> **Loop-back re-scoping (2026-06-02):** WP-A landed the pipeline as the *only* chat-completions surface (the handler swap routed every request through it). The loop-back scopes the pipeline to the single-turn (non-tool) surface; **WP-LB-A** adds the surface-mode discriminator above it so tool-driven requests route to the Loop Driver instead. The `ClientToolCall` plumbing WP-A removed in `0a7a822` returns under the loop-back terminal (WP-LB-C). WP-A stands as a faithful, green, reversible increment of ADR-027 as written; the objective and changes below are the as-built record.
 
 **Objective:** Land the framework-driven dispatch pipeline (plan → dispatch → synthesize) as the chat-completions caller. Introduce the new Dispatch Pipeline module at L2, the Plan→`InternalToolCall` adapter inside the pipeline (per ARCHITECT Finding 11 disposition), and the four new pipeline-stage event types (`PlanEmitted`, `DispatchFired`, `SynthesizerCompleted`, `DirectCompletionFallback`) emitted through the existing Dispatch Event Substrate.
 
