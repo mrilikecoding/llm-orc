@@ -65,6 +65,7 @@ _LAYER_MAP: dict[str, int] = {
     "llm_orc.agentic.orchestrator_context_event_sink": 2,  # WP-C6 per ADR-023
     "llm_orc.agentic.dispatch_pipeline": 2,  # WP-A7 per ADR-027
     "llm_orc.agentic.ensemble_backed_roles": 2,  # WP-A7 per ADR-027/028/029
+    "llm_orc.agentic.single_step_enforcer": 2,  # WP-LB-B per ADR-033
     # L3 — Entry
     "llm_orc.agentic.session_registry": 3,
     "llm_orc.agentic.session_artifacts": 3,  # WP-D4 per ADR-013
