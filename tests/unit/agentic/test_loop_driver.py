@@ -18,7 +18,8 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
-from llm_orc.agentic.loop_driver import LoopDriver
+from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
+from llm_orc.agentic.loop_driver import LoopDriver, TurnDecision
 from llm_orc.agentic.orchestrator_chunk import (
     ClientToolCall,
     Completion,
@@ -104,12 +105,28 @@ def _build_driver(
     seat_filler: _FakeSeatFiller,
     *,
     tool_dispatch: _FakeToolDispatch | None = None,
+    event_substrate: DispatchEventSubstrate | None = None,
 ) -> LoopDriver:
     return LoopDriver(
         seat_filler=seat_filler,
         enforcer=SingleStepEnforcer(),
         tool_dispatch=tool_dispatch or _FakeToolDispatch(),
+        event_substrate=event_substrate,
     )
+
+
+class _CapturingSink:
+    """Event sink recording every event the substrate fans out."""
+
+    def __init__(self) -> None:
+        self.events: list[object] = []
+
+    def consume(self, event: object) -> None:
+        self.events.append(event)
+
+
+def _turn_decisions(sink: _CapturingSink) -> list[TurnDecision]:
+    return [event for event in sink.events if isinstance(event, TurnDecision)]
 
 
 def _one_tool_call(chunks: list[OrchestratorChunk]) -> Any:
@@ -277,3 +294,98 @@ class TestLoopDriverGroundedCarry:
         assert any(
             message.get("content") == "TOKEN_7f3a9c" for message in surfaced_messages
         )
+
+
+class TestLoopDriverTurnDecision:
+    """FC-51 — each turn emits a TurnDecision diagnostic.
+
+    The event carries the action, the delegated ensemble (if any), whether a
+    grounded carry was held, and whether the enforcer truncated a batch — so a
+    failing long-horizon (axis-2) run reconstructs as split-incorrect (wrong
+    action) vs callee-incorrect (wrong generated content).
+    """
+
+    @staticmethod
+    def _capture(
+        seat_filler: _FakeSeatFiller,
+    ) -> tuple[DispatchEventSubstrate, _CapturingSink, LoopDriver]:
+        substrate = DispatchEventSubstrate()
+        sink = _CapturingSink()
+        substrate.register_sink(sink)
+        driver = _build_driver(seat_filler, event_substrate=substrate)
+        return substrate, sink, driver
+
+    async def test_finish_turn_emits_a_turn_decision(self) -> None:
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(content="done", tool_calls=[], finish_reason="stop")
+        )
+        _, sink, driver = self._capture(seat_filler)
+
+        await _collect(driver.run(_make_context()))
+
+        decisions = _turn_decisions(sink)
+        assert len(decisions) == 1
+        assert decisions[0].action == "finish"
+        assert decisions[0].delegated_ensemble is None
+
+    async def test_generation_turn_records_the_delegated_ensemble(self) -> None:
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="invoke_ensemble",
+                        arguments_json=json.dumps(
+                            {
+                                "name": "code-generator",
+                                "input": "write a function",
+                                "filePath": "f.py",
+                            }
+                        ),
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        )
+        _, sink, driver = self._capture(seat_filler)
+
+        await _collect(driver.run(_make_context()))
+
+        decision = _turn_decisions(sink)[0]
+        assert decision.action == "write"
+        assert decision.delegated_ensemble == "code-generator"
+        assert decision.grounded_carry_held is False
+
+    async def test_literal_carry_batch_flags_grounded_and_truncation(self) -> None:
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="w1",
+                        name="write",
+                        arguments_json=json.dumps(
+                            {"filePath": "a.txt", "content": "A"}
+                        ),
+                    ),
+                    ToolCall(
+                        id="w2",
+                        name="write",
+                        arguments_json=json.dumps(
+                            {"filePath": "b.txt", "content": "B"}
+                        ),
+                    ),
+                ],
+                finish_reason="tool_calls",
+            )
+        )
+        _, sink, driver = self._capture(seat_filler)
+
+        await _collect(driver.run(_make_context()))
+
+        decision = _turn_decisions(sink)[0]
+        assert decision.action == "write"
+        assert decision.grounded_carry_held is True
+        assert decision.delegated_ensemble is None
+        assert decision.replanned_after_truncation is True
