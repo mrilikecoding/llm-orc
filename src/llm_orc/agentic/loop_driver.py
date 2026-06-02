@@ -14,18 +14,26 @@ interposing single-step enforcement and per-turn ensemble delegation. Each
 requests (the client executes the emitted tool call locally and returns
 its result in a follow-up request; ADR-034's terminal participates).
 
-Per turn the driver:
+**Seat-filler contract (system-design Amendment, BUILD-resolved 2026-06-02).**
+The seat-filler decides one of two things per turn, and the framework
+truncates any batch to that one action (Single-Step Enforcer, ADR-033 §3):
 
-* invokes the injected **seat-filler** LLM to decide the next agentic step
-  (which client tool to call, or finish), conditioned on the conversation
-  including any prior observed tool result;
-* enforces **single-action-per-turn** via the Single-Step Enforcer
-  (batch-truncation — the framework's grounding guarantee, ADR-033 §3);
-* delegates per-turn content generation to a **single capability ensemble**
-  (the callee — not the ``plan → dispatch → synthesize`` pipeline; WP-LB-B
-  callee delegation lands the generation path);
-* emits a per-turn ``TurnDecision`` diagnostic for axis-2 split-vs-callee
-  diagnosis (FC-51).
+* a **client tool call** (``write``/``edit``/``bash``/``read``) with literal
+  arguments — passed through to the client **verbatim**. This is the
+  grounded-carry path: a value observed in a prior tool result, which the
+  seat-filler read from the conversation, reaches the client tool call
+  argument unchanged (no ``${...}`` template, no fabrication; FC-45);
+* an internal **``invoke_ensemble``** call — the per-turn **callee**
+  generation delegation. The driver dispatches a *single* capability
+  ensemble through the existing Tool Dispatch chokepoint (no routing-planner,
+  no response-synthesizer; FC-44), then **maps** the deliverable to a client
+  tool call (the tool-mapping decision the Loop Driver owns).
+
+This keeps generated content delegated to ensembles (the cost-distribution
+value proposition) while keeping literal/observed values exact — the
+distinction the grounded-carry path needs. The seat-filler emits
+``invoke_ensemble`` for content it wants generated and a client tool call
+for content it already determines.
 
 The seat-filler is injected (a swappable Model Profile per ADR-011) so a
 driver-model swap (cheap-tier ↔ frontier-tier — the named axis-2 fallback)
@@ -56,7 +64,12 @@ from llm_orc.agentic.session_start import SessionContext
 from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
 from llm_orc.models.base import ToolCall, ToolCallingResponse
 
-__all__ = ["CapabilitySelector", "LoopDriver", "SeatFiller", "ToolDispatcher"]
+__all__ = ["LoopDriver", "SeatFiller", "ToolDispatcher"]
+
+_GENERATION_TOOL = "invoke_ensemble"
+"""The internal tool name the seat-filler emits to delegate per-turn
+content generation to a capability ensemble (the callee). Any other tool
+name is a client tool call passed through verbatim."""
 
 
 class SeatFiller(Protocol):
@@ -91,18 +104,6 @@ class ToolDispatcher(Protocol):
     ) -> ToolCallResult: ...
 
 
-class CapabilitySelector(Protocol):
-    """Selects the capability ensemble for a generation turn (AS-10).
-
-    The selection is a function of the turn's task content, never the
-    client-declared tools. WP-LB-B injects a selector backed by a stub list;
-    the single-turn WP-D Capability List Builder is the shared production
-    source.
-    """
-
-    def select(self, *, task: str) -> str | None: ...
-
-
 class LoopDriver:
     """Layer-A multi-turn control structure (callee delegation)."""
 
@@ -112,12 +113,10 @@ class LoopDriver:
         seat_filler: SeatFiller,
         enforcer: SingleStepEnforcer,
         tool_dispatch: ToolDispatcher,
-        capability_selector: CapabilitySelector,
     ) -> None:
         self._seat_filler = seat_filler
         self._enforcer = enforcer
         self._tool_dispatch = tool_dispatch
-        self._capability_selector = capability_selector
 
     async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
         """Drive one turn of the tool-driven multi-turn loop."""
@@ -133,43 +132,69 @@ class LoopDriver:
             yield Completion(finish_reason="stop")
             return
 
-        invocation = await self._generate_action(enforced.action, context)
+        action = enforced.action
+        if action.name == _GENERATION_TOOL:
+            invocation = await self._delegate_generation(action, context)
+        else:
+            invocation = _passthrough_client_tool(action)
         yield ClientToolCall(tool_calls=(invocation,))
 
-    async def _generate_action(
+    async def _delegate_generation(
         self, action: ToolCall, context: SessionContext
     ) -> ToolCallInvocation:
-        """Resolve a client tool call's content via the per-turn callee.
+        """Dispatch the per-turn callee ensemble and map its deliverable.
 
-        A generation action (``write``/``edit``) delegates content to a
-        single capability ensemble selected by task content; the ensemble's
-        deliverable becomes the tool call's ``content`` (callee — not the
-        plan -> dispatch -> synthesize pipeline). The path and tool name come
-        from the seat-filler's decision.
+        The seat-filler's ``invoke_ensemble`` call names the capability and
+        the generation task (selected by task content — AS-10); the driver
+        dispatches that single ensemble (no routing-planner / synthesizer
+        stage — FC-44) and marshals the deliverable into a client ``write``.
+        Richer tool-mapping (``edit``/``bash``) and capability-list
+        validation are deferred to the WP-D Capability List Builder
+        integration.
         """
-        task = _generation_task(context)
-        capability = self._capability_selector.select(task=task)
+        args = _parse_arguments(action.arguments_json)
         result = await self._tool_dispatch.dispatch(
             InternalToolCall(
                 id=action.id,
-                name="invoke_ensemble",
-                arguments={"name": capability, "input": task},
+                name=_GENERATION_TOOL,
+                arguments={
+                    "name": _string_field(args, "name"),
+                    "input": _string_field(args, "input"),
+                },
             ),
             session_id=context.state.identity.value,
         )
-        arguments = json.dumps(
-            {"filePath": _action_path(action), "content": _deliverable_text(result)}
+        client_arguments = json.dumps(
+            {
+                "filePath": _string_field(args, "filePath"),
+                "content": _deliverable_text(result),
+            }
         )
-        return ToolCallInvocation(id=action.id, name=action.name, arguments=arguments)
+        return ToolCallInvocation(
+            id=action.id, name="write", arguments=client_arguments
+        )
+
+
+def _passthrough_client_tool(action: ToolCall) -> ToolCallInvocation:
+    """Carry a literal client tool call through to the client verbatim.
+
+    The seat-filler's exact ``arguments_json`` is preserved unchanged — the
+    grounded-carry guarantee (FC-45): an observed value the seat-filler placed
+    in the argument is not regenerated, summarized, or templated.
+    """
+    return ToolCallInvocation(
+        id=action.id, name=action.name, arguments=action.arguments_json
+    )
 
 
 def _to_openai_messages(context: SessionContext) -> list[dict[str, Any]]:
     """Project the session's chat messages into the seat-filler's payload.
 
-    Carries ``role`` and ``content`` for every message. Tool-round-trip
-    fields (``tool_call_id``, ``tool_calls``) are surfaced by WP-LB-B's
-    grounded-carry path / WP-LB-C's loop participation so the seat-filler
-    observes prior tool results.
+    Carries ``role`` and ``content`` for every message, so a prior observed
+    tool result (a ``role: tool`` message) is surfaced to the seat-filler —
+    the precondition for grounded carry. Fuller tool-round-trip fidelity
+    (``tool_call_id``, the assistant turn's ``tool_calls``) is WP-LB-C
+    loop-participation work.
     """
     return [
         {"role": message.role, "content": message.content}
@@ -177,28 +202,19 @@ def _to_openai_messages(context: SessionContext) -> list[dict[str, Any]]:
     ]
 
 
-def _generation_task(context: SessionContext) -> str:
-    """The task string the per-turn callee ensemble generates content for.
-
-    WP-LB-B derives it from the latest user message (matching the single-turn
-    pipeline's request extraction). Richer per-step task derivation — drawing
-    on the seat-filler's stated intent for the current step — is a refinement
-    tracked for the multi-turn build-out.
-    """
-    for message in reversed(context.messages):
-        if message.role == "user" and message.content:
-            return message.content
-    return ""
-
-
-def _action_path(action: ToolCall) -> str:
-    """Extract the target file path from the seat-filler's tool-call args."""
+def _parse_arguments(arguments_json: str) -> dict[str, Any]:
+    """Parse a tool call's JSON arguments, tolerating malformed input."""
     try:
-        arguments = json.loads(action.arguments_json)
+        parsed = json.loads(arguments_json)
     except json.JSONDecodeError:
-        return ""
-    path = arguments.get("filePath", "")
-    return path if isinstance(path, str) else ""
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _string_field(arguments: dict[str, Any], key: str) -> str:
+    """Read a string-typed argument field, defaulting to empty."""
+    value = arguments.get(key, "")
+    return value if isinstance(value, str) else ""
 
 
 def _deliverable_text(result: ToolCallResult) -> str:

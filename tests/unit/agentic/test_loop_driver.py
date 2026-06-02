@@ -3,8 +3,10 @@
 The Loop Driver is the layer-A control structure for the tool-driven
 multi-turn surface. Each ``run`` is one turn: it invokes the injected
 seat-filler LLM to decide the next action, enforces single-action-per-turn,
-delegates per-turn generation to a single capability ensemble (the
-callee), and emits a ``TurnDecision`` diagnostic. Scenarios from
+and resolves that action one of two ways — a literal client tool call is
+passed through verbatim (grounded carry), an ``invoke_ensemble`` call
+delegates per-turn generation to a single capability ensemble (the callee)
+and maps the deliverable to a client tool. Scenarios from
 ``docs/agentic-serving/scenarios.md`` §"Layer-A Loop-Driver and
 Surface-Mode Discrimination (ADR-033)".
 """
@@ -79,22 +81,6 @@ class _FakeToolDispatch:
         )
 
 
-class _FakeCapabilitySelector:
-    """Capability-selector double returning a fixed capability for any task.
-
-    Records the tasks it was asked to match so tests can assert selection is
-    a function of the turn's task content (AS-10), never a client signal.
-    """
-
-    def __init__(self, capability: str | None = "code-generator") -> None:
-        self._capability = capability
-        self.tasks: list[str] = []
-
-    def select(self, *, task: str) -> str | None:
-        self.tasks.append(task)
-        return self._capability
-
-
 def _make_context(
     messages: list[ChatMessage] | None = None,
     tools: list[dict[str, Any]] | None = None,
@@ -118,14 +104,18 @@ def _build_driver(
     seat_filler: _FakeSeatFiller,
     *,
     tool_dispatch: _FakeToolDispatch | None = None,
-    capability_selector: _FakeCapabilitySelector | None = None,
 ) -> LoopDriver:
     return LoopDriver(
         seat_filler=seat_filler,
         enforcer=SingleStepEnforcer(),
         tool_dispatch=tool_dispatch or _FakeToolDispatch(),
-        capability_selector=capability_selector or _FakeCapabilitySelector(),
     )
+
+
+def _one_tool_call(chunks: list[OrchestratorChunk]) -> Any:
+    tool_calls = [c for c in chunks if isinstance(c, ClientToolCall)]
+    assert len(tool_calls) == 1
+    return tool_calls[0].tool_calls[0]
 
 
 class TestLoopDriverFinishesWithText:
@@ -164,33 +154,37 @@ class TestLoopDriverFinishesWithText:
         assert chunks == [Completion(finish_reason="stop")]
 
 
-def _write_call(call_id: str, arguments_json: str) -> ToolCall:
-    return ToolCall(id=call_id, name="write", arguments_json=arguments_json)
-
-
 class TestLoopDriverDelegatesToCallee:
     """FC-44 — per-turn generation routes to a single capability ensemble.
 
-    Not the plan -> dispatch -> synthesize pipeline: the driver dispatches
-    exactly one ``invoke_ensemble`` for the selected capability and emits the
-    deliverable as a client tool call. There is no routing-planner or
-    response-synthesizer collaborator on the driver to invoke (the structural
-    callee property), so "zero planner / zero synthesizer" holds by absence.
+    The seat-filler emits an ``invoke_ensemble`` call to delegate generation;
+    the driver dispatches exactly one ensemble (no routing-planner or
+    response-synthesizer collaborator exists on the driver to invoke — the
+    structural callee property) and maps the deliverable to a client tool.
     """
 
     async def test_delegates_generation_to_single_ensemble(self) -> None:
         seat_filler = _FakeSeatFiller(
             ToolCallingResponse(
                 content="",
-                tool_calls=[_write_call("t1", '{"filePath": "sort.py"}')],
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="invoke_ensemble",
+                        arguments_json=json.dumps(
+                            {
+                                "name": "code-generator",
+                                "input": "write a sorting function",
+                                "filePath": "sort.py",
+                            }
+                        ),
+                    )
+                ],
                 finish_reason="tool_calls",
             )
         )
         tool_dispatch = _FakeToolDispatch(deliverable="def sort(xs): ...")
-        selector = _FakeCapabilitySelector(capability="code-generator")
-        driver = _build_driver(
-            seat_filler, tool_dispatch=tool_dispatch, capability_selector=selector
-        )
+        driver = _build_driver(seat_filler, tool_dispatch=tool_dispatch)
 
         chunks = await _collect(driver.run(_make_context()))
 
@@ -198,38 +192,88 @@ class TestLoopDriverDelegatesToCallee:
         call = tool_dispatch.calls[0]
         assert call.name == "invoke_ensemble"
         assert call.arguments["name"] == "code-generator"
+        assert call.arguments["input"] == "write a sorting function"
 
-        tool_calls = [c for c in chunks if isinstance(c, ClientToolCall)]
-        assert len(tool_calls) == 1
-        invocation = tool_calls[0].tool_calls[0]
+        invocation = _one_tool_call(chunks)
         assert invocation.name == "write"
         args = json.loads(invocation.arguments)
         assert args["filePath"] == "sort.py"
         assert args["content"] == "def sort(xs): ..."
 
-    async def test_content_comes_from_the_ensemble_not_the_seat_filler(self) -> None:
-        # Callee delegation: even if the seat-filler proposes its own content,
-        # the client write carries the *ensemble's* deliverable. Generation is
-        # delegated, not done by the driver's seat-filler.
+
+class TestLoopDriverGroundedCarry:
+    """FC-45 — an action depending on a prior observed result uses that value.
+
+    A literal client tool call carries the seat-filler's arguments verbatim:
+    a value observed in a prior tool result reaches the client tool-call
+    argument unchanged (no ``${...}`` template, no fabrication, no ensemble
+    regeneration).
+    """
+
+    @staticmethod
+    def _grounded_context() -> SessionContext:
+        return _make_context(
+            messages=[
+                ChatMessage(
+                    role="user",
+                    content="run gen-token.sh and save the token to token.txt",
+                ),
+                ChatMessage(
+                    role="assistant",
+                    content=None,
+                    tool_calls=(
+                        {
+                            "id": "b1",
+                            "type": "function",
+                            "function": {
+                                "name": "bash",
+                                "arguments": '{"command": "./gen-token.sh"}',
+                            },
+                        },
+                    ),
+                ),
+                ChatMessage(role="tool", content="TOKEN_7f3a9c", tool_call_id="b1"),
+            ]
+        )
+
+    async def test_observed_value_carried_into_tool_call_verbatim(self) -> None:
         seat_filler = _FakeSeatFiller(
             ToolCallingResponse(
                 content="",
                 tool_calls=[
-                    _write_call(
-                        "t1",
-                        '{"filePath": "sort.py", "content": "SEAT_FILLER_GUESS"}',
+                    ToolCall(
+                        id="w1",
+                        name="write",
+                        arguments_json=json.dumps(
+                            {"filePath": "token.txt", "content": "TOKEN_7f3a9c"}
+                        ),
                     )
                 ],
                 finish_reason="tool_calls",
             )
         )
-        tool_dispatch = _FakeToolDispatch(deliverable="def sort(xs): return xs")
+        tool_dispatch = _FakeToolDispatch()
         driver = _build_driver(seat_filler, tool_dispatch=tool_dispatch)
 
-        chunks = await _collect(driver.run(_make_context()))
+        chunks = await _collect(driver.run(self._grounded_context()))
 
-        invocation = next(
-            c for c in chunks if isinstance(c, ClientToolCall)
-        ).tool_calls[0]
-        args = json.loads(invocation.arguments)
-        assert args["content"] == "def sort(xs): return xs"
+        # No ensemble dispatch for a literal carry — the value is not
+        # regenerated.
+        assert tool_dispatch.calls == []
+        invocation = _one_tool_call(chunks)
+        assert invocation.name == "write"
+        assert json.loads(invocation.arguments)["content"] == "TOKEN_7f3a9c"
+        assert "${" not in invocation.arguments
+
+    async def test_prior_tool_result_is_surfaced_to_the_seat_filler(self) -> None:
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(content="done", tool_calls=[], finish_reason="stop")
+        )
+        driver = _build_driver(seat_filler)
+
+        await _collect(driver.run(self._grounded_context()))
+
+        surfaced_messages = seat_filler.calls[0][0]
+        assert any(
+            message.get("content") == "TOKEN_7f3a9c" for message in surfaced_messages
+        )
