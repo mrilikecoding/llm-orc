@@ -575,11 +575,13 @@ async def _collect_non_streaming(
 ) -> _NonStreamingResult:
     """Drive the caller and flatten its chunks to the non-streaming shape.
 
-    The Dispatch Pipeline (ADR-027) yields ``ContentDelta`` text and a
-    terminal ``Completion``; the synthesizer's composed response is the
-    concatenation of the content deltas. The orchestrator-LLM's
-    ``VisibilityEvent`` narration and ``ClientToolCall`` delegation
-    chunks are not part of this surface's vocabulary under ADR-027.
+    This collector serves the single-turn (non-tool) chat-completions
+    surface: the Dispatch Pipeline (ADR-027) yields ``ContentDelta`` text
+    and a terminal ``Completion``, and the synthesizer's composed response
+    is the concatenation of the content deltas. The tool-driven multi-turn
+    surface (ADR-033 / ADR-034) emits ``ClientToolCall`` chunks through its
+    own client-tool-action terminal; that path is handled separately, not
+    here.
     """
     content_parts: list[str] = []
     finish_reason = "stop"
