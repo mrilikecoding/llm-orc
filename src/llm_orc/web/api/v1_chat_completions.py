@@ -365,6 +365,41 @@ async def get_dispatch_pipeline() -> DispatchPipeline:
     )
 
 
+class _StubLoopDriver:
+    """Placeholder layer-A loop-driver for WP-LB-A (ADR-033).
+
+    WP-LB-A lands only the surface-mode discriminator that branches
+    tool-driven requests (client ``tools[]`` present) to the loop-driver
+    surface. The real layer-A control structure — per-turn next-action
+    decision, framework-enforced single-action-per-turn, callee ensemble
+    delegation, ``TurnDecision`` diagnostics — is WP-LB-B's
+    ``agentic/loop_driver.py``. Until then this stub satisfies
+    :class:`_ChatCompletionsCaller` by finishing immediately with a text
+    completion. That is the safe terminal ADR-033 §Decision 1 names: a
+    tool-capable client routed to the driver but wanting a plain answer
+    on this turn is served correctly because the driver can finish with
+    text, which is why engaging the driver on tools presence is safe.
+    """
+
+    async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
+        del context
+        yield Completion(finish_reason="stop")
+
+
+async def get_loop_driver() -> _ChatCompletionsCaller:
+    """Construct the layer-A loop-driver caller for tool-driven requests.
+
+    Parallel to :func:`get_dispatch_pipeline`. WP-LB-A returns the
+    :class:`_StubLoopDriver` placeholder; WP-LB-B swaps the body to build
+    the real Loop Driver (seat-filler Model Profile per ADR-011, Single-
+    Step Enforcer, callee ensemble delegation) without changing this call
+    site or the surface-mode branch. Tests override it via
+    ``monkeypatch.setattr`` the same way they override the pipeline
+    factory.
+    """
+    return _StubLoopDriver()
+
+
 class _ChatCompletionMessage(BaseModel):
     """One message in the OpenAI chat-completions request.
 
@@ -394,11 +429,40 @@ class _ChatCompletionsRequest(BaseModel):
     user: str | None = None
 
 
+def _is_tool_driven(request: _ChatCompletionsRequest) -> bool:
+    """Surface-mode discriminator (ADR-033 §Decision 1; D1).
+
+    A request that carries client ``tools[]`` is a tool-driven client
+    prepared to execute tool calls (e.g. OpenCode's build agent declaring
+    ``write``/``edit``/``bash``/``read``), so it engages the layer-A
+    loop-driver. A request with no client tools is a non-agentic
+    answer-a-question request and continues through ADR-027's single-turn
+    ``plan → dispatch → synthesize`` pipeline.
+
+    Validate-not-assume (loop-back ARCHITECT advisory #2): whether
+    ``tools[]`` presence is the right discriminator is a drafting-time
+    design choice grounded in Spike π Phase 0, not a measured result. A
+    tool-capable client could send ``tools[]`` for bookkeeping while
+    wanting a plain answer on a given turn; that edge case is safe
+    because the loop-driver can finish with text. Treat the first
+    unexpected ``tools[]`` pattern from production traffic as a named
+    validation event, not a defect.
+    """
+    return len(request.tools) > 0
+
+
 @router.post("/chat/completions", response_model=None)
 async def chat_completions(
     request: _ChatCompletionsRequest,
 ) -> dict[str, Any] | StreamingResponse:
-    """Resolve session, build the Dispatch Pipeline, then stream or return a body.
+    """Resolve session, select the surface-mode caller, then stream or return a body.
+
+    The surface-mode discriminator (:func:`_is_tool_driven`, ADR-033 D1)
+    selects the caller: a tool-driven request (client ``tools[]`` present)
+    engages the layer-A loop-driver; a non-tool request continues through
+    ADR-027's single-turn Dispatch Pipeline. Both satisfy
+    :class:`_ChatCompletionsCaller`, so the heartbeat + context-sink
+    lifecycle below wraps either caller unchanged.
 
     Per Cycle 6 WP-B piece 5 a per-request
     :class:`InferenceWaitHeartbeatScheduler` is registered with the
@@ -418,14 +482,18 @@ async def chat_completions(
     context = _resolve_context(request)
     session_id = context.state.identity.value
     context_sink = _build_context_sink(session_id=session_id)
-    pipeline = await get_dispatch_pipeline()
+    caller: _ChatCompletionsCaller
+    if _is_tool_driven(request):
+        caller = await get_loop_driver()
+    else:
+        caller = await get_dispatch_pipeline()
     scheduler = _build_heartbeat_scheduler(session_id=session_id)
 
     if request.stream:
         return StreamingResponse(
             _stream_completion_with_heartbeat(
                 context,
-                pipeline,
+                caller,
                 model=request.model,
                 scheduler=scheduler,
                 context_sink=context_sink,
@@ -435,7 +503,7 @@ async def chat_completions(
 
     return await _build_completion_body_with_heartbeat(
         context,
-        pipeline,
+        caller,
         model=request.model,
         scheduler=scheduler,
         context_sink=context_sink,
