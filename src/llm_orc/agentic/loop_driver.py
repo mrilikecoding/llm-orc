@@ -46,8 +46,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Any, Protocol
 
+from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
 from llm_orc.agentic.orchestrator_chunk import (
     ClientToolCall,
     Completion,
@@ -64,12 +66,43 @@ from llm_orc.agentic.session_start import SessionContext
 from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
 from llm_orc.models.base import ToolCall, ToolCallingResponse
 
-__all__ = ["LoopDriver", "SeatFiller", "ToolDispatcher"]
+__all__ = ["LoopDriver", "SeatFiller", "ToolDispatcher", "TurnDecision"]
 
 _GENERATION_TOOL = "invoke_ensemble"
 """The internal tool name the seat-filler emits to delegate per-turn
 content generation to a capability ensemble (the callee). Any other tool
 name is a client tool call passed through verbatim."""
+
+
+@dataclass(frozen=True)
+class TurnDecision:
+    """Per-turn diagnostic event for axis-2 split-vs-callee diagnosis (FC-51).
+
+    Emitted once per turn through the Dispatch Event Substrate. The fields
+    let a failing long-horizon run be reconstructed and classified:
+
+    * ``action`` — the client tool the driver emitted (``write``/``edit``/
+      ``bash``/``read``) or ``"finish"``. A wrong ``action`` points at the
+      driver (split-incorrect).
+    * ``delegated_ensemble`` — the capability ensemble a generation turn
+      delegated to, else ``None``. Wrong content from a named ensemble points
+      at the callee (callee-incorrect).
+    * ``grounded_carry_held`` — the turn was a literal client-tool passthrough
+      (an observed value carried verbatim), not a generation.
+    * ``replanned_after_truncation`` — the Single-Step Enforcer truncated a
+      proposed batch this turn, so the driver re-plans next turn.
+
+    ``dispatch_id`` is the ADR-023 correlation identifier (``None`` when no
+    substrate is configured), satisfying the substrate's ``DispatchEvent``
+    protocol.
+    """
+
+    dispatch_id: str | None
+    turn_index: int
+    action: str
+    delegated_ensemble: str | None
+    grounded_carry_held: bool
+    replanned_after_truncation: bool
 
 
 class SeatFiller(Protocol):
@@ -113,10 +146,12 @@ class LoopDriver:
         seat_filler: SeatFiller,
         enforcer: SingleStepEnforcer,
         tool_dispatch: ToolDispatcher,
+        event_substrate: DispatchEventSubstrate | None = None,
     ) -> None:
         self._seat_filler = seat_filler
         self._enforcer = enforcer
         self._tool_dispatch = tool_dispatch
+        self._event_substrate = event_substrate
 
     async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
         """Drive one turn of the tool-driven multi-turn loop."""
@@ -125,8 +160,13 @@ class LoopDriver:
             tools=context.tools,
         )
         enforced = self._enforcer.enforce(response.tool_calls)
+        dispatch_id = self._new_dispatch_id(context)
+        turn_index = _turn_index(context)
 
         if enforced.action is None:
+            self._emit_turn_decision(
+                dispatch_id, turn_index, "finish", None, False, enforced.truncated
+            )
             if response.content:
                 yield ContentDelta(content=response.content)
             yield Completion(finish_reason="stop")
@@ -134,33 +174,43 @@ class LoopDriver:
 
         action = enforced.action
         if action.name == _GENERATION_TOOL:
-            invocation = await self._delegate_generation(action, context)
+            invocation, ensemble = await self._delegate_generation(action, context)
+            grounded = False
         else:
             invocation = _passthrough_client_tool(action)
+            ensemble = None
+            grounded = True
+        self._emit_turn_decision(
+            dispatch_id,
+            turn_index,
+            invocation.name,
+            ensemble,
+            grounded,
+            enforced.truncated,
+        )
         yield ClientToolCall(tool_calls=(invocation,))
 
     async def _delegate_generation(
         self, action: ToolCall, context: SessionContext
-    ) -> ToolCallInvocation:
+    ) -> tuple[ToolCallInvocation, str]:
         """Dispatch the per-turn callee ensemble and map its deliverable.
 
         The seat-filler's ``invoke_ensemble`` call names the capability and
         the generation task (selected by task content — AS-10); the driver
         dispatches that single ensemble (no routing-planner / synthesizer
         stage — FC-44) and marshals the deliverable into a client ``write``.
-        Richer tool-mapping (``edit``/``bash``) and capability-list
-        validation are deferred to the WP-D Capability List Builder
-        integration.
+        Returns the client invocation and the delegated capability name (for
+        the ``TurnDecision`` diagnostic). Richer tool-mapping
+        (``edit``/``bash``) and capability-list validation are deferred to the
+        WP-D Capability List Builder integration.
         """
         args = _parse_arguments(action.arguments_json)
+        capability = _string_field(args, "name")
         result = await self._tool_dispatch.dispatch(
             InternalToolCall(
                 id=action.id,
                 name=_GENERATION_TOOL,
-                arguments={
-                    "name": _string_field(args, "name"),
-                    "input": _string_field(args, "input"),
-                },
+                arguments={"name": capability, "input": _string_field(args, "input")},
             ),
             session_id=context.state.identity.value,
         )
@@ -170,8 +220,36 @@ class LoopDriver:
                 "content": _deliverable_text(result),
             }
         )
-        return ToolCallInvocation(
+        invocation = ToolCallInvocation(
             id=action.id, name="write", arguments=client_arguments
+        )
+        return invocation, capability
+
+    def _new_dispatch_id(self, context: SessionContext) -> str | None:
+        if self._event_substrate is None:
+            return None
+        return self._event_substrate.new_dispatch_id(context.state.identity.value)
+
+    def _emit_turn_decision(
+        self,
+        dispatch_id: str | None,
+        turn_index: int,
+        action: str,
+        delegated_ensemble: str | None,
+        grounded_carry_held: bool,
+        replanned_after_truncation: bool,
+    ) -> None:
+        if self._event_substrate is None:
+            return
+        self._event_substrate.emit(
+            TurnDecision(
+                dispatch_id=dispatch_id,
+                turn_index=turn_index,
+                action=action,
+                delegated_ensemble=delegated_ensemble,
+                grounded_carry_held=grounded_carry_held,
+                replanned_after_truncation=replanned_after_truncation,
+            )
         )
 
 
@@ -200,6 +278,20 @@ def _to_openai_messages(context: SessionContext) -> list[dict[str, Any]]:
         {"role": message.role, "content": message.content}
         for message in context.messages
     ]
+
+
+def _turn_index(context: SessionContext) -> int:
+    """The 1-based position of this turn in the trajectory.
+
+    Each ``run`` is one assistant turn; the multi-turn loop spans requests, so
+    the index is recovered from the conversation — one past the count of prior
+    assistant turns. Lets the ``TurnDecision`` stream order a long-horizon run
+    even though the driver is stateless across requests.
+    """
+    prior_assistant_turns = sum(
+        1 for message in context.messages if message.role == "assistant"
+    )
+    return prior_assistant_turns + 1
 
 
 def _parse_arguments(arguments_json: str) -> dict[str, Any]:
