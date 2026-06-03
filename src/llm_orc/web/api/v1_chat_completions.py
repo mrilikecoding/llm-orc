@@ -62,6 +62,7 @@ from llm_orc.agentic.inference_wait_heartbeat import (
 from llm_orc.agentic.loop_driver import LoopDriver, SeatFiller
 from llm_orc.agentic.operator_terminal_event_sink import OperatorTerminalEventSink
 from llm_orc.agentic.orchestrator_chunk import (
+    ClientToolCall,
     Completion,
     ContentDelta,
     OrchestratorChunk,
@@ -90,7 +91,7 @@ from llm_orc.agentic.tier_router_audit import TierEscalationAuditor
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.models.model_factory import ModelFactory
 from llm_orc.web.api import get_orchestra_service
-from llm_orc.web.api.sse_format import OpenAiSseFormatter
+from llm_orc.web.api.sse_format import OpenAiSseFormatter, encode_tool_call_for_message
 from llm_orc.web.api.v1_models import get_orchestrator_config_resolver
 
 router = APIRouter(prefix="/v1", tags=["openai-compat"])
@@ -677,10 +678,17 @@ class _ChatCompletionsCaller(Protocol):
 
 @dataclass(frozen=True)
 class _NonStreamingResult:
-    """Collected chunk output shaped for the non-streaming response body."""
+    """Collected chunk output shaped for the non-streaming response body.
+
+    ``tool_calls`` is non-``None`` when the caller closed the turn with a
+    :class:`ClientToolCall` (ADR-034's tool-driven terminal) — the client-tool
+    delegations are carried on the response's ``message.tool_calls`` field and
+    ``finish_reason`` is ``"tool_calls"`` per the OpenAI shape.
+    """
 
     content: str
     finish_reason: str
+    tool_calls: list[dict[str, Any]] | None = None
 
 
 async def _collect_non_streaming(
@@ -688,24 +696,29 @@ async def _collect_non_streaming(
 ) -> _NonStreamingResult:
     """Drive the caller and flatten its chunks to the non-streaming shape.
 
-    This collector serves the single-turn (non-tool) chat-completions
-    surface: the Dispatch Pipeline (ADR-027) yields ``ContentDelta`` text
-    and a terminal ``Completion``, and the synthesizer's composed response
-    is the concatenation of the content deltas. The tool-driven multi-turn
-    surface (ADR-033 / ADR-034) emits ``ClientToolCall`` chunks through its
-    own client-tool-action terminal; that path is handled separately, not
-    here.
+    The single-turn (non-tool) surface — the Dispatch Pipeline (ADR-027) —
+    yields ``ContentDelta`` text and a terminal ``Completion``; the composed
+    response is the concatenation of the content deltas. The tool-driven
+    multi-turn surface (ADR-033 / ADR-034) closes a turn with a
+    ``ClientToolCall``, which shapes into ``message.tool_calls`` +
+    ``finish_reason: "tool_calls"`` per the OpenAI non-streaming tool-call
+    shape (the streaming path renders the same chunk via the SSE formatter).
     """
     content_parts: list[str] = []
     finish_reason = "stop"
+    tool_calls: list[dict[str, Any]] | None = None
     async for chunk in caller.run(context):
         if isinstance(chunk, ContentDelta):
             content_parts.append(chunk.content)
+        elif isinstance(chunk, ClientToolCall):
+            tool_calls = [encode_tool_call_for_message(tc) for tc in chunk.tool_calls]
+            finish_reason = "tool_calls"
         elif isinstance(chunk, Completion):
             finish_reason = chunk.finish_reason
     return _NonStreamingResult(
         content="".join(content_parts),
         finish_reason=finish_reason,
+        tool_calls=tool_calls,
     )
 
 
@@ -841,6 +854,10 @@ async def _build_completion_body(
     result = await _collect_non_streaming(context, caller)
     turn_tokens = max(0, context.state.token_spend - pre_token_spend)
     message: dict[str, Any] = {"role": "assistant", "content": result.content}
+    if result.tool_calls is not None:
+        # OpenAI convention: content is null on a pure tool_calls turn.
+        message["content"] = None
+        message["tool_calls"] = result.tool_calls
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex}",
         "object": "chat.completion",
