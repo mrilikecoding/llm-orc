@@ -3424,6 +3424,134 @@ class TestSubstrateRoutingBranch:
         assert result.envelope.artifacts is None
 
     @pytest.mark.asyncio
+    async def test_substrate_write_stores_terminal_agent_output(
+        self, tmp_path: Path
+    ) -> None:
+        """Scenarios.md §Client-Tool Deliverable Form Contract, D1 (FC-56).
+
+        A multi-agent capability ensemble's execution result carries the
+        executor-resolved ``deliverable`` (ADR-035 D1: the terminal
+        agent's output — the dependency-based model never populates
+        top-level ``synthesis``). The substrate write stores that
+        deliverable, never ``json.dumps(raw_result)`` (the Finding D
+        raw-envelope failure).
+        """
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        reader = _RecordingSubstrateReader(
+            configs={
+                "code-generator": SubstrateRoutingConfig(
+                    output_substrate="artifact",
+                    output_retention=None,
+                    calibration_substrate_access=None,
+                    topaz_skill="code_generation",
+                )
+            }
+        )
+        terminal_output = "def fibonacci(n):\n    a, b = 0, 1\n    ..."
+        ops = _ScriptedOperations(
+            invoke_result={
+                "results": {
+                    "coder": {"response": "draft impl", "status": "success"},
+                    "critic": {"response": "a critique", "status": "success"},
+                    "synthesizer": {
+                        "response": terminal_output,
+                        "status": "success",
+                    },
+                },
+                "synthesis": None,
+                "deliverable": terminal_output,
+            }
+        )
+        dispatch = _build_dispatch(
+            operations=ops,
+            harness=_build_harness(
+                raises=AssertionError("harness must not run for substrate routing")
+            ),
+            event_substrate=DispatchEventSubstrate(),
+            ensemble_substrate_reader=reader,
+            session_artifact_store=store,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-d1",
+                name="invoke_ensemble",
+                arguments={"name": "code-generator", "input": "fibonacci"},
+            ),
+            session_id="session-d1",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        assert result.envelope.artifacts is not None
+        stored = store.read_deliverable(
+            ArtifactReference(**result.envelope.artifacts[0])
+        )
+        assert stored == terminal_output
+
+    @pytest.mark.asyncio
+    async def test_extraction_falls_back_on_failed_terminal_node(
+        self, tmp_path: Path
+    ) -> None:
+        """Scenarios.md §D1: terminal-node failure (Spike χ-P1) fallback (FC-56).
+
+        The synthesizer timed out (``response: null, status: failed``);
+        the executor resolved the deliverable to the last successful
+        agent's output. The substrate write stores that fallback — not
+        null, not the failed node, not the raw dict.
+        """
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        reader = _RecordingSubstrateReader(
+            configs={
+                "code-generator": SubstrateRoutingConfig(
+                    output_substrate="artifact",
+                    output_retention=None,
+                    calibration_substrate_access=None,
+                    topaz_skill="code_generation",
+                )
+            }
+        )
+        fallback_output = "def palindrome(s):\n    return s == s[::-1]"
+        ops = _ScriptedOperations(
+            invoke_result={
+                "results": {
+                    "coder": {"response": fallback_output, "status": "success"},
+                    "critic": {"response": None, "status": "failed"},
+                    "synthesizer": {"response": None, "status": "failed"},
+                },
+                "synthesis": None,
+                "deliverable": fallback_output,
+            }
+        )
+        dispatch = _build_dispatch(
+            operations=ops,
+            harness=_build_harness(
+                raises=AssertionError("harness must not run for substrate routing")
+            ),
+            event_substrate=DispatchEventSubstrate(),
+            ensemble_substrate_reader=reader,
+            session_artifact_store=store,
+        )
+
+        result = await dispatch.dispatch(
+            InternalToolCall(
+                id="call-d1-fallback",
+                name="invoke_ensemble",
+                arguments={"name": "code-generator", "input": "palindrome"},
+            ),
+            session_id="session-d1-fallback",
+        )
+
+        assert isinstance(result, ToolCallSuccess)
+        assert result.envelope is not None
+        assert result.envelope.artifacts is not None
+        stored = store.read_deliverable(
+            ArtifactReference(**result.envelope.artifacts[0])
+        )
+        assert stored == fallback_output
+        assert "json" not in str(stored)[:6]  # never the serialized raw dict
+
+    @pytest.mark.asyncio
     async def test_no_reader_or_store_preserves_legacy_inline_path(self) -> None:
         """Pre-WP-E call sites (no reader, no store) stay inline.
 

@@ -52,6 +52,7 @@ from llm_orc.core.execution.result_types import AgentResult, ExecutionResult
 from llm_orc.core.execution.results_processor import (
     create_initial_result,
     finalize_result,
+    resolve_deliverable,
 )
 from llm_orc.core.execution.runners.ensemble_runner import EnsembleAgentRunner
 from llm_orc.core.execution.runners.llm_runner import LlmAgentRunner
@@ -817,6 +818,14 @@ class EnsembleExecutor:
         adaptive_stats = self._agent_executor.get_adaptive_stats()
         final_result = finalize_result(
             result, agent_usage, has_errors, start_time, adaptive_stats
+        )
+
+        # ADR-035 D1: resolve the single-deliverable contract here, where
+        # the config's depends_on graph is known — downstream consumers
+        # (substrate write, handler projections) read the field instead of
+        # reconstructing the terminal node from the results dict.
+        final_result.deliverable = resolve_deliverable(
+            final_result.results, config.agents
         )
 
         # Run validation if config is present

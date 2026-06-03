@@ -2239,6 +2239,49 @@ class TestEnsembleExecutor:
         # The real implementation should handle save errors gracefully
 
     @pytest.mark.asyncio
+    async def test_finalize_resolves_deliverable_from_terminal_node(
+        self, mock_ensemble_executor: Any
+    ) -> None:
+        """Finalization populates the single-deliverable contract (ADR-035 D1).
+
+        The terminal node (no agent depends on it) provides the
+        deliverable; the raw multi-agent results dict is never the
+        ensemble's output surface.
+        """
+        config = EnsembleConfig(
+            name="capability_ensemble",
+            description="coder/critic feed a terminal synthesizer",
+            agents=[
+                LlmAgentConfig(name="coder", model_profile="test-tester"),
+                LlmAgentConfig(name="critic", model_profile="test-tester"),
+                LlmAgentConfig(
+                    name="synthesizer",
+                    model_profile="test-tester",
+                    depends_on=["coder", "critic"],
+                ),
+            ],
+        )
+        start_time = time.time() - 1.0
+        result = ExecutionResult(
+            ensemble="capability_ensemble",
+            status="running",
+            input={"data": "Test input"},
+            results={
+                "coder": {"response": "draft", "status": "success"},
+                "critic": {"response": "review", "status": "success"},
+                "synthesizer": {"response": "final code", "status": "success"},
+            },
+            metadata=ExecutionMetadata(agents_used=3, started_at=start_time),
+        )
+
+        final_result = await mock_ensemble_executor._finalize_execution_results(
+            config, result, False, start_time
+        )
+
+        assert final_result.deliverable == "final code"
+        assert final_result.to_dict()["deliverable"] == "final code"
+
+    @pytest.mark.asyncio
     async def test_execute_with_validation_config(
         self, mock_ensemble_executor: Any
     ) -> None:
