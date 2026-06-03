@@ -165,6 +165,52 @@ class TestApplyWorkEmission:
         assert args["content"] == "def sort(xs): ..."
 
 
+class _RecordingBridge(ArtifactBridge):
+    """Bridge subclass recording the destination tool each marshal received."""
+
+    def __init__(self, store: SessionArtifactStore) -> None:
+        super().__init__(store)
+        self.destinations: list[str | None] = []
+
+    def marshal(
+        self,
+        envelope: DispatchEnvelope,
+        *,
+        destination_tool: str | None = None,
+    ) -> str | bytes:
+        self.destinations.append(destination_tool)
+        return super().marshal(envelope, destination_tool=destination_tool)
+
+
+class TestTerminalThreadsDestinationTool:
+    """FC-57 — the Terminal passes the turn's destination tool to the bridge.
+
+    ADR-035 §4: the FormGate seam lives on the marshal surface; the
+    Terminal threads ``outcome.tool_name`` through the existing
+    Terminal→Bridge edge (a shared-type extension, not a new edge) so
+    the gate knows which destination's form it is evaluating.
+    """
+
+    async def test_apply_work_marshals_with_the_decided_tool(
+        self, tmp_path: Path
+    ) -> None:
+        bridge = _RecordingBridge(SessionArtifactStore(agentic_sessions_root=tmp_path))
+        outcome = ApplyWork(
+            invocation_id="t1",
+            tool_name="write",
+            file_path="sort.py",
+            envelope=DispatchEnvelope(status="success", primary="def sort(xs): ..."),
+            delegated_ensemble="code-generator",
+        )
+        terminal = ClientToolActionTerminal(
+            loop_driver=_ScriptedDecider(outcome), bridge=bridge
+        )
+
+        await _collect(terminal.run(_make_context()))
+
+        assert bridge.destinations == ["write"]
+
+
 class TestApplyWorkSubstrateFidelity:
     """FC-49 — a substrate-routed deliverable is marshalled at full fidelity.
 

@@ -105,7 +105,9 @@ class ClientToolActionTerminal:
         Terminal error handling; FC-48 forbids fabricated content).
         """
         try:
-            content = self._bridge.marshal(outcome.envelope)
+            content = self._bridge.marshal(
+                outcome.envelope, destination_tool=outcome.tool_name
+            )
         except ArtifactNotFoundError as error:
             return _finish_chunks(f"[dispatch failed: {error}]")
         if not isinstance(content, str):

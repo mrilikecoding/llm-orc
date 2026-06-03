@@ -72,3 +72,36 @@ class TestArtifactBridgeMarshal:
 
         assert marshalled == content
         assert marshalled != envelope.primary  # fidelity: the content, not the summary
+
+
+class TestFormGateSeam:
+    """FC-57 — the named FormGate seam on the marshal surface (ADR-035 §4).
+
+    ``marshal`` receives the turn's destination tool and evaluates the
+    content at the FormGate before returning it. The default gate is
+    pass-through (identity): the form contract's primary mechanism is
+    the boundary directive (FC-53/54), not bridge-side shaping. The
+    detect-and-refuse escalation installs at this seam on PLAY evidence
+    with zero Terminal edits — the seam existing is the fitness
+    property; form-gating composes with, never weakens, the fidelity
+    contract (no paraphrase, no summary, no multi-fence extraction).
+    """
+
+    def test_form_gate_seam_default_passthrough(self, tmp_path: Path) -> None:
+        """The default gate is identity — content is marshalled unchanged,
+        destination tool in hand (scenarios.md §ADR-035 defense-in-depth:
+        the seam exists; the contract lives upstream)."""
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        bridge = ArtifactBridge(store)
+        content = "def f():\n    return 42\n"
+        envelope = DispatchEnvelope(status="success", primary=content)
+
+        assert bridge.marshal(envelope, destination_tool="write") == content
+
+    def test_destination_tool_defaults_for_legacy_callers(self, tmp_path: Path) -> None:
+        """Callers that predate the seam still marshal (no signature break)."""
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        bridge = ArtifactBridge(store)
+        envelope = DispatchEnvelope(status="success", primary="x = 1\n")
+
+        assert bridge.marshal(envelope) == "x = 1\n"
