@@ -17,7 +17,9 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
-from llm_orc.agentic.artifact_bridge import ArtifactBridge
+import pytest
+
+from llm_orc.agentic.artifact_bridge import ArtifactBridge, FormRefusedError
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
 from llm_orc.agentic.session_artifact_store import SessionArtifactStore
 
@@ -105,3 +107,21 @@ class TestFormGateSeam:
         envelope = DispatchEnvelope(status="success", primary="x = 1\n")
 
         assert bridge.marshal(envelope) == "x = 1\n"
+
+    def test_refusing_gate_raises_through_the_seam(self, tmp_path: Path) -> None:
+        """The refusal channel: a gate refuses by raising FormRefusedError.
+
+        The detect-and-refuse escalation (ADR-035 §4) installs as a gate
+        that raises; the channel pre-exists so installation touches only
+        the seam (FC-57's zero-Terminal-edits criterion).
+        """
+
+        def refusing_gate(content: str | bytes, tool: str | None) -> str | bytes:
+            raise FormRefusedError(f"clearly non-bare deliverable for {tool!r}")
+
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        bridge = ArtifactBridge(store, form_gate=refusing_gate)
+        envelope = DispatchEnvelope(status="success", primary="```python\n...\n```")
+
+        with pytest.raises(FormRefusedError, match="write"):
+            bridge.marshal(envelope, destination_tool="write")
