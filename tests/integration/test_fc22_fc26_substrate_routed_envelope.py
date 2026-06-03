@@ -81,7 +81,7 @@ class _LoudSummarizerInvoker:
 
     async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
         self.calls.append(dict(arguments))
-        return {"synthesis": "INLINE-PATH-SUMMARY"}
+        return {"deliverable": "INLINE-PATH-SUMMARY"}
 
 
 class _UnusedWriter:

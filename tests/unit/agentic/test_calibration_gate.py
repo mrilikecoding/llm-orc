@@ -377,7 +377,7 @@ class _RecordingInvoker:
         raises: Exception | None = None,
     ) -> None:
         self._returns: dict[str, Any] = (
-            returns if returns is not None else {"synthesis": "signal: positive"}
+            returns if returns is not None else {"deliverable": "signal: positive"}
         )
         self._raises = raises
         self.calls: list[dict[str, Any]] = []
@@ -400,7 +400,7 @@ class TestEnsembleBackedChecker:
     @pytest.mark.asyncio
     async def test_synthesis_positive_is_parsed(self) -> None:
         invoker = _RecordingInvoker(
-            returns={"synthesis": "signal: positive\nreason: clear on-task response"}
+            returns={"deliverable": "signal: positive\nreason: clear on-task response"}
         )
         checker = EnsembleBackedChecker(invoker=invoker)
         signal = await checker.check(
@@ -411,7 +411,7 @@ class TestEnsembleBackedChecker:
     @pytest.mark.asyncio
     async def test_synthesis_negative_is_parsed(self) -> None:
         invoker = _RecordingInvoker(
-            returns={"synthesis": "signal: negative\nreason: hallucinated content"}
+            returns={"deliverable": "signal: negative\nreason: hallucinated content"}
         )
         checker = EnsembleBackedChecker(invoker=invoker)
         signal = await checker.check(ensemble_name="composed-a", raw_result={})
@@ -420,7 +420,7 @@ class TestEnsembleBackedChecker:
     @pytest.mark.asyncio
     async def test_synthesis_absent_is_parsed(self) -> None:
         invoker = _RecordingInvoker(
-            returns={"synthesis": "signal: absent\nreason: empty output"}
+            returns={"deliverable": "signal: absent\nreason: empty output"}
         )
         checker = EnsembleBackedChecker(invoker=invoker)
         assert await checker.check(ensemble_name="x", raw_result={}) == "absent"
@@ -436,7 +436,7 @@ class TestEnsembleBackedChecker:
         invoker = _RecordingInvoker(
             returns={
                 "results": {"only": {"response": "signal: positive"}},
-                "synthesis": None,
+                "deliverable": None,
             }
         )
         checker = EnsembleBackedChecker(invoker=invoker)
@@ -446,7 +446,7 @@ class TestEnsembleBackedChecker:
     @pytest.mark.asyncio
     async def test_unparseable_response_yields_absent(self) -> None:
         invoker = _RecordingInvoker(
-            returns={"synthesis": "the ensemble looked fine but I am not sure"}
+            returns={"deliverable": "the ensemble looked fine but I am not sure"}
         )
         checker = EnsembleBackedChecker(invoker=invoker)
         assert await checker.check(ensemble_name="x", raw_result={}) == "absent"
@@ -478,7 +478,7 @@ class TestEnsembleBackedChecker:
     async def test_signal_tokens_tolerate_case(self) -> None:
         """Operators phrasing ``SIGNAL: Positive`` should still parse."""
         invoker = _RecordingInvoker(
-            returns={"synthesis": "SIGNAL: Positive (ensemble answered on-task)"}
+            returns={"deliverable": "SIGNAL: Positive (ensemble answered on-task)"}
         )
         checker = EnsembleBackedChecker(invoker=invoker)
         assert await checker.check(ensemble_name="x", raw_result={}) == "positive"

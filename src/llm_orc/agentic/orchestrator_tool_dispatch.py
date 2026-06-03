@@ -1586,7 +1586,9 @@ class OrchestratorToolDispatch:
         schema = self._output_schema_reader.output_schema_for(ensemble_name)
         if schema is None:
             return None
-        response_text = _extract_synthesizer_text(raw_result)
+        response_text = _resolved_deliverable(raw_result) or _extract_synthesizer_text(
+            raw_result
+        )
         if response_text is None:
             return None
         try:
@@ -1789,7 +1791,9 @@ def _shape_calibration_evaluation_input(
     if structured is not None:
         payload["structured"] = structured
     if substrate_config.calibration_substrate_access == "artifact":
-        deliverable = _extract_synthesizer_text(raw_result)
+        deliverable = _resolved_deliverable(raw_result) or _extract_synthesizer_text(
+            raw_result
+        )
         if deliverable is not None:
             payload["artifact_content"] = deliverable
     return payload

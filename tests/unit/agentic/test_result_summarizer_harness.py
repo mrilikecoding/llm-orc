@@ -33,7 +33,7 @@ class _StubInvoker:
         raises: Exception | None = None,
     ) -> None:
         self._returns: dict[str, Any] = (
-            returns if returns is not None else {"synthesis": "summary text"}
+            returns if returns is not None else {"deliverable": "summary text"}
         )
         self._raises = raises
         self.calls: list[dict[str, Any]] = []
@@ -68,7 +68,7 @@ async def test_raw_output_flag_returns_passthrough_without_invoking_summarizer()
 
 @pytest.mark.asyncio
 async def test_summarize_invokes_configured_summarizer_with_json_input() -> None:
-    invoker = _StubInvoker(returns={"synthesis": "condensed output"})
+    invoker = _StubInvoker(returns={"deliverable": "condensed output"})
     harness = ResultSummarizerHarness(invoker=invoker, summarizer_name="my-summarizer")
 
     raw = {"results": {"agent_a": "output"}, "status": "ok"}
@@ -83,9 +83,9 @@ async def test_summarize_invokes_configured_summarizer_with_json_input() -> None
 
 
 @pytest.mark.asyncio
-async def test_summarize_returns_success_with_synthesis_text() -> None:
+async def test_summarize_returns_success_with_deliverable_text() -> None:
     invoker = _StubInvoker(
-        returns={"synthesis": "The ensemble found X.", "results": {}}
+        returns={"deliverable": "The ensemble found X.", "results": {}}
     )
     harness = ResultSummarizerHarness(
         invoker=invoker, summarizer_name="agentic-result-summarizer"
@@ -111,7 +111,7 @@ async def test_summarize_returns_failure_when_invoker_raises_value_error() -> No
 
 
 @pytest.mark.asyncio
-async def test_summarize_returns_failure_when_synthesis_field_missing() -> None:
+async def test_summarize_returns_failure_when_deliverable_field_missing() -> None:
     invoker = _StubInvoker(returns={"results": {"a": "x"}, "status": "ok"})
     harness = ResultSummarizerHarness(
         invoker=invoker, summarizer_name="agentic-result-summarizer"
@@ -125,8 +125,8 @@ async def test_summarize_returns_failure_when_synthesis_field_missing() -> None:
 
 
 @pytest.mark.asyncio
-async def test_summarize_returns_failure_when_synthesis_is_empty_string() -> None:
-    invoker = _StubInvoker(returns={"synthesis": "", "results": {}})
+async def test_summarize_returns_failure_when_deliverable_is_empty_string() -> None:
+    invoker = _StubInvoker(returns={"deliverable": "", "results": {}})
     harness = ResultSummarizerHarness(
         invoker=invoker, summarizer_name="agentic-result-summarizer"
     )
@@ -137,8 +137,8 @@ async def test_summarize_returns_failure_when_synthesis_is_empty_string() -> Non
 
 
 @pytest.mark.asyncio
-async def test_summarize_returns_failure_when_synthesis_is_not_string() -> None:
-    invoker = _StubInvoker(returns={"synthesis": {"nested": "dict"}, "results": {}})
+async def test_summarize_returns_failure_when_deliverable_is_not_string() -> None:
+    invoker = _StubInvoker(returns={"deliverable": {"nested": "dict"}, "results": {}})
     harness = ResultSummarizerHarness(
         invoker=invoker, summarizer_name="agentic-result-summarizer"
     )
@@ -149,16 +149,16 @@ async def test_summarize_returns_failure_when_synthesis_is_not_string() -> None:
 
 
 @pytest.mark.asyncio
-async def test_summarize_uses_single_agent_response_when_synthesis_absent() -> None:
-    """Default summarizer is a single-agent ensemble; synthesis is None.
+async def test_summarize_uses_single_agent_response_when_deliverable_absent() -> None:
+    """Tolerant fallback when the deliverable contract is absent.
 
-    llm-orc's dependency-based execution model never populates synthesis
-    (see core/execution/results_processor.finalize_result). A single-agent
-    summarizer ensemble puts its output in results[agent_name]["response"].
+    A raw result that did not flow through the executor's deliverable
+    resolution (resolve_deliverable) still summarizes when exactly one
+    agent response is unambiguous.
     """
     invoker = _StubInvoker(
         returns={
-            "synthesis": None,
+            "deliverable": None,
             "results": {"summarizer": {"response": "A short summary."}},
         }
     )
@@ -173,11 +173,11 @@ async def test_summarize_uses_single_agent_response_when_synthesis_absent() -> N
 
 
 @pytest.mark.asyncio
-async def test_summarize_prefers_synthesis_over_single_agent_response() -> None:
-    """When synthesis is populated, it wins over the results fallback."""
+async def test_summarize_prefers_deliverable_over_single_agent_response() -> None:
+    """When the deliverable contract is populated, it wins over the fallback."""
     invoker = _StubInvoker(
         returns={
-            "synthesis": "synthesized",
+            "deliverable": "resolved deliverable",
             "results": {"summarizer": {"response": "agent response"}},
         }
     )
@@ -188,20 +188,20 @@ async def test_summarize_prefers_synthesis_over_single_agent_response() -> None:
     result = await harness.summarize({"results": {}}, raw_output=False)
 
     assert isinstance(result, SummarizationSuccess)
-    assert result.summary == "synthesized"
+    assert result.summary == "resolved deliverable"
 
 
 @pytest.mark.asyncio
 async def test_summarize_fallback_requires_exactly_one_agent() -> None:
-    """Multi-agent results without synthesis → SummarizationFailure.
+    """Multi-agent results without a deliverable → SummarizationFailure.
 
     The fallback is deliberately narrow: exactly one agent. Multi-agent
-    ensembles must populate synthesis to disambiguate which agent's
-    response carries the summary.
+    results are ambiguous without the executor-resolved deliverable
+    contract to disambiguate which agent's response carries the summary.
     """
     invoker = _StubInvoker(
         returns={
-            "synthesis": None,
+            "deliverable": None,
             "results": {
                 "agent_a": {"response": "first"},
                 "agent_b": {"response": "second"},

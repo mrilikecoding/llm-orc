@@ -71,6 +71,10 @@ class StreamingProgressTracker:
                     "results": final_result["results"],
                     "metadata": final_result["metadata"],
                     "status": final_result["status"],
+                    # ADR-035 D1: the executor-resolved single-deliverable
+                    # contract rides the completion event so streaming
+                    # consumers see the same output surface as invoke
+                    "deliverable": final_result.get("deliverable"),
                 },
             }
 
