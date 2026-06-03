@@ -39,7 +39,19 @@ from llm_orc.agentic.session_artifact_store import (
     SessionArtifactStore,
 )
 
-__all__ = ["ArtifactBridge", "FormGate"]
+__all__ = ["ArtifactBridge", "FormGate", "FormRefusedError"]
+
+
+class FormRefusedError(Exception):
+    """A FormGate refused to emit a clearly-wrong deliverable (ADR-035 §4).
+
+    The refusal channel for the detect-and-refuse escalation: no shipped
+    gate raises it (the default gate is pass-through), but the channel
+    pre-exists so installing the escalated gate touches only the seam —
+    the Terminal already degrades this to a dispatch-failure completion
+    (FC-57's zero-Terminal-edits criterion).
+    """
+
 
 FormGate = Callable[["str | bytes", "str | None"], "str | bytes"]
 """The FormGate seam's contract (ADR-035 §Decision 4, FC-57).

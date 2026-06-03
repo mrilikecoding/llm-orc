@@ -29,7 +29,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import Protocol
 
-from llm_orc.agentic.artifact_bridge import ArtifactBridge
+from llm_orc.agentic.artifact_bridge import ArtifactBridge, FormRefusedError
 from llm_orc.agentic.loop_driver import (
     ApplyWork,
     CarryClientTool,
@@ -108,7 +108,7 @@ class ClientToolActionTerminal:
             content = self._bridge.marshal(
                 outcome.envelope, destination_tool=outcome.tool_name
             )
-        except ArtifactNotFoundError as error:
+        except (ArtifactNotFoundError, FormRefusedError) as error:
             return _finish_chunks(f"[dispatch failed: {error}]")
         if not isinstance(content, str):
             return _finish_chunks(

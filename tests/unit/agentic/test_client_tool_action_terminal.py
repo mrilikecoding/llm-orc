@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from llm_orc.agentic.artifact_bridge import ArtifactBridge
+from llm_orc.agentic.artifact_bridge import ArtifactBridge, FormRefusedError
 from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
 from llm_orc.agentic.loop_driver import (
@@ -293,6 +293,39 @@ class TestApplyWorkDegradesOnBridgeFailure:
         )
         terminal = ClientToolActionTerminal(
             loop_driver=_ScriptedDecider(outcome), bridge=ArtifactBridge(store)
+        )
+
+        chunks = await _collect(terminal.run(_make_context()))
+
+        assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks)
+        assert chunks[-1] == Completion(finish_reason="stop")
+
+    async def test_form_refusal_yields_a_text_completion(self, tmp_path: Path) -> None:
+        """A refusing FormGate degrades like a missing artifact (ADR-035 §4).
+
+        The refusal channel pre-exists the detect-and-refuse gate so
+        installing it touches only the seam (FC-57) — the Terminal
+        already degrades a FormRefusedError to a dispatch-failure
+        completion rather than sending a clearly-wrong deliverable to
+        the client.
+        """
+
+        def refusing_gate(content: str | bytes, tool: str | None) -> str | bytes:
+            raise FormRefusedError("multi-fence deliverable; refusing to emit")
+
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        outcome = ApplyWork(
+            invocation_id="t1",
+            tool_name="write",
+            file_path="bad.py",
+            envelope=DispatchEnvelope(
+                status="success", primary="```python\n...\n```\nprose\n```...```"
+            ),
+            delegated_ensemble="code-generator",
+        )
+        terminal = ClientToolActionTerminal(
+            loop_driver=_ScriptedDecider(outcome),
+            bridge=ArtifactBridge(store, form_gate=refusing_gate),
         )
 
         chunks = await _collect(terminal.run(_make_context()))
