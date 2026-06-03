@@ -117,6 +117,25 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ---
 
+### WP-LB-G: Offer the seat-filler `invoke_ensemble` + the capability list (surfaced by WP-LB-C validation; Finding B)
+
+**Surfaced by:** the WP-LB-C real-OpenCode validation (2026-06-02; research log `essays/research-logs/cycle-7-wp-lb-c-opencode-validation.md`). A real OpenCode → real `llm-orc serve` → real qwen3:14b round-trip produced the parity mechanism (OpenCode executed the synthesized `write`) but **zero ensemble dispatches** — `LoopDriver.decide` passes only the client's tools to the seat-filler and never offers `invoke_ensemble`, so a real seat-filler cannot delegate. The callee → bridge → ApplyWork path (WP-LB-B/C/D) is unreachable in production until this lands.
+
+**Objective:** Make ensemble delegation reachable by a real seat-filler — offer `invoke_ensemble` alongside the client tools, fed by the capability list, with guidance on when to delegate vs. act directly. The *design* is settled (ADR-033 callee + `invoke_ensemble`; the single-turn `_build_capability_names` is the reusable capability source); the gap is integration + prompt-shaping.
+
+**Changes:**
+- `LoopDriver.decide` augments the seat-filler's `tools` with an `invoke_ensemble` tool definition (args: capability `name`, `input`, client `filePath` — the shape `_delegate_generation` already parses) whose enumerated capabilities come from the capability list (reuse the single-turn `_build_capability_names`; thread the capability source into the Loop Driver at construction, no new L3 import).
+- A seat-filler system prompt (or message preamble) that frames the delegate-vs-act-directly decision: delegate generation of substantive deliverables to a capability ensemble; carry literal/observed values directly (grounded carry).
+- The Serving Layer threads the capability source into `get_loop_driver()`.
+
+**Scenarios covered (new):** the seat-filler offered `invoke_ensemble` delegates a generation sub-task to a capability ensemble; the delegated deliverable marshals through the Artifact Bridge into the client `write` (the callee → bridge → ApplyWork path, now reachable). Harness tests assert the augmented tool list + the delegation branch; the **load-bearing acceptance gate is a real OpenCode session** whose serve log shows a real `invoke_ensemble` dispatch + a `code-generator` artifact marshalled into the client write — not a scripted test.
+
+**Participating modules:** Loop Driver (tool-list augmentation + capability-source dependency), Serving Layer (threads the capability source), Capability List Builder (the reused source).
+
+**Dependencies:** Hard on **WP-LB-B/C/D** (the delegation path it activates). **Sequenced before WP-LB-E/F** (both are downstream of delegation working at all). **Loop-back trigger:** if the real-OpenCode run shows the seat-filler will not reliably delegate (the cheap-driver-skips-delegation tension), loop back to DECIDE on the delegation-decision mechanism (`tool_choice` forcing / routing pre-filter / a different driver-vs-delegation split) — decided on the run's evidence.
+
+---
+
 ## Dependency Graph (Cycle 7 loop-back)
 
 ```

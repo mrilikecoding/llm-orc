@@ -1,0 +1,1 @@
+{"id":"chatcmpl-8502ae02b6474d8eabc95c8f4e684126","object":"chat.completion","created":1780456671,"model":"agentic","choices":[{"index":0,"message":{"role":"assistant","content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}
