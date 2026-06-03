@@ -30,6 +30,7 @@ artifact (the terminal does not exist yet).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
@@ -38,7 +39,32 @@ from llm_orc.agentic.session_artifact_store import (
     SessionArtifactStore,
 )
 
-__all__ = ["ArtifactBridge"]
+__all__ = ["ArtifactBridge", "FormGate"]
+
+FormGate = Callable[["str | bytes", "str | None"], "str | bytes"]
+"""The FormGate seam's contract (ADR-035 §Decision 4, FC-57).
+
+Evaluates marshalled content against the destination tool's form before
+emission. A gate may *refuse* (raise) or apply the defined conservative
+normalization; it never paraphrases, summarizes, or attempts multi-fence
+extraction (Spike χ F-χ.1 rejects that path as fragile) — form-gating
+composes with, and does not weaken, the fidelity contract (FC-49).
+"""
+
+
+def _passthrough_form_gate(
+    content: str | bytes, destination_tool: str | None
+) -> str | bytes:
+    """The default FormGate — identity.
+
+    The form contract's primary mechanism is the boundary directive
+    (FC-53/54), not bridge-side shaping; under the directive the spike
+    probes produced zero stray fences (χ-P3/P4/P5), so no normalization
+    ships by default (LB-5 resolved pass-through — defensive dead code
+    is debt). The detect-and-refuse escalation installs at this seam on
+    PLAY evidence with zero Terminal edits.
+    """
+    return content
 
 
 class ArtifactBridge:
@@ -47,19 +73,33 @@ class ArtifactBridge:
     Constructed with the Session Artifact Store the substrate-routed
     deliverables were written to; the store's ``read_deliverable``
     accessor (the read-side API added for WP-LB-D) is the only
-    dependency.
+    dependency. An optional ``form_gate`` installs at the FormGate seam
+    (default pass-through).
     """
 
-    def __init__(self, store: SessionArtifactStore) -> None:
+    def __init__(
+        self,
+        store: SessionArtifactStore,
+        *,
+        form_gate: FormGate | None = None,
+    ) -> None:
         self._store = store
+        self._form_gate: FormGate = form_gate or _passthrough_form_gate
 
-    def marshal(self, envelope: DispatchEnvelope) -> str | bytes:
+    def marshal(
+        self,
+        envelope: DispatchEnvelope,
+        *,
+        destination_tool: str | None = None,
+    ) -> str | bytes:
         """Return the deliverable content for a client tool-call argument.
 
         Reads from the Session Artifact Store for substrate-routed
         deliverables (``envelope.artifacts`` populated) and from
         ``envelope.primary`` for inline ones (the artifact-vs-inline
-        branch the bridge owns). Raises
+        branch the bridge owns), then evaluates the content at the
+        FormGate for the ``destination_tool`` (FC-57; default
+        pass-through). Raises
         :class:`~llm_orc.agentic.session_artifact_store.ArtifactNotFoundError`
         (from ``read_deliverable``) when a substrate reference does not
         resolve — the Terminal degrades that to a dispatch-failure
@@ -68,8 +108,10 @@ class ArtifactBridge:
         """
         reference = _artifact_reference(envelope)
         if reference is None:
-            return envelope.primary
-        return self._store.read_deliverable(reference)
+            content: str | bytes = envelope.primary
+        else:
+            content = self._store.read_deliverable(reference)
+        return self._form_gate(content, destination_tool)
 
 
 def _artifact_reference(envelope: DispatchEnvelope) -> ArtifactReference | None:
