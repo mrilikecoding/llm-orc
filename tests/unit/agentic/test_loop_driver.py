@@ -101,14 +101,26 @@ def _build_driver(
     seat_filler: _FakeSeatFiller,
     *,
     tool_dispatch: _FakeToolDispatch | None = None,
+    capabilities: frozenset[str] = frozenset(),
     event_substrate: DispatchEventSubstrate | None = None,
 ) -> LoopDriver:
     return LoopDriver(
         seat_filler=seat_filler,
         enforcer=SingleStepEnforcer(),
         tool_dispatch=tool_dispatch or _FakeToolDispatch(),
+        capabilities=capabilities,
         event_substrate=event_substrate,
     )
+
+
+def _offered_tool_names(seat_filler: _FakeSeatFiller) -> list[str]:
+    _messages, tools = seat_filler.calls[0]
+    names: list[str] = []
+    for tool in tools:
+        function = tool.get("function")
+        if isinstance(function, dict) and isinstance(function.get("name"), str):
+            names.append(function["name"])
+    return names
 
 
 class _CapturingSink:
@@ -156,6 +168,72 @@ class TestLoopDriverFinishesWithText:
         outcome = await driver.decide(_make_context())
 
         assert outcome == FinishTurn(content=None)
+
+
+class TestLoopDriverOffersDelegation:
+    """WP-LB-G — the seat-filler is offered ``invoke_ensemble`` + guidance.
+
+    Finding B (WP-LB-C real-OpenCode validation): without being offered the
+    delegation tool, a real seat-filler can only act directly and never
+    delegates. When capability ensembles are configured the driver augments the
+    seat-filler's tool list with an ``invoke_ensemble`` tool enumerating them,
+    and prepends delegation guidance.
+    """
+
+    _NAMED_TOOLS = [{"type": "function", "function": {"name": "write"}}]
+
+    def _finishing_filler(self) -> _FakeSeatFiller:
+        return _FakeSeatFiller(
+            ToolCallingResponse(content="ok", tool_calls=[], finish_reason="stop")
+        )
+
+    async def test_offers_invoke_ensemble_enumerating_capabilities(self) -> None:
+        seat_filler = self._finishing_filler()
+        driver = _build_driver(
+            seat_filler,
+            capabilities=frozenset({"code-generator", "web-searcher"}),
+        )
+
+        await driver.decide(_make_context(tools=self._NAMED_TOOLS))
+
+        names = _offered_tool_names(seat_filler)
+        assert "invoke_ensemble" in names
+        # The client tools are still offered alongside the delegation tool.
+        assert "write" in names
+        _messages, tools = seat_filler.calls[0]
+        delegation = next(
+            tool for tool in tools if tool["function"]["name"] == "invoke_ensemble"
+        )
+        enum = delegation["function"]["parameters"]["properties"]["name"]["enum"]
+        assert enum == ["code-generator", "web-searcher"]
+        assert delegation["function"]["parameters"]["required"] == [
+            "name",
+            "input",
+            "filePath",
+        ]
+
+    async def test_prepends_delegation_guidance_when_capabilities_present(
+        self,
+    ) -> None:
+        seat_filler = self._finishing_filler()
+        driver = _build_driver(seat_filler, capabilities=frozenset({"code-generator"}))
+
+        await driver.decide(_make_context(tools=self._NAMED_TOOLS))
+
+        messages, _tools = seat_filler.calls[0]
+        assert messages[0]["role"] == "system"
+        assert "invoke_ensemble" in messages[0]["content"]
+        assert "delegat" in messages[0]["content"].lower()
+
+    async def test_no_delegation_tool_or_guidance_without_capabilities(self) -> None:
+        seat_filler = self._finishing_filler()
+        driver = _build_driver(seat_filler)  # no capabilities
+
+        await driver.decide(_make_context(tools=self._NAMED_TOOLS))
+
+        assert "invoke_ensemble" not in _offered_tool_names(seat_filler)
+        messages, _tools = seat_filler.calls[0]
+        assert all(message["role"] != "system" for message in messages)
 
 
 class TestLoopDriverDelegatesToCallee:
