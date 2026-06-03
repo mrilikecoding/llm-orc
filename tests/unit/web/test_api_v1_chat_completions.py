@@ -32,9 +32,11 @@ from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
 from llm_orc.agentic.dispatch_pipeline import DispatchPipeline, DispatchPlan
 from llm_orc.agentic.loop_driver import LoopDriver, TurnDecision
 from llm_orc.agentic.orchestrator_chunk import (
+    ClientToolCall,
     Completion,
     ContentDelta,
     OrchestratorChunk,
+    ToolCallInvocation,
 )
 from llm_orc.agentic.orchestrator_config import (
     BudgetDefaults,
@@ -638,6 +640,47 @@ class TestSurfaceModeDiscrimination:
         )
 
         assert not [e for e in sink.events if isinstance(e, TurnDecision)]
+
+
+class TestNonStreamingToolCallEmission:
+    """FC-47 (non-streaming) — a tool-call outcome shapes ``message.tool_calls``.
+
+    The streaming path emits tool_calls via the SSE formatter (the formatter's
+    ``ClientToolCall`` case was retained by ``0a7a822``); the non-streaming body
+    shapes the same ``ClientToolCall`` into ``message.tool_calls`` + ``content:
+    null`` + ``finish_reason: "tool_calls"`` (the OpenAI non-streaming tool-call
+    shape — the collector + body pieces ``0a7a822`` removed, re-introduced on
+    the tool-driven terminal path per ADR-034).
+    """
+
+    def test_tool_call_chunk_becomes_message_tool_calls(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        invocation = ToolCallInvocation(
+            id="w1",
+            name="write",
+            arguments=json.dumps({"filePath": "f.py", "content": "x = 1\n"}),
+        )
+        terminal = _StubPipeline([ClientToolCall(tool_calls=(invocation,))])
+        client, _, _ = _build_client(monkeypatch, terminal=terminal)
+
+        response = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "primary",
+                "messages": [{"role": "user", "content": "write f.py"}],
+                "tools": [{"type": "function", "function": {"name": "write"}}],
+            },
+        )
+
+        body = response.json()
+        choice = body["choices"][0]
+        assert choice["finish_reason"] == "tool_calls"
+        assert choice["message"]["content"] is None
+        tool_calls = choice["message"]["tool_calls"]
+        assert len(tool_calls) == 1
+        assert tool_calls[0]["function"]["name"] == "write"
+        assert json.loads(tool_calls[0]["function"]["arguments"])["filePath"] == "f.py"
 
 
 class TestStreamingPath:
