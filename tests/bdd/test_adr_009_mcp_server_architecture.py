@@ -244,7 +244,7 @@ def artifact_exists(bdd_context: dict[str, Any], tmp_path: Path) -> None:
             "syntax-check": {"status": "success", "response": "No syntax errors"},
             "style-check": {"status": "success", "response": "Style OK"},
         },
-        "synthesis": "Code review passed all checks.",
+        "deliverable": "Code review passed all checks.",
         "metadata": {
             "started_at": 1705320000.0,
             "duration": "2.3s",
@@ -577,7 +577,7 @@ def call_invoke_tool(bdd_context: dict[str, Any], datatable: Any) -> None:
         mock_executor.execute = AsyncMock(
             return_value={
                 "results": {"test-agent": {"response": "Mock output"}},
-                "synthesis": "Mock synthesis",
+                "deliverable": "Mock synthesis",
                 "status": "success",
             }
         )
@@ -822,15 +822,15 @@ def receive_artifact_data(bdd_context: dict[str, Any]) -> None:
     assert "ensemble" in result, "Artifact should have ensemble"
 
 
-@then("it should include agent results and synthesis")
+@then("it should include agent results and the deliverable")
 def artifact_includes_results(bdd_context: dict[str, Any]) -> None:
-    """Verify artifact includes results and synthesis."""
+    """Verify artifact includes results and the deliverable contract."""
     if not bdd_context.get("mcp_available"):
         pytest.skip("MCP server not available - Red phase")
 
     result = bdd_context.get("resource_result", {})
     assert "results" in result, "Artifact should have results"
-    assert "synthesis" in result, "Artifact should have synthesis"
+    assert "deliverable" in result, "Artifact should have the deliverable"
 
 
 @then("I should receive aggregated metrics")

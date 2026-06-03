@@ -56,7 +56,7 @@ async def test_raw_output_flag_returns_passthrough_without_invoking_summarizer()
 
     raw = {
         "results": {"a": "x"},
-        "synthesis": "ensemble-self-synthesis",
+        "deliverable": "ensemble-self-synthesis",
         "status": "ok",
     }
     result = await harness.summarize(raw, raw_output=True)

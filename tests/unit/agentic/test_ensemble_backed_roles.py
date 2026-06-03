@@ -30,7 +30,7 @@ class _FakeInvoker:
         self.calls.append(arguments)
         return {
             "results": {"planner": {"response": self._response_text}},
-            "synthesis": None,
+            "deliverable": None,
             "status": "success",
             "raw_output": False,
         }

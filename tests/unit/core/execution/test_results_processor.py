@@ -39,7 +39,7 @@ class TestResultsProcessor:
         assert result.status == "running"
         assert result.input["data"] == "test input"
         assert result.results == {}
-        assert result.synthesis is None
+        assert result.deliverable is None
         assert result.metadata.agents_used == 3
         assert result.metadata.started_at >= start_time
 
@@ -104,7 +104,7 @@ class TestResultsProcessor:
             },
         }
 
-        summary = calculate_usage_summary(agent_usage, None)
+        summary = calculate_usage_summary(agent_usage)
 
         # Check structure
         assert "agents" in summary
@@ -123,42 +123,9 @@ class TestResultsProcessor:
         assert totals["total_duration_ms"] == 2500
         assert totals["agents_count"] == 2
 
-    def test_calculate_usage_summary_with_synthesis(self) -> None:
-        """Test calculating usage summary with synthesis."""
-        agent_usage = {
-            "agent1": {
-                "total_tokens": 100,
-                "input_tokens": 60,
-                "output_tokens": 40,
-                "cost_usd": 0.05,
-                "duration_ms": 1000,
-            }
-        }
-        synthesis_usage = {
-            "total_tokens": 50,
-            "input_tokens": 30,
-            "output_tokens": 20,
-            "cost_usd": 0.03,
-            "duration_ms": 500,
-        }
-
-        summary = calculate_usage_summary(agent_usage, synthesis_usage)
-
-        # Check synthesis is included
-        assert "synthesis" in summary
-        assert summary["synthesis"] == synthesis_usage
-
-        # Check totals include synthesis
-        totals = summary["totals"]
-        assert totals["total_tokens"] == 150  # 100 + 50
-        assert totals["total_input_tokens"] == 90  # 60 + 30
-        assert totals["total_output_tokens"] == 60  # 40 + 20
-        assert totals["total_cost_usd"] == 0.08  # 0.05 + 0.03
-        assert totals["total_duration_ms"] == 1500  # 1000 + 500
-
     def test_calculate_usage_summary_empty(self) -> None:
         """Test calculating usage summary with no data."""
-        summary = calculate_usage_summary({}, None)
+        summary = calculate_usage_summary({})
 
         assert summary["agents"] == {}
         totals = summary["totals"]
@@ -176,7 +143,7 @@ class TestResultsProcessor:
             "agent2": {"cost_usd": 0.05, "duration_ms": 1000},  # Missing tokens
         }
 
-        summary = calculate_usage_summary(agent_usage, None)
+        summary = calculate_usage_summary(agent_usage)
 
         totals = summary["totals"]
         assert totals["total_tokens"] == 100  # Only agent1 has tokens

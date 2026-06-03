@@ -123,7 +123,7 @@ async def test_tool_call_emit_log_precedes_dispatch_start(
     sink = OperatorTerminalEventSink()
     sink.register_with(substrate)
     dispatch = _build_dispatch(
-        operations=_ScriptedOperations({"synthesis": "done", "raw_output": True}),
+        operations=_ScriptedOperations({"deliverable": "done", "raw_output": True}),
         substrate=substrate,
         sink=sink,
     )

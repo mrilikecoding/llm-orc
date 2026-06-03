@@ -52,7 +52,7 @@ class TestInvokeStatusNormalization:
             executor_execute_return={
                 "status": "completed",
                 "results": {},
-                "synthesis": None,
+                "deliverable": None,
             },
         )
 
@@ -67,7 +67,7 @@ class TestInvokeStatusNormalization:
             executor_execute_return={
                 "status": "completed_with_errors",
                 "results": {},
-                "synthesis": None,
+                "deliverable": None,
             },
         )
 
@@ -82,7 +82,7 @@ class TestInvokeStatusNormalization:
             executor_execute_return={
                 "status": "running",
                 "results": {},
-                "synthesis": None,
+                "deliverable": None,
             },
         )
 
@@ -101,7 +101,6 @@ class TestInvokeDeliverablePassthrough:
             executor_execute_return={
                 "status": "completed",
                 "results": {"synthesizer": {"status": "success", "response": "code"}},
-                "synthesis": None,
                 "deliverable": "code",
             },
         )
@@ -117,7 +116,7 @@ class TestInvokeDeliverablePassthrough:
             executor_execute_return={
                 "status": "completed",
                 "results": {},
-                "synthesis": None,
+                "deliverable": None,
             },
         )
 
@@ -140,7 +139,7 @@ class TestInvokeInputFile:
             executor_execute_return={
                 "status": "completed",
                 "results": {},
-                "synthesis": None,
+                "deliverable": None,
             },
         )
         await handler.invoke(
@@ -168,7 +167,7 @@ class TestInvokeInputFile:
             executor_execute_return={
                 "status": "completed",
                 "results": {},
-                "synthesis": None,
+                "deliverable": None,
             },
         )
         await handler.invoke(
