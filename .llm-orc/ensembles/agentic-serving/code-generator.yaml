@@ -59,6 +59,10 @@ agents:
 
   - name: critic
     model_profile: agentic-tier-cheap-general
+    # depends_on makes the review real: without it the critic ran in
+    # parallel with the coder and reviewed a response it never saw
+    # (confabulated critiques observed in the WP-LB-G captured artifact).
+    depends_on: [coder]
     system_prompt: |
       You review a coding response from another assistant. Identify
       any specific issues — incorrect API usage, logic errors,
