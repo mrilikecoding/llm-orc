@@ -73,7 +73,7 @@ class _StubSummarizerInvoker:
         self._summary = summary
 
     async def invoke(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        return {"synthesis": self._summary}
+        return {"deliverable": self._summary}
 
 
 class _UnusedWriter:

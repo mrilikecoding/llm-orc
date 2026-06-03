@@ -108,7 +108,7 @@ class ResultSummarizerHarness:
             return SummarizationFailure(
                 reason=(
                     f"summarizer ensemble '{self._summarizer_name}' "
-                    "returned no summary text (checked synthesis and "
+                    "returned no summary text (checked deliverable and "
                     "single-agent response)"
                 )
             )
@@ -121,19 +121,19 @@ def _extract_summary(invocation: dict[str, Any]) -> str | None:
     The contract is forgiving so the operator can shape the summarizer
     ensemble naturally:
 
-    1. If the ensemble populated ``synthesis`` with a non-empty string,
-       that is the summary. This is the preferred shape.
+    1. If the result carries the executor-resolved ``deliverable``
+       contract (ADR-035 D1 — ``resolve_deliverable`` in
+       ``core/execution/results_processor``), that is the summary. This
+       is the preferred shape.
     2. Otherwise, if the ensemble has exactly one agent result with a
-       non-empty ``response`` field, use that response. This matches
-       the default single-agent summarizer shape — llm-orc's dependency
-       based execution model leaves ``synthesis`` unpopulated for
-       single-agent ensembles (see ``core/execution/results_processor``
-       ``finalize_result``).
+       non-empty ``response`` field, use that response — the tolerant
+       fallback for raw results that did not flow through the
+       executor's deliverable resolution.
     3. Otherwise, return ``None`` — caller raises ``SummarizationFailure``.
     """
-    synthesis = invocation.get("synthesis")
-    if isinstance(synthesis, str) and synthesis:
-        return synthesis
+    deliverable = invocation.get("deliverable")
+    if isinstance(deliverable, str) and deliverable:
+        return deliverable
 
     results = invocation.get("results")
     if isinstance(results, dict) and len(results) == 1:

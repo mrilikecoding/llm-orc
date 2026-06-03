@@ -121,7 +121,7 @@ class _ScriptedOperations(_RaisingOperations):
 class _StubSummarizerInvoker:
     """Handwritten double for ``SummarizerInvoker``.
 
-    Default behavior is "summarizer returns a synthesis string so the
+    Default behavior is "summarizer returns a deliverable string so the
     Harness produces a ``SummarizationSuccess``". Tests that exercise
     the raw-output escape hatch or summarization failure override the
     returns/raises parameters.
@@ -134,7 +134,7 @@ class _StubSummarizerInvoker:
         raises: Exception | None = None,
     ) -> None:
         self._returns: dict[str, Any] = (
-            returns if returns is not None else {"synthesis": "summary text"}
+            returns if returns is not None else {"deliverable": "summary text"}
         )
         self._raises = raises
         self.calls: list[dict[str, Any]] = []
@@ -721,7 +721,7 @@ class TestInvokeEnsemble:
         operations = _ScriptedOperations(invoke_result=normalized_result)
         dispatch = _build_dispatch(
             operations=operations,
-            harness=_build_harness(returns={"synthesis": "distilled summary"}),
+            harness=_build_harness(returns={"deliverable": "distilled summary"}),
             autonomy_policy=_permissive_policy(),
         )
 
@@ -759,7 +759,9 @@ class TestInvokeEnsemble:
             "raw_output": True,
         }
         operations = _ScriptedOperations(invoke_result=raw_result)
-        harness = _build_harness(returns={"synthesis": "WOULD-SUMMARIZE-BUT-SHOULDNT"})
+        harness = _build_harness(
+            returns={"deliverable": "WOULD-SUMMARIZE-BUT-SHOULDNT"}
+        )
         dispatch = _build_dispatch(
             operations=operations,
             harness=harness,
@@ -1277,7 +1279,7 @@ class TestCalibrationGateInterposition:
         gate = _RecordingCalibrationGate(check_raises=RuntimeError("checker crashed"))
         dispatch = _build_dispatch(
             operations=operations,
-            harness=_build_harness(returns={"synthesis": "distilled"}),
+            harness=_build_harness(returns={"deliverable": "distilled"}),
             autonomy_policy=_permissive_policy(),
             calibration_gate=gate,
         )
@@ -1313,7 +1315,7 @@ class TestCalibrationGateInterposition:
         operations = _ScriptedOperations(invoke_result=raw_result)
         dispatch = _build_dispatch(
             operations=operations,
-            harness=_build_harness(returns={"synthesis": "distilled"}),
+            harness=_build_harness(returns={"deliverable": "distilled"}),
             autonomy_policy=_permissive_policy(),
             # No calibration_gate — default helper omits it.
         )
@@ -3257,7 +3259,7 @@ class TestSubstrateRoutingBranch:
         )
         dispatch = _build_dispatch(
             operations=ops,
-            harness=_build_harness(returns={"synthesis": "summarized verdict"}),
+            harness=_build_harness(returns={"deliverable": "summarized verdict"}),
             event_substrate=DispatchEventSubstrate(),
             ensemble_substrate_reader=reader,
             session_artifact_store=store,
@@ -3353,7 +3355,7 @@ class TestSubstrateRoutingBranch:
         )
         dispatch = _build_dispatch(
             operations=ops,
-            harness=_build_harness(returns={"synthesis": "Concise prose summary."}),
+            harness=_build_harness(returns={"deliverable": "Concise prose summary."}),
             event_substrate=DispatchEventSubstrate(),
             ensemble_substrate_reader=reader,
             session_artifact_store=store,
@@ -3562,7 +3564,7 @@ class TestSubstrateRoutingBranch:
         ops = _ScriptedOperations(invoke_result={"synthesis": "x", "raw_output": False})
         dispatch = _build_dispatch(
             operations=ops,
-            harness=_build_harness(returns={"synthesis": "summary"}),
+            harness=_build_harness(returns={"deliverable": "summary"}),
             event_substrate=DispatchEventSubstrate(),
         )
 
@@ -4007,7 +4009,7 @@ class TestSubstrateCalibrationInterposition:
         ops = _ScriptedOperations(invoke_result=raw)
         dispatch = _build_dispatch(
             operations=ops,
-            harness=_build_harness(returns={"synthesis": "summarized"}),
+            harness=_build_harness(returns={"deliverable": "summarized"}),
             event_substrate=DispatchEventSubstrate(),
             ensemble_substrate_reader=reader,
             session_artifact_store=store,

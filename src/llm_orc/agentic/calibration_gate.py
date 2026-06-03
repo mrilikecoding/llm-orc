@@ -853,15 +853,16 @@ class EnsembleBackedChecker:
 def _extract_checker_text(response: dict[str, Any]) -> str | None:
     """Pull the response text from the checker ensemble's output.
 
-    Accepts either a populated ``synthesis`` string or a single-agent
-    ``results[agent_name]["response"]`` — the same two-shape tolerance
-    :class:`ResultSummarizerHarness` uses, for the same reason:
-    operators shape summarizer-style ensembles naturally and the
-    dependency-free single-agent case leaves ``synthesis`` unpopulated.
+    Accepts either the executor-resolved ``deliverable`` contract
+    (ADR-035 D1) or a single-agent ``results[agent_name]["response"]``
+    — the same two-shape tolerance :class:`ResultSummarizerHarness`
+    uses, for the same reason: the deliverable is the preferred single
+    output; the single-agent leg covers raw results that did not flow
+    through the executor's deliverable resolution.
     """
-    synthesis = response.get("synthesis")
-    if isinstance(synthesis, str) and synthesis:
-        return synthesis
+    deliverable = response.get("deliverable")
+    if isinstance(deliverable, str) and deliverable:
+        return deliverable
 
     results = response.get("results")
     if isinstance(results, dict) and len(results) == 1:
