@@ -43,6 +43,7 @@ from llm_orc.agentic.calibration_gate import (
     CalibrationGate,
     EnsembleBackedChecker,
 )
+from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
 from llm_orc.agentic.composition_validator import (
     CompositionValidator,
     ConfigManagerEnsembleWriter,
@@ -406,15 +407,17 @@ async def _resolve_seat_filler() -> SeatFiller:
     return model
 
 
-async def get_loop_driver() -> _ChatCompletionsCaller:
-    """Construct the layer-A Loop Driver caller for tool-driven requests.
+async def get_loop_driver() -> LoopDriver:
+    """Construct the real layer-A Loop Driver (ADR-033).
 
-    Parallel to :func:`get_dispatch_pipeline`. Builds the real Loop Driver
-    (ADR-033): the seat-filler resolved from the Model Profile, the
-    Single-Step Enforcer (batch-truncation grounding guarantee), the shared
-    Tool Dispatch chokepoint for per-turn callee generation, and the shared
-    Dispatch Event Substrate for ``TurnDecision`` diagnostics. Tests override
-    this factory (or :func:`_resolve_seat_filler`) via ``monkeypatch.setattr``.
+    The seat-filler resolved from the Model Profile, the Single-Step Enforcer
+    (batch-truncation grounding guarantee), the shared Tool Dispatch chokepoint
+    for per-turn callee generation, and the shared Dispatch Event Substrate for
+    ``TurnDecision`` diagnostics. The driver decides each turn; the
+    Client-Tool-Action Terminal (composed by
+    :func:`get_client_tool_action_terminal`) emits the wire response. Tests
+    override this factory (or :func:`_resolve_seat_filler`) via
+    ``monkeypatch.setattr``.
     """
     return LoopDriver(
         seat_filler=await _resolve_seat_filler(),
@@ -422,6 +425,18 @@ async def get_loop_driver() -> _ChatCompletionsCaller:
         tool_dispatch=get_orchestrator_tool_dispatch(),
         event_substrate=get_dispatch_event_substrate(),
     )
+
+
+async def get_client_tool_action_terminal() -> _ChatCompletionsCaller:
+    """Construct the tool-driven-surface caller (ADR-034).
+
+    Parallel to :func:`get_dispatch_pipeline`. The Client-Tool-Action Terminal
+    composes the real Loop Driver (:func:`get_loop_driver`) and owns tool-call
+    emission + multi-turn loop participation. The surface-mode discriminator
+    engages this caller when a request carries client ``tools[]``. Tests
+    override this factory via ``monkeypatch.setattr`` to inject a stub caller.
+    """
+    return ClientToolActionTerminal(loop_driver=await get_loop_driver())
 
 
 class _ChatCompletionMessage(BaseModel):
@@ -483,10 +498,10 @@ async def chat_completions(
 
     The surface-mode discriminator (:func:`_is_tool_driven`, ADR-033 D1)
     selects the caller: a tool-driven request (client ``tools[]`` present)
-    engages the layer-A loop-driver; a non-tool request continues through
-    ADR-027's single-turn Dispatch Pipeline. Both satisfy
-    :class:`_ChatCompletionsCaller`, so the heartbeat + context-sink
-    lifecycle below wraps either caller unchanged.
+    engages the Client-Tool-Action Terminal (ADR-034, composing the layer-A
+    loop-driver); a non-tool request continues through ADR-027's single-turn
+    Dispatch Pipeline. Both satisfy :class:`_ChatCompletionsCaller`, so the
+    heartbeat + context-sink lifecycle below wraps either caller unchanged.
 
     Per Cycle 6 WP-B piece 5 a per-request
     :class:`InferenceWaitHeartbeatScheduler` is registered with the
@@ -508,7 +523,7 @@ async def chat_completions(
     context_sink = _build_context_sink(session_id=session_id)
     caller: _ChatCompletionsCaller
     if _is_tool_driven(request):
-        caller = await get_loop_driver()
+        caller = await get_client_tool_action_terminal()
     else:
         caller = await get_dispatch_pipeline()
     scheduler = _build_heartbeat_scheduler(session_id=session_id)

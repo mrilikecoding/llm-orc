@@ -25,6 +25,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
 from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
 from llm_orc.agentic.dispatch_pipeline import DispatchPipeline, DispatchPlan
 from llm_orc.agentic.loop_driver import LoopDriver, TurnDecision
@@ -116,14 +117,22 @@ class _CapturingSink:
         self.events.append(event)
 
 
-def _real_loop_driver(
+def _real_terminal(
     seat_filler: _FakeSeatFiller, substrate: DispatchEventSubstrate
-) -> LoopDriver:
-    return LoopDriver(
-        seat_filler=seat_filler,
-        enforcer=SingleStepEnforcer(),
-        tool_dispatch=_NoToolDispatch(),
-        event_substrate=substrate,
+) -> ClientToolActionTerminal:
+    """The tool-driven caller: the real Terminal over the real Loop Driver.
+
+    The endpoint drives the Terminal (the ``_ChatCompletionsCaller``); the
+    Terminal composes the Loop Driver, which still emits the ``TurnDecision``
+    diagnostics the FC-42 tests assert.
+    """
+    return ClientToolActionTerminal(
+        loop_driver=LoopDriver(
+            seat_filler=seat_filler,
+            enforcer=SingleStepEnforcer(),
+            tool_dispatch=_NoToolDispatch(),
+            event_substrate=substrate,
+        )
     )
 
 
@@ -248,7 +257,7 @@ def _build_client(
     registry: SessionRegistry | None = None,
     session_start_spy: (Callable[[SessionContext], list[PromptFragment]] | None) = None,
     pipeline: "_StubPipeline | DispatchPipeline | None" = None,
-    loop_driver: "_StubPipeline | LoopDriver | None" = None,
+    terminal: "_StubPipeline | ClientToolActionTerminal | None" = None,
     config: OrchestratorConfig | None = None,
 ) -> tuple[TestClient, SessionRegistry, SessionStartCache]:
     """Wire a TestClient with isolated Registry, cache, and Dispatch Pipeline.
@@ -283,12 +292,16 @@ def _build_client(
 
     monkeypatch.setattr(v1_chat_completions, "get_dispatch_pipeline", _pipeline_factory)
 
-    stub_loop_driver: _StubPipeline | LoopDriver = loop_driver or _StubPipeline()
+    stub_terminal: _StubPipeline | ClientToolActionTerminal = (
+        terminal or _StubPipeline()
+    )
 
-    async def _loop_driver_factory() -> _StubPipeline | LoopDriver:
-        return stub_loop_driver
+    async def _terminal_factory() -> _StubPipeline | ClientToolActionTerminal:
+        return stub_terminal
 
-    monkeypatch.setattr(v1_chat_completions, "get_loop_driver", _loop_driver_factory)
+    monkeypatch.setattr(
+        v1_chat_completions, "get_client_tool_action_terminal", _terminal_factory
+    )
 
     resolver = _FakeConfigResolver(config or _default_orchestrator_config())
     monkeypatch.setattr(
@@ -441,9 +454,9 @@ class TestSurfaceModeDiscrimination:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         pipeline_caller = self._scripted("PIPELINE")
-        loop_driver_caller = self._scripted("LOOPDRIVER")
+        terminal_caller = self._scripted("LOOPDRIVER")
         client, _, _ = _build_client(
-            monkeypatch, pipeline=pipeline_caller, loop_driver=loop_driver_caller
+            monkeypatch, pipeline=pipeline_caller, terminal=terminal_caller
         )
 
         response = client.post(
@@ -462,16 +475,16 @@ class TestSurfaceModeDiscrimination:
 
         body = response.json()
         assert body["choices"][0]["message"]["content"] == "LOOPDRIVER"
-        assert loop_driver_caller.contexts, "loop-driver should be driven"
+        assert terminal_caller.contexts, "loop-driver should be driven"
         assert not pipeline_caller.contexts, "pipeline should not be driven"
 
     def test_non_tool_request_uses_single_turn_pipeline(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         pipeline_caller = self._scripted("PIPELINE")
-        loop_driver_caller = self._scripted("LOOPDRIVER")
+        terminal_caller = self._scripted("LOOPDRIVER")
         client, _, _ = _build_client(
-            monkeypatch, pipeline=pipeline_caller, loop_driver=loop_driver_caller
+            monkeypatch, pipeline=pipeline_caller, terminal=terminal_caller
         )
 
         response = client.post(
@@ -485,16 +498,16 @@ class TestSurfaceModeDiscrimination:
         body = response.json()
         assert body["choices"][0]["message"]["content"] == "PIPELINE"
         assert pipeline_caller.contexts, "pipeline should be driven"
-        assert not loop_driver_caller.contexts, "loop-driver should not be driven"
+        assert not terminal_caller.contexts, "loop-driver should not be driven"
 
     def test_tool_request_engages_loop_driver_on_streaming_path(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Discrimination happens before the stream/non-stream branch (wiring)."""
         pipeline_caller = self._scripted("PIPELINE")
-        loop_driver_caller = self._scripted("LOOPDRIVER")
+        terminal_caller = self._scripted("LOOPDRIVER")
         client, _, _ = _build_client(
-            monkeypatch, pipeline=pipeline_caller, loop_driver=loop_driver_caller
+            monkeypatch, pipeline=pipeline_caller, terminal=terminal_caller
         )
 
         response = client.post(
@@ -519,18 +532,20 @@ class TestSurfaceModeDiscrimination:
             if not frame.get("__done__")
         ]
         assert "".join(deltas) == "LOOPDRIVER"
-        assert loop_driver_caller.contexts
+        assert terminal_caller.contexts
         assert not pipeline_caller.contexts
 
-    async def test_get_loop_driver_builds_the_real_loop_driver(
+    async def test_terminal_factory_composes_the_real_loop_driver(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """WP-LB-B swap: the production factory builds the real Loop Driver.
+        """WP-LB-C: the production caller factory builds the real Terminal.
 
-        The seat-filler is resolved via the overridable
-        :func:`_resolve_seat_filler` seam (a double here, so the test does not
-        stand up model resolution); the factory wires the real LoopDriver, not
-        a stub. Its driving behavior is covered by the loop-driver unit tests.
+        :func:`get_loop_driver` builds the real Loop Driver (seat-filler
+        resolved via the overridable :func:`_resolve_seat_filler` seam, a
+        double here so the test does not stand up model resolution);
+        :func:`get_client_tool_action_terminal` composes it into the Terminal
+        the discriminator engages. The Terminal's ``run`` drives the real
+        driver — a no-action seat-filler finishes with a stop completion.
         """
         seat_filler = _FakeSeatFiller(
             ToolCallingResponse(content="ok", tool_calls=[], finish_reason="stop")
@@ -546,9 +561,10 @@ class TestSurfaceModeDiscrimination:
             lambda: _NoToolDispatch(),
         )
 
-        caller = await v1_chat_completions.get_loop_driver()
+        assert isinstance(await v1_chat_completions.get_loop_driver(), LoopDriver)
+        caller = await v1_chat_completions.get_client_tool_action_terminal()
 
-        assert isinstance(caller, LoopDriver)
+        assert isinstance(caller, ClientToolActionTerminal)
         registry = SessionRegistry()
         state = registry.get_or_create_state(
             SessionIdentity(value="seam-test", method="user_field")
@@ -577,7 +593,7 @@ class TestSurfaceModeDiscrimination:
             ToolCallingResponse(content="ack", tool_calls=[], finish_reason="stop")
         )
         client, _, _ = _build_client(
-            monkeypatch, loop_driver=_real_loop_driver(seat_filler, substrate)
+            monkeypatch, terminal=_real_terminal(seat_filler, substrate)
         )
 
         response = client.post(
@@ -605,7 +621,7 @@ class TestSurfaceModeDiscrimination:
             ToolCallingResponse(content="ack", tool_calls=[], finish_reason="stop")
         )
         client, _, _ = _build_client(
-            monkeypatch, loop_driver=_real_loop_driver(seat_filler, substrate)
+            monkeypatch, terminal=_real_terminal(seat_filler, substrate)
         )
 
         client.post(

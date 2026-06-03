@@ -1,30 +1,32 @@
 """Tests for the Loop Driver (Cycle 7 loop-back WP-LB-B, ADR-033).
 
 The Loop Driver is the layer-A control structure for the tool-driven
-multi-turn surface. Each ``run`` is one turn: it invokes the injected
+multi-turn surface. Each ``decide`` is one turn: it invokes the injected
 seat-filler LLM to decide the next action, enforces single-action-per-turn,
-and resolves that action one of two ways — a literal client tool call is
-passed through verbatim (grounded carry), an ``invoke_ensemble`` call
-delegates per-turn generation to a single capability ensemble (the callee)
-and maps the deliverable to a client tool. Scenarios from
-``docs/agentic-serving/scenarios.md`` §"Layer-A Loop-Driver and
-Surface-Mode Discrimination (ADR-033)".
+and returns the per-turn :class:`TurnOutcome` — a literal client tool call is
+carried through verbatim (grounded carry, :class:`CarryClientTool`), an
+``invoke_ensemble`` call delegates per-turn generation to a single capability
+ensemble (the callee) and returns the deliverable envelope for the Terminal
+to marshal (:class:`ApplyWork`), and a no-action turn finishes with text
+(:class:`FinishTurn`). Scenarios from ``docs/agentic-serving/scenarios.md``
+§"Layer-A Loop-Driver and Surface-Mode Discrimination (ADR-033)". Tool-call
+*emission* and deliverable-content marshalling are the Client-Tool-Action
+Terminal's job (ADR-034); see ``test_client_tool_action_terminal.py``.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
 from typing import Any
 
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
 from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
-from llm_orc.agentic.loop_driver import LoopDriver, TurnDecision
-from llm_orc.agentic.orchestrator_chunk import (
-    ClientToolCall,
-    Completion,
-    ContentDelta,
-    OrchestratorChunk,
+from llm_orc.agentic.loop_driver import (
+    ApplyWork,
+    CarryClientTool,
+    FinishTurn,
+    LoopDriver,
+    TurnDecision,
 )
 from llm_orc.agentic.orchestrator_tool_dispatch import (
     InternalToolCall,
@@ -95,12 +97,6 @@ def _make_context(
     )
 
 
-async def _collect(
-    chunks: AsyncIterator[OrchestratorChunk],
-) -> list[OrchestratorChunk]:
-    return [chunk async for chunk in chunks]
-
-
 def _build_driver(
     seat_filler: _FakeSeatFiller,
     *,
@@ -129,12 +125,6 @@ def _turn_decisions(sink: _CapturingSink) -> list[TurnDecision]:
     return [event for event in sink.events if isinstance(event, TurnDecision)]
 
 
-def _one_tool_call(chunks: list[OrchestratorChunk]) -> Any:
-    tool_calls = [c for c in chunks if isinstance(c, ClientToolCall)]
-    assert len(tool_calls) == 1
-    return tool_calls[0].tool_calls[0]
-
-
 class TestLoopDriverFinishesWithText:
     """Loop-driver finishes with a text completion when no further action.
 
@@ -153,22 +143,19 @@ class TestLoopDriverFinishesWithText:
         )
         driver = _build_driver(seat_filler)
 
-        chunks = await _collect(driver.run(_make_context()))
+        outcome = await driver.decide(_make_context())
 
-        assert chunks == [
-            ContentDelta(content="2 + 2 = 4."),
-            Completion(finish_reason="stop"),
-        ]
+        assert outcome == FinishTurn(content="2 + 2 = 4.")
 
-    async def test_no_content_delta_when_finish_text_is_empty(self) -> None:
+    async def test_no_content_when_finish_text_is_empty(self) -> None:
         seat_filler = _FakeSeatFiller(
             ToolCallingResponse(content="", tool_calls=[], finish_reason="stop")
         )
         driver = _build_driver(seat_filler)
 
-        chunks = await _collect(driver.run(_make_context()))
+        outcome = await driver.decide(_make_context())
 
-        assert chunks == [Completion(finish_reason="stop")]
+        assert outcome == FinishTurn(content=None)
 
 
 class TestLoopDriverDelegatesToCallee:
@@ -177,7 +164,8 @@ class TestLoopDriverDelegatesToCallee:
     The seat-filler emits an ``invoke_ensemble`` call to delegate generation;
     the driver dispatches exactly one ensemble (no routing-planner or
     response-synthesizer collaborator exists on the driver to invoke — the
-    structural callee property) and maps the deliverable to a client tool.
+    structural callee property) and returns the deliverable envelope plus the
+    tool-mapping decision for the Terminal to emit.
     """
 
     async def test_delegates_generation_to_single_ensemble(self) -> None:
@@ -203,7 +191,7 @@ class TestLoopDriverDelegatesToCallee:
         tool_dispatch = _FakeToolDispatch(deliverable="def sort(xs): ...")
         driver = _build_driver(seat_filler, tool_dispatch=tool_dispatch)
 
-        chunks = await _collect(driver.run(_make_context()))
+        outcome = await driver.decide(_make_context())
 
         assert len(tool_dispatch.calls) == 1
         call = tool_dispatch.calls[0]
@@ -211,11 +199,13 @@ class TestLoopDriverDelegatesToCallee:
         assert call.arguments["name"] == "code-generator"
         assert call.arguments["input"] == "write a sorting function"
 
-        invocation = _one_tool_call(chunks)
-        assert invocation.name == "write"
-        args = json.loads(invocation.arguments)
-        assert args["filePath"] == "sort.py"
-        assert args["content"] == "def sort(xs): ..."
+        assert isinstance(outcome, ApplyWork)
+        assert outcome.tool_name == "write"
+        assert outcome.file_path == "sort.py"
+        assert outcome.delegated_ensemble == "code-generator"
+        # The envelope, not baked content, travels to the Terminal (which
+        # marshals it); WP-LB-B's deliverable is the inline primary.
+        assert outcome.envelope.primary == "def sort(xs): ..."
 
 
 class TestLoopDriverGroundedCarry:
@@ -224,7 +214,8 @@ class TestLoopDriverGroundedCarry:
     A literal client tool call carries the seat-filler's arguments verbatim:
     a value observed in a prior tool result reaches the client tool-call
     argument unchanged (no ``${...}`` template, no fabrication, no ensemble
-    regeneration).
+    regeneration). The driver owns this verbatim guarantee; the Terminal emits
+    the carried invocation as-is.
     """
 
     @staticmethod
@@ -272,15 +263,15 @@ class TestLoopDriverGroundedCarry:
         tool_dispatch = _FakeToolDispatch()
         driver = _build_driver(seat_filler, tool_dispatch=tool_dispatch)
 
-        chunks = await _collect(driver.run(self._grounded_context()))
+        outcome = await driver.decide(self._grounded_context())
 
         # No ensemble dispatch for a literal carry — the value is not
         # regenerated.
         assert tool_dispatch.calls == []
-        invocation = _one_tool_call(chunks)
-        assert invocation.name == "write"
-        assert json.loads(invocation.arguments)["content"] == "TOKEN_7f3a9c"
-        assert "${" not in invocation.arguments
+        assert isinstance(outcome, CarryClientTool)
+        assert outcome.invocation.name == "write"
+        assert json.loads(outcome.invocation.arguments)["content"] == "TOKEN_7f3a9c"
+        assert "${" not in outcome.invocation.arguments
 
     async def test_prior_tool_result_is_surfaced_to_the_seat_filler(self) -> None:
         seat_filler = _FakeSeatFiller(
@@ -288,7 +279,7 @@ class TestLoopDriverGroundedCarry:
         )
         driver = _build_driver(seat_filler)
 
-        await _collect(driver.run(self._grounded_context()))
+        await driver.decide(self._grounded_context())
 
         surfaced_messages = seat_filler.calls[0][0]
         assert any(
@@ -321,7 +312,7 @@ class TestLoopDriverTurnDecision:
         )
         _, sink, driver = self._capture(seat_filler)
 
-        await _collect(driver.run(_make_context()))
+        await driver.decide(_make_context())
 
         decisions = _turn_decisions(sink)
         assert len(decisions) == 1
@@ -350,7 +341,7 @@ class TestLoopDriverTurnDecision:
         )
         _, sink, driver = self._capture(seat_filler)
 
-        await _collect(driver.run(_make_context()))
+        await driver.decide(_make_context())
 
         decision = _turn_decisions(sink)[0]
         assert decision.action == "write"
@@ -382,7 +373,7 @@ class TestLoopDriverTurnDecision:
         )
         _, sink, driver = self._capture(seat_filler)
 
-        await _collect(driver.run(_make_context()))
+        await driver.decide(_make_context())
 
         decision = _turn_decisions(sink)[0]
         assert decision.action == "write"

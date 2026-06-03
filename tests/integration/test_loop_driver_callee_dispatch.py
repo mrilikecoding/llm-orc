@@ -9,9 +9,9 @@ accepted by the real dispatch's argument validation, the ensemble executes,
 and the deliverable flows back into a client ``write`` tool call.
 
 Deliverable *content fidelity* for substrate-routed capability ensembles is
-the Artifact Bridge's job (WP-LB-D); WP-LB-B marshals what ``dispatch``
-returns directly. This test asserts the structural integration of the
-callee boundary, not large-deliverable fidelity.
+the Artifact Bridge's job (WP-LB-D); the Client-Tool-Action Terminal marshals
+the inline ``primary`` directly here. This test asserts the structural
+integration of the callee boundary, not large-deliverable fidelity.
 
 Per ``docs/agentic-serving/system-design.agents.md`` §Module: Loop Driver
 (callee delegation; FC-44) and the build skill's Step 5 (Integration
@@ -29,6 +29,7 @@ import pytest
 import yaml
 
 from llm_orc.agentic.autonomy_policy import BASELINE_LEVEL, AutonomyPolicy
+from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
 from llm_orc.agentic.composition_validator import (
     CompositionValidator,
     ConfigManagerEnsembleWriter,
@@ -153,6 +154,7 @@ async def test_callee_generation_dispatches_real_ensemble_into_a_write(
         enforcer=SingleStepEnforcer(),
         tool_dispatch=dispatch,
     )
+    terminal = ClientToolActionTerminal(loop_driver=driver)
     context = SessionContext(
         messages=[ChatMessage(role="user", content="write a fibonacci function")],
         tools=[{"type": "function", "function": {"name": "write"}}],
@@ -161,7 +163,7 @@ async def test_callee_generation_dispatches_real_ensemble_into_a_write(
         ),
     )
 
-    chunks = await _collect(driver.run(context))
+    chunks = await _collect(terminal.run(context))
 
     tool_calls = [c for c in chunks if isinstance(c, ClientToolCall)]
     assert len(tool_calls) == 1
