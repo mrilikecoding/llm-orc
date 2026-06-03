@@ -38,6 +38,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from llm_orc.agentic.artifact_bridge import ArtifactBridge
 from llm_orc.agentic.autonomy_policy import AutonomyPolicy
 from llm_orc.agentic.calibration_gate import (
     CalibrationGate,
@@ -432,11 +433,16 @@ async def get_client_tool_action_terminal() -> _ChatCompletionsCaller:
 
     Parallel to :func:`get_dispatch_pipeline`. The Client-Tool-Action Terminal
     composes the real Loop Driver (:func:`get_loop_driver`) and owns tool-call
-    emission + multi-turn loop participation. The surface-mode discriminator
-    engages this caller when a request carries client ``tools[]``. Tests
-    override this factory via ``monkeypatch.setattr`` to inject a stub caller.
+    emission + multi-turn loop participation, marshalling substrate-routed
+    deliverable content via the Artifact Bridge (ADR-034 §Decision 3) over the
+    shared Session Artifact Store. The surface-mode discriminator engages this
+    caller when a request carries client ``tools[]``. Tests override this
+    factory via ``monkeypatch.setattr`` to inject a stub caller.
     """
-    return ClientToolActionTerminal(loop_driver=await get_loop_driver())
+    return ClientToolActionTerminal(
+        loop_driver=await get_loop_driver(),
+        bridge=ArtifactBridge(get_session_artifact_store()),
+    )
 
 
 class _ChatCompletionMessage(BaseModel):

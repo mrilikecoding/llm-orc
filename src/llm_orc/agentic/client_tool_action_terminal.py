@@ -29,10 +29,10 @@ import json
 from collections.abc import AsyncIterator
 from typing import Protocol
 
+from llm_orc.agentic.artifact_bridge import ArtifactBridge
 from llm_orc.agentic.loop_driver import (
     ApplyWork,
     CarryClientTool,
-    FinishTurn,
     TurnOutcome,
 )
 from llm_orc.agentic.orchestrator_chunk import (
@@ -42,6 +42,7 @@ from llm_orc.agentic.orchestrator_chunk import (
     OrchestratorChunk,
     ToolCallInvocation,
 )
+from llm_orc.agentic.session_artifact_store import ArtifactNotFoundError
 from llm_orc.agentic.session_start import SessionContext
 
 __all__ = ["ClientToolActionTerminal", "TurnDecider"]
@@ -73,37 +74,57 @@ class ClientToolActionTerminal:
     extraction, which would drop the tool result.
     """
 
-    def __init__(self, *, loop_driver: TurnDecider) -> None:
+    def __init__(self, *, loop_driver: TurnDecider, bridge: ArtifactBridge) -> None:
         self._loop_driver = loop_driver
+        self._bridge = bridge
 
     async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
         """Decide one turn and emit it as wire chunks."""
         outcome = await self._loop_driver.decide(context)
+        for chunk in self._emit(outcome):
+            yield chunk
 
-        if isinstance(outcome, FinishTurn):
-            if outcome.content:
-                yield ContentDelta(content=outcome.content)
-            yield Completion(finish_reason="stop")
-            return
-
+    def _emit(self, outcome: TurnOutcome) -> list[OrchestratorChunk]:
+        """Map a per-turn outcome to the wire chunks for it."""
         if isinstance(outcome, CarryClientTool):
-            yield ClientToolCall(tool_calls=(outcome.invocation,))
-            return
+            return [ClientToolCall(tool_calls=(outcome.invocation,))]
+        if isinstance(outcome, ApplyWork):
+            return self._emit_apply_work(outcome)
+        return _finish_chunks(outcome.content)
 
-        yield ClientToolCall(tool_calls=(self._invocation_for(outcome),))
-
-    def _invocation_for(self, outcome: ApplyWork) -> ToolCallInvocation:
+    def _emit_apply_work(self, outcome: ApplyWork) -> list[OrchestratorChunk]:
         """Marshal a generation outcome's deliverable into a client tool call.
 
-        Reads the deliverable content from the envelope and places it into the
-        client tool-call ``content`` argument (ADR-034 §Decision 3). WP-LB-C's
-        first increment marshals the inline ``primary`` directly; wiring the
-        Artifact Bridge for substrate-routed full-fidelity content (FC-49) is
-        the next increment.
+        The Artifact Bridge (ADR-034 §Decision 3) resolves the deliverable
+        content from the envelope — full fidelity for substrate-routed
+        deliverables (ADR-025; FC-49), ``envelope.primary`` for inline ones —
+        and the content is placed into the client tool-call ``content``
+        argument. A bridge error (unresolvable reference) or a binary
+        deliverable — not yet established, ADR-034 §Negative — degrades to a
+        dispatch-failure completion, not a malformed tool call (system-design
+        Terminal error handling; FC-48 forbids fabricated content).
         """
-        content = outcome.envelope.primary
-        return ToolCallInvocation(
+        try:
+            content = self._bridge.marshal(outcome.envelope)
+        except ArtifactNotFoundError as error:
+            return _finish_chunks(f"[dispatch failed: {error}]")
+        if not isinstance(content, str):
+            return _finish_chunks(
+                f"[dispatch failed: binary deliverable for "
+                f"{outcome.file_path} is not yet supported]"
+            )
+        invocation = ToolCallInvocation(
             id=outcome.invocation_id,
             name=outcome.tool_name,
             arguments=json.dumps({"filePath": outcome.file_path, "content": content}),
         )
+        return [ClientToolCall(tool_calls=(invocation,))]
+
+
+def _finish_chunks(content: str | None) -> list[OrchestratorChunk]:
+    """Build the chunks for a finish turn — optional text, then a stop."""
+    chunks: list[OrchestratorChunk] = []
+    if content:
+        chunks.append(ContentDelta(content=content))
+    chunks.append(Completion(finish_reason="stop"))
+    return chunks

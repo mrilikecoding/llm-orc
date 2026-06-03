@@ -28,6 +28,7 @@ from typing import Any
 import pytest
 import yaml
 
+from llm_orc.agentic.artifact_bridge import ArtifactBridge
 from llm_orc.agentic.autonomy_policy import BASELINE_LEVEL, AutonomyPolicy
 from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
 from llm_orc.agentic.composition_validator import (
@@ -39,6 +40,7 @@ from llm_orc.agentic.loop_driver import LoopDriver
 from llm_orc.agentic.orchestrator_chunk import ClientToolCall, OrchestratorChunk
 from llm_orc.agentic.orchestrator_tool_dispatch import OrchestratorToolDispatch
 from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
+from llm_orc.agentic.session_artifact_store import SessionArtifactStore
 from llm_orc.agentic.session_registry import SessionIdentity, SessionState
 from llm_orc.agentic.session_start import ChatMessage, SessionContext
 from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
@@ -154,7 +156,10 @@ async def test_callee_generation_dispatches_real_ensemble_into_a_write(
         enforcer=SingleStepEnforcer(),
         tool_dispatch=dispatch,
     )
-    terminal = ClientToolActionTerminal(loop_driver=driver)
+    terminal = ClientToolActionTerminal(
+        loop_driver=driver,
+        bridge=ArtifactBridge(SessionArtifactStore(agentic_sessions_root=tmp_path)),
+    )
     context = SessionContext(
         messages=[ChatMessage(role="user", content="write a fibonacci function")],
         tools=[{"type": "function", "function": {"name": "write"}}],
