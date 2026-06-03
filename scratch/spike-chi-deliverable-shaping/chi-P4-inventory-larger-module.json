@@ -1,0 +1,5 @@
+{
+  "prompt": "bare-output, inventory.py module (imports+dataclass+class+3 methods)",
+  "verdict": "CLEAN bare content; directly writable; no fences/prose",
+  "synthesizer_response": "from dataclasses import dataclass\n\n@dataclass\nclass Item:\n    name: str\n    price: float\n    qty: int\n\nclass Inventory: ... (3 methods)"
+}

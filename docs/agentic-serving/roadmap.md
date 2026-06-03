@@ -134,6 +134,28 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 **Dependencies:** Hard on **WP-LB-B/C/D** (the delegation path it activates). **Sequenced before WP-LB-E/F** (both are downstream of delegation working at all). **Loop-back trigger:** if the real-OpenCode run shows the seat-filler will not reliably delegate (the cheap-driver-skips-delegation tension), loop back to DECIDE on the delegation-decision mechanism (`tool_choice` forcing / routing pre-filter / a different driver-vs-delegation split) — decided on the run's evidence.
 
+**Status: ✅ Closed 2026-06-02** — delegation fired end-to-end against real OpenCode (seat-filler chose `invoke_ensemble` → `code-generator` → bridge → client `write`; Finding B resolved). The run surfaced **Finding D** (the marshalled deliverable is the raw envelope, not usable content) → WP-LB-H.
+
+---
+
+### WP-LB-H: Client-tool deliverable form contract + D1 extraction (ADR-035; Finding D)
+
+**Surfaced by:** the WP-LB-G real-OpenCode run (2026-06-02): delegation fired end-to-end but the client `write` carried the raw ensemble result envelope (`{"results": {coder, critic, synthesizer}, …}`) — unusable as file content (Finding D). Spike φ split the problem into D1 (extraction) + D2a (declared contracts inert at execution) + D2b (deliverable form targets a human reader); Spike χ/χ.2 grounded the mechanism (boundary directive reliable at n=4 single-deliverable types; deterministic shaping fragile at 2/3 multi-fence ambiguity; multi-file-in-one-dispatch breaks).
+
+**Objective:** A delegated client-tool deliverable lands as **usable bare content** — the north-star loop produces a runnable file, not prose-wrapped markdown or a JSON envelope.
+
+**Changes:**
+- **Loop Driver:** `compose_form_directive(tool)` stateless helper (`write` → bare file bytes; `bash` → bare command; `edit` → bare replacement content) + injection into the callee `invoke_ensemble` dispatch input (FC-53 presence; FC-54 keying). No ensemble YAML changes (destination-agnostic, ADR-035 decision 2).
+- **Artifact Bridge:** `marshal()` gains `destination_tool` (the Terminal threads it); named **FormGate** seam, default pass-through (FC-57). Conservative single-fence normalization is an open choice (LB-5).
+- **Orchestrator Tool Dispatch:** D1 extraction fix — store the last *successful* agent's output; fall back across failed terminal nodes; never `json.dumps(raw_result)` when an agent succeeded (FC-56). Extraction locus is an open choice (LB-4).
+- **Client-Tool-Action Terminal:** passes the turn's destination tool to the bridge.
+
+**Scenarios covered:** scenarios.md §Client-Tool Deliverable Form Contract (ADR-035, Finding D) — the behavior + D1 + preservation scenarios and the Cycle Acceptance Criteria (Finding D) table.
+
+**Participating modules:** Loop Driver, Artifact Bridge, Client-Tool-Action Terminal, Orchestrator Tool Dispatch.
+
+**Dependencies:** Hard on **WP-LB-B/C/D/G** (all landed — the delegation + marshalling + emission path the directive rides). **WP-LB-E/F resume after WP-LB-H** (the Finding D blocker gates the surface's usability; E/F refine a working surface). **Acceptance gates (load-bearing):** suite green + the **$0 real-OpenCode smoke test re-run showing a runnable file landing** (the Finding D refutation — the WP-LB-G rig re-run with the directive in effect; the layer-match "no" row in the acceptance criteria table is closed at this layer). **Escalation trigger:** if the real run still produces non-bare content, escalate per ADR-035's Conditional Acceptance order (detect-and-refuse gate → schema-retry → frontier seat-filler) on the run's evidence — not a redesign.
+
 ---
 
 ## Dependency Graph (Cycle 7 loop-back)
@@ -159,6 +181,14 @@ WP-LB-D (Artifact Bridge + read_deliverable)
 
 WP-LB-B ─ implied ─▶ single-turn WP-D (Capability List Builder — shared; Loop Driver selects from it)
 WP-LB-D ─ open choice with WP-LB-B (bridge testable in isolation)
+
+WP-LB-G (delegation reachable; ✅ closed — surfaced Finding D)
+   │
+   └─ hard ─▶ WP-LB-H (the form contract rides the delegation path G activated)
+
+WP-LB-H (form contract + D1)
+   │
+   └─ implied ─▶ WP-LB-E, WP-LB-F (resume after the Finding D blocker clears)
 ```
 
 **Classification key:** Hard = structural necessity; Implied = simpler-first but stub-able; Open choice = genuinely independent.
@@ -170,6 +200,10 @@ WP-LB-D ─ open choice with WP-LB-B (bridge testable in isolation)
 ### TS-12: Tool-driven surface delivers a parity round-trip (after WP-LB-A + WP-LB-B + WP-LB-C + WP-LB-D)
 
 When the surface-mode discriminator, Loop Driver + Single-Step Enforcer, Client-Tool-Action Terminal, and Artifact Bridge land, a tool-driven client (e.g. OpenCode) driven against agentic-serving gets a single-turn parity round-trip: the loop-driver decides an action, delegates generation to a capability ensemble, the artifact-bridge marshals the deliverable, the terminal emits `finish_reason: "tool_calls"`, the client executes the write locally, and the tool result feeds back. This is the **north-star "delegate work, apply locally" surface** the loop-back exists to deliver. The multi-turn loop is observable from a real client; long-horizon coherence (axis 2) is not yet validated (PLAY/first-deployment, ADR-097 Conditional Acceptance).
+
+### TS-14: Form-contracted parity — the north-star loop produces runnable files (after WP-LB-H)
+
+TS-12's parity round-trip with ADR-035's form contract in effect: the delegated deliverable landing via the client's `write` is bare, runnable file content (the Finding D refutation), and the D1 extraction stores the terminal agent's output rather than the raw envelope. After this state, WP-LB-E/F resume and the remaining loop-back work is refinement + instrumentation, not surface correctness. Trajectory-scale form compliance remains the PLAY target (ADR-097 Conditional Acceptance).
 
 ### TS-13: Cycle 7 fully complete — both surfaces (after both surface WP sets)
 
@@ -189,7 +223,19 @@ The Loop Driver's seat-filler is a swappable Model Profile (FC-46). Cheap-tier i
 
 ### LB-3. `edit`/`bash`/multi-file/streaming-token coverage (ADR-034 §Negative)
 
-Spike π/ρ validated the `write` round-trip for a single new file. `edit`-in-place (needs a `read` first), `bash` command execution, multi-file deliverables, and token-streaming the synthesized content are BUILD scope. Open decision: which of these land in Cycle 7 loop-back BUILD vs. defer to a follow-on cycle — the file-action `write` path is the BUILD focus; the richer surface is north-star context (ADR-033 §Decision 6(c)).
+Spike π/ρ validated the `write` round-trip for a single new file. `edit`-in-place (needs a `read` first), `bash` command execution, multi-file deliverables, and token-streaming the synthesized content are BUILD scope. Open decision: which of these land in Cycle 7 loop-back BUILD vs. defer to a follow-on cycle — the file-action `write` path is the BUILD focus; the richer surface is north-star context (ADR-033 §Decision 6(c)). *(Loop-back #2 note: multi-file is now design-resolved as across-turn decomposition — ADR-035 §Decision 3 / FC-55; what remains open is which destinations beyond `write` get directive coverage exercised in BUILD.)*
+
+### LB-4. D1 extraction locus (ADR-035 decision 5 where-sub-fork) — WP-LB-H scenario-group gate
+
+Executor-side (populate a canonical deliverable field in `finalize_result`, where `depends_on` is known — robust for branching DAGs) vs. envelope-side (terminal-node selection on `results` insertion order — adequate for linear pipelines, less plumbing). Surface at the WP-LB-H scenario-group gate; do not pre-decide.
+
+### LB-5. Conservative normalization now-or-later (ADR-035 decision 4) — builder's choice
+
+The single-enclosing-fence strip is cheap and spike-motivated, but the directive may make it dead code (χ-P3/P4/P5 produced zero fences under the directive). Build it with WP-LB-H or leave the FormGate pure pass-through until PLAY shows a stray fence. Either satisfies FC-57 (the seam exists regardless).
+
+### LB-6. Directive wording (tunable within FC-53/54)
+
+The directive text is framework-owned prose (the χ probes used "Output ONLY the exact raw bytes… no fences, no explanation"). FC-53/54 pin *presence* and *keying*, not wording — if PLAY shows wording-sensitive compliance, tuning is FC-visible and requires no design change.
 
 ---
 

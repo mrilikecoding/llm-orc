@@ -1325,3 +1325,77 @@ These Layer-match "no" entries are the table working as designed: they mark wher
 **Given** the conformance scan found a docstring comment at `v1_chat_completions.py:581–583` stating that `ClientToolCall` chunks "are not part of this surface's vocabulary under ADR-027" — a comment that now contradicts ADR-034
 **When** the loop-back BUILD begins (before the tool-call terminal is built)
 **Then** the misleading comment is removed as a `refactor:` commit so BUILD implementors are not misled; this is the one refactor-now item from the loop-back conformance scan (the other 11 findings are BUILD-work or ARCHITECT-deferral, tracked as the loop-back BUILD load).
+
+---
+
+## Feature: Client-Tool Deliverable Form Contract (ADR-035, Finding D)
+
+*Conformance disposition (no formal scan): ADR-035 is a new decision; no shipped code implements the boundary directive, so there is no drift to scan — only unbuilt work + the D1 extraction bug Spike φ characterized in-context (`_extract_synthesizer_text` at `orchestrator_tool_dispatch.py:1373/1796` stores `json.dumps(raw_result)` for multi-agent ensembles). The "debt" is captured by the D1 scenarios below.*
+
+### Scenario: the marshalling boundary injects a destination-keyed form directive (write)
+**Given** the loop-driver decides a turn's action is a `write` and delegates generation to a capability ensemble via callee `invoke_ensemble` (ADR-033)
+**When** the dispatch input is composed at the marshalling boundary (loop-driver / Client-Tool-Action Terminal)
+**Then** the dispatch input carries a `write`-keyed bare-output directive (produce only the bare file bytes — no markdown fences, no prose, no example block). Refutable: a client-tool dispatch whose input carries no destination-keyed form directive violates the boundary-directive FC.
+
+### Scenario: the directive is keyed to the destination tool (bash)
+**Given** the loop-driver decides a turn's action is a `bash` command
+**When** the dispatch input is composed
+**Then** the injected directive is a bare-command directive (produce only the exact command), not the `write` bare-file-bytes directive. Refutable: emitting the `write`-form directive for a `bash` destination violates destination-keying.
+
+### Scenario: capability ensembles stay destination-agnostic
+**Given** a capability ensemble (e.g. `code-generator`) dispatched for a client-tool deliverable
+**When** the dispatch occurs
+**Then** the form directive lives in the dispatch input only; no ensemble YAML field (`system_prompt`, `default_task`, `output_schema`, or a baked-in `submit_file` tool) couples the ensemble to file-production. Refutable: a `submit_file`-shaped tool or a destination-form instruction baked into the ensemble's static config violates the destination-agnostic FC (ADR-025 reusability principle).
+
+### Scenario (integration): a delegated `write` deliverable is bare client-tool content (the Finding D refutation)
+**Given** `code-generator` dispatched with a `write`-keyed bare-output directive, producing a deliverable that the artifact-bridge (ADR-034) marshals into a `write` tool call
+**When** the client receives the `write`
+**Then** the `write` content is bare file content — directly writable and runnable, with no markdown fences, no prose preamble, and no "Example Usage" block. Refutable: a `write` whose content is the raw `{"results": {...}}` envelope (the WP-LB-G failure) or carries fences / prose / an example block violates the form contract.
+
+### Scenario: one dispatch → one client-tool deliverable (granularity invariant)
+**Given** a task that produces multiple files (e.g. a module plus its test file)
+**When** the loop-driver serves it
+**Then** the loop-driver decomposes the work across turns — one `write` (one dispatch → one deliverable) per turn — rather than one dispatch producing N files. Refutable: a single dispatch whose deliverable encodes multiple files (the Spike χ-P6 `filename\ncontent` shape) violates the granularity invariant. *(Across-turn decomposition under a real loop-driver is BUILD/PLAY work per ADR-033 §6b; this scenario states the invariant the BUILD must hold.)*
+
+### Scenario (defense-in-depth, optional): the bridge backstop normalizes a stray enclosing fence
+**Given** a deliverable that — despite the directive — still arrives wrapped in a single enclosing code fence
+**When** the artifact-bridge marshals it
+**Then** an optional conservative backstop strips the single enclosing fence before marshalling. This is a defense-in-depth net, not the contract (the directive is the primary mechanism); the backstop does not attempt heuristic extraction from multi-fence output (Spike χ F-χ.1 — that path is fragile). Refutable: a backstop that attempts first/largest-fence extraction across multiple fences violates the backstop's conservative scope.
+
+### Scenario (integration, D1 — BUILD fix shaped to ADR-035): deliverable extraction stores the terminal agent's output, not the raw dict
+**Given** a multi-agent capability ensemble (`code-generator`: coder → critic → synthesizer) whose execution result has no top-level `synthesis` (the dependency-based model never populates it — `results_processor.py:21`)
+**When** the substrate write extracts the deliverable (`_extract_synthesizer_text`)
+**Then** it stores the terminal agent's output (the last successful agent — here `synthesizer`), not `json.dumps(raw_result)`. Refutable: a stored deliverable equal to `{"results": {coder, critic, synthesizer}, …}` (the Finding D raw envelope) violates the D1 extraction fix.
+
+### Scenario (D1): terminal-node failure falls back to the last successful agent
+**Given** a multi-agent ensemble whose terminal agent (synthesizer) failed or timed out (`response: null`, `status: failed` — observed in Spike χ-P1)
+**When** the deliverable is extracted
+**Then** extraction falls back to the last *successful* agent's output (e.g. `coder`), not the failed node's null and not the raw dict. Refutable: storing null, the failed node, or `json.dumps(raw_result)` when a successful upstream agent exists violates the fallback.
+
+### Preservation: the artifact-bridge fidelity FC (ADR-034) is unchanged
+**Given** ADR-034's artifact-bridge marshals exactly what is stored (fidelity FC)
+**When** ADR-035's form contract is in effect
+**Then** the bridge still marshals the stored deliverable faithfully — ADR-035 changes what the ensemble *produces and stores* (bare form), not the bridge's faithfulness; the bridge gains no summarization or transformation step. Refutable: a bridge that transforms or summarizes the deliverable to "fix" its form violates the fidelity FC (the fix belongs upstream, at production).
+
+### Preservation: ADR-025 substrate routing is unchanged
+**Given** a capability ensemble with `output_substrate: artifact`
+**When** the boundary directive is injected into its dispatch
+**Then** the deliverable still routes to the `SessionArtifactStore` exactly as before; only the produced content's *form* changes, not the routing or the store. Refutable: a change to substrate routing triggered by the form directive violates this preservation.
+
+### Preservation: inter-ensemble composition keeps ADR-024's advisory-schema stance (carve-out boundary)
+**Given** two capability ensembles composed (an upstream deliverable consumed by a downstream ensemble — NOT a client-tool deliverable)
+**When** the upstream produces output
+**Then** ADR-024's advisory `output_schema` stance still governs — ADR-035 refines only the client-tool-deliverable path. Refutable: applying the boundary bare-output form-directive to a non-client-tool composition dispatch violates the ADR-024/ADR-035 carve-out scope.
+
+### Preservation: the single-turn answer-a-question surface (ADR-027) is untouched
+**Given** a non-tool-driven request (no client tools in the request → dispatch-pipeline path, WP-LB-A discriminator)
+**When** it is served
+**Then** ADR-035's boundary directive does not engage (it is specific to client-tool deliverables on the tool-driven surface); the text pipeline's behavior is unchanged.
+
+### Cycle Acceptance Criteria (Finding D)
+
+| Criterion | Specified layer | Verification method | Layer-match check |
+|---|---|---|---|
+| A delegated client-tool deliverable lands as usable bare content (the north-star "delegate work, apply locally" loop produces a runnable file) | Real OpenCode round-trip (real `llm-orc serve` + real client + local Ollama, $0) | The real-serving-surface integration test (TS-12/13) + the $0 real-OpenCode smoke test, exercised with the boundary directive in effect; the per-component scenarios above stub the client | **no** — the loop-driver/bridge scenarios stub the client; BUILD Step 5.5 must exercise the real-client round-trip (the WP-A "never run through the client" failure is the thing to avoid) |
+| The produced deliverable is bare client-tool content across deliverable types | API-boundary behavior, then real-client | The "bare client-tool content" integration scenario above (single deliverable); breadth across types is grounded n=4 (Spike χ.2) but trajectory/escalated-tier breadth is PLAY (ADR-033 §6b axis-2) | partial — single-dispatch grounded; sustained-trajectory compliance is a PLAY target (Conditional Acceptance, ADR-097) |
+| D1: multi-agent deliverable extraction stores the terminal/last-successful agent's output | Substrate-write layer (unit/integration) | The two D1 scenarios above, verified against the real `SessionArtifactStore` | yes (1:1 at the substrate-write layer) |

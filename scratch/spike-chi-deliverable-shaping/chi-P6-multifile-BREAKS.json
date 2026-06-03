@@ -1,0 +1,5 @@
+{
+  "prompt": "bare-output, TWO files calc.py + test_calc.py in one dispatch",
+  "verdict": "BREAKS: ad-hoc 'filename\\ncontent' convention (unparseable by a single write) + synthesizer re-added '**Critic's Notes:**' prose",
+  "synthesizer_response": "calc.py\ndef add(a, b):\n    return a + b\n\ntest_calc.py\nimport calc\n\ndef test_add_positive(): ...\n\n**Critic's Notes:**\n- Updated test cases..."
+}
