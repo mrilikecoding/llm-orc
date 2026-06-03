@@ -82,6 +82,7 @@ __all__ = [
     "ToolDispatcher",
     "TurnDecision",
     "TurnOutcome",
+    "compose_form_directive",
 ]
 
 _GENERATION_TOOL = "invoke_ensemble"
@@ -271,15 +272,24 @@ class LoopDriver:
 
         action = enforced.action
         if action.name == _GENERATION_TOOL:
+            # The tool-mapping decision the driver owns (ADR-034 §Decision 4):
+            # generation deliverables map to a client ``write``; richer
+            # mapping (``edit``/``bash``) is deferred (LB-3).
+            destination_tool = "write"
             envelope, ensemble, file_path = await self._delegate_generation(
-                action, context
+                action, context, destination_tool
             )
             self._emit_turn_decision(
-                dispatch_id, turn_index, "write", ensemble, False, enforced.truncated
+                dispatch_id,
+                turn_index,
+                destination_tool,
+                ensemble,
+                False,
+                enforced.truncated,
             )
             return ApplyWork(
                 invocation_id=action.id,
-                tool_name="write",
+                tool_name=destination_tool,
                 file_path=file_path,
                 envelope=envelope,
                 delegated_ensemble=ensemble,
@@ -316,7 +326,7 @@ class LoopDriver:
         return [{"role": "system", "content": _DELEGATION_GUIDANCE}, *messages]
 
     async def _delegate_generation(
-        self, action: ToolCall, context: SessionContext
+        self, action: ToolCall, context: SessionContext, destination_tool: str
     ) -> tuple[DispatchEnvelope, str, str]:
         """Dispatch the per-turn callee ensemble and return its deliverable envelope.
 
@@ -324,19 +334,28 @@ class LoopDriver:
         the generation task (selected by task content — AS-10); the driver
         dispatches that single ensemble (no routing-planner / synthesizer
         stage — FC-44) and returns the deliverable *envelope* (ADR-024) for
-        the Terminal to marshal. Returns ``(envelope, capability, file_path)``;
-        the capability name feeds the ``TurnDecision`` diagnostic. Richer
-        tool-mapping (``edit``/``bash``) and capability-list validation are
-        deferred to the WP-D Capability List Builder integration.
+        the Terminal to marshal. The dispatch input carries the
+        ``destination_tool``-keyed form directive (ADR-035; FC-53/54).
+        Returns ``(envelope, capability, file_path)``; the capability name
+        feeds the ``TurnDecision`` diagnostic. Richer tool-mapping
+        (``edit``/``bash``) and capability-list validation are deferred to
+        the WP-D Capability List Builder integration.
         """
         args = _parse_arguments(action.arguments_json)
         capability = _string_field(args, "name")
         file_path = _string_field(args, "filePath")
+        # ADR-035 decision 1 (FC-53): the deliverable is bound for a client
+        # tool, so the dispatch input carries the destination-keyed
+        # bare-output directive alongside the generation task. Composed
+        # per-dispatch here at the boundary — never baked into ensemble
+        # YAML (destination-agnostic preservation, decision 2).
+        directive = compose_form_directive(destination_tool)
+        task = _string_field(args, "input")
         result = await self._tool_dispatch.dispatch(
             InternalToolCall(
                 id=action.id,
                 name=_GENERATION_TOOL,
-                arguments={"name": capability, "input": _string_field(args, "input")},
+                arguments={"name": capability, "input": f"{task}\n\n{directive}"},
             ),
             session_id=context.state.identity.value,
         )
@@ -368,6 +387,41 @@ class LoopDriver:
                 replanned_after_truncation=replanned_after_truncation,
             )
         )
+
+
+_DIRECTIVE_SUBJECTS = {
+    "write": "the exact raw bytes of the file",
+    "bash": "the exact shell command",
+    "edit": "the exact replacement content",
+}
+"""Destination-keyed directive subjects (ADR-035 §Decision 1).
+
+``write`` → bare file bytes; ``bash`` → bare command; ``edit`` → bare
+replacement content. ``read`` never delegates generation, so it has no
+directive.
+"""
+
+
+def compose_form_directive(tool: str) -> str:
+    """Compose the destination-keyed bare-output directive (ADR-035, FC-53/54).
+
+    The form contract for a client-tool-bound deliverable: the
+    capability ensemble produces content already in the destination
+    tool's argument form, so the Artifact Bridge marshals it unchanged.
+    The wording is framework-owned prose grounded by Spike χ/χ.2 (n=4
+    first-try compliance) and tunable without design change (LB-6) —
+    FC-53/54 pin the directive's *presence* and *keying*, not its text.
+
+    Raises ``ValueError`` for a destination with no directive rather
+    than emitting a mismatched form (FC-54's zero-mismatch criterion).
+    """
+    subject = _DIRECTIVE_SUBJECTS.get(tool)
+    if subject is None:
+        raise ValueError(f"no form directive for destination tool {tool!r}")
+    return (
+        f"Output ONLY {subject}. No markdown fences, no prose, "
+        "no explanations, no example blocks."
+    )
 
 
 def _invoke_ensemble_tool_def(capabilities: list[str]) -> dict[str, Any]:
