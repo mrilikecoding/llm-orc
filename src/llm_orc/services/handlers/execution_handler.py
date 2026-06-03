@@ -96,7 +96,6 @@ class ExecutionHandler:
 
         return {
             "results": result.get("results", {}),
-            "synthesis": result.get("synthesis"),
             "deliverable": result.get("deliverable"),
             "status": status,
             "raw_output": config.raw_output,

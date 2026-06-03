@@ -714,7 +714,7 @@ class TestInvokeEnsemble:
         """
         normalized_result = {
             "results": {"analyst": {"response": "ok"}},
-            "synthesis": "ensemble's own synthesis",
+            "deliverable": "ensemble's own synthesis",
             "status": "success",
             "raw_output": False,
         }
@@ -754,7 +754,7 @@ class TestInvokeEnsemble:
         """
         raw_result = {
             "results": {"classifier": {"intent": "refactor"}},
-            "synthesis": None,
+            "deliverable": None,
             "status": "success",
             "raw_output": True,
         }
@@ -795,7 +795,7 @@ class TestInvokeEnsemble:
         """
         normalized_result = {
             "results": {"a": "x"},
-            "synthesis": "raw",
+            "deliverable": "raw",
             "status": "success",
             "raw_output": False,
         }
@@ -894,7 +894,7 @@ class TestAutonomyGate:
         operations = _ScriptedOperations(
             invoke_result={
                 "results": {"a": "x"},
-                "synthesis": "ok",
+                "deliverable": "ok",
                 "status": "success",
                 "raw_output": True,  # bypass summarizer so invoke path stays simple
             },
@@ -1236,7 +1236,7 @@ class TestCalibrationGateInterposition:
     async def test_invoke_calls_gate_with_session_id_and_raw_result(self) -> None:
         raw_result = {
             "results": {"a": {"response": "hi"}},
-            "synthesis": "syn",
+            "deliverable": "syn",
             "status": "success",
             "raw_output": False,
         }
@@ -1271,7 +1271,7 @@ class TestCalibrationGateInterposition:
         """
         raw_result = {
             "results": {"a": {"response": "ok"}},
-            "synthesis": "syn",
+            "deliverable": "syn",
             "status": "success",
             "raw_output": False,
         }
@@ -1308,7 +1308,7 @@ class TestCalibrationGateInterposition:
         """
         raw_result = {
             "results": {"a": {"response": "ok"}},
-            "synthesis": "syn",
+            "deliverable": "syn",
             "status": "success",
             "raw_output": False,
         }
@@ -1600,7 +1600,7 @@ class TestTierEscalationRouterInterposition:
         operations = _ScriptedOperations(
             invoke_result={
                 "results": {"a": "x"},
-                "synthesis": "ok",
+                "deliverable": "ok",
                 "status": "success",
                 "raw_output": True,
             }
@@ -1651,7 +1651,7 @@ class TestTierEscalationRouterInterposition:
         operations = _ScriptedOperations(
             invoke_result={
                 "results": {},
-                "synthesis": "",
+                "deliverable": "",
                 "status": "success",
                 "raw_output": True,
             }
@@ -1786,7 +1786,7 @@ class TestVerdictToTierMappingDeterministicViaDispatch:
         operations = _ScriptedOperations(
             invoke_result={
                 "results": {},
-                "synthesis": "",
+                "deliverable": "",
                 "status": "success",
                 "raw_output": True,
             }
@@ -1879,7 +1879,7 @@ class TestADR011PreservationUnderTierEscalation:
         operations = _ScriptedOperations(
             invoke_result={
                 "results": {},
-                "synthesis": "",
+                "deliverable": "",
                 "status": "success",
                 "raw_output": True,
             }
@@ -1930,7 +1930,7 @@ class TestADR011PreservationUnderTierEscalation:
         ops_cheap = _ScriptedOperations(
             invoke_result={
                 "results": {"a": "cheap-output"},
-                "synthesis": "cheap-synth",
+                "deliverable": "cheap-synth",
                 "status": "success",
                 "raw_output": True,
             }
@@ -1951,7 +1951,7 @@ class TestADR011PreservationUnderTierEscalation:
         ops_esc = _ScriptedOperations(
             invoke_result={
                 "results": {"a": "escalated-output"},
-                "synthesis": "escalated-synth",
+                "deliverable": "escalated-synth",
                 "status": "success",
                 "raw_output": True,
             }
@@ -2086,7 +2086,7 @@ class TestTierEscalationAuditorWiring:
         ops = _ScriptedOperations(
             invoke_result={
                 "results": {},
-                "synthesis": "",
+                "deliverable": "",
                 "status": "success",
                 "raw_output": True,
             }
@@ -2373,7 +2373,7 @@ class TestDispatchEventSubstrateIntegration:
         substrate = DispatchEventSubstrate()
         sink = _RecordingEventSink()
         substrate.register_sink(sink)
-        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        ops = _ScriptedOperations(invoke_result={"deliverable": "ok"})
         dispatch = _build_dispatch(operations=ops, event_substrate=substrate)
 
         await dispatch.dispatch(
@@ -2412,7 +2412,7 @@ class TestDispatchEventSubstrateIntegration:
         substrate = DispatchEventSubstrate()
         sink = _RecordingEventSink()
         substrate.register_sink(sink)
-        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        ops = _ScriptedOperations(invoke_result={"deliverable": "ok"})
         gate = _ScriptedCalibrationGate(verdict="proceed")
         router = TestTierEscalationRouterInterposition._build_router_with_skill(
             "code-generator",
@@ -2513,7 +2513,7 @@ class TestDispatchEventSubstrateIntegration:
     @pytest.mark.asyncio
     async def test_substrate_absent_preserves_pre_cycle_6_path(self) -> None:
         """No event_substrate configured — invoke_ensemble works as before."""
-        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        ops = _ScriptedOperations(invoke_result={"deliverable": "ok"})
         dispatch = _build_dispatch(operations=ops)
 
         result = await dispatch.dispatch(
@@ -2573,7 +2573,7 @@ class TestToolCallEmitLogger:
         substrate = DispatchEventSubstrate()
         ledger: list[object] = []
         substrate.register_sink(_OrderingSink(ledger))
-        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        ops = _ScriptedOperations(invoke_result={"deliverable": "ok"})
         logger = _RecordingToolCallEmitLogger()
         dispatch = _build_dispatch(
             operations=ops,
@@ -2607,7 +2607,7 @@ class TestToolCallEmitLogger:
         """The log line carries the substrate-allocated ``dispatch_id`` and
         the literal ``invoke_ensemble`` tool name."""
         substrate = DispatchEventSubstrate()
-        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        ops = _ScriptedOperations(invoke_result={"deliverable": "ok"})
         logger = _RecordingToolCallEmitLogger()
         dispatch = _build_dispatch(
             operations=ops,
@@ -2637,7 +2637,7 @@ class TestToolCallEmitLogger:
     ) -> None:
         """Tool Dispatch works as before when the optional logger is None."""
         substrate = DispatchEventSubstrate()
-        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        ops = _ScriptedOperations(invoke_result={"deliverable": "ok"})
         dispatch = _build_dispatch(
             operations=ops,
             event_substrate=substrate,
@@ -2662,7 +2662,7 @@ class TestToolCallEmitLogger:
         """Without a substrate there is no dispatch_id to log — the logger
         is not called even when configured. Symmetric with the
         ``DispatchTiming`` emission contract."""
-        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        ops = _ScriptedOperations(invoke_result={"deliverable": "ok"})
         logger = _RecordingToolCallEmitLogger()
         dispatch = _build_dispatch(
             operations=ops,
@@ -2745,7 +2745,7 @@ class TestInvokeEnsembleReturnsTypedEnvelope:
         """The envelope's status/primary/diagnostics carry the dispatch outcome."""
         substrate = DispatchEventSubstrate()
         ops = _ScriptedOperations(
-            invoke_result={"synthesis": "the text-summarizer's deliverable"}
+            invoke_result={"deliverable": "the text-summarizer's deliverable"}
         )
         dispatch = _build_dispatch(
             operations=ops,
@@ -2788,7 +2788,7 @@ class TestInvokeEnsembleReturnsTypedEnvelope:
         substrate = DispatchEventSubstrate()
         ledger: list[object] = []
         substrate.register_sink(_OrderingSink(ledger))
-        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        ops = _ScriptedOperations(invoke_result={"deliverable": "ok"})
         dispatch = _build_dispatch(operations=ops, event_substrate=substrate)
 
         result = await dispatch.dispatch(
@@ -2813,7 +2813,7 @@ class TestInvokeEnsembleReturnsTypedEnvelope:
     ) -> None:
         """The DispatchTiming(end) event's duration_seconds projects to envelope."""
         substrate = DispatchEventSubstrate()
-        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        ops = _ScriptedOperations(invoke_result={"deliverable": "ok"})
         dispatch = _build_dispatch(operations=ops, event_substrate=substrate)
 
         result = await dispatch.dispatch(
@@ -2841,7 +2841,7 @@ class TestInvokeEnsembleReturnsTypedEnvelope:
     ) -> None:
         """TierSelection event projects model_profile, tier, topaz_skill."""
         substrate = DispatchEventSubstrate()
-        ops = _ScriptedOperations(invoke_result={"synthesis": "ok"})
+        ops = _ScriptedOperations(invoke_result={"deliverable": "ok"})
 
         # A real TierRouter wiring would be heavy for this test — emit
         # a TierSelection event directly to verify the projection logic.
@@ -2894,7 +2894,7 @@ class TestInvokeEnsembleReturnsTypedEnvelope:
         ops = _ScriptedOperations(
             invoke_result={
                 "raw_output": True,
-                "synthesis": "irrelevant",
+                "deliverable": "irrelevant",
                 "results": {"agent": {"response": "passthrough"}},
             }
         )
@@ -2933,7 +2933,7 @@ class TestInvokeEnsembleReturnsTypedEnvelope:
         """
         ops = _ScriptedOperations(
             invoke_result={
-                "synthesis": "ok",
+                "deliverable": "ok",
                 "metadata": {"tokens": 42, "model": "qwen3:8b"},
             }
         )
@@ -2974,13 +2974,13 @@ class TestEnvelopeStructuredPopulation:
     async def test_structured_populated_when_schema_declared_and_response_is_json(
         self,
     ) -> None:
-        """JSON synthesis text parses into envelope.structured."""
+        """A JSON deliverable parses into envelope.structured."""
         substrate = DispatchEventSubstrate()
-        # claim-extractor under output_schema declaration: synthesizer
-        # would emit a JSON document conforming to the schema.
+        # claim-extractor under output_schema declaration: the resolved
+        # deliverable is a JSON document conforming to the schema.
         ops = _ScriptedOperations(
             invoke_result={
-                "synthesis": (
+                "deliverable": (
                     '{"claims": [{"text": "x", "label": "established"}, '
                     '{"text": "y", "label": "contested"}]}'
                 )
@@ -3045,7 +3045,7 @@ class TestEnvelopeStructuredPopulation:
         # JSON, structured stays None — the advisory-parsing contract.
         ops = _ScriptedOperations(
             invoke_result={
-                "synthesis": (
+                "deliverable": (
                     "- Claim 1 about the source (established)\n"
                     "- Claim 2 about the source (contested)"
                 )
@@ -3078,7 +3078,7 @@ class TestEnvelopeStructuredPopulation:
     async def test_structured_stays_none_when_ensemble_has_no_schema(self) -> None:
         """No schema declared → no structured population, reader still consulted."""
         substrate = DispatchEventSubstrate()
-        ops = _ScriptedOperations(invoke_result={"synthesis": '{"k": "v"}'})
+        ops = _ScriptedOperations(invoke_result={"deliverable": '{"k": "v"}'})
         reader = _RecordingOutputSchemaReader(schemas={})  # no ensemble keyed
         dispatch = _build_dispatch(
             operations=ops,
@@ -3109,7 +3109,7 @@ class TestEnvelopeStructuredPopulation:
         field is just unconditionally None.
         """
         substrate = DispatchEventSubstrate()
-        ops = _ScriptedOperations(invoke_result={"synthesis": '{"k": "v"}'})
+        ops = _ScriptedOperations(invoke_result={"deliverable": '{"k": "v"}'})
         dispatch = _build_dispatch(
             operations=ops,
             event_substrate=substrate,
@@ -3196,7 +3196,7 @@ class TestSubstrateRoutingBranch:
         ops = _ScriptedOperations(
             invoke_result={
                 "results": {"coder": {"response": "def reverse(s): ..."}},
-                "synthesis": "def reverse_string(s):\n    return s[::-1]\n",
+                "deliverable": "def reverse_string(s):\n    return s[::-1]\n",
             }
         )
         dispatch = _build_dispatch(
@@ -3255,7 +3255,7 @@ class TestSubstrateRoutingBranch:
             }
         )
         ops = _ScriptedOperations(
-            invoke_result={"synthesis": "Verdict: Proceed; confidence: 0.91"}
+            invoke_result={"deliverable": "Verdict: Proceed; confidence: 0.91"}
         )
         dispatch = _build_dispatch(
             operations=ops,
@@ -3307,7 +3307,7 @@ class TestSubstrateRoutingBranch:
         )
         ops = _ScriptedOperations(
             invoke_result={
-                "synthesis": "- claim 1 (established)\n- claim 2 (contested)"
+                "deliverable": "- claim 1 (established)\n- claim 2 (contested)"
             }
         )
         dispatch = _build_dispatch(
@@ -3351,7 +3351,7 @@ class TestSubstrateRoutingBranch:
             }
         )
         ops = _ScriptedOperations(
-            invoke_result={"synthesis": "improved prose paragraph"}
+            invoke_result={"deliverable": "improved prose paragraph"}
         )
         dispatch = _build_dispatch(
             operations=ops,
@@ -3399,7 +3399,7 @@ class TestSubstrateRoutingBranch:
         )
         raw_result_dict = {
             "results": {"classifier": {"intent": "refactor"}},
-            "synthesis": None,
+            "deliverable": None,
             "raw_output": True,
         }
         ops = _ScriptedOperations(invoke_result=raw_result_dict)
@@ -3460,7 +3460,6 @@ class TestSubstrateRoutingBranch:
                         "status": "success",
                     },
                 },
-                "synthesis": None,
                 "deliverable": terminal_output,
             }
         )
@@ -3521,7 +3520,6 @@ class TestSubstrateRoutingBranch:
                     "critic": {"response": None, "status": "failed"},
                     "synthesizer": {"response": None, "status": "failed"},
                 },
-                "synthesis": None,
                 "deliverable": fallback_output,
             }
         )
@@ -3561,7 +3559,9 @@ class TestSubstrateRoutingBranch:
         ``session_artifact_store`` preserves the WP-D inline-response
         behavior — substrate branch is inert; harness fires per ADR-004.
         """
-        ops = _ScriptedOperations(invoke_result={"synthesis": "x", "raw_output": False})
+        ops = _ScriptedOperations(
+            invoke_result={"deliverable": "x", "raw_output": False}
+        )
         dispatch = _build_dispatch(
             operations=ops,
             harness=_build_harness(returns={"deliverable": "summary"}),
@@ -3606,7 +3606,7 @@ class TestSubstrateRoutingBranch:
                 )
             }
         )
-        ops = _ScriptedOperations(invoke_result={"synthesis": "def f(): pass\n"})
+        ops = _ScriptedOperations(invoke_result={"deliverable": "def f(): pass\n"})
         dispatch = _build_dispatch(
             operations=ops,
             event_substrate=substrate_events,
@@ -3800,7 +3800,7 @@ class TestShapeCalibrationEvaluationInput:
         )
         payload = _shape_calibration_evaluation_input(
             substrate_config=config,
-            raw_result={"synthesis": "def reverse(s): return s[::-1]"},
+            raw_result={"deliverable": "def reverse(s): return s[::-1]"},
             reference=self._reference(),
             primary="Wrote code-generator to ... (1.2 KB, application/python).",
             structured=None,
@@ -3825,7 +3825,7 @@ class TestShapeCalibrationEvaluationInput:
         }
         payload = _shape_calibration_evaluation_input(
             substrate_config=config,
-            raw_result={"synthesis": "..."},
+            raw_result={"deliverable": "..."},
             reference=self._reference(),
             primary="summary line",
             structured=structured,
@@ -3848,7 +3848,7 @@ class TestShapeCalibrationEvaluationInput:
         )
         payload = _shape_calibration_evaluation_input(
             substrate_config=config,
-            raw_result={"synthesis": "def f(): return 42"},
+            raw_result={"deliverable": "def f(): return 42"},
             reference=self._reference(),
             primary="summary line",
             structured=None,
@@ -3868,7 +3868,7 @@ class TestShapeCalibrationEvaluationInput:
         )
         payload = _shape_calibration_evaluation_input(
             substrate_config=config,
-            raw_result={"synthesis": "deliverable text"},
+            raw_result={"deliverable": "deliverable text"},
             reference=self._reference(),
             primary="primary",
             structured={"k": "v"},
@@ -3909,7 +3909,7 @@ class TestSubstrateCalibrationInterposition:
         gate = _RecordingCalibrationGate()
         # claim-extractor in calibration — mark composed so check fires.
         gate.mark_composed(session_id="session-calib", ensemble_name="claim-extractor")
-        ops = _ScriptedOperations(invoke_result={"synthesis": "- claim 1\n- claim 2"})
+        ops = _ScriptedOperations(invoke_result={"deliverable": "- claim 1\n- claim 2"})
         dispatch = _build_dispatch(
             operations=ops,
             event_substrate=DispatchEventSubstrate(),
@@ -3954,7 +3954,7 @@ class TestSubstrateCalibrationInterposition:
         gate = _RecordingCalibrationGate()
         gate.mark_composed(session_id="session-codegen", ensemble_name="code-generator")
         deliverable = "def reverse(s):\n    return s[::-1]\n"
-        ops = _ScriptedOperations(invoke_result={"synthesis": deliverable})
+        ops = _ScriptedOperations(invoke_result={"deliverable": deliverable})
         dispatch = _build_dispatch(
             operations=ops,
             event_substrate=DispatchEventSubstrate(),
@@ -4005,7 +4005,7 @@ class TestSubstrateCalibrationInterposition:
             session_id="session-inline",
             ensemble_name="agentic-calibration-checker",
         )
-        raw = {"synthesis": "Verdict: Proceed"}
+        raw = {"deliverable": "Verdict: Proceed"}
         ops = _ScriptedOperations(invoke_result=raw)
         dispatch = _build_dispatch(
             operations=ops,
@@ -4056,7 +4056,7 @@ class TestSubstrateCalibrationInterposition:
         )
         gate = _RecordingCalibrationGate(check_raises=RuntimeError("checker exploded"))
         gate.mark_composed(session_id="session-fail", ensemble_name="claim-extractor")
-        ops = _ScriptedOperations(invoke_result={"synthesis": "- claim"})
+        ops = _ScriptedOperations(invoke_result={"deliverable": "- claim"})
         dispatch = _build_dispatch(
             operations=ops,
             event_substrate=DispatchEventSubstrate(),

@@ -106,7 +106,7 @@ async def test_envelope_diagnostics_dispatch_id_matches_event_stream() -> None:
         invoke_result={
             "ensemble": "text-summarizer",
             "status": "completed",
-            "synthesis": "the deliverable text",
+            "deliverable": "the deliverable text",
             "metadata": {"tokens": 100},
         }
     )
@@ -159,7 +159,7 @@ async def test_envelope_diagnostics_carry_duration_from_dispatch_timing_end() ->
     """
     substrate = DispatchEventSubstrate()
     operations = _ScriptedOperations(
-        invoke_result={"synthesis": "deliverable", "metadata": {}}
+        invoke_result={"deliverable": "deliverable", "metadata": {}}
     )
     harness = ResultSummarizerHarness(
         invoker=_StubSummarizerInvoker(summary="summary"),

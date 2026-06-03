@@ -20,8 +20,7 @@ def finalize_result(
     adaptive_stats: dict[str, Any] | None = None,
 ) -> ExecutionResult:
     """Finalize execution result with metadata and usage summary."""
-    # Calculate usage totals (no coordinator synthesis in dependency-based model)
-    usage_summary = calculate_usage_summary(agent_usage, None)
+    usage_summary = calculate_usage_summary(agent_usage)
 
     # Finalize result
     end_time = time.time()
@@ -37,9 +36,7 @@ def finalize_result(
     return result
 
 
-def calculate_usage_summary(
-    agent_usage: dict[str, Any], synthesis_usage: dict[str, Any] | None
-) -> dict[str, Any]:
+def calculate_usage_summary(agent_usage: dict[str, Any]) -> dict[str, Any]:
     """Calculate aggregated usage summary."""
     summary = {
         "agents": agent_usage,
@@ -60,19 +57,6 @@ def calculate_usage_summary(
         summary["totals"]["total_output_tokens"] += usage.get("output_tokens", 0)
         summary["totals"]["total_cost_usd"] += usage.get("cost_usd", 0.0)
         summary["totals"]["total_duration_ms"] += usage.get("duration_ms", 0)
-
-    # Add synthesis usage
-    if synthesis_usage:
-        summary["synthesis"] = synthesis_usage
-        summary["totals"]["total_tokens"] += synthesis_usage.get("total_tokens", 0)
-        summary["totals"]["total_input_tokens"] += synthesis_usage.get(
-            "input_tokens", 0
-        )
-        summary["totals"]["total_output_tokens"] += synthesis_usage.get(
-            "output_tokens", 0
-        )
-        summary["totals"]["total_cost_usd"] += synthesis_usage.get("cost_usd", 0.0)
-        summary["totals"]["total_duration_ms"] += synthesis_usage.get("duration_ms", 0)
 
     return summary
 

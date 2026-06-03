@@ -152,7 +152,7 @@ async def test_fc22_dispatch_id_consistent_across_event_envelope_artifact(
     operations = _ScriptedOperations(
         invoke_results={
             "code-generator": {
-                "synthesis": "def reverse(s):\n    return s[::-1]\n",
+                "deliverable": "def reverse(s):\n    return s[::-1]\n",
                 "results": {"coder": {"response": "def reverse(s): ..."}},
             }
         }
@@ -230,7 +230,7 @@ async def test_fc26_substrate_routed_dispatch_does_not_invoke_harness(
     operations = _ScriptedOperations(
         invoke_results={
             "claim-extractor": {
-                "synthesis": "- claim 1 (established)\n- claim 2 (contested)",
+                "deliverable": "- claim 1 (established)\n- claim 2 (contested)",
             }
         }
     )
@@ -287,7 +287,7 @@ async def test_fc26_inline_dispatch_invokes_harness_once(
     operations = _ScriptedOperations(
         invoke_results={
             "agentic-calibration-checker": {
-                "synthesis": "Verdict: Proceed; confidence: 0.91",
+                "deliverable": "Verdict: Proceed; confidence: 0.91",
             }
         }
     )
@@ -349,9 +349,9 @@ async def test_fc26_mixed_mode_session_honors_per_dispatch_decision(
     artifact_store = SessionArtifactStore(agentic_sessions_root=tmp_path)
     operations = _ScriptedOperations(
         invoke_results={
-            "code-generator": {"synthesis": "def f(): pass\n"},
+            "code-generator": {"deliverable": "def f(): pass\n"},
             "agentic-calibration-checker": {
-                "synthesis": "Verdict: Proceed",
+                "deliverable": "Verdict: Proceed",
             },
         }
     )

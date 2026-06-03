@@ -77,7 +77,7 @@ class _StubEnsembleOperations:
         self.invoke_calls.append(dict(arguments))
         return {
             "results": {"a": {"response": "ok"}},
-            "synthesis": None,
+            "deliverable": None,
             "status": "success",
             "raw_output": True,
         }

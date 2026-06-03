@@ -1370,10 +1370,8 @@ class OrchestratorToolDispatch:
         because this success path explicitly closed.
         """
         assert self._session_artifact_store is not None  # narrowed by caller
-        deliverable_text = (
-            _resolved_deliverable(raw_result)
-            or _extract_synthesizer_text(raw_result)
-            or json.dumps(raw_result, default=str)
+        deliverable_text = _resolved_deliverable(raw_result) or json.dumps(
+            raw_result, default=str
         )
         content_type = _resolve_substrate_content_type(
             topaz_skill=substrate_config.topaz_skill
@@ -1586,9 +1584,7 @@ class OrchestratorToolDispatch:
         schema = self._output_schema_reader.output_schema_for(ensemble_name)
         if schema is None:
             return None
-        response_text = _resolved_deliverable(raw_result) or _extract_synthesizer_text(
-            raw_result
-        )
+        response_text = _resolved_deliverable(raw_result)
         if response_text is None:
             return None
         try:
@@ -1791,9 +1787,7 @@ def _shape_calibration_evaluation_input(
     if structured is not None:
         payload["structured"] = structured
     if substrate_config.calibration_substrate_access == "artifact":
-        deliverable = _resolved_deliverable(raw_result) or _extract_synthesizer_text(
-            raw_result
-        )
+        deliverable = _resolved_deliverable(raw_result)
         if deliverable is not None:
             payload["artifact_content"] = deliverable
     return payload
@@ -1813,31 +1807,6 @@ def _resolved_deliverable(raw_result: dict[str, Any]) -> str | None:
     deliverable = raw_result.get("deliverable")
     if isinstance(deliverable, str) and deliverable:
         return deliverable
-    return None
-
-
-def _extract_synthesizer_text(raw_result: dict[str, Any]) -> str | None:
-    """Pull the synthesizer's response text from the execution result.
-
-    Mirrors :func:`~llm_orc.agentic.result_summarizer_harness._extract_summary`'s
-    forgiving contract: prefer ``synthesis`` when populated, otherwise
-    use the single-agent ensemble's lone ``response`` field. Returns
-    ``None`` when neither shape applies — multi-agent ensembles without
-    a synthesizer carry per-agent responses that an envelope-time JSON
-    parse cannot meaningfully unify (the legacy leg behind
-    :func:`_resolved_deliverable`, kept for raw results that did not
-    flow through the executor's deliverable resolution).
-    """
-    synthesis = raw_result.get("synthesis")
-    if isinstance(synthesis, str) and synthesis:
-        return synthesis
-    results = raw_result.get("results")
-    if isinstance(results, dict) and len(results) == 1:
-        only_result = next(iter(results.values()))
-        if isinstance(only_result, dict):
-            response = only_result.get("response")
-            if isinstance(response, str) and response:
-                return response
     return None
 
 
