@@ -107,3 +107,61 @@ sequenced **before** WP-LB-E/F (both downstream of delegation working):
   delegate, that is the signal to loop back to DECIDE on the delegation-decision
   mechanism (force via `tool_choice`, a routing pre-filter, or a different
   driver-vs-delegation split) — decided on evidence, not speculation.
+
+## Update — WP-LB-G built + validated (2026-06-02 evening)
+
+WP-LB-G landed (commit offering the seat-filler an `invoke_ensemble` tool
+enumerating the capability list + a delegate-vs-act-directly system prompt).
+The real-OpenCode acceptance gate was re-run (same rig: real `llm-orc serve` +
+qwen3:14b seat-filler, $0).
+
+**Delegation fires — Finding B resolved at the mechanism level.** The serve log
+shows the cheap seat-filler *chose to delegate*:
+
+```
+tool-call emit: tool=invoke_ensemble dispatch_id=…-dispatch-0002
+dispatch start: ensemble=code-generator …
+calibration verdict: proceed ensemble=code-generator …
+tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation …
+```
+
+The `code-generator` ensemble ran, wrote a substrate artifact, the Artifact
+Bridge marshalled it, and the surface returned `finish_reason: tool_calls` with
+a `write` to the requested path. The full callee → bridge → ApplyWork chain is
+reachable end-to-end with a real model. The cheap-driver-skips-delegation
+tension did **not** bite here (the nudge held); whether it holds across prompts
+and clients remains an axis-2 / PLAY observation.
+
+**But Finding D (new blocker) — the marshalled deliverable is the raw ensemble
+result envelope, not usable file content.** The `write` content was:
+
+```json
+{"results": {"coder": {"response": "Here's a function … ```python\ndef fibonacci(n): …```\n### Key Points …"}}}
+```
+
+The bridge faithfully marshalled what was stored; the problem is upstream, at
+the ADR-025 substrate-write / ensemble-output-contract layer. Two layers:
+
+- **D1 — wrong extraction.** The artifact (`code-generator.py`) holds the full
+  multi-agent `{"results": {coder, critic, synthesizer}}` dict, not the
+  synthesizer agent's final output. The substrate write stored the raw ensemble
+  result structure as the deliverable.
+- **D2 — form drift.** Even the synthesizer's output is conversational markdown
+  (prose + fenced code + "Key Points"/"Example Usage"), not the bare file
+  content a `write` needs. This is the cycle's recorded form-drift / I/O-contract
+  concern (carry-forward #3; claim-extractor non-conformance) demonstrated for
+  the code-generator → client-write path.
+
+Evidence retained: `scratch/wp-lb-c-opencode-validation/wplbg_stored_artifact.json`
+(the raw artifact), `wplbg_probe.out` (the probe response), `serve_wplbg.log`
+(the dispatch trace).
+
+**Disposition (for practitioner).** WP-LB-G met its gate (delegation fires).
+Finding D is the next blocker and sits at a different layer than the
+loop-driver/terminal work: D1 looks like a deliverable-extraction bug (the
+artifact should hold the synthesizer's output, not the raw result dict); D2 is
+the I/O-contract / form-drift design question the cycle already flagged for a
+DECIDE-level policy (bare-deliverable contract for client-tool content, e.g.
+`output_schema` / a `submit_file`-shaped synthesizer, or a deterministic
+shaper). A natural fresh-context boundary — Finding D is upstream of the
+terminal surface this session has been in.
