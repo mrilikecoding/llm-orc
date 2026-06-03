@@ -1,21 +1,25 @@
 """Tests for the Client-Tool-Action Terminal (Cycle 7 loop-back WP-LB-C, ADR-034).
 
-The Terminal owns tool-call *emission*: it asks the Loop Driver to decide one
-turn and maps the resulting :class:`TurnOutcome` to the shared
-``OrchestratorChunk`` vocabulary. These tests drive the mapping in isolation
-against a scripted decider (the N emission cases), then verify the composition
-with the real Loop Driver (the +1 wiring test — the content the Terminal
-marshals into a ``write`` comes from the driver's delegated ensemble).
-Scenarios from ``docs/agentic-serving/scenarios.md`` §"Client-Tool-Action
-Terminal and Artifact-Bridge (ADR-034)".
+The Terminal owns tool-call *emission* and the artifact-bridge marshalling: it
+asks the Loop Driver to decide one turn and maps the resulting
+:class:`TurnOutcome` to the shared ``OrchestratorChunk`` vocabulary, resolving
+substrate-routed deliverable content through the Artifact Bridge. These tests
+drive the mapping in isolation against a scripted decider (the N emission
+cases), verify substrate-routed full-fidelity content + degradation paths
+(FC-49 / FC-48), then verify composition with the real Loop Driver (the +1
+wiring test). Scenarios from ``docs/agentic-serving/scenarios.md``
+§"Client-Tool-Action Terminal and Artifact-Bridge (ADR-034)".
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
+from llm_orc.agentic.artifact_bridge import ArtifactBridge
 from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
 from llm_orc.agentic.loop_driver import (
@@ -37,6 +41,7 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     ToolCallResult,
     ToolCallSuccess,
 )
+from llm_orc.agentic.session_artifact_store import SessionArtifactStore
 from llm_orc.agentic.session_registry import SessionIdentity, SessionState
 from llm_orc.agentic.session_start import ChatMessage, SessionContext
 from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
@@ -70,19 +75,40 @@ def _make_context(messages: list[ChatMessage] | None = None) -> SessionContext:
     )
 
 
+def _unused_bridge() -> ArtifactBridge:
+    """A bridge whose store is never read (inline / finish / carry outcomes).
+
+    Only a substrate-routed ``ApplyWork`` reads the store; finish,
+    grounded-carry, and inline-``primary`` outcomes resolve without touching
+    disk, so an unrooted store is fine for those.
+    """
+    store = SessionArtifactStore(agentic_sessions_root=Path("unused-by-inline-tests"))
+    return ArtifactBridge(store)
+
+
+def _inline_terminal(decider: _ScriptedDecider) -> ClientToolActionTerminal:
+    """A Terminal over a scripted decider whose bridge is never read."""
+    return ClientToolActionTerminal(loop_driver=decider, bridge=_unused_bridge())
+
+
 async def _collect(
     chunks: AsyncIterator[OrchestratorChunk],
 ) -> list[OrchestratorChunk]:
     return [chunk async for chunk in chunks]
 
 
+def _one_invocation(chunks: list[OrchestratorChunk]) -> ToolCallInvocation:
+    assert len(chunks) == 1
+    tool_call = chunks[0]
+    assert isinstance(tool_call, ClientToolCall)
+    return tool_call.tool_calls[0]
+
+
 class TestFinishOutcomeEmission:
     """A finish outcome emits assistant text (if any) then a stop completion."""
 
     async def test_finish_with_text_emits_content_delta_then_completion(self) -> None:
-        terminal = ClientToolActionTerminal(
-            loop_driver=_ScriptedDecider(FinishTurn(content="2 + 2 = 4."))
-        )
+        terminal = _inline_terminal(_ScriptedDecider(FinishTurn(content="2 + 2 = 4.")))
 
         chunks = await _collect(terminal.run(_make_context()))
 
@@ -92,9 +118,7 @@ class TestFinishOutcomeEmission:
         ]
 
     async def test_finish_without_text_emits_only_completion(self) -> None:
-        terminal = ClientToolActionTerminal(
-            loop_driver=_ScriptedDecider(FinishTurn(content=None))
-        )
+        terminal = _inline_terminal(_ScriptedDecider(FinishTurn(content=None)))
 
         chunks = await _collect(terminal.run(_make_context()))
 
@@ -110,8 +134,8 @@ class TestCarryClientToolEmission:
             name="write",
             arguments=json.dumps({"filePath": "token.txt", "content": "TOKEN_7f3a9c"}),
         )
-        terminal = ClientToolActionTerminal(
-            loop_driver=_ScriptedDecider(CarryClientTool(invocation=invocation))
+        terminal = _inline_terminal(
+            _ScriptedDecider(CarryClientTool(invocation=invocation))
         )
 
         chunks = await _collect(terminal.run(_make_context()))
@@ -122,7 +146,7 @@ class TestCarryClientToolEmission:
 class TestApplyWorkEmission:
     """A generation outcome emits a tool call carrying the deliverable (FC-47)."""
 
-    async def test_apply_work_emits_write_tool_call_with_deliverable(self) -> None:
+    async def test_inline_deliverable_marshalled_into_write(self) -> None:
         outcome = ApplyWork(
             invocation_id="t1",
             tool_name="write",
@@ -130,18 +154,136 @@ class TestApplyWorkEmission:
             envelope=DispatchEnvelope(status="success", primary="def sort(xs): ..."),
             delegated_ensemble="code-generator",
         )
-        terminal = ClientToolActionTerminal(loop_driver=_ScriptedDecider(outcome))
+        terminal = _inline_terminal(_ScriptedDecider(outcome))
 
         chunks = await _collect(terminal.run(_make_context()))
 
-        assert len(chunks) == 1
-        tool_call = chunks[0]
-        assert isinstance(tool_call, ClientToolCall)
-        invocation = tool_call.tool_calls[0]
+        invocation = _one_invocation(chunks)
         assert invocation.name == "write"
         args = json.loads(invocation.arguments)
         assert args["filePath"] == "sort.py"
         assert args["content"] == "def sort(xs): ..."
+
+
+class TestApplyWorkSubstrateFidelity:
+    """FC-49 — a substrate-routed deliverable is marshalled at full fidelity.
+
+    The bridge reads the full content from the Session Artifact Store, not the
+    summary on ``envelope.primary`` (scenarios.md §ADR-034 "Artifact-bridge
+    reads the substrate-routed deliverable and marshals it into tool-call
+    content"). This is the live-loop wiring WP-LB-D's bridge enabled.
+    """
+
+    async def test_write_carries_full_artifact_content_not_the_summary(
+        self, tmp_path: Path
+    ) -> None:
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        content = (
+            "class Calculator:\n"
+            "    def add(self, a: int, b: int) -> int:\n"
+            "        return a + b\n"
+        )
+        ref = store.write_deliverable(
+            session_id="2026-06-02T12:00:00Z-cc33",
+            dispatch_id="dispatch-009",
+            deliverable_name="calculator",
+            content=content,
+            content_type="application/python",
+        )
+        outcome = ApplyWork(
+            invocation_id="t1",
+            tool_name="write",
+            file_path="calculator.py",
+            envelope=DispatchEnvelope(
+                status="success",
+                primary="calculator.py: 3 lines — a Calculator class",  # summary
+                artifacts=[dataclasses.asdict(ref)],
+            ),
+            delegated_ensemble="code-generator",
+        )
+        terminal = ClientToolActionTerminal(
+            loop_driver=_ScriptedDecider(outcome), bridge=ArtifactBridge(store)
+        )
+
+        chunks = await _collect(terminal.run(_make_context()))
+
+        invocation = _one_invocation(chunks)
+        args = json.loads(invocation.arguments)
+        assert args["content"] == content
+        assert "summary" not in args["content"]
+
+
+class TestApplyWorkDegradesOnBridgeFailure:
+    """Error handling — a bridge failure degrades to a dispatch-failure completion.
+
+    The Terminal never emits a ``write`` with empty or fabricated content
+    (FC-48 / the fidelity FC forbid a paraphrase substitute); a missing
+    artifact or a binary deliverable becomes a text completion instead
+    (system-design.agents.md §Client-Tool-Action Terminal error handling).
+    """
+
+    async def test_unresolvable_reference_yields_a_text_completion(
+        self, tmp_path: Path
+    ) -> None:
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        ref = store.write_deliverable(
+            session_id="s1",
+            dispatch_id="d1",
+            deliverable_name="present",
+            content="real content\n",
+            content_type="application/python",
+        )
+        ghost = dataclasses.replace(ref, path=ref.path + ".missing")
+        outcome = ApplyWork(
+            invocation_id="t1",
+            tool_name="write",
+            file_path="ghost.py",
+            envelope=DispatchEnvelope(
+                status="success",
+                primary="ghost summary",
+                artifacts=[dataclasses.asdict(ghost)],
+            ),
+            delegated_ensemble="code-generator",
+        )
+        terminal = ClientToolActionTerminal(
+            loop_driver=_ScriptedDecider(outcome), bridge=ArtifactBridge(store)
+        )
+
+        chunks = await _collect(terminal.run(_make_context()))
+
+        assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks)
+        assert chunks[-1] == Completion(finish_reason="stop")
+
+    async def test_binary_deliverable_yields_a_text_completion(
+        self, tmp_path: Path
+    ) -> None:
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        ref = store.write_deliverable(
+            session_id="s1",
+            dispatch_id="d1",
+            deliverable_name="blob",
+            content=b"\x80\x81\x82\xff",  # not UTF-8 decodable
+            content_type="application/octet-stream",
+        )
+        outcome = ApplyWork(
+            invocation_id="t1",
+            tool_name="write",
+            file_path="blob.bin",
+            envelope=DispatchEnvelope(
+                status="success",
+                primary="blob summary",
+                artifacts=[dataclasses.asdict(ref)],
+            ),
+            delegated_ensemble="code-generator",
+        )
+        terminal = ClientToolActionTerminal(
+            loop_driver=_ScriptedDecider(outcome), bridge=ArtifactBridge(store)
+        )
+
+        chunks = await _collect(terminal.run(_make_context()))
+
+        assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks)
+        assert chunks[-1] == Completion(finish_reason="stop")
 
 
 class TestLoopParticipation:
@@ -155,7 +297,7 @@ class TestLoopParticipation:
 
     async def test_trailing_tool_result_reaches_the_driver(self) -> None:
         decider = _ScriptedDecider(FinishTurn(content="done"))
-        terminal = ClientToolActionTerminal(loop_driver=decider)
+        terminal = _inline_terminal(decider)
         context = _make_context(
             messages=[
                 ChatMessage(role="user", content="write a token to token.txt"),
@@ -254,14 +396,11 @@ class TestTerminalComposesRealLoopDriver:
             enforcer=SingleStepEnforcer(),
             tool_dispatch=_FakeToolDispatch(deliverable="def sort(xs): return xs"),
         )
-        terminal = ClientToolActionTerminal(loop_driver=driver)
+        terminal = ClientToolActionTerminal(loop_driver=driver, bridge=_unused_bridge())
 
         chunks = await _collect(terminal.run(_make_context()))
 
-        assert len(chunks) == 1
-        tool_call = chunks[0]
-        assert isinstance(tool_call, ClientToolCall)
-        invocation = tool_call.tool_calls[0]
+        invocation = _one_invocation(chunks)
         assert invocation.name == "write"
         args = json.loads(invocation.arguments)
         assert args["filePath"] == "sort.py"

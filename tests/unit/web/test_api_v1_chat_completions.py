@@ -20,11 +20,13 @@ Shape/streaming/session tests drive a :class:`_StubPipeline`; the
 
 import json
 from collections.abc import AsyncIterator, Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
+from llm_orc.agentic.artifact_bridge import ArtifactBridge
 from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
 from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
 from llm_orc.agentic.dispatch_pipeline import DispatchPipeline, DispatchPlan
@@ -46,6 +48,7 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     ToolCallResult,
     ToolCallSuccess,
 )
+from llm_orc.agentic.session_artifact_store import SessionArtifactStore
 from llm_orc.agentic.session_registry import SessionIdentity, SessionRegistry
 from llm_orc.agentic.session_start import (
     PromptFragment,
@@ -126,13 +129,15 @@ def _real_terminal(
     Terminal composes the Loop Driver, which still emits the ``TurnDecision``
     diagnostics the FC-42 tests assert.
     """
+    store = SessionArtifactStore(agentic_sessions_root=Path("unused-by-finish-path"))
     return ClientToolActionTerminal(
         loop_driver=LoopDriver(
             seat_filler=seat_filler,
             enforcer=SingleStepEnforcer(),
             tool_dispatch=_NoToolDispatch(),
             event_substrate=substrate,
-        )
+        ),
+        bridge=ArtifactBridge(store),
     )
 
 
