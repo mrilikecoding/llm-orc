@@ -19,6 +19,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
 from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
 from llm_orc.agentic.loop_driver import (
@@ -27,6 +29,7 @@ from llm_orc.agentic.loop_driver import (
     FinishTurn,
     LoopDriver,
     TurnDecision,
+    compose_form_directive,
 )
 from llm_orc.agentic.orchestrator_tool_dispatch import (
     InternalToolCall,
@@ -275,7 +278,9 @@ class TestLoopDriverDelegatesToCallee:
         call = tool_dispatch.calls[0]
         assert call.name == "invoke_ensemble"
         assert call.arguments["name"] == "code-generator"
-        assert call.arguments["input"] == "write a sorting function"
+        # The generation task leads the dispatch input; the ADR-035 form
+        # directive rides after it (FC-53 covers the directive itself).
+        assert call.arguments["input"].startswith("write a sorting function")
 
         assert isinstance(outcome, ApplyWork)
         assert outcome.tool_name == "write"
@@ -284,6 +289,83 @@ class TestLoopDriverDelegatesToCallee:
         # The envelope, not baked content, travels to the Terminal (which
         # marshals it); WP-LB-B's deliverable is the inline primary.
         assert outcome.envelope.primary == "def sort(xs): ..."
+
+
+class TestFormDirectiveDestinationKeying:
+    """FC-54 — ``compose_form_directive`` keys the directive to the tool.
+
+    Scenarios.md §Client-Tool Deliverable Form Contract: the injected
+    directive matches the decided destination (``write`` → bare file
+    bytes; ``bash`` → bare command; ``edit`` → bare replacement). The
+    wording is framework-owned prose (LB-6, tunable); the keying is the
+    fitness property.
+    """
+
+    def test_write_directive_names_bare_file_bytes(self) -> None:
+        directive = compose_form_directive("write")
+
+        assert "file" in directive
+        assert "ONLY" in directive
+        assert "fence" in directive.lower()
+
+    def test_bash_directive_names_bare_command(self) -> None:
+        directive = compose_form_directive("bash")
+
+        assert "command" in directive
+        assert "file" not in directive  # a write-form directive on bash fails
+
+    def test_edit_directive_names_bare_replacement(self) -> None:
+        directive = compose_form_directive("edit")
+
+        assert "replacement" in directive
+        assert "command" not in directive
+
+    def test_unknown_destination_fails_loud(self) -> None:
+        with pytest.raises(ValueError, match="read"):
+            compose_form_directive("read")
+
+
+class TestLoopDriverInjectsFormDirective:
+    """FC-53 — every client-tool-bound callee dispatch carries the directive.
+
+    ADR-035 decision 1: the marshalling boundary composes the
+    destination-keyed bare-output directive and injects it into the
+    callee ``invoke_ensemble`` dispatch input. The ensemble stays
+    destination-agnostic — the directive arrives per-dispatch, never
+    via ensemble YAML.
+    """
+
+    async def test_loop_driver_injects_form_directive(self) -> None:
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="invoke_ensemble",
+                        arguments_json=json.dumps(
+                            {
+                                "name": "code-generator",
+                                "input": "write a sorting function",
+                                "filePath": "sort.py",
+                            }
+                        ),
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        )
+        tool_dispatch = _FakeToolDispatch(deliverable="def sort(xs): ...")
+        driver = _build_driver(seat_filler, tool_dispatch=tool_dispatch)
+
+        await driver.decide(_make_context())
+
+        dispatch_input = tool_dispatch.calls[0].arguments["input"]
+        # The seat-filler's generation task is preserved...
+        assert "write a sorting function" in dispatch_input
+        # ...and the write-keyed directive rides the same dispatch input
+        # (a client-tool-bound dispatch lacking the directive fails FC-53).
+        assert compose_form_directive("write") in dispatch_input
 
 
 class TestLoopDriverGroundedCarry:
