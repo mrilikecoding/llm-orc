@@ -433,7 +433,9 @@ agentic_serving:
     # blocked. Use `agentic-orchestrator-offline-tools` for cost-free
     # local operation, or `agentic-orchestrator-minimax-m25` (paid) for
     # production-shape characterization.
-    model_profile: agentic-orchestrator
+    # Note (2026-06-03): switched to the cost-free local profile while
+    # the Zen free tier stays blocked (WP-LB-H smoke runs are $0 local).
+    model_profile: agentic-orchestrator-offline-tools
 
     # ADR-007/014 Calibration Gate (verdict producer + first-N post-hoc
     # result-check). Defaults: N=3 invocations before trust transition;

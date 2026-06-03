@@ -35,6 +35,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
+from llm_orc.agentic.loop_driver import compose_form_directive
 from llm_orc.agentic.orchestrator_config import (
     BudgetDefaults,
     CalibrationDefaults,
@@ -248,6 +249,12 @@ def test_non_streaming_tool_request_emits_bridge_marshalled_tool_call(
     # Full bridge-marshalled content, not the envelope's summary line.
     assert args["content"] == _DELIVERABLE
     assert dispatch.calls, "the loop driver delegated generation to the ensemble"
+    # FC-53 at the real serving composition: the callee dispatch input
+    # carries the write-keyed bare-output form directive (ADR-035) after
+    # the seat-filler's generation task.
+    dispatched_input = dispatch.calls[0].arguments["input"]
+    assert dispatched_input.startswith("write a quicksort")
+    assert compose_form_directive("write") in dispatched_input
 
 
 def test_no_server_side_write_to_the_client_filesystem_path(

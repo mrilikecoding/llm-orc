@@ -165,3 +165,65 @@ DECIDE-level policy (bare-deliverable contract for client-tool content, e.g.
 `output_schema` / a `submit_file`-shaped synthesizer, or a deterministic
 shaper). A natural fresh-context boundary — Finding D is upstream of the
 terminal surface this session has been in.
+
+## Update — WP-LB-H built + validated; Finding D refuted; Finding E surfaced (2026-06-03)
+
+WP-LB-H landed (commits `f57b61e` deliverable contract / `030723f` consumers /
+`7c14c94` synthesis excision / `db09a48` form directive FC-53/54 / `9303b0e`
+FormRefusedError channel / `612aa6d` FormGate seam FC-57 / `545c1b7` critic
+depends_on fix). Suite 2914 green. The acceptance gate re-ran on the same rig
+(real OpenCode 1.15.5 headless → real `llm-orc serve` → qwen3:14b seat-filler
+via `agentic-orchestrator-offline-tools`, $0 local; the prior default
+`agentic-orchestrator` profile is Zen-blocked and was switched in config).
+
+### Finding D refuted at the real-client layer (TS-14 reached)
+
+Run ledger:
+
+| Run | Layer | Task phrasing | Delegated? | Landed file |
+|---|---|---|---|---|
+| 1 fib.py | real OpenCode | natural | no (grounded-carry) | bare, runs — model-direct |
+| 2 inventory.py | real OpenCode | natural | no (grounded-carry) | bare — model-direct |
+| probe stack.py | direct endpoint | natural | **yes** | bare, `ast.parse`-clean |
+| 3 matrix_utils.py | real OpenCode | delegation-leaning | **yes** (2 dispatches) | bare, parses; OpenCode executed the `write` (`tool_use … completed`) |
+
+On the delegating runs the stored artifact is the synthesizer's bare output
+(D1: never the raw `{"results": …}` dict), zero fences (the directive held
+through the dependency wrapper's "provide your own analysis" framing and the
+now-real critic chain), and the client-applied file parses and runs. Caveats:
+run 3's session exceeded its 420s budget *after* the write completed (slow
+serial local inference, not a correctness failure); the OpenCode run that
+delegated used delegation-leaning phrasing.
+
+### Finding E — delegation under the client's system prompt is a coin flip
+
+Cumulative real-OpenCode evidence (WP-LB-G + today): **2 delegated / 2
+grounded-carried** under natural phrasing. The direct-endpoint probe (no
+client system prompt) delegated immediately — isolating the suppressor to
+OpenCode's own system prompt out-competing `_DELEGATION_GUIDANCE` for the
+seat-filler's attention. The form contract works whenever delegation fires;
+*whether it fires* is now the weakest link in the north-star loop. This is
+the pre-named loop-back trigger (§"Loop-back trigger" above) firing on
+evidence.
+
+**Disposition (practitioner, 2026-06-03).** Loop back to DECIDE on the
+delegation-decision mechanism — grounded in spikes first: "this should be
+something we can vary and test." Pre-named spike shape (Spike ψ, DECIDE
+entry): capture a real OpenCode request (client system prompt included) and
+replay variations against the endpoint, one lever at a time, n runs per
+variant, measuring delegation rate — (ψ.1) baseline rate under the current
+nudge; (ψ.2) guidance wording/position variants (Tier-2 lever); (ψ.3)
+server-side `tool_choice` forcing on the seat-filler call (Ollama + qwen3 —
+distinct from Spike κ's Zen/MiniMax negative); (ψ.4) structural split — a
+framework pre-filter decides delegate-vs-carry and the seat-filler decides
+only the action shape (model-independent, consistent with the
+framework-guarantees-the-contract thesis).
+
+### Side observations
+
+- OpenCode's auxiliary tools-less requests (e.g. title generation) route to
+  the single-turn dispatch pipeline and 500 (`Ensemble does not exist:
+  agentic-routing-planner` — WP-B unbuilt). Non-fatal to the session;
+  known-issue for the single-turn surface work.
+- Evidence retained: `scratch/wp-lb-h-smoke/` (serve log, three session
+  traces, direct-probe response, landed files) per spike-artifact-retention.
