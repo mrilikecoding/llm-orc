@@ -89,6 +89,23 @@ _GENERATION_TOOL = "invoke_ensemble"
 content generation to a capability ensemble (the callee). Any other tool
 name is a client tool call passed through verbatim."""
 
+_DELEGATION_GUIDANCE = (
+    "You drive a tool-using coding session. To produce substantive new "
+    "content — code, files, written analysis — delegate generation to a "
+    "capability ensemble by calling invoke_ensemble(name, input, filePath): "
+    "the framework runs the named ensemble and applies its deliverable to the "
+    "client's file at filePath. Use a direct client tool call "
+    "(write/edit/bash/read) only to carry a literal or already-observed value, "
+    "to read a file, or to run a command — not to generate new content "
+    "yourself. Prefer delegating generation to an ensemble."
+)
+"""System guidance offered to the seat-filler when capabilities are available.
+
+The delegate-vs-act-directly framing is the operative lever for Finding B (the
+seat-filler is otherwise capable enough to generate inline and skip
+delegation). Whether the nudge holds against a client's own system prompt is
+the WP-LB-G real-OpenCode acceptance question, not a settled property."""
+
 
 @dataclass(frozen=True)
 class ApplyWork:
@@ -215,11 +232,13 @@ class LoopDriver:
         seat_filler: SeatFiller,
         enforcer: SingleStepEnforcer,
         tool_dispatch: ToolDispatcher,
+        capabilities: frozenset[str] = frozenset(),
         event_substrate: DispatchEventSubstrate | None = None,
     ) -> None:
         self._seat_filler = seat_filler
         self._enforcer = enforcer
         self._tool_dispatch = tool_dispatch
+        self._capabilities = capabilities
         self._event_substrate = event_substrate
 
     async def decide(self, context: SessionContext) -> TurnOutcome:
@@ -228,10 +247,17 @@ class LoopDriver:
         Returns the per-turn :class:`TurnOutcome`; the Client-Tool-Action
         Terminal (ADR-034) marshals it into the wire response. Each ``decide``
         is one turn — the multi-turn loop is realized across HTTP requests.
+
+        When capability ensembles are available, the seat-filler is offered an
+        ``invoke_ensemble`` tool (enumerating the capability list) alongside the
+        client's tools, plus delegation guidance — so it can delegate generation
+        to a capability ensemble (the callee path; FC-44) rather than only
+        carrying literal values. Without capabilities it sees the client tools
+        only (no delegation possible).
         """
         response = await self._seat_filler.generate_with_tools(
-            messages=_to_openai_messages(context),
-            tools=context.tools,
+            messages=self._seat_filler_messages(context),
+            tools=self._delegation_tools() + list(context.tools),
         )
         enforced = self._enforcer.enforce(response.tool_calls)
         dispatch_id = self._new_dispatch_id(context)
@@ -264,6 +290,30 @@ class LoopDriver:
             dispatch_id, turn_index, invocation.name, None, True, enforced.truncated
         )
         return CarryClientTool(invocation=invocation)
+
+    def _delegation_tools(self) -> list[dict[str, Any]]:
+        """The ``invoke_ensemble`` tool offered to the seat-filler, if any.
+
+        Empty when no capability ensembles are configured — the seat-filler
+        then sees the client tools only and cannot delegate (the pre-WP-LB-G
+        behavior). When present, the capability names enumerate the tool's
+        ``name`` argument so the seat-filler picks a registered capability.
+        """
+        if not self._capabilities:
+            return []
+        return [_invoke_ensemble_tool_def(sorted(self._capabilities))]
+
+    def _seat_filler_messages(self, context: SessionContext) -> list[dict[str, Any]]:
+        """The seat-filler payload — delegation guidance, then the conversation.
+
+        The delegation system message is prepended only when delegation is
+        possible (capabilities present), so the guidance never references a tool
+        the seat-filler was not offered.
+        """
+        messages = _to_openai_messages(context)
+        if not self._capabilities:
+            return messages
+        return [{"role": "system", "content": _DELEGATION_GUIDANCE}, *messages]
 
     async def _delegate_generation(
         self, action: ToolCall, context: SessionContext
@@ -318,6 +368,49 @@ class LoopDriver:
                 replanned_after_truncation=replanned_after_truncation,
             )
         )
+
+
+def _invoke_ensemble_tool_def(capabilities: list[str]) -> dict[str, Any]:
+    """Build the ``invoke_ensemble`` tool schema offered to the seat-filler.
+
+    Mirrors the Orchestrator Runtime's ``invoke_ensemble`` schema convention,
+    extended for the loop-driver surface: the deliverable maps to a client
+    ``write`` at ``filePath`` (the tool-mapping the Loop Driver owns), and the
+    ``name`` argument enumerates the registered capability ensembles so the
+    seat-filler delegates to a real capability.
+    """
+    return {
+        "type": "function",
+        "function": {
+            "name": _GENERATION_TOOL,
+            "description": (
+                "Delegate generation of a deliverable to a capability ensemble. "
+                "The framework runs the named ensemble and applies its output to "
+                "the client's file at filePath."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "enum": capabilities,
+                        "description": "The capability ensemble to delegate to.",
+                    },
+                    "input": {
+                        "type": "string",
+                        "description": "The generation task for the ensemble.",
+                    },
+                    "filePath": {
+                        "type": "string",
+                        "description": (
+                            "Client path where the deliverable is written."
+                        ),
+                    },
+                },
+                "required": ["name", "input", "filePath"],
+            },
+        },
+    }
 
 
 def _passthrough_client_tool(action: ToolCall) -> ToolCallInvocation:
