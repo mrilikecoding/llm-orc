@@ -59,7 +59,13 @@ Drawn from `domain-model.md` (AS-1 through AS-10) and project-level Invariants 1
 
 ## Current state
 
-### Cycle 7 loop-back #2 ARCHITECT close (2026-06-03) — current
+### Cycle 7 loop-back #2 BUILD close — WP-LB-H landed; Finding E → loop-back #3 (2026-06-03) — current
+
+**WP-LB-H shipped the form contract and refuted Finding D at the real-client layer (TS-14):** a real OpenCode session received a delegated, form-contracted deliverable and applied it locally as bare, runnable content. The build resolved the D1 extraction fork **executor-side** on the practitioner's contract framing — *the ensemble abstraction presents a single output*: `resolve_deliverable` computes the terminal node from `depends_on` at finalize and populates the new `ExecutionResult.deliverable` field, which every downstream consumer now reads (substrate write, summarizer harness, calibration checker, structured parse, calibration artifact-content, streaming completion). The legacy always-`None` `synthesis` field was excised wholesale (no parallel single-output notions; the MCP result shape drops the perpetually-null key). The Loop Driver injects `compose_form_directive(tool)` into every callee dispatch (FC-53/54); the Artifact Bridge carries the FormGate seam (pass-through default) with a pre-built `FormRefusedError` channel so detect-and-refuse installs with zero Terminal edits (FC-57); code-generator's critic now `depends_on: [coder]` (its review was confabulated — it never saw the code). Suite 2914 green; commits `f57b61e`..`545c1b7`; system-design Amendment #15.
+
+**The same validation surfaced Finding E:** delegation under the client's system prompt is ~coin-flip (2 delegated / 2 grounded-carried across all real-OpenCode runs; a direct-endpoint probe without the client system prompt delegated immediately — clean isolation). The form contract works whenever delegation fires; whether it fires is now the weakest link in the north-star loop. The pre-named loop-back trigger fires on this evidence: **loop-back #3 → DECIDE on the delegation-decision mechanism, entered behind Spike ψ** (vary-and-measure: baseline rate, guidance variants, server-side `tool_choice` forcing on Ollama+qwen3, structural pre-filter split — roadmap LB-7). WP-LB-E/F resume after.
+
+### Cycle 7 loop-back #2 ARCHITECT close (2026-06-03)
 
 Cycle 7's loop-back BUILD landed WP-LB-A..D + G: the tool-driven multi-turn surface works end-to-end against real OpenCode — surface-mode discrimination, the Loop Driver + Single-Step Enforcer, the Client-Tool-Action Terminal + Artifact Bridge, and seat-filler delegation (`invoke_ensemble` offered + chosen by a real qwen3:14b driver; the full callee → bridge → client-`write` chain validated, $0). The same real run surfaced **Finding D**: the marshalled deliverable was the raw ensemble result envelope — *delivered* correctly but *unusable* as file content.
 

@@ -68,6 +68,11 @@ delegate generation and apply the result locally, for example:
 The round-trip **passes** when OpenCode behaves as it would against a normal
 single-model provider:
 
+- [ ] The serve log shows **`dispatch start: ensemble=…`** — delegation
+      actually fired. A passing-looking run can be model-direct: the
+      seat-filler may grounded-carry (generate inline and emit a literal
+      `write`), which exercises neither the ensemble nor the form contract
+      (Finding E, WP-LB-H).
 - [ ] OpenCode shows a **`write` tool call** (a `tool_use` event), not only an
       assistant text message.
 - [ ] OpenCode's **permission gate / diff** appears for the write (the client is

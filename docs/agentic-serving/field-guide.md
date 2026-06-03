@@ -3,6 +3,15 @@
 **Generated:** 2026-04-24
 **Derived from:** `system-design.md` v1.0 + amendments #1–#4, current implementation at WP-I close (TS-2 reached + Plexus Adapter skeleton wired).
 
+> **Staleness notice (2026-06-03, WP-LB-H close):** this guide predates
+> Cycles 6–7 — it has no entries for the Dispatch Event Substrate,
+> Session Artifact Store, Dispatch Pipeline, Loop Driver, Single-Step
+> Enforcer, Artifact Bridge, or Client-Tool-Action Terminal (system-design
+> is now v6.1). Entries falsified by WP-LB-H (the deliverable contract
+> replacing `synthesis`) were patched in place; full regeneration is
+> queued for the Cycle 7 loop-back BUILD phase close. Until then, prefer
+> `system-design.agents.md` module entries for the Cycle 6–7 surfaces.
+
 ## How to use this guide
 
 This document maps each module in `system-design.md` to its current
@@ -376,9 +385,9 @@ Dispatch.
 
 ## Module: Result Summarizer Harness
 
-**Implementation state:** Complete (WP-D).
+**Implementation state:** Complete (WP-D; extraction contract updated WP-LB-H 2026-06-03).
 **Code location:** `src/llm_orc/agentic/result_summarizer_harness.py`.
-**Stability:** Settled. The `_extract_summary` fallback order (synthesis → single-agent `response`) is the stable contract; the quality-of-summarizer concern defers to Calibration Gate (WP-E / WP-H).
+**Stability:** Settled. The `_extract_summary` fallback order (the executor-resolved `deliverable` contract → single-agent `response`) is the stable contract; the quality-of-summarizer concern defers to Calibration Gate (WP-E / WP-H).
 
 ### Domain concepts in code
 
@@ -389,7 +398,7 @@ Dispatch.
 | Summarizer invocation facade | `SummarizerInvoker` Protocol (shape: `async def invoke(arguments) -> dict`) | `result_summarizer_harness.py:34` |
 | Summarization result variants | `SummarizationSuccess \| RawOutputPassthrough \| SummarizationFailure` | `result_summarizer_harness.py:46-78` |
 | Raw-output escape hatch (ADR-004) | `raw_output: bool` keyword on `summarize`; set on `EnsembleConfig.raw_output` | `result_summarizer_harness.py:95`; `core/config/ensemble_config.py` |
-| Summary extraction (synthesis + single-agent fallback) | `_extract_summary` module function | `result_summarizer_harness.py:118` |
+| Summary extraction (deliverable contract + single-agent fallback) | `_extract_summary` module function | `result_summarizer_harness.py:118` |
 
 ### Design rationale
 
@@ -409,13 +418,13 @@ ensembles whose operator has opted in via `raw_output: true`);
 `SummarizationFailure.reason` becomes a typed `ToolCallError(kind=
 "summarization_failed")` — never a raw-dict leak.
 
-The `_extract_summary` fallback is deliberately forgiving: prefer
-`synthesis` when non-empty, otherwise accept a single-agent ensemble's
-`results[agent]["response"]`. llm-orc's dependency-based execution
-model leaves `synthesis` unpopulated for single-agent ensembles, and
-the default summarizer (`.llm-orc/ensembles/agentic-result-summarizer
-.yaml`) is single-agent — the fallback keeps the default working
-without requiring a synthesis pass.
+The `_extract_summary` fallback is deliberately forgiving: prefer the
+executor-resolved `deliverable` contract (ADR-035 D1, WP-LB-H —
+`resolve_deliverable` in `core/execution/results_processor.py`
+computes the terminal node from `depends_on`; the legacy `synthesis`
+field was excised), otherwise accept a single-agent ensemble's
+`results[agent]["response"]` for raw results that did not flow through
+the executor's resolution.
 
 **FC-8 enforcement is three-sided.** FC-4 isolates the Runtime from
 ensemble-execution surfaces; the Harness is the only producer of

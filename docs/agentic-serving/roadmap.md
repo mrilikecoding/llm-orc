@@ -140,6 +140,8 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ### WP-LB-H: Client-tool deliverable form contract + D1 extraction (ADR-035; Finding D)
 
+**Status: ✅ Closed 2026-06-03** — Finding D refuted at the real-client layer (TS-14 reached): a real OpenCode session executed a delegated, form-contracted `write`; the landed file is bare, fence-free, parsing Python. Commits `f57b61e` (deliverable contract, FC-56) / `030723f` (contract consumers) / `7c14c94` (synthesis excision) / `db09a48` (form directive, FC-53/54) / `9303b0e` (FormRefusedError channel) / `612aa6d` (FormGate seam, FC-57) / `545c1b7` (critic depends_on fix). Suite 2914 green. LB-4 resolved executor-side; LB-5 resolved pass-through; LB-6 resolved to the χ wording (see system-design Amendment #15). **Surfaced Finding E** — delegation under the client's system prompt is ~coin-flip (2 delegated / 2 carried across all real-OpenCode runs; the direct-endpoint probe delegated immediately, isolating the suppressor to the client system prompt). Practitioner disposition: the pre-named loop-back trigger fires → **loop-back #3 to DECIDE on the delegation-decision mechanism, grounded by Spike ψ** (vary-and-measure: baseline rate / guidance variants / server-side `tool_choice` forcing on Ollama+qwen3 / structural pre-filter split). WP-LB-E/F resume after loop-back #3 (F's TurnDecision surfacing is the standing instrument for exactly this measurement — consider folding into the loop-back's BUILD).
+
 **Surfaced by:** the WP-LB-G real-OpenCode run (2026-06-02): delegation fired end-to-end but the client `write` carried the raw ensemble result envelope (`{"results": {coder, critic, synthesizer}, …}`) — unusable as file content (Finding D). Spike φ split the problem into D1 (extraction) + D2a (declared contracts inert at execution) + D2b (deliverable form targets a human reader); Spike χ/χ.2 grounded the mechanism (boundary directive reliable at n=4 single-deliverable types; deterministic shaping fragile at 2/3 multi-fence ambiguity; multi-file-in-one-dispatch breaks).
 
 **Objective:** A delegated client-tool deliverable lands as **usable bare content** — the north-star loop produces a runnable file, not prose-wrapped markdown or a JSON envelope.
@@ -225,17 +227,21 @@ The Loop Driver's seat-filler is a swappable Model Profile (FC-46). Cheap-tier i
 
 Spike π/ρ validated the `write` round-trip for a single new file. `edit`-in-place (needs a `read` first), `bash` command execution, multi-file deliverables, and token-streaming the synthesized content are BUILD scope. Open decision: which of these land in Cycle 7 loop-back BUILD vs. defer to a follow-on cycle — the file-action `write` path is the BUILD focus; the richer surface is north-star context (ADR-033 §Decision 6(c)). *(Loop-back #2 note: multi-file is now design-resolved as across-turn decomposition — ADR-035 §Decision 3 / FC-55; what remains open is which destinations beyond `write` get directive coverage exercised in BUILD.)*
 
-### LB-4. D1 extraction locus (ADR-035 decision 5 where-sub-fork) — WP-LB-H scenario-group gate
+### LB-4. D1 extraction locus — ✅ resolved executor-side (WP-LB-H gate, 2026-06-03)
 
-Executor-side (populate a canonical deliverable field in `finalize_result`, where `depends_on` is known — robust for branching DAGs) vs. envelope-side (terminal-node selection on `results` insertion order — adequate for linear pipelines, less plumbing). Surface at the WP-LB-H scenario-group gate; do not pre-decide.
+Resolved at the WP-LB-H scenario-group gate on the practitioner's contract framing ("the ensemble abstraction presents a single output"): `resolve_deliverable` computes the unique terminal node from `depends_on` at finalize and populates `ExecutionResult.deliverable`; the dispatch layer reads the contract instead of reconstructing it. The legacy `synthesis` field was excised wholesale. See system-design Amendment #15.
 
-### LB-5. Conservative normalization now-or-later (ADR-035 decision 4) — builder's choice
+### LB-5. Conservative normalization — ✅ resolved pass-through (WP-LB-H, 2026-06-03)
 
-The single-enclosing-fence strip is cheap and spike-motivated, but the directive may make it dead code (χ-P3/P4/P5 produced zero fences under the directive). Build it with WP-LB-H or leave the FormGate pure pass-through until PLAY shows a stray fence. Either satisfies FC-57 (the seam exists regardless).
+No normalization ships: χ-P3/P4/P5 produced zero fences under the directive, so the strip would be day-one dead code. The FormGate seam exists (FC-57) with a pre-built `FormRefusedError` refusal channel the Terminal already degrades — the detect-and-refuse escalation installs at the seam with literal zero Terminal edits on PLAY evidence.
 
-### LB-6. Directive wording (tunable within FC-53/54)
+### LB-6. Directive wording — ✅ resolved to the χ-probe wording (WP-LB-H, 2026-06-03)
 
-The directive text is framework-owned prose (the χ probes used "Output ONLY the exact raw bytes… no fences, no explanation"). FC-53/54 pin *presence* and *keying*, not wording — if PLAY shows wording-sensitive compliance, tuning is FC-visible and requires no design change.
+"Output ONLY {the exact raw bytes of the file | the exact shell command | the exact replacement content}. No markdown fences, no prose, no explanations, no example blocks." — appended after the generation task in the dispatch input. Held through the dependency wrapper's "provide your own analysis" framing on all delegating runs. Remains tunable within FC-53/54; if PLAY shows wording-sensitive drift, the dependency wrapper's framing is a named suspect.
+
+### LB-7. Delegation-decision mechanism (Finding E; loop-back #3 → DECIDE behind Spike ψ)
+
+Delegation under the client's system prompt is ~coin-flip (2/2 carried on natural phrasing; the direct probe delegated immediately). Candidate levers for Spike ψ to vary and measure ($0 local, replaying a captured real-OpenCode request shape): (ψ.1) baseline delegation rate under the current nudge; (ψ.2) guidance wording/position variants; (ψ.3) server-side `tool_choice` forcing on the seat-filler call (Ollama+qwen3 — distinct surface from Spike κ's Zen/MiniMax negative); (ψ.4) structural pre-filter split (the framework decides delegate-vs-carry; the seat-filler decides only the action shape — model-independent, consistent with the framework-guarantees-the-contract thesis). DECIDE picks the mechanism on measured rates.
 
 ---
 
