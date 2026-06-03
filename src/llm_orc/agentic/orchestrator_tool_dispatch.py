@@ -1370,8 +1370,10 @@ class OrchestratorToolDispatch:
         because this success path explicitly closed.
         """
         assert self._session_artifact_store is not None  # narrowed by caller
-        deliverable_text = _extract_synthesizer_text(raw_result) or json.dumps(
-            raw_result, default=str
+        deliverable_text = (
+            _resolved_deliverable(raw_result)
+            or _extract_synthesizer_text(raw_result)
+            or json.dumps(raw_result, default=str)
         )
         content_type = _resolve_substrate_content_type(
             topaz_skill=substrate_config.topaz_skill
@@ -1793,6 +1795,23 @@ def _shape_calibration_evaluation_input(
     return payload
 
 
+def _resolved_deliverable(raw_result: dict[str, Any]) -> str | None:
+    """The executor-resolved single-deliverable contract, when present.
+
+    ADR-035 D1 (FC-56): the executor resolves the terminal node's output
+    (with last-successful fallback) where the dependency graph is known
+    and carries it on the ``deliverable`` field through the
+    ``ExecutionHandler.invoke`` projection. Preferring it here means the
+    substrate write stores the actual deliverable for multi-agent
+    capability ensembles instead of falling through to
+    ``json.dumps(raw_result)`` — the Finding D raw-envelope failure.
+    """
+    deliverable = raw_result.get("deliverable")
+    if isinstance(deliverable, str) and deliverable:
+        return deliverable
+    return None
+
+
 def _extract_synthesizer_text(raw_result: dict[str, Any]) -> str | None:
     """Pull the synthesizer's response text from the execution result.
 
@@ -1801,7 +1820,9 @@ def _extract_synthesizer_text(raw_result: dict[str, Any]) -> str | None:
     use the single-agent ensemble's lone ``response`` field. Returns
     ``None`` when neither shape applies — multi-agent ensembles without
     a synthesizer carry per-agent responses that an envelope-time JSON
-    parse cannot meaningfully unify.
+    parse cannot meaningfully unify (the legacy leg behind
+    :func:`_resolved_deliverable`, kept for raw results that did not
+    flow through the executor's deliverable resolution).
     """
     synthesis = raw_result.get("synthesis")
     if isinstance(synthesis, str) and synthesis:

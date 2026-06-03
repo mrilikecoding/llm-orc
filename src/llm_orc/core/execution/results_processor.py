@@ -5,9 +5,11 @@ from typing import Any
 
 from llm_orc.core.execution.patterns import INSTANCE_PATTERN
 from llm_orc.core.execution.result_types import (
+    AgentResult,
     ExecutionMetadata,
     ExecutionResult,
 )
+from llm_orc.schemas.agent_config import AgentConfig
 
 
 def finalize_result(
@@ -73,6 +75,76 @@ def calculate_usage_summary(
         summary["totals"]["total_duration_ms"] += synthesis_usage.get("duration_ms", 0)
 
     return summary
+
+
+def resolve_deliverable(
+    results: dict[str, Any],
+    agents: list[AgentConfig],
+) -> str | None:
+    """Resolve the ensemble's single deliverable from its dependency DAG.
+
+    The ensemble abstraction presents one output regardless of internal
+    multi-agent structure (ADR-035 D1, FC-56): the terminal node's
+    response — the agent no other agent depends on — when it succeeded
+    with content, else the last successful agent's response walking the
+    declaration order backward. Returns ``None`` when no agent produced
+    content (the caller decides the degraded fallback).
+
+    Computed here, where ``depends_on`` is known, rather than
+    reconstructed downstream from the results dict (the dispatch layer
+    receives a projection that has already dropped the config).
+    Multi-terminal DAGs take the last terminal by declaration order.
+    """
+    depended_on = _depended_on_names(agents)
+    terminals = [agent.name for agent in agents if agent.name not in depended_on]
+
+    for name in reversed(terminals):
+        response = _successful_response(results.get(name))
+        if response is not None:
+            return response
+
+    for agent in reversed(agents):
+        response = _successful_response(results.get(agent.name))
+        if response is not None:
+            return response
+    return None
+
+
+def _depended_on_names(agents: list[AgentConfig]) -> set[str]:
+    """Collect every agent name that appears as a dependency.
+
+    Tolerates both string and conditional dict-form ``depends_on``
+    entries, mirroring ``ensemble_config.detect_cycle``'s traversal.
+    """
+    names: set[str] = set()
+    for agent in agents:
+        for dep in agent.depends_on:
+            dep_name = dep if isinstance(dep, str) else dep.get("agent_name")
+            if dep_name:
+                names.add(dep_name)
+    return names
+
+
+def _successful_response(agent_result: Any) -> str | None:
+    """An agent's response when it succeeded with non-empty text, else None.
+
+    Tolerates both ``AgentResult`` objects and their serialized dict
+    form, matching ``ExecutionResult.to_dict``'s posture.
+    """
+    if isinstance(agent_result, AgentResult):
+        return _non_empty_text(agent_result.response, agent_result.status)
+    if isinstance(agent_result, dict):
+        return _non_empty_text(agent_result.get("response"), agent_result.get("status"))
+    return None
+
+
+def _non_empty_text(response: Any, status: Any) -> str | None:
+    """Narrow a successful agent's response to non-empty text."""
+    if status != "success":
+        return None
+    if isinstance(response, str) and response:
+        return response
+    return None
 
 
 def process_agent_results(
