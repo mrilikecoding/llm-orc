@@ -1,8 +1,12 @@
 # ADR-024: Common I/O Envelope for Capability Ensemble Dispatches
 
-**Status:** Proposed
+> **Updated by ADR-035 on 2026-06-03.** For deliverables bound to a client tool, the output-form contract is composed at the marshalling boundary and delivered through the dispatch input — it is not the advisory `output_schema` this ADR describes. ADR-024's advisory-schema stance remains current for inter-ensemble composition; only the client-tool-deliverable path is refined by ADR-035. (Empirical correction recorded in ADR-035: `default_task` is inert at execution, so the "drift is `input.data` overriding `default_task`" mechanism named below does not operate for the client-tool path — the dispatch input is the sole contract surface reaching the model.)
+
+**Status:** Accepted; Updated by ADR-035 on 2026-06-03 (client-tool-deliverable path)
 
 **Date:** 2026-05-15
+
+*(Status corrected from `Proposed` to `Accepted` on 2026-06-03: the `DispatchEnvelope` contract shipped in Cycle 6 BUILD — a stale-Proposed hygiene fix per the cycle-status flag.)*
 
 ---
 

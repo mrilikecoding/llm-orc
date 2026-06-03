@@ -1,0 +1,5 @@
+{
+  "prompt": "bare-output, shell command to list .py files modified <24h",
+  "verdict": "CLEAN bare command",
+  "synthesizer_response": "find . -type f -name \"*.py\" -mtime -1"
+}

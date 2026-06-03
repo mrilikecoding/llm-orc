@@ -420,6 +420,10 @@ The Skill Orchestration User (Cycle 5 introduction) composes a client-side skill
 
 **Interaction mechanics:** When the chosen action needs generated content (file content for a `write`, a patch for an `edit`), the loop-driver delegates generation to a single capability ensemble invocation, not the full `plan → dispatch → synthesize` pipeline (ADR-033 callee resolution). The driver decides *what* and *which tool*; the ensemble produces the content; the terminal marshals it into the tool call.
 
+#### Task: Compose the destination-keyed deliverable form directive (ADR-035)
+
+**Interaction mechanics:** When delegating content generation for a client-tool deliverable, the loop-driver composes a form directive keyed to the destination tool — `write` → bare file bytes (no markdown fences, no prose, no example block); `bash` → bare command; `edit` → bare replacement content — and includes it in the callee `invoke_ensemble` dispatch input, so the capability ensemble produces the deliverable already in client-tool form. The ensemble's own config stays destination-agnostic: the directive is composed per-dispatch by the framework, never baked into the ensemble's `system_prompt`/`default_task`/`output_schema`. One dispatch produces one client-tool deliverable; multi-file work is decomposed across turns (one `write` per turn), not crammed into a single dispatch. *(The directive's first-try compliance is grounded n=4 single-deliverable at cheap tier (Spike χ.2); sustained-trajectory compliance is a PLAY validation target — Conditional Acceptance, ADR-097.)*
+
 #### Task: Apply the deliverable via the client-tool-action terminal
 
 **Interaction mechanics:** The loop-driver hands the generated deliverable to the client-tool-action terminal (ADR-034), which reads it (via the artifact-bridge from the `SessionArtifactStore` for substrate-routed ensembles, or inline for inline ensembles) and emits the `tool_calls` response the client executes. The driver maps the deliverable to the right client tool (`write` for new files; `edit` after a `read` for in-place changes; `bash` for commands). `edit`-in-place requires reading current file state first.
