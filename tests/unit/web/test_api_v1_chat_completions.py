@@ -1416,3 +1416,89 @@ class TestDispatchPipelineHandlerSwap:
         payload = response.json()["error"]
         assert payload["error"] == "reserved_tool_name"
         assert reserved in payload["reserved_names"]
+
+
+class _StubConfigManager:
+    def __init__(self, profiles: dict[str, dict[str, Any]]) -> None:
+        self._profiles = profiles
+
+    def get_model_profiles(self) -> dict[str, dict[str, Any]]:
+        return self._profiles
+
+
+class _StubService:
+    def __init__(self, profiles: dict[str, dict[str, Any]]) -> None:
+        self.config_manager = _StubConfigManager(profiles)
+
+
+class _ResolveOnlyResolver:
+    def __init__(self, config: OrchestratorConfig) -> None:
+        self._config = config
+
+    def resolve(self) -> OrchestratorConfig:
+        return self._config
+
+
+class _ToolCallingModel:
+    supports_tool_calling = True
+
+
+class _CapturingModelFactory:
+    """A ModelFactory double recording the kwargs ``load_model`` was handed."""
+
+    last_kwargs: dict[str, Any] = {}
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    async def load_model(
+        self, model_name: str, provider: str | None = None, **kwargs: Any
+    ) -> _ToolCallingModel:
+        _CapturingModelFactory.last_kwargs = {
+            "model_name": model_name,
+            "provider": provider,
+            **kwargs,
+        }
+        return _ToolCallingModel()
+
+
+class TestResolveSeatFiller:
+    """The seat-filler resolution threads the profile's connection config.
+
+    A local OpenAI-compatible (Ollama) seat-filler profile carries
+    ``base_url: http://localhost:11434/v1``; if the resolution drops it, the
+    adapter defaults to ``api.openai.com`` and a $0 local seat-filler 401s.
+    The harness override of ``_resolve_seat_filler`` hides this, so the
+    threading is asserted here directly.
+    """
+
+    async def test_resolve_seat_filler_threads_profile_base_url(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        profiles = {
+            "test-profile": {
+                "model": "qwen3:14b",
+                "provider": "openai-compatible/ollama",
+                "base_url": "http://localhost:11434/v1",
+            }
+        }
+        _CapturingModelFactory.last_kwargs = {}
+        monkeypatch.setattr(
+            v1_chat_completions, "get_orchestra_service", lambda: _StubService(profiles)
+        )
+        monkeypatch.setattr(
+            v1_chat_completions,
+            "get_orchestrator_config_resolver",
+            lambda: _ResolveOnlyResolver(_default_orchestrator_config()),
+        )
+        monkeypatch.setattr(
+            v1_chat_completions, "CredentialStorage", lambda config_manager: object()
+        )
+        monkeypatch.setattr(v1_chat_completions, "ModelFactory", _CapturingModelFactory)
+
+        await v1_chat_completions._resolve_seat_filler()
+
+        assert (
+            _CapturingModelFactory.last_kwargs.get("base_url")
+            == "http://localhost:11434/v1"
+        )

@@ -399,7 +399,11 @@ async def _resolve_seat_filler() -> SeatFiller:
         )
     credential_storage = CredentialStorage(config_manager)
     model_factory = ModelFactory(config_manager, credential_storage)
-    model = await model_factory.load_model(profile["model"], profile.get("provider"))
+    model = await model_factory.load_model(
+        profile["model"],
+        profile.get("provider"),
+        base_url=profile.get("base_url"),
+    )
     if not model.supports_tool_calling:
         raise RuntimeError(
             f"Seat-filler Model Profile '{config.model_profile}' resolves to a "
