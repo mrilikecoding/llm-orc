@@ -266,6 +266,85 @@ wording arm (does re-tuning the directive recover a failing model? — would
 reframe FC-60 re-validation as "re-tune + re-validate"); latency-shape
 analysis on delegated calls (the H3 degenerate-emission signature).
 
+### Addendum — the two-hop distinction under H1 (practitioner exchange, 2026-06-04)
+
+The "system prompt becomes more important" inference fuses two hops with
+opposite ownership:
+
+- **Seat-filler hop (Finding E's locus):** the contested system prompt is
+  the *client's* (passed through, not framework-authored). The framework's
+  guidance there is already fully dynamic — composed per turn, wording and
+  position framework-owned. Dynamism was never the missing property;
+  *authority* was (V1/V2 — the framework's own system message, repositioned
+  and reworded — lost on the same model where the user-turn form went
+  55/55). Under H1, the one untested system-region move is **system-region
+  surgery**: rewriting or wrapping the client's own system-prompt content
+  at the framework hop (technically available — the client never sees the
+  seat-filler request; deliberately not taken by C3, which never mutates
+  client-authored content). Recorded as a candidate arm with its integrity
+  tradeoff named.
+- **Ensemble hop:** the framework owns the entire request; there is no
+  contest. Static ensemble `system_prompt` YAML is a design choice (ADR-025
+  reusability; ADR-035 destination-agnosticism) with a working dynamic
+  channel: the per-dispatch directive in the dispatch *input* (Spike φ Run
+  2; χ n=4 compliance). Non-dynamism is not the Finding-E problem here.
+- **The shared exposure:** both hops' chosen channels (user-turn guidance;
+  input-carried directives) bet on the instruction channel H1-style
+  alignment de-prioritizes. The ensemble hop's fix is easy if needed
+  (compose the system prompt per dispatch — the framework owns the
+  request); the seat-filler hop has only the surgery option.
+
+### Addendum — leveraging alignment convergence (practitioner question, 2026-06-04)
+
+*Speculation on speculation (H1 unconfirmed) — recorded as design options
+contingent on the transferability cycle's findings.*
+
+The reframe: if alignment converges on instruction hierarchy, the contest
+stops being a *prompt-budget fight* and becomes a *hierarchy-position
+question* — and the framework's structural advantage is that it composes
+every request the model actually sees. Convergence makes whatever occupies
+the authoritative slot **reliably** obeyed: the very training that kills
+the user-turn nudge converts authoritative-slot instructions into something
+approaching the model-layer enforcement ADR-036 could not find. Four
+contingent leverage moves:
+
+1. **Claim the top of the hierarchy (system-region surgery matures).** On
+   hierarchy-aligned models, a framework-authored wrapper *above* the
+   client's system prompt ("client instructions govern tool interaction,
+   EXCEPT substantive generation delegates via invoke_ensemble") should win
+   reliably — the V1/V2 losses were measured on a weak-hierarchy model.
+   The lever flips per profile: pocket models need user-turn adjacency;
+   converged models obey system-position authority. FC-60's re-validation
+   is the per-profile channel selector.
+2. **The developer-role tier.** The instruction-hierarchy ecosystem
+   (system > developer > user) is middleware-shaped: the framework IS the
+   developer in that hierarchy. If local chat templates adopt the tier,
+   the framework gets a designed-for slot — no fight with the client's
+   system prompt, no user-turn smuggling. Watch: Ollama/template support
+   across model generations.
+3. **The structural pre-filter re-opens (ADR-036's named door).** The
+   rejected "framework decides delegate-vs-carry" pole failed for want of
+   a compliance mechanism. Converged hierarchy IS a soft compliance
+   mechanism: the ψ.4a classifier decides per turn, a per-turn
+   authoritative-slot directive binds the action shape. ADR-036
+   §Rejected alternatives explicitly re-opens on this condition.
+4. **tool_choice may age back in.** Alignment convergence tends to ride
+   with protocol-compliance convergence (function-calling adherence,
+   schema honoring). The three-surface negative is stack-versioned, not
+   eternal — re-probe ψ.3 per model/Ollama upgrade (cheap standing arm).
+
+**Architectural preparation that is cheap now:** the seat-filler message
+composition is already one function (`_seat_filler_messages`); making the
+composition channel a per-profile *strategy* (user-turn / system-wrapper /
+developer-role / tool_choice) is a small seam consistent with FC-46's
+swappability discipline. FC-58 is deliberately tight to today's validated
+channel — a future channel switch is a Design Amendment + ADR update on
+measured evidence (per-profile re-validation), which is the methodology's
+intended path, not a workaround. Defensive note: the client's prompt is
+also written for converged models — "use tools directly" gets *stronger*
+too; positions beside it (V1/V2) or below it (user-turn) both eventually
+lose, so leverage means taking a position above it or in a middleware tier.
+
 ## Artifacts
 
 - Harness + arms: `scratch/spike-psi-delegation-rate/` (`capture_proxy.py`,
