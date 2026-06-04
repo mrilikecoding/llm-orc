@@ -1,0 +1,63 @@
+{
+  "arm": "B4",
+  "n_run": 5,
+  "delegated": 0,
+  "rate": 0.0,
+  "runs": [
+    {
+      "delegated": false,
+      "shape": "tool:read",
+      "n_calls": 1,
+      "all_tools": [
+        "read"
+      ],
+      "first_args": "{\"filePath\":\"/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/string_utils.py\",\"limit\":2000}",
+      "run": 1,
+      "seconds": 30.0
+    },
+    {
+      "delegated": false,
+      "shape": "tool:glob",
+      "n_calls": 1,
+      "all_tools": [
+        "glob"
+      ],
+      "first_args": "{\"pattern\":\"string_utils.py\"}",
+      "run": 2,
+      "seconds": 26.0
+    },
+    {
+      "delegated": false,
+      "shape": "tool:read",
+      "n_calls": 1,
+      "all_tools": [
+        "read"
+      ],
+      "first_args": "{\"filePath\":\"/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/string_utils.py\",\"limit\":2000}",
+      "run": 3,
+      "seconds": 32.2
+    },
+    {
+      "delegated": false,
+      "shape": "tool:read",
+      "n_calls": 1,
+      "all_tools": [
+        "read"
+      ],
+      "first_args": "{\"filePath\":\"/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/string_utils.py\",\"limit\":2000}",
+      "run": 4,
+      "seconds": 25.4
+    },
+    {
+      "delegated": false,
+      "shape": "tool:read",
+      "n_calls": 1,
+      "all_tools": [
+        "read"
+      ],
+      "first_args": "{\"filePath\":\"string_utils.py\",\"limit\":100}",
+      "run": 5,
+      "seconds": 21.8
+    }
+  ]
+}

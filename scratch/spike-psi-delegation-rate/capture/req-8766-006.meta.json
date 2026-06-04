@@ -1,0 +1,16 @@
+{
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "query": "",
+  "headers": {
+    "authorization": "Bearer sk-llmorc-local-dummy",
+    "content-type": "application/json",
+    "user-agent": "opencode/1.15.5 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14",
+    "x-session-affinity": "ses_1702e860effe38Ql1MdeO06MNc",
+    "connection": "keep-alive",
+    "accept": "*/*",
+    "host": "127.0.0.1:8766",
+    "accept-encoding": "gzip, deflate, br, zstd",
+    "content-length": "57713"
+  }
+}

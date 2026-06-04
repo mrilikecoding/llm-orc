@@ -1,0 +1,41 @@
+{
+  "arm": "psi3a",
+  "n_run": 3,
+  "n_planned": 3,
+  "delegated": 0,
+  "rate": 0.0,
+  "threshold": null,
+  "passed": null,
+  "runs": [
+    {
+      "delegated": false,
+      "shape": "tool:write",
+      "n_calls": 1,
+      "all_tools": [
+        "write"
+      ],
+      "run": 1,
+      "seconds": 115.7
+    },
+    {
+      "delegated": false,
+      "shape": "tool:write",
+      "n_calls": 1,
+      "all_tools": [
+        "write"
+      ],
+      "run": 2,
+      "seconds": 46.9
+    },
+    {
+      "delegated": false,
+      "shape": "tool:write",
+      "n_calls": 1,
+      "all_tools": [
+        "write"
+      ],
+      "run": 3,
+      "seconds": 58.4
+    }
+  ]
+}

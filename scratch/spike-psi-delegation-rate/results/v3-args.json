@@ -1,0 +1,66 @@
+{
+  "arm": "v3-args",
+  "n_run": 5,
+  "n_planned": 5,
+  "delegated": 5,
+  "rate": 1.0,
+  "threshold": null,
+  "passed": null,
+  "runs": [
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"input\":\"Create a Python module with two functions: reverse_word_order(sentence) which reverses the word order of a sentence, and count_vowels(s) which counts the number of vowels in a string.\",\"name\":\"code-generator\",\"filePath\":\"/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/string_utils.py\"}",
+      "run": 1,
+      "seconds": 118.0
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"input\":\"Create a Python module with two functions: reverse_word_order that reverses the word order of a sentence, and count_vowels that counts the number of vowels in a string.\",\"name\":\"code-generator\",\"filePath\":\"string_utils.py\"}",
+      "run": 2,
+      "seconds": 34.6
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"name\":\"code-generator\",\"filePath\":\"/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/string_utils.py\",\"input\":\"Create a Python module with two functions: reverse_word_order(sentence) which reverses the word order of a sentence, and count_vowels(s) which counts the number of vowels in a string.\"}",
+      "run": 3,
+      "seconds": 51.2
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"input\":\"Generate a Python module with:\\n1. Function reverse_word_order(sentence) that reverses word order\\n2. Function count_vowels(s) that counts vowels in a string\",\"name\":\"code-generator\",\"filePath\":\"./string_utils.py\"}",
+      "run": 4,
+      "seconds": 33.8
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"input\":\"Implement two functions: reverse_word_order(sentence) that returns words in reverse order, and count_vowels(s) that returns the count of vowels (a, e, i, o, u) in the string.\",\"name\":\"code-generator\",\"filePath\":\"string_utils.py\"}",
+      "run": 5,
+      "seconds": 22.5
+    }
+  ]
+}

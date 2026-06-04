@@ -1,0 +1,63 @@
+{
+  "arm": "A1",
+  "n_run": 5,
+  "delegated": 5,
+  "rate": 1.0,
+  "runs": [
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"input\":\"Generate Python code that loads a CSV file and computes the mean of each numeric column using pandas. The code should handle non-numeric columns gracefully and output the results as a dictionary.\",\"name\":\"code-generator\",\"filePath\":\"csv_helper.py\"}",
+      "run": 1,
+      "seconds": 117.1
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"name\":\"code-generator\",\"input\":\"Generate a Python script that loads a CSV file and computes the mean of each numeric column. The script should use pandas and include a function to process the file.\",\"filePath\":\"csv_helper.py\"}",
+      "run": 2,
+      "seconds": 52.1
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"name\":\"code-generator\",\"filePath\":\"/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/csv_helper.py\",\"input\":\"Generate a Python script that loads a CSV file and computes the mean of each numeric column.\"}",
+      "run": 3,
+      "seconds": 54.2
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"filePath\":\"/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/csv_helper.py\",\"input\":\"Create a Python script that loads a CSV file and computes the mean of each numeric column using pandas.\",\"name\":\"code-generator\"}",
+      "run": 4,
+      "seconds": 44.9
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"input\":\"loads a CSV file and computes the mean of each numeric column\",\"filePath\":\"csv_helper.py\",\"name\":\"code-generator\"}",
+      "run": 5,
+      "seconds": 24.3
+    }
+  ]
+}

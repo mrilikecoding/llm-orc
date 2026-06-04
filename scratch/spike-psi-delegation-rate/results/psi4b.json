@@ -1,0 +1,111 @@
+{
+  "arm": "psi4b",
+  "n_run": 10,
+  "n_planned": 10,
+  "delegated": 0,
+  "rate": 0.0,
+  "threshold": null,
+  "passed": null,
+  "runs": [
+    {
+      "delegated": false,
+      "shape": "tool:write",
+      "n_calls": 1,
+      "all_tools": [
+        "write"
+      ],
+      "run": 1,
+      "seconds": 126.1
+    },
+    {
+      "delegated": false,
+      "shape": "tool:write",
+      "n_calls": 1,
+      "all_tools": [
+        "write"
+      ],
+      "run": 2,
+      "seconds": 45.3
+    },
+    {
+      "delegated": false,
+      "shape": "tool:write",
+      "n_calls": 1,
+      "all_tools": [
+        "write"
+      ],
+      "run": 3,
+      "seconds": 37.1
+    },
+    {
+      "delegated": false,
+      "shape": "tool:write",
+      "n_calls": 1,
+      "all_tools": [
+        "write"
+      ],
+      "run": 4,
+      "seconds": 54.0
+    },
+    {
+      "delegated": false,
+      "shape": "tool:write",
+      "n_calls": 1,
+      "all_tools": [
+        "write"
+      ],
+      "run": 5,
+      "seconds": 57.4
+    },
+    {
+      "delegated": false,
+      "shape": "tool:write",
+      "n_calls": 1,
+      "all_tools": [
+        "write"
+      ],
+      "run": 6,
+      "seconds": 40.5
+    },
+    {
+      "delegated": false,
+      "shape": "tool:write",
+      "n_calls": 1,
+      "all_tools": [
+        "write"
+      ],
+      "run": 7,
+      "seconds": 43.4
+    },
+    {
+      "delegated": false,
+      "shape": "tool:write",
+      "n_calls": 1,
+      "all_tools": [
+        "write"
+      ],
+      "run": 8,
+      "seconds": 46.0
+    },
+    {
+      "delegated": false,
+      "shape": "tool:write",
+      "n_calls": 1,
+      "all_tools": [
+        "write"
+      ],
+      "run": 9,
+      "seconds": 38.1
+    },
+    {
+      "delegated": false,
+      "shape": "tool:write",
+      "n_calls": 1,
+      "all_tools": [
+        "write"
+      ],
+      "run": 10,
+      "seconds": 41.6
+    }
+  ]
+}
