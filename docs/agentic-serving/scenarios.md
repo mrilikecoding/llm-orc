@@ -1399,3 +1399,75 @@ These Layer-match "no" entries are the table working as designed: they mark wher
 | A delegated client-tool deliverable lands as usable bare content (the north-star "delegate work, apply locally" loop produces a runnable file) | Real OpenCode round-trip (real `llm-orc serve` + real client + local Ollama, $0) | The real-serving-surface integration test (TS-12/13) + the $0 real-OpenCode smoke test, exercised with the boundary directive in effect; the per-component scenarios above stub the client | **closed at the specified layer 2026-06-03** — WP-LB-H smoke run 3: real OpenCode executed a delegated, form-contracted `write`; `matrix_utils.py` landed bare and parsing (research log §"WP-LB-H built + validated"). Residual: delegation *reliability* under the client system prompt is Finding E (loop-back #3 → DECIDE); trajectory-scale compliance stays the ADR-097 PLAY target |
 | The produced deliverable is bare client-tool content across deliverable types | API-boundary behavior, then real-client | The "bare client-tool content" integration scenario above (single deliverable); breadth across types is grounded n=4 (Spike χ.2) but trajectory/escalated-tier breadth is PLAY (ADR-033 §6b axis-2) | partial — single-dispatch grounded; sustained-trajectory compliance is a PLAY target (Conditional Acceptance, ADR-097) |
 | D1: multi-agent deliverable extraction stores the terminal/last-successful agent's output | Substrate-write layer (unit/integration) | The two D1 scenarios above, verified against the real `SessionArtifactStore` | yes (1:1 at the substrate-write layer) |
+
+## Feature: Delegation-Decision Mechanism — User-Turn Guidance Composition (ADR-036, Finding E)
+
+*Conformance disposition (`housekeeping/audits/conformance-scan-cycle-7-loopback3-decide.md`): 4 findings, all expected-or-mild — F-1 the system-message composition this feature replaces (refactor-now, the primary WP); F-2/F-3 the instrumentation gap (TurnDecision sink + classifier graduation, co-dependent BUILD work); F-4 a one-line docstring drift (deferred, bundled below).*
+
+### Scenario: first-turn guidance composes into the user turn, never as a system message
+**Given** a tool-driven request (client `tools[]` present) entering the loop-driver on its first turn
+**When** the seat-filler request is composed
+**Then** the delegation guidance is attached to the user task in the user-turn region and the composed request carries no framework-authored system message — the client's system prompt stands alone in the system region. Refutable: a composed seat-filler request with `_DELEGATION_GUIDANCE` in a `{"role": "system"}` message violates the directive-in-user-turn FC.
+
+### Scenario: trailing turns carry the guidance as a standalone trailing user-role message (C3 form)
+**Given** a multi-turn session whose conversation tail is a tool result (assistant tool-call → tool-result pairs)
+**When** the next seat-filler request is composed
+**Then** the guidance is appended as its own `{"role": "user"}` message after the conversation tail, without mutating any client-authored message content. Refutable: guidance merged into a client-authored message, or absent from the composed trailing-turn request, violates the FC. *(C1/C2 attachment forms are equally measured (5/5 each) — using them is implementation choice, not a violation; the structural property is user-role placement.)*
+
+### Scenario: the composition is invisible to the client
+**Given** any tool-driven session with the V3 composition in effect
+**When** the client inspects everything it receives (responses, streamed chunks, tool calls)
+**Then** no client-visible surface carries the delegation guidance — the composition exists only on the framework ↔ seat-filler hop. Refutable: guidance text appearing in any client-visible response violates this.
+
+### Scenario (integration): a generation-shaped turn under V3 composition delegates
+**Given** a generation-shaped request (e.g. "Create a file called csv_helper.py that loads a CSV and computes column means") composed under V3 against the validated seat-filler profile (qwen3:14b)
+**When** the seat-filler decides the turn
+**Then** the decision is an `invoke_ensemble` call naming a registered capability ensemble, with a substantive input brief and a filePath — observable as a `dispatch start` in the serve log and a `TurnDecision` with `delegated_ensemble` set. Refutable: a direct `write` with inline-generated content on a generation-shaped turn is a non-delegation (the Finding E signature). *(Replay layer: 55/55 measured. The real-client layer is the acceptance criterion below — per the WP-A scar, a passing-looking run must verify delegation actually fired.)*
+
+### Scenario: TurnDecision events surface to the operator (instrumentation numerator)
+**Given** a tool-driven session emitting `TurnDecision` events through the Dispatch Event Substrate
+**When** the operator event sink consumes the substrate's events
+**Then** `TurnDecision` no longer falls through silently — at minimum `action`, `delegated_ensemble`, and the turn correlation surface in the operator-visible log. Refutable: a `TurnDecision` event consumed by no sink branch violates the delegation-rate measurability FC (conformance F-2).
+
+### Scenario: the generation-shaped classifier graduates into the package (instrumentation denominator)
+**Given** the spike-validated classification rule (generation verb × content object × capability domain × observed-carry exclusions)
+**When** it is relocated from `scratch/spike-psi-delegation-rate/psi4a_prefilter.py` into `src/llm_orc/agentic/`
+**Then** the graduated classifier reproduces the spike's labeled-set results — 0 misclassifications on the 12 clear cases — as a package regression test, and `delegation_rate` is computable from events alone (classifier denominator × `TurnDecision.delegated_ensemble` numerator). Refutable: a deployment from which the rate cannot be computed without log archaeology violates the measurability FC (conformance F-3).
+
+### Scenario: boundary turns are excluded from the denominator, not guessed
+**Given** a repair-shaped turn ("Fix the bug in string_utils.py where count_vowels misses uppercase vowels") or a turn whose content domain has no registered capability
+**When** the classifier processes it
+**Then** the turn is recorded as boundary-excluded — outside the delegation-rate denominator — and the boundary-excluded share is itself observable (the operational signal that denominator coverage is degrading). Refutable: a boundary turn counted in the denominator, or an unobservable exclusion count, violates Decision 3's measurement-integrity choice.
+
+### Scenario (refactor, before BUILD): the single_step_enforcer docstring stops calling tool_choice BUILD-tunable
+**Given** `single_step_enforcer.py:17–19` frames a one-tool `tool_choice` constraint as a BUILD-tunable enforcement candidate
+**When** the docstring is updated (conformance F-4; `refactor:` commit)
+**Then** it records the family as empirically closed (Spike ψ.3 added the third negative: Ollama+qwen3 silently ignores forcing), leaving the re-planning prompt as the only remaining untested candidate.
+
+### Preservation: carry-shaped turns still select client tools (no over-delegation)
+**Given** read-shaped, command-shaped, and literal-write turns under the V3 composition
+**When** the seat-filler decides each turn
+**Then** the decisions remain `read`/`glob`, `bash`, and `write` respectively — never `invoke_ensemble`. Refutable: a carry-shaped turn that delegates violates the carry-side preservation FC. *(Measured 0/15 false delegations, ψ′ Arm B.)*
+
+### Preservation: grounded carry stays verbatim under the new composition (FC-45)
+**Given** a literal-payload write task ("Write exactly this to notes.txt: …") under V3 composition
+**When** the seat-filler emits the `write`
+**Then** the literal payload appears in the `write` arguments byte-for-byte — the guidance relocation does not cause paraphrase or regeneration of carried values. Refutable: a paraphrased payload with the correct tool name is a grounded-carry violation the tool-name dimension alone cannot see (the methods-review P1-A lesson). *(Measured verbatim 5/5, ψ′ B3.)*
+
+### Preservation: the ADR-035 form directive composition is untouched
+**Given** a delegated generation turn whose callee dispatch input carries the destination-keyed form directive (`compose_form_directive`, FC-53/54)
+**When** the seat-filler guidance relocates to the user turn
+**Then** the callee dispatch composition is unchanged — the two directives live on different hops (guidance: framework → seat-filler; form directive: framework → callee ensemble) and neither moves. Refutable: a callee dispatch missing its form directive after the guidance relocation lands violates this.
+
+### Preservation: the single-turn answer-a-question surface (ADR-027) is untouched
+**Given** a non-tool-driven request (no client tools → dispatch-pipeline path)
+**When** it is served
+**Then** the V3 composition does not engage (it is specific to the seat-filler hop on the tool-driven surface); the pipeline's message composition is unchanged.
+
+### Cycle Acceptance Criteria (Finding E)
+
+| Criterion | Specified layer | Verification method | Layer-match check |
+|---|---|---|---|
+| Delegation fires reliably on generation-shaped turns under the real client (the north-star "work delegated to ensembles by default") | Real OpenCode round-trip (real `llm-orc serve` + real client + local Ollama, $0) | The integration scenario above at the replay layer (55/55 measured) + the $0 real-OpenCode acceptance run with delegation **verified fired** (serve-log `dispatch start` / `TurnDecision` — a passing-looking run can be model-direct, the WP-A scar) — this run is ADR-036's Conditional Acceptance **gating condition** | **no until BUILD** — per-component scenarios stub the client; the real-client run is the layer-matching verification (BUILD Step 5.5 work) |
+| `delegation_rate` ≥ 0.9 sustained (provisional threshold; ≥25 generation-shaped-turn qualifying window) | Production events layer (trailing confirmation, not acceptance gate) | TurnDecision-sink + classifier scenarios above; the meter read over the first soak window | yes at the events layer once F-2/F-3 land; the *number* is practitioner-revisable at the gate |
+| Profile-swap re-validation recorded on any seat-filler model change | Process criterion (FC) | The FC's recorded-run requirement; no scenario can pre-verify a future swap | n/a — process FC, enforced at swap time |

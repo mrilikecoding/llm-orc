@@ -1,0 +1,63 @@
+{
+  "arm": "C2",
+  "n_run": 5,
+  "delegated": 5,
+  "rate": 1.0,
+  "runs": [
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"name\":\"code-generator\",\"filePath\":\"test_string_utils.py\",\"input\":\"Generate unit tests for string_utils.py functions reverse_word_order and count_vowels using Python's unittest framework\"}",
+      "run": 1,
+      "seconds": 85.5
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"filePath\":\"test_string_utils.py\",\"input\":\"Generate unit tests for string_utils.py using pytest conventions. Test both reverse_word_order (edge cases: empty string, multi-word sentences) and count_vowels (case-insensitive, no vowels, all vowels).\",\"name\":\"code-generator\"}",
+      "run": 2,
+      "seconds": 49.5
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"input\":\"Generate unit tests for string_utils.py using Python's unittest framework. Test both functions with normal cases, edge cases, and error conditions.\",\"name\":\"code-generator\",\"filePath\":\"test_string_utils.py\"}",
+      "run": 3,
+      "seconds": 47.0
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"name\":\"code-generator\",\"filePath\":\"test_string_utils.py\",\"input\":\"Write unit tests for the functions in string_utils.py using pytest conventions\"}",
+      "run": 4,
+      "seconds": 34.6
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "first_args": "{\"name\":\"code-generator\",\"input\":\"Generate unit tests for string_utils.py. Test requirements:\\n1. reverse_word_order function:\\n   - 'Hello world' \u2192 'world Hello'\\n   - Empty string \u2192 ''\\n   - Single word \u2192 same word\\n   - Punctuation handling\\n2. count_vowels function:\\n   - 'AEIOUaeiou' \u2192 10\\n   - 'Python' \u2192 2 (o and y?)\\n   - 'xyz' \u2192 0\\n   - Mixed case handling\",\"filePath\":\"test_string_utils.py",
+      "run": 5,
+      "seconds": 40.0
+    }
+  ]
+}

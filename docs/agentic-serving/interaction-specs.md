@@ -431,3 +431,17 @@ The Skill Orchestration User (Cycle 5 introduction) composes a client-side skill
 #### Task: Observe the client's tool result and continue or finish
 
 **Interaction mechanics:** After the client executes the tool and returns the `role: "tool"` result, the loop-driver receives it (the framework routes the follow-up's tool message to the driver rather than dropping it) and decides the next action or finishes with a text completion. The loop continues until the task is complete.
+
+#### Task: Receive the delegation guidance in the user-turn region (ADR-036)
+
+**Interaction mechanics:** The framework composes the delegation guidance into the user-turn region of every seat-filler request — attached to the user task on first turns, as a standalone trailing user-role message after tool-result tails (the C3 form) — never as a framework system message (the system slot measurably loses the attention contest to the client's system prompt: baseline 0/10 vs user-turn 55/55, Spikes ψ/ψ′). The driver's delegation decision is won by composition, not coerced: no model-layer forcing mechanism exists on this stack (`tool_choice` silently ignored; narrowed-role prompts inert; tool-list restriction breaks the turn). The composition is internal to the framework ↔ seat-filler hop; the client never sees it.
+
+## Ensemble Author / Operator — Cycle 7 loop-back #3 task additions (ADR-036)
+
+#### Task: Watch the delegation-rate meter
+
+**Interaction mechanics:** The operator reads `delegation_rate` — the fraction of generation-shaped turns that delegated to a capability ensemble — computed from events alone (generation-shaped classifier denominator × `TurnDecision.delegated_ensemble` numerator) over a 24-hour rolling window. Sustained readings below the provisional 0.9 threshold are refutation evidence for the composition mechanism. The meter routes the response: ~0.85–0.9 is detect-and-retry candidate territory (mechanism mostly working); below ~0.85 or a degrading trend means mechanism diagnosis (client-prompt change, model update, composition regression) — not a retry layer masking the failure. A growing boundary-excluded share (repair-shaped turns, uncovered content domains) signals the denominator's coverage needs re-examination, including whenever new capability ensembles are registered.
+
+#### Task: Re-validate the delegation rate on any seat-filler profile change
+
+**Interaction mechanics:** Before trusting a seat-filler Model Profile swap, the operator records a delegation-rate re-validation — a pre-swap replay run (the Spike ψ harness shape) or a post-swap soak window (≥25 generation-shaped turns per ADR-036). The V3 lever is a (composition × model) property, not a transferable prompt technique: identical composition delegated 1/5 on qwen3.5:9b and 2/5 on mistral-nemo:12b (ψ′ Arm D). Swappability stays structural (config-only, ADR-033 FC); trust is empirical (the recorded run).

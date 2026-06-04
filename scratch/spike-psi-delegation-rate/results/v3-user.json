@@ -1,0 +1,111 @@
+{
+  "arm": "v3-user",
+  "n_run": 10,
+  "n_planned": 10,
+  "delegated": 10,
+  "rate": 1.0,
+  "threshold": 9,
+  "passed": true,
+  "runs": [
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "run": 1,
+      "seconds": 120.8
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "run": 2,
+      "seconds": 37.8
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "run": 3,
+      "seconds": 26.0
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "run": 4,
+      "seconds": 33.1
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "run": 5,
+      "seconds": 33.3
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "run": 6,
+      "seconds": 27.3
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "run": 7,
+      "seconds": 34.3
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "run": 8,
+      "seconds": 34.2
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "run": 9,
+      "seconds": 26.6
+    },
+    {
+      "delegated": true,
+      "shape": "tool:invoke_ensemble",
+      "n_calls": 1,
+      "all_tools": [
+        "invoke_ensemble"
+      ],
+      "run": 10,
+      "seconds": 28.3
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "method": "GET",
+  "path": "/v1/models",
+  "query": "",
+  "headers": {
+    "host": "127.0.0.1:8766",
+    "user-agent": "curl/8.14.1",
+    "accept": "*/*"
+  }
+}

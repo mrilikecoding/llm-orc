@@ -1,0 +1,6 @@
+data: {"id": "chatcmpl-c48380037c8149ad93e7a1ca59dc43e3", "object": "chat.completion.chunk", "created": 1780529529, "model": "agentic", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-c48380037c8149ad93e7a1ca59dc43e3", "object": "chat.completion.chunk", "created": 1780529529, "model": "agentic", "choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "call_0etc4g8v", "type": "function", "function": {"name": "write", "arguments": "{\"content\":\"def reverse_word_order(sentence):\\n    \\\"\\\"\\\"Reverse the word order of a sentence.\\n\\n    Args:\\n        sentence (str): The input sentence.\\n\\n    Returns:\\n        str: The sentence with words in reverse order.\\n    \\\"\\\"\\\"\\n    return ' '.join(sentence.split()[::-1])\\n\\n\\ndef count_vowels(s):\\n    \\\"\\\"\\\"Count the number of vowels in a string.\\n\\n    Args:\\n        s (str): The input string.\\n\\n    Returns:\\n        int: The count of vowels (a, e, i, o, u).\\n    \\\"\\\"\\\"\\n    return sum(1 for char in s.lower() if char in 'aeiou')\",\"filePath\":\"/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/string_utils.py\"}"}}]}, "finish_reason": "tool_calls"}]}
+
+data: [DONE]
+

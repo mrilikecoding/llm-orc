@@ -1,0 +1,63 @@
+{
+  "arm": "B2",
+  "n_run": 5,
+  "delegated": 0,
+  "rate": 0.0,
+  "runs": [
+    {
+      "delegated": false,
+      "shape": "tool:bash",
+      "n_calls": 1,
+      "all_tools": [
+        "bash"
+      ],
+      "first_args": "{\"command\":\"ls -la\",\"description\":\"Lists files in current directory with details\",\"workdir\":\"/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace\"}",
+      "run": 1,
+      "seconds": 39.9
+    },
+    {
+      "delegated": false,
+      "shape": "tool:bash",
+      "n_calls": 1,
+      "all_tools": [
+        "bash"
+      ],
+      "first_args": "{\"description\":\"Lists all files in current directory with details\",\"command\":\"ls -la\"}",
+      "run": 2,
+      "seconds": 24.5
+    },
+    {
+      "delegated": false,
+      "shape": "tool:bash",
+      "n_calls": 1,
+      "all_tools": [
+        "bash"
+      ],
+      "first_args": "{\"command\":\"ls -la\",\"description\":\"Lists files in current directory with details\",\"workdir\":\"/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace\"}",
+      "run": 3,
+      "seconds": 49.8
+    },
+    {
+      "delegated": false,
+      "shape": "tool:bash",
+      "n_calls": 1,
+      "all_tools": [
+        "bash"
+      ],
+      "first_args": "{\"command\":\"ls -la\",\"description\":\"Lists all files in current directory with details\"}",
+      "run": 4,
+      "seconds": 36.6
+    },
+    {
+      "delegated": false,
+      "shape": "tool:bash",
+      "n_calls": 1,
+      "all_tools": [
+        "bash"
+      ],
+      "first_args": "{\"command\":\"ls -la\",\"description\":\"Lists files in current directory with details\",\"workdir\":\"/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace\"}",
+      "run": 5,
+      "seconds": 33.8
+    }
+  ]
+}
