@@ -101,7 +101,9 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ---
 
-### WP-LB-F: Axis-2 diagnostic instrumentation surfacing (advisory #5; OQ #27 axis 2)
+### WP-LB-F: Axis-2 diagnostic instrumentation surfacing (advisory #5; OQ #27 axis 2) — **FOLDED into WP-LB-J (2026-06-04)**
+
+**Status: folded, not dropped.** ADR-036's delegation-rate instrumentation needs exactly this surfacing — the `TurnDecision` sink branch is simultaneously the axis-2 split-vs-callee diagnostic (FC-51, this WP's original objective) and the delegation-rate numerator surface (FC-59). The WP-LB-H feed-forward pre-named the fold ("F's TurnDecision surfacing is the standing instrument for exactly this measurement"). All WP-LB-F changes are carried verbatim inside **WP-LB-J** below; the trajectory-reconstruction helper rides along. Original spec retained below for the trail.
 
 **Objective:** Surface the per-turn `TurnDecision` events (emitted by WP-LB-B) through the operator-terminal + orchestrator-context sinks so a failing long-horizon (axis-2) run in PLAY/first-deployment is diagnosable as split-incorrect vs. callee-incorrect. The recorded load-bearing risk (ADR-033 §Decision ¶5) gets its observation surface.
 
@@ -160,6 +162,41 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ---
 
+### WP-LB-I: User-turn delegation guidance composition (ADR-036; Finding E — the mechanism)
+
+**Objective:** Delegation fires reliably on generation-shaped turns under the real client — the seat-filler guidance relocates from the losing system slot (baseline 0/10) to the user-turn region (55/55 measured), per ADR-036 Decision 1.
+
+**Changes:**
+- **Loop Driver:** `_seat_filler_messages` composes the delegation guidance into the user-turn region — first turn: attached to the user task; trailing tool-result tails: standalone trailing user-role message (C3 preferred form; C1/C2 equally measured, not violations). The composed request carries **no framework-authored system message** (FC-58). Module + guidance docstrings updated (the conformance F-1 "System guidance" framing predates the ADR).
+- **Single-Step Enforcer:** docstring stops calling `tool_choice` BUILD-tunable — the family is empirically closed (Spike ψ.3 third negative); re-planning prompt remains the only untested candidate (conformance F-4; `refactor:` commit).
+- **Tool-list completeness constraint (FC-62):** assert the composition path cannot construct a narrowed tool list (ψ.4c empty-response break).
+
+**Scenarios covered:** scenarios.md §Delegation-Decision Mechanism — first-turn composition, trailing-turn C3 form, client-invisibility, the generation-shaped delegation integration scenario, carry-side + verbatim grounded-carry preservations, the docstring refactor scenario.
+
+**Participating modules:** Loop Driver; Single-Step Enforcer (docstring only).
+
+**Dependencies:** None hard (the composition path landed with WP-LB-B/G). **Acceptance gate (load-bearing — ADR-036's Conditional Acceptance gating condition):** the $0 real-OpenCode run with delegation **verified fired** (serve-log `dispatch start` / `TurnDecision` — a passing-looking run can be model-direct; the WP-A scar). Carry-side preservation asserted in the same run shape (FC-61).
+
+---
+
+### WP-LB-J: Delegation-rate instrumentation (ADR-036 Decision 3; absorbs WP-LB-F)
+
+**Objective:** The delegation rate is computable from events alone and operator-visible — the regression-visibility mechanism for the stack-scoped win (the meter is the safety net; Spike ψ′ Arm D: the lever does not transfer across models).
+
+**Changes:**
+- **Delegation Rate Meter (new module, `src/llm_orc/agentic/delegation_rate_meter.py`):** graduate the Spike ψ.4a rule from `scratch/spike-psi-delegation-rate/psi4a_prefilter.py` (`classify_turn` over raw inputs; labeled set ships as regression fixtures — 0/12 clear-case errors) + `delegation_rate(events)` over a narrow structural protocol (imports neither Loop Driver nor sinks; conformance F-3).
+- **Loop Driver:** per-turn `classify_turn` call; `TurnDecision` gains `turn_shape` (FC-59 denominator).
+- **Operator-Terminal Event Sink:** `TurnDecision` consume branch — one INFO line per turn (turn index, action, shape, delegated ensemble, carry-held, replanned) — the former WP-LB-F objective (FC-51) and the rate numerator surface (FC-59) in one branch; rate surfacing cadence (per-N-turns / session-close / on-demand) is a BUILD open choice. The WP-LB-F trajectory-reconstruction helper rides along.
+- **Profile-swap re-validation discipline (FC-60):** recorded-run requirement documented in the field guide at the profile-swap touchpoint.
+
+**Scenarios covered:** scenarios.md §Delegation-Decision Mechanism — TurnDecision surfacing, classifier graduation + labeled-set regression, boundary-exclusion observability; plus the original WP-LB-F axis-2 acceptance row (FC-51).
+
+**Participating modules:** Delegation Rate Meter (new), Loop Driver, Operator-Terminal Event Sink.
+
+**Dependencies:** Hard on **WP-LB-B** (landed — the TurnDecision events). **Open choice with WP-LB-I** (classification stamping is independent of guidance placement) — but ADR-036's trailing confirmation (the ≥25 generation-shaped-turn soak ≥0.9) needs both landed, so finishing both before the soak reading is the natural order.
+
+---
+
 ## Dependency Graph (Cycle 7 loop-back)
 
 ```
@@ -188,9 +225,16 @@ WP-LB-G (delegation reachable; ✅ closed — surfaced Finding D)
    │
    └─ hard ─▶ WP-LB-H (the form contract rides the delegation path G activated)
 
-WP-LB-H (form contract + D1)
+WP-LB-H (form contract + D1; ✅ closed — surfaced Finding E)
    │
-   └─ implied ─▶ WP-LB-E, WP-LB-F (resume after the Finding D blocker clears)
+   └─ hard ─▶ WP-LB-I (the guidance composition rides the delegation path H made form-correct)
+
+WP-LB-I (user-turn guidance; the ADR-036 mechanism) ─ open choice with ─ WP-LB-J (instrumentation)
+   (the Conditional Acceptance soak reading needs both; WP-LB-J absorbs WP-LB-F)
+
+WP-LB-B ─ hard ─▶ WP-LB-J (the TurnDecision events it instruments; landed)
+
+WP-LB-I, WP-LB-J ─ implied ─▶ WP-LB-E (wrapper-contingency seam — resumes once the delegation surface is reliable + measured)
 ```
 
 **Classification key:** Hard = structural necessity; Implied = simpler-first but stub-able; Open choice = genuinely independent.
@@ -207,9 +251,13 @@ When the surface-mode discriminator, Loop Driver + Single-Step Enforcer, Client-
 
 TS-12's parity round-trip with ADR-035's form contract in effect: the delegated deliverable landing via the client's `write` is bare, runnable file content (the Finding D refutation), and the D1 extraction stores the terminal agent's output rather than the raw envelope. After this state, WP-LB-E/F resume and the remaining loop-back work is refinement + instrumentation, not surface correctness. Trajectory-scale form compliance remains the PLAY target (ADR-097 Conditional Acceptance).
 
+### TS-15: Delegation reliable and measured (after WP-LB-I + WP-LB-J)
+
+TS-14's form-contracted parity with ADR-036's mechanism and meter in effect: generation-shaped turns delegate reliably under the real client (the V3 composition; gating condition = the delegation-verified real-OpenCode run), and the delegation rate is computable from events alone with the boundary-excluded share observable (the trailing ≥25-generation-shaped-turn soak reads ≥0.9 or refutes). The win is stack-scoped (composition × qwen3:14b × OpenCode 1.15.5) — the meter is what makes losing it visible; profile swaps re-validate (FC-60). After this state only WP-LB-E remains in the loop-back set.
+
 ### TS-13: Cycle 7 fully complete — both surfaces (after both surface WP sets)
 
-Both Cycle 7 surfaces shipped: the single-turn answer-a-question surface (first-pass WP-A landed + WP-B/C/D/E) and the tool-driven multi-turn surface (WP-LB-A..F). The surface-mode discriminator routes each request; the Capability List Builder serves both. Axis-2 long-horizon driver coherence is carried into PLAY/first-deployment as the recorded load-bearing risk under ADR-097 Conditional Acceptance, with the seat-filler swappable (cheap ↔ frontier) as the testable lever and FC-51 instrumentation making a failure diagnosable.
+Both Cycle 7 surfaces shipped: the single-turn answer-a-question surface (first-pass WP-A landed + WP-B/C/D/E) and the tool-driven multi-turn surface (WP-LB-A..E + G..J; F folded into J). The surface-mode discriminator routes each request; the Capability List Builder serves both. Axis-2 long-horizon driver coherence is carried into PLAY/first-deployment as the recorded load-bearing risk under ADR-097 Conditional Acceptance, with the seat-filler swappable (cheap ↔ frontier) as the testable lever and FC-51 instrumentation making a failure diagnosable.
 
 ---
 
