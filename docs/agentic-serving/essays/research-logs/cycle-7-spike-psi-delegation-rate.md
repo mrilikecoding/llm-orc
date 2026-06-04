@@ -217,6 +217,55 @@ against "the seat-filler decides" per feed-forward #3.
    multi-turn behavior unmeasured; n=10 per arm. The 15/15 V3 result bounds
    the first-turn delegation decision only.
 
+## Post-spike speculation — recorded for the candidate transferability cycle (2026-06-04)
+
+*Practitioner-requested speculation at session close ("why did only the 1
+model work... Even against other models in the same family. 14B? Is there a
+floor?"). Hypotheses, NOT findings — two Arm D negatives cannot establish a
+mechanism. Recorded so the candidate transferability cycle inherits the
+question set rather than rediscovering it.*
+
+**H1 — Instruction-hierarchy post-training (generation-dependent;
+anti-correlated with newer alignment).** V3 works because qwen3:14b lets a
+late user-turn instruction out-compete the system prompt. Newer
+post-training tends to strengthen system-prompt authority (user-turn
+injection IS the prompt-injection threat model), so qwen3.5 may have been
+trained out of the very calibration the lever exploits. If H1 dominates,
+the lever weakens as local models improve — strengthening the meter's role
+and the case for re-opening structural mechanisms if a provider honors
+`tool_choice`.
+
+**H2 — Capability floor for the delegation concept.** "Invoke a meta-tool
+instead of doing the work yourself" requires suppressing the model's own
+competence in favor of routing. Smaller models' agentic training
+pattern-matches coding task → file tool; 14B may cross the threshold where
+the suppression is followable. Size and generation are confounded in Arm D
+(qwen3.5:9b differs on both axes).
+
+**H3 — Tool-calling training distribution (a different disease with the
+same score).** The strategy needs an already-strong tool-caller so the
+nudge only flips *which* tool. mistral-nemo's two "delegations" returned in
+1.6–2.1s vs 8–80s for its direct writes — degenerate quick-emission, not
+considered routing. nemo may fail on capability while qwen3.5 fails on
+hierarchy.
+
+**H4 — Chat-template mechanics (contributor, not the story).** Identical
+JSON message lists render to different token streams per family; adjacency
+in the list is not adjacency in the rendered stream.
+
+**Synthesis: a pocket, not a floor.** The model must be capable enough to
+tool-call cleanly and represent delegation (floor-like, H2/H3) while not so
+hierarchy-aligned that the user-turn lever loses (ceiling-like,
+generation-dependent, H1). qwen3:14b sits in the pocket.
+
+**Discriminating arms for the transferability cycle (all $0 local unless
+noted):** qwen3:8b + qwen3:32b (size at fixed generation — splits H2 from
+H1); a larger qwen3.5 if available (generation at fixed-ish size — tests H1
+directly); one strong different-family tool-caller (tests H3); a per-model
+wording arm (does re-tuning the directive recover a failing model? — would
+reframe FC-60 re-validation as "re-tune + re-validate"); latency-shape
+analysis on delegated calls (the H3 degenerate-emission signature).
+
 ## Artifacts
 
 - Harness + arms: `scratch/spike-psi-delegation-rate/` (`capture_proxy.py`,
