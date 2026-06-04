@@ -49,10 +49,37 @@ to deliver)?
 
 ## Pre-registered design
 
+**Candidate sourcing (practitioner-directed, 2026-06-04: "research and
+pull other small ollama models to try and fit this").** The fresh session
+opens with a short survey of the current Ollama library for additional
+candidates before the screen runs. Selection criteria (pre-registered so
+the sourcing is principled):
+1. **≤4B parameters** (the "small/fast" premise; broker latency ceiling ≤2s
+   warm).
+2. **Tool-calling template support on Ollama** — screening precondition: one
+   `generate_with_tools` probe call per candidate; an Ollama 400 "does not
+   support tools" (the S0-CAP-8 signature) disqualifies immediately, before
+   any arm spends runs.
+3. **Recent generation** — H1 says hierarchy adherence is alignment-recency
+   dependent; newer post-training is the property being shopped for.
+4. **Family diversity** — the swappability requirement (≥2 viable incl.
+   ≥1 non-qwen) is the point; prefer adding families over adding sizes.
+5. **Free/local only** (standing preference); pulls ≤ ~3 GB each.
+
+Starter shortlist to verify against current library state (availability
+changes; the survey confirms): qwen3:1.7b / qwen3:4b; llama3.2:1b / 3b;
+gemma3:1b / 4b; phi4-mini; granite-dense small; smollm2 (tool support
+doubtful — probe first); deepseek-r1:1.5b (reasoning-tuned; H3
+tool-calling risk — probe first). Cap the screen at ~5–6 candidates
+total to keep ω.1 wall-clock bounded (≈24 cases × n=3 × candidates);
+record every disqualification with its mechanism (context-fit / no-tools /
+H3 signature / accuracy) per the P2-D telemetry discipline.
+
 **Candidate models (screen all on ω.1; carry survivors forward):**
 qwen3:0.6b (already local); qwen3:1.7b and/or qwen3:4b (small pulls);
 one non-qwen tiny (gemma3:4b or llama3.2:3b) — the cross-family point is
-load-bearing for the swappability claim, not optional.
+load-bearing for the swappability claim, not optional; plus survey
+additions per the sourcing step above.
 
 **Baselines:**
 - The deterministic ψ.4a rule: 0/12 clear-case errors, $0, zero latency.
