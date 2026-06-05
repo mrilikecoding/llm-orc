@@ -317,3 +317,171 @@ recorded per-run, and read under the finish-text quality criterion (a
 returnable finish turn should not assert fabricated file contents). The
 automatic detector is unchanged; the rule-4 tally applies the refined
 category. Smoke evidence: `results/smoke.json`.
+
+---
+
+## Round 1 results + verdict (2026-06-05; qwen3:14b, $0 local)
+
+| Arm | Tail | Form | Expected | Correct (n=10 denominator) |
+|-----|------|------|----------|---------------------------|
+| θ.1a | work-complete | A (in-session) | COMPLETE | **10/10** |
+| θ.1b | work-complete | B (bare) | COMPLETE | **0/10** (all REMAINING) |
+| θ.2a | work-remaining E4 | A | REMAINING | **3/10** |
+| θ.2b | work-remaining E4 | B | REMAINING | **10/10** |
+| θ.2a′ | work-remaining E4′ | A | REMAINING | **6/10** |
+| θ.2b′ | work-remaining E4′ | B | REMAINING | **10/10** |
+
+Zero flips (either category), zero unparseable, zero tool-call attempts,
+latencies 9–35s/call both forms. Per-run records `results/*.json`.
+
+**Rule outcomes (applied as pre-registered):** Rule 1 — no form passes
+(Form A fails both θ.2 clauses; Form B fails θ.1). Rule 2 — does NOT fire
+(Form B exceeds the >6/10 implicit bar on both work-remaining bases). Rule
+3 — does not fire (Form A false-continue 0/10). Rule 4 — no flips. **Rule
+5 fires for Form B** (near-uniform REMAINING regardless of tail): rebuild
+before judging.
+
+**F-θ.1 (the round-1 finding — the forms fail on opposite sides for the
+same root cause).** The action record visible to both forms carries no
+information about WHAT was written: the client-serialized assistant
+messages are empty and tool results are bare "Wrote file successfully"
+strings. Form B fills the gap with skepticism — every θ.1b response reasons
+that file content/paths are unrecorded so completion cannot be confirmed
+(honest epistemics on an information-starved digest, invited by the
+digest's own "(file path and content not recorded)" line; not a
+continuation-bias degeneracy). Form A fills the gap with optimism — θ.2a
+responses confabulate completion ("Created string_utils.py and
+test_string_utils.py") when the session wrote one file: coherent-confident-
+false in the judgment seat, the AS-9 confabulation pattern. The
+discriminating information is absent from the context; the forms guess in
+opposite directions.
+
+## Round 2 pre-registration (2026-06-05, before any round-2 run)
+
+**Rebuild target (per rule 5 + F-θ.1): the digest's information content and
+the judgment standard — not the question's verdict format.**
+
+**Enrichment is production-honest but spike-constructed.** At runtime the
+framework composes every client-tool write call itself (grounded carry or
+delegation → Artifact Bridge → Client-Tool-Action Terminal), so it knows
+each write's filePath and each delegation's brief, and can join its own
+emitted calls with the client's per-call success results. The capture bytes
+carry none of this (OpenCode's serialization drops it), so the round-2
+digests use **constructed path annotations**, recorded honestly: the
+work-complete base is annotated as one write of `string_utils.py` plus two
+revision writes of the same file (the Finding-F production shape that
+generates such tails); E4 as one write of `string_utils.py`; E4′ as writes
+of `string_utils.py` and `number_utils.py`. The production mechanism
+derives these from the framework's own records — a structural advantage the
+spike cannot reproduce from capture bytes; the BUILD acceptance gate
+validates the production join (the corpus pattern).
+
+**Judgment-standard fix.** Round-1 Form B treats code-correctness
+unverifiability as REMAINING — true forever and therefore useless as a
+termination criterion. The mechanism's question is deliverable accounting
+(are requested deliverables not yet produced?), not QA — correctness is
+owned by the capability ensemble, the calibration gate, and PLAY. Round-2
+question text (revised; verdict literals and format unchanged):
+
+> Status check: based on the action record, does the session's requested
+> work have deliverables that have not yet been produced? A successful
+> write of a requested file counts as that deliverable being produced; you
+> are not being asked to verify code correctness. Reply with one line
+> starting with `VERDICT: COMPLETE` (no outstanding deliverables) or
+> `VERDICT: REMAINING` (outstanding deliverables exist). If COMPLETE,
+> follow with a brief summary of what was done. If REMAINING, state in one
+> sentence what remains. Do not perform any of the remaining work yourself.
+
+**Arms (n=10 each, qwen3:14b, $0):** both forms enriched — Form B-enriched
+(digest with per-action file paths + revised question) on all three bases
+(θ.3b / θ.4b / θ.4b′), Form A-enriched (the revised question message
+additionally carrying the framework's action digest as framework-authored
+appended content — permitted under ADR-036's no-client-content-mutation
+rule) on all three bases (θ.3a / θ.4a / θ.4a′).
+
+**Decision rule (round 2):** rule-1 thresholds unchanged — a form passes
+with θ.3 (work-complete) ≥9/10 false-continue ≤1/10 AND ≥8/10 on each
+work-remaining base. Both pass → Form B wins on cost (unchanged tiebreak).
+Neither passes → rule-2 reopen path (implicit variant with composed-
+estimate costs vs ship-as-is vs turn-cap-only) — no third rebuild round
+without a gate conversation. Measurement, denominator, flip (as amended),
+finish-text, and latency disciplines carry unchanged.
+
+**Methods-review disposition (recorded visibly):** round 2 is not
+re-dispatched for review — it is a bounded rebuild within the reviewed
+framework (the ψ″-E4 precedent: same measurement and rule discipline, new
+arms), but the question-text revision and digest enrichment are material
+composition changes; flagged here for the phase-boundary susceptibility
+snapshot and the gate.
+
+## Round 2 results + verdict (2026-06-05; qwen3:14b, $0 local)
+
+| Arm | Tail | Form | Expected | Correct (n=10) |
+|-----|------|------|----------|----------------|
+| θ.3a | work-complete | A-enriched | COMPLETE | **10/10** |
+| θ.3b | work-complete | B-enriched | COMPLETE | **9/10** (1 false-continue) |
+| θ.4a | work-remaining E4 | A-enriched | REMAINING | **10/10** |
+| θ.4b | work-remaining E4 | B-enriched | REMAINING | **10/10** |
+| θ.4a′ | work-remaining E4′ | A-enriched | REMAINING | **10/10** |
+| θ.4b′ | work-remaining E4′ | B-enriched | REMAINING | **10/10** |
+
+Zero flips, zero unparseable, zero tool-call attempts. Latency medians:
+Form B-enriched 7–8s on work-remaining bases / 19s work-complete; Form
+A-enriched 8–11s / 17s. Form B's request is ~1–2k tokens against Form A's
+~30k (the client prompt rides in A); A's prompt-processing cost grows with
+session depth, B's is bounded by the digest. Per-run records
+`results/theta3*.json` / `results/theta4*.json`.
+
+**Decision rule (round 2) outcome: BOTH forms pass.** Form A-enriched
+30/30; Form B-enriched 29/30 with the single θ.3b false-continue exactly at
+the ≤1/10 threshold — the residual verification-skepticism mode ("functions
+not confirmed to be implemented"), the round-1 Form B failure shape at 1/10
+instead of 10/10. **Per the pre-registered tiebreak, Form B-enriched is the
+adopted form (cost: no client-prompt processing on the judgment call;
+bounded context independent of session depth).** n=10 cannot distinguish
+30/30 from 29/30; the tiebreak was pre-registered on cost, not score, and
+is honored as registered.
+
+**Finish-text returnability (θ.3 COMPLETE responses, both forms):** clean —
+brief factual summaries, no fabricated code blocks (the smoke-check concern
+did not materialize under the deliverable-accounting question). Returnable
+as the user-facing finish turn with the VERDICT line stripped.
+
+**F-θ.2 (the round-2 finding):** with per-action file paths in the digest
+and an explicit deliverable-accounting standard, the explicit judgment call
+discriminates work-complete from work-remaining tails at 59/60 across two
+forms and three bases — against round 1's information-starved 19/60 (forms
+failing on opposite sides). The mechanism's accuracy lives in the evidence
+base and the judgment standard, not in the model's unguided disposition:
+the same model, same bases, same verdict format moved 19/60 → 59/60 on
+digest + standard alone. Production implication: the framework owns the
+digest (joins its own emitted tool calls with client results) — the
+judgment's evidence base is a framework-guaranteed property even though the
+judgment itself is model-rendered. The thesis lands in its correct scope:
+the framework cannot compute task-completeness, but it can guarantee what
+the completeness judgment gets to see.
+
+**Composed mechanism estimate (labeled per P2-C; composed from
+independently-measured n=10 arms, not a measured end-to-end rate):**
+work-complete tails finish at ~0.9 (θ.3b) with returnable finish text;
+work-remaining tails delegate at ~0.9 (θ.4b 1.0 × E4b 0.9). The residual
+failure modes: 1/10 false-continue on work-complete (one extra delegated
+revision turn — the Finding F shape at bounded frequency, terminated on the
+next trailing turn's judgment with ~0.9 probability per cycle, geometric
+decay vs round-zero's never-terminates), and E4b's 1/10 non-delegation on
+work-remaining (unchanged from ADR-036's measured composition).
+
+## Portability annotation (hosted secondary arms; read after local verdict per P2-D)
+
+θ.h1/θ.h2 mirrored the adopted composition (B-enriched, byte-identical
+messages) on `zen:minimax-m2.7`: **work-complete 10/10 COMPLETE,
+work-remaining 10/10 REMAINING — 20/20**, latency 0.7–3.0s/call (vs 7–19s
+local). Spend ~$0.03 (21 calls incl. one response-shape probe; within the
+authorized envelope). Annotation only — the local arms carry the verdict.
+Contrast with the V3 delegation lever (ψ′ Arm D: non-transfer across two
+models): the judgment call is framework-composed with no attention contest,
+and on this single hosted pair it transfers cleanly. One pair does not
+establish portability as a property; it establishes the composition is not
+qwen-idiosyncratic, de-risks the queued FC-60 hosted seat-filler
+re-validation probe, and feeds the candidate Cycle 8 transferability
+subject. Records `results/thetah*.json`.
