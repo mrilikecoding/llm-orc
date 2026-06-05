@@ -65,6 +65,13 @@ class _FixedSeatFiller:
         return self._response
 
 
+class _FakeJudgmentSeat:
+    """Judgment-seat double — the contexts here never reach a judgment."""
+
+    async def generate_response(self, message: str, role_prompt: str) -> str:
+        return "VERDICT: REMAINING\n"
+
+
 def _write_capability_library(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Lay out a local ``.llm-orc`` with one mock-model capability ensemble."""
     global_root = tmp_path / "xdg"
@@ -157,6 +164,7 @@ async def test_callee_generation_dispatches_real_ensemble_into_a_write(
         enforcer=SingleStepEnforcer(),
         tool_dispatch=dispatch,
         action_record=SessionActionRecord(),
+        judgment_seat=_FakeJudgmentSeat(),
     )
     terminal = ClientToolActionTerminal(
         loop_driver=driver,

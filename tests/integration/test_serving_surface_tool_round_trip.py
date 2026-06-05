@@ -109,6 +109,16 @@ class _ScriptedSeatFiller:
         self.surfaced.append(messages)
         return self._responses.pop(0)
 
+    async def generate_response(self, message: str, role_prompt: str) -> str:
+        """The judgment seat shares the seat-filler's model (FC-68 default).
+
+        ADR-037: a trailing tool-result tail opens with the termination
+        judgment. REMAINING keeps this test on the call-2 path, so the
+        scripted action responses (and the FC-50 assertion that the tool
+        result reached the driver) ride unchanged.
+        """
+        return "VERDICT: REMAINING\nThe requested follow-up is still open."
+
 
 class _StoreWritingDispatch:
     """Tool-dispatch double that routes its deliverable through the store.

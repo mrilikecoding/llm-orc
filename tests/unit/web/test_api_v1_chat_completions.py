@@ -123,6 +123,13 @@ class _CapturingSink:
         self.events.append(event)
 
 
+class _FakeJudgmentSeat:
+    """Judgment-seat double — the contexts here never reach a judgment."""
+
+    async def generate_response(self, message: str, role_prompt: str) -> str:
+        return "VERDICT: REMAINING\n"
+
+
 def _real_terminal(
     seat_filler: _FakeSeatFiller, substrate: DispatchEventSubstrate
 ) -> ClientToolActionTerminal:
@@ -139,6 +146,7 @@ def _real_terminal(
             enforcer=SingleStepEnforcer(),
             tool_dispatch=_NoToolDispatch(),
             action_record=SessionActionRecord(),
+            judgment_seat=_FakeJudgmentSeat(),
             event_substrate=substrate,
         ),
         bridge=ArtifactBridge(store),
