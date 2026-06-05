@@ -444,4 +444,18 @@ The Skill Orchestration User (Cycle 5 introduction) composes a client-side skill
 
 #### Task: Re-validate the delegation rate on any seat-filler profile change
 
-**Interaction mechanics:** Before trusting a seat-filler Model Profile swap, the operator records a delegation-rate re-validation — a pre-swap replay run (the Spike ψ harness shape) or a post-swap soak window (≥25 generation-shaped turns per ADR-036). The V3 lever is a (composition × model) property, not a transferable prompt technique: identical composition delegated 1/5 on qwen3.5:9b and 2/5 on mistral-nemo:12b (ψ′ Arm D). Swappability stays structural (config-only, ADR-033 FC); trust is empirical (the recorded run).
+**Interaction mechanics:** Before trusting a seat-filler Model Profile swap, the operator records a delegation-rate re-validation — a pre-swap replay run (the Spike ψ harness shape) or a post-swap soak window (≥25 generation-shaped turns per ADR-036). The V3 lever is a (composition × model) property, not a transferable prompt technique: identical composition delegated 1/5 on qwen3.5:9b and 2/5 on mistral-nemo:12b (ψ′ Arm D). Swappability stays structural (config-only, ADR-033 FC); trust is empirical (the recorded run). *(ADR-037 extension: when the judgment seat shares the profile, the same re-validation event also covers the θ-harness judgment arms — one recorded run, both instruments; split seats re-validate per-seat with the matching instrument.)*
+
+## Cycle 7 loop-back #5 task additions (ADR-037)
+
+#### Task (Loop Driver, as actor): Open every trailing turn with the termination judgment
+
+**Interaction mechanics:** On a tool-result tail with no new user task, the loop-driver first dispatches the bare-form termination judgment — framework judge system message, the framework-owned digest (action kind + file path + result per emitted call, joined from the framework's own records), and the deliverable-accounting question; no tools, no client prompt. A COMPLETE verdict returns the judgment's summary (VERDICT line stripped) as the text-only finish turn — the client ends its loop on it. A REMAINING verdict triggers exactly one ADR-036 C3-form action call with the judgment exchange discarded. First turns and new-user-task turns never see the judgment. *(Replay-layer grounding: θ round 2, 29/30 qwen3:14b; the production digest join is the Conditional Acceptance gating condition.)*
+
+#### Task (Tool User): Receive a session that converges
+
+**Interaction mechanics:** When the requested work is complete, the session ends with a brief factual summary of what was produced — no further tool activity, no phantom revisions of finished files. The "endpoint is a model" abstraction now includes natural completion: the user observes the same finish behavior a direct model session would produce. Headless runs terminate on their own; the AS-3 turn cap remains the hard ceiling if judgment repeatedly errs toward continuing (geometric-decay residual, ~0.9 per-cycle termination probability — composed estimate).
+
+#### Task (Operator): Watch the false-continue share alongside the delegation rate
+
+**Interaction mechanics:** The operator reads the finish-policy fields on TurnDecision-family events (turn shape + judgment verdict) to compute how often work-complete tails failed to finish (false-continue) and how often work-remaining tails finished early (false-stop, visible as sessions ending with deliverables missing). The false-continue share is the termination analogue of the delegation-rate meter and shares its event substrate (WP-LB-J). The ADR-036 ≥0.9 soak window is read only after this mechanism lands — earlier reads are distorted by Finding F's phantom-revision inflation.

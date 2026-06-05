@@ -1,6 +1,18 @@
 # ADR-036: Delegation-Decision Mechanism — User-Turn Guidance Composition
 
-**Status:** Accepted (Cycle 7 loop-back #3 DECIDE, gate closed 2026-06-04; Conditional Acceptance per ADR-097 — see §Empirical grounding for the discharge condition)
+> **Updated by ADR-037 on 2026-06-05.** Trailing-turn (tool-result tail)
+> composition only: the unconditional standalone trailing C3 guidance of
+> Decision 1 is replaced by ADR-037's two-call composition (framework-
+> composed termination judgment first; the C3-form guidance call fires only
+> on a REMAINING verdict — Finding F / F-ψ″.3). Decision 1's first-turn
+> merge branch, the FC (directive-in-user-turn presence) as scoped to
+> action-generation calls, decisions 2–5, and all other content of this ADR
+> remain current. The "no framework system message" neutral consequence is
+> narrowed to action-generation calls composed with the client
+> conversation (ADR-037's bare judgment call carries a framework judge
+> system message outside the client contest).
+
+**Status:** Accepted; Updated by ADR-037 (2026-06-05 — trailing-turn composition) (Cycle 7 loop-back #3 DECIDE, gate closed 2026-06-04; Conditional Acceptance per ADR-097 — see §Empirical grounding for the discharge condition; gating condition met 2026-06-04, WP-LB-I acceptance run)
 
 ## Context
 
