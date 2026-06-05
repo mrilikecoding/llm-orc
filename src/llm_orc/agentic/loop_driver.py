@@ -59,7 +59,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
 from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
@@ -69,7 +69,7 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     ToolCallResult,
     ToolCallSuccess,
 )
-from llm_orc.agentic.session_start import SessionContext
+from llm_orc.agentic.session_start import ChatMessage, SessionContext
 from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
 from llm_orc.models.base import ToolCall, ToolCallingResponse
 
@@ -89,6 +89,17 @@ _GENERATION_TOOL = "invoke_ensemble"
 """The internal tool name the seat-filler emits to delegate per-turn
 content generation to a capability ensemble (the callee). Any other tool
 name is a client tool call passed through verbatim."""
+
+TailKind = Literal["first_turn", "trailing_tool_result", "new_user_task"]
+"""The conversation-tail shapes the driver discriminates (ADR-037).
+
+A ``trailing_tool_result`` tail (tool result, no new user task) opens with
+the termination judgment; the other two shapes ride ADR-036's merge branch
+unchanged.
+"""
+
+JudgmentVerdict = Literal["COMPLETE", "REMAINING"]
+"""The termination judgment's parsed verdict (ADR-037 §Decision 4)."""
 
 _DELEGATION_GUIDANCE = (
     "You drive a tool-using coding session. To produce substantive new "
@@ -188,6 +199,20 @@ class TurnDecision:
     ``dispatch_id`` is the ADR-023 correlation identifier (``None`` when no
     substrate is configured), satisfying the substrate's ``DispatchEvent``
     protocol.
+
+    **Finish-policy fields (Cycle 7 loop-back #5 per ADR-037 — V-06, FC-67):**
+
+    * ``tail_kind`` — the turn's conversation-tail shape. The judgment is
+      specific to ``trailing_tool_result`` tails; ``first_turn`` and
+      ``new_user_task`` ride ADR-036's merge branch untouched.
+    * ``judgment_verdict`` — the termination judgment's parsed verdict on a
+      trailing turn (``None`` on non-trailing turns, and on a trailing turn
+      whose judgment response carried no parseable ``VERDICT:`` line — an
+      observable parse miss). False-continue and false-stop shares are
+      computable from emitted events alone — no log archaeology.
+
+    Distinct from the meter's ``turn_shape`` classification (FC-59 —
+    generation / carry / boundary_excluded), which WP-LB-J stamps.
     """
 
     dispatch_id: str | None
@@ -196,6 +221,8 @@ class TurnDecision:
     delegated_ensemble: str | None
     grounded_carry_held: bool
     replanned_after_truncation: bool
+    tail_kind: TailKind = "first_turn"
+    judgment_verdict: JudgmentVerdict | None = None
 
 
 class SeatFiller(Protocol):
@@ -264,6 +291,7 @@ class LoopDriver:
         rather than only carrying literal values. Without capabilities it sees
         the client tools only (no delegation possible).
         """
+        tail_kind = _tail_kind(context.messages)
         response = await self._seat_filler.generate_with_tools(
             messages=self._seat_filler_messages(context),
             tools=self._delegation_tools() + list(context.tools),
@@ -274,7 +302,14 @@ class LoopDriver:
 
         if enforced.action is None:
             self._emit_turn_decision(
-                dispatch_id, turn_index, "finish", None, False, enforced.truncated
+                dispatch_id,
+                turn_index,
+                "finish",
+                None,
+                False,
+                enforced.truncated,
+                tail_kind,
+                None,
             )
             return FinishTurn(content=response.content or None)
 
@@ -294,6 +329,8 @@ class LoopDriver:
                 ensemble,
                 False,
                 enforced.truncated,
+                tail_kind,
+                None,
             )
             return ApplyWork(
                 invocation_id=action.id,
@@ -305,7 +342,14 @@ class LoopDriver:
 
         invocation = _passthrough_client_tool(action)
         self._emit_turn_decision(
-            dispatch_id, turn_index, invocation.name, None, True, enforced.truncated
+            dispatch_id,
+            turn_index,
+            invocation.name,
+            None,
+            True,
+            enforced.truncated,
+            tail_kind,
+            None,
         )
         return CarryClientTool(invocation=invocation)
 
@@ -395,6 +439,8 @@ class LoopDriver:
         delegated_ensemble: str | None,
         grounded_carry_held: bool,
         replanned_after_truncation: bool,
+        tail_kind: TailKind,
+        judgment_verdict: JudgmentVerdict | None,
     ) -> None:
         if self._event_substrate is None:
             return
@@ -406,6 +452,8 @@ class LoopDriver:
                 delegated_ensemble=delegated_ensemble,
                 grounded_carry_held=grounded_carry_held,
                 replanned_after_truncation=replanned_after_truncation,
+                tail_kind=tail_kind,
+                judgment_verdict=judgment_verdict,
             )
         )
 
@@ -498,6 +546,20 @@ def _passthrough_client_tool(action: ToolCall) -> ToolCallInvocation:
     return ToolCallInvocation(
         id=action.id, name=action.name, arguments=action.arguments_json
     )
+
+
+def _tail_kind(messages: list[ChatMessage]) -> TailKind:
+    """Discriminate the conversation-tail shape (ADR-037 scope boundary).
+
+    A ``role: tool`` tail with no newer user message is the trailing shape
+    the judgment opens; a user-message tail is the first turn (no prior
+    assistant turns) or a new user task (ADR-036's merge branch — the
+    judgment never fires there, per the preservation scenario).
+    """
+    if messages and messages[-1].role == "tool":
+        return "trailing_tool_result"
+    has_prior_assistant_turn = any(message.role == "assistant" for message in messages)
+    return "new_user_task" if has_prior_assistant_turn else "first_turn"
 
 
 def _to_openai_messages(context: SessionContext) -> list[dict[str, Any]]:
