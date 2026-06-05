@@ -590,6 +590,64 @@ class TestLoopDriverTurnDecision:
         assert decision.delegated_ensemble == "code-generator"
         assert decision.grounded_carry_held is False
 
+    async def test_first_turn_stamps_finish_policy_fields(self) -> None:
+        """V-06 (ADR-037 §Decision 6, FC-67): the finish-policy fields ride
+        every TurnDecision. A first turn is not a trailing tail, so no
+        judgment fires — ``judgment_verdict`` is ``None``.
+        """
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(content="done", tool_calls=[], finish_reason="stop")
+        )
+        _, sink, driver = self._capture(seat_filler)
+
+        await driver.decide(_make_context())
+
+        decision = _turn_decisions(sink)[0]
+        assert decision.tail_kind == "first_turn"
+        assert decision.judgment_verdict is None
+
+    async def test_new_user_task_tail_stamps_tail_kind(self) -> None:
+        """A trailing turn carrying a genuine new user task is ADR-036's
+        merge branch — untouched by the judgment (the preservation
+        scenario); the tail kind makes that discrimination observable.
+        """
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(content="done", tool_calls=[], finish_reason="stop")
+        )
+        _, sink, driver = self._capture(seat_filler)
+        context = _make_context(
+            messages=[
+                ChatMessage(role="user", content="write a.py"),
+                ChatMessage(role="assistant", content=None),
+                ChatMessage(role="tool", content="Wrote file successfully"),
+                ChatMessage(role="user", content="now also write b.py"),
+            ]
+        )
+
+        await driver.decide(context)
+
+        decision = _turn_decisions(sink)[0]
+        assert decision.tail_kind == "new_user_task"
+        assert decision.judgment_verdict is None
+
+    async def test_trailing_tool_result_tail_stamps_tail_kind(self) -> None:
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(content="done", tool_calls=[], finish_reason="stop")
+        )
+        _, sink, driver = self._capture(seat_filler)
+        context = _make_context(
+            messages=[
+                ChatMessage(role="user", content="write a.py"),
+                ChatMessage(role="assistant", content=None),
+                ChatMessage(role="tool", content="Wrote file successfully"),
+            ]
+        )
+
+        await driver.decide(context)
+
+        decision = _turn_decisions(sink)[0]
+        assert decision.tail_kind == "trailing_tool_result"
+
     async def test_literal_carry_batch_flags_grounded_and_truncation(self) -> None:
         seat_filler = _FakeSeatFiller(
             ToolCallingResponse(
