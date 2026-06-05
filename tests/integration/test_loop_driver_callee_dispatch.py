@@ -40,6 +40,7 @@ from llm_orc.agentic.loop_driver import LoopDriver
 from llm_orc.agentic.orchestrator_chunk import ClientToolCall, OrchestratorChunk
 from llm_orc.agentic.orchestrator_tool_dispatch import OrchestratorToolDispatch
 from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
+from llm_orc.agentic.session_action_record import SessionActionRecord
 from llm_orc.agentic.session_artifact_store import SessionArtifactStore
 from llm_orc.agentic.session_registry import SessionIdentity, SessionState
 from llm_orc.agentic.session_start import ChatMessage, SessionContext
@@ -155,6 +156,7 @@ async def test_callee_generation_dispatches_real_ensemble_into_a_write(
         seat_filler=seat_filler,
         enforcer=SingleStepEnforcer(),
         tool_dispatch=dispatch,
+        action_record=SessionActionRecord(),
     )
     terminal = ClientToolActionTerminal(
         loop_driver=driver,

@@ -69,6 +69,7 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     ToolCallResult,
     ToolCallSuccess,
 )
+from llm_orc.agentic.session_action_record import SessionActionRecord
 from llm_orc.agentic.session_start import ChatMessage, SessionContext
 from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
 from llm_orc.models.base import ToolCall, ToolCallingResponse
@@ -266,12 +267,14 @@ class LoopDriver:
         seat_filler: SeatFiller,
         enforcer: SingleStepEnforcer,
         tool_dispatch: ToolDispatcher,
+        action_record: SessionActionRecord,
         capabilities: frozenset[str] = frozenset(),
         event_substrate: DispatchEventSubstrate | None = None,
     ) -> None:
         self._seat_filler = seat_filler
         self._enforcer = enforcer
         self._tool_dispatch = tool_dispatch
+        self._action_record = action_record
         self._capabilities = capabilities
         self._event_substrate = event_substrate
 
@@ -292,6 +295,8 @@ class LoopDriver:
         the client tools only (no delegation possible).
         """
         tail_kind = _tail_kind(context.messages)
+        session_id = context.state.identity.value
+        self._join_client_result(session_id, context.messages)
         response = await self._seat_filler.generate_with_tools(
             messages=self._seat_filler_messages(context),
             tools=self._delegation_tools() + list(context.tools),
@@ -322,6 +327,9 @@ class LoopDriver:
             envelope, ensemble, file_path = await self._delegate_generation(
                 action, context, destination_tool
             )
+            self._action_record.record_action(
+                session_id, action_kind=destination_tool, target_path=file_path
+            )
             self._emit_turn_decision(
                 dispatch_id,
                 turn_index,
@@ -341,6 +349,11 @@ class LoopDriver:
             )
 
         invocation = _passthrough_client_tool(action)
+        self._action_record.record_action(
+            session_id,
+            action_kind=invocation.name,
+            target_path=_carry_target(invocation.name, invocation.arguments),
+        )
         self._emit_turn_decision(
             dispatch_id,
             turn_index,
@@ -352,6 +365,21 @@ class LoopDriver:
             None,
         )
         return CarryClientTool(invocation=invocation)
+
+    def _join_client_result(self, session_id: str, messages: list[ChatMessage]) -> None:
+        """Join the newest client tool result to the pending action record.
+
+        The loop spans HTTP requests: the action recorded on the prior
+        ``decide`` is joined with the ``role: tool`` result the client
+        echoes back on this request (FC-64 — the production digest join).
+        Single-step enforcement keeps at most one record pending, so the
+        newest tool message is exactly the pending action's result; with
+        nothing pending the join is a no-op (already-joined history).
+        """
+        for message in reversed(messages):
+            if message.role == "tool":
+                self._action_record.join_result(session_id, message.content or "")
+                return
 
     def _delegation_tools(self) -> list[dict[str, Any]]:
         """The ``invoke_ensemble`` tool offered to the seat-filler, if any.
@@ -546,6 +574,20 @@ def _passthrough_client_tool(action: ToolCall) -> ToolCallInvocation:
     return ToolCallInvocation(
         id=action.id, name=action.name, arguments=action.arguments_json
     )
+
+
+def _carry_target(tool_name: str, arguments_json: str) -> str:
+    """The action record's target for a carried client tool call.
+
+    ``write``/``edit``/``read`` carry a ``filePath``; ``bash`` carries the
+    command itself (the closest thing a shell action has to a target). The
+    write-log schema is the meta-record seam's first increment — richer
+    per-tool targets are extend-on-evidence work (FC-67 trigger).
+    """
+    args = _parse_arguments(arguments_json)
+    if tool_name == "bash":
+        return _string_field(args, "command")
+    return _string_field(args, "filePath")
 
 
 def _tail_kind(messages: list[ChatMessage]) -> TailKind:

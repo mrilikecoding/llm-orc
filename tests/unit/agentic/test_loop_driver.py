@@ -36,6 +36,10 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     ToolCallResult,
     ToolCallSuccess,
 )
+from llm_orc.agentic.session_action_record import (
+    ActionRecord,
+    SessionActionRecord,
+)
 from llm_orc.agentic.session_registry import SessionIdentity, SessionState
 from llm_orc.agentic.session_start import ChatMessage, SessionContext
 from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
@@ -106,6 +110,7 @@ def _build_driver(
     tool_dispatch: _FakeToolDispatch | None = None,
     capabilities: frozenset[str] = frozenset(),
     event_substrate: DispatchEventSubstrate | None = None,
+    action_record: SessionActionRecord | None = None,
 ) -> LoopDriver:
     return LoopDriver(
         seat_filler=seat_filler,
@@ -113,6 +118,7 @@ def _build_driver(
         tool_dispatch=tool_dispatch or _FakeToolDispatch(),
         capabilities=capabilities,
         event_substrate=event_substrate,
+        action_record=action_record or SessionActionRecord(),
     )
 
 
@@ -527,6 +533,135 @@ class TestLoopDriverGroundedCarry:
         assert any(
             message.get("content") == "TOKEN_7f3a9c" for message in surfaced_messages
         )
+
+
+class TestLoopDriverActionRecording:
+    """FC-64 (digest provenance) — the driver's side of the Session Action
+    Record contract: every emitted client-tool action is recorded at
+    decision time from the framework's own emission, and the client's
+    per-call tool result joins the pending record on the next request.
+    """
+
+    @staticmethod
+    def _delegating_filler() -> _FakeSeatFiller:
+        return _FakeSeatFiller(
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="invoke_ensemble",
+                        arguments_json=json.dumps(
+                            {
+                                "name": "code-generator",
+                                "input": "write a function",
+                                "filePath": "f.py",
+                            }
+                        ),
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        )
+
+    async def test_generation_turn_records_the_emitted_write(self) -> None:
+        record = SessionActionRecord()
+        driver = _build_driver(
+            self._delegating_filler(),
+            capabilities=frozenset({"code-generator"}),
+            action_record=record,
+        )
+
+        await driver.decide(_make_context())
+
+        assert record.records("test-session") == (
+            ActionRecord(action_kind="write", target_path="f.py", result=None),
+        )
+
+    async def test_carry_turn_records_the_client_tool_action(self) -> None:
+        record = SessionActionRecord()
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="r1",
+                        name="read",
+                        arguments_json=json.dumps({"filePath": "notes.md"}),
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        )
+        driver = _build_driver(seat_filler, action_record=record)
+
+        await driver.decide(_make_context())
+
+        assert record.records("test-session") == (
+            ActionRecord(action_kind="read", target_path="notes.md", result=None),
+        )
+
+    async def test_bash_carry_records_the_command_as_target(self) -> None:
+        record = SessionActionRecord()
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="b1",
+                        name="bash",
+                        arguments_json=json.dumps({"command": "pytest -q"}),
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        )
+        driver = _build_driver(seat_filler, action_record=record)
+
+        await driver.decide(_make_context())
+
+        assert record.records("test-session") == (
+            ActionRecord(action_kind="bash", target_path="pytest -q", result=None),
+        )
+
+    async def test_finish_turn_records_no_action(self) -> None:
+        record = SessionActionRecord()
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(content="done", tool_calls=[], finish_reason="stop")
+        )
+        driver = _build_driver(seat_filler, action_record=record)
+
+        await driver.decide(_make_context())
+
+        assert record.records("test-session") == ()
+
+    async def test_client_tool_result_joins_the_pending_record(self) -> None:
+        """The loop spans HTTP requests: the action recorded on turn N is
+        joined with the client's ``role: tool`` result when turn N+1's
+        request arrives (the production digest join, FC-64).
+        """
+        record = SessionActionRecord()
+        driver = _build_driver(
+            self._delegating_filler(),
+            capabilities=frozenset({"code-generator"}),
+            action_record=record,
+        )
+        await driver.decide(
+            _make_context(messages=[ChatMessage(role="user", content="write f.py")])
+        )
+
+        follow_up = _make_context(
+            messages=[
+                ChatMessage(role="user", content="write f.py"),
+                ChatMessage(role="assistant", content=None),
+                ChatMessage(role="tool", content="Wrote file successfully"),
+                ChatMessage(role="user", content="now write g.py too"),
+            ]
+        )
+        await driver.decide(follow_up)
+
+        first_record = record.records("test-session")[0]
+        assert first_record.result == "Wrote file successfully"
 
 
 class TestLoopDriverTurnDecision:
