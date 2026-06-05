@@ -1,0 +1,112 @@
+[
+  {
+    "verdict": "REMAINING",
+    "correct": true,
+    "flip": false,
+    "had_think": false,
+    "tool_calls": false,
+    "text": "VERDICT: REMAINING\nThe test_string_utils.py file has not been written yet.",
+    "raw_len": 74,
+    "run": 1,
+    "elapsed_s": 10.0
+  },
+  {
+    "verdict": "REMAINING",
+    "correct": true,
+    "flip": false,
+    "had_think": false,
+    "tool_calls": false,
+    "text": "VERDICT: REMAINING\nThe test_string_utils.py file has not been written yet.",
+    "raw_len": 74,
+    "run": 2,
+    "elapsed_s": 6.5
+  },
+  {
+    "verdict": "REMAINING",
+    "correct": true,
+    "flip": false,
+    "had_think": false,
+    "tool_calls": false,
+    "text": "VERDICT: REMAINING\nThe test_string_utils.py file has not been written yet.",
+    "raw_len": 74,
+    "run": 3,
+    "elapsed_s": 8.6
+  },
+  {
+    "verdict": "REMAINING",
+    "correct": true,
+    "flip": false,
+    "had_think": false,
+    "tool_calls": false,
+    "text": "VERDICT: REMAINING\nThe test_string_utils.py file has not been written yet.",
+    "raw_len": 74,
+    "run": 4,
+    "elapsed_s": 8.4
+  },
+  {
+    "verdict": "REMAINING",
+    "correct": true,
+    "flip": false,
+    "had_think": false,
+    "tool_calls": false,
+    "text": "VERDICT: REMAINING\nThe test_string_utils.py file has not been written yet.",
+    "raw_len": 74,
+    "run": 5,
+    "elapsed_s": 8.3
+  },
+  {
+    "verdict": "REMAINING",
+    "correct": true,
+    "flip": false,
+    "had_think": false,
+    "tool_calls": false,
+    "text": "VERDICT: REMAINING\nThe test_string_utils.py file has not been written yet.",
+    "raw_len": 74,
+    "run": 6,
+    "elapsed_s": 6.4
+  },
+  {
+    "verdict": "REMAINING",
+    "correct": true,
+    "flip": false,
+    "had_think": false,
+    "tool_calls": false,
+    "text": "VERDICT: REMAINING\nThe test_string_utils.py file has not been written yet.",
+    "raw_len": 74,
+    "run": 7,
+    "elapsed_s": 9.0
+  },
+  {
+    "verdict": "REMAINING",
+    "correct": true,
+    "flip": false,
+    "had_think": false,
+    "tool_calls": false,
+    "text": "VERDICT: REMAINING\nThe test_string_utils.py file has not been written yet.",
+    "raw_len": 74,
+    "run": 8,
+    "elapsed_s": 8.1
+  },
+  {
+    "verdict": "REMAINING",
+    "correct": true,
+    "flip": false,
+    "had_think": false,
+    "tool_calls": false,
+    "text": "VERDICT: REMAINING\nThe test_string_utils.py file has not been written yet.",
+    "raw_len": 74,
+    "run": 9,
+    "elapsed_s": 6.2
+  },
+  {
+    "verdict": "REMAINING",
+    "correct": true,
+    "flip": false,
+    "had_think": false,
+    "tool_calls": false,
+    "text": "VERDICT: REMAINING\nThe test_string_utils.py file with unit tests for the string module has not been created.",
+    "raw_len": 108,
+    "run": 10,
+    "elapsed_s": 7.7
+  }
+]
