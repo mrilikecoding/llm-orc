@@ -1,0 +1,108 @@
+{
+  "model": "zen:qwen3.5-plus",
+  "variant": "b",
+  "flips": 4,
+  "n": 10,
+  "runs": [
+    {
+      "iter": 0,
+      "decision": "delegate",
+      "carry_kind": null,
+      "flipped": false,
+      "wall_s": 8.051,
+      "load_s": 0.0,
+      "prompt_tokens": 7438,
+      "eval_tokens": 308
+    },
+    {
+      "iter": 1,
+      "decision": "carry",
+      "carry_kind": "literal_write",
+      "flipped": true,
+      "wall_s": 10.435,
+      "load_s": 0.0,
+      "prompt_tokens": 7438,
+      "eval_tokens": 472
+    },
+    {
+      "iter": 2,
+      "decision": "carry",
+      "carry_kind": "literal_write",
+      "flipped": true,
+      "wall_s": 7.234,
+      "load_s": 0.0,
+      "prompt_tokens": 7438,
+      "eval_tokens": 280
+    },
+    {
+      "iter": 3,
+      "decision": "delegate",
+      "carry_kind": null,
+      "flipped": false,
+      "wall_s": 9.558,
+      "load_s": 0.0,
+      "prompt_tokens": 7438,
+      "eval_tokens": 455
+    },
+    {
+      "iter": 4,
+      "decision": "carry",
+      "carry_kind": "literal_write",
+      "flipped": true,
+      "wall_s": 7.153,
+      "load_s": 0.0,
+      "prompt_tokens": 7438,
+      "eval_tokens": 325
+    },
+    {
+      "iter": 5,
+      "decision": "delegate",
+      "carry_kind": null,
+      "flipped": false,
+      "wall_s": 9.831,
+      "load_s": 0.0,
+      "prompt_tokens": 7438,
+      "eval_tokens": 443
+    },
+    {
+      "iter": 6,
+      "decision": "delegate",
+      "carry_kind": null,
+      "flipped": false,
+      "wall_s": 10.071,
+      "load_s": 0.0,
+      "prompt_tokens": 7438,
+      "eval_tokens": 453
+    },
+    {
+      "iter": 7,
+      "decision": "delegate",
+      "carry_kind": null,
+      "flipped": false,
+      "wall_s": 7.906,
+      "load_s": 0.0,
+      "prompt_tokens": 7438,
+      "eval_tokens": 373
+    },
+    {
+      "iter": 8,
+      "decision": "carry",
+      "carry_kind": "literal_write",
+      "flipped": true,
+      "wall_s": 6.816,
+      "load_s": 0.0,
+      "prompt_tokens": 7438,
+      "eval_tokens": 281
+    },
+    {
+      "iter": 9,
+      "decision": "delegate",
+      "carry_kind": null,
+      "flipped": false,
+      "wall_s": 8.727,
+      "load_s": 0.0,
+      "prompt_tokens": 7438,
+      "eval_tokens": 422
+    }
+  ]
+}

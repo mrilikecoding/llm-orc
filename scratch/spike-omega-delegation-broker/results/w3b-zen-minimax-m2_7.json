@@ -1,0 +1,108 @@
+{
+  "model": "zen:minimax-m2.7",
+  "variant": "b",
+  "flips": 6,
+  "n": 10,
+  "runs": [
+    {
+      "iter": 0,
+      "decision": "carry",
+      "carry_kind": "literal_write",
+      "flipped": true,
+      "wall_s": 1.743,
+      "load_s": 0.0,
+      "prompt_tokens": 6941,
+      "eval_tokens": 300
+    },
+    {
+      "iter": 1,
+      "decision": "carry",
+      "carry_kind": "literal_write",
+      "flipped": true,
+      "wall_s": 1.392,
+      "load_s": 0.0,
+      "prompt_tokens": 6941,
+      "eval_tokens": 279
+    },
+    {
+      "iter": 2,
+      "decision": "delegate",
+      "carry_kind": null,
+      "flipped": false,
+      "wall_s": 1.637,
+      "load_s": 0.0,
+      "prompt_tokens": 6941,
+      "eval_tokens": 306
+    },
+    {
+      "iter": 3,
+      "decision": "carry",
+      "carry_kind": "literal_write",
+      "flipped": true,
+      "wall_s": 2.048,
+      "load_s": 0.0,
+      "prompt_tokens": 6941,
+      "eval_tokens": 460
+    },
+    {
+      "iter": 4,
+      "decision": "delegate",
+      "carry_kind": null,
+      "flipped": false,
+      "wall_s": 2.744,
+      "load_s": 0.0,
+      "prompt_tokens": 6941,
+      "eval_tokens": 582
+    },
+    {
+      "iter": 5,
+      "decision": "carry",
+      "carry_kind": "literal_write",
+      "flipped": true,
+      "wall_s": 2.821,
+      "load_s": 0.0,
+      "prompt_tokens": 6941,
+      "eval_tokens": 550
+    },
+    {
+      "iter": 6,
+      "decision": "carry",
+      "carry_kind": "literal_write",
+      "flipped": true,
+      "wall_s": 1.778,
+      "load_s": 0.0,
+      "prompt_tokens": 6941,
+      "eval_tokens": 325
+    },
+    {
+      "iter": 7,
+      "decision": "delegate",
+      "carry_kind": null,
+      "flipped": false,
+      "wall_s": 3.145,
+      "load_s": 0.0,
+      "prompt_tokens": 6941,
+      "eval_tokens": 593
+    },
+    {
+      "iter": 8,
+      "decision": "delegate",
+      "carry_kind": null,
+      "flipped": false,
+      "wall_s": 1.591,
+      "load_s": 0.0,
+      "prompt_tokens": 6941,
+      "eval_tokens": 231
+    },
+    {
+      "iter": 9,
+      "decision": "carry",
+      "carry_kind": "literal_write",
+      "flipped": true,
+      "wall_s": 1.379,
+      "load_s": 0.0,
+      "prompt_tokens": 6941,
+      "eval_tokens": 241
+    }
+  ]
+}

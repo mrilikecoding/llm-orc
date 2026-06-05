@@ -226,6 +226,339 @@ the real-client end-to-end (the BUILD layer-match, per the WP-A scar);
 paid-tier models (free-options preference); broker fine-tuning (off-table
 this cycle — prompt-level only).
 
+## Run log
+
+### Pre-run notes (2026-06-04, recorded before any model call)
+
+**Candidate sourcing (survey of the Ollama library, criteria 1–5).**
+Selected screen set (6): qwen3:0.6b (local), qwen3:1.7b (local), gemma3:1b
+(local; probe-first — gemma3 tools support doubtful, gemma4 carries the
+tools tag only at 12B+), qwen3.5:2b (pull, 2.7 GB — 2-weeks-old
+post-training, the H1 recency bet, within-family contrast vs qwen3:0.6b),
+llama3.2:3b (pull, 2.0 GB — non-qwen #1, tools-tagged, 128K ctx),
+phi4-mini:3.8b (pull, 2.5 GB — non-qwen #2, tools-tagged, 128K ctx).
+Not selected (mechanism recorded): deepseek-r1:1.5b (reasoning-tuned,
+pre-flagged H3 risk; crowded out at the cap), smollm2 (tool support
+doubtful), granite small (older generation; three non-qwen families
+already in the screen), qwen3.5:4b (3.4 GB, over the ~3 GB pull bound),
+qwen3.5:0.8b (family-diversity cap — one qwen3.5 size carried).
+
+**Pre-run amendment — clear-case threshold scoring.** Deriving the labeled
+set surfaced that the ψ.4a rule misclassifies the real captured turn-1
+bytes (cap-001): OpenCode's captured user message arrives wrapped in
+literal quote characters and the rule's literal-payload regex
+(`['"].{120,}['"]`) fires on it → rule says carry; the true label is
+delegate (it is the generation task that produced the session). ψ.4a's
+0/12 was scored on unquoted reconstructions. Consequently the viability
+threshold "ω.1 matches the rule on clear cases (0 errors)" is scored
+against the recorded case labels (its intent — 0 clear-case errors), with
+rule agreement reported separately; cap-001 is a pre-registered
+rule-vs-broker disagreement where the broker can beat the rule on real
+bytes. Same quoting quirk makes the rule's carry verdicts on cap-002..004
+accidental (wrong mechanism: literal-payload, not work-complete) — the
+P2-A comparison records mechanism, not just verdict.
+
+**Harness decisions (recorded).** Native `/api/chat` with
+`options.num_ctx=16384` (the OpenAI-compat endpoint cannot set num_ctx;
+Ollama's default 4096 would truncate the ~9k-token composed input);
+`think=false` for qwen-family candidates (latency-arm fairness; the flag
+400s on non-thinking models, so absent elsewhere); default temperature
+(n=3 per case is sampling variation by design); `keep_alive=10m`;
+broker tools = `invoke_ensemble(capability, input, filePath)` + `carry
+(kind ∈ read|bash|edit|literal_write|respond, reason)` — decision-as-
+tool-call, matching the framework's wire pattern. Deployment hardware:
+32 GB unified memory (14b + 8b + tiny broker ≈ 17 GB can co-reside; ω.4
+measures eviction anyway). Boundary-case expectations recorded in
+`omega_cases.py` before any run: 24 cases = 12 clear ψ.4a + 4 ψ.4a
+ambiguous (a01/a03 ω-rubric supersessions recorded) + 4 captured
+layer-anchors (t01 clear-delegate; t02–04 boundary carry/respond) + 4
+constructed multi-turn (m01 repair-with-observed-content → delegate;
+m02 uncovered-domain → carry; m03 observed-literal → carry; m04
+mid-session new generation → delegate). Harness:
+`scratch/spike-omega-delegation-broker/` (omega_lib.py / omega_cases.py /
+omega_run.py).
+
+### ≤4B tier results (2026-06-04)
+
+**Screen outcome: 0 of 6 viable.** Five distinct disqualification
+mechanisms, all recorded (P2-D): gemma3:1b — S0-CAP-8 no-tools template;
+qwen3:0.6b — 72/72 no-tool-call (mixed degenerate/format floor: empty
+responses, terse refusals, decision-analyzing prose without a call, one
+tool-call-shaped JSON emitted as text that both fabricated delegation on an
+observed-literal case and named the wrong tool); qwen3:1.7b — 15/39 clear
+errors, total delegation suppression (zero delegations across all
+delegate-expected cases, consistent carry/read; notably correct on the
+work-complete tail boundaries cap-002..004 — the judgment the ψ.4a rule
+cannot make); qwen3.5:2b — 17/39 clear errors, inverse failure:
+over-delegation (fabricated delegation on reads, literal writes, bash,
+conversational turns, and the work-complete tails; zero no-calls — emission
+clean, decision broken); llama3.2:3b — 19/39 clear errors, mixed (30
+no-calls + read-bias); phi4-mini:3.8b — 39/39 clear errors, all
+no-tool-call. ω.1 totals: 24 cases × n=3 per model; context-fit passed for
+all (composed input 6,697–6,997 tokens vs 40K–262K windows).
+
+**Reading:** four different failure modes across families is not one
+fixable prompt bug — it reads as a capability floor for this composed-input
+decision task at ≤4B with prompt-level alignment only. H1's recency bet
+took a direct hit (qwen3.5:2b no better than qwen3:1.7b, wrong in the
+opposite direction). The pre-registered contingency ("if all candidates
+fail, 'small and aligned' is insufficient") is now evidence for this tier.
+Decision-rule consequence: the ≥2-viable-incl-non-qwen swappability
+requirement is unreachable at ≤4B.
+
+### Amendment 1 — tier widening to 7–9B (practitioner-directed, 2026-06-04; recorded before any widened-arm run)
+
+Practitioner: *"We could also consider next-tier (7-9B param models)."*
+Confirmed parameters: **all pinned thresholds kept unchanged**, including
+the ω.4 ≤2s warm-call ceiling (the tier earns viability under the original
+bar or fails it visibly; a decision-quality pass + latency fail is itself a
+precise DECIDE input). Widened candidate set (same five sourcing criteria
+at the new tier): qwen3.5:9b (local; failed V3 as *seat-filler* at ψ′ Arm D
+1/5 — a broker-role pass would be direct evidence for the role-narrowing
+thesis), qwen3:8b (local; within-family recency contrast), lfm2.5:8b (pull
+~4.7 GB; 4-days-old, tools-tagged, non-qwen #1), deepseek-r1:8b (local;
+llama-base distill, non-qwen #2; reasoning-tuned — H3 risk, probe-first).
+Pull-size note: lfm2.5:8b exceeds the tiny-tier ~3 GB pull bound; free,
+disk headroom 35 GB — recorded.
+
+**Integration-shape insight (recorded for DECIDE, not a mid-spike harness
+change):** the pre-registered composition order (varying task before the
+constant quoted client prompt) defeats KV prefix caching; a
+constant-prefix-first order would make warm broker calls cheap at any tier
+in production. ω measures the cache-hostile case honestly.
+
+**Labeled diagnostics (non-viability-bearing, P2-D mechanism
+classification):** (d1) qwen3:1.7b with thinking re-enabled — was
+`think=false` masking capability? (d2) qwen3:1.7b with the quoted client
+prompt ablated — is delegation suppression data-leakage from the quoted
+prompt or intrinsic read-bias? n=3 each on the canonical delegate case.
+
+**Diagnostic results:** d1 — 0/3 tool calls with thinking enabled (~420
+eval tokens of thought + prose answer); `think=false` was the more
+functional setting, not a mask. d2 — 0/3 tool calls on the ablated input
+(64-token degenerate/empty responses), vs consistent carry/read calls on
+the full input: the suppression is not clean data-leakage — call-emission
+itself is unstable across input scales at 1.7B. Neither diagnostic
+rescues the tier; both sharpen the capability-floor reading.
+
+**Tier-screen runtime events (recorded):** deepseek-r1:8b disqualified at
+S0 (no tools template — S0-CAP-8; the local 3-month-old distill).
+lfm2.5:8b required an Ollama upgrade (server 0.24.0 → 0.30.5,
+practitioner-performed mid-spike, 2026-06-04); the ≤4B tier ran on 0.24.0,
+the 7–9B tier runs on 0.30.5 — engine-version comparability note:
+immaterial for decision-accuracy verdicts, noted for cross-tier latency
+comparisons. lfm2.5:8b S0 tools-ok; fit 6,960 tokens vs 128K window.
+Final 7–9B screen set: qwen3.5:9b, qwen3:8b, lfm2.5:8b (deepseek-r1:8b
+S0-DQ'd; tier carries exactly one non-qwen candidate — a viable lfm2.5:8b
+plus one viable qwen would satisfy the ≥2-viable-incl-non-qwen
+swappability requirement at this tier).
+
+### Amendment 2 — hosted reference arm via OpenCode Zen (practitioner-authorized paid budget, 2026-06-04; recorded before any paid call)
+
+Practitioner: *"For comparison, I would also authorize a small budget for
+testing against Zen OpenCode paid models - MiniMax 2.6 or a Qwen there, as
+they are both affordable."*
+
+**Status in the decision rule: reference arm, NOT viability candidates.**
+The swappability decision rule stays local-scoped (Proposal B's premise is
+a local broker; a hosted broker is a different integration shape with
+network dependency and per-call cost). What the reference arm informs:
+(1) whether the broker decision task's boundary cases are solvable at
+scale — if hosted models also fail the boundary set, the problem is
+task-design, not model capability (directly interprets qwen3.5:9b's 17/33
+boundary errors); (2) a hosted-broker data point for DECIDE criteria 3
+(latency/cost per turn) and 6 (cost-of-validation), should the fork
+evaluation want the variant named.
+
+**Models:** `opencode/minimax-m2.7` ($0.30/$1.20 per M in/out — MiniMax
+2.6 has rolled off the Zen catalog; M2.7 is its successor at the same
+price) + `opencode/qwen3.5-plus` ($0.20/$1.20 — deliberately
+family-paired with the local qwen3.5:9b survivor so the hosted-large vs
+local-small contrast is within-family). **Arms:** S0 probe + ω.1 (n=3) +
+ω.2 (n=10) + ω.3a (n=10) + ω.3b (n=10). ω.4 residency N/A (hosted);
+per-call latency reported network-inclusive, not viability-thresholded.
+**Cost estimate:** ≈ $0.25 + $0.15 ≈ $0.40 total; hard stop if any
+single-model spend estimate exceeds $2. **Wire path:** the framework's
+own OpenAI-compatible route (`https://opencode.ai/zen/v1` +
+`/chat/completions`, Bearer key via llm-orc credential storage) — the
+same layer the production seat-filler call uses (layer-fidelity); the
+docs' `/v1/messages` anthropic-style route is the fallback if the compat
+route refuses tools.
+
+### Deferred design note — verifier-on-disagreement (practitioner-raised 2026-06-04; "probably a test for a different time")
+
+Practitioner question: what would a second model that evaluates error cases
+and retries look like? Sketch recorded for the future test; no runs.
+
+**Shape:** not always-on second-opinion (doubles latency/cost) but
+verifier-on-disagreement: WP-LB-J's classifier already computes a
+deterministic rule verdict per turn for the meter; a rule-vs-decider
+disagreement is a free anomaly trigger. Verifier sees a narrower question
+than the decider ("is decision X consistent with evidence Y — yes/no +
+reason"), AS-9-shaped one notch down; on rejection, ONE retry with the
+rejection reason appended, then fall back to the rule verdict or
+refuse-and-surface (FormRefusedError pattern). ψ.4c binds retries (no
+tool-list narrowing). Corpus anchors: ADR-036's held "detect-and-retry
+with retry-vs-diagnose meter routing" (this is that mechanism with a model
+in the verify slot); the structure imports the methodology's own
+architectural-isolation defense (fresh context treats prior output as
+external input) into the serving stack.
+
+**Trigger sizing from recorded ω.1 data (analysis only, no new calls):**
+disagreement-trigger would have fired on 23%/20%/11% of turns
+(qwen3.5:9b / qwen3:8b / minimax-m2.7) and seen 86%/75%/63% of each
+decider's errors; silent misses (decider wrong + rule agreeing wrong) 2/3/3
+runs. Caveat: rule verdicts on captured cases include the quoting-quirk
+accidents; the graduated classifier shifts these rates. Economically
+interesting variant: local 9B decider + hosted verifier on disagreement
+only (~0.04¢/turn at the measured 20% fire rate and MiniMax's 1.4s
+median), or a free local verifier IF small models verify better than they
+decide — the generator-verifier-gap hypothesis (cf. Cobbe et al. 2021
+verifier models) is the test's load-bearing question. The ω harness
+extends naturally: verifier-prompt variant + the recorded error cases as
+fixtures.
+
+**Disposition:** named deferral — candidate arm for the DECIDE
+evaluation's mechanism list or a future cycle's spike. Not run in ω.
+
+### 7–9B tier + hosted reference results (2026-06-04)
+
+**ω.1 (7–9B tier):** qwen3.5:9b **0/39 clear** (17/33 boundary, 3
+no-call; latency med 5.5s); qwen3:8b **0/39 clear** (24/33 boundary, 12
+no-call); lfm2.5:8b **FAIL — 13/39 clear** (25/33 boundary, 20 no-call,
+fabricated delegations on carry cases). The only non-qwen tier candidate
+is out → **no non-qwen survivor exists at either tier**, and the
+swappability requirement (≥2 viable incl. ≥1 non-qwen) is formally
+unreachable on candidate-pool grounds alone.
+
+**Hosted reference (Amendment 2; ~$0.45 total spend):** zen:minimax-m2.7
+0/39 clear, **8/33 boundary**, med 1.43s network-inclusive (faster than
+the local 9B at 5.5s), ω.1 cost $0.15. zen:qwen3.5-plus 0/39 clear, 11/33
+boundary, med 5.3s. **Boundary judgment is a capability property, not a
+task-design artifact:** boundary error rate falls monotonically with
+scale (qwen3:8b 24/33 → qwen3.5:9b 17/33 → qwen3.5-plus 11/33 →
+minimax-m2.7 8/33) while clear-case discrimination is perfect from 8B up.
+Residual hosted boundary misses cluster on contestable cases: m01
+carry/edit (direct edit of an observed one-line bug — arguably the better
+action; the pre-registered delegate expectation is flagged as contestable
+for the synthesis) and m04 carry/read; the only unambiguous hosted error
+is cap-004 deep-tail re-delegation.
+
+**ω.2 (action shape):** qwen3.5:9b 9/10, qwen3:8b 9/10 (each missing only
+the contestable m01 as a decision-level carry; arg form clean) — both
+pass ≥9/10. Hosted: 8/10 both (same two decision-level carries on
+m01/m04; zero malformed args).
+
+**ω.3a (user-turn adversarial): every model tested flips 10/10** (locals
+to carry/literal_write; both hosted likewise). Zero variance across
+models ⇒ the arm measured the composition, not the models: the ω.0
+composition carries the end-user task verbatim in the broker's user turn,
+so end-user text remains wire-legitimate instruction to the broker. Only
+the client *system prompt* was demoted to data. A fully-data variant
+(end-user task also in the data region) was not pre-registered and was
+not run — recorded as the natural follow-on probe for any B-variant.
+
+**ω.3b (data-position directive — the contest-dissolution core test):
+SPLIT, and against recency.** qwen3:8b **0/10 flips — the only clean
+model in the spike**; qwen3.5:9b 9/10 flips; zen:qwen3.5-plus 4/10;
+zen:minimax-m2.7 6/10. The pre-registered kill condition fired for every
+model except one: instruction-shaped text retains substantial authority
+in explicitly-fenced data position. The within-family inversion
+(qwen3:8b clean, qwen3.5:9b 9/10) reads as newer instruction-tuning
+generalizing "follow instruction-shaped text" to instructions-anywhere —
+**H1 is not merely unsupported; data-position discipline anti-correlates
+with post-training recency on this evidence.**
+
+**Formal verdict (pre-registered decision rule):** ω.3a's ≤1/10 bar
+disqualifies all candidates → **zero broker-viable candidates; Proposal B
+is refuted as specified** on two independent grounds (no non-qwen ω.1
+survivor; universal ω.3a failure — itself a composition finding). The
+sharpest single result for the DECIDE evaluation: the contest-dissolution
+mechanism held in only one tested model (qwen3:8b), making B's structural
+claim itself a single-model property — the same fragility shape Proposal
+B existed to escape.
+
+**ω.4 (reference measurement, labeled — no viability candidates remain):**
+run on qwen3:8b as the sole ω.3b-clean model; harness fix recorded
+pre-measurement (heavy seat-filler/ensemble calls now carry
+`num_predict=64` per the arm's design intent — the as-written
+implementation left generation unbounded, which would have swamped the
+broker delta with generation variance). **All three pinned numbers fail by
+an order of magnitude on the deployment hardware:** warm per-call avg
+14.7s / max 26.5s (bar ≤2s); carry-turn avg 28.8s where the rule costs
+0ms; session overhead **+501%** (bar ≤10%; with-broker 118–145s vs
+baseline ~22.6s on the captured 4-turn pattern × 3 reps). Mechanism: the
+~29s steady-state per-call cost is dominated by runner thrash — the
+broker (qwen3:8b @ num_ctx 16384) and the ensemble agents (qwen3:8b @
+8192) are the same model at different context sizes, which Ollama treats
+as a runner reconfigure, plus 14b/8b interleave on 32 GB — and by the
+cache-hostile composed-input order re-evaluating ~6.8k tokens per call.
+Integration-shape mitigations exist (unified num_ctx; constant-prefix-
+first composition; a distinct always-resident tiny model — except the
+tiny tier failed ω.1) but are recorded, not measured.
+
+### Spike ω verdict (pre-registered decision rule applied)
+
+**Zero broker-viable candidates. Proposal B is refuted as specified**, on
+four mutually independent grounds:
+
+1. **Swappability unreachable on candidate-pool grounds:** no non-qwen
+   model passed ω.1 at either tier (lfm2.5:8b 13/39 clear; all ≤4B
+   failed; deepseek-r1:8b S0-DQ).
+2. **ω.3a universal failure** (every model 10/10 flips) — a composition
+   finding: end-user task text carried verbatim in the broker's user turn
+   remains wire-legitimate instruction; only the client system prompt was
+   demoted to data. A fully-data composition variant is unspiked.
+3. **ω.3b kill condition fired on all models but one:** instruction-
+   shaped text in explicitly-fenced data position retained authority
+   (qwen3.5:9b 9/10 flips; hosted 4–6/10). The contest-dissolution
+   mechanism held only in qwen3:8b (0/10) — B's structural claim is
+   itself a single-model property, the fragility shape B existed to
+   escape. Data-position discipline anti-correlates with post-training
+   recency in the qwen family (H1 inverted).
+4. **The sole ω.3b-clean model fails every ω.4 pinned number** (+501%
+   session overhead vs ≤10% bar) on the deployment hardware.
+
+**Hosted reference (recorded, out of Proposal B's scope):** the broker
+task is solvable at scale — minimax-m2.7 at 8/33 boundary errors, 1.43s
+median network-inclusive, ~$0.0015/call — so a hosted-broker or
+hosted-verifier-on-disagreement variant remains a coherent future shape
+(see the verifier deferral note above), with network dependency and
+per-call cost as its named trade.
+
+Total spike cost: ~$0.45 hosted (within the ≈$0.40 estimate's rounding;
+$2/model hard stop never approached); all local arms $0.
+
+### Hosted-variant disposition (practitioner read, 2026-06-04)
+
+**B-hosted (e.g. minimax-m2.7 in the broker seat) is the first B-variant
+not refuted — but loses to A on the six criteria as architecture.** It
+solves capability/latency/residency (0/39 clear with the REAL client
+prompt as data; 1.43s median; nothing resident) but does not deliver the
+structural claim: ω.3b's 6/10 flips under directive-bearing client text
+make its client-churn robustness probabilistic — the same epistemic class
+as A's V3 lever, one layer down. It also converts every turn (including
+carry turns) into a hard network + paid dependency for correctness,
+killing the $0-offline property the acceptance gates standardized on.
+Its best-measured asset (8/33 boundary judgment) is available at ~1/5 the
+calls and no happy-path cloud dependency via the
+**verifier-on-disagreement slot** (see deferral note above) — the shape
+in which a hosted model most plausibly enters this architecture.
+
+**Practitioner scoping principle (recorded as a design constraint for
+DECIDE artifacts):** *"I'm not opposed to certain paid strategies if they
+are limited in scope and make the rest of the ensemble pipeline viable.
+But having a local option is important as well in case I don't want to
+pay."* Operationalized: paid components are acceptable in bounded,
+value-concentrated slots (verifier, fallback, reference validation) where
+they enable the pipeline rather than carry it; every paid slot must have
+a local degradation path (skip-verification, rule-fallback, local-profile
+swap) so the $0-local operating mode remains a first-class citizen, not
+a degraded afterthought. This refines — does not replace — the standing
+free-options preference.
+
+## Fork-neutral work note
+
 ## Fork-neutral work note
 
 **WP-LB-J (delegation-rate meter) is fork-independent:** the classifier and
