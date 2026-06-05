@@ -100,12 +100,18 @@ _DELEGATION_GUIDANCE = (
     "to read a file, or to run a command — not to generate new content "
     "yourself. Prefer delegating generation to an ensemble."
 )
-"""System guidance offered to the seat-filler when capabilities are available.
+"""Delegation guidance composed into the seat-filler's user-turn region.
 
 The delegate-vs-act-directly framing is the operative lever for Finding B (the
 seat-filler is otherwise capable enough to generate inline and skip
-delegation). Whether the nudge holds against a client's own system prompt is
-the WP-LB-G real-OpenCode acceptance question, not a settled property."""
+delegation). Placement is the mechanism (ADR-036, Finding E): as a framework
+system message this text loses the attention contest against the client's own
+system prompt (Spike ψ.1 baseline 0/10); composed into the user-turn region it
+delegates reliably (Spikes ψ/ψ′ cumulative 55/55). The win is stack-scoped —
+composition × qwen3:14b × OpenCode 1.15.5; ψ′ Arm D showed it does not
+transfer across models, so seat-filler profile swaps re-validate the
+delegation rate (FC-60). The wording is framework-owned and tunable; FC-58
+pins the *placement*, not the text."""
 
 
 @dataclass(frozen=True)
@@ -251,10 +257,12 @@ class LoopDriver:
 
         When capability ensembles are available, the seat-filler is offered an
         ``invoke_ensemble`` tool (enumerating the capability list) alongside the
-        client's tools, plus delegation guidance — so it can delegate generation
-        to a capability ensemble (the callee path; FC-44) rather than only
-        carrying literal values. Without capabilities it sees the client tools
-        only (no delegation possible).
+        client's tools — never instead of them (FC-62: a narrowed tool list
+        draws an empty response from the seat-filler, ψ.4c) — plus delegation
+        guidance composed into the user-turn region (ADR-036; FC-58), so it can
+        delegate generation to a capability ensemble (the callee path; FC-44)
+        rather than only carrying literal values. Without capabilities it sees
+        the client tools only (no delegation possible).
         """
         response = await self._seat_filler.generate_with_tools(
             messages=self._seat_filler_messages(context),
@@ -314,16 +322,29 @@ class LoopDriver:
         return [_invoke_ensemble_tool_def(sorted(self._capabilities))]
 
     def _seat_filler_messages(self, context: SessionContext) -> list[dict[str, Any]]:
-        """The seat-filler payload — delegation guidance, then the conversation.
+        """The seat-filler payload — guidance composed into the user-turn region.
 
-        The delegation system message is prepended only when delegation is
-        possible (capabilities present), so the guidance never references a tool
-        the seat-filler was not offered.
+        ADR-036 (FC-58): the guidance never rides a framework-authored
+        system message — the system slot measurably loses the attention
+        contest against the client's system prompt (Spike ψ.1 baseline
+        0/10 vs user-turn 55/55). A user-message tail (the task) gets the
+        guidance merged into it (the first-turn form ψ.2/ψ′-A measured);
+        any other tail (a tool result awaiting the next decision) gets the
+        guidance appended as a standalone trailing user-role message (the
+        C3 form ψ′-C measured), leaving client-authored content unmutated.
+        Guidance is composed only when delegation is possible (capabilities
+        present), so it never references a tool the seat-filler was not
+        offered.
         """
         messages = _to_openai_messages(context)
         if not self._capabilities:
             return messages
-        return [{"role": "system", "content": _DELEGATION_GUIDANCE}, *messages]
+        if messages and messages[-1]["role"] == "user":
+            task = messages[-1]["content"]
+            merged_content = f"{_DELEGATION_GUIDANCE}\n\n---\n\n{task}"
+            merged = {"role": "user", "content": merged_content}
+            return [*messages[:-1], merged]
+        return [*messages, {"role": "user", "content": _DELEGATION_GUIDANCE}]
 
     async def _delegate_generation(
         self, action: ToolCall, context: SessionContext, destination_tool: str
