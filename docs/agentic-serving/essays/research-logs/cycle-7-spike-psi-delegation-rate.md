@@ -504,3 +504,157 @@ turn delegates is exactly the multi-turn delegation question at depth ≥2 —
 covered for tests-after-write (C arms) but not for fix-after-read. Noted as
 a BUILD-acceptance observation point, not a spike gap: the real-OpenCode
 smoke is the layer-matched place to watch it.
+
+## Spike ψ″ — should-finish trailing shape (pre-registration, 2026-06-04)
+
+**Trigger:** Finding F (WP-LB-I acceptance run — see the WP validation log):
+under V3, every no-new-task tool-result tail delegated another revision
+instead of finishing; the session did not converge. ψ′ Arm C measured
+trailing turns that carried a genuine new task; the should-finish shape was
+never measured. Practitioner disposition at the WP-LB-I gate: spike the
+shape before choosing between composition refinement and
+instrumentation-first.
+
+**Question:** On a trailing turn whose tail is a completed-write tool result
+with no new user task, does the C3 guidance suppress `finish` — or does the
+seat-filler fail to finish regardless (continuation bias under the client
+prompt)?
+
+**Design (pre-registered before any run; replay harness = ψ′ infrastructure;
+all local qwen3:14b, $0).** Context assembled from real bytes: the ψ-capture
+OpenCode system prompt + the WP-LB-I run's user task + its first
+assistant-write/tool-result pair ("Wrote file successfully"). Composition
+step uses the landed `_seat_filler_messages` code path, not a hand-rolled
+imitation.
+
+- **Arm E1 (n=10):** tail + standalone trailing C3 guidance (the production
+  form as landed). Measure: finish (no tool calls) vs more-work (any tool
+  call).
+- **Arm E2 (n=10):** tail with no guidance appended — the control isolating
+  the guidance's contribution.
+- **Arm E3 (n=10, conditional — runs only if E1 shows suppression and E2
+  shows finishing):** cheapest candidate refinement, a completion clause
+  appended to the guidance text ("If the requested work is already complete,
+  respond with a brief summary instead of calling tools."). Wording is
+  tunable per FC-58 (placement pinned, not text); any adopted change still
+  re-validates the affected arms before landing.
+
+**Decision rule (pre-registered):**
+
+1. E1 finish ≤ 2/10 AND E2 finish ≥ 7/10 → suppression is
+   guidance-attributable → composition refinement work item (E3 informs the
+   shape); WP-LB-J unaffected (fork-neutral instrumentation).
+2. E1 ≈ E2 both low-finish → not the guidance — continuation bias under the
+   client prompt; composition change would not fix it. Route to
+   instrumentation (WP-LB-J makes the shape measurable) + a
+   framework-level termination policy question (DECIDE territory if
+   pursued; the Budget Controller turn cap is the only current stop).
+3. E1 AND E2 both high-finish → the replay does not reproduce the live
+   behavior (composition × context property); characterize further before
+   any change.
+
+**Measurement:** finish := response with zero tool calls. more-work := any
+tool call (`invoke_ensemble` or client tool). Per-run records retained at
+`scratch/spike-psi-prime-prime-should-finish/` per spike-artifact-retention.
+
+**Methods-review note:** not dispatched for this probe — it is a bounded
+BUILD-gate characterization (the χ/φ class), not a DECIDE-entry evaluation;
+the design reuses the methods-reviewed ψ′ harness and measurement
+definitions. Flagged here so the choice is visible.
+
+### Spike ψ″ run + verdict (2026-06-04)
+
+**Context amendment (recorded):** the harness used the ψ-capture trailing
+request (`req-11435-004.json`) minus its old system-guidance message, rather
+than the pre-registration's WP-LB-I-run assembly — same shape, real
+seat-filler-bound bytes, deeper work-complete tail (three completed writes,
+no new task), and the methods-reviewed ψ′ substrate. Fidelity checks before
+any run: the capture's guidance bytes are identical to the landed
+`_DELEGATION_GUIDANCE`, and the harness E1 composition is byte-equal to the
+landed `_seat_filler_messages` output on the same context.
+
+**Results (qwen3:14b, $0 local; per-run records
+`scratch/spike-psi-prime-prime-should-finish/results/`):**
+
+| Arm | Composition | finish | non-finish actions |
+|---|---|---|---|
+| E1 (n=10) | C3 trailing guidance (production as landed) | **0/10** | 9 `invoke_ensemble`, 1 `write` |
+| E2 (n=10) | no guidance (control) | **10/10** | — |
+| E3 (n=10, conditional — triggered) | guidance + completion clause | **1/10** | 8 `invoke_ensemble`, 1 `write` |
+
+**Decision rule 1 fires unambiguously** (E1 ≤2/10; E2 ≥7/10): the
+termination suppression is **guidance-attributable**. Finding F is the
+guidance's presence at the trailing position acting as a standing
+do-more-work instruction on a work-complete tail.
+
+**E3 informs the refinement shape negatively:** a wording fix does not
+license finish (1/10). Consistent with ψ.2 (V2 wording arms lose regardless)
+and ω.3b (demotion-by-text does not remove authority): the refinement must
+be structural — presence/placement, not phrasing.
+
+**F-ψ″.1 (narrowed candidate):** drop the C3 branch — compose no guidance on
+non-user tails. Evidence: E2 finish 10/10 on the should-finish shape. Under
+the landed tail-role discriminator, every measured delegation shape keeps
+its measured form (first turn and trailing new-task requests have user
+tails → the merge branch, ψ.2/ψ′-A 40/40 + C1 5/5). The single shape losing
+guidance is the non-user tail. Open risk, named: the **mid-task
+continuation** shape (tool-result tail, work explicitly remaining) is
+unmeasured without guidance — does the next generation step still delegate?
+One pre-registerable arm pair (mid-task context, with/without guidance)
+closes it.
+
+**F-ψ″.2 (alternative, DECIDE territory):** a framework-level termination
+policy (the driver decides finish structurally). Not pursued at BUILD scope;
+named for completeness.
+
+### Spike ψ″ Arm E4 — mid-task continuation (pre-registration, 2026-06-04)
+
+**Trigger:** F-ψ″.1's named open risk before adopting drop-C3. **Question:**
+on a tool-result tail with work explicitly remaining, does the next
+generation step still delegate *without* trailing guidance?
+
+**Context (constructed, recorded honestly):** the capture base with the user
+task edited to a two-deliverable ask ("…string_utils.py… and a
+test_string_utils.py with unit tests for it") and the tail truncated to ONE
+completed write pair — file 1 done, file 2 outstanding, no new user message.
+System prompt, message structure, and tool list remain the captured real
+bytes; the task text is edited, so this context is constructed-adjacent, not
+captured.
+
+- **E4a (n=10):** no guidance appended — the drop-C3 candidate behavior.
+- **E4b (n=10):** standalone trailing C3 guidance — the current behavior,
+  for comparison.
+
+**Decision rule (pre-registered):** E4a `invoke_ensemble` ≥8/10 → mid-task
+delegation holds without trailing guidance → **adopt drop-C3** (remove the
+non-user-tail branch; tests updated; suite green). E4a delegation <8/10 with
+E4b high → trailing guidance is load-bearing mid-task → drop-C3 costs
+delegation; the fork reopens (conditional composition vs framework
+termination policy — DECIDE territory). Both arms low → the constructed
+context failed to express continuation; rebuild the context before judging.
+
+### Spike ψ″ Arm E4 results (2026-06-04)
+
+| Arm | Composition | finish | actions |
+|---|---|---|---|
+| E4a (n=10) | mid-task tail, no guidance (drop-C3 candidate) | 4/10 | 6 inline `write`, **0 `invoke_ensemble`** |
+| E4b (n=10) | mid-task tail, C3 guidance (current) | 0/10 | 9 `invoke_ensemble`, 1 `write` |
+
+**Decision rule branch 2 fires: drop-C3 is refuted.** Without trailing
+guidance on a mid-task tail the seat-filler never delegates — it generates
+the remaining deliverable inline (6/10, the north-star violation Finding B
+named) or abandons the remaining work by finishing early (4/10). The
+trailing guidance is load-bearing for mid-task delegation.
+
+**F-ψ″.3 (the full characterization — a two-sided composition tension):**
+the C3 trailing guidance is simultaneously (a) termination-suppressing on
+work-complete tails (E1 0/10 finish vs E2 10/10) and (b) delegation-carrying
+on work-remaining tails (E4b 9/10 delegate vs E4a 0/10). No composition of
+the current guidance text resolves both sides (E3's completion clause: 1/10
+finish); distinguishing the shapes requires knowing whether work remains —
+state the framework does not currently compute. The mechanism choice
+(conditional composition with a work-remaining signal vs framework-level
+termination policy vs restructured conditional guidance text) is DECIDE
+territory per the cycle's loop-back-on-evidence pattern. WP-LB-J
+(instrumentation) is fork-neutral and makes the tension's production
+frequency measurable (every suppressed-finish turn is a TurnDecision line).
