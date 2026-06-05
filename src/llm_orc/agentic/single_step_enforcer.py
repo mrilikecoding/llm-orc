@@ -13,10 +13,10 @@ Enforcer. **D2 resolution (ARCHITECT): batch-truncation** — the only
 enforcement technique with direct spike evidence (Spike τ′, n=3, used
 it), model-independent (so it does not change when the seat-filler swaps
 tiers — the precondition for FC-46), and placeable as a stateless policy.
-The two untested candidates (a re-planning prompt; a one-tool
-``tool_choice`` constraint) remain BUILD-tunable behind this module's
-boundary; ``tool_choice`` is the weakest (Spike κ: the framework does not
-forward ``tool_choice``, and MiniMax did not honor it).
+The ``tool_choice`` family is empirically closed (three negatives: Spike
+κ — the framework does not forward it and MiniMax did not honor it;
+Spike ψ.3 — Ollama+qwen3 silently ignores forcing). A re-planning prompt
+remains the only untested candidate behind this module's boundary.
 
 The policy is stateless — it has no module-level dependencies and holds
 no per-session state. The Loop Driver owns the loop; this module owns the
