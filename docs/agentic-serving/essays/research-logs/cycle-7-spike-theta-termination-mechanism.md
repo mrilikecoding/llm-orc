@@ -450,10 +450,16 @@ as the user-facing finish turn with the VERDICT line stripped.
 **F-θ.2 (the round-2 finding):** with per-action file paths in the digest
 and an explicit deliverable-accounting standard, the explicit judgment call
 discriminates work-complete from work-remaining tails at 59/60 across two
-forms and three bases — against round 1's information-starved 19/60 (forms
-failing on opposite sides). The mechanism's accuracy lives in the evidence
+forms and three bases — against round 1, which produced no usable form:
+Form A 19/30 failing toward confabulated COMPLETE; Form B 20/30 raw-correct
+where all 20 came from degenerate uniform-REMAINING (the rule-5 trigger,
+not discrimination). *(Corrected per argument-audit R1 P3-4: this
+paragraph originally read "19/60", conflating Form A's 19/30 with the full
+sixty; the raw round-1 total is 39/60, itself misleading without the
+degeneracy note.)* The mechanism's accuracy lives in the evidence
 base and the judgment standard, not in the model's unguided disposition:
-the same model, same bases, same verdict format moved 19/60 → 59/60 on
+the same model, same bases, same verdict format moved from no-usable-form
+(per-form breakdown above) to 59/60 on
 digest + standard alone. Production implication: the framework owns the
 digest (joins its own emitted tool calls with client results) — the
 judgment's evidence base is a framework-guaranteed property even though the

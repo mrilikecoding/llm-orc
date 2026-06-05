@@ -1471,3 +1471,86 @@ These Layer-match "no" entries are the table working as designed: they mark wher
 | Delegation fires reliably on generation-shaped turns under the real client (the north-star "work delegated to ensembles by default") | Real OpenCode round-trip (real `llm-orc serve` + real client + local Ollama, $0) | The integration scenario above at the replay layer (55/55 measured) + the $0 real-OpenCode acceptance run with delegation **verified fired** (serve-log `dispatch start` / `TurnDecision` — a passing-looking run can be model-direct, the WP-A scar) — this run is ADR-036's Conditional Acceptance **gating condition** | **no until BUILD** — per-component scenarios stub the client; the real-client run is the layer-matching verification (BUILD Step 5.5 work) |
 | `delegation_rate` ≥ 0.9 sustained (provisional threshold; ≥25 generation-shaped-turn qualifying window) | Production events layer (trailing confirmation, not acceptance gate) | TurnDecision-sink + classifier scenarios above; the meter read over the first soak window | yes at the events layer once F-2/F-3 land; the *number* is practitioner-revisable at the gate |
 | Profile-swap re-validation recorded on any seat-filler model change | Process criterion (FC) | The FC's recorded-run requirement; no scenario can pre-verify a future swap | n/a — process FC, enforced at swap time |
+
+## Feature: Session-Termination Mechanism — Two-Call Trailing Composition (ADR-037, Finding F)
+
+*Conformance disposition (`housekeeping/audits/conformance-scan-cycle-7-loopback5.md`): 8 findings, all expected BUILD work against the newly-decided mechanism — V-01 the unconditional C3 trailing branch this feature replaces (the primary WP); V-02..V-05 the judgment call, digest, standard, and branch enforcement; V-06 the TurnDecision field gap; V-07/V-08 the two FC guards. One incidental true gap outside the table: the AS-3 turn cap (`BudgetController`) is not wired into the loop-driver path — ADR-037 names it the absolute ceiling on non-termination, so wiring it rides in this WP (scenario below).*
+
+### Scenario: a trailing tail triggers the termination judgment before any action call
+**Given** a multi-turn tool-driven session whose conversation tail is a tool result with no new user task
+**When** the loop-driver processes the turn
+**Then** the first model call is the framework-composed termination judgment — not a guidance-composed action call. Refutable: a trailing-tail turn whose first composed request carries `_DELEGATION_GUIDANCE` violates the judgment-first FC (conformance V-01/V-02).
+
+### Scenario: the judgment call is bare-form — no client prompt, no tools
+**Given** a trailing tail entering the judgment composition
+**When** the judgment request is composed
+**Then** it contains exactly a framework-authored judge system message and one user message (task quoted as data + framework-owned digest + deliverable-accounting question), carries no `tools` field, and does not include the client's system prompt. Refutable: a judgment request carrying the client prompt, a tool list, or the delegation guidance violates the bare-form composition. *(Round-2 measured form: 29/30 qwen3:14b.)*
+
+### Scenario: the deliverable-accounting standard is in the question, code QA is not
+**Given** the composed judgment question
+**When** its text is inspected
+**Then** it asks whether requested deliverables have not yet been produced, states that a successful write of a requested file counts as produced, and explicitly does not ask for code-correctness verification. Refutable: a judgment question demanding content verification reproduces round 1's unanswerable standard (Form B 0/10). *(Wording is tunable at the FC-58 bar: revisions re-validate the affected θ arms before landing.)*
+
+### Scenario (integration): the framework-owned digest derives from the framework's own records
+**Given** a session in which the framework emitted client-tool calls (grounded carry or delegation → bridge → terminal) and received the client's per-call tool results
+**When** the digest is composed for a judgment call
+**Then** each action record carries the action kind, target file path, and result, joined from the framework's own emission records with the client's results — and a digest composed from client-serialized messages alone (empty assistant messages, bare "Wrote file successfully" strings) is structurally impossible to produce from the implemented path. Refutable: a digest entry whose file path cannot be traced to a framework emission record violates the digest-provenance FC (conformance V-03; the round-1 failure mode).
+
+### Scenario: COMPLETE → a clean text-only finish turn
+**Given** a judgment response whose verdict parses COMPLETE
+**When** the loop-driver returns the turn to the client
+**Then** the client receives the judgment's summary as an assistant message with no tool calls and no `VERDICT:` line — and the client ends its loop (the model is the stop mechanism). Refutable: a COMPLETE turn carrying tool calls, or leaking the verdict literal, violates the finish-protocol FC (conformance V-05/V-07). *(Finish-text returnability: θ.3 responses were brief factual summaries, no fabricated code.)*
+
+### Scenario: REMAINING → exactly one C3-form action call, judgment exchange discarded
+**Given** a judgment response whose verdict parses REMAINING
+**When** the loop-driver composes the action call
+**Then** the composed request is the ADR-036 C3 trailing form (session messages + standalone trailing guidance) with the judgment exchange absent from its context — byte-equal to what the pre-ADR-037 trailing composition produced on the same session state. Refutable: a call-2 request containing the judgment question or verdict violates the call-2 form-preservation FC (conformance V-08). *(This byte-equality is what lets E4b's 9/10 ride as call 2's evidence.)*
+
+### Scenario: TurnDecision carries the finish-policy fields
+**Given** a trailing-turn judgment (either verdict)
+**When** the TurnDecision-family event is emitted
+**Then** it carries the turn shape and the judgment verdict, and the false-continue frequency is computable from emitted events alone — no log archaeology. Refutable: a deployment that cannot compute how often work-complete tails failed to finish violates the termination-observability FC (conformance V-06; this is the event shape WP-LB-J consumes).
+
+### Scenario (integration): a work-complete session converges end-to-end
+**Given** a session whose requested deliverables have all been produced (framework records show each requested file written successfully)
+**When** the next trailing turn is processed through the real loop-driver against the real session records
+**Then** the judgment fires, parses COMPLETE, and the session returns a text-only finish turn — the session does not delegate a phantom revision. Refutable: a delegated dispatch on a fully-satisfied session is the Finding F signature. *(Replay layer: θ.3b 9/10. The real-client layer is the acceptance criterion below.)*
+
+### Scenario: the AS-3 turn cap backstops the loop-driver path
+**Given** the loop-driver processing any multi-turn session
+**When** the session's turn count reaches the budget cap
+**Then** the `BudgetController` check fires on this surface and the session terminates regardless of judgment outcomes — the deterministic ceiling ADR-037 names is actually wired (conformance incidental: currently absent from the loop-driver path). Refutable: a session exceeding the cap without termination violates AS-3 on this surface.
+
+### Preservation: first-turn and new-user-task composition is untouched
+**Given** a first turn, or a trailing turn carrying a genuine new user task
+**When** the seat-filler request is composed
+**Then** ADR-036's merge branch composes exactly as today (guidance attached to the user task; no judgment call fires — the judgment is specific to no-new-task tool-result tails). Refutable: a judgment call on a user-tail turn violates ADR-037's scope. *(ψ/ψ′ first-turn evidence — 40/40 — rides untouched.)*
+
+### Preservation: mid-task delegation is preserved through the two-call path
+**Given** a work-remaining trailing tail (the E4/E4′ shapes)
+**When** the two-call composition processes it
+**Then** the session still delegates to a capability ensemble at the call-2 step — the termination mechanism does not reintroduce Finding B (inline generation) or premature finish. Refutable: an inline `write` of new content, or a finish turn, on a work-remaining tail. *(Composed estimate ~0.9: θ.4b 10/10 × E4b 9/10 — labeled composed, not end-to-end.)*
+
+### Preservation: carry-side behavior is unchanged at call 2
+**Given** a REMAINING verdict whose next action is carry-shaped (read, command, literal write)
+**When** call 2 is composed and the seat-filler decides
+**Then** carry turns still select client tools with verbatim payloads (the ψ′ Arm B contract) — the judgment layer adds no delegation pressure to carry-shaped work. Refutable: a carry-shaped call-2 turn that delegates, or paraphrases a literal payload.
+
+### Preservation: the judgment exchange is invisible to the client
+**Given** any trailing turn processed through the two-call composition
+**When** the client inspects everything it receives
+**Then** no client-visible surface carries the judgment question, the digest, or the verdict literal — both composition points exist only on the framework ↔ model hop. Refutable: judgment artifacts in any client-visible response.
+
+### Preservation: the single-turn answer-a-question surface (ADR-027) is untouched
+**Given** a non-tool-driven request (no client tools → dispatch-pipeline path)
+**When** it is served
+**Then** the termination judgment does not engage (it is specific to trailing turns on the tool-driven surface); the pipeline's behavior is unchanged.
+
+### Cycle Acceptance Criteria (Finding F)
+
+| Criterion | Specified layer | Verification method | Layer-match check |
+|---|---|---|---|
+| A completed task's session converges under the real client — the finish turn lands text-only and the client loop ends (the Finding F refutation) | Real OpenCode round-trip (real `llm-orc serve` + real client + local Ollama, $0) | The end-to-end convergence scenario above at the replay layer (θ.3b 9/10) + the $0 real-OpenCode acceptance run with convergence verified from serve-log evidence; **this run is ADR-037's Conditional Acceptance gating condition (a)**, and its judgment calls must be fed by the production digest join, not a constructed digest | **no until BUILD** — the production join (V-03) does not exist yet; the real-client run is the layer-matching verification |
+| A work-remaining trailing turn still delegates under the real client (no delegation regression from the termination mechanism) | Real OpenCode round-trip | The mid-task preservation scenario at the replay layer (composed ~0.9) + the same acceptance run exercising at least one work-remaining trailing turn with delegation verified fired (`dispatch start` / TurnDecision — the WP-A scar discipline); **gating condition (b)** | **no until BUILD** |
+| False-continue frequency is computable from events alone | Production events layer | The TurnDecision finish-policy scenario; the false-continue share read alongside WP-LB-J's delegation-rate meter | yes at the events layer once V-06 lands |
+| ADR-036's ≥0.9 delegation-rate soak becomes readable (Finding F no longer inflates the numerator's turn stream) | Production events layer (trailing confirmation) | The soak window read AFTER this mechanism lands — explicitly deferred until then per the loop-back #5 entry package | deferred by design — reading it earlier is the distortion this criterion guards against |
