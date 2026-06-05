@@ -162,9 +162,11 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ---
 
-### WP-LB-I: User-turn delegation guidance composition (ADR-036; Finding E — the mechanism)
+### WP-LB-I: User-turn delegation guidance composition (ADR-036; Finding E — the mechanism) — ✅ CLOSED 2026-06-04
 
-**Objective:** Delegation fires reliably on generation-shaped turns under the real client — the seat-filler guidance relocates from the losing system slot (baseline 0/10) to the user-turn region (55/55 measured), per ADR-036 Decision 1.
+**Outcome:** Landed (commits `863fb5d` feat + `0f9d48d` refactor; suite 2917 green). **Acceptance gate MET:** the $0 real-OpenCode run delegated under natural phrasing (4× serve-log `dispatch start`; bare `ast.parse`-clean file landed via the client `write`) — ADR-036's Conditional Acceptance gating condition. The same run surfaced **Finding F** (termination suppression on no-new-task tails); Spike ψ″ characterized it as the two-sided F-ψ″.3 tension → **loop-back #5: DECIDE on the termination mechanism** (see cycle-status §Finding F). The ADR-036 ≥0.9 soak read is deferred until termination is decided (Finding F inflates the turn stream).
+
+**Objective (as specified):** Delegation fires reliably on generation-shaped turns under the real client — the seat-filler guidance relocates from the losing system slot (baseline 0/10) to the user-turn region (55/55 measured), per ADR-036 Decision 1.
 
 **Changes:**
 - **Loop Driver:** `_seat_filler_messages` composes the delegation guidance into the user-turn region — first turn: attached to the user task; trailing tool-result tails: standalone trailing user-role message (C3 preferred form; C1/C2 equally measured, not violations). The composed request carries **no framework-authored system message** (FC-58). Module + guidance docstrings updated (the conformance F-1 "System guidance" framing predates the ADR).
@@ -179,7 +181,9 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ---
 
-### WP-LB-J: Delegation-rate instrumentation (ADR-036 Decision 3; absorbs WP-LB-F)
+### WP-LB-J: Delegation-rate instrumentation (ADR-036 Decision 3; absorbs WP-LB-F) — ⏸ HELD pending loop-back #5
+
+*Held 2026-06-04: the Finding F termination mechanism (DECIDE loop-back #5) plausibly extends the `TurnDecision` event shape this WP consumes (finish-policy event / work-remaining field) — build once against the settled shape. Advisory C (verify the WP-LB-F fold preserves FC-51 axis-2 intent) still applies at entry.*
 
 **Objective:** The delegation rate is computable from events alone and operator-visible — the regression-visibility mechanism for the stack-scoped win (the meter is the safety net; Spike ψ′ Arm D: the lever does not transfer across models).
 

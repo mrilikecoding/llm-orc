@@ -227,3 +227,62 @@ framework-guarantees-the-contract thesis).
   known-issue for the single-turn surface work.
 - Evidence retained: `scratch/wp-lb-h-smoke/` (serve log, three session
   traces, direct-probe response, landed files) per spike-artifact-retention.
+
+## Update — WP-LB-I built + validated; ADR-036 gating condition met; Finding F surfaced (2026-06-04)
+
+**WP-LB-I landed** (commits `863fb5d` feat: V3 user-turn guidance composition
++ `0f9d48d` refactor: F-4 tool_choice-family-closed docstring; suite 2917
+green at the 2914 baseline +3; lint clean). `_seat_filler_messages` composes
+the delegation guidance into the user-turn region: a user-message tail gets
+the guidance merged into it (`guidance + "\n\n---\n\n" + task` — the exact
+ψ.2/ψ′-A form, 40/40), any other tail gets a standalone trailing user-role
+guidance message (the C3 form, ψ′-C 5/5). No framework-authored system
+message (FC-58); tool-list completeness pinned (FC-62, ψ.4c). The guidance
+text is unchanged — only placement moved.
+
+### Acceptance run — delegation VERIFIED fired (the ADR-036 Conditional Acceptance gating condition)
+
+Real OpenCode (headless) → real `llm-orc serve` → qwen3:14b
+(`agentic-orchestrator-offline-tools`), $0 local. Task issued with **natural
+phrasing** ("Create a file called csv_helper.py that loads a CSV file and
+computes the mean of each numeric column.") — the shape that was 0/10 under
+the old system-slot composition (ψ.1 baseline).
+
+- Serve log: `tool-call emit: tool=invoke_ensemble` → `dispatch start:
+  ensemble=code-generator` on the **first turn** — delegation verified fired
+  under the real client, natural phrasing, V3 composition.
+- **Trailing turns delegated too** (4 delegation dispatches total) — the C3
+  trailing form fired under the real client; it was replay-only evidence
+  until this run.
+- OpenCode executed 3 `write` tool calls; `csv_helper.py` landed as bare,
+  fence-free, `ast.parse`-clean Python (the ADR-035 form contract held under
+  V3).
+- FC-50 loop participation: each tool result was consumed and a next-turn
+  decision produced.
+
+**Gating-condition verdict: MET.** Honest scope notes: FC-61's real-run
+carry-side assertion did not occur (the session produced no carry-shaped
+turns; ψ′ Arm B 0/15 + verbatim 5/5 remain the evidence); client-invisibility
+holds structurally (guidance exists only on the framework → seat-filler hop)
+with no dedicated test.
+
+### Finding F (new) — termination suppression on no-new-task tool-result tails
+
+Every trailing turn in the run was a tool-result tail with **no new user
+task** — the work-complete shape whose correct decision is eventually
+`finish`. The seat-filler instead delegated another revision of the same file
+every turn (4 dispatches; 3 progressively rewritten `csv_helper.py` versions:
+`data.csv` → `input.csv` → argv-based CLI). The session was killed by the
+operator after the pattern was established; the framework turn cap (100) was
+the only natural stop. **The should-finish trailing shape was never in the
+55/55** — ψ′ Arm C's trailing turns all carried a genuine new task. The V3
+lever works; on this shape it may over-fire — attribution (guidance vs the
+model's own continuation bias under the OpenCode prompt) is exactly what
+Spike ψ″ (pre-registered in the ψ research log) isolates before any
+composition change. Practitioner disposition at the WP-LB-I scenario gate:
+**spike the shape first**.
+
+- Evidence retained: `scratch/wp-lb-i-smoke/` (serve log, session trace,
+  three write payloads, final landed file) per spike-artifact-retention.
+- Side observation: the WP-B `agentic-routing-planner` 500 on tools-less
+  auxiliary requests reproduced (known issue, non-fatal).
