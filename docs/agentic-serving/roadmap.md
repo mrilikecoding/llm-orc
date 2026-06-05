@@ -1,7 +1,7 @@
 # Roadmap: Agentic Serving
 
-**Generated:** 2026-04-20; **last amended:** 2026-06-02 (Cycle 7 loop-back ARCHITECT close)
-**Derived from:** `system-design.md` (v6.0), ADRs 001-034, scenarios.md (Cycle 7 + loop-back additions), interaction-specs.md (Cycle 7 + loop-back additions)
+**Generated:** 2026-04-20; **last amended:** 2026-06-05 (Cycle 7 loop-back #5 ARCHITECT close — WP-LB-K added; WP-LB-J unheld)
+**Derived from:** `system-design.md` (v6.3), ADRs 001-037, scenarios.md (Cycle 7 + loop-back additions), interaction-specs.md (Cycle 7 + loop-back additions)
 
 This roadmap expresses the sequencing landscape for building agentic serving — what depends on what, where the builder has a choice, and which coherent intermediates are worth pausing at. It does not prescribe a build order. Work package order within each dependency band is a build-time decision.
 
@@ -11,7 +11,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ## Work Packages — Cycle 7 loop-back (active; tool-driven multi-turn surface)
 
-> **Six loop-back work packages (WP-LB-A through WP-LB-F).** They build the ADR-033 layer-A Loop Driver + ADR-034 client-tool-action Terminal + Artifact Bridge surface. Identifiers are `WP-LB-*` to avoid collision with the first-pass Cycle 7 `WP-A..E` (single-turn surface, below). **BUILD-mode declaration:** to be set at BUILD entry per ADR-091; recommended **gated** — the loop-back carries the cycle's load-bearing open risk (axis-2 long-horizon driver coherence, ADR-033 §Decision ¶5) and a drafting-time-synthesized surface-mode discriminator (validate-not-assume), both of which want practitioner-in-the-loop stewardship; auto mode is appropriate only once the surface-mode shape + Loop Driver structure are in place and the remaining WPs reduce to mechanical wiring.
+> **Loop-back work packages WP-LB-A through WP-LB-K** (F folded into J; G/H/I added by loop-backs as findings surfaced; K added at loop-back #5). They build the ADR-033 layer-A Loop Driver + ADR-034 client-tool-action Terminal + Artifact Bridge surface, the ADR-035 form contract, the ADR-036 delegation mechanism, and the ADR-037 termination mechanism. Identifiers are `WP-LB-*` to avoid collision with the first-pass Cycle 7 `WP-A..E` (single-turn surface, below). **BUILD-mode declaration:** to be set at BUILD entry per ADR-091; recommended **gated** — the loop-back carries the cycle's load-bearing open risk (axis-2 long-horizon driver coherence, ADR-033 §Decision ¶5) and a drafting-time-synthesized surface-mode discriminator (validate-not-assume), both of which want practitioner-in-the-loop stewardship; auto mode is appropriate only once the surface-mode shape + Loop Driver structure are in place and the remaining WPs reduce to mechanical wiring.
 
 ### Track A-LB — `refactor:` commit (precedes WP-LB-A)
 
@@ -181,9 +181,9 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ---
 
-### WP-LB-J: Delegation-rate instrumentation (ADR-036 Decision 3; absorbs WP-LB-F) — ⏸ HELD pending loop-back #5
+### WP-LB-J: Delegation-rate instrumentation (ADR-036 Decision 3; absorbs WP-LB-F) — UNHELD 2026-06-05 (loop-back #5 ARCHITECT settled the event shape)
 
-*Held 2026-06-04: the Finding F termination mechanism (DECIDE loop-back #5) plausibly extends the `TurnDecision` event shape this WP consumes (finish-policy event / work-remaining field) — build once against the settled shape. Advisory C (verify the WP-LB-F fold preserves FC-51 axis-2 intent) still applies at entry.*
+*Held 2026-06-04 pending the Finding F termination mechanism; unheld at the loop-back #5 ARCHITECT close: the settled `TurnDecision` shape = the six existing fields + `turn_shape` (this WP stamps it — meter classification, FC-59) + `tail_kind` + `judgment_verdict` (WP-LB-K emits them — finish-policy fields, FC-67). The fields are additive and independently emittable, so J and K do not block each other; the ADR-036 soak reading needs both landed (Finding F distortion lifts only when K's mechanism does). Advisory C (verify the WP-LB-F fold preserves FC-51 axis-2 intent) still applies at entry.*
 
 **Objective:** The delegation rate is computable from events alone and operator-visible — the regression-visibility mechanism for the stack-scoped win (the meter is the safety net; Spike ψ′ Arm D: the lever does not transfer across models).
 
@@ -197,7 +197,36 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 **Participating modules:** Delegation Rate Meter (new), Loop Driver, Operator-Terminal Event Sink.
 
-**Dependencies:** Hard on **WP-LB-B** (landed — the TurnDecision events). **Open choice with WP-LB-I** (classification stamping is independent of guidance placement) — but ADR-036's trailing confirmation (the ≥25 generation-shaped-turn soak ≥0.9) needs both landed, so finishing both before the soak reading is the natural order.
+**Dependencies:** Hard on **WP-LB-B** (landed — the TurnDecision events). **Open choice with WP-LB-I** (classification stamping is independent of guidance placement) — but ADR-036's trailing confirmation (the ≥25 generation-shaped-turn soak ≥0.9) needs both landed, so finishing both before the soak reading is the natural order. **Open choice with WP-LB-K** (the finish-policy fields are additive; J's `turn_shape` stamping and K's `tail_kind`/`judgment_verdict` emission are independent) — but the soak reading additionally needs K (Finding F inflates the numerator's turn stream until the termination mechanism lands).
+
+---
+
+### WP-LB-K: Session-termination mechanism — two-call trailing composition (ADR-037; Finding F)
+
+**Objective:** Sessions converge — work-complete trailing tails finish protocol-clean while work-remaining tails keep delegating at ADR-036's measured level. The conformance scan's V-01..V-08 are this WP's work list; ADR-037's Conditional Acceptance gating conditions are its acceptance gate.
+
+**Changes:**
+- **Session Action Record (new module, `src/llm_orc/agentic/session_action_record.py` or equivalent; V-03 — build FIRST):** the per-session action-record store (`record_action` at the driver's emission; `join_result` on the next request's `role: "tool"` message; `records` for digest rendering). The production digest join is the Conditional Acceptance gating-condition pre-condition — a spike-style constructed digest does not discharge the gate (FC-64).
+- **Loop Driver (V-01/V-02/V-04/V-05/V-08):** trailing-tail detection in `decide`; the bare-form judgment dispatch (judge system message + quoted task + digest + deliverable-accounting standard — the prompt component that moved Spike θ from 0/10 to 29/30; no tools; no client prompt; locally-constructed messages, not session context); `VERDICT:` parsing; COMPLETE → `FinishTurn(content=stripped_text)` (the Terminal already handles `FinishTurn` — V-07 confirms no Terminal edits); REMAINING → the existing C3 path unchanged, judgment exchange discarded (FC-63/65/66).
+- **TurnDecision extension (V-06; low-cost, additive):** `tail_kind` (first_turn / trailing_tool_result / new_user_task) + `judgment_verdict` (COMPLETE / REMAINING / None). Note the field-name resolution: the meter's `turn_shape` (generation / carry / boundary_excluded, FC-59) is a different field — do not reuse the name for the tail discrimination.
+- **Operator-Terminal Event Sink:** finish-policy fields on the TurnDecision INFO line; false-continue/false-stop shares computable from the serve log (FC-67).
+- **Orchestrator Configuration:** judgment-seat Model Profile resolution (defaults to the seat-filler's profile; FC-68).
+- **AS-3 wiring (FC-69; conformance incidental — independent of ADR-037 but riding this WP per the gate commitment):** construct the `BudgetController` on the loop-driver path (`get_loop_driver`); enforce the turn cap so the backstop ADR-037 names as the absolute ceiling is actually active on this surface.
+
+**Scenarios covered:** scenarios.md §Session-Termination Mechanism (ADR-037 blocks, landed at DECIDE) — judgment-first composition, branch enforcement, digest provenance, finish cleanliness, finish-policy observability; plus the AS-3 cap row.
+
+**Participating modules:** Session Action Record (new), Loop Driver, Operator-Terminal Event Sink, Orchestrator Configuration, Budget Controller (wiring).
+
+**Dependencies:** Hard on **WP-LB-I** (landed — call 2 IS the ADR-036 composition; the judgment branches around it). Hard on **WP-LB-B** (landed — TurnDecision events). **Open choice with WP-LB-J** (additive fields; see J's entry). The **θ harness** (`scratch/spike-theta-termination-mechanism/`, retained per corpus policy) is the judgment-seat re-validation instrument and the replay layer for regression — reuse it for the judgment-arm regression fixtures rather than rebuilding.
+
+**Acceptance gate (ADR-037 Conditional Acceptance — staged at the loop-back #5 ARCHITECT gate, 2026-06-05; the WP-A scar's layer-match discipline).** Design principle: vary one thing — Spike θ measured the judgment composition on multi-file bases with constructed digests and no client; the gate run swaps in the two unmeasured pieces (production digest join; real client) while keeping the task shape inside the measured envelope, so a failure diagnoses the join, not an unmeasured task shape.
+
+- **Run 1 (gating):** a real-OpenCode session ($0 local, the WP-LB-I rig) on one natural-phrasing ask producing **2–3 related files** with the deliverable count legible in the task text (e.g., module + test + README). One session yields both gating conditions: **(b) n-1 work-remaining trailing tails** each judged REMAINING with delegation verified fired (`dispatch start` per file; `judgment_verdict=REMAINING`; no inline writes — the Finding B shape; no premature finish — the E4a shape), then **(a) convergence** — the final digest reads all-produced, COMPLETE, text-only finish, client loop ends. Judgment calls fed by the **production digest join** (not a constructed digest — assert from captured request bytes that the digest carries framework-recorded paths joined with client results). Incidentals: the deliverable-accounting standard gets a real counting task with the false-stop direction exposed but detectable (a COMPLETE at 2-of-3 is visible in the serve log); FC-55 granularity + ADR-035 form contract verified across multiple files (extends TS-14's single-file evidence).
+- **Run 2 (incidental discharge, not gating):** Run 1's shape plus a leading read step ("read X, then write the files consistent with it") — discharges FC-61's outstanding real-run carry-side assertion and exercises the judgment over a mixed record (a read is context, not a deliverable).
+- **Deliberately out of the gate** (recorded, not guessed across): mid-session intent refinement (`new_user_task` tail — ADR-036's merge branch, untouched by ADR-037; verified by unit test on tail-kind detection, not a real run); non-write-shaped deliverables (the ADR-037 recorded boundary; watched by FC-67's shares); messy real-session shapes (PLAY territory).
+- **After the gate passes (practitioner-directed, crawl-before-walk):** design a **progressive task-shape ladder** — escalating runs (more deliverables, mixed read/write, repair-shaped flows, multi-part asks) to find the digest's expressiveness limit in controlled runs rather than waiting for production false-stops; the ladder's design is informed by Run 1's evidence (do not pre-specify past it). The ladder is the proactive complement to FC-67's trailing false-stop trigger and feeds digest enrichment ahead of PLAY.
+
+The ADR-036 ≥0.9 soak window becomes readable after this WP lands (deferred-by-design until then).
 
 ---
 
@@ -238,7 +267,14 @@ WP-LB-I (user-turn guidance; the ADR-036 mechanism) ─ open choice with ─ WP-
 
 WP-LB-B ─ hard ─▶ WP-LB-J (the TurnDecision events it instruments; landed)
 
-WP-LB-I, WP-LB-J ─ implied ─▶ WP-LB-E (wrapper-contingency seam — resumes once the delegation surface is reliable + measured)
+WP-LB-I (✅ landed — surfaced Finding F)
+   │
+   └─ hard ─▶ WP-LB-K (the judgment branches around the landed ADR-036 composition; call 2 IS that composition)
+
+WP-LB-K ─ open choice with ─ WP-LB-J (additive TurnDecision fields; independent build order)
+   (the ADR-036 soak reading needs BOTH: J computes the rate, K removes the Finding F numerator inflation)
+
+WP-LB-I, WP-LB-J, WP-LB-K ─ implied ─▶ WP-LB-E (wrapper-contingency seam — resumes once the delegation surface is reliable, measured, and terminating)
 ```
 
 **Classification key:** Hard = structural necessity; Implied = simpler-first but stub-able; Open choice = genuinely independent.
@@ -257,7 +293,11 @@ TS-12's parity round-trip with ADR-035's form contract in effect: the delegated 
 
 ### TS-15: Delegation reliable and measured (after WP-LB-I + WP-LB-J)
 
-TS-14's form-contracted parity with ADR-036's mechanism and meter in effect: generation-shaped turns delegate reliably under the real client (the V3 composition; gating condition = the delegation-verified real-OpenCode run), and the delegation rate is computable from events alone with the boundary-excluded share observable (the trailing ≥25-generation-shaped-turn soak reads ≥0.9 or refutes). The win is stack-scoped (composition × qwen3:14b × OpenCode 1.15.5) — the meter is what makes losing it visible; profile swaps re-validate (FC-60). After this state only WP-LB-E remains in the loop-back set.
+TS-14's form-contracted parity with ADR-036's mechanism and meter in effect: generation-shaped turns delegate reliably under the real client (the V3 composition; gating condition = the delegation-verified real-OpenCode run), and the delegation rate is computable from events alone with the boundary-excluded share observable (the trailing ≥25-generation-shaped-turn soak reads ≥0.9 or refutes — **soak reading deferred to TS-16**: Finding F inflates the numerator's turn stream until the termination mechanism lands). The win is stack-scoped (composition × qwen3:14b × OpenCode 1.15.5) — the meter is what makes losing it visible; profile swaps re-validate (FC-60). After this state WP-LB-K (termination) and WP-LB-E remain in the loop-back set.
+
+### TS-16: Sessions converge — terminating, delegating, measured (after WP-LB-K + WP-LB-J)
+
+TS-15's reliable delegation with ADR-037's termination mechanism in effect: a completed task's real-OpenCode session ends on its own (the judgment's COMPLETE verdict returns text-only and the client closes the loop — no zombie-revision burn to the AS-3 cap, which is now also actually wired on this surface per FC-69), work-remaining tails still delegate at the measured level, and termination behavior is itself meterable (false-continue and false-stop shares from events alone, FC-67). The ADR-036 ≥0.9 delegation-rate soak window becomes readable here for the first time (Finding F's numerator inflation is gone). The false-stop share doubles as the digest-enrichment trigger — the extensible meta-record seam extends on evidence, not speculation. After this state only WP-LB-E remains in the loop-back set.
 
 ### TS-13: Cycle 7 fully complete — both surfaces (after both surface WP sets)
 
@@ -293,7 +333,11 @@ No normalization ships: χ-P3/P4/P5 produced zero fences under the directive, so
 
 ### LB-7. Delegation-decision mechanism (Finding E; loop-back #3 → DECIDE behind Spike ψ)
 
-Delegation under the client's system prompt is ~coin-flip (2/2 carried on natural phrasing; the direct probe delegated immediately). Candidate levers for Spike ψ to vary and measure ($0 local, replaying a captured real-OpenCode request shape): (ψ.1) baseline delegation rate under the current nudge; (ψ.2) guidance wording/position variants; (ψ.3) server-side `tool_choice` forcing on the seat-filler call (Ollama+qwen3 — distinct surface from Spike κ's Zen/MiniMax negative); (ψ.4) structural pre-filter split (the framework decides delegate-vs-carry; the seat-filler decides only the action shape — model-independent, consistent with the framework-guarantees-the-contract thesis). DECIDE picks the mechanism on measured rates.
+Delegation under the client's system prompt is ~coin-flip (2/2 carried on natural phrasing; the direct probe delegated immediately). Candidate levers for Spike ψ to vary and measure ($0 local, replaying a captured real-OpenCode request shape): (ψ.1) baseline delegation rate under the current nudge; (ψ.2) guidance wording/position variants; (ψ.3) server-side `tool_choice` forcing on the seat-filler call (Ollama+qwen3 — distinct surface from Spike κ's Zen/MiniMax negative); (ψ.4) structural pre-filter split (the framework decides delegate-vs-carry; the seat-filler decides only the action shape — model-independent, consistent with the framework-guarantees-the-contract thesis). DECIDE picks the mechanism on measured rates. *(Resolved: ADR-036 at loop-back #3; trailing branch updated by ADR-037 at loop-back #5.)*
+
+### LB-8. Judgment-seat profile (shared default vs. split; hosted-seat adoption)
+
+The termination judgment's model seat defaults to the seat-filler's profile (one re-validation run covers both instruments — FC-68 composing with FC-60). Two open choices, both config-level: (a) **split the seats** — a distinct judgment-seat profile makes re-validation per-seat with the matching instrument; no structural change, the θ harness is the judgment instrument either way; (b) **hosted judgment seat** — minimax-m2.7 measured 20/20 at ~10× lower latency (~0.7–3.0s vs 7–19s local) and ~$0.0015/call; an optimization slot only, with local qwen3:14b (29/30) the standing fallback per the paid/local scoping principle. Neither choice blocks WP-LB-K; both are deployment decisions the operator can revisit on the FC-67 shares.
 
 ---
 
