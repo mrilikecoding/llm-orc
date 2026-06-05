@@ -78,6 +78,7 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
 )
 from llm_orc.agentic.plexus_adapter import PlexusAdapter
 from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
+from llm_orc.agentic.session_action_record import SessionActionRecord
 from llm_orc.agentic.session_artifact_store import SessionArtifactStore
 from llm_orc.agentic.session_registry import SessionRegistry
 from llm_orc.agentic.session_start import ChatMessage, SessionContext, SessionStartCache
@@ -110,6 +111,7 @@ _SHARED_TOOL_DISPATCH: OrchestratorToolDispatch | None = None
 _SHARED_DISPATCH_EVENT_SUBSTRATE: DispatchEventSubstrate | None = None
 _SHARED_OPERATOR_TERMINAL_SINK: OperatorTerminalEventSink | None = None
 _SHARED_SESSION_ARTIFACT_STORE: SessionArtifactStore | None = None
+_SHARED_SESSION_ACTION_RECORD: SessionActionRecord | None = None
 
 
 def get_session_registry() -> SessionRegistry:
@@ -196,6 +198,29 @@ def get_session_artifact_store() -> SessionArtifactStore:
         )
         _SHARED_SESSION_ARTIFACT_STORE = store
     return _SHARED_SESSION_ARTIFACT_STORE
+
+
+def get_session_action_record() -> SessionActionRecord:
+    """Return the process-scoped Session Action Record (Cycle 7 LB#5, ADR-037).
+
+    The framework-owned digest's home: the Loop Driver records each
+    emitted client-tool action at decision time and joins the client's
+    per-call ``role: tool`` result on the next request (FC-64 — records
+    derive from the framework's own emissions, never client-serialized
+    reconstruction). On first construction the store registers its
+    ``cleanup_session`` as a close callback on the shared Session
+    Registry — lifecycle rides session scope, the Session Artifact Store
+    retention pattern.
+    """
+    global _SHARED_SESSION_ACTION_RECORD
+    if _SHARED_SESSION_ACTION_RECORD is None:
+        store = SessionActionRecord()
+        registry = get_session_registry()
+        registry.register_close_callback(
+            lambda identity: store.cleanup_session(identity.value)
+        )
+        _SHARED_SESSION_ACTION_RECORD = store
+    return _SHARED_SESSION_ACTION_RECORD
 
 
 def get_orchestrator_tool_dispatch() -> OrchestratorToolDispatch:
