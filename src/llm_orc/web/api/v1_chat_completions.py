@@ -454,6 +454,7 @@ async def get_loop_driver() -> LoopDriver:
         seat_filler=await _resolve_seat_filler(),
         enforcer=SingleStepEnforcer(),
         tool_dispatch=get_orchestrator_tool_dispatch(),
+        action_record=get_session_action_record(),
         capabilities=await _build_capability_names(),
         event_substrate=get_dispatch_event_substrate(),
     )

@@ -50,6 +50,7 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     ToolCallResult,
     ToolCallSuccess,
 )
+from llm_orc.agentic.session_action_record import SessionActionRecord
 from llm_orc.agentic.session_artifact_store import SessionArtifactStore
 from llm_orc.agentic.session_registry import SessionIdentity, SessionRegistry
 from llm_orc.agentic.session_start import (
@@ -137,6 +138,7 @@ def _real_terminal(
             seat_filler=seat_filler,
             enforcer=SingleStepEnforcer(),
             tool_dispatch=_NoToolDispatch(),
+            action_record=SessionActionRecord(),
             event_substrate=substrate,
         ),
         bridge=ArtifactBridge(store),
