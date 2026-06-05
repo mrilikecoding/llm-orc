@@ -1,0 +1,48 @@
+{
+  "d1_think_enabled": [
+    {
+      "iter": 0,
+      "decision": "no_tool_call",
+      "carry_kind": null,
+      "wall_s": 13.21,
+      "eval_tokens": 424
+    },
+    {
+      "iter": 1,
+      "decision": "no_tool_call",
+      "carry_kind": null,
+      "wall_s": 5.99,
+      "eval_tokens": 418
+    },
+    {
+      "iter": 2,
+      "decision": "no_tool_call",
+      "carry_kind": null,
+      "wall_s": 6.03,
+      "eval_tokens": 421
+    }
+  ],
+  "d2_client_ablated": [
+    {
+      "iter": 0,
+      "decision": "no_tool_call",
+      "carry_kind": null,
+      "wall_s": 0.71,
+      "eval_tokens": 64
+    },
+    {
+      "iter": 1,
+      "decision": "no_tool_call",
+      "carry_kind": null,
+      "wall_s": 0.68,
+      "eval_tokens": 64
+    },
+    {
+      "iter": 2,
+      "decision": "no_tool_call",
+      "carry_kind": null,
+      "wall_s": 0.68,
+      "eval_tokens": 64
+    }
+  ]
+}

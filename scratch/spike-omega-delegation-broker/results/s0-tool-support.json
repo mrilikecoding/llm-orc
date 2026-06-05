@@ -1,0 +1,19 @@
+{
+  "num_ctx": 16384,
+  "models": {
+    "zen:minimax-m2.7": {
+      "verdict": "tools-ok",
+      "wall_s": 1.472,
+      "load_s": 0.0,
+      "prompt_tokens": 6894,
+      "eval_tokens": 169
+    },
+    "zen:qwen3.5-plus": {
+      "verdict": "tools-ok",
+      "wall_s": 6.01,
+      "load_s": 0.0,
+      "prompt_tokens": 7388,
+      "eval_tokens": 236
+    }
+  }
+}

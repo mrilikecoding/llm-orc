@@ -1,0 +1,1628 @@
+{
+  "model": "qwen3:1.7b",
+  "n_per_case": 3,
+  "summary": {
+    "clear_errors": 15,
+    "clear_total": 39,
+    "boundary_errors": 6,
+    "boundary_total": 33,
+    "h3_flags": 46,
+    "errors_or_no_call": 3
+  },
+  "runs": [
+    {
+      "case": "psi-c01",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the content before proceeding with any edits"
+      },
+      "detail": null,
+      "wall_s": 7.624,
+      "load_s": 1.017,
+      "prompt_tokens": 7016,
+      "eval_tokens": 34
+    },
+    {
+      "case": "psi-c01",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Observing the file contents is necessary to generate the correct code."
+      },
+      "detail": null,
+      "wall_s": 0.576,
+      "load_s": 0.056,
+      "prompt_tokens": 7016,
+      "eval_tokens": 37
+    },
+    {
+      "case": "psi-c01",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the contents of the file before proceeding."
+      },
+      "detail": null,
+      "wall_s": 0.551,
+      "load_s": 0.055,
+      "prompt_tokens": 7016,
+      "eval_tokens": 35
+    },
+    {
+      "case": "psi-c02",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "write",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 0,
+      "args": {
+        "kind": "write",
+        "reason": "Writing a Python module to transpose and multiply matrices"
+      },
+      "detail": null,
+      "wall_s": 6.237,
+      "load_s": 0.054,
+      "prompt_tokens": 7005,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-c02",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "write",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 1,
+      "args": {
+        "kind": "write",
+        "reason": "Writing a Python module to transpose and multiply matrices"
+      },
+      "detail": null,
+      "wall_s": 0.529,
+      "load_s": 0.055,
+      "prompt_tokens": 7005,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-c02",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "write",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 2,
+      "args": {
+        "kind": "write",
+        "reason": "Writing a Python module to transpose and multiply matrices"
+      },
+      "detail": null,
+      "wall_s": 0.522,
+      "load_s": 0.054,
+      "prompt_tokens": 7005,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-c03",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "no_tool_call",
+      "carry_kind": null,
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 0,
+      "args": null,
+      "detail": "",
+      "wall_s": 6.49,
+      "load_s": 0.054,
+      "prompt_tokens": 7006,
+      "eval_tokens": 52
+    },
+    {
+      "case": "psi-c03",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "no_tool_call",
+      "carry_kind": null,
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 1,
+      "args": null,
+      "detail": "",
+      "wall_s": 0.783,
+      "load_s": 0.054,
+      "prompt_tokens": 7006,
+      "eval_tokens": 52
+    },
+    {
+      "case": "psi-c03",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "no_tool_call",
+      "carry_kind": null,
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 2,
+      "args": null,
+      "detail": "",
+      "wall_s": 0.789,
+      "load_s": 0.055,
+      "prompt_tokens": 7006,
+      "eval_tokens": 52
+    },
+    {
+      "case": "psi-c04",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the file contents before proceeding."
+      },
+      "detail": null,
+      "wall_s": 6.239,
+      "load_s": 0.056,
+      "prompt_tokens": 7006,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-c04",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the file contents before proceeding."
+      },
+      "detail": null,
+      "wall_s": 0.524,
+      "load_s": 0.056,
+      "prompt_tokens": 7006,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-c04",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the file contents before proceeding."
+      },
+      "detail": null,
+      "wall_s": 0.523,
+      "load_s": 0.054,
+      "prompt_tokens": 7006,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-c05",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Reading the file to inspect its contents before making any changes."
+      },
+      "detail": null,
+      "wall_s": 6.29,
+      "load_s": 0.056,
+      "prompt_tokens": 7008,
+      "eval_tokens": 36
+    },
+    {
+      "case": "psi-c05",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Reading the file to inspect its contents before making any changes."
+      },
+      "detail": null,
+      "wall_s": 0.567,
+      "load_s": 0.055,
+      "prompt_tokens": 7008,
+      "eval_tokens": 36
+    },
+    {
+      "case": "psi-c05",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Reading the file to inspect its contents before making any changes."
+      },
+      "detail": null,
+      "wall_s": 0.564,
+      "load_s": 0.055,
+      "prompt_tokens": 7008,
+      "eval_tokens": 36
+    },
+    {
+      "case": "psi-c06",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Reading results.log to append the output verbatim"
+      },
+      "detail": null,
+      "wall_s": 6.258,
+      "load_s": 0.055,
+      "prompt_tokens": 7020,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-c06",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "respond",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "respond",
+        "reason": "Append the output above to results.log verbatim."
+      },
+      "detail": null,
+      "wall_s": 0.539,
+      "load_s": 0.053,
+      "prompt_tokens": 7020,
+      "eval_tokens": 34
+    },
+    {
+      "case": "psi-c06",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Append the output above to results.log verbatim."
+      },
+      "detail": null,
+      "wall_s": 0.543,
+      "load_s": 0.053,
+      "prompt_tokens": 7020,
+      "eval_tokens": 34
+    },
+    {
+      "case": "psi-c07",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Need to inspect settings.py to determine where 'DEBUG = True' is located before making any changes."
+      },
+      "detail": null,
+      "wall_s": 6.402,
+      "load_s": 0.054,
+      "prompt_tokens": 7005,
+      "eval_tokens": 44
+    },
+    {
+      "case": "psi-c07",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "reason": "Need to inspect settings.py to determine where 'DEBUG = True' is located before making any changes.",
+        "kind": "read"
+      },
+      "detail": null,
+      "wall_s": 0.672,
+      "load_s": 0.054,
+      "prompt_tokens": 7005,
+      "eval_tokens": 44
+    },
+    {
+      "case": "psi-c07",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "reason": "Need to inspect settings.py to determine file path and contents before making changes.",
+        "kind": "read"
+      },
+      "detail": null,
+      "wall_s": 0.61,
+      "load_s": 0.054,
+      "prompt_tokens": 7005,
+      "eval_tokens": 39
+    },
+    {
+      "case": "psi-c08",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Reading stack.py to understand its contents."
+      },
+      "detail": null,
+      "wall_s": 6.23,
+      "load_s": 0.061,
+      "prompt_tokens": 6997,
+      "eval_tokens": 32
+    },
+    {
+      "case": "psi-c08",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Reading stack.py to understand its contents."
+      },
+      "detail": null,
+      "wall_s": 0.516,
+      "load_s": 0.056,
+      "prompt_tokens": 6997,
+      "eval_tokens": 32
+    },
+    {
+      "case": "psi-c08",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Reading stack.py to determine its purpose and content."
+      },
+      "detail": null,
+      "wall_s": 0.536,
+      "load_s": 0.055,
+      "prompt_tokens": 6997,
+      "eval_tokens": 34
+    },
+    {
+      "case": "psi-c09",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Reading file to inspect its contents before proceeding."
+      },
+      "detail": null,
+      "wall_s": 6.235,
+      "load_s": 0.055,
+      "prompt_tokens": 6996,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-c09",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Reading file to inspect its contents"
+      },
+      "detail": null,
+      "wall_s": 0.484,
+      "load_s": 0.054,
+      "prompt_tokens": 6996,
+      "eval_tokens": 30
+    },
+    {
+      "case": "psi-c09",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Reading file to inspect its contents before proceeding."
+      },
+      "detail": null,
+      "wall_s": 0.531,
+      "load_s": 0.055,
+      "prompt_tokens": 6996,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-c10",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "respond",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "respond",
+        "reason": "Run the tests and report whether they pass."
+      },
+      "detail": null,
+      "wall_s": 6.236,
+      "load_s": 0.054,
+      "prompt_tokens": 6996,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-c10",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "respond",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "respond",
+        "reason": "Run the tests and report whether they pass."
+      },
+      "detail": null,
+      "wall_s": 0.525,
+      "load_s": 0.055,
+      "prompt_tokens": 6996,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-c10",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "respond",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "reason": "Running tests to determine if they pass",
+        "kind": "respond"
+      },
+      "detail": null,
+      "wall_s": 0.5,
+      "load_s": 0.054,
+      "prompt_tokens": 6996,
+      "eval_tokens": 31
+    },
+    {
+      "case": "psi-c11",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Executing ls -la in the project root to inspect directory contents"
+      },
+      "detail": null,
+      "wall_s": 6.287,
+      "load_s": 0.055,
+      "prompt_tokens": 6996,
+      "eval_tokens": 36
+    },
+    {
+      "case": "psi-c11",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Reading the project root to inspect files and directories before executing ls -la."
+      },
+      "detail": null,
+      "wall_s": 0.618,
+      "load_s": 0.056,
+      "prompt_tokens": 6996,
+      "eval_tokens": 39
+    },
+    {
+      "case": "psi-c11",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Executing ls -la in the project root to inspect directory contents"
+      },
+      "detail": null,
+      "wall_s": 0.562,
+      "load_s": 0.054,
+      "prompt_tokens": 6996,
+      "eval_tokens": 36
+    },
+    {
+      "case": "psi-c12",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the repository contents before proceeding."
+      },
+      "detail": null,
+      "wall_s": 6.232,
+      "load_s": 0.055,
+      "prompt_tokens": 6993,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-c12",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the repository contents before proceeding."
+      },
+      "detail": null,
+      "wall_s": 0.525,
+      "load_s": 0.055,
+      "prompt_tokens": 6993,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-c12",
+      "case_kind": "clear",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the repository contents before proceeding."
+      },
+      "detail": null,
+      "wall_s": 0.53,
+      "load_s": 0.057,
+      "prompt_tokens": 6993,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-a01",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "read"
+      ],
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Need to inspect stack.py to understand the bug context"
+      },
+      "detail": null,
+      "wall_s": 6.265,
+      "load_s": 0.056,
+      "prompt_tokens": 7001,
+      "eval_tokens": 34
+    },
+    {
+      "case": "psi-a01",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "read"
+      ],
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Need to inspect stack.py to understand the bug and its context."
+      },
+      "detail": null,
+      "wall_s": 0.58,
+      "load_s": 0.053,
+      "prompt_tokens": 7001,
+      "eval_tokens": 37
+    },
+    {
+      "case": "psi-a01",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "read"
+      ],
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Need to inspect stack.py to understand the bug and its context."
+      },
+      "detail": null,
+      "wall_s": 0.575,
+      "load_s": 0.053,
+      "prompt_tokens": 7001,
+      "eval_tokens": 37
+    },
+    {
+      "case": "psi-a02",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "edit"
+      ],
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": false,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Need to inspect inventory.py to determine what needs to be renamed"
+      },
+      "detail": null,
+      "wall_s": 6.287,
+      "load_s": 0.053,
+      "prompt_tokens": 6998,
+      "eval_tokens": 36
+    },
+    {
+      "case": "psi-a02",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "edit"
+      ],
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": false,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Need to inspect inventory.py to determine what needs to be renamed"
+      },
+      "detail": null,
+      "wall_s": 0.578,
+      "load_s": 0.054,
+      "prompt_tokens": 6998,
+      "eval_tokens": 36
+    },
+    {
+      "case": "psi-a02",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "edit"
+      ],
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": false,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Need to inspect inventory.py to determine what needs to be renamed."
+      },
+      "detail": null,
+      "wall_s": 0.589,
+      "load_s": 0.054,
+      "prompt_tokens": 6998,
+      "eval_tokens": 37
+    },
+    {
+      "case": "psi-a03",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Need to summarize the repository into NOTES.md"
+      },
+      "detail": null,
+      "wall_s": 6.216,
+      "load_s": 0.055,
+      "prompt_tokens": 6996,
+      "eval_tokens": 32
+    },
+    {
+      "case": "psi-a03",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the repository contents before proceeding."
+      },
+      "detail": null,
+      "wall_s": 0.535,
+      "load_s": 0.055,
+      "prompt_tokens": 6996,
+      "eval_tokens": 33
+    },
+    {
+      "case": "psi-a03",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Need to summarize the repository into NOTES.md"
+      },
+      "detail": null,
+      "wall_s": 0.502,
+      "load_s": 0.054,
+      "prompt_tokens": 6996,
+      "eval_tokens": 32
+    },
+    {
+      "case": "psi-a04",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Need to inspect the README file to update test results"
+      },
+      "detail": null,
+      "wall_s": 6.262,
+      "load_s": 0.056,
+      "prompt_tokens": 7023,
+      "eval_tokens": 34
+    },
+    {
+      "case": "psi-a04",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Reading the README to update test results"
+      },
+      "detail": null,
+      "wall_s": 0.501,
+      "load_s": 0.059,
+      "prompt_tokens": 7023,
+      "eval_tokens": 31
+    },
+    {
+      "case": "psi-a04",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Need to inspect the README file to update test results"
+      },
+      "detail": null,
+      "wall_s": 0.537,
+      "load_s": 0.053,
+      "prompt_tokens": 7023,
+      "eval_tokens": 34
+    },
+    {
+      "case": "cap-001",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Observe the file contents before writing"
+      },
+      "detail": null,
+      "wall_s": 6.232,
+      "load_s": 0.057,
+      "prompt_tokens": 7017,
+      "eval_tokens": 31
+    },
+    {
+      "case": "cap-001",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Observing the file contents is necessary to generate the correct code."
+      },
+      "detail": null,
+      "wall_s": 0.576,
+      "load_s": 0.055,
+      "prompt_tokens": 7017,
+      "eval_tokens": 37
+    },
+    {
+      "case": "cap-001",
+      "case_kind": "clear",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the contents of the file before proceeding."
+      },
+      "detail": null,
+      "wall_s": 0.551,
+      "load_s": 0.053,
+      "prompt_tokens": 7017,
+      "eval_tokens": 35
+    },
+    {
+      "case": "cap-002",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "respond"
+      ],
+      "got": "carry",
+      "carry_kind": "respond",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "respond",
+        "reason": "Task completed successfully."
+      },
+      "detail": null,
+      "wall_s": 6.154,
+      "load_s": 0.053,
+      "prompt_tokens": 7022,
+      "eval_tokens": 28
+    },
+    {
+      "case": "cap-002",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "respond"
+      ],
+      "got": "carry",
+      "carry_kind": "respond",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "reason": "Task completed successfully.",
+        "kind": "respond"
+      },
+      "detail": null,
+      "wall_s": 0.451,
+      "load_s": 0.055,
+      "prompt_tokens": 7022,
+      "eval_tokens": 28
+    },
+    {
+      "case": "cap-002",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "respond"
+      ],
+      "got": "carry",
+      "carry_kind": "respond",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "respond",
+        "reason": "Task completed successfully."
+      },
+      "detail": null,
+      "wall_s": 0.458,
+      "load_s": 0.054,
+      "prompt_tokens": 7022,
+      "eval_tokens": 28
+    },
+    {
+      "case": "cap-003",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "respond"
+      ],
+      "got": "carry",
+      "carry_kind": "respond",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "respond",
+        "reason": "Task completed successfully."
+      },
+      "detail": null,
+      "wall_s": 6.166,
+      "load_s": 0.054,
+      "prompt_tokens": 7030,
+      "eval_tokens": 28
+    },
+    {
+      "case": "cap-003",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "respond"
+      ],
+      "got": "carry",
+      "carry_kind": "respond",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "respond",
+        "reason": "Task completed successfully."
+      },
+      "detail": null,
+      "wall_s": 0.459,
+      "load_s": 0.053,
+      "prompt_tokens": 7030,
+      "eval_tokens": 28
+    },
+    {
+      "case": "cap-003",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "respond"
+      ],
+      "got": "carry",
+      "carry_kind": "respond",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "reason": "Task completed successfully.",
+        "kind": "respond"
+      },
+      "detail": null,
+      "wall_s": 0.464,
+      "load_s": 0.053,
+      "prompt_tokens": 7030,
+      "eval_tokens": 28
+    },
+    {
+      "case": "cap-004",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "respond"
+      ],
+      "got": "carry",
+      "carry_kind": "respond",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "respond",
+        "reason": "Task completed successfully."
+      },
+      "detail": null,
+      "wall_s": 6.169,
+      "load_s": 0.054,
+      "prompt_tokens": 7038,
+      "eval_tokens": 28
+    },
+    {
+      "case": "cap-004",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "respond"
+      ],
+      "got": "carry",
+      "carry_kind": "respond",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "respond",
+        "reason": "Task completed successfully."
+      },
+      "detail": null,
+      "wall_s": 0.46,
+      "load_s": 0.054,
+      "prompt_tokens": 7038,
+      "eval_tokens": 28
+    },
+    {
+      "case": "cap-004",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "respond"
+      ],
+      "got": "carry",
+      "carry_kind": "respond",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "reason": "Task completed successfully.",
+        "kind": "respond"
+      },
+      "detail": null,
+      "wall_s": 0.457,
+      "load_s": 0.054,
+      "prompt_tokens": 7038,
+      "eval_tokens": 28
+    },
+    {
+      "case": "m01",
+      "case_kind": "boundary",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Need to inspect stack.py to understand the bug context"
+      },
+      "detail": null,
+      "wall_s": 6.344,
+      "load_s": 0.054,
+      "prompt_tokens": 7063,
+      "eval_tokens": 34
+    },
+    {
+      "case": "m01",
+      "case_kind": "boundary",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the contents of stack.py to determine what needs to be fixed."
+      },
+      "detail": null,
+      "wall_s": 0.643,
+      "load_s": 0.055,
+      "prompt_tokens": 7063,
+      "eval_tokens": 40
+    },
+    {
+      "case": "m01",
+      "case_kind": "boundary",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Need to inspect stack.py to understand the bug context"
+      },
+      "detail": null,
+      "wall_s": 0.551,
+      "load_s": 0.057,
+      "prompt_tokens": 7063,
+      "eval_tokens": 34
+    },
+    {
+      "case": "m02",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the content before processing"
+      },
+      "detail": null,
+      "wall_s": 6.325,
+      "load_s": 0.057,
+      "prompt_tokens": 7000,
+      "eval_tokens": 31
+    },
+    {
+      "case": "m02",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the content before processing"
+      },
+      "detail": null,
+      "wall_s": 0.521,
+      "load_s": 0.054,
+      "prompt_tokens": 7000,
+      "eval_tokens": 31
+    },
+    {
+      "case": "m02",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": true,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the content before processing"
+      },
+      "detail": null,
+      "wall_s": 0.509,
+      "load_s": 0.053,
+      "prompt_tokens": 7000,
+      "eval_tokens": 31
+    },
+    {
+      "case": "m03",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "literal_write",
+        "edit"
+      ],
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": false,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 0,
+      "args": {
+        "reason": "Need to observe the contents of the file to determine if the configuration already exists.",
+        "kind": "read"
+      },
+      "detail": null,
+      "wall_s": 6.471,
+      "load_s": 0.054,
+      "prompt_tokens": 7023,
+      "eval_tokens": 40
+    },
+    {
+      "case": "m03",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "literal_write",
+        "edit"
+      ],
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": false,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Reading the configuration file to understand the existing setup and ensure consistency with the desired changes."
+      },
+      "detail": null,
+      "wall_s": 0.661,
+      "load_s": 0.054,
+      "prompt_tokens": 7023,
+      "eval_tokens": 41
+    },
+    {
+      "case": "m03",
+      "case_kind": "boundary",
+      "expect": "carry",
+      "accept_kinds": [
+        "literal_write",
+        "edit"
+      ],
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": true,
+      "kind_ok": false,
+      "rule": "carry",
+      "rule_agrees_broker": true,
+      "iter": 2,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the contents of the file to determine if the configuration already exists."
+      },
+      "detail": null,
+      "wall_s": 0.619,
+      "load_s": 0.056,
+      "prompt_tokens": 7023,
+      "eval_tokens": 40
+    },
+    {
+      "case": "m04",
+      "case_kind": "boundary",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 0,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the contents of the file before proceeding."
+      },
+      "detail": null,
+      "wall_s": 6.288,
+      "load_s": 0.055,
+      "prompt_tokens": 7017,
+      "eval_tokens": 35
+    },
+    {
+      "case": "m04",
+      "case_kind": "boundary",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 1,
+      "args": {
+        "kind": "read",
+        "reason": "Need to observe the content before proceeding with any edits"
+      },
+      "detail": null,
+      "wall_s": 0.546,
+      "load_s": 0.055,
+      "prompt_tokens": 7017,
+      "eval_tokens": 34
+    },
+    {
+      "case": "m04",
+      "case_kind": "boundary",
+      "expect": "delegate",
+      "accept_kinds": null,
+      "got": "carry",
+      "carry_kind": "read",
+      "correct": false,
+      "kind_ok": true,
+      "rule": "delegate",
+      "rule_agrees_broker": false,
+      "iter": 2,
+      "args": {
+        "reason": "Need to observe the content before proceeding with the task.",
+        "kind": "read"
+      },
+      "detail": null,
+      "wall_s": 0.554,
+      "load_s": 0.055,
+      "prompt_tokens": 7017,
+      "eval_tokens": 35
+    }
+  ]
+}

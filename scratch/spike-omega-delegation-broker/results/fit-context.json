@@ -1,0 +1,15 @@
+{
+  "models": {
+    "lfm2.5:8b": {
+      "biggest_case": "cap-004",
+      "chars_full": 29924,
+      "chars_lean": 4137,
+      "prompt_tokens_full": 6960,
+      "model_max_ctx": 128000,
+      "fits_75pct": true,
+      "run_num_ctx": 16384,
+      "run_ctx_ok": true,
+      "error": null
+    }
+  }
+}

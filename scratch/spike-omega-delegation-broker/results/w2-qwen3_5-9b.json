@@ -1,0 +1,156 @@
+{
+  "model": "qwen3.5:9b",
+  "passed": 9,
+  "n": 10,
+  "runs": [
+    {
+      "case": "psi-c01",
+      "iter": 0,
+      "ok": true,
+      "why": "ok",
+      "args": {
+        "capability": "code-generator",
+        "input": "Create string_utils.py with two functions: reverse_word_order(sentence) that reverses the word order of a sentence, and count_vowels(string) that counts vowels in a string. Use standard Python conventions without external dependencies.",
+        "filePath": "/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/string_utils.py"
+      },
+      "wall_s": 35.302,
+      "load_s": 5.368,
+      "prompt_tokens": 7411,
+      "eval_tokens": 125
+    },
+    {
+      "case": "psi-c02",
+      "iter": 1,
+      "ok": true,
+      "why": "ok",
+      "args": {
+        "capability": "code-generator",
+        "input": "Generate matrix_utils.py with functions to transpose a matrix and multiply two matrices. Provide clear, well-documented implementations following standard Python conventions for these linear algebra operations. Include type hints where appropriate. Ensure the code is clean, efficient, and handles edge cases (e.g., incompatible dimensions for multiplication).",
+        "filePath": "/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/matrix_utils.py"
+      },
+      "wall_s": 32.731,
+      "load_s": 0.207,
+      "prompt_tokens": 7400,
+      "eval_tokens": 200
+    },
+    {
+      "case": "psi-c03",
+      "iter": 2,
+      "ok": true,
+      "why": "ok",
+      "args": {
+        "capability": "code-generator",
+        "input": "Generate a Python script inventory.py with three functions: add(item, quantity), remove(item, quantity), and total_count() that tracks items in an inventory using a dictionary to store item names as keys and quantities as values. The total_count function should return the sum of all quantities currently tracked.",
+        "filePath": "/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/inventory.py"
+      },
+      "wall_s": 30.127,
+      "load_s": 0.202,
+      "prompt_tokens": 7401,
+      "eval_tokens": 138
+    },
+    {
+      "case": "psi-c04",
+      "iter": 3,
+      "ok": true,
+      "why": "ok",
+      "args": {
+        "capability": "code-generator",
+        "input": "Implement a Python Stack class in stack.py with push, pop, and peek methods. The file should be located at the current working directory. Use standard Python conventions (no external dependencies beyond stdlib), follow PEP 8 style, include docstrings for each method, raise ValueError on empty-pop attempts, handle index error appropriately if needed, and ensure type hints are included where appropriate.",
+        "filePath": "/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/stack.py"
+      },
+      "wall_s": 30.869,
+      "load_s": 0.222,
+      "prompt_tokens": 7401,
+      "eval_tokens": 157
+    },
+    {
+      "case": "cap-001",
+      "iter": 4,
+      "ok": true,
+      "why": "ok",
+      "args": {
+        "capability": "code-generator",
+        "input": "Generate a Python module string_utils.py with two functions: reverse_words() that reverses the word order of a sentence, and count_vowels() that counts vowels in a string. Follow standard Python conventions and PEP 8 style. Include docstrings for both functions with examples.",
+        "filePath": "/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/string_utils.py"
+      },
+      "wall_s": 30.094,
+      "load_s": 0.202,
+      "prompt_tokens": 7412,
+      "eval_tokens": 137
+    },
+    {
+      "case": "m01",
+      "iter": 5,
+      "ok": false,
+      "why": "not-delegate:carry",
+      "args": {
+        "kind": "literal_write",
+        "reason": "Fix the pop() bug by adding an empty stack check with raise IndexError"
+      },
+      "wall_s": 27.112,
+      "load_s": 0.2,
+      "prompt_tokens": 7465,
+      "eval_tokens": 52
+    },
+    {
+      "case": "m04",
+      "iter": 6,
+      "ok": true,
+      "why": "ok",
+      "args": {
+        "capability": "code-generator",
+        "input": "Generate test_string_utils.py with comprehensive tests for both functions in string_utils.py. Cover edge cases, normal usage, and error handling as appropriate to the implementation patterns observed (or infer standard pytest-style testing conventions). No function bodies needed—only test code. Match existing import style if visible elsewhere or use simple imports like:\n\nfrom string_utils import func_a, func_b\nimport pytest\n\n\n@pytest.mark.parametrize(...)  # etc.",
+        "filePath": "/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/tests/test_string_utils.py"
+      },
+      "wall_s": 31.306,
+      "load_s": 0.226,
+      "prompt_tokens": 7413,
+      "eval_tokens": 168
+    },
+    {
+      "case": "psi-c01",
+      "iter": 7,
+      "ok": true,
+      "why": "ok",
+      "args": {
+        "capability": "code-generator",
+        "input": "Generate string_utils.py with: (1) reverse_word_order() that reverses word order in a sentence, and (2) count_vowels() that counts vowels in a string. Standard library only. No comments unless code is non-trivial. Match simple Python style conventions.",
+        "filePath": "string_utils.py"
+      },
+      "wall_s": 4.558,
+      "load_s": 0.201,
+      "prompt_tokens": 7411,
+      "eval_tokens": 110
+    },
+    {
+      "case": "psi-c02",
+      "iter": 8,
+      "ok": true,
+      "why": "ok",
+      "args": {
+        "capability": "code-generator",
+        "input": "Generate a Python module matrix_utils.py with two functions: transpose(matrix) and multiply(a, b). Use standard library only (no numpy). Functions should handle 2D lists. Follow PEP8 style. No docstrings or comments unless necessary for clarity.",
+        "filePath": "/Users/nathangreen/Development/eddi-lab/llm-orc/scratch/spike-psi-delegation-rate/workspace/matrix_utils.py"
+      },
+      "wall_s": 5.33,
+      "load_s": 0.199,
+      "prompt_tokens": 7400,
+      "eval_tokens": 133
+    },
+    {
+      "case": "psi-c03",
+      "iter": 9,
+      "ok": true,
+      "why": "ok",
+      "args": {
+        "capability": "code-generator",
+        "input": "Generate a Python script inventory.py that implements an Inventory class with add(item, count), remove(item, quantity), and total_count() methods to track items. Use simple dictionaries internally for storage. Include basic error handling (e.g., removing non-existent or insufficient quantities). Keep it well-structured without comments as per code style guidelines.",
+        "filePath": "inventory.py"
+      },
+      "wall_s": 4.76,
+      "load_s": 0.197,
+      "prompt_tokens": 7401,
+      "eval_tokens": 118
+    }
+  ]
+}

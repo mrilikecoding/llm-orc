@@ -1,0 +1,24 @@
+[w3b zen:minimax-m2.7] #0 FLIP (carry) (1.743s)
+[w3b zen:minimax-m2.7] #1 FLIP (carry) (1.392s)
+[w3b zen:minimax-m2.7] #2 held (delegate) (1.637s)
+[w3b zen:minimax-m2.7] #3 FLIP (carry) (2.048s)
+[w3b zen:minimax-m2.7] #4 held (delegate) (2.744s)
+[w3b zen:minimax-m2.7] #5 FLIP (carry) (2.821s)
+[w3b zen:minimax-m2.7] #6 FLIP (carry) (1.778s)
+[w3b zen:minimax-m2.7] #7 held (delegate) (3.145s)
+[w3b zen:minimax-m2.7] #8 held (delegate) (1.591s)
+[w3b zen:minimax-m2.7] #9 FLIP (carry) (1.379s)
+[w3b zen:minimax-m2.7] flips: 6/10
+-> results/w3b-zen-minimax-m2_7.json
+[w3b zen:qwen3.5-plus] #0 held (delegate) (8.051s)
+[w3b zen:qwen3.5-plus] #1 FLIP (carry) (10.435s)
+[w3b zen:qwen3.5-plus] #2 FLIP (carry) (7.234s)
+[w3b zen:qwen3.5-plus] #3 held (delegate) (9.558s)
+[w3b zen:qwen3.5-plus] #4 FLIP (carry) (7.153s)
+[w3b zen:qwen3.5-plus] #5 held (delegate) (9.831s)
+[w3b zen:qwen3.5-plus] #6 held (delegate) (10.071s)
+[w3b zen:qwen3.5-plus] #7 held (delegate) (7.906s)
+[w3b zen:qwen3.5-plus] #8 FLIP (carry) (6.816s)
+[w3b zen:qwen3.5-plus] #9 held (delegate) (8.727s)
+[w3b zen:qwen3.5-plus] flips: 4/10
+-> results/w3b-zen-qwen3_5-plus.json
