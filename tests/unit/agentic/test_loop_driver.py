@@ -174,13 +174,15 @@ class TestLoopDriverFinishesWithText:
 
 
 class TestLoopDriverOffersDelegation:
-    """WP-LB-G — the seat-filler is offered ``invoke_ensemble`` + guidance.
+    """WP-LB-G/WP-LB-I — the seat-filler is offered ``invoke_ensemble`` + guidance.
 
     Finding B (WP-LB-C real-OpenCode validation): without being offered the
     delegation tool, a real seat-filler can only act directly and never
     delegates. When capability ensembles are configured the driver augments the
     seat-filler's tool list with an ``invoke_ensemble`` tool enumerating them,
-    and prepends delegation guidance.
+    and composes delegation guidance into the user-turn region (ADR-036;
+    FC-58 — a framework system message loses the attention contest against
+    the client's system prompt, Finding E).
     """
 
     _NAMED_TOOLS = [{"type": "function", "function": {"name": "write"}}]
@@ -215,18 +217,97 @@ class TestLoopDriverOffersDelegation:
             "filePath",
         ]
 
-    async def test_prepends_delegation_guidance_when_capabilities_present(
-        self,
-    ) -> None:
+    async def test_first_turn_guidance_composes_into_the_user_task(self) -> None:
+        """FC-58 (ADR-036) — guidance lives in the user-turn region.
+
+        The first-turn form Spikes ψ.2/ψ′-A measured (40/40): guidance
+        merged into the user task message; no framework-authored system
+        message anywhere in the composed request.
+        """
         seat_filler = self._finishing_filler()
         driver = _build_driver(seat_filler, capabilities=frozenset({"code-generator"}))
 
         await driver.decide(_make_context(tools=self._NAMED_TOOLS))
 
         messages, _tools = seat_filler.calls[0]
-        assert messages[0]["role"] == "system"
-        assert "invoke_ensemble" in messages[0]["content"]
-        assert "delegat" in messages[0]["content"].lower()
+        assert all(message["role"] != "system" for message in messages)
+        task_message = messages[-1]
+        assert task_message["role"] == "user"
+        assert "invoke_ensemble" in task_message["content"]
+        assert "delegat" in task_message["content"].lower()
+        # The client's task is preserved after the merged guidance.
+        assert task_message["content"].endswith("what is 2 + 2?")
+
+    async def test_trailing_tool_result_tail_gets_standalone_guidance(self) -> None:
+        """FC-58 (ADR-036) — the C3 trailing form Spike ψ′-C measured.
+
+        A tool-result tail gets the guidance appended as its own
+        ``role: "user"`` message after the conversation, without mutating
+        any client-authored message content.
+        """
+        seat_filler = self._finishing_filler()
+        driver = _build_driver(seat_filler, capabilities=frozenset({"code-generator"}))
+        conversation = [
+            ChatMessage(role="user", content="Create fib.py"),
+            ChatMessage(role="assistant", content="writing fib.py"),
+            ChatMessage(role="tool", content="wrote fib.py"),
+        ]
+
+        await driver.decide(
+            _make_context(messages=conversation, tools=self._NAMED_TOOLS)
+        )
+
+        messages, _tools = seat_filler.calls[0]
+        guidance = messages[-1]
+        assert guidance["role"] == "user"
+        assert "invoke_ensemble" in guidance["content"]
+        # Every client-authored message is carried through unmutated.
+        assert messages[:-1] == [
+            {"role": "user", "content": "Create fib.py"},
+            {"role": "assistant", "content": "writing fib.py"},
+            {"role": "tool", "content": "wrote fib.py"},
+        ]
+
+    async def test_client_system_prompt_stands_alone_in_the_system_region(
+        self,
+    ) -> None:
+        """FC-58 — the composed request's only system message is the client's.
+
+        The client's system prompt is the measured suppressor (Finding E);
+        ADR-036 leaves it alone rather than contesting the slot.
+        """
+        seat_filler = self._finishing_filler()
+        driver = _build_driver(seat_filler, capabilities=frozenset({"code-generator"}))
+        conversation = [
+            ChatMessage(role="system", content="You are a coding agent."),
+            ChatMessage(role="user", content="Create fib.py"),
+        ]
+
+        await driver.decide(
+            _make_context(messages=conversation, tools=self._NAMED_TOOLS)
+        )
+
+        messages, _tools = seat_filler.calls[0]
+        system_messages = [m for m in messages if m["role"] == "system"]
+        assert system_messages == [
+            {"role": "system", "content": "You are a coding agent."}
+        ]
+
+    async def test_seat_filler_tool_list_completeness(self) -> None:
+        """FC-62 (ψ.4c) — the composed tool list always includes the client tools.
+
+        qwen3:14b answers a judged-incompatible tool list with an empty
+        response; ``invoke_ensemble``-only tool lists must be
+        unconstructable through the driver's composition path.
+        """
+        seat_filler = self._finishing_filler()
+        driver = _build_driver(seat_filler, capabilities=frozenset({"code-generator"}))
+
+        await driver.decide(_make_context(tools=self._NAMED_TOOLS))
+
+        _messages, tools = seat_filler.calls[0]
+        for client_tool in self._NAMED_TOOLS:
+            assert client_tool in tools
 
     async def test_no_delegation_tool_or_guidance_without_capabilities(self) -> None:
         seat_filler = self._finishing_filler()
@@ -237,6 +318,7 @@ class TestLoopDriverOffersDelegation:
         assert "invoke_ensemble" not in _offered_tool_names(seat_filler)
         messages, _tools = seat_filler.calls[0]
         assert all(message["role"] != "system" for message in messages)
+        assert all("invoke_ensemble" not in message["content"] for message in messages)
 
 
 class TestLoopDriverDelegatesToCallee:
