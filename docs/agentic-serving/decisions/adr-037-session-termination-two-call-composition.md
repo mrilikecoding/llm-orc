@@ -1,7 +1,8 @@
 # ADR-037: Session-Termination Mechanism — Two-Call Trailing Composition
 
-**Status:** Proposed (Cycle 7 loop-back #5 DECIDE; Conditional Acceptance
-per ADR-097 — see §Empirical grounding for the discharge condition)
+**Status:** Accepted (Cycle 7 loop-back #5 DECIDE, gate closed 2026-06-05;
+Conditional Acceptance per ADR-097 — see §Empirical grounding for the
+discharge condition)
 
 ## Context
 
@@ -324,6 +325,17 @@ beneath this mechanism, not the mechanism.
   deliverable-accounting standard may not bound the judgment there. The
   boundary is recorded; widening it is future spike work, watched by the
   termination-observability events in the meantime.
+- **The digest's expressiveness is the mechanism's reliability ceiling**
+  (practitioner pre-mortem at the gate, 2026-06-05): a judgment over a
+  meta-record that cannot represent what completeness means for a complex
+  session — multi-part asks, mid-session intent refinement, deliverables
+  that are not file writes — degrades exactly the way round 1 measured.
+  The framework records; the model reasons over the record; neither
+  substitutes for the other. The committed digest (action kind + path +
+  result) is the **first increment of an extensible meta-record seam, not
+  its final form**; the false-stop share (termination-observability FC) is
+  the extend-on-evidence trigger for digest enrichment, and the digest's
+  home and shape are an ARCHITECT allocation question.
 - The spike validated the composition with constructed path annotations;
   the production digest join (framework records ↔ client results) is
   unbuilt — it is the BUILD work and the Conditional Acceptance gating
@@ -393,4 +405,9 @@ judgment-exchange-discard pin (implementation cleanliness choices the
 spike fixed by pre-registration, not rate-driven); the
 one-re-validation-covers-both-seats reading when judgment and action seats
 share a profile (synthesis from the FC compositions; the practitioner can
-split the seats, which would make re-validation per-seat).
+split the seats, which would make re-validation per-seat); the designation
+of the false-stop share as the extend-on-evidence trigger for digest
+enrichment (the digest-expressiveness ceiling itself is the practitioner's
+gate pre-mortem; routing its watch-signal through the
+termination-observability FC is drafting-time synthesis following the
+cycle's instrumentation-first pattern).
