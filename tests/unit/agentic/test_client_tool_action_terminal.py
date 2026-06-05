@@ -76,6 +76,13 @@ def _make_context(messages: list[ChatMessage] | None = None) -> SessionContext:
     )
 
 
+class _FakeJudgmentSeat:
+    """Judgment-seat double — the contexts here never reach a judgment."""
+
+    async def generate_response(self, message: str, role_prompt: str) -> str:
+        return "VERDICT: REMAINING\n"
+
+
 def _unused_bridge() -> ArtifactBridge:
     """A bridge whose store is never read (inline / finish / carry outcomes).
 
@@ -476,6 +483,7 @@ class TestTerminalComposesRealLoopDriver:
             enforcer=SingleStepEnforcer(),
             tool_dispatch=_FakeToolDispatch(deliverable="def sort(xs): return xs"),
             action_record=SessionActionRecord(),
+            judgment_seat=_FakeJudgmentSeat(),
         )
         terminal = ClientToolActionTerminal(loop_driver=driver, bridge=_unused_bridge())
 

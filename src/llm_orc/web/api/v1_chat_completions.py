@@ -59,7 +59,7 @@ from llm_orc.agentic.ensemble_backed_roles import (
 from llm_orc.agentic.inference_wait_heartbeat import (
     InferenceWaitHeartbeatScheduler,
 )
-from llm_orc.agentic.loop_driver import LoopDriver, SeatFiller
+from llm_orc.agentic.loop_driver import LoopDriver
 from llm_orc.agentic.operator_terminal_event_sink import OperatorTerminalEventSink
 from llm_orc.agentic.orchestrator_chunk import (
     ClientToolCall,
@@ -91,6 +91,7 @@ from llm_orc.agentic.tier_router import (
 from llm_orc.agentic.tier_router_audit import TierEscalationAuditor
 from llm_orc.core.auth.authentication import CredentialStorage
 from llm_orc.core.models.model_factory import ModelFactory
+from llm_orc.models.base import ModelInterface
 from llm_orc.web.api import get_orchestra_service
 from llm_orc.web.api.sse_format import OpenAiSseFormatter, encode_tool_call_for_message
 from llm_orc.web.api.v1_models import get_orchestrator_config_resolver
@@ -397,7 +398,7 @@ async def get_dispatch_pipeline() -> DispatchPipeline:
     )
 
 
-async def _resolve_seat_filler() -> SeatFiller:
+async def _resolve_seat_filler() -> ModelInterface:
     """Resolve the loop-driver's seat-filler LLM from the Model Profile.
 
     The seat-filler fills the client's "model" seat (ADR-033 §Decision 5):
@@ -406,6 +407,12 @@ async def _resolve_seat_filler() -> SeatFiller:
     Orchestrator Runtime is handed its orchestrator-LLM. Swapping the driver
     model (cheap-tier ↔ frontier-tier — the named axis-2 fallback) is a
     config edit to the profile, never a change to the Loop Driver (FC-46).
+
+    The returned ``ModelInterface`` satisfies both of the driver's model
+    ports: ``SeatFiller`` (``generate_with_tools`` — the action calls) and
+    ``JudgmentSeat`` (``generate_response`` — ADR-037's bare judgment
+    call). The judgment seat defaults to this same resolved model (FC-68:
+    shared profile = one re-validation covers both instruments).
 
     The model must support tool calling — the loop-driver decides each turn
     via ``generate_with_tools``. A profile resolving to a non-tool-calling
@@ -450,11 +457,16 @@ async def get_loop_driver() -> LoopDriver:
     override this factory (or :func:`_resolve_seat_filler`) via
     ``monkeypatch.setattr``.
     """
+    seat_filler_model = await _resolve_seat_filler()
     return LoopDriver(
-        seat_filler=await _resolve_seat_filler(),
+        seat_filler=seat_filler_model,
         enforcer=SingleStepEnforcer(),
         tool_dispatch=get_orchestrator_tool_dispatch(),
         action_record=get_session_action_record(),
+        # FC-68: the judgment seat defaults to the seat-filler's profile —
+        # one re-validation event covers both instruments. A split
+        # judgment-seat profile is a config choice (LB-8), not built here.
+        judgment_seat=seat_filler_model,
         capabilities=await _build_capability_names(),
         event_substrate=get_dispatch_event_substrate(),
     )
