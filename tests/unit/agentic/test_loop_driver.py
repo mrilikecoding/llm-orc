@@ -21,6 +21,7 @@ from typing import Any
 
 import pytest
 
+from llm_orc.agentic.budget_controller import BudgetController
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
 from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
 from llm_orc.agentic.loop_driver import (
@@ -115,6 +116,7 @@ def _build_driver(
     event_substrate: DispatchEventSubstrate | None = None,
     action_record: SessionActionRecord | None = None,
     judgment_seat: _FakeJudgmentSeat | None = None,
+    budget: BudgetController | None = None,
 ) -> LoopDriver:
     return LoopDriver(
         seat_filler=seat_filler,
@@ -124,6 +126,7 @@ def _build_driver(
         event_substrate=event_substrate,
         action_record=action_record or SessionActionRecord(),
         judgment_seat=judgment_seat or _FakeJudgmentSeat("VERDICT: REMAINING\n"),
+        budget=budget or BudgetController(turn_limit=1_000, token_limit=1_000_000),
     )
 
 
@@ -538,6 +541,81 @@ class TestLoopDriverGroundedCarry:
         assert any(
             message.get("content") == "TOKEN_7f3a9c" for message in surfaced_messages
         )
+
+
+class TestLoopDriverBudgetCap:
+    """AS-3 (FC-69) — the turn cap is the absolute ceiling on this surface.
+
+    ADR-037 names the BudgetController as the deterministic backstop beneath
+    the termination mechanism. On the tool-driven surface the loop spans
+    stateless HTTP requests, so the cap measures against the
+    conversation-recovered turn index. When the cap is reached the session
+    terminates regardless of judgment outcomes — refutable: a session
+    exceeding the cap without termination violates AS-3 on this surface.
+    """
+
+    @staticmethod
+    def _context_at_turn(turn: int) -> SessionContext:
+        """A trailing context whose recovered turn index is ``turn``.
+
+        ``_turn_index`` is one past the count of prior assistant turns, so
+        ``turn - 1`` prior assistant turns puts this turn at ``turn``.
+        """
+        messages: list[ChatMessage] = [ChatMessage(role="user", content="write a.py")]
+        for _ in range(turn - 1):
+            messages.append(ChatMessage(role="assistant", content=None))
+            messages.append(ChatMessage(role="tool", content="Wrote file"))
+        return _make_context(messages=messages)
+
+    async def test_session_terminates_at_the_turn_cap(self) -> None:
+        judgment = _FakeJudgmentSeat("VERDICT: REMAINING\nmore to do")
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(content="", tool_calls=[], finish_reason="stop")
+        )
+        driver = _build_driver(
+            seat_filler,
+            capabilities=frozenset({"code-generator"}),
+            judgment_seat=judgment,
+            budget=BudgetController(turn_limit=3, token_limit=1_000_000),
+        )
+
+        outcome = await driver.decide(self._context_at_turn(3))
+
+        assert isinstance(outcome, FinishTurn)
+        # The cap is the absolute ceiling: it fires before the judgment and
+        # before any action call.
+        assert judgment.calls == []
+        assert seat_filler.calls == []
+
+    async def test_below_the_cap_the_turn_proceeds(self) -> None:
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(content="ok", tool_calls=[], finish_reason="stop")
+        )
+        driver = _build_driver(
+            seat_filler,
+            budget=BudgetController(turn_limit=10, token_limit=1_000_000),
+        )
+
+        await driver.decide(self._context_at_turn(2))
+
+        assert len(seat_filler.calls) == 1
+
+    async def test_cap_termination_emits_a_turn_decision(self) -> None:
+        substrate = DispatchEventSubstrate()
+        sink = _CapturingSink()
+        substrate.register_sink(sink)
+        driver = _build_driver(
+            _FakeSeatFiller(
+                ToolCallingResponse(content="", tool_calls=[], finish_reason="stop")
+            ),
+            budget=BudgetController(turn_limit=2, token_limit=1_000_000),
+            event_substrate=substrate,
+        )
+
+        await driver.decide(self._context_at_turn(2))
+
+        decision = _turn_decisions(sink)[0]
+        assert decision.action == "finish"
 
 
 class _FakeJudgmentSeat:

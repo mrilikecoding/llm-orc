@@ -62,6 +62,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
+from llm_orc.agentic.budget_controller import BudgetCheckExhausted, BudgetController
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
 from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
 from llm_orc.agentic.orchestrator_chunk import ToolCallInvocation
@@ -109,6 +110,14 @@ unchanged.
 
 JudgmentVerdict = Literal["COMPLETE", "REMAINING"]
 """The termination judgment's parsed verdict (ADR-037 §Decision 4)."""
+
+_BUDGET_EXHAUSTED_MESSAGE = "[Session budget exhausted: turn limit reached. Stopping.]"
+"""The finish text when the AS-3 cap terminates the session (FC-69).
+
+The circuit-breaker message returned as a clean text-only turn so the
+client loop ends — the deterministic ceiling beneath the termination
+mechanism, not the mechanism (ADR-037 §Rejected: ship-as-is with the
+turn cap as terminator)."""
 
 _DELEGATION_GUIDANCE = (
     "You drive a tool-using coding session. To produce substantive new "
@@ -292,6 +301,7 @@ class LoopDriver:
         tool_dispatch: ToolDispatcher,
         action_record: SessionActionRecord,
         judgment_seat: JudgmentSeat,
+        budget: BudgetController,
         capabilities: frozenset[str] = frozenset(),
         event_substrate: DispatchEventSubstrate | None = None,
     ) -> None:
@@ -300,6 +310,7 @@ class LoopDriver:
         self._tool_dispatch = tool_dispatch
         self._action_record = action_record
         self._judgment_seat = judgment_seat
+        self._budget = budget
         self._capabilities = capabilities
         self._event_substrate = event_substrate
 
@@ -321,7 +332,27 @@ class LoopDriver:
         """
         tail_kind = _tail_kind(context.messages)
         session_id = context.state.identity.value
+        turn_index = _turn_index(context)
         self._join_client_result(session_id, context.messages)
+
+        # AS-3 (FC-69): the turn cap is the deterministic backstop beneath
+        # the termination mechanism — the absolute ceiling on non-
+        # termination ADR-037 names. Checked first, so an exhausted session
+        # terminates regardless of judgment outcomes. The loop spans
+        # stateless HTTP requests, so the count is the conversation-
+        # recovered turn index, not the (unincremented-here) SessionState.
+        if self._cap_reached(context, turn_index):
+            self._emit_turn_decision(
+                self._new_dispatch_id(context),
+                turn_index,
+                "finish",
+                None,
+                False,
+                False,
+                tail_kind,
+                None,
+            )
+            return FinishTurn(content=_BUDGET_EXHAUSTED_MESSAGE)
 
         # ADR-037 §Decision 1 (FC-63): trailing tool-result tails on the
         # delegation surface open with the termination judgment — call 1
@@ -335,7 +366,7 @@ class LoopDriver:
             if judgment_verdict == "COMPLETE":
                 self._emit_turn_decision(
                     self._new_dispatch_id(context),
-                    _turn_index(context),
+                    turn_index,
                     "finish",
                     None,
                     False,
@@ -351,7 +382,6 @@ class LoopDriver:
         )
         enforced = self._enforcer.enforce(response.tool_calls)
         dispatch_id = self._new_dispatch_id(context)
-        turn_index = _turn_index(context)
 
         if enforced.action is None:
             self._emit_turn_decision(
@@ -431,6 +461,19 @@ class LoopDriver:
         return await self._judgment_seat.generate_response(
             message=message, role_prompt=_JUDGE_SYSTEM
         )
+
+    def _cap_reached(self, context: SessionContext, turn_index: int) -> bool:
+        """Whether the AS-3 turn/token cap is reached for this turn (FC-69).
+
+        The conversation-recovered ``turn_index`` is the turn count on this
+        stateless cross-request surface; ``token_spend`` rides the
+        session-level accounting. ``check`` compares ``>=`` the limit, so a
+        ``turn_index`` that has reached the cap exhausts.
+        """
+        check = self._budget.check(
+            turn_count=turn_index, token_spend=context.state.token_spend
+        )
+        return isinstance(check, BudgetCheckExhausted)
 
     def _join_client_result(self, session_id: str, messages: list[ChatMessage]) -> None:
         """Join the newest client tool result to the pending action record.

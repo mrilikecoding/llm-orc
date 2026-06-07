@@ -40,6 +40,7 @@ from pydantic import BaseModel, Field
 
 from llm_orc.agentic.artifact_bridge import ArtifactBridge
 from llm_orc.agentic.autonomy_policy import AutonomyPolicy
+from llm_orc.agentic.budget_controller import BudgetController
 from llm_orc.agentic.calibration_gate import (
     CalibrationGate,
     EnsembleBackedChecker,
@@ -458,6 +459,7 @@ async def get_loop_driver() -> LoopDriver:
     ``monkeypatch.setattr``.
     """
     seat_filler_model = await _resolve_seat_filler()
+    budget = get_orchestrator_config_resolver().resolve().budget
     return LoopDriver(
         seat_filler=seat_filler_model,
         enforcer=SingleStepEnforcer(),
@@ -467,6 +469,12 @@ async def get_loop_driver() -> LoopDriver:
         # one re-validation event covers both instruments. A split
         # judgment-seat profile is a config choice (LB-8), not built here.
         judgment_seat=seat_filler_model,
+        # FC-69: AS-3's turn cap is the absolute ceiling beneath the
+        # termination mechanism — wired onto the loop-driver path so the
+        # zombie-revision loop ADR-037 fixes has a deterministic backstop.
+        budget=BudgetController(
+            turn_limit=budget.turn_limit, token_limit=budget.token_limit
+        ),
         capabilities=await _build_capability_names(),
         event_substrate=get_dispatch_event_substrate(),
     )
