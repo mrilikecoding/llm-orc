@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING
 from llm_orc.agentic.calibration_gate import CalibrationVerdictEvent
 from llm_orc.agentic.calibration_signal_channel import CalibrationSignal
 from llm_orc.agentic.dispatch_event_substrate import DispatchTiming
+from llm_orc.agentic.loop_driver import TurnDecision
 from llm_orc.agentic.tier_router import TierSelection
 from llm_orc.agentic.tier_router_audit import AuditDiagnostic
 
@@ -99,6 +100,8 @@ class OperatorTerminalEventSink:
             self._log_calibration_verdict(event)
         elif isinstance(event, AuditDiagnostic):
             self._log_audit_diagnostic(event)
+        elif isinstance(event, TurnDecision):
+            self._log_turn_decision(event)
         elif isinstance(event, CalibrationSignal):
             self._log_calibration_signal(event)
 
@@ -240,6 +243,27 @@ class OperatorTerminalEventSink:
                 finding.exceeds,
                 dispatch_id,
             )
+
+    def _log_turn_decision(self, event: TurnDecision) -> None:
+        """``INFO: turn decision: ...`` — the finish-policy line (ADR-037 FC-67).
+
+        Carries the tail shape and the termination verdict so an operator
+        computes false-continue and false-stop shares from the serve log
+        alone: a ``trailing_tool_result`` tail with ``judgment_verdict=COMPLETE``
+        followed by a delegated revision is a false stop; one whose verdict was
+        ``REMAINING`` on a work-complete session is a false continue. The
+        ``action`` field disambiguates the COMPLETE finish from a REMAINING
+        action call.
+        """
+        self._logger.info(
+            "turn decision: tail_kind=%s judgment_verdict=%s action=%s "
+            "turn_index=%d dispatch_id=%s",
+            event.tail_kind,
+            event.judgment_verdict if event.judgment_verdict is not None else "?",
+            event.action,
+            event.turn_index,
+            event.dispatch_id if event.dispatch_id is not None else "?",
+        )
 
     def _log_calibration_signal(self, event: CalibrationSignal) -> None:
         """``DEBUG: calibration signal: ...`` — suppressed at default verbosity.

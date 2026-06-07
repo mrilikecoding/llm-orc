@@ -397,3 +397,68 @@ class TestReportValidationResults:
         sink.report_validation_results(())
 
         assert caplog.records == []
+
+
+# ---------------------------------------------------------------------------
+# TurnDecision finish-policy formatting (Cycle 7 loop-back #5, ADR-037 FC-67)
+# ---------------------------------------------------------------------------
+
+
+class TestTurnDecisionFormatting:
+    """Per ADR-037 §Decision 6 (FC-67) — the finish-policy line.
+
+    A trailing-turn ``TurnDecision`` carries the tail shape and the
+    termination verdict, so an operator computes false-continue and
+    false-stop shares from the serve log alone (no log archaeology).
+    """
+
+    def test_trailing_turn_renders_tail_kind_and_verdict(
+        self,
+        sink_and_caplog: tuple[OperatorTerminalEventSink, pytest.LogCaptureFixture],
+    ) -> None:
+        from llm_orc.agentic.loop_driver import TurnDecision
+
+        sink, caplog = sink_and_caplog
+        sink.consume(
+            TurnDecision(
+                dispatch_id="session-A-dispatch-0007",
+                turn_index=3,
+                action="finish",
+                delegated_ensemble=None,
+                grounded_carry_held=False,
+                replanned_after_truncation=False,
+                tail_kind="trailing_tool_result",
+                judgment_verdict="COMPLETE",
+            )
+        )
+        (record,) = caplog.records
+        assert record.levelno == logging.INFO
+        assert "turn decision" in record.message
+        assert "tail_kind=trailing_tool_result" in record.message
+        assert "judgment_verdict=COMPLETE" in record.message
+        assert "action=finish" in record.message
+        assert "dispatch_id=session-A-dispatch-0007" in record.message
+
+    def test_non_trailing_turn_renders_none_verdict(
+        self,
+        sink_and_caplog: tuple[OperatorTerminalEventSink, pytest.LogCaptureFixture],
+    ) -> None:
+        from llm_orc.agentic.loop_driver import TurnDecision
+
+        sink, caplog = sink_and_caplog
+        sink.consume(
+            TurnDecision(
+                dispatch_id=None,
+                turn_index=1,
+                action="write",
+                delegated_ensemble="code-generator",
+                grounded_carry_held=False,
+                replanned_after_truncation=False,
+                tail_kind="first_turn",
+                judgment_verdict=None,
+            )
+        )
+        (record,) = caplog.records
+        assert "tail_kind=first_turn" in record.message
+        assert "judgment_verdict=?" in record.message
+        assert "dispatch_id=?" in record.message
