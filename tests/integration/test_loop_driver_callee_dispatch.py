@@ -30,6 +30,7 @@ import yaml
 
 from llm_orc.agentic.artifact_bridge import ArtifactBridge
 from llm_orc.agentic.autonomy_policy import BASELINE_LEVEL, AutonomyPolicy
+from llm_orc.agentic.budget_controller import BudgetController
 from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
 from llm_orc.agentic.composition_validator import (
     CompositionValidator,
@@ -165,6 +166,7 @@ async def test_callee_generation_dispatches_real_ensemble_into_a_write(
         tool_dispatch=dispatch,
         action_record=SessionActionRecord(),
         judgment_seat=_FakeJudgmentSeat(),
+        budget=BudgetController(turn_limit=1_000, token_limit=1_000_000),
     )
     terminal = ClientToolActionTerminal(
         loop_driver=driver,

@@ -80,12 +80,20 @@ def _minimal_config() -> OrchestratorConfig:
 
 
 class _FakeConfigResolver:
-    """Returns a canned config; only ``resolve_validated`` is read here."""
+    """Returns a canned config.
+
+    ``resolve_validated`` feeds the serving body; ``resolve`` feeds
+    ``get_loop_driver`` (the AS-3 budget read, FC-69) — both return the
+    same canned config here.
+    """
 
     def __init__(self, config: OrchestratorConfig) -> None:
         self._config = config
 
     def resolve_validated(self) -> OrchestratorConfig:
+        return self._config
+
+    def resolve(self) -> OrchestratorConfig:
         return self._config
 
 

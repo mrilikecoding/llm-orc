@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from llm_orc.agentic.artifact_bridge import ArtifactBridge, FormRefusedError
+from llm_orc.agentic.budget_controller import BudgetController
 from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
 from llm_orc.agentic.loop_driver import (
@@ -484,6 +485,7 @@ class TestTerminalComposesRealLoopDriver:
             tool_dispatch=_FakeToolDispatch(deliverable="def sort(xs): return xs"),
             action_record=SessionActionRecord(),
             judgment_seat=_FakeJudgmentSeat(),
+            budget=BudgetController(turn_limit=1_000, token_limit=1_000_000),
         )
         terminal = ClientToolActionTerminal(loop_driver=driver, bridge=_unused_bridge())
 

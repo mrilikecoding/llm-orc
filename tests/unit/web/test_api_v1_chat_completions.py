@@ -27,6 +27,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from llm_orc.agentic.artifact_bridge import ArtifactBridge
+from llm_orc.agentic.budget_controller import BudgetController
 from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
 from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
 from llm_orc.agentic.dispatch_pipeline import DispatchPipeline, DispatchPlan
@@ -147,6 +148,7 @@ def _real_terminal(
             tool_dispatch=_NoToolDispatch(),
             action_record=SessionActionRecord(),
             judgment_seat=_FakeJudgmentSeat(),
+            budget=BudgetController(turn_limit=1_000, token_limit=1_000_000),
             event_substrate=substrate,
         ),
         bridge=ArtifactBridge(store),
