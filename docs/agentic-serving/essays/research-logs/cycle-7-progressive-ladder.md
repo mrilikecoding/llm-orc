@@ -1,11 +1,12 @@
 # Progressive Task-Shape Ladder — design (Cycle 7, post-WP-LB-J)
 
-**Status:** RUNGS 2 + axis B RUN — both PASS. Axis A holds at depth 3; the mixed read-then-write
-flow works and FC-61's carry-side is discharged. A bidirectional meter `turn_shape` gap is confirmed
-(hybrid-classification redesign, grounded by axes A+B; finalize at axis C). Next: axis C (repair),
-which needs the P1 repair-turn scoring clarification. Methods-reviewed
+**Status:** LADDER COMPLETE (axes A + B + C all PASS on qwen3:14b, $0 local). The mechanism
+question is answered for the file-action subset: delegate + advance + converge holds across depth,
+mixed read-write, and repair shapes (only a minor repair churn tail). The meter `turn_shape`
+redesign (hybrid action+instruction) is now grounded across all three turn shapes — a WP-LB-J
+follow-up with its own TDD cycle. Methods-reviewed
 (`housekeeping/audits/research-methods-progressive-ladder.md`). Evidence:
-`scratch/spike-ladder-rung2/RESULTS.md` + `scratch/spike-ladder-axisB/RESULTS.md`.
+`scratch/spike-ladder-rung2/RESULTS.md` + `…-axisB/RESULTS.md` + `…-axisC/RESULTS.md`.
 **Date:** 2026-06-08
 
 ## Rung 2 outcome (axis A, depth-3 write-only) — PASS
@@ -51,6 +52,28 @@ settings_loader.py + test_settings_loader.py.
   signal too. So the fix is a **hybrid (action + instruction)** meter redesign with its own TDD
   cycle, the `boundary_excluded` branch finalized with axis-C evidence. Detail:
   `scratch/spike-ladder-axisB/RESULTS.md`.
+
+## Axis C outcome (repair-shaped) — PASS
+
+n=10/state, $0 local qwen3:14b, real production composition. Task: fix string_utils.py (buggy
+module inlined) + write test_string_utils.py.
+
+| State (done) | result | judge verdict | turn_shape |
+|--------------|--------|---------------|------------|
+| RC0 (nothing) | repair-write 10/10, delegated 10/10 | (first turn) | **boundary_excluded 10/10** |
+| RC1 (module fixed) | advance to test 8/10, **churn 2/10** | **REMAINING 10/10** | carry 8 / boundary_excluded 2 |
+| RCc (fixed+test) | finish 10/10 | **COMPLETE 10/10** | carry 10/10 |
+
+- Repair flow engages + delivers (RC0 10/10), the **P1 accounting resolution holds** (the judge
+  counts the repair-as-write as the deliverable done — REMAINING at RC1, COMPLETE at RCc), and it
+  converges (10/10). `boundary_excluded` confirmed (the third turn shape).
+- **Minor finding — first churn in the ladder:** RC1 re-targets the fixed module 2/10 (axes A/B were
+  0/10). The "fix the bug" framing keeps the module salient; advance still 8/10, backstopped by
+  re-judgment. The ADR-038 anchor is slightly less decisive on repair than on clean writes.
+- RC1 also shows the anchor-phrasing fragility directly: the *same* state stamps `carry` 8/10 vs
+  `boundary_excluded` 2/10 by whether the judge's statement contained "fix" — the shape must come
+  from framework knowledge (action + instruction nature), not the anchor text. Detail:
+  `scratch/spike-ladder-axisC/RESULTS.md`.
 
 **Instrument:** Delegation Rate Meter (WP-LB-J, `delegation_rate_meter.py`) — the rate
 and the boundary-excluded share are now computable from emitted events alone.
@@ -123,10 +146,17 @@ the meter classifies, so the instrument reads each axis directly:
     zero cost, and directly comparable to SlopCodeBench's long-horizon degradation curves — the
     concrete form of the framing §7 borrows.
 
-**Repair-turn scoring (P1 — held until axis C).** A `boundary_excluded` repair turn is excluded
-from the delegation-rate denominator by design; the deliverable-advance accounting must separately
-say whether such a turn counts as a deliverable produced. This does not affect axes A/B (write/read
-only); it is a required clarification paragraph before any axis-C rung is pre-registered.
+**Repair-turn scoring (P1 — RESOLVED for axis C).** The two accountings are **independent**:
+a repair turn is `boundary_excluded` for the delegation-RATE denominator (the instruction is
+repair-shaped — multi-step read-then-generate — not clean generation), AND it counts as the
+requested deliverable produced for **advance**-accounting. Grounded in the current driver: generation
+maps to `write` (the `edit`/`bash` mapping is the deferred LB-3), so a repair is delivered as a write
+(full rewrite) of the target file, which the existing judge accounting standard ("a successful write
+of a requested file counts as that deliverable being produced") already recognizes. Advance therefore
+= the repaired file was (re)written; correctness of the fix is out of scope (owned by the ensemble +
+calibration + PLAY), consistent with the ladder's standing not-under-test line. **Carry-forward for a
+future cycle:** if LB-3 lands the `edit`/`bash` tool-mapping, the judge accounting standard must be
+widened to recognize edits explicitly — flagged for that cycle, not this rung.
 
 ## 6. First rung to run (rung 2) — proposed
 
