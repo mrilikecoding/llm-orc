@@ -249,6 +249,41 @@ The ADR-036 ≥0.9 soak window becomes readable after this WP lands (deferred-by
 
 ---
 
+### WP-LB-M: Delegation-rate meter `turn_shape` hybrid redesign (follow-up to WP-LB-J; ladder-surfaced) — PLANNED (next session)
+
+*Added 2026-06-08 (ladder rungs A/B/C surfaced the gap; practitioner directed: build this next, then keep pushing the ladder).*
+
+**Objective:** `turn_shape` reflects the turn's actual shape so the delegation rate instruments multi-file and mixed sessions, not just first turns. Grounded across all three ladder axes (10/10 consistent): WP-LB-J classifies `turn_shape` once before the action from the instruction (`remaining_anchor or _user_task`), which mis-stamps — REMAINING delegated-writes → `carry` (the descriptive anchor has no generation verb), mixed-read first turns → `generation` (the user task's write framing), and the *same* state flips `carry`↔`boundary_excluded` by the judge's surface phrasing (axis C RC1). The shape must come from framework per-turn knowledge (the action taken + the instruction's boundary/observed-carry nature), not the anchor text.
+
+**Changes (simple action-based variant — recommended; precise variant is a documented future refinement):**
+- **Loop Driver (`loop_driver.py`):** compute `turn_shape` per-outcome in `decide` instead of once before the seat-filler call:
+  - `boundary_excluded` if `classify_turn(instruction, …)` is `boundary_excluded` (repair-shaped / uncovered-domain — the instruction signal is reliable for these);
+  - else `generation` if the outcome is a write: `ApplyWork` (delegated) OR a `CarryClientTool` whose action is a `write`/`edit` (the C1 inline-write — still counts in the denominator, no numerator, so the rate drops: C1 detection preserved);
+  - else `carry` (`CarryClientTool` read/bash, `FinishTurn`).
+  - `classify_turn` stays as the instruction-side helper (it still owns `boundary_excluded` + observed-carry + the first-turn generation case); its labeled-set regression stays valid.
+- **Precise variant (future refinement, documented not built):** disambiguate write-carries via the observed-carry check (observed-value write → `carry`; fresh-content write → `generation`). Only matters if observed-value carry-writes become common on this surface (rare today).
+- **System-design:** a BUILD Design Amendment noting FC-59's denominator now reads from action + instruction, not instruction-only.
+
+**Tests:** loop-driver stamping tests updated to the action-derived shape (REMAINING delegated-write → `generation`; mixed-read first turn → `carry`; repair → `boundary_excluded`; C1 literal-write → `generation`); meter `classify_turn` labeled-set unchanged; the events-alone integration test should now show trailing multi-file generation turns counted.
+
+**Acceptance:** re-run the ladder probe slices (`scratch/spike-ladder-{rung2,axisB,axisC}/`) and confirm `turn_shape` now matches the action (delegated writes → `generation`, reads → `carry`, repairs → `boundary_excluded`) and the rate counts the trailing multi-file turns. Behavior change → `feat:`, own TDD cycle.
+
+**Participating modules:** Loop Driver (stamping), Delegation Rate Meter (helper boundary if any).
+
+---
+
+### Ladder continuation (after WP-LB-M; practitioner: "keep pushing")
+
+The three single-axis rungs (A depth, B mixed, C repair) all passed cleanly on qwen3:14b. The methods review's open question #1 (interaction effects — do failures only surface when axes compound?) is the natural next probe. Candidate rungs, crawl-before-walk, design from the prior evidence (do not pre-specify past the next learning point):
+- **Compound A×B** — depth-3 mixed (a leading read + 3 writes).
+- **Compound A×C** — multi-file with a repair (fix X + write 2 new files); pull the **axis-C repair-churn thread** (does the 2/10 re-target tail worsen when a repair sits inside a multi-file flow?).
+- **Deeper depth** — 4–5 deliverables (does the anchor/digest hold further?).
+- **Axis D** — multi-part / mid-session intent refinement (the `new_user_task` tail; ADR-037's recorded boundary, verified by unit test today but not under a real run).
+- **Optional cloud rung** — a more-capable seat contrast (~$5 cap); low priority since local qwen3:14b held every single-axis rung (the ≤7/10 trigger never fired), but available to separate seat ceiling from mechanism ceiling on a compound rung that does degrade.
+- Re-running the ladder slices doubles as WP-LB-M's acceptance.
+
+---
+
 ## Dependency Graph (Cycle 7 loop-back)
 
 ```
