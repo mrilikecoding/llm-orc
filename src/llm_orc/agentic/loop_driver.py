@@ -111,6 +111,16 @@ unchanged.
 JudgmentVerdict = Literal["COMPLETE", "REMAINING"]
 """The termination judgment's parsed verdict (ADR-037 §Decision 4)."""
 
+_REMAINING_IMPERATIVE = "Produce that next."
+"""The fixed framework imperative appended after the judge's remaining-work
+statement on the REMAINING branch (ADR-038).
+
+The anchor form is the judge's stripped statement + this imperative. Spike ρ:
+statement-only advanced 8–9/10, statement+imperative 9–10/10 (never worse,
+modestly better, removed the lone stuck/no-tool-call cases). The imperative is
+a fixed framework string, tunable at the FC-58 evidence bar like the guidance
+and judgment-question text."""
+
 _BUDGET_EXHAUSTED_MESSAGE = "[Session budget exhausted: turn limit reached. Stopping.]"
 """The finish text when the AS-3 cap terminates the session (FC-69).
 
@@ -360,6 +370,7 @@ class LoopDriver:
         # REMAINING (and a parse miss, which must not silently drop work)
         # falls through to the unchanged ADR-036 action call below.
         judgment_verdict: JudgmentVerdict | None = None
+        remaining_anchor: str | None = None
         if tail_kind == "trailing_tool_result" and self._capabilities:
             judgment_text = await self._dispatch_judgment(session_id, context)
             judgment_verdict = parse_verdict(judgment_text)
@@ -375,9 +386,18 @@ class LoopDriver:
                     judgment_verdict,
                 )
                 return FinishTurn(content=strip_verdict(judgment_text) or None)
+            if judgment_verdict == "REMAINING":
+                # ADR-038 (V-38-1): route the judge's own remaining-work
+                # statement forward to anchor the action call, instead of
+                # discarding the judgment exchange. The stripped statement is
+                # the only part that carries — the question/digest/verdict
+                # literal stay discarded (ADR-037 context-bounding holds).
+                remaining_anchor = strip_verdict(judgment_text) or None
 
         response = await self._seat_filler.generate_with_tools(
-            messages=self._seat_filler_messages(context),
+            messages=self._seat_filler_messages(
+                context, remaining_anchor=remaining_anchor
+            ),
             tools=self._delegation_tools() + list(context.tools),
         )
         enforced = self._enforcer.enforce(response.tool_calls)
@@ -502,7 +522,9 @@ class LoopDriver:
             return []
         return [_invoke_ensemble_tool_def(sorted(self._capabilities))]
 
-    def _seat_filler_messages(self, context: SessionContext) -> list[dict[str, Any]]:
+    def _seat_filler_messages(
+        self, context: SessionContext, *, remaining_anchor: str | None = None
+    ) -> list[dict[str, Any]]:
         """The seat-filler payload — guidance composed into the user-turn region.
 
         ADR-036 (FC-58): the guidance never rides a framework-authored
@@ -516,6 +538,15 @@ class LoopDriver:
         Guidance is composed only when delegation is possible (capabilities
         present), so it never references a tool the seat-filler was not
         offered.
+
+        ADR-038 (V-38-2): on the REMAINING branch the caller passes the judge's
+        stripped remaining-work statement as ``remaining_anchor``; it is
+        appended after the trailing guidance, followed by the fixed framework
+        imperative, so the action call is steered to the next unproduced
+        deliverable instead of re-deriving the next step from the bare
+        conversation. The anchor only ever rides the trailing (tool-result-tail)
+        form — a REMAINING verdict is specific to that tail — so the first-turn
+        merge branch is untouched.
         """
         messages = _to_openai_messages(context)
         if not self._capabilities:
@@ -525,7 +556,10 @@ class LoopDriver:
             merged_content = f"{_DELEGATION_GUIDANCE}\n\n---\n\n{task}"
             merged = {"role": "user", "content": merged_content}
             return [*messages[:-1], merged]
-        return [*messages, {"role": "user", "content": _DELEGATION_GUIDANCE}]
+        trailing = _DELEGATION_GUIDANCE
+        if remaining_anchor:
+            trailing = f"{trailing}\n\n{remaining_anchor} {_REMAINING_IMPERATIVE}"
+        return [*messages, {"role": "user", "content": trailing}]
 
     async def _delegate_generation(
         self, action: ToolCall, context: SessionContext, destination_tool: str

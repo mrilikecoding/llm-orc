@@ -1,6 +1,6 @@
 # Roadmap: Agentic Serving
 
-**Generated:** 2026-04-20; **last amended:** 2026-06-05 (Cycle 7 loop-back #5 ARCHITECT close — WP-LB-K added; WP-LB-J unheld)
+**Generated:** 2026-04-20; **last amended:** 2026-06-08 (Cycle 7 loop-back #6 BUILD — WP-LB-L added [remaining-work anchor, ADR-038]; ARCHITECT skipped). Prior: 2026-06-05 (loop-back #5 ARCHITECT close — WP-LB-K added; WP-LB-J unheld)
 **Derived from:** `system-design.md` (v6.3), ADRs 001-037, scenarios.md (Cycle 7 + loop-back additions), interaction-specs.md (Cycle 7 + loop-back additions)
 
 This roadmap expresses the sequencing landscape for building agentic serving — what depends on what, where the builder has a choice, and which coherent intermediates are worth pausing at. It does not prescribe a build order. Work package order within each dependency band is a build-time decision.
@@ -227,6 +227,25 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 - **After the gate passes (practitioner-directed, crawl-before-walk):** design a **progressive task-shape ladder** — escalating runs (more deliverables, mixed read/write, repair-shaped flows, multi-part asks) to find the digest's expressiveness limit in controlled runs rather than waiting for production false-stops; the ladder's design is informed by Run 1's evidence (do not pre-specify past it). The ladder is the proactive complement to FC-67's trailing false-stop trigger and feeds digest enrichment ahead of PLAY.
 
 The ADR-036 ≥0.9 soak window becomes readable after this WP lands (deferred-by-design until then).
+
+---
+
+### WP-LB-L: Remaining-work anchor — multi-file progress (ADR-038; Finding G)
+
+*Added 2026-06-08 (loop-back #6 BUILD; ARCHITECT skipped — pure composition amendment, no structural allocation). Landed the same session.*
+
+**Objective:** Multi-file sessions advance through all deliverables instead of re-revising the first (the Finding G fix). On a REMAINING verdict, route the judge's own stripped remaining-work statement + a fixed imperative ("Produce that next.") forward to anchor the action call — the signal ADR-037 discarded.
+
+**Changes (one logical unit, conformance-scan-cycle-7-loopback6.md V-38-1/2/3, all landed):**
+- **Loop Driver (`loop_driver.py`):** `decide` REMAINING fall-through captures `strip_verdict(judgment_text)` as `remaining_anchor` (V-38-1); `_seat_filler_messages` gains a `remaining_anchor` param that appends the statement + the `_REMAINING_IMPERATIVE` constant to the trailing region on the tool-result-tail form (V-38-2). Only the stripped statement + imperative carry forward — question/digest/verdict literal stay discarded (FC-66 amended).
+- **Tests (`test_loop_driver.py`):** `test_remaining_verdict_call2_form_preserved` updated to the anchored form; new `TestRemainingWorkAnchor` (anchor presence + judge's-actual-statement + no-anchor on first-turn/new-user-task/parse-miss) (V-38-3).
+- **Design Amendment #18:** system-design.md (v6.4) + system-design.agents.md (Loop Driver REMAINING clause, FC-66 amended, two new ADR-038 FC rows) + ORIENTATION.md + domain-model.md REMAINING-clause sweep; ADR-037 Updated-by-ADR-038 header.
+
+**Participating modules:** Loop Driver (only). No new module, edge, or field.
+
+**Dependencies:** Hard on **WP-LB-K** (landed — the two-call composition + judge's statement this routes forward). The Spike ρ harness (`scratch/spike-rho-remaining-anchor/`) is the composition-layer regression reference.
+
+**Acceptance gate (joint ADR-037 + ADR-038 Conditional Acceptance discharge):** a single $0 real-OpenCode multi-file session that BOTH advances through all deliverables (no churn re-writing file 1; `dispatch start` per distinct deliverable; `turn decision: judgment_verdict=REMAINING` with the next file each turn) AND converges (final COMPLETE, text-only finish, the client loop ends) — verified from serve-log evidence within the one run.
 
 ---
 
