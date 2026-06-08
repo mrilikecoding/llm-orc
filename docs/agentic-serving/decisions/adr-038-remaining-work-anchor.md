@@ -1,8 +1,14 @@
 # ADR-038: Remaining-Work Anchor — Routing the Judge's Signal Forward
 
+> **Conditional Acceptance discharged 2026-06-08** (jointly with ADR-037). The
+> real-OpenCode multi-file run (WP-LB-L) passed in a single session: turn 1
+> wrote `string_utils.py`, turn 2 (REMAINING) advanced to `test_string_utils.py`
+> via the anchor (no churn), turn 3 (COMPLETE) finished text-only and the client
+> loop ended. Evidence: `scratch/wp-lb-l-acceptance/RESULTS.md`.
+
 **Status:** Accepted (Cycle 7 loop-back #6 DECIDE, gate closed 2026-06-08;
-Conditional Acceptance per ADR-097 — see §Empirical grounding for the discharge
-condition)
+Conditional Acceptance per ADR-097 discharged 2026-06-08 by the WP-LB-L
+real-OpenCode multi-file run — see §Empirical grounding)
 
 ## Context
 

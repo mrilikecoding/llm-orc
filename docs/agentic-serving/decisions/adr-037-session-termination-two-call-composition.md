@@ -10,9 +10,12 @@
 > discarded before call 2). See ADR-038.
 
 **Status:** Accepted, Updated by ADR-038 (Cycle 7 loop-back #5 DECIDE, gate
-closed 2026-06-05; Conditional Acceptance per ADR-097 — see §Empirical grounding
-for the discharge condition; FC call-2 form preservation updated by ADR-038
-2026-06-08)
+closed 2026-06-05; Conditional Acceptance per ADR-097 **discharged 2026-06-08**
+jointly with ADR-038 by the WP-LB-L real-OpenCode run — a single multi-file
+session that converged [COMPLETE → text-only finish, client loop ended] and, via
+ADR-038's anchor, advanced through both deliverables; evidence
+`scratch/wp-lb-l-acceptance/RESULTS.md`; FC call-2 form preservation updated by
+ADR-038 2026-06-08)
 
 ## Context
 
