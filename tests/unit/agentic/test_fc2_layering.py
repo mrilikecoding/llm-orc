@@ -68,6 +68,7 @@ _LAYER_MAP: dict[str, int] = {
     "llm_orc.agentic.ensemble_backed_roles": 2,  # WP-A7 per ADR-027/028/029
     "llm_orc.agentic.single_step_enforcer": 2,  # WP-LB-B per ADR-033
     "llm_orc.agentic.loop_driver": 2,  # WP-LB-B per ADR-033
+    "llm_orc.agentic.delegation_rate_meter": 2,  # WP-LB-J per ADR-036 §Decision 3
     "llm_orc.agentic.artifact_bridge": 2,  # WP-LB-D per ADR-034
     # L3 — Entry
     "llm_orc.agentic.client_tool_action_terminal": 3,  # WP-LB-C per ADR-034

@@ -462,3 +462,103 @@ class TestTurnDecisionFormatting:
         assert "tail_kind=first_turn" in record.message
         assert "judgment_verdict=?" in record.message
         assert "dispatch_id=?" in record.message
+
+
+# ---------------------------------------------------------------------------
+# TurnDecision meter-field formatting + delegation-rate surfacing
+# (Cycle 7 loop-back #3, ADR-036 §Decision 3 — WP-LB-J, FC-59/FC-51)
+# ---------------------------------------------------------------------------
+
+
+def _turn_decision(**overrides: object) -> object:
+    from llm_orc.agentic.loop_driver import TurnDecision
+
+    fields: dict[str, object] = {
+        "dispatch_id": "d-1",
+        "turn_index": 0,
+        "action": "write",
+        "delegated_ensemble": None,
+        "grounded_carry_held": False,
+        "replanned_after_truncation": False,
+        "tail_kind": "first_turn",
+        "judgment_verdict": None,
+        "turn_shape": "carry",
+    }
+    fields.update(overrides)
+    return TurnDecision(**fields)  # type: ignore[arg-type]
+
+
+class TestTurnDecisionMeterFields:
+    """FC-59/FC-51 — the turn-decision line carries the meter fields and the
+    running delegation rate surfaces on generation turns."""
+
+    def test_line_carries_shape_delegated_carry_and_replanned(
+        self,
+        sink_and_caplog: tuple[OperatorTerminalEventSink, pytest.LogCaptureFixture],
+    ) -> None:
+        sink, caplog = sink_and_caplog
+        sink.consume(
+            _turn_decision(
+                turn_index=1,
+                action="write",
+                delegated_ensemble="code-generator",
+                turn_shape="generation",
+            )
+        )
+        turn_lines = [r.message for r in caplog.records if "turn decision" in r.message]
+        (line,) = turn_lines
+        assert "turn=1" in line
+        assert "shape=generation" in line
+        assert "delegated=code-generator" in line
+        assert "carry_held=false" in line
+        assert "replanned=false" in line
+
+    def test_carry_turn_renders_dash_for_no_delegation(
+        self,
+        sink_and_caplog: tuple[OperatorTerminalEventSink, pytest.LogCaptureFixture],
+    ) -> None:
+        sink, caplog = sink_and_caplog
+        sink.consume(
+            _turn_decision(action="read", grounded_carry_held=True, turn_shape="carry")
+        )
+        # A carry turn is a single line — the rate moves only on generation.
+        (record,) = caplog.records
+        assert "shape=carry" in record.message
+        assert "delegated=-" in record.message
+        assert "carry_held=true" in record.message
+
+    def test_generation_turn_surfaces_running_rate_line(
+        self,
+        sink_and_caplog: tuple[OperatorTerminalEventSink, pytest.LogCaptureFixture],
+    ) -> None:
+        sink, caplog = sink_and_caplog
+        sink.consume(
+            _turn_decision(delegated_ensemble="code-generator", turn_shape="generation")
+        )
+        rate_lines = [
+            r.message for r in caplog.records if "delegation rate" in r.message
+        ]
+        (rate_line,) = rate_lines
+        assert "rate=1.000" in rate_line
+        assert "delegated=1" in rate_line
+        assert "generation=1" in rate_line
+
+    def test_delegation_rate_reading_from_consumed_events(
+        self,
+        sink_and_caplog: tuple[OperatorTerminalEventSink, pytest.LogCaptureFixture],
+    ) -> None:
+        sink, _ = sink_and_caplog
+        sink.consume(
+            _turn_decision(delegated_ensemble="code-generator", turn_shape="generation")
+        )
+        sink.consume(_turn_decision(turn_shape="generation"))  # failed to delegate
+        sink.consume(_turn_decision(turn_shape="carry"))
+        sink.consume(_turn_decision(turn_shape="boundary_excluded"))
+
+        reading = sink.delegation_rate_reading()
+
+        assert reading.delegated == 1
+        assert reading.generation_turns == 2
+        assert reading.rate == 0.5
+        assert reading.boundary_excluded == 1
+        assert reading.considered == 4

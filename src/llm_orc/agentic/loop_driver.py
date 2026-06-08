@@ -63,6 +63,11 @@ from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
 from llm_orc.agentic.budget_controller import BudgetCheckExhausted, BudgetController
+from llm_orc.agentic.delegation_rate_meter import (
+    TurnShape,
+    classify_turn,
+    domains_for,
+)
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
 from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
 from llm_orc.agentic.orchestrator_chunk import ToolCallInvocation
@@ -239,8 +244,16 @@ class TurnDecision:
       observable parse miss). False-continue and false-stop shares are
       computable from emitted events alone — no log archaeology.
 
-    Distinct from the meter's ``turn_shape`` classification (FC-59 —
-    generation / carry / boundary_excluded), which WP-LB-J stamps.
+    **Meter field (Cycle 7 loop-back #3 per ADR-036 §Decision 3 — WP-LB-J,
+    FC-59):**
+
+    * ``turn_shape`` — the Delegation Rate Meter's classification of the
+      turn's driving instruction (``generation`` / ``carry`` /
+      ``boundary_excluded``). The delegation-rate denominator: a
+      ``generation`` turn with ``delegated_ensemble`` set is a delegated
+      generation (numerator); one without is a generation that failed to
+      delegate. Distinct from ``tail_kind``/``judgment_verdict`` (the
+      finish-policy fields). ``None`` only when no substrate stamps it.
     """
 
     dispatch_id: str | None
@@ -251,6 +264,7 @@ class TurnDecision:
     replanned_after_truncation: bool
     tail_kind: TailKind = "first_turn"
     judgment_verdict: JudgmentVerdict | None = None
+    turn_shape: TurnShape | None = None
 
 
 class SeatFiller(Protocol):
@@ -352,6 +366,8 @@ class LoopDriver:
         # stateless HTTP requests, so the count is the conversation-
         # recovered turn index, not the (unincremented-here) SessionState.
         if self._cap_reached(context, turn_index):
+            # A forced backstop finish, not a generation opportunity — shaped
+            # ``carry`` so it never inflates the delegation-rate denominator.
             self._emit_turn_decision(
                 self._new_dispatch_id(context),
                 turn_index,
@@ -361,6 +377,7 @@ class LoopDriver:
                 False,
                 tail_kind,
                 None,
+                "carry",
             )
             return FinishTurn(content=_BUDGET_EXHAUSTED_MESSAGE)
 
@@ -375,6 +392,8 @@ class LoopDriver:
             judgment_text = await self._dispatch_judgment(session_id, context)
             judgment_verdict = parse_verdict(judgment_text)
             if judgment_verdict == "COMPLETE":
+                # The judge ruled the work done — finishing is correct, not a
+                # generation turn; shaped ``carry`` (off the rate denominator).
                 self._emit_turn_decision(
                     self._new_dispatch_id(context),
                     turn_index,
@@ -384,6 +403,7 @@ class LoopDriver:
                     False,
                     tail_kind,
                     judgment_verdict,
+                    "carry",
                 )
                 return FinishTurn(content=strip_verdict(judgment_text) or None)
             if judgment_verdict == "REMAINING":
@@ -393,6 +413,18 @@ class LoopDriver:
                 # the only part that carries — the question/digest/verdict
                 # literal stay discarded (ADR-037 context-bounding holds).
                 remaining_anchor = strip_verdict(judgment_text) or None
+
+        # The Delegation Rate Meter classifies the turn's shape from its
+        # driving instruction (FC-59) — the REMAINING anchor names the next
+        # deliverable, else the original user task. Stamped on every emit
+        # below so the rate is computable from events alone. A generation
+        # instruction the seat-filler declines (a finish below) still counts
+        # in the denominator without a numerator — the honest delegation miss.
+        turn_shape = classify_turn(
+            remaining_anchor or _user_task(context.messages),
+            _observed_values(context.messages),
+            domains_for(self._capabilities),
+        )
 
         response = await self._seat_filler.generate_with_tools(
             messages=self._seat_filler_messages(
@@ -413,6 +445,7 @@ class LoopDriver:
                 enforced.truncated,
                 tail_kind,
                 judgment_verdict,
+                turn_shape,
             )
             return FinishTurn(content=response.content or None)
 
@@ -437,6 +470,7 @@ class LoopDriver:
                 enforced.truncated,
                 tail_kind,
                 judgment_verdict,
+                turn_shape,
             )
             return ApplyWork(
                 invocation_id=action.id,
@@ -461,6 +495,7 @@ class LoopDriver:
             enforced.truncated,
             tail_kind,
             judgment_verdict,
+            turn_shape,
         )
         return CarryClientTool(invocation=invocation)
 
@@ -612,6 +647,7 @@ class LoopDriver:
         replanned_after_truncation: bool,
         tail_kind: TailKind,
         judgment_verdict: JudgmentVerdict | None,
+        turn_shape: TurnShape,
     ) -> None:
         if self._event_substrate is None:
             return
@@ -625,6 +661,7 @@ class LoopDriver:
                 replanned_after_truncation=replanned_after_truncation,
                 tail_kind=tail_kind,
                 judgment_verdict=judgment_verdict,
+                turn_shape=turn_shape,
             )
         )
 
@@ -776,6 +813,20 @@ def _user_task(messages: list[ChatMessage]) -> str:
         for message in messages
         if message.role == "user" and message.content
     )
+
+
+def _observed_values(messages: list[ChatMessage]) -> list[str]:
+    """Tool-result contents observed earlier in the conversation.
+
+    Feeds the Delegation Rate Meter's observed-carry exclusion (FC-59): a
+    turn that passes through an already-observed value is a grounded carry,
+    not a fresh generation, so it should not count toward the rate denominator.
+    """
+    return [
+        message.content
+        for message in messages
+        if message.role == "tool" and message.content
+    ]
 
 
 def _invoke_ensemble_tool_def(capabilities: list[str]) -> dict[str, Any]:

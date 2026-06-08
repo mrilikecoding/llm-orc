@@ -27,11 +27,13 @@ threads or schedule tasks — it formats and emits lines via Python's
 from __future__ import annotations
 
 import logging
+from collections import deque
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from llm_orc.agentic.calibration_gate import CalibrationVerdictEvent
 from llm_orc.agentic.calibration_signal_channel import CalibrationSignal
+from llm_orc.agentic.delegation_rate_meter import RateReading, delegation_rate
 from llm_orc.agentic.dispatch_event_substrate import DispatchTiming
 from llm_orc.agentic.loop_driver import TurnDecision
 from llm_orc.agentic.tier_router import TierSelection
@@ -74,11 +76,22 @@ class OperatorTerminalEventSink:
     per ADR-023 §"Noise-floor remediation".
     """
 
+    _RATE_WINDOW = 256
+    """Bounded recent-turn window for the running delegation-rate reading.
+
+    A rolling window of the most recent ``TurnDecision`` events — comfortably
+    above ADR-036's ≥25 generation-shaped-turn soak window while keeping
+    memory bounded across a long serve process. The meter computes the rate;
+    the time-based (24h) soak policy is the interpreting layer's concern
+    (ADR-036 §Decision 3 — "the meter computes, policy interprets").
+    """
+
     def __init__(
         self,
         logger: logging.Logger | None = None,
     ) -> None:
         self._logger = logger if logger is not None else _logger
+        self._turn_decisions: deque[TurnDecision] = deque(maxlen=self._RATE_WINDOW)
 
     # ------------------------------------------------------------------
     # EventSink Protocol — substrate fan-out
@@ -245,25 +258,60 @@ class OperatorTerminalEventSink:
             )
 
     def _log_turn_decision(self, event: TurnDecision) -> None:
-        """``INFO: turn decision: ...`` — the finish-policy line (ADR-037 FC-67).
+        """``INFO: turn decision: ...`` — the per-turn diagnostic line.
 
-        Carries the tail shape and the termination verdict so an operator
-        computes false-continue and false-stop shares from the serve log
-        alone: a ``trailing_tool_result`` tail with ``judgment_verdict=COMPLETE``
-        followed by a delegated revision is a false stop; one whose verdict was
-        ``REMAINING`` on a work-complete session is a false continue. The
-        ``action`` field disambiguates the COMPLETE finish from a REMAINING
-        action call.
+        Carries both the finish-policy fields (ADR-037 FC-67 — ``tail_kind``,
+        ``judgment_verdict``) and the meter fields (ADR-036 FC-59/FC-51 —
+        ``shape``, ``delegated``, ``carry_held``, ``replanned``), so an
+        operator reconstructs a session from the serve log alone: false-stop
+        and false-continue shares from the verdict fields (the event no longer
+        falls through silently — conformance loop-back #3 F-2), and the
+        delegation rate from ``shape`` (denominator) × ``delegated``
+        (numerator). On a generation-shaped turn the running rate is surfaced
+        on its own line — the rate moves only on generation turns, so carry
+        and boundary turns stay a single line (the cadence is a BUILD open
+        choice; the FC requires computability and an operator-visible reading,
+        not a fixed cadence).
         """
         self._logger.info(
-            "turn decision: tail_kind=%s judgment_verdict=%s action=%s "
-            "turn_index=%d dispatch_id=%s",
+            "turn decision: turn=%d tail_kind=%s judgment_verdict=%s action=%s "
+            "shape=%s delegated=%s carry_held=%s replanned=%s dispatch_id=%s",
+            event.turn_index,
             event.tail_kind,
             event.judgment_verdict if event.judgment_verdict is not None else "?",
             event.action,
-            event.turn_index,
+            event.turn_shape if event.turn_shape is not None else "?",
+            event.delegated_ensemble if event.delegated_ensemble is not None else "-",
+            "true" if event.grounded_carry_held else "false",
+            "true" if event.replanned_after_truncation else "false",
             event.dispatch_id if event.dispatch_id is not None else "?",
         )
+        self._turn_decisions.append(event)
+        if event.turn_shape == "generation":
+            self._log_delegation_rate()
+
+    def _log_delegation_rate(self) -> None:
+        """``INFO: delegation rate: ...`` — the running rate over the window."""
+        reading = self.delegation_rate_reading()
+        self._logger.info(
+            "delegation rate: rate=%s delegated=%d generation=%d "
+            "boundary_excluded=%d considered=%d",
+            f"{reading.rate:.3f}" if reading.rate is not None else "?",
+            reading.delegated,
+            reading.generation_turns,
+            reading.boundary_excluded,
+            reading.considered,
+        )
+
+    def delegation_rate_reading(self) -> RateReading:
+        """The delegation rate over the recent-turn window (FC-59), on demand.
+
+        Composes the Delegation Rate Meter's :func:`delegation_rate` over the
+        ``TurnDecision`` events this sink has consumed — readable at session
+        close or any time, no log archaeology. The reading carries the
+        boundary-excluded count (the denominator-degradation signal).
+        """
+        return delegation_rate(self._turn_decisions)
 
     def _log_calibration_signal(self, event: CalibrationSignal) -> None:
         """``DEBUG: calibration signal: ...`` — suppressed at default verbosity.
