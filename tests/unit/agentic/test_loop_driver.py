@@ -1314,3 +1314,174 @@ class TestLoopDriverTurnDecision:
         assert decision.grounded_carry_held is True
         assert decision.delegated_ensemble is None
         assert decision.replanned_after_truncation is True
+
+
+class TestTurnShapeStamping:
+    """FC-59 — each TurnDecision carries the meter's turn-shape classification.
+
+    The shape is classified from the turn's driving instruction (the
+    Delegation Rate Meter's denominator). A generation-shaped turn that
+    delegates is the rate numerator; a framework finish (cap reached, judge
+    COMPLETE) is shaped ``carry`` so it never inflates the denominator.
+    Scenarios.md §Delegation-Decision Mechanism (the classifier denominator;
+    boundary turns excluded, not guessed).
+    """
+
+    _CAPS = frozenset({"code-generator"})
+
+    def _capture(
+        self,
+        seat_filler: _FakeSeatFiller,
+        *,
+        judgment_seat: _FakeJudgmentSeat | None = None,
+        budget: BudgetController | None = None,
+    ) -> tuple[_CapturingSink, LoopDriver]:
+        substrate = DispatchEventSubstrate()
+        sink = _CapturingSink()
+        substrate.register_sink(sink)
+        driver = _build_driver(
+            seat_filler,
+            capabilities=self._CAPS,
+            event_substrate=substrate,
+            judgment_seat=judgment_seat,
+            budget=budget,
+        )
+        return sink, driver
+
+    async def test_generation_shaped_turn_stamps_generation(self) -> None:
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="invoke_ensemble",
+                        arguments_json=json.dumps(
+                            {
+                                "name": "code-generator",
+                                "input": "sort a list",
+                                "filePath": "sort.py",
+                            }
+                        ),
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        )
+        sink, driver = self._capture(seat_filler)
+        ctx = _make_context(
+            messages=[
+                ChatMessage(
+                    role="user",
+                    content="Write a python module sort.py with a sorting function.",
+                )
+            ]
+        )
+
+        await driver.decide(ctx)
+
+        decision = _turn_decisions(sink)[0]
+        assert decision.turn_shape == "generation"
+        assert decision.delegated_ensemble == "code-generator"
+
+    async def test_read_turn_stamps_carry(self) -> None:
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="read",
+                        arguments_json=json.dumps({"filePath": "sort.py"}),
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        )
+        sink, driver = self._capture(seat_filler)
+        ctx = _make_context(
+            messages=[
+                ChatMessage(
+                    role="user", content="Read sort.py and tell me what it does."
+                )
+            ]
+        )
+
+        await driver.decide(ctx)
+
+        decision = _turn_decisions(sink)[0]
+        assert decision.turn_shape == "carry"
+        assert decision.grounded_carry_held is True
+
+    async def test_repair_shaped_turn_stamps_boundary_excluded(self) -> None:
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="invoke_ensemble",
+                        arguments_json=json.dumps(
+                            {
+                                "name": "code-generator",
+                                "input": "fix it",
+                                "filePath": "sort.py",
+                            }
+                        ),
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        )
+        sink, driver = self._capture(seat_filler)
+        ctx = _make_context(
+            messages=[
+                ChatMessage(
+                    role="user",
+                    content="Fix the bug in sort.py where it crashes on empty input.",
+                )
+            ]
+        )
+
+        await driver.decide(ctx)
+
+        decision = _turn_decisions(sink)[0]
+        assert decision.turn_shape == "boundary_excluded"
+
+    async def test_complete_judgment_finish_stamps_carry(self) -> None:
+        judgment = _FakeJudgmentSeat("VERDICT: COMPLETE\nWrote string_utils.py.")
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(content="ok", tool_calls=[], finish_reason="stop")
+        )
+        sink, driver = self._capture(seat_filler, judgment_seat=judgment)
+
+        await driver.decide(_trailing_context())
+
+        decision = _turn_decisions(sink)[0]
+        assert decision.action == "finish"
+        assert decision.judgment_verdict == "COMPLETE"
+        assert decision.turn_shape == "carry"
+
+    async def test_cap_finish_stamps_carry(self) -> None:
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(content="", tool_calls=[], finish_reason="stop")
+        )
+        sink, driver = self._capture(
+            seat_filler,
+            budget=BudgetController(turn_limit=2, token_limit=1_000_000),
+        )
+        ctx = _make_context(
+            messages=[
+                ChatMessage(role="user", content="write string_utils.py"),
+                ChatMessage(role="assistant", content=None),
+                ChatMessage(role="tool", content="ok"),
+                ChatMessage(role="assistant", content=None),
+                ChatMessage(role="tool", content="ok"),
+            ]
+        )
+
+        await driver.decide(ctx)
+
+        decision = _turn_decisions(sink)[0]
+        assert decision.action == "finish"
+        assert decision.turn_shape == "carry"
