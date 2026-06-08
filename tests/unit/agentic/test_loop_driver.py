@@ -755,12 +755,13 @@ class TestLoopDriverTerminationJudgment:
         assert outcome == FinishTurn(content="Wrote string_utils.py and its tests.")
 
     async def test_remaining_verdict_call2_form_preserved(self) -> None:
-        """FC-66 (V-08): REMAINING falls through to exactly one action call
-        composed per ADR-036's trailing form — the session messages plus
-        the standalone trailing guidance — with the judgment exchange
-        absent from its context (byte-equal to the pre-ADR-037
-        composition, which is what lets E4b's 9/10 ride as call 2's
-        evidence).
+        """FC-66 amended (ADR-038, V-38-3): REMAINING falls through to exactly
+        one action call composed per ADR-036's trailing form (session messages
+        + standalone trailing guidance) **plus the remaining-work anchor** —
+        with the rest of the judgment exchange (judge system message, digest,
+        Status-check question, VERDICT literal) absent from its context. The
+        anchor is the routed-forward stripped statement; the byte-equality to
+        the pre-ADR-037 E4b composition is intentionally broken by ADR-038.
         """
         judgment = _FakeJudgmentSeat("VERDICT: REMAINING\ntests not yet written")
         seat_filler = self._finishing_filler()
@@ -773,17 +774,118 @@ class TestLoopDriverTerminationJudgment:
 
         assert len(seat_filler.calls) == 1
         messages, _tools = seat_filler.calls[0]
-        # The session projection rides unchanged, then the standalone
-        # trailing guidance — and nothing from the judgment exchange.
+        # The session projection rides unchanged; only the trailing region
+        # carries the guidance + anchor.
         assert messages[:-1] == [
             {"role": message.role, "content": message.content}
             for message in context.messages
         ]
         assert messages[-1]["role"] == "user"
+        # The rest of the judgment exchange stays discarded (ADR-037
+        # context-bounding preserved): no question, no digest provenance line.
         for composed in messages:
             content = composed["content"] or ""
-            assert "VERDICT" not in content
             assert "Status check" not in content
+            assert "action record" not in content.lower()
+            # the literal verdict token never carries (strip_verdict removes it)
+            assert "VERDICT:" not in content
+
+
+class TestRemainingWorkAnchor:
+    """ADR-038 — the remaining-work anchor (V-38-1/V-38-2).
+
+    On a REMAINING verdict the judge's own stripped remaining-work statement
+    is routed forward into call 2's trailing region, followed by the fixed
+    framework imperative — instead of being discarded. Scenarios from
+    scenarios.md §"Remaining-Work Anchor (ADR-038, Finding G)".
+    """
+
+    _CAPS = frozenset({"code-generator"})
+
+    @staticmethod
+    def _finishing_filler() -> _FakeSeatFiller:
+        return _FakeSeatFiller(
+            ToolCallingResponse(content="ok", tool_calls=[], finish_reason="stop")
+        )
+
+    @staticmethod
+    def _trailing_content(seat_filler: _FakeSeatFiller) -> str:
+        messages, _tools = seat_filler.calls[0]
+        return str(messages[-1]["content"])
+
+    async def test_remaining_anchor_carries_statement_and_imperative(self) -> None:
+        judgment = _FakeJudgmentSeat(
+            "VERDICT: REMAINING\nThe test file test_string_utils.py "
+            "has not been written yet."
+        )
+        seat_filler = self._finishing_filler()
+        driver = _build_driver(
+            seat_filler, capabilities=self._CAPS, judgment_seat=judgment
+        )
+
+        await driver.decide(_trailing_context())
+
+        trailing = self._trailing_content(seat_filler)
+        # the judge's actual stripped statement (routed forward, not templated)
+        assert "The test file test_string_utils.py has not been written yet." in (
+            trailing
+        )
+        # the fixed framework imperative
+        assert "Produce that next." in trailing
+        # the ADR-036 guidance is still present (anchor appends, not replaces)
+        assert "invoke_ensemble" in trailing
+
+    async def test_no_anchor_on_first_turn(self) -> None:
+        """A first turn fires no judgment, so no remaining-work anchor."""
+        seat_filler = self._finishing_filler()
+        driver = _build_driver(
+            seat_filler,
+            capabilities=self._CAPS,
+            judgment_seat=_FakeJudgmentSeat("VERDICT: REMAINING\nx remains"),
+        )
+
+        await driver.decide(_make_context())
+
+        assert "Produce that next." not in self._trailing_content(seat_filler)
+
+    async def test_no_anchor_on_new_user_task_tail(self) -> None:
+        """A trailing tail with a new user task is ADR-036's merge branch —
+        no judgment, no anchor.
+        """
+        seat_filler = self._finishing_filler()
+        driver = _build_driver(
+            seat_filler,
+            capabilities=self._CAPS,
+            judgment_seat=_FakeJudgmentSeat("VERDICT: REMAINING\nx remains"),
+        )
+        context = _make_context(
+            messages=[
+                ChatMessage(role="user", content="write a.py"),
+                ChatMessage(role="assistant", content=None),
+                ChatMessage(role="tool", content="Wrote file successfully"),
+                ChatMessage(role="user", content="now also write b.py"),
+            ]
+        )
+
+        await driver.decide(context)
+
+        assert "Produce that next." not in self._trailing_content(seat_filler)
+
+    async def test_no_anchor_when_parse_miss(self) -> None:
+        """A judgment with no parseable verdict falls through to the action
+        call, but with no usable statement there is no anchor (the turn still
+        delegates via the unanchored guidance; the next re-judgment re-anchors).
+        """
+        seat_filler = self._finishing_filler()
+        driver = _build_driver(
+            seat_filler,
+            capabilities=self._CAPS,
+            judgment_seat=_FakeJudgmentSeat("I am not sure what remains here"),
+        )
+
+        await driver.decide(_trailing_context())
+
+        assert "Produce that next." not in self._trailing_content(seat_filler)
 
     async def test_unparseable_verdict_falls_through_to_the_action_call(
         self,
