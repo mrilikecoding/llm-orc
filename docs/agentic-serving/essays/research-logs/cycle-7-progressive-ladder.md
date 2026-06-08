@@ -1,8 +1,11 @@
 # Progressive Task-Shape Ladder — design (Cycle 7, post-WP-LB-J)
 
-**Status:** RUNG 2 RUN — PASS (axis A holds at depth 3); proceeding to axis B. Methods-reviewed
-(`housekeeping/audits/research-methods-progressive-ladder.md`); four P2 clarifications applied;
-P1 (repair-turn scoring) held until axis C. Rung-2 evidence: `scratch/spike-ladder-rung2/RESULTS.md`.
+**Status:** RUNGS 2 + axis B RUN — both PASS. Axis A holds at depth 3; the mixed read-then-write
+flow works and FC-61's carry-side is discharged. A bidirectional meter `turn_shape` gap is confirmed
+(hybrid-classification redesign, grounded by axes A+B; finalize at axis C). Next: axis C (repair),
+which needs the P1 repair-turn scoring clarification. Methods-reviewed
+(`housekeeping/audits/research-methods-progressive-ladder.md`). Evidence:
+`scratch/spike-ladder-rung2/RESULTS.md` + `scratch/spike-ladder-axisB/RESULTS.md`.
 **Date:** 2026-06-08
 
 ## Rung 2 outcome (axis A, depth-3 write-only) — PASS
@@ -25,6 +28,30 @@ n=10/state, $0 local qwen3:14b, **real production composition** (judge → ancho
   sessions ADR-038 serves. Candidate WP-LB-J follow-up; the fix interacts with axis B's read turn
   (a REMAINING turn is generation only when the steered action is a write), so decide after axis B.
   Detail + fix options in `scratch/spike-ladder-rung2/RESULTS.md`.
+
+## Axis B outcome (mixed read-then-write) — PASS
+
+n=10/state, $0 local qwen3:14b, real production composition. Task: read config.py, then write
+settings_loader.py + test_settings_loader.py.
+
+| State (done) | result | judge verdict | turn_shape |
+|--------------|--------|---------------|------------|
+| R0 (nothing) | **read first 10/10** | (first turn) | generation ✗ |
+| R1 (read) | advance to module 9/10, churn 0 | **REMAINING 10/10** | carry ✗ |
+| R2 (read+module) | advance to test 9/10, churn 0 | REMAINING 10/10 | carry ✗ |
+| RC (read+2 writes) | finish 10/10 | **COMPLETE 10/10** | carry ✓ |
+
+- The mixed flow works end to end: read-first 10/10, advance 9/10 each write, converge 10/10.
+- **FC-61 carry-side discharged:** the judge treats the read as context, not a deliverable
+  (REMAINING at R1; COMPLETE at RC — read present, not false-counted).
+- **Meter gap now confirmed BIDIRECTIONAL** (10/10 each): read→`generation` (R0), delegated
+  write→`carry` (R1/R2). An action-based signal corrects both AND preserves the C1 detection
+  (a literal-write carry still counts in the denominator), but a *pure* action signal can't tell
+  a C1 inline-write from a legitimate observed-value carry-write — that needs the instruction
+  signal too. So the fix is a **hybrid (action + instruction)** meter redesign with its own TDD
+  cycle, the `boundary_excluded` branch finalized with axis-C evidence. Detail:
+  `scratch/spike-ladder-axisB/RESULTS.md`.
+
 **Instrument:** Delegation Rate Meter (WP-LB-J, `delegation_rate_meter.py`) — the rate
 and the boundary-excluded share are now computable from emitted events alone.
 **Grounding:** WP-LB-K Run 1 (multi-file weak link) + the rung-1 probe
