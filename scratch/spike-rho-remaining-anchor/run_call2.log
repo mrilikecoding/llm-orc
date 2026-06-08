@@ -1,0 +1,66 @@
+###### rho2 B2
+  rho2 B2 1/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B2 2/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B2 3/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B2 4/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B2 5/10: {'target': 'stuck', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B2 6/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B2 7/10: {'target': 'none', 'delegated': False, 'tool': None}
+  rho2 B2 8/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B2 9/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B2 10/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+
+rho2 B2: advance=8/10 stuck=1/10 delegated=9/10 none=1/10 runnable=10/10
+###### rho2_imp B2
+  rho2_imp B2 1/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B2 2/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B2 3/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B2 4/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B2 5/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B2 6/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B2 7/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B2 8/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B2 9/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B2 10/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+
+rho2_imp B2: advance=10/10 stuck=0/10 delegated=10/10 none=0/10 runnable=10/10
+###### control B2
+  control B2 1/10: {'target': 'stuck', 'delegated': True, 'tool': 'invoke_ensemble'}
+  control B2 2/10: {'target': 'other', 'delegated': True, 'tool': 'invoke_ensemble'}
+  control B2 3/10: {'target': 'stuck', 'delegated': True, 'tool': 'invoke_ensemble'}
+  control B2 4/10: {'target': 'stuck', 'delegated': True, 'tool': 'invoke_ensemble'}
+  control B2 5/10: {'target': 'stuck', 'delegated': True, 'tool': 'invoke_ensemble'}
+  control B2 6/10: {'target': 'other', 'delegated': True, 'tool': 'invoke_ensemble'}
+  control B2 7/10: {'target': 'stuck', 'delegated': True, 'tool': 'invoke_ensemble'}
+  control B2 8/10: {'target': 'stuck', 'delegated': True, 'tool': 'invoke_ensemble'}
+  control B2 9/10: {'target': 'other', 'delegated': True, 'tool': 'invoke_ensemble'}
+  control B2 10/10: {'target': 'stuck', 'delegated': True, 'tool': 'invoke_ensemble'}
+
+control B2: advance=0/10 stuck=7/10 delegated=10/10 none=0/10 runnable=10/10
+###### rho2 B3
+  rho2 B3 1/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B3 2/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B3 3/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B3 4/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B3 5/10: {'target': 'stuck', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B3 6/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B3 7/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B3 8/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B3 9/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2 B3 10/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+
+rho2 B3: advance=9/10 stuck=1/10 delegated=10/10 none=0/10 runnable=10/10
+###### rho2_imp B3
+  rho2_imp B3 1/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B3 2/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B3 3/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B3 4/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B3 5/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B3 6/10: {'target': 'none', 'delegated': False, 'tool': None}
+  rho2_imp B3 7/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B3 8/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B3 9/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+  rho2_imp B3 10/10: {'target': 'advance', 'delegated': True, 'tool': 'invoke_ensemble'}
+
+rho2_imp B3: advance=9/10 stuck=0/10 delegated=9/10 none=1/10 runnable=10/10
+###### CALL2 DONE

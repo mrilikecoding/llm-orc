@@ -1,0 +1,58 @@
+{
+  "arm": "control",
+  "base": "B2",
+  "n": 10,
+  "runnable": 10,
+  "results": [
+    {
+      "target": "stuck",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "other",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "stuck",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "stuck",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "stuck",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "other",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "stuck",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "stuck",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "other",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "stuck",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    }
+  ]
+}

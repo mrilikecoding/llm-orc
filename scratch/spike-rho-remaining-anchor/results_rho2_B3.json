@@ -1,0 +1,58 @@
+{
+  "arm": "rho2",
+  "base": "B3",
+  "n": 10,
+  "runnable": 10,
+  "results": [
+    {
+      "target": "advance",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "advance",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "advance",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "advance",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "stuck",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "advance",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "advance",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "advance",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "advance",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    },
+    {
+      "target": "advance",
+      "delegated": true,
+      "tool": "invoke_ensemble"
+    }
+  ]
+}
