@@ -181,7 +181,7 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ---
 
-### WP-LB-J: Delegation-rate instrumentation (ADR-036 Decision 3; absorbs WP-LB-F) — UNHELD 2026-06-05 (loop-back #5 ARCHITECT settled the event shape)
+### WP-LB-J: Delegation-rate instrumentation (ADR-036 Decision 3; absorbs WP-LB-F) — ✅ LANDED 2026-06-08 (commit `0fb9abc`; suite 2982 green; classifier 0/12; events-alone rate verified driver→substrate→sink integration; FC-2 L2 entry; FC-3 cycle-free; FC-60 field-guide note deferred to cycle-close batch). UNHELD 2026-06-05 (loop-back #5 ARCHITECT settled the event shape)
 
 *Held 2026-06-04 pending the Finding F termination mechanism; unheld at the loop-back #5 ARCHITECT close: the settled `TurnDecision` shape = the six existing fields + `turn_shape` (this WP stamps it — meter classification, FC-59) + `tail_kind` + `judgment_verdict` (WP-LB-K emits them — finish-policy fields, FC-67). The fields are additive and independently emittable, so J and K do not block each other; the ADR-036 soak reading needs both landed (Finding F distortion lifts only when K's mechanism does). Advisory C (verify the WP-LB-F fold preserves FC-51 axis-2 intent) still applies at entry.*
 
