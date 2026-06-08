@@ -1,0 +1,56 @@
+{
+  "arm": "A_current",
+  "n": 10,
+  "results": [
+    {
+      "delegated": true,
+      "target": "stuck",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "stuck",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "stuck",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "stuck",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "stuck",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "stuck",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "stuck",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "other",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "other",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "other",
+      "tool": "invoke_ensemble"
+    }
+  ]
+}

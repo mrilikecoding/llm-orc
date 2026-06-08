@@ -1,0 +1,56 @@
+{
+  "arm": "B_anchored",
+  "n": 10,
+  "results": [
+    {
+      "delegated": false,
+      "target": "none",
+      "tool": null
+    },
+    {
+      "delegated": true,
+      "target": "advance",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "advance",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "advance",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "advance",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": false,
+      "target": "none",
+      "tool": null
+    },
+    {
+      "delegated": true,
+      "target": "advance",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "advance",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "advance",
+      "tool": "invoke_ensemble"
+    },
+    {
+      "delegated": true,
+      "target": "advance",
+      "tool": "invoke_ensemble"
+    }
+  ]
+}
