@@ -1,9 +1,30 @@
 # Progressive Task-Shape Ladder — design (Cycle 7, post-WP-LB-J)
 
-**Status:** METHODS-REVIEWED (`housekeeping/audits/research-methods-progressive-ladder.md`) —
-rung 2 sound to run; four P2 clarifications applied below; one P1 (repair-turn scoring)
-held until axis C. Pending practitioner go/no-go + the cloud-escalation threshold (§6). No runs yet.
+**Status:** RUNG 2 RUN — PASS (axis A holds at depth 3); proceeding to axis B. Methods-reviewed
+(`housekeeping/audits/research-methods-progressive-ladder.md`); four P2 clarifications applied;
+P1 (repair-turn scoring) held until axis C. Rung-2 evidence: `scratch/spike-ladder-rung2/RESULTS.md`.
 **Date:** 2026-06-08
+
+## Rung 2 outcome (axis A, depth-3 write-only) — PASS
+
+n=10/state, $0 local qwen3:14b, **real production composition** (judge → anchor → call 2) at depth 3.
+
+| State (produced) | advance | churn | delegated | judge verdict |
+|------------------|---------|-------|-----------|---------------|
+| A (module) | 8/10 | 0/10 | 9/10 | REMAINING 10/10 |
+| B (module+test) — deep test | **9/10** | 0/10 | 9/10 | REMAINING 10/10 |
+| C (all 3) | — | 0/10 | 0/10 | **COMPLETE 10/10** |
+
+- The WP-LB-L anchor **scales to depth 3**: advance does not degrade (State B 9/10 ≥ ρ depth-2
+  8/10), churn 0/10, first-churn never. Convergence clean (COMPLETE 10/10). Cloud trigger did not
+  fire (>7/10) — axis A is not the binding constraint.
+- **Secondary finding — meter coverage gap (the ladder caught the instrument).** All 30 turns
+  stamped `turn_shape=carry`, including the generation turns that delegated: `classify_turn` reads
+  the judge's *descriptive* remaining-statement (no generation verb) on REMAINING turns, so the
+  delegation rate counts only first-turn generation and under-instruments the very multi-file
+  sessions ADR-038 serves. Candidate WP-LB-J follow-up; the fix interacts with axis B's read turn
+  (a REMAINING turn is generation only when the steered action is a write), so decide after axis B.
+  Detail + fix options in `scratch/spike-ladder-rung2/RESULTS.md`.
 **Instrument:** Delegation Rate Meter (WP-LB-J, `delegation_rate_meter.py`) — the rate
 and the boundary-excluded share are now computable from emitted events alone.
 **Grounding:** WP-LB-K Run 1 (multi-file weak link) + the rung-1 probe
