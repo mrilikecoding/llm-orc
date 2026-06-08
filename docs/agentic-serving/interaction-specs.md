@@ -459,3 +459,15 @@ The Skill Orchestration User (Cycle 5 introduction) composes a client-side skill
 #### Task (Operator): Watch the false-continue share alongside the delegation rate
 
 **Interaction mechanics:** The operator reads the finish-policy fields on TurnDecision-family events (turn shape + judgment verdict) to compute how often work-complete tails failed to finish (false-continue) and how often work-remaining tails finished early (false-stop, visible as sessions ending with deliverables missing). The false-continue share is the termination analogue of the delegation-rate meter and shares its event substrate (WP-LB-J). The ADR-036 ≥0.9 soak window is read only after this mechanism lands — earlier reads are distorted by Finding F's phantom-revision inflation.
+
+## Cycle 7 loop-back #6 task additions (ADR-038)
+
+*ADR-038 amends ADR-037's call-2 composition only (the remaining-work anchor on the REMAINING branch). It is invisible to stakeholders as an interaction mechanic — no new surface, no new action — but it changes one observable outcome for the Tool User (multi-deliverable sessions now advance instead of churning) and extends the Loop Driver actor's REMAINING-branch composition. No other stakeholder's tasks change.*
+
+#### Task (Loop Driver, as actor): Anchor the REMAINING action call with what remains
+
+**Interaction mechanics:** On a REMAINING verdict, before composing the ADR-036 C3-form action call, the loop-driver captures the judge's `VERDICT:`-stripped remaining-work statement (the same statement the judge already produced for the verdict) and appends it — followed by the fixed imperative "Produce that next." — to the call-2 trailing region. The seat-filler then delegates the *named* next deliverable rather than re-deciding from the bare conversation. Only the stripped statement + imperative carry forward; the judgment question, digest, and verdict literal stay discarded (ADR-037's context-bounding holds). The anchor is composed only on the REMAINING fall-through — never on COMPLETE, first turns, or new-user-task tails. *(Replay-layer grounding: Spike ρ — judge names the remaining deliverable 20/20; anchored call 2 advances 19/20; content-neutral control 0/10, isolating the remaining-work content as the cause.)*
+
+#### Task (Tool User): Receive a session that converges *across multiple deliverables*
+
+**Interaction mechanics:** Extends the ADR-037 convergence task. A request that decomposes into several deliverables (a module and its tests, several files) now advances through them one per turn — each trailing turn delegates the next unproduced deliverable rather than re-revising the first — and then finishes when all are produced. The user observes the same multi-step-then-stop behavior a direct capable-model session would produce; the framework no longer churns on the first file. The real-client multi-file convergence run (ADR-038's Conditional Acceptance discharge gate, joint with ADR-037's) is the layer-match verification of this experience.

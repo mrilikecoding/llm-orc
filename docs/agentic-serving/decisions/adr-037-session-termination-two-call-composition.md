@@ -1,8 +1,18 @@
 # ADR-037: Session-Termination Mechanism — Two-Call Trailing Composition
 
-**Status:** Accepted (Cycle 7 loop-back #5 DECIDE, gate closed 2026-06-05;
-Conditional Acceptance per ADR-097 — see §Empirical grounding for the
-discharge condition)
+> **Updated by ADR-038 on 2026-06-08.** The FC (call-2 form preservation) is
+> amended: on a REMAINING verdict, call 2 carries the judge's remaining-work
+> statement plus a framework imperative as a next-step anchor — it is no longer
+> byte-equal to the E4b composition. The rest of this ADR (judgment-first
+> composition, bare-form judgment, digest provenance, COMPLETE protocol-clean
+> finish, AS-3 backstop) remains current. Motivated by Finding G (multi-file
+> sessions did not advance because the judge's computed "what remains" was
+> discarded before call 2). See ADR-038.
+
+**Status:** Accepted, Updated by ADR-038 (Cycle 7 loop-back #5 DECIDE, gate
+closed 2026-06-05; Conditional Acceptance per ADR-097 — see §Empirical grounding
+for the discharge condition; FC call-2 form preservation updated by ADR-038
+2026-06-08)
 
 ## Context
 

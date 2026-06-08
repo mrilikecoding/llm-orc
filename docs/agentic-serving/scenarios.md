@@ -1554,3 +1554,49 @@ These Layer-match "no" entries are the table working as designed: they mark wher
 | A work-remaining trailing turn still delegates under the real client (no delegation regression from the termination mechanism) | Real OpenCode round-trip | The mid-task preservation scenario at the replay layer (composed ~0.9) + the same acceptance run exercising at least one work-remaining trailing turn with delegation verified fired (`dispatch start` / TurnDecision — the WP-A scar discipline); **gating condition (b)** | **no until BUILD** |
 | False-continue frequency is computable from events alone | Production events layer | The TurnDecision finish-policy scenario; the false-continue share read alongside WP-LB-J's delegation-rate meter | yes at the events layer once V-06 lands |
 | ADR-036's ≥0.9 delegation-rate soak becomes readable (Finding F no longer inflates the numerator's turn stream) | Production events layer (trailing confirmation) | The soak window read AFTER this mechanism lands — explicitly deferred until then per the loop-back #5 entry package | deferred by design — reading it earlier is the distortion this criterion guards against |
+
+## Feature: Remaining-Work Anchor — Routing the Judge's Signal Forward (ADR-038, Finding G)
+
+*Conformance disposition (`housekeeping/audits/conformance-scan-cycle-7-loopback6.md`): 3 findings, all expected BUILD work, one logical unit — V-38-1 (capture the judge's REMAINING statement instead of discarding it), V-38-2 (`_seat_filler_messages` gains a remaining-anchor parameter + the "Produce that next." imperative on the REMAINING branch), V-38-3 (the existing `test_remaining_verdict_call2_form_preserved` asserts the pre-amendment byte-equal form and must be updated to the anchored form). ADR-037's two-call composition is fully conforming and unchanged. This feature amends ADR-037's call-2 form preservation only — it touches the REMAINING fall-through, nothing else.*
+
+### Scenario: a REMAINING verdict routes the judge's statement into call 2
+**Given** a trailing tool-result tail on the delegation surface whose termination judgment parses REMAINING with a statement naming an unproduced deliverable
+**When** the loop-driver composes call 2 (the action call)
+**Then** the composed call-2 request's trailing region contains the judge's `VERDICT:`-stripped remaining-work statement followed by the framework imperative "Produce that next." — the signal the judgment computed is routed forward, not discarded. Refutable: a call-2 composition on a REMAINING turn whose trailing region is the bare ADR-036 `_DELEGATION_GUIDANCE` with no remaining-work statement violates the anchor-presence FC (conformance V-38-1/V-38-2).
+
+### Scenario: the anchor is the judge's actual statement, not a fabricated one
+**Given** a judgment response whose REMAINING statement reads "The test file test_string_utils.py has not been created yet."
+**When** call 2 is composed
+**Then** the trailing anchor carries that exact stripped statement (the `strip_verdict` output), not a framework-synthesized or templated description of what remains. Refutable: a call-2 anchor whose remaining-work text does not match the judge's stripped statement for that turn.
+
+### Scenario: only the statement and imperative carry forward — the judgment exchange stays discarded
+**Given** a REMAINING verdict whose judgment call carried the judge system message, the quoted task, and the framework-owned digest
+**When** call 2 is composed with the anchor
+**Then** call 2's context contains the session messages, the ADR-036 trailing guidance, and the remaining-work statement + imperative — and contains NONE of the judgment exchange's other parts: no judge system message, no digest, no `VERDICT:` literal, no judgment question. Refutable: a call-2 request carrying the digest, the judge system message, or the verdict literal violates the amended call-2 form-preservation FC (this preserves ADR-037's context-bounding property).
+
+### Scenario: the anchored call 2 still delegates the named deliverable
+**Given** a REMAINING turn whose anchor names an unproduced deliverable
+**When** the seat-filler decides the action on the anchored call 2
+**Then** it delegates generation of the named deliverable via `invoke_ensemble` (the callee path) — it does not write the named deliverable inline (the Finding B shape) and does not finish (a no-tool-call premature stop). Refutable: an inline `write` of generated content, or a no-tool-call turn, on an anchored REMAINING call 2 (Spike ρ measured delegation 9–10/10, no-tool-call ≤1/10).
+
+### Scenario (integration): a multi-file session advances then converges
+**Given** a real-OpenCode session on a multi-deliverable task (e.g. a module and its test file), file 1 produced
+**When** the session runs through the loop-driver against the real session records
+**Then** each work-remaining trailing tail judges REMAINING and the anchored call 2 delegates the *next distinct* deliverable (no churn re-writing file 1), and once all deliverables are produced the final trailing tail judges COMPLETE and the session finishes text-only — the session both advances and converges in one run. Refutable: a session that re-writes an already-produced file on consecutive trailing turns (the Finding G signature) is the failure this scenario refutes. *(Replay layer: Spike ρ ρ.2-imp 19/20 advance. The real-client layer is the acceptance criterion below — ADR-038's Conditional Acceptance discharge gate, joint with ADR-037's.)*
+
+### Preservation: the COMPLETE branch is unchanged by the amendment
+**Given** a trailing tail whose judgment parses COMPLETE
+**When** the loop-driver returns the turn
+**Then** the session finishes text-only exactly as ADR-037 specified — the remaining-work anchor is composed only on the REMAINING fall-through and never touches the COMPLETE path. Refutable: a COMPLETE turn that composes or emits a remaining-work anchor violates the REMAINING-only scope.
+
+### Preservation: first-turn and new-user-task composition is untouched
+**Given** a first turn, or a trailing turn carrying a new user task (ADR-036's merge branch)
+**When** the seat-filler request is composed
+**Then** no termination judgment fires and no remaining-work anchor is composed — the amendment is scoped to the REMAINING branch of the no-new-task trailing tail. Refutable: a remaining-work anchor on a first turn or a new-user-task tail.
+
+### Cycle Acceptance Criteria (Finding G)
+
+| Criterion | Specified layer | Verification method | Layer-match check |
+|---|---|---|---|
+| A multi-deliverable session advances through all deliverables (no churn on file 1) AND converges, in a single real-client session | Real OpenCode round-trip (real `llm-orc serve` + real client + local Ollama, $0) | The advance-then-converge integration scenario above at the replay layer (Spike ρ ρ.2-imp 19/20 advance; ρ.1 20/20 naming) + the $0 real-OpenCode multi-file run with the advance sequence and the COMPLETE finish both verified from serve-log evidence in one run; **this is ADR-038's Conditional Acceptance discharge gate, joint with ADR-037's** | **no until BUILD** — the anchor (V-38-1/V-38-2) does not exist yet; the real-client multi-file run is the layer-matching verification |
+| The anchored call 2 preserves delegation (no Finding B inline-write regression, no premature-finish regression) | API-boundary composition + real-client run | The delegation-preservation scenario above (Spike ρ delegation 9–10/10, no-tool-call ≤1/10) + the same multi-file run showing `dispatch start` per deliverable | partial — composition verified at the harness layer; the real-client run confirms it at the serving layer |
