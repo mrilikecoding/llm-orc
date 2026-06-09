@@ -1,0 +1,18 @@
+```python
+import json
+
+# Load the settings file
+with open('settings.json') as f:
+    config = json.load(f)
+
+# Directly access the three required configuration keys
+retry_backoff_ms = config['rbo_ms']
+max_queue_depth = config['qdepth_max']
+affinity_salt = config['affinity_salt']
+```
+
+This implementation:
+- Loads the `settings.json` file directly
+- Accesses each required configuration key using exact subscript notation (`config['rbo_ms']`, etc.)
+- Stores the values in variables for use in the scheduler logic
+- Does not iterate through keys or use generic configuration loading mechanisms

@@ -1,0 +1,24 @@
+Here's a focused implementation of `scheduler.py` that reads the exact configuration keys as specified:
+
+```python
+import json
+
+def load_scheduler_config():
+    with open('settings.json') as f:
+        config = json.load(f)
+    
+    rbo_ms = config['rbo_ms']
+    qdepth_max = config['qdepth_max']
+    aff_salt = config['aff_salt']
+    
+    return rbo_ms, qdepth_max, aff_salt
+
+if __name__ == '__main__':
+    rbo, qdepth, salt = load_scheduler_config()
+    print(f"Retry backoff: {rbo}ms, Max queue depth: {qdepth}, Affinity salt: {salt}")
+```
+
+### Key Details:
+- Directly accesses the three required keys via `config['rbo_ms']`, `config['qdepth_max']`, and `config['aff_salt']`.
+- Does not iterate over or invent configuration keys.
+- The `settings.json` file is assumed to be in the same directory as `scheduler.py`.

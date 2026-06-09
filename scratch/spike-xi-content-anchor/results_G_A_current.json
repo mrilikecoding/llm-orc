@@ -1,0 +1,212 @@
+{
+  "base": "G",
+  "arm": "A_current",
+  "n": 10,
+  "model": "qwen3:8b",
+  "resolves": 0,
+  "counts": {
+    "invented": 10
+  },
+  "results": [
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "affinity_salt",
+          false
+        ],
+        [
+          "max_queue_depth",
+          false
+        ],
+        [
+          "retry_backoff_ms",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 969
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "affinity_salt",
+          false
+        ],
+        [
+          "max_queue_depth",
+          false
+        ],
+        [
+          "retry_backoff_ms",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 1061
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "affinity_salt",
+          false
+        ],
+        [
+          "max_queue_depth",
+          false
+        ],
+        [
+          "retry_backoff_ms",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 840
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "affinity_salt",
+          false
+        ],
+        [
+          "max_queue_depth",
+          false
+        ],
+        [
+          "retry_backoff_ms",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 1153
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "affinity_salt_for_shard_routing",
+          false
+        ],
+        [
+          "max_queue_depth",
+          false
+        ],
+        [
+          "retry_backoff_ms",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 1167
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "affinity_salt",
+          false
+        ],
+        [
+          "max_queue_depth",
+          false
+        ],
+        [
+          "retry_backoff_ms",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 1055
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "affinity_salt",
+          false
+        ],
+        [
+          "max_queue_depth",
+          false
+        ],
+        [
+          "retry_backoff_ms",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 576
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "affinity_salt",
+          false
+        ],
+        [
+          "max_queue_depth",
+          false
+        ],
+        [
+          "retry_backoff_ms",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 716
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "affinity_salt",
+          false
+        ],
+        [
+          "max_queue_depth",
+          false
+        ],
+        [
+          "retry_backoff_ms",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 859
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "affinity_salt",
+          false
+        ],
+        [
+          "max_queue_depth",
+          false
+        ],
+        [
+          "retry_backoff_ms",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 513
+    }
+  ]
+}

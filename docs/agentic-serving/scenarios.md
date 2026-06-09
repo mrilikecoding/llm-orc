@@ -1600,3 +1600,50 @@ These Layer-match "no" entries are the table working as designed: they mark wher
 |---|---|---|---|
 | A multi-deliverable session advances through all deliverables (no churn on file 1) AND converges, in a single real-client session | Real OpenCode round-trip (real `llm-orc serve` + real client + local Ollama, $0) | The advance-then-converge integration scenario above at the replay layer (Spike ρ ρ.2-imp 19/20 advance; ρ.1 20/20 naming) + the $0 real-OpenCode multi-file run with the advance sequence and the COMPLETE finish both verified from serve-log evidence in one run; **this is ADR-038's Conditional Acceptance discharge gate, joint with ADR-037's** | **no until BUILD** — the anchor (V-38-1/V-38-2) does not exist yet; the real-client multi-file run is the layer-matching verification |
 | The anchored call 2 preserves delegation (no Finding B inline-write regression, no premature-finish regression) | API-boundary composition + real-client run | The delegation-preservation scenario above (Spike ρ delegation 9–10/10, no-tool-call ≤1/10) + the same multi-file run showing `dispatch start` per deliverable | partial — composition verified at the harness layer; the real-client run confirms it at the serving layer |
+
+## Feature: Content Anchor — Routing Produced-Sibling Signatures into the Callee Dispatch (ADR-039, Finding H)
+
+*Conformance disposition (`housekeeping/audits/conformance-scan-cycle-7-loopback7.md`): 5 findings, all expected BUILD work (the mechanism does not exist yet; no FC violations) — V-01 (no anchor injection at the callee dispatch — `_delegate_generation` assembles `task + directive` only; the injection seam is one string concat), V-02 (no signature-extraction utility anywhere in `src/` — net-new, correctness-critical, needs a real-fixture unit test), V-03 (`LoopDriver` has no `SessionArtifactStore` access — the structural prerequisite for reading produced files at dispatch time), V-04 (`ActionRecord` does not carry the artifact-store reference — `target_path` is client-facing; the lower-coupling path is to extend the ADR-037 meta-record seam with `artifact_reference`), V-05 (optional `TurnDecision` anchor-present field for discharge-gate observability). Reuse inherited clean: `SessionArtifactStore.read_deliverable` (R-01, production-ready, ADR-039 names it) and the `_delegate_generation` concat seam (R-02). BUILD commits the V-03 path (inject the store vs extend the record) and the multi-sibling selection policy ("all prior siblings" is the simplest conforming default).*
+
+### Scenario: a delegated write into a session with produced siblings carries their signatures
+**Given** a delegated generation that writes a file (`cli.py`) on a session where sibling files (`converters.py`) have already been produced
+**When** the framework composes the callee dispatch (the input the capability ensemble receives via `invoke_ensemble`)
+**Then** the dispatch context contains the produced siblings' public API signatures (function/class signatures + one-line docstrings). Refutable: a callee dispatch on a session with produced siblings whose context carries only `task + directive` and no sibling signatures violates the content-anchor-presence FC (conformance V-01).
+
+### Scenario: the anchor is extracted from the real produced file, never guessed
+**Given** a produced sibling `converters.py` that defines exactly `celsius_to_fahrenheit`, `fahrenheit_to_celsius`, `celsius_to_kelvin`
+**When** the framework builds the content anchor
+**Then** every injected signature names a symbol that actually exists in the produced file (a structural extraction read via `SessionArtifactStore.read_deliverable`), and the anchor contains no symbol the file does not define. Refutable: an injected signature naming a symbol absent from the produced file — the decoy failure mode (a wrong anchor resolved 0/10, *below* the unanchored baseline, because the coder obeys whatever API it is handed, so anchor correctness is the load-bearing FC; conformance V-02/V-03).
+
+### Scenario: the anchor carries signatures, not full bodies
+**Given** a produced sibling whose functions have multi-line implementations
+**When** the content anchor is composed
+**Then** the anchor carries the signatures + docstrings, not the full function bodies — the compact form Spike ξ selected (B = C_full, signatures suffice, and the dispatch does not bloat as the deliverable count grows). Refutable: a content anchor carrying full function bodies violates the signatures-form FC.
+
+### Scenario: the anchor fires regardless of callee type (code and prose)
+**Given** a delegated generation routed to a prose-generating callee (`prose-improver`, the README) on a session with produced code siblings
+**When** the callee dispatch is composed
+**Then** the prose callee receives the sibling signatures exactly as a code callee does — the augmentation is callee-agnostic (Spike ξ prose arm: blind README 0/10 → anchored 10/10). Refutable: a content anchor composed for `code-generator` but omitted for `prose-improver` on the same session state violates the callee-agnostic scope.
+
+### Scenario (integration): dependent deliverables reference real sibling APIs
+**Given** a real-OpenCode session on the 5-file temperature-library task (the exact Finding H task), with the content anchor wired into the callee dispatch
+**When** the session runs to completion against the real client
+**Then** the dependent deliverables reference only symbols that exist in their produced siblings — `cli.py` calls the real `converters` functions (no invented `convert_temperature`), the tests match the implementation, and the README documents real functions (no invented `fahrenheit_to_kelvin`, no Rankine scale) — while axis-1 holds (zero churn, convergence). Refutable: a dependent deliverable that references a nonexistent sibling symbol (the Finding H signature) is the failure this scenario refutes. *(Harness layer: Spike ξ code 3/10→10/10, prose 0/10→10/10. The real-client layer is the acceptance criterion below — ADR-039's Conditional Acceptance discharge gate.)*
+
+### Preservation: delegation and the form contract hold under the anchor
+**Given** a delegated write whose callee dispatch now carries the sibling signatures
+**When** the seat-filler decides the action and the callee generates
+**Then** the turn still delegates (no Finding B inline-write regression) and the produced file still honors ADR-035's form contract (no fenced-prose-into-code regression traceable to the added context). Refutable: an inline `write` of generated content, or an ADR-035 form-contract violation traceable to the anchor, on an anchored dispatch.
+
+### Preservation: no produced siblings → no anchor
+**Given** a first delegated write on a session with no already-produced file deliverables (or a write with no cross-file dependency)
+**When** the callee dispatch is composed
+**Then** no content anchor is injected — the augmentation fires only when there are produced siblings to source. Refutable: a content anchor composed on a session with no produced file deliverables.
+
+### Cycle Acceptance Criteria (Finding H)
+
+| Criterion | Specified layer | Verification method | Layer-match check |
+|---|---|---|---|
+| Dependent deliverables (code AND prose) reference real sibling APIs in a single real-client run of the 5-file Finding H task, with axis-1 (zero churn, convergence) preserved | Real OpenCode round-trip (real `llm-orc serve` + real client + local Ollama, $0) | The integration scenario above at the harness layer (Spike ξ code 3/10→10/10, prose 0/10→10/10) + the $0 real-OpenCode 5-file re-run with `cli.py`/tests/README all referencing real APIs, verified by reading the landed files; **this is ADR-039's Conditional Acceptance discharge gate** | **no until BUILD** — the anchor (V-01..V-03) does not exist yet; the real-client run is the layer-matching verification, and the Finding H lesson (a synthetic pass hid the real-client gap) is why the harness PASS is necessary-not-sufficient |
+| The anchor is framework-sourced from real files, never guessed (a wrong anchor is worse than none) | Framework extraction + real-client run | The "extracted from the real produced file" scenario above (Spike ξ decoy 0/10 < baseline 3/10) + the discharge run showing no invented cross-file references | partial — extraction verified at the harness/unit layer; the real-client run confirms the framework actually delivers the real anchor to the callee |
+| Delegation + ADR-035 form contract preserved under the anchor | API-boundary composition + real-client run | The preservation scenario above + the discharge run showing `dispatch start` per deliverable with no inline-write and no form-contract regression | partial — composition verified at the harness layer; the real-client run confirms it at the serving layer |

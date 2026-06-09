@@ -1,0 +1,32 @@
+Here's a focused implementation of `scheduler.py` that reads the three specified settings from `settings.json` using direct subscripting:
+
+```python
+import json
+
+def configure_scheduler():
+    with open('settings.json') as f:
+        config = json.load(f)
+    
+    retry_backoff = config['retry_backoff_ms']
+    max_queue_depth = config['max_queue_depth']
+    affinity_salt = config['affinity_salt']
+    
+    # Example usage: print the values
+    print(f"Retry backoff: {retry_backoff} ms")
+    print(f"Max queue depth: {max_queue_depth}")
+    print(f"Affinity salt: {affinity_salt}")
+    
+    # Your scheduler logic would use these values here
+    # ...
+
+if __name__ == "__main__":
+    configure_scheduler()
+```
+
+This implementation:
+1. Loads `settings.json` directly
+2. Accesses the three required keys via direct subscripting (`config['key']`)
+3. Provides example output to demonstrate usage
+4. Avoids any key iteration or generic loading logic
+
+Make sure your `settings.json` contains these exact keys with matching types (int for numbers, string for salt).

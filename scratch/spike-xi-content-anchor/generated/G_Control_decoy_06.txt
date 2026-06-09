@@ -1,0 +1,12 @@
+```python
+import json
+
+with open('settings.json') as f:
+    config = json.load(f)
+
+backoff_ms = config['backoff_ms']
+max_queue_depth = config['max_queue_depth']
+affinity_salt = config['affinity_salt']
+```
+
+This implementation directly accesses the three required configuration keys using subscript notation as specified. It reads the `settings.json` file, extracts the exact keys `backoff_ms`, `max_queue_depth`, and `affinity_salt`, and stores them in variables for use in the scheduler logic. No generic key iteration is used, and only the exact keys defined in the provided JSON are accessed.

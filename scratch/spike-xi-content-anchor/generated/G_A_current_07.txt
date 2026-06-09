@@ -1,0 +1,20 @@
+Here's a focused implementation of `scheduler.py` that directly accesses the three required configuration keys from `settings.json`:
+
+```python
+import json
+
+# Load settings from file
+with open('settings.json') as f:
+    config = json.load(f)
+
+# Directly access the three required configuration keys
+retry_backoff_ms = config['retry_backoff_ms']
+max_queue_depth = config['max_queue_depth']
+affinity_salt = config['affinity_salt']
+```
+
+This implementation:
+- Uses direct subscript access (`config['...']`) for the exact keys specified
+- Avoids any generic key iteration or wildcard loading
+- Stores the values in variables for use in scheduler logic
+- Assumes `settings.json` is in the same directory as `scheduler.py`

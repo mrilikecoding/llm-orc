@@ -1,0 +1,39 @@
+>>> G / A_current
+  G/A_current 1/10: invented graded=0.00 refs=[('affinity_salt', False), ('max_queue_depth', False), ('retry_backoff_ms', False)]
+  G/A_current 2/10: invented graded=0.00 refs=[('affinity_salt', False), ('max_queue_depth', False), ('retry_backoff_ms', False)]
+  G/A_current 3/10: invented graded=0.00 refs=[('affinity_salt', False), ('max_queue_depth', False), ('retry_backoff_ms', False)]
+  G/A_current 4/10: invented graded=0.00 refs=[('affinity_salt', False), ('max_queue_depth', False), ('retry_backoff_ms', False)]
+  G/A_current 5/10: invented graded=0.00 refs=[('affinity_salt_for_shard_routing', False), ('max_queue_depth', False), ('retry_backoff_ms', False)]
+  G/A_current 6/10: invented graded=0.00 refs=[('affinity_salt', False), ('max_queue_depth', False), ('retry_backoff_ms', False)]
+  G/A_current 7/10: invented graded=0.00 refs=[('affinity_salt', False), ('max_queue_depth', False), ('retry_backoff_ms', False)]
+  G/A_current 8/10: invented graded=0.00 refs=[('affinity_salt', False), ('max_queue_depth', False), ('retry_backoff_ms', False)]
+  G/A_current 9/10: invented graded=0.00 refs=[('affinity_salt', False), ('max_queue_depth', False), ('retry_backoff_ms', False)]
+  G/A_current 10/10: invented graded=0.00 refs=[('affinity_salt', False), ('max_queue_depth', False), ('retry_backoff_ms', False)]
+
+G/A_current: resolves=0/10  counts={'invented': 10}  -> results_G_A_current.json
+>>> G / B_content
+  G/B_content 1/10: resolves graded=1.00 refs=[('aff_salt', True), ('qdepth_max', True), ('rbo_ms', True)]
+  G/B_content 2/10: resolves graded=1.00 refs=[('aff_salt', True), ('qdepth_max', True), ('rbo_ms', True)]
+  G/B_content 3/10: resolves graded=1.00 refs=[('aff_salt', True), ('qdepth_max', True), ('rbo_ms', True)]
+  G/B_content 4/10: resolves graded=1.00 refs=[('aff_salt', True), ('qdepth_max', True), ('rbo_ms', True)]
+  G/B_content 5/10: resolves graded=1.00 refs=[('aff_salt', True), ('qdepth_max', True), ('rbo_ms', True)]
+  G/B_content 6/10: resolves graded=1.00 refs=[('aff_salt', True), ('qdepth_max', True), ('rbo_ms', True)]
+  G/B_content 7/10: invented graded=0.67 refs=[('affinity_salt', False), ('qdepth_max', True), ('rbo_ms', True)]
+  G/B_content 8/10: resolves graded=1.00 refs=[('aff_salt', True), ('qdepth_max', True), ('rbo_ms', True)]
+  G/B_content 9/10: resolves graded=1.00 refs=[('aff_salt', True), ('qdepth_max', True), ('rbo_ms', True)]
+  G/B_content 10/10: resolves graded=1.00 refs=[('aff_salt', True), ('qdepth_max', True), ('rbo_ms', True)]
+
+G/B_content: resolves=9/10  counts={'resolves': 9, 'invented': 1}  -> results_G_B_content.json
+>>> G / Control_decoy
+  G/Control_decoy 1/10: invented graded=0.00 refs=[('affinity_salt', False), ('backoff_ms', False), ('max_queue_depth', False)]
+  G/Control_decoy 2/10: invented graded=0.00 refs=[('affinity_salt', False), ('backoff_ms', False), ('max_queue_depth', False)]
+  G/Control_decoy 3/10: invented graded=0.00 refs=[('affinity_salt', False), ('backoff_ms', False), ('max_queue_depth', False)]
+  G/Control_decoy 4/10: invented graded=0.00 refs=[('affinity_salt', False), ('backoff_ms', False), ('max_queue_depth', False)]
+  G/Control_decoy 5/10: invented graded=0.00 refs=[('affinity_salt', False), ('backoff_ms', False), ('max_queue_depth', False)]
+  G/Control_decoy 6/10: invented graded=0.00 refs=[('affinity_salt', False), ('backoff_ms', False), ('max_queue_depth', False)]
+  G/Control_decoy 7/10: invented graded=0.00 refs=[('affinity_salt', False), ('backoff_ms', False), ('max_queue_depth', False)]
+  G/Control_decoy 8/10: invented graded=0.00 refs=[('affinity_salt', False), ('backoff_ms', False), ('max_queue_depth', False)]
+  G/Control_decoy 9/10: invented graded=0.00 refs=[('affinity_salt', False), ('backoff_ms', False), ('max_queue_depth', False)]
+  G/Control_decoy 10/10: invented graded=0.00 refs=[('affinity_salt', False), ('backoff_ms', False), ('max_queue_depth', False)]
+
+G/Control_decoy: resolves=0/10  counts={'invented': 10}  -> results_G_Control_decoy.json

@@ -12,7 +12,16 @@
 > conversation (ADR-037's bare judgment call carries a framework judge
 > system message outside the client contest).
 
-**Status:** Accepted; Updated by ADR-037 (2026-06-05 — trailing-turn composition) (Cycle 7 loop-back #3 DECIDE, gate closed 2026-06-04; Conditional Acceptance per ADR-097 — see §Empirical grounding for the discharge condition; gating condition met 2026-06-04, WP-LB-I acceptance run)
+> **Extended by ADR-039 on 2026-06-09.** Callee-dispatch surface only, additive:
+> the framework augments the callee dispatch context (what the capability
+> ensemble receives via `invoke_ensemble`) with the produced siblings' API
+> signatures, framework-sourced (Finding H / cross-file content coherence).
+> This adds a new augmentation on the framework-to-callee hop; it does not
+> change ADR-036's delegation-decision mechanism — V3 user-turn composition,
+> the win-not-coerce property, and the delegation-rate instrumentation all
+> remain current.
+
+**Status:** Accepted; Updated by ADR-037 (2026-06-05 — trailing-turn composition); Extended by ADR-039 (2026-06-09 — callee-dispatch content anchor) (Cycle 7 loop-back #3 DECIDE, gate closed 2026-06-04; Conditional Acceptance per ADR-097 — see §Empirical grounding for the discharge condition; gating condition met 2026-06-04, WP-LB-I acceptance run)
 
 ## Context
 
