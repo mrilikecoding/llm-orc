@@ -274,3 +274,17 @@ the bidirectional bug this log's axis-A/B/C meter findings documented: reads →
 powered n + pre-registered boundary the review requires), deeper depth (4–5 writes),
 axis D (mid-session intent refinement), or the live multi-turn trajectory run (the
 state-injection limitation shared by all rungs — a BUILD-phase OpenCode validation).
+
+**Update (same session) — the live trajectory run was done, and it found the limit.**
+The synthetic ladder is structurally blind to cumulative degradation, so a real
+OpenCode → real `serve` → qwen3:14b depth-5 session was driven to completion
+(`scratch/spike-trajectory-live/`). The **mechanism held** end-to-end (ideal 6 turns,
+zero churn, delegation 1.0, capability-matched routing emerged), but it surfaced
+**Finding H — cross-file content coherence is unanchored**: the model issued 0 reads,
+so each file was generated blind to sibling contents (the digest carries action+path+
+result, not content) and cross-file API references degraded (cli.py invented a
+nonexistent `convert_temperature`; the README invented nonexistent functions). This is
+axis-2 (ADR-033 §6b, the PLAY/ADR-097 target), located concretely; it rhymes with
+Finding G (progress unanchored → ADR-038), and the candidate fix is a **content-anchor**
+(route sibling content/signatures into the callee dispatch). Loop-back #7 prepared. Full
+write-up `scratch/spike-trajectory-live/RESULTS.md`; feed-forward in cycle-status.
