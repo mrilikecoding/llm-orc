@@ -1,0 +1,28 @@
+```python
+# test_text_tools.py
+import pytest
+from text_tools import clean_text, tokenize, remove_stopwords, abbreviate
+
+test_data = [
+    ("Hello, world!  How's it going?", "Hello world  Hows it going"),
+    ("  Leading & trailing spaces   ", "Leading  trailing spaces"),
+    ("Special@chars#should$be%removed", "Specialcharsshouldbe removed"),
+]
+
+@pytest.mark.parametrize("input_str,expected", test_data)
+def test_clean_text(input_str, expected):
+    assert clean_text(input_str) == expected
+
+def test_tokenize():
+    assert tokenize("Hello world!") == ["Hello", "world!"]
+
+def test_remove_stopwords():
+    assert remove_stopwords("the quick brown fox jumps over the lazy dog") == [
+        "quick", "brown", "fox", "jumps", "over", "lazy", "dog"
+    ]
+
+def test_abbreviate():
+    assert abbreviate("abbreviation") == "abbrev."
+    assert abbreviate("hello") == "hello"
+    assert abbreviate("Python is awesome") == "Python is awes."
+```

@@ -1,0 +1,212 @@
+{
+  "base": "T",
+  "arm": "B_signatures",
+  "n": 10,
+  "model": "qwen3:8b",
+  "resolves": 10,
+  "counts": {
+    "resolves": 10
+  },
+  "results": [
+    {
+      "cls": "resolves",
+      "refs": [
+        [
+          "celsius_to_fahrenheit",
+          true
+        ],
+        [
+          "fahrenheit_to_celsius",
+          true
+        ],
+        [
+          "celsius_to_kelvin",
+          true
+        ]
+      ],
+      "graded": 1.0,
+      "note": "",
+      "raw_len": 663
+    },
+    {
+      "cls": "resolves",
+      "refs": [
+        [
+          "celsius_to_fahrenheit",
+          true
+        ],
+        [
+          "fahrenheit_to_celsius",
+          true
+        ],
+        [
+          "celsius_to_kelvin",
+          true
+        ]
+      ],
+      "graded": 1.0,
+      "note": "",
+      "raw_len": 765
+    },
+    {
+      "cls": "resolves",
+      "refs": [
+        [
+          "celsius_to_fahrenheit",
+          true
+        ],
+        [
+          "celsius_to_kelvin",
+          true
+        ],
+        [
+          "fahrenheit_to_celsius",
+          true
+        ]
+      ],
+      "graded": 1.0,
+      "note": "",
+      "raw_len": 896
+    },
+    {
+      "cls": "resolves",
+      "refs": [
+        [
+          "celsius_to_fahrenheit",
+          true
+        ],
+        [
+          "fahrenheit_to_celsius",
+          true
+        ],
+        [
+          "celsius_to_kelvin",
+          true
+        ]
+      ],
+      "graded": 1.0,
+      "note": "",
+      "raw_len": 729
+    },
+    {
+      "cls": "resolves",
+      "refs": [
+        [
+          "celsius_to_fahrenheit",
+          true
+        ],
+        [
+          "fahrenheit_to_celsius",
+          true
+        ],
+        [
+          "celsius_to_kelvin",
+          true
+        ]
+      ],
+      "graded": 1.0,
+      "note": "",
+      "raw_len": 739
+    },
+    {
+      "cls": "resolves",
+      "refs": [
+        [
+          "celsius_to_fahrenheit",
+          true
+        ],
+        [
+          "fahrenheit_to_celsius",
+          true
+        ],
+        [
+          "celsius_to_kelvin",
+          true
+        ]
+      ],
+      "graded": 1.0,
+      "note": "",
+      "raw_len": 555
+    },
+    {
+      "cls": "resolves",
+      "refs": [
+        [
+          "celsius_to_fahrenheit",
+          true
+        ],
+        [
+          "celsius_to_kelvin",
+          true
+        ],
+        [
+          "fahrenheit_to_celsius",
+          true
+        ]
+      ],
+      "graded": 1.0,
+      "note": "",
+      "raw_len": 1001
+    },
+    {
+      "cls": "resolves",
+      "refs": [
+        [
+          "celsius_to_fahrenheit",
+          true
+        ],
+        [
+          "fahrenheit_to_celsius",
+          true
+        ],
+        [
+          "celsius_to_kelvin",
+          true
+        ]
+      ],
+      "graded": 1.0,
+      "note": "",
+      "raw_len": 699
+    },
+    {
+      "cls": "resolves",
+      "refs": [
+        [
+          "celsius_to_fahrenheit",
+          true
+        ],
+        [
+          "celsius_to_kelvin",
+          true
+        ],
+        [
+          "fahrenheit_to_celsius",
+          true
+        ]
+      ],
+      "graded": 1.0,
+      "note": "",
+      "raw_len": 1128
+    },
+    {
+      "cls": "resolves",
+      "refs": [
+        [
+          "celsius_to_fahrenheit",
+          true
+        ],
+        [
+          "fahrenheit_to_celsius",
+          true
+        ],
+        [
+          "celsius_to_kelvin",
+          true
+        ]
+      ],
+      "graded": 1.0,
+      "note": "",
+      "raw_len": 790
+    }
+  ]
+}

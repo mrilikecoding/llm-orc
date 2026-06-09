@@ -1,0 +1,392 @@
+{
+  "base": "V",
+  "arm": "A_current",
+  "n": 10,
+  "model": "qwen3:8b",
+  "resolves": 0,
+  "counts": {
+    "invented": 9,
+    "no-reference": 1
+  },
+  "results": [
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "remove_stopwords",
+          false
+        ],
+        [
+          "remove_stopwords",
+          false
+        ],
+        [
+          "remove_stopwords",
+          false
+        ],
+        [
+          "tokenize_text",
+          false
+        ],
+        [
+          "tokenize_text",
+          false
+        ],
+        [
+          "tokenize_text",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 722
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "split_text",
+          false
+        ],
+        [
+          "count_words",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 658
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "cleans_text",
+          false
+        ],
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "slugify",
+          false
+        ],
+        [
+          "slugify",
+          false
+        ],
+        [
+          "slugify",
+          false
+        ],
+        [
+          "slugify",
+          false
+        ],
+        [
+          "truncate",
+          false
+        ],
+        [
+          "truncate",
+          false
+        ],
+        [
+          "truncate",
+          false
+        ],
+        [
+          "truncate",
+          false
+        ],
+        [
+          "highlight_keywords",
+          false
+        ],
+        [
+          "highlight_keywords",
+          false
+        ],
+        [
+          "highlight_keywords",
+          false
+        ],
+        [
+          "highlight_keywords",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 1231
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "split_text",
+          false
+        ],
+        [
+          "split_text",
+          false
+        ],
+        [
+          "count_words",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 549
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "to_snake_case",
+          false
+        ],
+        [
+          "to_snake_case",
+          false
+        ],
+        [
+          "to_snake_case",
+          false
+        ],
+        [
+          "to_camel_case",
+          false
+        ],
+        [
+          "to_camel_case",
+          false
+        ],
+        [
+          "to_camel_case",
+          false
+        ],
+        [
+          "remove_special_characters",
+          false
+        ],
+        [
+          "remove_special_characters",
+          false
+        ],
+        [
+          "remove_special_characters",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 722
+    },
+    {
+      "cls": "no-reference",
+      "refs": [],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 1294
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "split_words",
+          false
+        ],
+        [
+          "split_words",
+          false
+        ],
+        [
+          "split_words",
+          false
+        ],
+        [
+          "remove_extra_spaces",
+          false
+        ],
+        [
+          "remove_extra_spaces",
+          false
+        ],
+        [
+          "remove_punctuation",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 1043
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "count_words",
+          false
+        ],
+        [
+          "count_words",
+          false
+        ],
+        [
+          "count_punctuation",
+          false
+        ],
+        [
+          "remove_punctuation",
+          false
+        ],
+        [
+          "remove_punctuation",
+          false
+        ],
+        [
+          "remove_punctuation",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 659
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "split_words",
+          false
+        ],
+        [
+          "split_words",
+          false
+        ],
+        [
+          "count_words",
+          false
+        ],
+        [
+          "count_words",
+          false
+        ],
+        [
+          "count_words",
+          false
+        ],
+        [
+          "highlight_keywords",
+          false
+        ],
+        [
+          "highlight_keywords",
+          false
+        ],
+        [
+          "highlight_keywords",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 918
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "clean_text",
+          false
+        ],
+        [
+          "tokenize",
+          false
+        ],
+        [
+          "remove_stopwords",
+          false
+        ],
+        [
+          "abbreviate",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 938
+    }
+  ]
+}

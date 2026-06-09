@@ -1,0 +1,41 @@
+```python
+import pytest
+from text_tools import squeeze_runs, tally_class
+
+
+def test_squeeze_runs_no_runs():
+    assert squeeze_runs("a b c", chars=" ") == "a b c"
+
+
+def test_squeeze_runs_multiple_spaces():
+    assert squeeze_runs("a  b   c", chars=" ") == "a b c"
+
+
+def test_squeeze_runs_collapsing():
+    assert squeeze_runs("aaabbb", chars="ab") == "ab"
+
+
+def test_squeeze_runs_mixed():
+    assert squeeze_runs("aabbaa", chars="a") == "aba"
+
+
+def test_squeeze_runs_empty():
+    assert squeeze_runs("") == ""
+
+
+def test_tally_class_digits():
+    assert tally_class("abc123", "digit") == 3
+
+
+def test_tally_class_alpha():
+    assert tally_class("abc123", "alpha") == 3
+
+
+def test_tally_class_space():
+    assert tally_class("   ", "space") == 3
+
+
+def test_tally_class_invalid_predicate():
+    with pytest.raises(KeyError):
+        tally_class("abc", "unknown")
+```

@@ -1,0 +1,20 @@
+```python
+import argparse
+from converters import convert
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description='Convert temperature between units')
+    parser.add_argument('value', type=float, help='The temperature value to convert')
+    parser.add_argument('from_unit', choices=['Celsius', 'Fahrenheit', 'Kelvin'], help='The unit to convert from')
+    parser.add_argument('to_unit', choices=['Celsius', 'Fahrenheit', 'Kelvin'], help='The unit to convert to')
+    args = parser.parse_args()
+
+    try:
+        result = convert(args.value, args.from_unit, args.to_unit)
+        print(f"{args.value} {args.from_unit} is equal to {result} {args.to_unit}")
+    except ValueError as e:
+        print(f"Error: {e}")
+
+if __name__ == '__main__':
+    main()
+```

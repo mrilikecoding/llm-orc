@@ -1,0 +1,20 @@
+```python
+# test_text_tools.py
+import pytest
+from text_tools import clean_text, split_text, count_words
+
+def test_clean_text():
+    assert clean_text("  Hello, World!  ") == "hello world"
+    assert clean_text("   ") == ""
+    assert clean_text("Mixed CASE") == "mixed case"
+
+def test_split_text():
+    assert split_text("Hello. How are you?") == ["Hello.", "How are you?"]
+    assert split_text("Single sentence") == ["Single sentence"]
+    assert split, split_text("No. Period.") == ["No.", "Period."]
+
+def test_count_words():
+    assert count_words("Hello world") == 2
+    assert count_words("   ") == 0
+    assert count_words("One. Two. Three.") == 3
+```

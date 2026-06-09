@@ -1,0 +1,21 @@
+```python
+import text_tools
+
+
+def test_squeeze_runs():
+    assert text_tools.squeeze_runs("hello   world", chars=" ") == "hello world"
+    assert text_tools.squeeze_runs("a  b  c", chars=" ") == "a b c"
+    assert text_tools.squeeze_runs("xxxyyzz", chars="xyz") == "xyz"
+    assert text_tools.squeeze_runs("", chars=" ") == ""
+    assert text_tools.squeeze_runs("aaaaa", chars="a") == "a"
+    assert text_tools.squeeze_runs("no  extra  spaces", chars=" ") == "no extra spaces"
+
+
+def test_tally_class():
+    assert text_tools.tally_class("abc123", "digit") == 3
+    assert text_tools.tally_class("abc123", "alpha") == 3
+    assert text_tools.tally_class("hello world", "space") == 1
+    assert text_tools.tally_class("a1 b", "alpha") == 1
+    assert text_tools.tally_class("a1 b", "digit") == 1
+    assert text_tools.tally_class("a1 b", "space") == 1
+```

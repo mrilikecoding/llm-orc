@@ -1,0 +1,19 @@
+import text_tools
+
+def test_squeeze_runs():
+    assert text_tools.squeeze_runs("hello   world", chars=" ") == "hello world"
+    assert text_tools.squeeze_runs("aaabbb", chars="a") == "abbb"
+    assert text_tools.squeeze_runs("aaabbb", chars="b") == "aaab"
+    assert text_tools.squeeze_runs("aabbaa", chars="ab") == "aba"
+    assert text_tools.squeeze_runs("") == ""
+
+def test_tally_class():
+    assert text_tools.tally_class("abc123", "alpha") == 3
+    assert text_tools.tally_class("abc123", "digit") == 3
+    assert text_tools.tally_class("   ", "space") == 3
+    assert text_tools.tally_class("a1!", "alpha") == 1
+    assert text_tools.tally_class("a1!", "digit") == 1
+    assert text_tools.tally_class("a1!", "space") == 0
+    assert text_tools.tally_class("", "alpha") == 0
+    assert text_tools.tally_class("", "digit") == 0
+    assert text_tools.tally_class("", "space") == 0

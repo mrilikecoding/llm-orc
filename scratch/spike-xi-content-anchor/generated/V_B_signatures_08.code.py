@@ -1,0 +1,25 @@
+import text_tools
+
+
+def test_squeeze_runs_default():
+    assert text_tools.squeeze_runs("hello   world") == "hello world"
+
+
+def test_squeeze_runs_custom():
+    assert text_tools.squeeze_runs("xaaabbb", chars='a') == "xabbb"
+
+
+def test_tally_class_digits():
+    assert text_tools.tally_class("abc123", "digit") == 3
+
+
+def test_tally_class_alpha():
+    assert text_tools.tally_class("AbC123", "alpha") == 3
+
+
+def test_tally_class_spaces():
+    assert text_tools.tally_class("hello   world", "space") == 3
+
+
+def test_tally_class_empty():
+    assert text_tools.tally_class("", "space") == 0
