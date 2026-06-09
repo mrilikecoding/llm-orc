@@ -104,6 +104,47 @@ class TestSessionActionRecordAccumulates:
         )
 
 
+class TestSessionActionRecordContent:
+    """ADR-039 (loop-back #7, V-03/V-04): the record carries the resolved
+    deliverable content forward, the extensible meta-record seam's second
+    increment. Content is captured at the Terminal (where the Artifact Bridge
+    resolves the deliverable), so the Loop Driver builds the content anchor
+    from records it already holds — no Session Artifact Store edge. Scenarios
+    from ``docs/agentic-serving/scenarios.md`` §"Content Anchor (ADR-039,
+    Finding H)".
+    """
+
+    def test_record_content_attaches_to_the_latest_record(self) -> None:
+        store = SessionActionRecord()
+        store.record_action(
+            "session-1", action_kind="write", target_path="converters.py"
+        )
+
+        store.record_content("session-1", "def c_to_f(c: float) -> float: ...")
+
+        records = store.records("session-1")
+        assert records[-1].content == "def c_to_f(c: float) -> float: ..."
+
+    def test_record_content_without_a_record_is_a_no_op(self) -> None:
+        """Content only ever follows an emitted action; an orphan capture with
+        no prior record must not fabricate one (the FC-64 no-fabrication rule).
+        """
+        store = SessionActionRecord()
+
+        store.record_content("session-1", "orphan content")
+
+        assert store.records("session-1") == ()
+
+    def test_content_defaults_to_none_until_captured(self) -> None:
+        """A recorded action carries no content until the Terminal resolves and
+        captures the deliverable; carries and failed dispatches stay ``None``.
+        """
+        store = SessionActionRecord()
+        store.record_action("session-1", action_kind="read", target_path="a.py")
+
+        assert store.records("session-1")[-1].content is None
+
+
 class TestSessionActionRecordLifecycle:
     """Lifecycle rides session scope (the Session Artifact Store retention
     pattern): close clears the session's records.

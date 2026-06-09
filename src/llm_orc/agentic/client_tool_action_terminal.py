@@ -42,6 +42,7 @@ from llm_orc.agentic.orchestrator_chunk import (
     OrchestratorChunk,
     ToolCallInvocation,
 )
+from llm_orc.agentic.session_action_record import SessionActionRecord
 from llm_orc.agentic.session_artifact_store import ArtifactNotFoundError
 from llm_orc.agentic.session_start import SessionContext
 
@@ -74,25 +75,34 @@ class ClientToolActionTerminal:
     extraction, which would drop the tool result.
     """
 
-    def __init__(self, *, loop_driver: TurnDecider, bridge: ArtifactBridge) -> None:
+    def __init__(
+        self,
+        *,
+        loop_driver: TurnDecider,
+        bridge: ArtifactBridge,
+        action_record: SessionActionRecord | None = None,
+    ) -> None:
         self._loop_driver = loop_driver
         self._bridge = bridge
+        self._action_record = action_record
 
     async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
         """Decide one turn and emit it as wire chunks."""
         outcome = await self._loop_driver.decide(context)
-        for chunk in self._emit(outcome):
+        for chunk in self._emit(outcome, context.state.identity.value):
             yield chunk
 
-    def _emit(self, outcome: TurnOutcome) -> list[OrchestratorChunk]:
+    def _emit(self, outcome: TurnOutcome, session_id: str) -> list[OrchestratorChunk]:
         """Map a per-turn outcome to the wire chunks for it."""
         if isinstance(outcome, CarryClientTool):
             return [ClientToolCall(tool_calls=(outcome.invocation,))]
         if isinstance(outcome, ApplyWork):
-            return self._emit_apply_work(outcome)
+            return self._emit_apply_work(outcome, session_id)
         return _finish_chunks(outcome.content)
 
-    def _emit_apply_work(self, outcome: ApplyWork) -> list[OrchestratorChunk]:
+    def _emit_apply_work(
+        self, outcome: ApplyWork, session_id: str
+    ) -> list[OrchestratorChunk]:
         """Marshal a generation outcome's deliverable into a client tool call.
 
         The Artifact Bridge (ADR-034 §Decision 3) resolves the deliverable
@@ -103,6 +113,12 @@ class ClientToolActionTerminal:
         deliverable — not yet established, ADR-034 §Negative — degrades to a
         dispatch-failure completion, not a malformed tool call (system-design
         Terminal error handling; FC-48 forbids fabricated content).
+
+        On a resolved string deliverable the content is captured onto the
+        turn's action record (ADR-039 V-04) — the same bytes that land in the
+        client ``write`` become the content anchor's source for a later turn's
+        callee. A failed or binary deliverable captures nothing (no usable
+        content to anchor on).
         """
         try:
             content = self._bridge.marshal(
@@ -115,6 +131,8 @@ class ClientToolActionTerminal:
                 f"[dispatch failed: binary deliverable for "
                 f"{outcome.file_path} is not yet supported]"
             )
+        if self._action_record is not None:
+            self._action_record.record_content(session_id, content)
         invocation = ToolCallInvocation(
             id=outcome.invocation_id,
             name=outcome.tool_name,
