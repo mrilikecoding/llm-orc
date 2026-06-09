@@ -55,6 +55,7 @@ _LAYER_MAP: dict[str, int] = {
     "llm_orc.agentic.dispatch_event_substrate": 1,  # WP-A6 per ADR-023
     "llm_orc.agentic.session_artifact_store": 1,  # WP-E6 per ADR-025
     "llm_orc.agentic.session_action_record": 1,  # WP-LB-K per ADR-037
+    "llm_orc.agentic.sibling_interface_extractor": 1,  # loop-back #7 per ADR-039
     # L2 — Runtime
     "llm_orc.agentic.result_summarizer_harness": 2,
     "llm_orc.agentic.orchestrator_tool_dispatch": 2,
