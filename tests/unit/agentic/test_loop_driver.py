@@ -464,6 +464,138 @@ class TestLoopDriverInjectsFormDirective:
         assert compose_form_directive("write") in dispatch_input
 
 
+class TestContentAnchor:
+    """ADR-039 (Finding H, V-01) — the content anchor on the callee dispatch.
+
+    On a delegated write into a session with already-produced siblings, the
+    driver builds the anchor from the records it already holds (the content
+    captured at the Terminal, V-04) and injects it into the callee dispatch
+    input, so the dependent deliverable references real sibling APIs instead
+    of inventing them. The current target is excluded — a file never anchors
+    on itself. Scenarios from scenarios.md §"Content Anchor (ADR-039, Finding
+    H)".
+    """
+
+    _CAPS = frozenset({"code-generator"})
+
+    @staticmethod
+    def _delegating_filler(file_path: str, *, task: str) -> _FakeSeatFiller:
+        return _FakeSeatFiller(
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="invoke_ensemble",
+                        arguments_json=json.dumps(
+                            {
+                                "name": "code-generator",
+                                "input": task,
+                                "filePath": file_path,
+                            }
+                        ),
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        )
+
+    @staticmethod
+    def _record_with_sibling(path: str, content: str) -> SessionActionRecord:
+        record = SessionActionRecord()
+        record.record_action("test-session", action_kind="write", target_path=path)
+        record.record_content("test-session", content)
+        return record
+
+    async def test_anchor_injects_prior_sibling_api_into_callee_dispatch(
+        self,
+    ) -> None:
+        record = self._record_with_sibling(
+            "converters.py",
+            "def celsius_to_fahrenheit(c: float) -> float:\n"
+            "    return c * 9 / 5 + 32\n",
+        )
+        seat_filler = self._delegating_filler("cli.py", task="write cli.py")
+        tool_dispatch = _FakeToolDispatch()
+        driver = _build_driver(
+            seat_filler,
+            tool_dispatch=tool_dispatch,
+            capabilities=self._CAPS,
+            action_record=record,
+        )
+
+        await driver.decide(_make_context())
+
+        dispatch_input = tool_dispatch.calls[0].arguments["input"]
+        # the produced sibling's API surface is anchored into the dispatch
+        assert "celsius_to_fahrenheit" in dispatch_input
+        assert "These files already exist" in dispatch_input
+        # task still leads and the form directive is preserved (delegation +
+        # form preserved under the anchor — the ADR-039 FC)
+        assert dispatch_input.startswith("write cli.py")
+        assert compose_form_directive("write") in dispatch_input
+
+    async def test_anchor_excludes_the_current_target(self) -> None:
+        """A sibling list containing only the file being rewritten yields no
+        anchor — the callee never anchors a file on itself.
+        """
+        record = self._record_with_sibling("cli.py", "def main() -> None: ...\n")
+        seat_filler = self._delegating_filler("cli.py", task="rewrite cli.py")
+        tool_dispatch = _FakeToolDispatch()
+        driver = _build_driver(
+            seat_filler,
+            tool_dispatch=tool_dispatch,
+            capabilities=self._CAPS,
+            action_record=record,
+        )
+
+        await driver.decide(_make_context())
+
+        dispatch_input = tool_dispatch.calls[0].arguments["input"]
+        assert "These files already exist" not in dispatch_input
+        assert dispatch_input == f"rewrite cli.py\n\n{compose_form_directive('write')}"
+
+    async def test_no_anchor_without_prior_siblings(self) -> None:
+        """A first delegation has no produced siblings, so the dispatch input
+        is the unanchored task + directive — byte-equal to the pre-ADR-039 form
+        (no regression on first-file or no-dependency writes).
+        """
+        seat_filler = self._delegating_filler(
+            "converters.py", task="write converters.py"
+        )
+        tool_dispatch = _FakeToolDispatch()
+        driver = _build_driver(
+            seat_filler, tool_dispatch=tool_dispatch, capabilities=self._CAPS
+        )
+
+        await driver.decide(_make_context())
+
+        dispatch_input = tool_dispatch.calls[0].arguments["input"]
+        assert dispatch_input == (
+            f"write converters.py\n\n{compose_form_directive('write')}"
+        )
+
+    async def test_records_without_content_do_not_anchor(self) -> None:
+        """A carried action (a read, or a write whose dispatch failed) has no
+        captured content, so it contributes nothing to the anchor.
+        """
+        record = SessionActionRecord()
+        record.record_action("test-session", action_kind="read", target_path="a.py")
+        seat_filler = self._delegating_filler("cli.py", task="write cli.py")
+        tool_dispatch = _FakeToolDispatch()
+        driver = _build_driver(
+            seat_filler,
+            tool_dispatch=tool_dispatch,
+            capabilities=self._CAPS,
+            action_record=record,
+        )
+
+        await driver.decide(_make_context())
+
+        dispatch_input = tool_dispatch.calls[0].arguments["input"]
+        assert dispatch_input == f"write cli.py\n\n{compose_form_directive('write')}"
+
+
 class TestLoopDriverGroundedCarry:
     """FC-45 — an action depending on a prior observed result uses that value.
 
