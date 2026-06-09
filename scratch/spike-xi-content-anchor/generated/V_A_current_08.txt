@@ -1,0 +1,22 @@
+```python
+import text_tools
+
+def test_clean_text():
+    assert text_tools.clean_text("  Hello, world!  ") == "hello world"
+    assert text_tools.clean_text("This is a test.") == "this is a test"
+    assert text_tools.clean_text("   ") == ""
+
+def test_split_words():
+    assert text_tools.split_words("Hello world") == ["Hello", "world"]
+    assert text_tools.split_words("   Split   this   text   ") == ["Split", "this", "text"]
+
+def test_count_words():
+    assert text_tools.count_words("One two three") == 3
+    assert text_tools.count_words("") == 0
+    assert text_tools.count_words("   ") == 0
+
+def test_highlight_keywords():
+    assert text_tools.highlight_keywords("Python is great", ["Python", "great"]) == "**Python** is **great**"
+    assert text_tools.highlight_keywords("Highlight this", ["this"]) == "Highlight **this**"
+    assert text_tools.highlight_keywords("No matches", ["test"]) == "No matches"
+```

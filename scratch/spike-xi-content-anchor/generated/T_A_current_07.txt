@@ -1,0 +1,20 @@
+```python
+import argparse
+import converters
+
+def main():
+    parser = argparse.ArgumentParser(description='Convert temperature between Celsius and Fahrenheit')
+    parser.add_argument('value', type=float, help='The temperature value to convert')
+    parser.add_argument('target_unit', choices=['C', 'F'], help='Target unit (C for Celsius, F for Fahrenheit)')
+    args = parser.parse_args()
+
+    if args.target_unit == 'F':
+        result = converters.convert_c_to_f(args.value)
+    else:  # target_unit is 'C'
+        result = converters.convert_f_to_c(args.value)
+
+    print(result)
+
+if __name__ == '__main__':
+    main()
+```

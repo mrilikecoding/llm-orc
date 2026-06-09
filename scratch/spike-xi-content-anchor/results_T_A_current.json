@@ -1,0 +1,201 @@
+{
+  "base": "T",
+  "arm": "A_current",
+  "n": 10,
+  "model": "qwen3:8b",
+  "resolves": 3,
+  "counts": {
+    "resolves": 3,
+    "invented": 7
+  },
+  "results": [
+    {
+      "cls": "resolves",
+      "refs": [
+        [
+          "celsius_to_fahrenheit",
+          true
+        ],
+        [
+          "fahrenheit_to_celsius",
+          true
+        ]
+      ],
+      "graded": 1.0,
+      "note": "",
+      "raw_len": 860
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "convert",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 593
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "convert",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 645
+    },
+    {
+      "cls": "resolves",
+      "refs": [
+        [
+          "celsius_to_fahrenheit",
+          true
+        ],
+        [
+          "fahrenheit_to_celsius",
+          true
+        ]
+      ],
+      "graded": 1.0,
+      "note": "",
+      "raw_len": 824
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "convert",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 578
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "f_to_c",
+          false
+        ],
+        [
+          "c_to_f",
+          false
+        ],
+        [
+          "c_to_k",
+          false
+        ],
+        [
+          "k_to_c",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 1080
+    },
+    {
+      "cls": "resolves",
+      "refs": [
+        [
+          "celsius_to_fahrenheit",
+          true
+        ],
+        [
+          "fahrenheit_to_celsius",
+          true
+        ]
+      ],
+      "graded": 1.0,
+      "note": "",
+      "raw_len": 849
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "convert_c_to_f",
+          false
+        ],
+        [
+          "convert_f_to_c",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 626
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "c_to_f",
+          false
+        ],
+        [
+          "f_to_c",
+          false
+        ],
+        [
+          "c_to_k",
+          false
+        ],
+        [
+          "k_to_c",
+          false
+        ],
+        [
+          "f_to_k",
+          false
+        ],
+        [
+          "k_to_f",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 956
+    },
+    {
+      "cls": "invented",
+      "refs": [
+        [
+          "c_to_f",
+          false
+        ],
+        [
+          "c_to_k",
+          false
+        ],
+        [
+          "f_to_c",
+          false
+        ],
+        [
+          "f_to_k",
+          false
+        ],
+        [
+          "k_to_c",
+          false
+        ],
+        [
+          "k_to_f",
+          false
+        ]
+      ],
+      "graded": 0.0,
+      "note": "",
+      "raw_len": 1118
+    }
+  ]
+}

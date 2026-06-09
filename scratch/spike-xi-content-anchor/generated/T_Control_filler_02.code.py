@@ -1,0 +1,36 @@
+import argparse
+from converters import convert_celsius_to_fahrenheit, convert_fahrenheit_to_celsius, convert_celsius_to_kelvin, convert_kelvin_to_celsius, convert_fahrenheit_to_kelvin, convert_kelvin_to_fahrenheit
+
+FUNCTION_MAP = {
+    ('c', 'f'): convert_celsius_to_fahrenheit,
+    ('f', 'c'): convert_fahrenheit_to_celsius,
+    ('c', 'k'): convert_celsius_to_kelvin,
+    ('k', 'c'): convert_kelvin_to_celsius,
+    ('f', 'k'): convert_fahrenheit_to_kelvin,
+    ('k', 'f'): convert_kelvin_to_fahrenheit,
+}
+
+def main():
+    parser = argparse.ArgumentParser(description='Convert temperature between Celsius, Fahrenheit, and Kelvin.')
+    parser.add_argument('--value', type=float, required=True, help='The temperature value to convert.')
+    parser.add_argument('--from', dest='from_unit', choices=['c', 'f', 'k'], required=True, help='The unit of the input temperature.')
+    parser.add_argument('--to', choices=['c', 'f', 'k'], required=True, help='The target unit for conversion.')
+    args = parser.parse_args()
+
+    from_unit = args.from_unit
+    to_unit = args.to
+    value = args.value
+
+    if from_unit == to_unit:
+        print(value)
+        return
+
+    if (from_unit, to_unit) not in FUNCTION_MAP:
+        parser.error(f"Unsupported conversion from {from_unit} to {to_unit}")
+
+    converter_function = FUNCTION_MAP[(from_unit, to_unit)]
+    result = converter_function(value)
+    print(result)
+
+if __name__ == '__main__':
+    main()

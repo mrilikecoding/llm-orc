@@ -1,0 +1,26 @@
+```python
+import argparse
+import converters
+
+def main():
+    parser = argparse.ArgumentParser(description='Convert temperature.')
+    parser.add_argument('--from', choices=['c', 'f', 'k'], required=True, help='Source unit (c, f, k)')
+    parser.add_argument('--to', choices=['c', 'f', 'k'], required=True, help='Target unit (c, f, k)')
+    parser.add_argument('--value', type=float, required=True, help='Temperature value')
+    args = parser.parse_args()
+
+    if args.from == 'c' and args.to == 'f':
+        result = converters.celsius_to_fahrenheit(args.value)
+    elif args.from == 'f' and args.to == 'c':
+        result = converters.fahrenheit_to_celsius(args.value)
+    elif args.from == 'c' and args.to == 'k':
+        result = converters.celsius_to_kelvin(args.value)
+    else:
+        print(f"Error: Conversion from {args.from} to {args.to} is not supported.")
+        return
+
+    print(result)
+
+if __name__ == '__main__':
+    main()
+```

@@ -1,0 +1,115 @@
+=== Spike xi primary battery (n=10 per cell, qwen3:8b) ===
+
+>>> T / A_current
+  T/A_current 1/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True)]
+  T/A_current 2/10: invented graded=0.00 refs=[('convert', False)]
+  T/A_current 3/10: invented graded=0.00 refs=[('convert', False)]
+  T/A_current 4/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True)]
+  T/A_current 5/10: invented graded=0.00 refs=[('convert', False)]
+  T/A_current 6/10: invented graded=0.00 refs=[('f_to_c', False), ('c_to_f', False), ('c_to_k', False), ('k_to_c', False)]
+  T/A_current 7/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True)]
+  T/A_current 8/10: invented graded=0.00 refs=[('convert_c_to_f', False), ('convert_f_to_c', False)]
+  T/A_current 9/10: invented graded=0.00 refs=[('c_to_f', False), ('f_to_c', False), ('c_to_k', False), ('k_to_c', False), ('f_to_k', False), ('k_to_f', False)]
+  T/A_current 10/10: invented graded=0.00 refs=[('c_to_f', False), ('c_to_k', False), ('f_to_c', False), ('f_to_k', False), ('k_to_c', False), ('k_to_f', False)]
+
+T/A_current: resolves=3/10  counts={'resolves': 3, 'invented': 7}  -> results_T_A_current.json
+
+>>> T / B_signatures
+  T/B_signatures 1/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True)]
+  T/B_signatures 2/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True)]
+  T/B_signatures 3/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('celsius_to_kelvin', True), ('fahrenheit_to_celsius', True)]
+  T/B_signatures 4/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True)]
+  T/B_signatures 5/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True)]
+  T/B_signatures 6/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True)]
+  T/B_signatures 7/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('celsius_to_kelvin', True), ('fahrenheit_to_celsius', True)]
+  T/B_signatures 8/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True)]
+  T/B_signatures 9/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('celsius_to_kelvin', True), ('fahrenheit_to_celsius', True)]
+  T/B_signatures 10/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True)]
+
+T/B_signatures: resolves=10/10  counts={'resolves': 10}  -> results_T_B_signatures.json
+
+>>> T / C_full
+  T/C_full 1/10: no-reference graded=0.00 refs=[]
+  T/C_full 2/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True)]
+  T/C_full 3/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True)]
+  T/C_full 4/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('celsius_to_kelvin', True), ('fahrenheit_to_celsius', True)]
+  T/C_full 5/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True)]
+  T/C_full 6/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True)]
+  T/C_full 7/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True)]
+  T/C_full 8/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True)]
+  T/C_full 9/10: parse-fail graded=0.00 refs=[]
+  T/C_full 10/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True)]
+
+T/C_full: resolves=8/10  counts={'no-reference': 1, 'resolves': 8, 'parse-fail': 1}  -> results_T_C_full.json
+
+>>> T / Control_decoy
+  T/Control_decoy 1/10: invented graded=0.00 refs=[('convert_temperature', False)]
+  T/Control_decoy 2/10: invented graded=0.00 refs=[('convert_temperature', False)]
+  T/Control_decoy 3/10: invented graded=0.00 refs=[('convert_temperature', False)]
+  T/Control_decoy 4/10: invented graded=0.00 refs=[('convert_temperature', False)]
+  T/Control_decoy 5/10: invented graded=0.00 refs=[('convert_temperature', False)]
+  T/Control_decoy 6/10: invented graded=0.00 refs=[('convert_temperature', False)]
+  T/Control_decoy 7/10: invented graded=0.00 refs=[('convert_temperature', False)]
+  T/Control_decoy 8/10: invented graded=0.00 refs=[('convert_temperature', False)]
+  T/Control_decoy 9/10: invented graded=0.00 refs=[('convert_temperature', False)]
+  T/Control_decoy 10/10: invented graded=0.00 refs=[('convert_temperature', False)]
+
+T/Control_decoy: resolves=0/10  counts={'invented': 10}  -> results_T_Control_decoy.json
+
+>>> T / Control_filler
+  T/Control_filler 1/10: invented graded=0.50 refs=[('celsius_to_fahrenheit', True), ('celsius_to_kelvin', True), ('fahrenheit_to_celsius', True), ('fahrenheit_to_kelvin', False), ('kelvin_to_celsius', False), ('kelvin_to_fahrenheit', False)]
+  T/Control_filler 2/10: invented graded=0.00 refs=[('convert', False)]
+  T/Control_filler 3/10: invented graded=0.00 refs=[('convert_celsius_to_fahrenheit', False), ('convert_fahrenheit_to_celsius', False), ('convert_celsius_to_kelvin', False), ('convert_kelvin_to_celsius', False), ('convert_fahrenheit_to_kelvin', False), ('convert_kelvin_to_fahrenheit', False)]
+  T/Control_filler 4/10: invented graded=0.50 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True), ('celsius_to_kelvin', True), ('kelvin_to_celsius', False), ('fahrenheit_to_kelvin', False), ('kelvin_to_fahrenheit', False)]
+  T/Control_filler 5/10: invented graded=0.00 refs=[('convert', False)]
+  T/Control_filler 6/10: invented graded=0.00 refs=[('c_to_f', False), ('c_to_k', False), ('f_to_c', False), ('f_to_k', False), ('k_to_c', False), ('k_to_f', False)]
+  T/Control_filler 7/10: invented graded=0.00 refs=[('f_to_c', False), ('c_to_f', False), ('f_to_k', False), ('k_to_f', False), ('c_to_k', False), ('k_to_c', False)]
+  T/Control_filler 8/10: invented graded=0.00 refs=[('convert_temperature', False)]
+  T/Control_filler 9/10: invented graded=0.00 refs=[('convert_c_to_f', False), ('convert_c_to_k', False)]
+  T/Control_filler 10/10: resolves graded=1.00 refs=[('celsius_to_fahrenheit', True), ('fahrenheit_to_celsius', True)]
+
+T/Control_filler: resolves=1/10  counts={'invented': 9, 'resolves': 1}  -> results_T_Control_filler.json
+
+>>> V / A_current
+  V/A_current 1/10: invented graded=0.00 refs=[('clean_text', False), ('clean_text', False), ('clean_text', False), ('remove_stopwords', False), ('remove_stopwords', False), ('remove_stopwords', False), ('tokenize_text', False), ('tokenize_text', False), ('tokenize_text', False)]
+  V/A_current 2/10: invented graded=0.00 refs=[('clean_text', False), ('split_text', False), ('count_words', False)]
+  V/A_current 3/10: invented graded=0.00 refs=[('clean_text', False), ('clean_text', False), ('cleans_text', False), ('clean_text', False), ('slugify', False), ('slugify', False), ('slugify', False), ('slugify', False), ('truncate', False), ('truncate', False), ('truncate', False), ('truncate', False), ('highlight_keywords', False), ('highlight_keywords', False), ('highlight_keywords', False), ('highlight_keywords', False)]
+  V/A_current 4/10: invented graded=0.00 refs=[('clean_text', False), ('clean_text', False), ('split_text', False), ('split_text', False), ('count_words', False)]
+  V/A_current 5/10: invented graded=0.00 refs=[('to_snake_case', False), ('to_snake_case', False), ('to_snake_case', False), ('to_camel_case', False), ('to_camel_case', False), ('to_camel_case', False), ('remove_special_characters', False), ('remove_special_characters', False), ('remove_special_characters', False)]
+  V/A_current 6/10: no-reference graded=0.00 refs=[]
+  V/A_current 7/10: invented graded=0.00 refs=[('clean_text', False), ('clean_text', False), ('clean_text', False), ('split_words', False), ('split_words', False), ('split_words', False), ('remove_extra_spaces', False), ('remove_extra_spaces', False), ('remove_punctuation', False)]
+  V/A_current 8/10: invented graded=0.00 refs=[('clean_text', False), ('clean_text', False), ('clean_text', False), ('count_words', False), ('count_words', False), ('count_punctuation', False), ('remove_punctuation', False), ('remove_punctuation', False), ('remove_punctuation', False)]
+  V/A_current 9/10: invented graded=0.00 refs=[('clean_text', False), ('clean_text', False), ('clean_text', False), ('split_words', False), ('split_words', False), ('count_words', False), ('count_words', False), ('count_words', False), ('highlight_keywords', False), ('highlight_keywords', False), ('highlight_keywords', False)]
+  V/A_current 10/10: invented graded=0.00 refs=[('clean_text', False), ('tokenize', False), ('remove_stopwords', False), ('abbreviate', False)]
+
+V/A_current: resolves=0/10  counts={'invented': 9, 'no-reference': 1}  -> results_V_A_current.json
+
+>>> V / B_signatures
+  V/B_signatures 1/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True)]
+  V/B_signatures 2/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('tally_class', True)]
+  V/B_signatures 3/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('tally_class', True)]
+  V/B_signatures 4/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True)]
+  V/B_signatures 5/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('squeeze_runs', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True)]
+  V/B_signatures 6/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('squeeze_runs', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True)]
+  V/B_signatures 7/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True)]
+  V/B_signatures 8/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True)]
+  V/B_signatures 9/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('squeeze_runs', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True)]
+  V/B_signatures 10/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True)]
+
+V/B_signatures: resolves=10/10  counts={'resolves': 10}  -> results_V_B_signatures.json
+
+>>> V / C_full
+  V/C_full 1/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True)]
+  V/C_full 2/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('tally_class', True), ('tally_class', True), ('tally_class', True)]
+  V/C_full 3/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('tally_class', True)]
+  V/C_full 4/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('tally_class', True)]
+  V/C_full 5/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True)]
+  V/C_full 6/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True)]
+  V/C_full 7/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('squeeze_runs', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True), ('tally_class', True)]
+  V/C_full 8/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('tally_class', True)]
+  V/C_full 9/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('tally_class', True)]
+  V/C_full 10/10: resolves graded=1.00 refs=[('squeeze_runs', True), ('tally_class', True)]
+
+V/C_full: resolves=10/10  counts={'resolves': 10}  -> results_V_C_full.json
+
+=== battery complete ===

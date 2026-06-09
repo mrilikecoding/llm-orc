@@ -1,0 +1,42 @@
+```python
+import sys
+import converters
+
+def main():
+    if len(sys.argv) != 4:
+        print("Usage: python cli.py <value> <from_unit> <to_unit>")
+        sys.exit(1)
+    
+    try:
+        value: float = float(sys.argv[1])
+    except ValueError:
+        print("Error: Value must be a number.")
+        sys.exit(1)
+    
+    from_unit: str = sys.argv[2].upper()
+    to_unit: str = sys.argv[3].upper()
+    
+    if from_unit not in {'F', 'C', 'K'} or to_unit not in {'F', 'C', 'K'}:
+        print("Error: Units must be F, C, or K.")
+        sys.exit(1)
+    
+    FUNCTION_MAP = {
+        ('F', 'C'): converters.f_to_c,
+        ('C', 'F'): converters.c_to_f,
+        ('F', 'K'): converters.f_to_k,
+        ('K', 'F'): converters.k_to_f,
+        ('C', 'K'): converters.c_to_k,
+        ('K', 'C'): converters.k_to_c,
+    }
+    
+    key = (from_unit, to_unit)
+    if key not in FUNCTION_MAP:
+        print("Error: Unsupported conversion.")
+        sys.exit(1)
+    
+    result: float = FUNCTION_MAP[key](value)
+    print(f"{value} {from_unit} is equal to {result} {to_unit}")
+
+if __name__ == "__main__":
+    main()
+```
