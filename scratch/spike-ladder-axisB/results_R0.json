@@ -1,0 +1,96 @@
+{
+  "state": "R0",
+  "n": 10,
+  "rows": [
+    {
+      "action": "read:read",
+      "target": "read",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": null,
+      "turn_shape": "generation"
+    },
+    {
+      "action": "read:read",
+      "target": "read",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": null,
+      "turn_shape": "generation"
+    },
+    {
+      "action": "read:read",
+      "target": "read",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": null,
+      "turn_shape": "generation"
+    },
+    {
+      "action": "read:read",
+      "target": "read",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": null,
+      "turn_shape": "generation"
+    },
+    {
+      "action": "read:read",
+      "target": "read",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": null,
+      "turn_shape": "generation"
+    },
+    {
+      "action": "read:read",
+      "target": "read",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": null,
+      "turn_shape": "generation"
+    },
+    {
+      "action": "read:read",
+      "target": "read",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": null,
+      "turn_shape": "generation"
+    },
+    {
+      "action": "read:read",
+      "target": "read",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": null,
+      "turn_shape": "generation"
+    },
+    {
+      "action": "read:read",
+      "target": "read",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": null,
+      "turn_shape": "generation"
+    },
+    {
+      "action": "read:read",
+      "target": "read",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": null,
+      "turn_shape": "generation"
+    }
+  ]
+}

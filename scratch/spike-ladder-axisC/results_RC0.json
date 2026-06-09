@@ -1,0 +1,96 @@
+{
+  "state": "RC0",
+  "n": 10,
+  "rows": [
+    {
+      "action": "write:module",
+      "target": "module",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": null,
+      "turn_shape": "boundary_excluded"
+    },
+    {
+      "action": "write:module",
+      "target": "module",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": null,
+      "turn_shape": "boundary_excluded"
+    },
+    {
+      "action": "write:module",
+      "target": "module",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": null,
+      "turn_shape": "boundary_excluded"
+    },
+    {
+      "action": "write:module",
+      "target": "module",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": null,
+      "turn_shape": "boundary_excluded"
+    },
+    {
+      "action": "write:module",
+      "target": "module",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": null,
+      "turn_shape": "boundary_excluded"
+    },
+    {
+      "action": "write:module",
+      "target": "module",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": null,
+      "turn_shape": "boundary_excluded"
+    },
+    {
+      "action": "write:module",
+      "target": "module",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": null,
+      "turn_shape": "boundary_excluded"
+    },
+    {
+      "action": "write:module",
+      "target": "module",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": null,
+      "turn_shape": "boundary_excluded"
+    },
+    {
+      "action": "write:module",
+      "target": "module",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": null,
+      "turn_shape": "boundary_excluded"
+    },
+    {
+      "action": "write:module",
+      "target": "module",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": null,
+      "turn_shape": "boundary_excluded"
+    }
+  ]
+}

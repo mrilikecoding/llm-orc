@@ -1,0 +1,99 @@
+{
+  "state": "A",
+  "produced": [
+    "module"
+  ],
+  "n": 10,
+  "rows": [
+    {
+      "outcome": "apply_work",
+      "target": "test",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "apply_work",
+      "target": "test",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "apply_work",
+      "target": "other",
+      "advanced": false,
+      "churn": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "apply_work",
+      "target": "test",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "carry",
+      "target": "none",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": "REMAINING",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "apply_work",
+      "target": "test",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "apply_work",
+      "target": "test",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "apply_work",
+      "target": "test",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "apply_work",
+      "target": "test",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "apply_work",
+      "target": "test",
+      "advanced": true,
+      "churn": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "carry"
+    }
+  ]
+}
