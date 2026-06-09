@@ -37,9 +37,15 @@ from llm_orc.agentic.composition_validator import (
     ConfigManagerEnsembleWriter,
     ConfigManagerPrimitiveRegistry,
 )
+from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
 from llm_orc.agentic.loop_driver import LoopDriver
 from llm_orc.agentic.orchestrator_chunk import ClientToolCall, OrchestratorChunk
-from llm_orc.agentic.orchestrator_tool_dispatch import OrchestratorToolDispatch
+from llm_orc.agentic.orchestrator_tool_dispatch import (
+    InternalToolCall,
+    OrchestratorToolDispatch,
+    ToolCallResult,
+    ToolCallSuccess,
+)
 from llm_orc.agentic.result_summarizer_harness import ResultSummarizerHarness
 from llm_orc.agentic.session_action_record import SessionActionRecord
 from llm_orc.agentic.session_artifact_store import SessionArtifactStore
@@ -193,3 +199,161 @@ async def test_callee_generation_dispatches_real_ensemble_into_a_write(
     # invoke_ensemble call passed the real dispatch's validation and routed
     # through the real Ensemble Engine, not a stub.
     assert "write a fibonacci function" in args["content"]
+
+
+class _ScriptedSeatFiller:
+    """Seat-filler emitting one scripted decision per turn, in order."""
+
+    def __init__(self, responses: list[ToolCallingResponse]) -> None:
+        self._responses = list(responses)
+        self._turn = 0
+
+    async def generate_with_tools(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> ToolCallingResponse:
+        response = self._responses[self._turn]
+        self._turn += 1
+        return response
+
+
+class _RecordingDispatch:
+    """Tool-dispatch double recording each callee input, returning a per-turn
+    inline deliverable the Terminal marshals and captures."""
+
+    def __init__(self, deliverables: list[str]) -> None:
+        self._deliverables = list(deliverables)
+        self.inputs: list[str] = []
+
+    async def dispatch(
+        self, call: InternalToolCall, *, session_id: str = ""
+    ) -> ToolCallResult:
+        deliverable = self._deliverables[len(self.inputs)]
+        self.inputs.append(str(call.arguments["input"]))
+        return ToolCallSuccess(
+            id=call.id,
+            name=call.name,
+            content=deliverable,
+            envelope=DispatchEnvelope(status="success", primary=deliverable),
+        )
+
+
+class _RemainingJudge:
+    """Judgment-seat double returning REMAINING with a fixed statement."""
+
+    def __init__(self, statement: str) -> None:
+        self._statement = statement
+
+    async def generate_response(self, message: str, role_prompt: str) -> str:
+        return f"VERDICT: REMAINING\n{self._statement}"
+
+
+def _delegate(name: str, task: str, file_path: str) -> ToolCallingResponse:
+    return ToolCallingResponse(
+        content="",
+        tool_calls=[
+            ToolCall(
+                id="t1",
+                name="invoke_ensemble",
+                arguments_json=json.dumps(
+                    {"name": name, "input": task, "filePath": file_path}
+                ),
+            )
+        ],
+        finish_reason="tool_calls",
+    )
+
+
+@pytest.mark.asyncio
+async def test_content_anchor_flows_from_a_produced_sibling_to_the_next_callee(
+    tmp_path: Path,
+) -> None:
+    """ADR-039 (V-01/V-03/V-04) end to end at the harness layer: a sibling
+    produced on turn 1 has its content captured at the Terminal, and turn 2's
+    callee dispatch carries that sibling's API as the content anchor.
+
+    Real Loop Driver, real Terminal, real Artifact Bridge, and one shared
+    Session Action Record across both turns (the production wiring) — only the
+    model edges (seat-filler, judgment seat, ensemble dispatch) are stubbed.
+    The boundary under test is the content-capture → anchor-readback lifecycle
+    on the shared record, which the per-module unit tests stub.
+    """
+    converters_src = (
+        "def celsius_to_fahrenheit(c: float) -> float:\n    return c * 9 / 5 + 32\n"
+    )
+    seat_filler = _ScriptedSeatFiller(
+        [
+            _delegate("code-gen-mock", "write converters.py", "converters.py"),
+            _delegate("code-gen-mock", "write cli.py", "cli.py"),
+        ]
+    )
+    dispatch = _RecordingDispatch([converters_src, "import converters\n"])
+    action_record = SessionActionRecord()
+    driver = LoopDriver(
+        seat_filler=seat_filler,
+        enforcer=SingleStepEnforcer(),
+        tool_dispatch=dispatch,
+        action_record=action_record,
+        judgment_seat=_RemainingJudge("cli.py has not been written yet."),
+        budget=BudgetController(turn_limit=1_000, token_limit=1_000_000),
+        capabilities=frozenset({"code-gen-mock"}),
+    )
+    terminal = ClientToolActionTerminal(
+        loop_driver=driver,
+        bridge=ArtifactBridge(SessionArtifactStore(agentic_sessions_root=tmp_path)),
+        action_record=action_record,
+    )
+    state = SessionState(
+        identity=SessionIdentity(value="anchor-int", method="user_field")
+    )
+    tools = [{"type": "function", "function": {"name": "write"}}]
+
+    # turn 1 — a first file (no produced siblings, so no anchor)
+    await _collect(
+        terminal.run(
+            SessionContext(
+                messages=[ChatMessage(role="user", content="build a temperature CLI")],
+                tools=tools,
+                state=state,
+            )
+        )
+    )
+    # turn 2 — the client echoes the write result; the trailing tool-result
+    # tail opens with the REMAINING judgment, then the driver delegates cli.py
+    await _collect(
+        terminal.run(
+            SessionContext(
+                messages=[
+                    ChatMessage(role="user", content="build a temperature CLI"),
+                    ChatMessage(
+                        role="assistant",
+                        content=None,
+                        tool_calls=(
+                            {
+                                "id": "w1",
+                                "type": "function",
+                                "function": {
+                                    "name": "write",
+                                    "arguments": '{"filePath": "converters.py"}',
+                                },
+                            },
+                        ),
+                    ),
+                    ChatMessage(
+                        role="tool",
+                        content="Wrote file successfully",
+                        tool_call_id="w1",
+                    ),
+                ],
+                tools=tools,
+                state=state,
+            )
+        )
+    )
+
+    # turn 1's dispatch had no anchor; turn 2's carries converters.py's API
+    assert "These files already exist" not in dispatch.inputs[0]
+    assert "celsius_to_fahrenheit" in dispatch.inputs[1]
+    assert "These files already exist" in dispatch.inputs[1]
