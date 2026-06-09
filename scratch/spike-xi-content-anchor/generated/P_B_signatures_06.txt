@@ -1,0 +1,31 @@
+# Temperature Conversion Library
+
+## Installation
+Install the library using pip:
+
+```bash
+pip install temperature-converter
+```
+
+## Functions
+The `converters` module provides the following functions:
+
+```python
+def celsius_to_fahrenheit(celsius: float) -> float
+def fahrenheit_to_celsius(fahrenheit: float) -> float
+def celsius_to_kelvin(celsius: float) -> float
+```
+
+## Example Usage
+```python
+from converters import celsius_to_fahrenheit, fahrenheit_to_celsius, celsius_to_kelvin
+
+# Convert 25°C to Fahrenheit and Kelvin
+fahrenheit = celsius_to_fahrenheit(25)
+kelvin = celsius_to_kelvin(25)
+print(f"25°C = {fahrenheit}°F, {kelvin}K")
+
+# Convert 77°F to Celsius
+celsius = fahrenheit_to_celsius(77)
+print(f"77°F = {celsius}°C")
+```

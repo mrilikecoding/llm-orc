@@ -1,0 +1,38 @@
+# Temperature Conversion Library
+
+## Installation
+Install the library using pip:
+```bash
+pip install temperature-converter
+```
+
+## Usage
+Import the `converters` module and use its functions to convert temperatures between scales.
+
+```python
+from temperature_converter import converters
+
+# Convert Celsius to Fahrenheit
+converters.convert_celsius_to_fahrenheit(25)  # Output: 77.0
+
+# Convert Fahrenheit to Celsius
+converters.convert_fahrenheit_to_celsius(98.6)  # Output: 37.0
+
+# Convert Kelvin to Celsius
+converters.convert_kelvin_to_celsius(300)  # Output: 26.85
+
+# Convert Celsius to Kelvin
+converters.convert_celsius_to_kelvin(-273.15)  # Output: 0.0
+```
+
+## Functions
+The `converters` module provides the following functions:
+
+- `convert_celsius_to_fahrenheit(celsius: float) -> float`: Converts Celsius to Fahrenheit.
+- `convert_fahrenheit_to_celsius(fahrenheit: float) -> float`: Converts Fahrenheit to Celsius.
+- `convert_kelvin_to_celsius(kelvin: float) -> float`: Converts Kelvin to Celsius.
+- `convert_celsius_to_kelvin(celsius: float) -> float`: Converts Celsius to Kelvin.
+- `convert_fahrenheit_to_kelvin(fahrenheit: float) -> float`: Converts Fahrenheit to Kelvin.
+- `convert_kelvin_to_fahrenheit(kelvin: float) -> float`: Converts Kelvin to Fahrenheit.
+
+All functions handle edge cases and raise `ValueError` for invalid inputs.

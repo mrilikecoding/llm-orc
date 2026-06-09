@@ -1,0 +1,23 @@
+Here's a focused implementation of `scheduler.py` that reads the exact configuration keys as specified:
+
+```python
+import json
+
+def load_scheduler_config():
+    with open('settings.json') as f:
+        config = json.load(f)
+    
+    retry_backoff_ms = config['retry_backoff_ms']
+    max_queue_depth = config['max_queue_depth']
+    affinity_salt = config['affinity_salt']
+    
+    return retry_backoff_ms, max_queue_depth, affinity_salt
+```
+
+This implementation:
+1. Directly accesses the three required keys using exact subscript notation
+2. Assumes `settings.json` is in the same directory
+3. Returns the configuration values for use in scheduling logic
+4. Does not iterate through configuration keys generically
+
+The configuration values can then be used in your scheduler logic to control retry backoff, limit queue depth, and manage shard routing affinity.

@@ -1,0 +1,40 @@
+# Temperature Conversion Library  
+
+## Installation  
+To install the library, use pip:  
+```bash  
+pip install temperature-converter  
+```  
+Alternatively, clone the repository and install manually:  
+```bash  
+git clone https://github.com/yourusername/temperature-converter.git  
+cd temperature-converter  
+python setup.py install  
+```  
+
+## Usage  
+Import the `converters` module and use its functions:  
+
+```python  
+import converters  
+
+# Convert Celsius to Fahrenheit  
+fahrenheit = converters.celsius_to_fahrenheit(25.0)  
+print(f"25°C = {fahrenheit}°F")  # Output: 25°C = 77.0°F  
+
+# Convert Fahrenheit to Celsius  
+celsius = converters.fahrenheit_to_celsius(98.6)  
+print(f"98.6°F = {celsius}°C")  # Output: 98.6°F = 37.0°C  
+
+# Convert Celsius to Kelvin  
+kelvin = converters.celsius_to_kelvin(0.0)  
+print(f"0°C = {kelvin}K")  # Output: 0°C = 273.15K  
+```  
+
+## API Reference  
+The `converters` module provides the following functions:  
+- `celsius_to_fahrenheit(celsius: float) -> float`: Converts Celsius to Fahrenheit.  
+- `fahrenheit_to_celsius(fahrenheit: float) -> float`: Converts Fahrenheit to Celsius.  
+- `celsius_to_kelvin(celsius: float) -> float`: Converts Celsius to Kelvin.  
+
+No other functions are available.

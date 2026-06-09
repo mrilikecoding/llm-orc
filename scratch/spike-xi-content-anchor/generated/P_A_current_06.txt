@@ -1,0 +1,42 @@
+# Temperature Conversion Library
+
+## Installation
+Install the library using pip:
+```bash
+pip install temperature-converter
+```
+
+Or clone the repository from GitHub:
+```bash
+git clone https://github.com/your-username/temperature-converter.git
+cd temperature-converter
+pip install .
+```
+
+## Usage
+Import the `converters` module and use its functions to convert temperatures between scales.
+
+### Available Functions
+The `converters` module provides the following functions:
+
+- `celsius_to_fahrenheit(degrees: float) -> float`: Converts Celsius to Fahrenheit.
+- `fahrenheit_to_celsius(degrees: float) -> float`: Converts Fahrenheit to Celsius.
+- `celsius_to_kelvin(degrees: float) -> float`: Converts Celsius to Kelvin.
+- `kelvin_to_celsius(degrees: float) -> float`: Converts Kelvin to Celsius.
+- `fahrenheit_to_rankine(degrees: float) -> float`: Converts Fahrenheit to Rankine.
+- `rankine_to_fahrenheit(degrees: float) -> float`: Converts Rankine to Fahrenheit.
+
+### Example Usage
+```python
+from converters import celsius_to_fahrenheit, kelvin_to_celsius
+
+# Convert 25°C to Fahrenheit
+print(celsius_to_fahrenheit(25))  # Output: 77.0
+
+# Convert 300 K to Celsius
+print(kelvin_to_celsius(300))  # Output: 26.85
+```
+
+### Notes
+- All functions return values rounded to two decimal places.
+- Input values should be numeric; non-numeric inputs will raise a TypeError.

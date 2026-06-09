@@ -1,0 +1,17 @@
+```python
+import json
+
+def load_scheduler_settings():
+    with open('settings.json') as f:
+        config = json.load(f)
+    backoff_ms = config['backoff_ms']
+    max_queue_depth = config['max_queue_depth']
+    affinity_salt = config['affinity_salt']
+    return backoff_ms, max_queue_depth, affinity_salt
+```
+
+This implementation:
+1. Uses direct subscripting to access the exact config keys
+2. Loads the JSON file once
+3. Returns the three required settings as separate variables
+4. Does not iterate through config keys or use generic key access methods

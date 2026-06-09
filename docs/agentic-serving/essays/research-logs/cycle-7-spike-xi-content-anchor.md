@@ -3,9 +3,14 @@
 **Status:** COMPLETE (run 2026-06-08, $0 local qwen3:8b). **Verdict: PASS — content-anchor
 grounded; B (signatures-in-dispatch) selected; the specific sibling content causally
 isolated as the mechanism (B 10/10 vs decoy 0/10 vs filler 1/10 on Base T); the cheap
-qwen3:8b coder resolves 10/10 on both bases — no capability rung, no cloud spend. Grounds a
-content-anchor ADR (candidate ADR-039), Conditional Acceptance pending the real-OpenCode
-trajectory discharge.** See Results below.
+qwen3:8b coder resolves 10/10 on all bases — no capability rung, no cloud spend. The fix is
+**content-agnostic by construction** (full-content baseline + signature compaction),
+grounded across three structurally-different sibling types by practitioner-directed arms:
+**prose (Base P)** A 0/10 → B 10/10 (README; prose invents *worse* blind, signatures suffice
+B = C) and **config/data (Base G)** A 0/10 → B 9/10 via the full-content path with decoy
+isolation (Control_decoy 0/10) — a non-code JSON sibling, keys not functions. Grounds
+**ADR-039** (content-agnostic; argument-audited R1→R5 converged), Conditional Acceptance
+pending the real-OpenCode trajectory discharge.** See Results below.
 Pre-registered + methods-reviewed 2026-06-08
 (`housekeeping/audits/research-methods-spike-xi.md`, 2 P1 / 4 P2 / 2 P3);
 **all 8 findings applied** (visible-flag disposition): P1-A added a second control arm
@@ -38,12 +43,13 @@ that do not exist; `test_cli.py` asserted behavior `cli.py` does not implement.
 design is dispatched before any run; not the χ/φ bounded BUILD-gate class).
 
 **The decision this spike grounds:** which content-anchor *form* fixes cross-file
-API guessing **on the cheap-local model (qwen3:14b)** — and is it the specific sibling
-content doing the work, or any API-shaped context? The practitioner declined a
-cloud-contrast that would mask the gap: the fix must work on the targeted cheap-local
-seat, because the north star is a cheap local orchestrator + ensembles, not a frontier
-seat. So every powered arm runs $0 local qwen3:14b; cloud enters only as a bounded,
-asked-before-spent *diagnostic* contingency (below).
+API guessing **on the cheap-local coder (qwen3:8b — the production cheap tier; see the
+Arms model-fidelity correction)** — and is it the specific sibling content doing the work,
+or any API-shaped context? The practitioner declined a cloud-contrast that would mask the
+gap: the fix must work on the targeted cheap-local coder, because the north star is a cheap
+local orchestrator + ensembles, not a frontier seat. So every powered arm runs $0 local
+qwen3:8b; cloud enters only as a bounded, asked-before-spent *diagnostic* contingency
+(below, after the free in-stack qwen3:14b escalation rung).
 
 ---
 
@@ -64,7 +70,7 @@ loop-back #7 is DECIDE behind a spike, not RESEARCH.
 
 ## What is open (the forks the spike must discriminate)
 
-1. **Does a content-anchor fix cross-file guessing on qwen3:14b at all?** (vs. the
+1. **Does a content-anchor fix cross-file guessing on qwen3:8b at all?** (vs. the
    failure being pure model capability, fixable only with a stronger seat.)
 2. **Which form?** — three candidates with different context-budget / fidelity / latency
    tradeoffs:
@@ -301,11 +307,13 @@ Both the n=10 rate and the graded resolution rate are reported.
 
 **Failure-mode backstops (ρ / ADR-097 pattern):**
 - **All forms fail (none ≥ 7/10 on a base):** a content-anchor as composed does not fix
-  cross-file coherence on qwen3:14b. This is the trigger that earns the **bounded cloud
-  contingent arm** (below): it discriminates "the anchor form is wrong" (cloud also fails
-  → redesign toward generate-then-repair against a real import check) from "qwen3:14b
-  cannot use even a correct anchor" (cloud passes → the fix needs a capability floor,
-  which bears directly on the north star's cheap-local claim and is itself a finding).
+  cross-file coherence on the cheap qwen3:8b coder. This is the trigger that earns the
+  **capability contrast ladder** (below): the in-stack qwen3:14b escalation rung first ($0
+  local), then cloud, to discriminate "the anchor form is wrong" (the more capable seat
+  also fails → redesign toward generate-then-repair against a real import check) from
+  "qwen3:8b cannot use even a correct anchor" (the more capable seat passes → the fix needs
+  a capability floor, which bears directly on the north star's cheap-local claim and is
+  itself a finding).
 - **A form passes but Control_decoy also passes (causal isolation fails):** the fix works
   for the wrong reason; ship characterized as perturbation/any-API-context, and consider
   whether a structurally simpler change achieves the same.
@@ -445,11 +453,87 @@ axis-2; an in-harness PASS must be confirmed under the real client before the AD
 full Acceptance). Artifacts: `scratch/spike-xi-content-anchor/` (probe, per-cell results
 JSON, retained generated files + `.code.py` extractions, `battery.log`).
 
+### Prose arm (Base P — practitioner-directed grounding, 2026-06-09)
+
+The code battery scoped prose out for clean AST measurement, not because the mechanism
+differs. The practitioner challenged that scope: prose coherence matters equally, and
+nothing is structurally different about prose from the model's side (the README also
+routed to a cheap qwen3:8b coder, `prose-improver` at `tier=cheap`, generating blind to
+siblings the same way). Grounded rather than assumed by a prose arm on **Base P**: the
+`prose-improver` coder generating `README.md` for the converters library, with and without
+the converters signatures anchor, resolution by a prose-robust regex over the README's
+import lines, `module.attr()` calls, and backtick / `_to_`-shaped function mentions.
+
+| Base | Arm | resolves | mean graded |
+|------|-----|----------|-------------|
+| P | A_current | **0/10** (10 invented) | 0.23 |
+| P | B_signatures | **10/10** | 1.00 |
+| P | C_full | **10/10** | 1.00 |
+
+**Findings.** (1) **The anchor fixes prose coherence completely** (0/10 → 10/10) — prose is
+the same mechanism, confirmed, not extrapolated. (2) **Prose invents worse than code blind**
+(prose A 0/10 versus code A 3/10): the README pulls a strong "document a complete conversion
+library" prior, so the blind model confidently fills in every pairwise conversion
+(`fahrenheit_to_kelvin`, `kelvin_to_fahrenheit`, and in one trial a wholesale invented
+`c_to_f` / `c_to_k` / `f_to_k` API), most of which do not exist — so the anchor matters
+*more* for prose, not less. (3) **Signatures suffice for prose** (B 10/10 = C 10/10): the
+sufficiency nuance (that prose might need behavior or examples beyond the API surface) did
+not materialize — signatures plus one-line docstrings let the README document the real API.
+So signatures is the right form for both callees. **Measurement caveat:** prose resolution
+is regex-heuristic (targeting conversion-function-shaped identifiers), not AST-clean like
+code; the 0/10 versus 10/10 gap is far outside any plausible extraction-noise margin.
+Artifacts: `scratch/spike-xi-content-anchor/results_P_*.json` + retained READMEs.
+
+### Cross-type arm (Base G — config/data sibling, content-agnosticism confirmation, 2026-06-09)
+
+The practitioner set content-agnosticism as the build commitment ("this needs to be
+completely content agnostic... whatever that entails"). The code and prose arms both
+sourced the anchor from a *Python* sibling; the open question for "completely
+content-agnostic" was whether the universal full-content path works when the sibling is a
+**non-code** file. Base G probes the most-different case: a `settings.json` **data**
+sibling whose Python consumer (`scheduler.py`) must reference specific config keys — a
+different file kind (data, not code) and a different interface (keys, not function
+signatures). The keys are deliberately opaque (`rbo_ms`, `qdepth_max`, `aff_salt`) so a
+blind consumer forced to reference them by purpose cannot guess them.
+
+*(Base-validity iteration, itself a finding.* The first Base-G design used a generic
+*loader* task; the blind loader read the dict generically and never referenced specific
+keys — `no-reference`, not `invented` — so it did not reproduce the failure. The
+baseline-validity guard caught it; the task was re-pinned to force direct key references.
+The lesson: the cross-file-coherence failure arises only when the consumer must commit to a
+sibling's specific named interface; generic-blob consumption dodges it. That bounds where
+the anchor matters — it is moot for siblings consumed wholesale.)*
+
+| Base | Arm | resolves | failure |
+|------|-----|----------|---------|
+| G | A_current | **0/10** | 10 invented (`retry_backoff_ms`, `max_queue_depth`, `affinity_salt` — the plausible guesses) |
+| G | B_content (full-content anchor) | **9/10** | 1 invented |
+| G | Control_decoy (wrong keys) | **0/10** | 10 invented (followed the decoy) |
+
+**Findings.** (1) **The full-content path is content-agnostic across the code/data divide:**
+on a non-code data sibling, blind 0/10 → anchored 9/10. The universal type-blind path
+(inject the file's bytes) works when the sibling is JSON, not Python, and the interface is
+keys, not signatures. (2) **Causal isolation holds on the config type too** (B − decoy =
+0.9): the *specific* config content (the real keys) is the mechanism, not "any
+config-shaped context" — the decoy (wrong keys) resolved 0/10, the model following it into
+invention exactly as the code decoy did. (3) The one B miss (9/10) is within the n=10
+wide-CI margin. **Content-agnosticism is now grounded across three structurally-different
+sibling types — Python code (signatures), prose README (full-text reference), and JSON
+data (keys) — not by a structural argument alone.** **Measurement caveat (config):**
+`resolve_config` counts all string-literal subscripts and `.get()` calls (a slight
+over-catch beyond config access), but in a config-focused consumer these are config-key
+references; the retained files confirm no trial was mis-classified. Artifacts:
+`scratch/spike-xi-content-anchor/results_G_*.json` + retained generated files.
+
 ### What this grounds
 
 A content-anchor ADR (candidate **ADR-039**, extending ADR-036's callee dispatch):
 **route the produced siblings' API signatures into the callee dispatch context**, sourced
-by the framework from the real produced files (never guessed). Conditional Acceptance, with
-the real-OpenCode 5-file trajectory re-run as the discharge gate (the ADR-037/038 pattern).
-The mechanism rhymes with ADR-038 (Finding G): the already-available signal (there, "what
-remains"; here, "the sibling API") is computed/on-disk and simply routed forward.
+by the framework from the real produced files (never guessed), **regardless of callee type**
+— code-generating (`code-generator`) AND prose-generating (`prose-improver`) callees alike,
+since the prose arm shows the failure and the fix are identical across both. Conditional
+Acceptance, with the real-OpenCode 5-file trajectory re-run as the discharge gate (the
+ADR-037/038 pattern) — and the README is a gate criterion, not merely observed, now that
+prose coherence is measured (0/10 → 10/10). The mechanism rhymes with ADR-038 (Finding G):
+the already-available signal (there, "what remains"; here, "the sibling API") is
+computed/on-disk and simply routed forward.
