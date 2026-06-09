@@ -1,0 +1,40 @@
+=== STATE RC0 ===
+  RC0 1/10: {'action': 'write:module', 'target': 'module', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': None, 'turn_shape': 'boundary_excluded'}
+  RC0 2/10: {'action': 'write:module', 'target': 'module', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': None, 'turn_shape': 'boundary_excluded'}
+  RC0 3/10: {'action': 'write:module', 'target': 'module', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': None, 'turn_shape': 'boundary_excluded'}
+  RC0 4/10: {'action': 'write:module', 'target': 'module', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': None, 'turn_shape': 'boundary_excluded'}
+  RC0 5/10: {'action': 'write:module', 'target': 'module', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': None, 'turn_shape': 'boundary_excluded'}
+  RC0 6/10: {'action': 'write:module', 'target': 'module', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': None, 'turn_shape': 'boundary_excluded'}
+  RC0 7/10: {'action': 'write:module', 'target': 'module', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': None, 'turn_shape': 'boundary_excluded'}
+  RC0 8/10: {'action': 'write:module', 'target': 'module', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': None, 'turn_shape': 'boundary_excluded'}
+  RC0 9/10: {'action': 'write:module', 'target': 'module', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': None, 'turn_shape': 'boundary_excluded'}
+  RC0 10/10: {'action': 'write:module', 'target': 'module', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': None, 'turn_shape': 'boundary_excluded'}
+
+state RC0: actions={'write': 10} advance=10/10 churn=0 delegated=10 verdict={None: 10} turn_shape={'boundary_excluded': 10} -> results_RC0.json
+=== STATE RC1 ===
+  RC1 1/10: {'action': 'write:test', 'target': 'test', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': 'REMAINING', 'turn_shape': 'carry'}
+  RC1 2/10: {'action': 'write:test', 'target': 'test', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': 'REMAINING', 'turn_shape': 'carry'}
+  RC1 3/10: {'action': 'write:module', 'target': 'module', 'advanced': False, 'churn': True, 'delegated': True, 'verdict': 'REMAINING', 'turn_shape': 'boundary_excluded'}
+  RC1 4/10: {'action': 'write:test', 'target': 'test', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': 'REMAINING', 'turn_shape': 'carry'}
+  RC1 5/10: {'action': 'write:test', 'target': 'test', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': 'REMAINING', 'turn_shape': 'carry'}
+  RC1 6/10: {'action': 'write:module', 'target': 'module', 'advanced': False, 'churn': True, 'delegated': True, 'verdict': 'REMAINING', 'turn_shape': 'boundary_excluded'}
+  RC1 7/10: {'action': 'write:test', 'target': 'test', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': 'REMAINING', 'turn_shape': 'carry'}
+  RC1 8/10: {'action': 'write:test', 'target': 'test', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': 'REMAINING', 'turn_shape': 'carry'}
+  RC1 9/10: {'action': 'write:test', 'target': 'test', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': 'REMAINING', 'turn_shape': 'carry'}
+  RC1 10/10: {'action': 'write:test', 'target': 'test', 'advanced': True, 'churn': False, 'delegated': True, 'verdict': 'REMAINING', 'turn_shape': 'carry'}
+
+state RC1: actions={'write': 10} advance=8/10 churn=2 delegated=10 verdict={'REMAINING': 10} turn_shape={'carry': 8, 'boundary_excluded': 2} -> results_RC1.json
+=== STATE RCc ===
+  RCc 1/10: {'action': 'finish', 'target': 'none', 'advanced': False, 'churn': False, 'delegated': False, 'verdict': 'COMPLETE', 'turn_shape': 'carry'}
+  RCc 2/10: {'action': 'finish', 'target': 'none', 'advanced': False, 'churn': False, 'delegated': False, 'verdict': 'COMPLETE', 'turn_shape': 'carry'}
+  RCc 3/10: {'action': 'finish', 'target': 'none', 'advanced': False, 'churn': False, 'delegated': False, 'verdict': 'COMPLETE', 'turn_shape': 'carry'}
+  RCc 4/10: {'action': 'finish', 'target': 'none', 'advanced': False, 'churn': False, 'delegated': False, 'verdict': 'COMPLETE', 'turn_shape': 'carry'}
+  RCc 5/10: {'action': 'finish', 'target': 'none', 'advanced': False, 'churn': False, 'delegated': False, 'verdict': 'COMPLETE', 'turn_shape': 'carry'}
+  RCc 6/10: {'action': 'finish', 'target': 'none', 'advanced': False, 'churn': False, 'delegated': False, 'verdict': 'COMPLETE', 'turn_shape': 'carry'}
+  RCc 7/10: {'action': 'finish', 'target': 'none', 'advanced': False, 'churn': False, 'delegated': False, 'verdict': 'COMPLETE', 'turn_shape': 'carry'}
+  RCc 8/10: {'action': 'finish', 'target': 'none', 'advanced': False, 'churn': False, 'delegated': False, 'verdict': 'COMPLETE', 'turn_shape': 'carry'}
+  RCc 9/10: {'action': 'finish', 'target': 'none', 'advanced': False, 'churn': False, 'delegated': False, 'verdict': 'COMPLETE', 'turn_shape': 'carry'}
+  RCc 10/10: {'action': 'finish', 'target': 'none', 'advanced': False, 'churn': False, 'delegated': False, 'verdict': 'COMPLETE', 'turn_shape': 'carry'}
+
+state RCc: actions={'finish': 10} advance=0/10 churn=0 delegated=0 verdict={'COMPLETE': 10} turn_shape={'carry': 10} -> results_RCc.json
+=== AXIS-C SWEEP DONE ===

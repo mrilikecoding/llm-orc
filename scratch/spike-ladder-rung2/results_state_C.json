@@ -1,0 +1,101 @@
+{
+  "state": "C",
+  "produced": [
+    "module",
+    "test",
+    "readme"
+  ],
+  "n": 10,
+  "rows": [
+    {
+      "outcome": "finish",
+      "target": "none",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": "COMPLETE",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "finish",
+      "target": "none",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": "COMPLETE",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "finish",
+      "target": "none",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": "COMPLETE",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "finish",
+      "target": "none",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": "COMPLETE",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "finish",
+      "target": "none",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": "COMPLETE",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "finish",
+      "target": "none",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": "COMPLETE",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "finish",
+      "target": "none",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": "COMPLETE",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "finish",
+      "target": "none",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": "COMPLETE",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "finish",
+      "target": "none",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": "COMPLETE",
+      "turn_shape": "carry"
+    },
+    {
+      "outcome": "finish",
+      "target": "none",
+      "advanced": false,
+      "churn": false,
+      "delegated": false,
+      "verdict": "COMPLETE",
+      "turn_shape": "carry"
+    }
+  ]
+}

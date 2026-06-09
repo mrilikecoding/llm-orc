@@ -1,0 +1,280 @@
+{
+  "state": "R1",
+  "produced": [
+    "read"
+  ],
+  "n": 15,
+  "rows": [
+    {
+      "outcome": "apply_work",
+      "target": "module",
+      "advanced": true,
+      "write_churn": false,
+      "read_churn": false,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "generation",
+      "judge_names": [
+        "test",
+        "module",
+        "validator"
+      ],
+      "judge_text": "VERDICT: REMAINING\nThe settings_loader.py, test_settings_loader.py, and validator.py modules have not been created yet."
+    },
+    {
+      "outcome": "apply_work",
+      "target": "module",
+      "advanced": true,
+      "write_churn": false,
+      "read_churn": false,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "generation",
+      "judge_names": [
+        "test",
+        "module",
+        "validator",
+        "read"
+      ],
+      "judge_text": "VERDICT: REMAINING\nThe config.py file was read, but the required modules (settings_loader.py, test_settings_loader.py, validator.py) have not been written."
+    },
+    {
+      "outcome": "apply_work",
+      "target": "module",
+      "advanced": true,
+      "write_churn": false,
+      "read_churn": false,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "generation",
+      "judge_names": [
+        "test",
+        "module",
+        "validator"
+      ],
+      "judge_text": "VERDICT: REMAINING\nThe requested files settings_loader.py, test_settings_loader.py, and validator.py have not been created in the action record."
+    },
+    {
+      "outcome": "apply_work",
+      "target": "module",
+      "advanced": true,
+      "write_churn": false,
+      "read_churn": false,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "generation",
+      "judge_names": [
+        "test",
+        "module",
+        "validator"
+      ],
+      "judge_text": "VERDICT: REMAINING\nThe requested files settings_loader.py, test_settings_loader.py, and validator.py have not been created yet."
+    },
+    {
+      "outcome": "apply_work",
+      "target": "module",
+      "advanced": true,
+      "write_churn": false,
+      "read_churn": false,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "generation",
+      "judge_names": [
+        "test",
+        "module",
+        "validator"
+      ],
+      "judge_text": "VERDICT: REMAINING\nThe files settings_loader.py, test_settings_loader.py, and validator.py have not been created yet."
+    },
+    {
+      "outcome": "apply_work",
+      "target": "module",
+      "advanced": true,
+      "write_churn": false,
+      "read_churn": false,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "generation",
+      "judge_names": [
+        "test",
+        "module",
+        "validator"
+      ],
+      "judge_text": "VERDICT: REMAINING\nThe deliverables settings_loader.py, test_settings_loader.py, and validator.py have not been created."
+    },
+    {
+      "outcome": "apply_work",
+      "target": "module",
+      "advanced": true,
+      "write_churn": false,
+      "read_churn": false,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "generation",
+      "judge_names": [
+        "test",
+        "module",
+        "validator"
+      ],
+      "judge_text": "VERDICT: REMAINING\nThe deliverables settings_loader.py, test_settings_loader.py, and validator.py have not been created yet."
+    },
+    {
+      "outcome": "apply_work",
+      "target": "module",
+      "advanced": true,
+      "write_churn": false,
+      "read_churn": false,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "generation",
+      "judge_names": [
+        "test",
+        "module",
+        "validator"
+      ],
+      "judge_text": "VERDICT: REMAINING\nThe requested files settings_loader.py, test_settings_loader.py, and validator.py have not been created yet."
+    },
+    {
+      "outcome": "carry",
+      "target": "read",
+      "advanced": false,
+      "write_churn": false,
+      "read_churn": true,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": false,
+      "verdict": "REMAINING",
+      "turn_shape": "carry",
+      "judge_names": [
+        "test",
+        "module",
+        "validator"
+      ],
+      "judge_text": "VERDICT: REMAINING: The requested files settings_loader.py, test_settings_loader.py, and validator.py have not been created in the action record."
+    },
+    {
+      "outcome": "apply_work",
+      "target": "module",
+      "advanced": true,
+      "write_churn": false,
+      "read_churn": false,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "generation",
+      "judge_names": [
+        "test",
+        "module",
+        "validator"
+      ],
+      "judge_text": "VERDICT: REMAINING\nThe deliverables settings_loader.py, test_settings_loader.py, and validator.py have not been created yet."
+    },
+    {
+      "outcome": "apply_work",
+      "target": "module",
+      "advanced": true,
+      "write_churn": false,
+      "read_churn": false,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "generation",
+      "judge_names": [
+        "test",
+        "module",
+        "validator"
+      ],
+      "judge_text": "VERDICT: REMAINING\nThe requested files settings_loader.py, test_settings_loader.py, and validator.py have not been created in the action record."
+    },
+    {
+      "outcome": "apply_work",
+      "target": "module",
+      "advanced": true,
+      "write_churn": false,
+      "read_churn": false,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "generation",
+      "judge_names": [
+        "test",
+        "module",
+        "validator"
+      ],
+      "judge_text": "VERDICT: REMAINING\nThe requested files (settings_loader.py, test_settings_loader.py, validator.py) have not been created in the action record."
+    },
+    {
+      "outcome": "apply_work",
+      "target": "module",
+      "advanced": true,
+      "write_churn": false,
+      "read_churn": false,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "generation",
+      "judge_names": [
+        "test",
+        "module",
+        "validator"
+      ],
+      "judge_text": "VERDICT: REMAINING\nThe requested files settings_loader.py, test_settings_loader.py, and validator.py have not been created in the action record."
+    },
+    {
+      "outcome": "apply_work",
+      "target": "module",
+      "advanced": true,
+      "write_churn": false,
+      "read_churn": false,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "generation",
+      "judge_names": [
+        "test",
+        "module",
+        "validator"
+      ],
+      "judge_text": "VERDICT: REMAINING\nThe requested files settings_loader.py, test_settings_loader.py, and validator.py have not been created yet."
+    },
+    {
+      "outcome": "apply_work",
+      "target": "module",
+      "advanced": true,
+      "write_churn": false,
+      "read_churn": false,
+      "churn_target": null,
+      "no_tool": false,
+      "delegated": true,
+      "verdict": "REMAINING",
+      "turn_shape": "generation",
+      "judge_names": [
+        "test",
+        "module",
+        "validator"
+      ],
+      "judge_text": "VERDICT: REMAINING\nThe settings_loader.py, test_settings_loader.py, and validator.py modules have not been created yet."
+    }
+  ]
+}
