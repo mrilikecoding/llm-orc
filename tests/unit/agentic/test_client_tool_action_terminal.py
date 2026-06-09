@@ -220,6 +220,84 @@ class TestTerminalThreadsDestinationTool:
         assert bridge.destinations == ["write"]
 
 
+class TestApplyWorkCapturesDeliverableContent:
+    """ADR-039 V-04 — the Terminal captures the resolved deliverable content
+    into the session action record, the content anchor's source.
+
+    The capture rides the existing Terminal→Bridge marshalling: the same bytes
+    that land in the client ``write`` are recorded onto the turn's action, so a
+    later turn's callee can anchor on the produced sibling. The driver recorded
+    the action at decide time; the Terminal joins the resolved content to it.
+    """
+
+    async def test_marshalled_content_is_recorded_on_the_latest_action(
+        self,
+    ) -> None:
+        action_record = SessionActionRecord()
+        action_record.record_action(
+            "terminal-test", action_kind="write", target_path="converters.py"
+        )
+        outcome = ApplyWork(
+            invocation_id="t1",
+            tool_name="write",
+            file_path="converters.py",
+            envelope=DispatchEnvelope(
+                status="success", primary="def c_to_f(c: float) -> float: ..."
+            ),
+            delegated_ensemble="code-generator",
+        )
+        terminal = ClientToolActionTerminal(
+            loop_driver=_ScriptedDecider(outcome),
+            bridge=_unused_bridge(),
+            action_record=action_record,
+        )
+
+        await _collect(terminal.run(_make_context()))
+
+        records = action_record.records("terminal-test")
+        assert records[-1].content == "def c_to_f(c: float) -> float: ..."
+
+    async def test_no_content_captured_when_the_bridge_fails(
+        self, tmp_path: Path
+    ) -> None:
+        """A failed marshal degrades to a dispatch-failure completion and yields
+        no usable deliverable, so the record carries no content to anchor on.
+        """
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        ref = store.write_deliverable(
+            session_id="s1",
+            dispatch_id="d1",
+            deliverable_name="present",
+            content="real content\n",
+            content_type="application/python",
+        )
+        ghost = dataclasses.replace(ref, path=ref.path + ".missing")
+        action_record = SessionActionRecord()
+        action_record.record_action(
+            "terminal-test", action_kind="write", target_path="ghost.py"
+        )
+        outcome = ApplyWork(
+            invocation_id="t1",
+            tool_name="write",
+            file_path="ghost.py",
+            envelope=DispatchEnvelope(
+                status="success",
+                primary="ghost summary",
+                artifacts=[dataclasses.asdict(ghost)],
+            ),
+            delegated_ensemble="code-generator",
+        )
+        terminal = ClientToolActionTerminal(
+            loop_driver=_ScriptedDecider(outcome),
+            bridge=ArtifactBridge(store),
+            action_record=action_record,
+        )
+
+        await _collect(terminal.run(_make_context()))
+
+        assert action_record.records("terminal-test")[-1].content is None
+
+
 class TestApplyWorkSubstrateFidelity:
     """FC-49 — a substrate-routed deliverable is marshalled at full fidelity.
 

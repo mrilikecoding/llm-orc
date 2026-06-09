@@ -37,11 +37,19 @@ class ActionRecord:
     decided the action this turn) and the client's per-call ``role: tool``
     result arriving on the next request — the join that makes the record
     judgment-grade evidence (FC-64).
+
+    ``content`` is the Terminal-resolved deliverable content (ADR-039, the
+    content anchor's source). ``None`` until the Terminal captures it (a carry
+    or a failed dispatch never resolves content), it is the extensible
+    meta-record seam's second increment — the produced file's bytes the Loop
+    Driver anchors a dependent callee against, sourced from the record it
+    already holds rather than re-read from the artifact store.
     """
 
     action_kind: str
     target_path: str
     result: str | None
+    content: str | None = None
 
 
 class SessionActionRecord:
@@ -71,6 +79,20 @@ class SessionActionRecord:
             if record.result is None:
                 session_records[index] = replace(record, result=tool_result)
                 return
+
+    def record_content(self, session_id: str, content: str) -> None:
+        """Capture the Terminal-resolved deliverable content on the latest record.
+
+        The content anchor's source (ADR-039): the Terminal calls this after
+        the Artifact Bridge resolves a delegated write's deliverable, so the
+        produced file's bytes ride forward in the record the Loop Driver
+        already holds. Single-step enforcement keeps one record per turn, so
+        the latest record is the write just emitted. With no record the capture
+        is dropped — content never fabricates a record (FC-64).
+        """
+        session_records = self._records.get(session_id, [])
+        if session_records:
+            session_records[-1] = replace(session_records[-1], content=content)
 
     def records(self, session_id: str) -> tuple[ActionRecord, ...]:
         """The session's accumulated records, in emission order."""

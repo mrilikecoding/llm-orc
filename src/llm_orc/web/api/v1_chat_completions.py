@@ -494,6 +494,10 @@ async def get_client_tool_action_terminal() -> _ChatCompletionsCaller:
     return ClientToolActionTerminal(
         loop_driver=await get_loop_driver(),
         bridge=ArtifactBridge(get_session_artifact_store()),
+        # ADR-039 V-04: the Terminal captures each resolved deliverable's
+        # content onto the same process-scoped record the driver writes its
+        # actions to — the content anchor's source for a later turn's callee.
+        action_record=get_session_action_record(),
     )
 
 
