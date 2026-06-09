@@ -535,6 +535,49 @@ class TestContentAnchor:
         assert dispatch_input.startswith("write cli.py")
         assert compose_form_directive("write") in dispatch_input
 
+    async def test_anchor_fires_for_a_prose_callee_too(self) -> None:
+        """ADR-039 callee-agnostic scope: the anchor fires regardless of which
+        capability ensemble is invoked — a prose callee (the README) receives
+        the produced code siblings' API exactly as a code callee does. The
+        injection never consults the capability name, so it cannot be omitted
+        for ``prose-improver`` (Spike ξ prose arm: blind 0/10 → anchored 10/10).
+        """
+        record = self._record_with_sibling(
+            "converters.py", "def celsius_to_fahrenheit(c: float) -> float: ...\n"
+        )
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="invoke_ensemble",
+                        arguments_json=json.dumps(
+                            {
+                                "name": "prose-improver",
+                                "input": "write README.md",
+                                "filePath": "README.md",
+                            }
+                        ),
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        )
+        tool_dispatch = _FakeToolDispatch()
+        driver = _build_driver(
+            seat_filler,
+            tool_dispatch=tool_dispatch,
+            capabilities=frozenset({"prose-improver"}),
+            action_record=record,
+        )
+
+        await driver.decide(_make_context())
+
+        dispatch_input = tool_dispatch.calls[0].arguments["input"]
+        assert "celsius_to_fahrenheit" in dispatch_input
+        assert "These files already exist" in dispatch_input
+
     async def test_anchor_excludes_the_current_target(self) -> None:
         """A sibling list containing only the file being rewritten yields no
         anchor — the callee never anchors a file on itself.
