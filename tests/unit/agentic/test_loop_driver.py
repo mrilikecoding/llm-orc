@@ -618,6 +618,48 @@ class TestContentAnchor:
             f"write converters.py\n\n{compose_form_directive('write')}"
         )
 
+    async def test_turn_decision_marks_the_anchor_present(self) -> None:
+        """V-05 — the anchor-presence FC is refutable from the event stream:
+        an anchored generation turn stamps ``content_anchor_present=True`` so
+        the discharge run reads presence from the TurnDecision, not the raw
+        dispatch payload.
+        """
+        record = self._record_with_sibling(
+            "converters.py", "def celsius_to_fahrenheit(c: float) -> float: ...\n"
+        )
+        substrate = DispatchEventSubstrate()
+        sink = _CapturingSink()
+        substrate.register_sink(sink)
+        driver = _build_driver(
+            self._delegating_filler("cli.py", task="write cli.py"),
+            capabilities=self._CAPS,
+            action_record=record,
+            event_substrate=substrate,
+        )
+
+        await driver.decide(_make_context())
+
+        assert _turn_decisions(sink)[0].content_anchor_present is True
+
+    async def test_turn_decision_marks_the_anchor_absent_on_first_delegation(
+        self,
+    ) -> None:
+        """A first delegation has no siblings, so no anchor — the event stamps
+        ``content_anchor_present=False`` (the unanchored baseline is observable).
+        """
+        substrate = DispatchEventSubstrate()
+        sink = _CapturingSink()
+        substrate.register_sink(sink)
+        driver = _build_driver(
+            self._delegating_filler("converters.py", task="write converters.py"),
+            capabilities=self._CAPS,
+            event_substrate=substrate,
+        )
+
+        await driver.decide(_make_context())
+
+        assert _turn_decisions(sink)[0].content_anchor_present is False
+
     async def test_records_without_content_do_not_anchor(self) -> None:
         """A carried action (a read, or a write whose dispatch failed) has no
         captured content, so it contributes nothing to the anchor.

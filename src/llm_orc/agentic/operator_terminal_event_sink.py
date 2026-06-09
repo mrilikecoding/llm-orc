@@ -275,7 +275,8 @@ class OperatorTerminalEventSink:
         """
         self._logger.info(
             "turn decision: turn=%d tail_kind=%s judgment_verdict=%s action=%s "
-            "shape=%s delegated=%s carry_held=%s replanned=%s dispatch_id=%s",
+            "shape=%s delegated=%s carry_held=%s replanned=%s anchor=%s "
+            "dispatch_id=%s",
             event.turn_index,
             event.tail_kind,
             event.judgment_verdict if event.judgment_verdict is not None else "?",
@@ -284,6 +285,7 @@ class OperatorTerminalEventSink:
             event.delegated_ensemble if event.delegated_ensemble is not None else "-",
             "true" if event.grounded_carry_held else "false",
             "true" if event.replanned_after_truncation else "false",
+            "true" if event.content_anchor_present else "false",
             event.dispatch_id if event.dispatch_id is not None else "?",
         )
         self._turn_decisions.append(event)
