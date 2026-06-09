@@ -81,6 +81,7 @@ from llm_orc.agentic.session_action_record import (
     SessionActionRecord,
 )
 from llm_orc.agentic.session_start import ChatMessage, SessionContext
+from llm_orc.agentic.sibling_interface_extractor import build_content_anchor
 from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
 from llm_orc.models.base import ToolCall, ToolCallingResponse
 
@@ -642,15 +643,44 @@ class LoopDriver:
         # YAML (destination-agnostic preservation, decision 2).
         directive = compose_form_directive(destination_tool)
         task = _string_field(args, "input")
+        # ADR-039 (V-01): anchor the callee on its produced siblings so it
+        # references real APIs instead of inventing them (Finding H). The
+        # anchor rides between the task and the directive — the form directive
+        # stays last (its Spike χ-validated terminal position). Empty (no
+        # siblings, or only the current target) leaves the input byte-equal to
+        # the pre-anchor form, so first-file and no-dependency writes are
+        # unchanged.
+        anchor = self._content_anchor(context, exclude=file_path)
+        composed_input = (
+            f"{task}\n\n{anchor}\n\n{directive}" if anchor else f"{task}\n\n{directive}"
+        )
         result = await self._tool_dispatch.dispatch(
             InternalToolCall(
                 id=action.id,
                 name=_GENERATION_TOOL,
-                arguments={"name": capability, "input": f"{task}\n\n{directive}"},
+                arguments={"name": capability, "input": composed_input},
             ),
             session_id=context.state.identity.value,
         )
         return _result_to_envelope(result), capability, file_path
+
+    def _content_anchor(self, context: SessionContext, *, exclude: str) -> str:
+        """Build the ADR-039 content anchor from the session's produced siblings.
+
+        Sources ``(path, content)`` pairs from the action records the driver
+        already holds — the content was captured at the Terminal (V-04), so no
+        Session Artifact Store edge is needed. The current target is excluded
+        (a file never anchors on itself), and records without captured content
+        (carries, failed dispatches) contribute nothing. Selection policy is
+        all prior produced siblings (the conformance-scan default; a
+        dependency-inferred subset is unmeasured and deferred).
+        """
+        session_id = context.state.identity.value
+        siblings: list[tuple[str, str]] = []
+        for record in self._action_record.records(session_id):
+            if record.content is not None and record.target_path != exclude:
+                siblings.append((record.target_path, record.content))
+        return build_content_anchor(siblings)
 
     def _new_dispatch_id(self, context: SessionContext) -> str | None:
         if self._event_substrate is None:
