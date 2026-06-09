@@ -513,6 +513,25 @@ class TestTurnDecisionMeterFields:
         assert "carry_held=false" in line
         assert "replanned=false" in line
 
+    def test_line_carries_the_content_anchor_presence(
+        self,
+        sink_and_caplog: tuple[OperatorTerminalEventSink, pytest.LogCaptureFixture],
+    ) -> None:
+        """V-05 (ADR-039) — the anchor-presence signal rides the diagnostic
+        line, so the discharge run reads presence from the serve log rather
+        than the raw dispatch payload."""
+        sink, caplog = sink_and_caplog
+        sink.consume(
+            _turn_decision(
+                action="write",
+                delegated_ensemble="code-generator",
+                turn_shape="generation",
+                content_anchor_present=True,
+            )
+        )
+        (line,) = [r.message for r in caplog.records if "turn decision" in r.message]
+        assert "anchor=true" in line
+
     def test_carry_turn_renders_dash_for_no_delegation(
         self,
         sink_and_caplog: tuple[OperatorTerminalEventSink, pytest.LogCaptureFixture],

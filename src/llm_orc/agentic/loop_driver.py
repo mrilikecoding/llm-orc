@@ -268,6 +268,15 @@ class TurnDecision:
       lets the rate instrument multi-file and mixed sessions, not only first
       turns. Distinct from ``tail_kind``/``judgment_verdict`` (the
       finish-policy fields). ``None`` only when no substrate stamps it.
+
+    **Content-anchor field (Cycle 7 loop-back #7 per ADR-039 — V-05):**
+
+    * ``content_anchor_present`` — whether this turn's callee dispatch carried
+      the content anchor (the produced siblings' API signatures). ``True`` only
+      on a delegated generation into a session with produced siblings;
+      ``False`` on a first delegation, a non-generation turn, or a finish.
+      Makes the ADR-039 anchor-presence FC refutable from the event stream —
+      the discharge run reads presence here, not from the raw dispatch payload.
     """
 
     dispatch_id: str | None
@@ -279,6 +288,7 @@ class TurnDecision:
     tail_kind: TailKind = "first_turn"
     judgment_verdict: JudgmentVerdict | None = None
     turn_shape: TurnShape | None = None
+    content_anchor_present: bool = False
 
 
 class SeatFiller(Protocol):
@@ -472,9 +482,12 @@ class LoopDriver:
             # generation deliverables map to a client ``write``; richer
             # mapping (``edit``/``bash``) is deferred (LB-3).
             destination_tool = "write"
-            envelope, ensemble, file_path = await self._delegate_generation(
-                action, context, destination_tool
-            )
+            (
+                envelope,
+                ensemble,
+                file_path,
+                anchor_present,
+            ) = await self._delegate_generation(action, context, destination_tool)
             self._action_record.record_action(
                 session_id, action_kind=destination_tool, target_path=file_path
             )
@@ -488,6 +501,7 @@ class LoopDriver:
                 tail_kind,
                 judgment_verdict,
                 _outcome_turn_shape(instruction_shape, is_write=True),
+                content_anchor_present=anchor_present,
             )
             return ApplyWork(
                 invocation_id=action.id,
@@ -619,7 +633,7 @@ class LoopDriver:
 
     async def _delegate_generation(
         self, action: ToolCall, context: SessionContext, destination_tool: str
-    ) -> tuple[DispatchEnvelope, str, str]:
+    ) -> tuple[DispatchEnvelope, str, str, bool]:
         """Dispatch the per-turn callee ensemble and return its deliverable envelope.
 
         The seat-filler's ``invoke_ensemble`` call names the capability and
@@ -628,8 +642,10 @@ class LoopDriver:
         stage — FC-44) and returns the deliverable *envelope* (ADR-024) for
         the Terminal to marshal. The dispatch input carries the
         ``destination_tool``-keyed form directive (ADR-035; FC-53/54).
-        Returns ``(envelope, capability, file_path)``; the capability name
-        feeds the ``TurnDecision`` diagnostic. Richer tool-mapping
+        Returns ``(envelope, capability, file_path, anchor_present)``; the
+        capability name feeds the ``TurnDecision`` diagnostic and
+        ``anchor_present`` stamps its ADR-039 content-anchor field (V-05).
+        Richer tool-mapping
         (``edit``/``bash``) and capability-list validation are deferred to
         the WP-D Capability List Builder integration.
         """
@@ -662,7 +678,7 @@ class LoopDriver:
             ),
             session_id=context.state.identity.value,
         )
-        return _result_to_envelope(result), capability, file_path
+        return _result_to_envelope(result), capability, file_path, bool(anchor)
 
     def _content_anchor(self, context: SessionContext, *, exclude: str) -> str:
         """Build the ADR-039 content anchor from the session's produced siblings.
@@ -698,6 +714,8 @@ class LoopDriver:
         tail_kind: TailKind,
         judgment_verdict: JudgmentVerdict | None,
         turn_shape: TurnShape,
+        *,
+        content_anchor_present: bool = False,
     ) -> None:
         if self._event_substrate is None:
             return
@@ -712,6 +730,7 @@ class LoopDriver:
                 tail_kind=tail_kind,
                 judgment_verdict=judgment_verdict,
                 turn_shape=turn_shape,
+                content_anchor_present=content_anchor_present,
             )
         )
 
