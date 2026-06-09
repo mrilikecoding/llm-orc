@@ -229,3 +229,48 @@ measurement (it is mechanism-specific; the benchmarks are not). Do not run bench
   cloud contrast — or escalate to cloud the moment local hits a ceiling on axis A?
 - Does borrowing benchmark task shapes import their assumptions (e.g. their notion of "a task")
   in a way that biases the ladder toward shapes the framework already handles?
+
+## 9. Compound rungs (interaction effects) — answering open question #1
+
+The single-axis rungs (A depth, B mixed, C repair) all passed. Open question #1 above
+(do failures surface only when axes COMPOUND?) is the compound ladder's target.
+
+**Methods-review redirect (A×C → A×B).** The first compound rung was drafted as A×C
+(depth × repair — pull axis C's 2/10 repair-churn thread). The research-methods review
+(`housekeeping/audits/research-methods-compound-axc.md`) found a **P1**: at n=10 the
+churn comparison (2/10 vs ~4/10) is statistically indistinguishable (z≈0.94, p≈0.17) —
+the rung could not answer its own question — and the PASS criterion ("advance ≥8/10")
+would pass regardless of churn, hiding the null. The review also flagged a README
+content-type confound (P2-A), two unmeasured failure modes (no-tool-call + judge
+remaining-naming, P2-B), an unfalsifiable interaction claim (P2-C), and **recommended
+A×B over A×C as the sharper limit-finder (P3)**: A×C compounds two already-characterized
+mechanisms, while A×B compounds depth with the carry-side read-then-write flow — the
+most undercharacterized mechanism in the ladder. Practitioner chose A×B.
+
+**A×B = read + 3 code writes** (axis B's read-then-write deepened from 2 writes to 3;
+all-code, no prose confound). Pre-registration + decision boundaries:
+`scratch/spike-ladder-compound-axb/probe.py`; the redesign was confirmed to discharge
+the prior findings before running (`research-methods-compound-axb.md`, no P1). Powered
+states R1/R2/R3 at n=15; tracked no-tool, read-churn, and judge remaining-naming.
+
+**A×B PASSED — the carry-side holds under depth; no interaction-effect limit** ($0 local,
+qwen3:14b; full detail `scratch/spike-ladder-compound-axb/RESULTS.md`). Read-first 9/10
+(R0); write-advance R1 14/15, R2 12/15, R3 13/15 (all ≥ the 0.80 holds line; R2 sits at
+the boundary — the pre-registered middle-band caveat); **carry-side integrity held across
+all three remaining states** — read-churn ~0 (1/15 at R1, the same minor re-read axis B
+saw), judge clean-naming 14/15 → 15/15 → 15/15 (never counts the read as a deliverable,
+FC-61 under depth); convergence COMPLETE 10/10 at RC with zero false-continue. The one
+elevated signal: premature-finish (no-tool) rose to ~13% on the deep REMAINING states
+(R2/R3 2/15 each), consistent with axis-B's ~10% and non-monotonic in depth, backstopped
+by re-judgment + the AS-3 cap. The cloud-contrast trigger (advance ≤ 0.73) did not fire.
+
+**WP-LB-M real-model acceptance (folded in).** The harness dogfooded the just-committed
+outcome-derived `turn_shape` stamping. Across all 65 decisions it was correct, validating
+the bidirectional bug this log's axis-A/B/C meter findings documented: reads → `carry`
+(was `generation`), delegated/inline writes → `generation` (was `carry`), finishes →
+`carry`; zero anchor-phrasing fragility.
+
+**Disposition.** First compound rung holds. Candidate next rungs: A×C (now with the
+powered n + pre-registered boundary the review requires), deeper depth (4–5 writes),
+axis D (mid-session intent refinement), or the live multi-turn trajectory run (the
+state-injection limitation shared by all rungs — a BUILD-phase OpenCode validation).
