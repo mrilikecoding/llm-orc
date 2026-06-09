@@ -185,6 +185,8 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 *Held 2026-06-04 pending the Finding F termination mechanism; unheld at the loop-back #5 ARCHITECT close: the settled `TurnDecision` shape = the six existing fields + `turn_shape` (this WP stamps it — meter classification, FC-59) + `tail_kind` + `judgment_verdict` (WP-LB-K emits them — finish-policy fields, FC-67). The fields are additive and independently emittable, so J and K do not block each other; the ADR-036 soak reading needs both landed (Finding F distortion lifts only when K's mechanism does). Advisory C (verify the WP-LB-F fold preserves FC-51 axis-2 intent) still applies at entry.*
 
+*Soak-policy deferral (the interpreting layer, NOT built): the time-window soak read (≥25 generation-shaped-turn / 24h rolling, ADR-036) is deferred to the interpreting layer (open choice #1). The sink surfaces only an in-memory per-process running rate over a bounded `deque` (`operator_terminal_event_sink.py:94`); there is no cross-session store. **Dev/prod-separation requirement (surfaced at the WP-LB-M gate, 2026-06-08):** when that layer is built it MUST exclude dev/test traffic from the soak window — a window spanning a session where the ladder or a probe harness ran against a live `serve` would otherwise read those turns as production and distort the ≥0.9 read. Same family as the Finding F distortion (now lifted by WP-LB-K): the soak read is only as valid as its window is clean. No contamination today (no persistent store; the harnesses build in-process substrates and never touch a live sink).*
+
 **Objective:** The delegation rate is computable from events alone and operator-visible — the regression-visibility mechanism for the stack-scoped win (the meter is the safety net; Spike ψ′ Arm D: the lever does not transfer across models).
 
 **Changes:**
@@ -249,9 +251,9 @@ The ADR-036 ≥0.9 soak window becomes readable after this WP lands (deferred-by
 
 ---
 
-### WP-LB-M: Delegation-rate meter `turn_shape` hybrid redesign (follow-up to WP-LB-J; ladder-surfaced) — PLANNED (next session)
+### WP-LB-M: Delegation-rate meter `turn_shape` hybrid redesign (follow-up to WP-LB-J; ladder-surfaced) — ✅ LANDED 2026-06-08 (suite 2986 green, +4; outcome-derived stamping in `loop_driver.decide`; `_outcome_turn_shape` + `_WRITE_TOOLS`; Design Amendment #19 / system-design v6.5; FC-59 denominator now action + instruction)
 
-*Added 2026-06-08 (ladder rungs A/B/C surfaced the gap; practitioner directed: build this next, then keep pushing the ladder).*
+*Added 2026-06-08 (ladder rungs A/B/C surfaced the gap; practitioner directed: build this next, then keep pushing the ladder). Built the same session via the simple action-based variant.*
 
 **Objective:** `turn_shape` reflects the turn's actual shape so the delegation rate instruments multi-file and mixed sessions, not just first turns. Grounded across all three ladder axes (10/10 consistent): WP-LB-J classifies `turn_shape` once before the action from the instruction (`remaining_anchor or _user_task`), which mis-stamps — REMAINING delegated-writes → `carry` (the descriptive anchor has no generation verb), mixed-read first turns → `generation` (the user task's write framing), and the *same* state flips `carry`↔`boundary_excluded` by the judge's surface phrasing (axis C RC1). The shape must come from framework per-turn knowledge (the action taken + the instruction's boundary/observed-carry nature), not the anchor text.
 
