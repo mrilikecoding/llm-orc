@@ -1319,12 +1319,15 @@ class TestLoopDriverTurnDecision:
 class TestTurnShapeStamping:
     """FC-59 — each TurnDecision carries the meter's turn-shape classification.
 
-    The shape is classified from the turn's driving instruction (the
-    Delegation Rate Meter's denominator). A generation-shaped turn that
-    delegates is the rate numerator; a framework finish (cap reached, judge
-    COMPLETE) is shaped ``carry`` so it never inflates the denominator.
-    Scenarios.md §Delegation-Decision Mechanism (the classifier denominator;
-    boundary turns excluded, not guessed).
+    The shape is derived from the turn's *outcome* (WP-LB-M): a write (a
+    delegated ``ApplyWork`` or a literal ``write``/``edit`` carry) is
+    ``generation`` (the denominator); a read, command, or finish is ``carry``;
+    a repair-shaped or uncovered-domain instruction is ``boundary_excluded``
+    regardless of the action. A generation turn that delegates is the rate
+    numerator; a framework finish (cap reached, judge COMPLETE) is shaped
+    ``carry`` so it never inflates the denominator. Scenarios.md
+    §Delegation-Decision Mechanism (the classifier denominator; boundary turns
+    excluded, not guessed).
     """
 
     _CAPS = frozenset({"code-generator"})
@@ -1485,3 +1488,117 @@ class TestTurnShapeStamping:
         decision = _turn_decisions(sink)[0]
         assert decision.action == "finish"
         assert decision.turn_shape == "carry"
+
+    async def test_remaining_delegated_write_stamps_generation(self) -> None:
+        """WP-LB-M — a trailing REMAINING turn that delegates a write is a
+        ``generation`` turn, even though the judge's remaining-work anchor is a
+        descriptive statement with no generation verb. The shape follows the
+        action taken, not the anchor wording — the gap the ladder surfaced
+        (multi-file sessions under-instrumented because the instruction-side
+        classification read the descriptive anchor and stamped ``carry``).
+        """
+        judgment = _FakeJudgmentSeat(
+            "VERDICT: REMAINING\nThe test file test_string_utils.py is still missing."
+        )
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="invoke_ensemble",
+                        arguments_json=json.dumps(
+                            {
+                                "name": "code-generator",
+                                "input": "write the test file",
+                                "filePath": "test_string_utils.py",
+                            }
+                        ),
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        )
+        sink, driver = self._capture(seat_filler, judgment_seat=judgment)
+
+        await driver.decide(_trailing_context())
+
+        decision = _turn_decisions(sink)[0]
+        assert decision.turn_shape == "generation"
+        assert decision.delegated_ensemble == "code-generator"
+
+    async def test_mixed_read_first_turn_stamps_carry(self) -> None:
+        """WP-LB-M — a turn whose action is a read is ``carry``, even when the
+        user task frames a write. The mixed read-then-write flow opens with a
+        read; the instruction's write framing must not stamp the read turn
+        ``generation`` (the axis-B mis-stamp).
+        """
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="read",
+                        arguments_json=json.dumps({"filePath": "config.py"}),
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        )
+        sink, driver = self._capture(seat_filler)
+        ctx = _make_context(
+            messages=[
+                ChatMessage(
+                    role="user",
+                    content="Read config.py, then write a module loader.py from it.",
+                )
+            ]
+        )
+
+        await driver.decide(ctx)
+
+        decision = _turn_decisions(sink)[0]
+        assert decision.turn_shape == "carry"
+        assert decision.grounded_carry_held is True
+
+    async def test_literal_write_carry_stamps_generation(self) -> None:
+        """WP-LB-M — a literal ``write`` carry (the C1 inline-write the model
+        produces instead of delegating) is a ``generation`` turn: it counts in
+        the denominator with no numerator, so the delegation rate drops. C1
+        detection is preserved by reading the action, not the instruction (the
+        literal instruction would classify ``carry``).
+        """
+        seat_filler = _FakeSeatFiller(
+            ToolCallingResponse(
+                content="",
+                tool_calls=[
+                    ToolCall(
+                        id="t1",
+                        name="write",
+                        arguments_json=json.dumps(
+                            {"filePath": "greeting.py", "content": "print('hi')\n"}
+                        ),
+                    )
+                ],
+                finish_reason="tool_calls",
+            )
+        )
+        sink, driver = self._capture(seat_filler)
+        ctx = _make_context(
+            messages=[
+                ChatMessage(
+                    role="user",
+                    content=(
+                        "Write the file greeting.py with exactly this content:\n"
+                        "```\nprint('hi')\n```"
+                    ),
+                )
+            ]
+        )
+
+        await driver.decide(ctx)
+
+        decision = _turn_decisions(sink)[0]
+        assert decision.turn_shape == "generation"
+        assert decision.delegated_ensemble is None

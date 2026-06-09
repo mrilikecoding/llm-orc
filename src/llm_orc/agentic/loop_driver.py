@@ -105,6 +105,14 @@ _GENERATION_TOOL = "invoke_ensemble"
 content generation to a capability ensemble (the callee). Any other tool
 name is a client tool call passed through verbatim."""
 
+_WRITE_TOOLS = frozenset({"write", "edit"})
+"""Client tools whose action produces file content (WP-LB-M, FC-59).
+
+A turn whose outcome is one of these is a write — the delegation-rate
+denominator. A delegated write is :class:`ApplyWork`; a literal ``write``/
+``edit`` the seat-filler carried instead of delegating is the C1 inline-write,
+which counts in the denominator without a numerator (so the rate drops)."""
+
 TailKind = Literal["first_turn", "trailing_tool_result", "new_user_task"]
 """The conversation-tail shapes the driver discriminates (ADR-037).
 
@@ -248,11 +256,16 @@ class TurnDecision:
     FC-59):**
 
     * ``turn_shape`` — the Delegation Rate Meter's classification of the
-      turn's driving instruction (``generation`` / ``carry`` /
-      ``boundary_excluded``). The delegation-rate denominator: a
-      ``generation`` turn with ``delegated_ensemble`` set is a delegated
-      generation (numerator); one without is a generation that failed to
-      delegate. Distinct from ``tail_kind``/``judgment_verdict`` (the
+      turn's *outcome* (``generation`` / ``carry`` / ``boundary_excluded``;
+      WP-LB-M). A write — a delegated ``ApplyWork`` or a literal ``write``/
+      ``edit`` carry — is ``generation`` (the denominator); a read, command,
+      or finish is ``carry``; a repair-shaped or uncovered-domain instruction
+      is ``boundary_excluded`` regardless of the action. A ``generation`` turn
+      with ``delegated_ensemble`` set is a delegated generation (numerator);
+      one without is a write that did not delegate (the C1 inline-write).
+      Deriving the shape from the action, not the driving instruction, is what
+      lets the rate instrument multi-file and mixed sessions, not only first
+      turns. Distinct from ``tail_kind``/``judgment_verdict`` (the
       finish-policy fields). ``None`` only when no substrate stamps it.
     """
 
@@ -414,13 +427,16 @@ class LoopDriver:
                 # literal stay discarded (ADR-037 context-bounding holds).
                 remaining_anchor = strip_verdict(judgment_text) or None
 
-        # The Delegation Rate Meter classifies the turn's shape from its
-        # driving instruction (FC-59) — the REMAINING anchor names the next
-        # deliverable, else the original user task. Stamped on every emit
-        # below so the rate is computable from events alone. A generation
-        # instruction the seat-filler declines (a finish below) still counts
-        # in the denominator without a numerator — the honest delegation miss.
-        turn_shape = classify_turn(
+        # The Delegation Rate Meter classifies each turn's shape from the
+        # action it takes, not the driving instruction (WP-LB-M, FC-59). The
+        # instruction-side classification (the REMAINING anchor names the next
+        # deliverable, else the user task) owns only the boundary_excluded
+        # determination — a repair-shaped or uncovered-domain turn is excluded
+        # from the denominator regardless of the action. Every other turn's
+        # shape follows its outcome below (a write is generation; a read,
+        # command, or finish is carry), so the rate instruments multi-file and
+        # mixed sessions, not only first turns.
+        instruction_shape = classify_turn(
             remaining_anchor or _user_task(context.messages),
             _observed_values(context.messages),
             domains_for(self._capabilities),
@@ -445,7 +461,7 @@ class LoopDriver:
                 enforced.truncated,
                 tail_kind,
                 judgment_verdict,
-                turn_shape,
+                _outcome_turn_shape(instruction_shape, is_write=False),
             )
             return FinishTurn(content=response.content or None)
 
@@ -470,7 +486,7 @@ class LoopDriver:
                 enforced.truncated,
                 tail_kind,
                 judgment_verdict,
-                turn_shape,
+                _outcome_turn_shape(instruction_shape, is_write=True),
             )
             return ApplyWork(
                 invocation_id=action.id,
@@ -486,6 +502,10 @@ class LoopDriver:
             action_kind=invocation.name,
             target_path=_carry_target(invocation.name, invocation.arguments),
         )
+        # A literal write/edit the seat-filler carried instead of delegating is
+        # the C1 inline-write — a write outcome, so it counts in the denominator
+        # (no numerator, so the rate drops). Reads and commands are carry.
+        carry_is_write = invocation.name in _WRITE_TOOLS
         self._emit_turn_decision(
             dispatch_id,
             turn_index,
@@ -495,7 +515,7 @@ class LoopDriver:
             enforced.truncated,
             tail_kind,
             judgment_verdict,
-            turn_shape,
+            _outcome_turn_shape(instruction_shape, is_write=carry_is_write),
         )
         return CarryClientTool(invocation=invocation)
 
@@ -797,6 +817,27 @@ def strip_verdict(text: str) -> str:
     """
     without_think = _THINK_BLOCK.sub("", text)
     return _VERDICT_LINE.sub("", without_think).strip()
+
+
+def _outcome_turn_shape(instruction_shape: TurnShape, *, is_write: bool) -> TurnShape:
+    """Derive a turn's delegation shape from its outcome (WP-LB-M, FC-59).
+
+    The instruction-side classification (:func:`classify_turn`) owns the
+    ``boundary_excluded`` determination — a repair-shaped or uncovered-domain
+    turn is excluded from the denominator regardless of the action the
+    seat-filler then takes. For every other turn the shape follows the *action
+    taken*: a write (a delegated :class:`ApplyWork` or a literal ``write``/
+    ``edit`` carry — the C1 inline-write) is ``generation`` (the denominator);
+    a read, command, or finish is ``carry``. Reading the action, not the
+    driving instruction, is what lets the rate instrument multi-file and mixed
+    sessions rather than only first turns: a REMAINING delegated-write is
+    ``generation`` even though its descriptive anchor carries no generation
+    verb, and a mixed-flow read is ``carry`` even though the user task framed a
+    write.
+    """
+    if instruction_shape == "boundary_excluded":
+        return "boundary_excluded"
+    return "generation" if is_write else "carry"
 
 
 def _user_task(messages: list[ChatMessage]) -> str:
