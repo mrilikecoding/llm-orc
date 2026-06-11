@@ -9,7 +9,17 @@
 > sessions did not advance because the judge's computed "what remains" was
 > discarded before call 2). See ADR-038.
 
-**Status:** Accepted, Updated by ADR-038 (Cycle 7 loop-back #5 DECIDE, gate
+> **Updated by ADR-040 on 2026-06-10.** For tasks that name their deliverables,
+> the COMPLETE/REMAINING verdict is now computed deterministically (requested
+> filenames vs produced write paths), not by the bare-form stochastic judge —
+> Spike σ measured the judge false-COMPLETE-ing after one of five files, with no
+> improvement across prompt or judge capability at the measured n (the
+> produced-only digest is the bottleneck no judge recovers from). The bare-form
+> judgment call still runs for tasks that name no files (the general-task
+> fallback), so the judgment-first composition, digest provenance, and the
+> COMPLETE protocol-clean finish all remain current on that path. See ADR-040.
+
+**Status:** Accepted, Updated by ADR-038 and ADR-040 (Cycle 7 loop-back #5 DECIDE, gate
 closed 2026-06-05; Conditional Acceptance per ADR-097 **discharged 2026-06-08**
 jointly with ADR-038 by the WP-LB-L real-OpenCode run — a single multi-file
 session that converged [COMPLETE → text-only finish, client loop ended] and, via

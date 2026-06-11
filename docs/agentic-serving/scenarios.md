@@ -1647,3 +1647,39 @@ These Layer-match "no" entries are the table working as designed: they mark wher
 | Dependent deliverables (code AND prose) reference real sibling APIs in a single real-client run of the 5-file Finding H task, with axis-1 (zero churn, convergence) preserved | Real OpenCode round-trip (real `llm-orc serve` + real client + local Ollama, $0) | The integration scenario above at the harness layer (Spike ξ code 3/10→10/10, prose 0/10→10/10) + the $0 real-OpenCode 5-file re-run with `cli.py`/tests/README all referencing real APIs, verified by reading the landed files; **this is ADR-039's Conditional Acceptance discharge gate** | **no until BUILD** — the anchor (V-01..V-03) does not exist yet; the real-client run is the layer-matching verification, and the Finding H lesson (a synthetic pass hid the real-client gap) is why the harness PASS is necessary-not-sufficient |
 | The anchor is framework-sourced from real files, never guessed (a wrong anchor is worse than none) | Framework extraction + real-client run | The "extracted from the real produced file" scenario above (Spike ξ decoy 0/10 < baseline 3/10) + the discharge run showing no invented cross-file references | partial — extraction verified at the harness/unit layer; the real-client run confirms the framework actually delivers the real anchor to the callee |
 | Delegation + ADR-035 form contract preserved under the anchor | API-boundary composition + real-client run | The preservation scenario above + the discharge run showing `dispatch start` per deliverable with no inline-write and no form-contract regression | partial — composition verified at the harness layer; the real-client run confirms it at the serving layer |
+
+## Feature: Deterministic Completeness Gate (ADR-040, Finding I / Spike σ)
+
+*Conformance disposition (`housekeeping/audits/conformance-scan-cycle-7-loopback7-tail.md`): CONFORMING, zero permanent violations (P1/P2/P3 all 0). Unlike the other loop-back features, the code landed before the ADR (the spike → build → ADR pattern these tails use), so the scan verified the ADR describes the built code rather than gating future work. Two expected-temporary items, not violations: the `completeness:` INFO log in `_completeness` and the env-gated `_resolve_judgment_seat` Arm-B hook, both scheduled for spike-close removal. The four FCs each map to landed code and a refutable test.*
+
+### Scenario: a named-file task completes deterministically, no judge consulted
+
+**Given** a trailing tail on a task that names its deliverables, where every requested file appears in the framework's produced write paths
+**When** the loop-driver computes completeness
+**Then** the verdict is COMPLETE from the set comparison `requested ⊆ produced` alone, with no judgment-seat call, and the session finishes text-only. Refutable: a judgment-seat invocation on a named-file trailing turn, or a COMPLETE finish with a requested file unproduced, violates the deterministic-verdict FC. *(Test: `test_complete_when_all_requested_produced_no_judge_call`. The false-COMPLETE Spike σ measured, 1/5 invariant of judge capability at the measured n, cannot occur on this path.)*
+
+### Scenario: a named-file task with work remaining anchors the missing files, ignoring a wrong judge
+
+**Given** a trailing tail on a named-file task where some requested files are unproduced, and a stochastic judge that would wrongly say COMPLETE
+**When** the loop-driver computes completeness
+**Then** the verdict is REMAINING from `requested − produced`, the judge is never consulted, and the call-2 anchor names exactly the unproduced files. Refutable: a judge call on this turn, or an anchor that omits an unproduced file or names a produced one, violates the deterministic-anchor FC. *(Test: `test_remaining_overrides_a_wrong_judge_and_anchors_missing`. This is the named-file supersession of ADR-038's judge-statement anchor.)*
+
+### Scenario (persist-once): the requested set survives a client-compacted later turn
+
+**Given** a session that named its files on turn 1 (the guaranteed-full task), then a later trailing turn whose task text the client has compacted so it names no files
+**When** the loop-driver computes completeness on the later turn
+**Then** it reads the requested set persisted from turn 1 (first-non-empty-wins) and still computes REMAINING for the unproduced files, rather than collapsing to an empty set and falling back to the judge. Refutable: a session whose persisted `requested` shrinks or empties across turns, or a false-COMPLETE traced to a re-derived empty set, violates the persist-once stability FC. *(Tests: `test_persisted_requested_survives_a_compacted_later_turn`, `test_decide_persists_the_requested_set_once_on_first_naming`. The compaction is simulated at the unit layer; no live compaction was observed in the discharge runs, a recorded BUILD-watch item.)*
+
+### Preservation: a task that names no files falls back to the ADR-037/038 judge
+
+**Given** a trailing tail on a task that names no deliverable files
+**When** the loop-driver computes completeness
+**Then** the requested set is empty, so the bare-form ADR-037 judge runs and the ADR-038 judge-statement anchor applies, exactly as before ADR-040. Refutable: a no-files task taking the deterministic path violates the no-files-fallback FC. *(Test: `test_falls_back_to_judge_when_task_names_no_files`. The deterministic gate is scoped to the task shape where requested files are mechanically extractable; everything else rides the unchanged judge path.)*
+
+### Cycle Acceptance Criteria (Finding I)
+
+| Criterion | Specified layer | Verification method | Layer-match check |
+|---|---|---|---|
+| A named-file multi-file session converges to a deterministic COMPLETE (all files produced, text-only finish, client loop ends) with no false-COMPLETE | Real OpenCode round-trip (real `llm-orc serve` + real client + local Ollama, $0) | Two $0 real-OpenCode 5-file runs, one at the 14b seat/coder and one at the production config (14b seat, 8b coder), each converging in six turns with `requested=[5]` every turn, monotonic produced 1→5, and COMPLETE at turn 6 | **yes — discharged 2026-06-10** (both tiers; evidence Spike σ log §RESOLUTION + `scratch/spike-sigma-premature-finish/j3_diag/`). The code was built and validated live before the ADR, so this is unconditional at the DECIDE gate |
+| persist-once holds the requested set stable under a real-client compaction event | Live real-client run | A real-client session exhibiting mid-session task compaction, with the gate still reading the persisted set | **no — unverified live** (no compaction occurred in either discharge run); validated only by a unit test that simulates the compaction. A BUILD-watch item carried forward |
+| The gate's coverage of the real task space (the named-file fraction) | Deployment characterization | The fraction of target-deployment tasks that name their files explicitly | **not characterized** — the cycle's north-star task shape is named-file, so the restriction is expected to cover the majority, but the coverage fraction is an untested assumption (ADR-040 §Consequences) |
