@@ -1,0 +1,2 @@
+VERDICT: REMAINING
+The README documenting the commands has not been produced.
