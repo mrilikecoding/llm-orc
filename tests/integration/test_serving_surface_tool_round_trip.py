@@ -347,10 +347,20 @@ def test_streaming_tool_request_emits_bridge_marshalled_tool_call(
 def test_tool_result_follow_up_continues_the_loop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """FC-50 — a ``role: "tool"`` follow-up reaches the driver, which finishes."""
+    """FC-50 — a ``role: "tool"`` follow-up reaches the driver, which finishes.
+
+    The judgment seat returns REMAINING (``_ScriptedSeatFiller``), so the
+    trailing tail falls through to the action call where the tool result is
+    surfaced (FC-50). The seat then stalls; the F-σ.1 REMAINING-retry re-asks
+    once and, on a second stall, the driver finishes — so two stall responses
+    are scripted (the AS-3 cap remains the ultimate backstop beyond that).
+    """
     store = SessionArtifactStore(agentic_sessions_root=tmp_path)
     seat_filler = _ScriptedSeatFiller(
-        [ToolCallingResponse(content="Done — quicksort written.", tool_calls=[])]
+        [
+            ToolCallingResponse(content="Done — quicksort written.", tool_calls=[]),
+            ToolCallingResponse(content="Done — quicksort written.", tool_calls=[]),
+        ]
     )
     dispatch = _StoreWritingDispatch(store, _DELIVERABLE)
     client = _wire_real_terminal(

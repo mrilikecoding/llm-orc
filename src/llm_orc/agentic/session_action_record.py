@@ -57,6 +57,7 @@ class SessionActionRecord:
 
     def __init__(self) -> None:
         self._records: dict[str, list[ActionRecord]] = {}
+        self._requested: dict[str, frozenset[str]] = {}
 
     def record_action(
         self, session_id: str, *, action_kind: str, target_path: str
@@ -98,6 +99,32 @@ class SessionActionRecord:
         """The session's accumulated records, in emission order."""
         return tuple(self._records.get(session_id, ()))
 
+    def set_requested_if_absent(
+        self, session_id: str, requested: frozenset[str]
+    ) -> None:
+        """Persist the requested-deliverable set once per session (J-3, Spike σ).
+
+        The first non-empty set wins; empty sets and repeat calls are no-ops.
+        The Loop Driver captures the set from turn 1's task (where the client is
+        guaranteed to send the full ask), so a later turn whose task text the
+        client has compacted cannot clear or overwrite it — the completeness
+        gate reads a stable set rather than re-deriving it from a possibly
+        truncated conversation each turn. An empty set is never persisted: that
+        would pin the session to the no-files judge fallback for the rest of its
+        life.
+        """
+        if requested and session_id not in self._requested:
+            self._requested[session_id] = requested
+
+    def requested(self, session_id: str) -> frozenset[str]:
+        """The session's persisted requested-deliverable set (empty if unset).
+
+        Empty means no turn has named files yet, which routes completeness to
+        the ADR-037 stochastic-judge fallback (the general-task path).
+        """
+        return self._requested.get(session_id, frozenset())
+
     def cleanup_session(self, session_id: str) -> None:
         """Clear a closed session's records (session-close callback target)."""
         self._records.pop(session_id, None)
+        self._requested.pop(session_id, None)
