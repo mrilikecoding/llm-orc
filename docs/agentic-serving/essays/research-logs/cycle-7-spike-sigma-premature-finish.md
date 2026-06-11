@@ -223,7 +223,7 @@ X explicit and routes it forward. Recommendation: spike J-2 first (minimal, keep
 removes its failure step), escalate to J-3 if the checklist alone does not stop the
 false-COMPLETE; F-σ.1 rides underneath whichever lands.
 
-### J-3 (deterministic completeness gate) — BUILT, live validation INCOMPLETE (env-blocked 2026-06-09)
+### J-3 (deterministic completeness gate) — BUILT, live validation INCOMPLETE (env-blocked 2026-06-09) → RESOLVED 2026-06-10 (see §RESOLUTION)
 
 Per the practitioner's determinism principle ("limit stochasticity to the ensembles"), J-3
 was built: `_extract_requested_deliverables` (filename heuristic), `_produced_paths`,
@@ -247,13 +247,18 @@ OpenCode is guaranteed to send the full task) and persist it session-scoped in t
 SessionActionRecord, so `_completeness` reads a stable set instead of re-deriving it from a
 possibly-truncated conversation each turn.
 
-### RESUME POINTER (next session, fresh ollama)
+### RESUME POINTER (next session, fresh ollama) — EXECUTED 2026-06-10 (see §RESOLUTION)
 1. Restart ollama; restart `uv run llm-orc serve --port 8765` (working-tree source).
 2. Run the diagnostic session; read the `completeness:` log on turn 2. requested=[] confirms
    the gate is not firing → apply the persist-once fix. requested=[5] → re-investigate.
 3. Re-run the J-3 arm (n≥6) to validate; watch COMPLETE vs name-match churn (OTHER).
 4. Then: reconcile the 3 judge-path integration tests (switch their tasks to non-file), the
    DECIDE/ADR-040 write-up, and remove the temporary `completeness:` diagnostic log.
+
+**Outcome:** step 2 returned requested=[5] (gate fires; truncation hypothesis refuted) →
+took the re-investigate branch → persist-once applied as hardening anyway (determinism
+principle) → steps 3 & 4 done. Still open after RESOLUTION: ADR-040 write-up; remove the
+diagnostic log + revert the timeout-600 edit (deferred to spike close).
 
 ### Uncommitted / temporary state at pause
 - Uncommitted code: F-σ.1 (validated seat-leg retry, keep), J-1 (insufficient, may fold or
@@ -264,3 +269,77 @@ possibly-truncated conversation each turn.
 - Broken: 3 judge-path integration tests (`test_termination_judgment_digest_join` ×2,
   `test_serving_surface_tool_round_trip`) — expected J-3 blast radius, reconcile to non-file
   tasks.
+
+## RESOLUTION (2026-06-10, fresh ollama, $0 local)
+
+### Step 2 — the diagnostic: the gate FIRES (truncation hypothesis refuted)
+
+One live diagnostic session (qwen3:14b coder, fresh serve) with the `completeness:` log
+read. Turn 2: `requested=['README.md','cli.py','converters.py','test_cli.py',
+'test_converters.py'] produced=['converters.py']`. **requested=[5], not [].** Across all 5
+trailing turns of the session, requested stayed [5] (no OpenCode context-compaction in a
+session this length) and produced grew monotonically — every turn computed REMAINING, none
+false-COMPLETEd. So J-3 was never the silent no-op the leading hypothesis feared: `_user_task`
+carries the filenamed task through OpenCode's real per-turn request, and the gate reads it
+correctly. The run-2 false-COMPLETE from 2026-06-09 did NOT reproduce; the only mechanism left
+for it is a *transient* `_user_task` truncation on some particular turn (compaction on a longer
+session, or a one-off message-shape variance).
+
+### persist-once — applied as hardening (not a bug fix)
+
+Per the determinism principle, the staged persist-once fix was applied anyway: it closes the
+one path to a false-COMPLETE structurally rather than leaving it to chance.
+- **Store** (`SessionActionRecord`): `set_requested_if_absent` (first non-empty set wins;
+  empty + repeat are no-ops) + `requested` reader; both cleared by `cleanup_session`. 6 unit
+  tests.
+- **Driver**: `decide` captures the requested set at the top of every turn (turn 1 carries
+  the guaranteed-full task, so it sets it first); `_completeness` reads the persisted set
+  instead of re-deriving from `_user_task` each turn. 2 unit tests (one simulates the run-2
+  compaction and proves the gate holds REMAINING).
+- **3 judge-path integration tests reconciled**: the two digest-join tests switched to a
+  no-files task (the recorded path the digest quotes comes from the seat's delegation, not the
+  task); the round-trip test got its F-σ.1 retry response scripted (the REMAINING-retry now
+  consumes a second action-call response).
+- Suite **3023 green**; `make lint` clean (mypy strict, ruff, format, complexipy). `decide`
+  complexity stayed in budget.
+
+### Step 3 — live validation (both model tiers, clean convergence)
+
+**Run A — 14b coder (confirm persist-once):** 6 turns, all 5 files, COMPLETE at turn 6,
+OpenCode loop ended clean. requested=[5] every turn; monotonic 1→2→3→4→5; no churn;
+capability-matched routing emerged (README → `prose-improver`).
+
+**Run B — production 8b coder (the ADR-039 production-8b discharge; 14b seat + 8b coder):**
+6 turns, all 5 files, COMPLETE at turn 6, loop ended clean. requested=[5] every turn;
+monotonic; no churn; README → `text-summarizer`.
+
+Both runs refute Finding I end-to-end: the deterministic COMPLETE fires only when all
+requested files are produced, and the session terminates cleanly.
+
+### ADR-039 content-anchor discharge — MET at the production 8b coder
+
+Run B's dependent files all reference the real `converters` API (`celsius_to_fahrenheit`,
+`fahrenheit_to_celsius`, `celsius_to_kelvin`), zero invention: tests import the real module,
+README documents the real function names. Finding H not reproduced. The named cross-file
+API-coherence criterion is met at the production coder.
+
+### Finding (separately tracked) — ADR-035 form-gate bleed reproduced at 8b
+
+Run B's `cli.py` carries a trailing explanation paragraph after the code (a prose sentence),
+making it a SyntaxError. This is the ADR-035 form-gate bleed (deliverable must be bare code,
+no prose), not an ADR-039/J-3 failure — the content anchor propagated the real API names
+correctly; the form contract leaked. Run A's `cli.py` had a different defect (`args.from`
+keyword collision). Both are coder-quality/form on the most complex of the five files, not
+anchor failures. Recorded as live 8b evidence for the separately-tracked ADR-035 thread.
+
+### Disposition / still open
+- F-σ.1 (REMAINING-retry): validated, kept. J-1 (enumeration prompt): superseded by J-3,
+  not separately retained.
+- Coder profile reverted to production qwen3:8b. **Still temporary:** the
+  `request_timeout.read` 600 edit (`.llm-orc/config.yaml`) and the `completeness:` diagnostic
+  log in `_completeness` — revert/remove at spike close.
+- Arm B `_resolve_judgment_seat` env-gated hook: still present as a default-noop (active only
+  when `LLMORC_SPIKE_JUDGMENT_PROFILE` is set, which the validation runs did not set, so the
+  judgment seat was the FC-68 default seat-filler model) — remove at spike close.
+- Next: ADR-040 write-up (J-3 + persist-once); cycle-status updated; the ADR-039 status flip
+  (Conditional → Accepted) is the practitioner's call given the discharge criterion is met.

@@ -6,7 +6,16 @@
 > via the anchor (no churn), turn 3 (COMPLETE) finished text-only and the client
 > loop ended. Evidence: `scratch/wp-lb-l-acceptance/RESULTS.md`.
 
-**Status:** Accepted (Cycle 7 loop-back #6 DECIDE, gate closed 2026-06-08;
+> **Updated by ADR-040 on 2026-06-10.** For tasks that name their deliverables,
+> the REMAINING anchor is now the framework-computed `requested − produced` set,
+> not the judge's one-sentence statement. Once ADR-040's deterministic
+> completeness gate exists for the verdict (forced by Spike σ's judge
+> false-COMPLETE), the remaining set is already computed, so the anchor rides it
+> at no extra cost. The judge-statement anchor this ADR validated (Spike ρ, 19/20
+> advance) still applies to tasks that name no files (the general-task fallback).
+> See ADR-040.
+
+**Status:** Accepted, Updated by ADR-040 (Cycle 7 loop-back #6 DECIDE, gate closed 2026-06-08;
 Conditional Acceptance per ADR-097 discharged 2026-06-08 by the WP-LB-L
 real-OpenCode multi-file run — see §Empirical grounding)
 
