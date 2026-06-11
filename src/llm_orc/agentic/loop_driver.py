@@ -58,6 +58,7 @@ Configuration — it does not import the L3 config module.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -100,6 +101,8 @@ __all__ = [
     "parse_verdict",
     "strip_verdict",
 ]
+
+_logger = logging.getLogger("llm_orc.agentic.loop_driver")
 
 _GENERATION_TOOL = "invoke_ensemble"
 """The internal tool name the seat-filler emits to delegate per-turn
@@ -383,6 +386,17 @@ class LoopDriver:
         turn_index = _turn_index(context)
         self._join_client_result(session_id, context.messages)
 
+        # J-3 persist-once (Spike σ): capture the requested deliverable set from
+        # the first turn that names files. Turn 1 carries the guaranteed-full
+        # task, so a later turn whose task text the client has compacted cannot
+        # collapse the completeness gate to the stochastic-judge fallback — the
+        # gate reads the stable persisted set rather than re-deriving it each
+        # turn. Empty extractions and repeat turns are no-ops (first non-empty
+        # wins), so a no-files task still routes to the judge.
+        self._action_record.set_requested_if_absent(
+            session_id, _extract_requested_deliverables(_user_task(context.messages))
+        )
+
         # AS-3 (FC-69): the turn cap is the deterministic backstop beneath
         # the termination mechanism — the absolute ceiling on non-
         # termination ADR-037 names. Checked first, so an exhausted session
@@ -405,19 +419,22 @@ class LoopDriver:
             )
             return FinishTurn(content=_BUDGET_EXHAUSTED_MESSAGE)
 
-        # ADR-037 §Decision 1 (FC-63): trailing tool-result tails on the
-        # delegation surface open with the termination judgment — call 1
-        # of the two-call composition. COMPLETE ends the turn here;
-        # REMAINING (and a parse miss, which must not silently drop work)
-        # falls through to the unchanged ADR-036 action call below.
+        # ADR-037 §Decision 1 + J-3 (Spike σ): a trailing tool-result tail opens
+        # with the termination decision. For a named-file task the framework
+        # determines completeness DETERMINISTICALLY (requested vs produced — no
+        # stochastic judge, so the false-COMPLETE cannot occur); a task naming no
+        # files falls back to the ADR-037 judge. COMPLETE ends the turn here;
+        # REMAINING (and a parse miss) falls through to the action call with the
+        # remaining anchor (ADR-038).
         judgment_verdict: JudgmentVerdict | None = None
         remaining_anchor: str | None = None
         if tail_kind == "trailing_tool_result" and self._capabilities:
-            judgment_text = await self._dispatch_judgment(session_id, context)
-            judgment_verdict = parse_verdict(judgment_text)
+            judgment_verdict, remaining_anchor, finish_text = await self._completeness(
+                context, session_id
+            )
             if judgment_verdict == "COMPLETE":
-                # The judge ruled the work done — finishing is correct, not a
-                # generation turn; shaped ``carry`` (off the rate denominator).
+                # Work done — finishing is correct, not a generation turn; shaped
+                # ``carry`` (off the rate denominator).
                 self._emit_turn_decision(
                     self._new_dispatch_id(context),
                     turn_index,
@@ -429,14 +446,7 @@ class LoopDriver:
                     judgment_verdict,
                     "carry",
                 )
-                return FinishTurn(content=strip_verdict(judgment_text) or None)
-            if judgment_verdict == "REMAINING":
-                # ADR-038 (V-38-1): route the judge's own remaining-work
-                # statement forward to anchor the action call, instead of
-                # discarding the judgment exchange. The stripped statement is
-                # the only part that carries — the question/digest/verdict
-                # literal stay discarded (ADR-037 context-bounding holds).
-                remaining_anchor = strip_verdict(judgment_text) or None
+                return FinishTurn(content=finish_text)
 
         # The Delegation Rate Meter classifies each turn's shape from the
         # action it takes, not the driving instruction (WP-LB-M, FC-59). The
@@ -453,13 +463,29 @@ class LoopDriver:
             domains_for(self._capabilities),
         )
 
+        seat_messages = self._seat_filler_messages(
+            context, remaining_anchor=remaining_anchor
+        )
+        seat_tools = self._delegation_tools() + list(context.tools)
         response = await self._seat_filler.generate_with_tools(
-            messages=self._seat_filler_messages(
-                context, remaining_anchor=remaining_anchor
-            ),
-            tools=self._delegation_tools() + list(context.tools),
+            messages=seat_messages, tools=seat_tools
         )
         enforced = self._enforcer.enforce(response.tool_calls)
+
+        # Finding I (ADR-039 loop-back, F-σ.1): on a REMAINING verdict the judge
+        # has affirmed work remains, so a seat-filler no-tool-call is an
+        # incoherent stall, not a legitimate finish — and under the real client a
+        # finish ENDS the loop, so the accepted "next re-judgment + AS-3 cap"
+        # backstop never fires (there is no next turn). Retry the action call
+        # once (the seat re-samples at the model's default temperature) before
+        # honoring a finish; the AS-3 cap remains the ultimate backstop.
+        if judgment_verdict == "REMAINING" and enforced.action is None:
+            response = await self._seat_filler.generate_with_tools(
+                messages=seat_messages, tools=seat_tools
+            )
+            enforced = self._enforcer.enforce(response.tool_calls)
+            _logger.info("remaining-retry: recovered=%s", enforced.action is not None)
+
         dispatch_id = self._new_dispatch_id(context)
 
         if enforced.action is None:
@@ -551,6 +577,36 @@ class LoopDriver:
         return await self._judgment_seat.generate_response(
             message=message, role_prompt=_JUDGE_SYSTEM
         )
+
+    async def _completeness(
+        self, context: SessionContext, session_id: str
+    ) -> tuple[JudgmentVerdict | None, str | None, str | None]:
+        """The trailing turn's termination decision (J-3, Spike σ).
+
+        For a task that names its deliverables, completeness is a deterministic
+        check — ``requested − produced`` from the filenames in the task and the
+        write actions the driver already holds — so no stochastic judge runs and
+        the false-COMPLETE failure mode (Spike σ: ~80% on the cheap judge, and a
+        frontier judge no better) cannot occur. The remaining set composes the
+        ADR-038 anchor deterministically. A task that names no files falls back
+        to the ADR-037 stochastic judge (the general-task path). Returns
+        ``(verdict, remaining_anchor, finish_text)``.
+        """
+        requested = self._action_record.requested(session_id)
+        produced = _produced_paths(self._action_record.records(session_id))
+        if requested:
+            remaining = requested - produced
+            if remaining:
+                return "REMAINING", _compose_remaining(remaining), None
+            return "COMPLETE", None, _compose_done(requested)
+        judgment_text = await self._dispatch_judgment(session_id, context)
+        verdict = parse_verdict(judgment_text)
+        stripped = strip_verdict(judgment_text) or None
+        if verdict == "COMPLETE":
+            return "COMPLETE", None, stripped
+        if verdict == "REMAINING":
+            return "REMAINING", stripped, None
+        return verdict, None, None  # parse miss → fall through to the action call
 
     def _cap_reached(self, context: SessionContext, turn_index: int) -> bool:
         """Whether the AS-3 turn/token cap is reached for this turn (FC-69).
@@ -748,6 +804,58 @@ directive.
 """
 
 
+_REQUESTED_FILE_RE = re.compile(r"\b[\w.-]+\.[A-Za-z][A-Za-z0-9]{1,7}\b")
+"""Filename heuristic for the J-3 deterministic completeness gate (Spike σ).
+
+Matches ``converters.py``, ``test_cli.py``, ``README.md`` — a stem of word /
+dot / dash chars, a dot, and a letter-led extension of 2-8 chars. The 2-char
+minimum extension filters abbreviation false positives (``e.g``, ``i.e``); the
+letter-led extension filters numeric tails (``273.15``, ``9.5``). A pragmatic
+heuristic for named-file tasks, not a general parser — tasks that name no files
+fall back to the stochastic judge."""
+
+
+def _extract_requested_deliverables(task: str) -> frozenset[str]:
+    """The requested deliverable set (J-3) — basenames of the files the task names.
+
+    Deterministic regex extraction. Empty when the task names no files, which
+    routes the turn to the ADR-037 stochastic-judge fallback (the general-task
+    path). Basenames so a path-qualified produced file matches a bare request.
+    """
+    return frozenset(
+        match.rsplit("/", 1)[-1] for match in _REQUESTED_FILE_RE.findall(task)
+    )
+
+
+def _produced_paths(records: tuple[ActionRecord, ...]) -> frozenset[str]:
+    """Basenames of the files the session has written (J-3 produced side).
+
+    The write-action target paths the driver already holds, basename-normalized
+    to match the requested set regardless of path prefix.
+    """
+    return frozenset(
+        record.target_path.rsplit("/", 1)[-1]
+        for record in records
+        if record.action_kind in _WRITE_TOOLS
+    )
+
+
+def _compose_remaining(remaining: frozenset[str]) -> str:
+    """The deterministic remaining-work statement (J-3).
+
+    Replaces the judge's stochastic "what remains" with the framework-computed
+    ``requested − produced`` set, feeding the ADR-038 anchor deterministically.
+    """
+    return "These requested files have not been written yet: " + ", ".join(
+        sorted(remaining)
+    )
+
+
+def _compose_done(requested: frozenset[str]) -> str:
+    """The deterministic finish text (J-3) when every requested file is produced."""
+    return "All requested files have been written: " + ", ".join(sorted(requested))
+
+
 def compose_form_directive(tool: str) -> str:
     """Compose the destination-keyed bare-output directive (ADR-035, FC-53/54).
 
@@ -787,23 +895,37 @@ re-validate the affected θ arms before landing.
 """
 
 _JUDGMENT_QUESTION = (
-    "Status check: based on the action record, does the session's requested "
-    "work have deliverables that have not yet been produced? A successful "
-    "write of a requested file counts as that deliverable being produced; "
-    "you are not being asked to verify code correctness. Reply with one "
-    "line starting with `VERDICT: COMPLETE` (no outstanding deliverables) "
-    "or `VERDICT: REMAINING` (outstanding deliverables exist). If COMPLETE, "
-    "follow with a brief summary of what was done. If REMAINING, state in "
-    "one sentence what remains. Do not perform any of the remaining work "
-    "yourself."
+    "Status check: first, step by step, enumerate every distinct deliverable "
+    "the user's request asks for; then, for each one, check whether the action "
+    "record shows it was produced. A successful write of a requested file "
+    "counts as that deliverable being produced; you are not being asked to "
+    "verify code correctness. Then reply with one line: `VERDICT: REMAINING` "
+    "if any requested deliverable has not yet been produced, or "
+    "`VERDICT: COMPLETE` only if every requested deliverable has been "
+    "produced. If REMAINING, state in one sentence what remains. If COMPLETE, "
+    "follow with a brief summary of what was done. Do not perform any of the "
+    "remaining work yourself."
 )
-"""The deliverable-accounting question (ADR-037 §Decision 3).
+"""The deliverable-accounting question (ADR-037 §Decision 3; J-1 reframe,
+Spike σ).
 
-The standard — a successful write of a requested file counts as produced;
-code correctness explicitly out of scope (owned by the capability
-ensemble, the calibration gate, and PLAY) — is the prompt component that
-moved Spike θ from 0/10 (round 1's unanswerable standard) to 29/30.
-Byte-identical to the measured round-2 form.
+The accounting standard — a successful write of a requested file counts as
+produced; code correctness explicitly out of scope (owned by the capability
+ensemble, the calibration gate, and PLAY) — is retained verbatim (the
+component that moved Spike θ from 0/10 to 29/30).
+
+**J-1 reframe (Spike σ, 2026-06-09):** the prior wording asked a
+double-negative ("are there deliverables that have *not* been produced?")
+and let the judge subtract requested-minus-produced implicitly. Spike σ's
+live baseline measured that the qwen3:14b judge false-COMPLETEs ~80% at the
+one-of-five-produced state under that wording (the digest carries produced
+work, not outstanding work, so the subtraction falls on the stochastic
+judge). The reframe forces *positive enumeration* (list every requested
+deliverable, check each against the record — in the model's reasoning, which
+``parse_verdict``/``strip_verdict`` strip) and raises the COMPLETE bar
+(`COMPLETE` only if *every* deliverable is produced). No longer
+byte-identical to θ's round-2 form: validated live by Spike σ's J-1 arm, not
+by re-running θ (the live-multi-turn-primary methodology).
 """
 
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)

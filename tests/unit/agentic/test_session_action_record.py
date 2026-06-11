@@ -145,6 +145,56 @@ class TestSessionActionRecordContent:
         assert store.records("session-1")[-1].content is None
 
 
+class TestSessionActionRecordRequested:
+    """J-3 persist-once (Spike σ): the requested-deliverable set is captured
+    once per session (turn 1 carries the guaranteed-full task) and held stable,
+    so a later turn whose task text the client has compacted cannot clear or
+    overwrite it. Scenarios from ``docs/agentic-serving/scenarios.md``
+    §"Deterministic completeness (Finding I / Spike σ)".
+    """
+
+    def test_requested_defaults_to_empty(self) -> None:
+        store = SessionActionRecord()
+
+        assert store.requested("session-1") == frozenset()
+
+    def test_set_requested_persists_and_is_retrievable(self) -> None:
+        store = SessionActionRecord()
+
+        store.set_requested_if_absent("session-1", frozenset({"a.py", "b.py"}))
+
+        assert store.requested("session-1") == frozenset({"a.py", "b.py"})
+
+    def test_empty_set_is_a_no_op(self) -> None:
+        """A turn that names no files must not persist an empty set — that would
+        pin the session to the no-files judge fallback for the rest of its life.
+        """
+        store = SessionActionRecord()
+
+        store.set_requested_if_absent("session-1", frozenset())
+
+        assert store.requested("session-1") == frozenset()
+
+    def test_first_non_empty_set_wins(self) -> None:
+        """A later (compacted) turn re-deriving a partial or empty set cannot
+        overwrite the set captured from the first turn that named files.
+        """
+        store = SessionActionRecord()
+        store.set_requested_if_absent("session-1", frozenset({"a.py", "b.py"}))
+
+        store.set_requested_if_absent("session-1", frozenset({"c.py"}))
+
+        assert store.requested("session-1") == frozenset({"a.py", "b.py"})
+
+    def test_requested_sets_are_session_isolated(self) -> None:
+        store = SessionActionRecord()
+        store.set_requested_if_absent("session-1", frozenset({"a.py"}))
+        store.set_requested_if_absent("session-2", frozenset({"b.py"}))
+
+        assert store.requested("session-1") == frozenset({"a.py"})
+        assert store.requested("session-2") == frozenset({"b.py"})
+
+
 class TestSessionActionRecordLifecycle:
     """Lifecycle rides session scope (the Session Artifact Store retention
     pattern): close clears the session's records.
@@ -157,6 +207,14 @@ class TestSessionActionRecordLifecycle:
         store.cleanup_session("session-1")
 
         assert store.records("session-1") == ()
+
+    def test_cleanup_session_clears_the_requested_set(self) -> None:
+        store = SessionActionRecord()
+        store.set_requested_if_absent("session-1", frozenset({"a.py"}))
+
+        store.cleanup_session("session-1")
+
+        assert store.requested("session-1") == frozenset()
 
     def test_cleanup_of_unknown_session_is_not_an_error(self) -> None:
         store = SessionActionRecord()

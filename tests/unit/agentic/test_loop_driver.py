@@ -29,6 +29,7 @@ from llm_orc.agentic.loop_driver import (
     CarryClientTool,
     FinishTurn,
     LoopDriver,
+    SeatFiller,
     TurnDecision,
     compose_form_directive,
     compose_judgment_message,
@@ -109,7 +110,7 @@ def _make_context(
 
 
 def _build_driver(
-    seat_filler: _FakeSeatFiller,
+    seat_filler: SeatFiller,
     *,
     tool_dispatch: _FakeToolDispatch | None = None,
     capabilities: frozenset[str] = frozenset(),
@@ -855,11 +856,15 @@ class _FakeJudgmentSeat:
 
 
 def _trailing_context() -> SessionContext:
-    """A trailing tool-result tail — the shape the judgment opens."""
+    """A trailing tool-result tail whose task names NO files — the shape the
+    ADR-037 stochastic judge opens. (J-3 routes named-file tasks to the
+    deterministic completeness gate instead; the judge is the no-named-files
+    fallback these tests exercise.)
+    """
     return _make_context(
         messages=[
             ChatMessage(role="system", content="You are OpenCode, a client."),
-            ChatMessage(role="user", content="write string_utils.py and tests"),
+            ChatMessage(role="user", content="Summarize the project discussion notes."),
             ChatMessage(role="assistant", content=None),
             ChatMessage(role="tool", content="Wrote file successfully"),
         ]
@@ -928,7 +933,7 @@ class TestLoopDriverTerminationJudgment:
             role_prompt
         )
         assert "You are OpenCode, a client." not in message
-        assert "write string_utils.py and tests" in message
+        assert "Summarize the project discussion notes." in message
         assert "write string_utils.py — tool result:" in message
         assert "Wrote file successfully" in message
 
@@ -981,7 +986,11 @@ class TestLoopDriverTerminationJudgment:
         the pre-ADR-037 E4b composition is intentionally broken by ADR-038.
         """
         judgment = _FakeJudgmentSeat("VERDICT: REMAINING\ntests not yet written")
-        seat_filler = self._finishing_filler()
+        # An acting seat-filler (the normal REMAINING path): it delegates, so the
+        # F-σ.1 no-tool-call retry does not fire and exactly one action call is
+        # composed. (A finishing filler here would now legitimately retry — the
+        # Finding I fix — which is covered by TestRemainingRetry.)
+        seat_filler = _FakeSeatFiller(_delegation_response("test_string_utils.py"))
         driver = _build_driver(
             seat_filler, capabilities=self._CAPS, judgment_seat=judgment
         )
@@ -1819,3 +1828,241 @@ class TestTurnShapeStamping:
         decision = _turn_decisions(sink)[0]
         assert decision.turn_shape == "generation"
         assert decision.delegated_ensemble is None
+
+
+class _SequencedSeatFiller:
+    """Seat-filler returning a scripted response per call (for retry tests).
+
+    Records each call so a test can assert how many times the driver dispatched
+    the action call. After the list is exhausted it repeats the last response.
+    """
+
+    def __init__(self, responses: list[ToolCallingResponse]) -> None:
+        self._responses = list(responses)
+        self.calls: list[tuple[list[dict[str, Any]], list[dict[str, Any]]]] = []
+
+    async def generate_with_tools(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+    ) -> ToolCallingResponse:
+        self.calls.append((messages, tools))
+        return self._responses[min(len(self.calls) - 1, len(self._responses) - 1)]
+
+
+def _no_action_response() -> ToolCallingResponse:
+    return ToolCallingResponse(
+        content="Making progress.", tool_calls=[], finish_reason="stop"
+    )
+
+
+def _delegation_response(file_path: str = "cli.py") -> ToolCallingResponse:
+    return ToolCallingResponse(
+        content="",
+        tool_calls=[
+            ToolCall(
+                id="t1",
+                name="invoke_ensemble",
+                arguments_json=json.dumps(
+                    {
+                        "name": "code-generator",
+                        "input": f"write {file_path}",
+                        "filePath": file_path,
+                    }
+                ),
+            )
+        ],
+        finish_reason="tool_calls",
+    )
+
+
+class TestRemainingRetry:
+    """ADR-039 loop-back / Finding I — the REMAINING-retry (F-σ.1).
+
+    On a REMAINING verdict the judge has affirmed work remains, so a seat-filler
+    no-tool-call is an incoherent stall, not a legitimate finish (a finish here
+    ends the client loop with deliverables missing — the premature-finish the
+    real client exposed). The driver retries the action call once before honoring
+    a finish; the AS-3 cap remains the ultimate backstop. The retry is
+    REMAINING-only: first-turn / non-judgment no-action responses finish without
+    a retry. Scenarios from scenarios.md §"Premature-finish (Finding I)".
+    """
+
+    _CAPS = frozenset({"code-generator"})
+
+    @staticmethod
+    def _remaining_judge() -> _FakeJudgmentSeat:
+        return _FakeJudgmentSeat("VERDICT: REMAINING\ncli.py has not been written yet.")
+
+    async def test_retry_recovers_a_stall_on_remaining(self) -> None:
+        seat = _SequencedSeatFiller([_no_action_response(), _delegation_response()])
+        driver = _build_driver(
+            seat, capabilities=self._CAPS, judgment_seat=self._remaining_judge()
+        )
+
+        outcome = await driver.decide(_trailing_context())
+
+        assert isinstance(outcome, ApplyWork)  # the retry recovered the stall
+        assert len(seat.calls) == 2  # original action call + one retry
+
+    async def test_finish_when_the_retry_also_stalls(self) -> None:
+        seat = _SequencedSeatFiller([_no_action_response(), _no_action_response()])
+        driver = _build_driver(
+            seat, capabilities=self._CAPS, judgment_seat=self._remaining_judge()
+        )
+
+        outcome = await driver.decide(_trailing_context())
+
+        assert isinstance(outcome, FinishTurn)  # both stalled → finish (AS-3 beyond)
+        assert len(seat.calls) == 2  # retried exactly once, then gave up
+
+    async def test_no_retry_off_the_remaining_branch(self) -> None:
+        """A first-turn no-action is not a REMAINING stall — finish, no retry."""
+        seat = _SequencedSeatFiller([_no_action_response()])
+        driver = _build_driver(seat, capabilities=self._CAPS)
+
+        outcome = await driver.decide(_make_context())  # first_turn tail, no judgment
+
+        assert isinstance(outcome, FinishTurn)
+        assert len(seat.calls) == 1  # no retry off the REMAINING branch
+
+
+def _trailing_with_task(task: str) -> SessionContext:
+    """A trailing tool-result tail carrying a custom user task."""
+    return _make_context(
+        messages=[
+            ChatMessage(role="system", content="You are OpenCode, a client."),
+            ChatMessage(role="user", content=task),
+            ChatMessage(role="assistant", content=None),
+            ChatMessage(role="tool", content="Wrote file successfully"),
+        ]
+    )
+
+
+class TestDeterministicCompleteness:
+    """J-3 (Spike σ) — deterministic completeness gate for named-file tasks.
+
+    For a task that names its deliverables the framework checks requested vs
+    produced deterministically (no stochastic judge → the false-COMPLETE failure
+    mode cannot occur), and ``requested − produced`` composes the ADR-038 anchor.
+    A task that names no files falls back to the ADR-037 judge. Scenarios from
+    scenarios.md §"Deterministic completeness (Finding I / Spike σ)".
+    """
+
+    _CAPS = frozenset({"code-generator"})
+    _TASK = "Create converters.py, test_converters.py, and README.md."
+
+    @staticmethod
+    def _record(*produced: str) -> SessionActionRecord:
+        record = SessionActionRecord()
+        for path in produced:
+            record.record_action("test-session", action_kind="write", target_path=path)
+        return record
+
+    def test_extract_requested_deliverables_filters_non_files(self) -> None:
+        from llm_orc.agentic.loop_driver import _extract_requested_deliverables
+
+        got = _extract_requested_deliverables(
+            "Create converters.py, test_converters.py, cli.py, test_cli.py, "
+            "README.md. Convert 273.15 K and 9.5; e.g. the notes."
+        )
+        assert got == frozenset(
+            {
+                "converters.py",
+                "test_converters.py",
+                "cli.py",
+                "test_cli.py",
+                "README.md",
+            }
+        )
+
+    async def test_complete_when_all_requested_produced_no_judge_call(self) -> None:
+        # The judge would say COMPLETE here too, but the point is it is never
+        # consulted — completeness is deterministic.
+        judge = _FakeJudgmentSeat("VERDICT: COMPLETE\n")
+        record = self._record("converters.py", "test_converters.py", "README.md")
+        driver = _build_driver(
+            _FakeSeatFiller(_no_action_response()),  # not reached on COMPLETE
+            capabilities=self._CAPS,
+            judgment_seat=judge,
+            action_record=record,
+        )
+
+        outcome = await driver.decide(_trailing_with_task(self._TASK))
+
+        assert isinstance(outcome, FinishTurn)
+        assert len(judge.calls) == 0  # deterministic — the stochastic judge is skipped
+
+    async def test_remaining_overrides_a_wrong_judge_and_anchors_missing(self) -> None:
+        # The stochastic judge would WRONGLY say COMPLETE after one file (the
+        # Spike σ false-COMPLETE). The deterministic gate ignores it and reports
+        # REMAINING, anchoring the two unproduced files.
+        judge = _FakeJudgmentSeat("VERDICT: COMPLETE\n")
+        seat = _FakeSeatFiller(_delegation_response("test_converters.py"))
+        record = self._record("converters.py")
+        driver = _build_driver(
+            seat, capabilities=self._CAPS, judgment_seat=judge, action_record=record
+        )
+
+        await driver.decide(_trailing_with_task(self._TASK))
+
+        assert len(judge.calls) == 0  # deterministic — judge not consulted
+        trailing = str(seat.calls[0][0][-1]["content"])
+        assert "test_converters.py" in trailing
+        assert "README.md" in trailing
+        assert "converters.py" not in trailing.replace("test_converters.py", "")
+
+    async def test_falls_back_to_judge_when_task_names_no_files(self) -> None:
+        judge = _FakeJudgmentSeat("VERDICT: REMAINING\nstill summarizing")
+        seat = _FakeSeatFiller(_delegation_response("notes.txt"))
+        driver = _build_driver(
+            seat,
+            capabilities=self._CAPS,
+            judgment_seat=judge,
+            action_record=self._record(),
+        )
+
+        await driver.decide(_trailing_with_task("Summarize the meeting discussion."))
+
+        assert len(judge.calls) == 1  # no requested set → stochastic-judge fallback
+
+    async def test_persisted_requested_survives_a_compacted_later_turn(self) -> None:
+        # An earlier turn named all the files (persist-once captured them). The
+        # current turn's task is client-compacted — it names no files. Without
+        # persist-once the gate re-derives an empty set and collapses to the
+        # judge (which false-COMPLETEs here); with it, the persisted set still
+        # anchors REMAINING. This is the live Spike σ run-2 failure mode.
+        judge = _FakeJudgmentSeat("VERDICT: COMPLETE\n")
+        seat = _FakeSeatFiller(_delegation_response("test_converters.py"))
+        record = self._record("converters.py")  # 1 of 3 produced
+        record.set_requested_if_absent(
+            "test-session",
+            frozenset({"converters.py", "test_converters.py", "README.md"}),
+        )
+        driver = _build_driver(
+            seat, capabilities=self._CAPS, judgment_seat=judge, action_record=record
+        )
+
+        await driver.decide(_trailing_with_task("Continue with the remaining work."))
+
+        assert len(judge.calls) == 0  # persisted set used → no stochastic fallback
+        trailing = str(seat.calls[0][0][-1]["content"])
+        assert "test_converters.py" in trailing
+        assert "README.md" in trailing
+
+    async def test_decide_persists_the_requested_set_once_on_first_naming(self) -> None:
+        # The driver captures the requested set from the task it sees this turn,
+        # so a later compacted turn reads the stable persisted set.
+        judge = _FakeJudgmentSeat("VERDICT: COMPLETE\n")
+        seat = _FakeSeatFiller(_delegation_response("test_converters.py"))
+        record = self._record("converters.py")
+        driver = _build_driver(
+            seat, capabilities=self._CAPS, judgment_seat=judge, action_record=record
+        )
+
+        await driver.decide(_trailing_with_task(self._TASK))
+
+        assert record.requested("test-session") == frozenset(
+            {"converters.py", "test_converters.py", "README.md"}
+        )

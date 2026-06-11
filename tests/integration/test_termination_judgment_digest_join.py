@@ -116,6 +116,13 @@ def _context(messages: list[ChatMessage]) -> SessionContext:
     )
 
 
+# A task that names no files, so completeness routes to the stochastic judge
+# (the J-3 deterministic gate fires only for named-file tasks — Spike σ). The
+# recorded path the digest quotes comes from the seat's delegation, not the
+# task, so the join assertions are unaffected by the task wording.
+_NO_FILE_TASK = "Add a helper that reverses the words in a sentence."
+
+
 async def test_judgment_reads_the_framework_recorded_path_joined_with_result() -> None:
     seat = _DelegateThenJudge()
     record = SessionActionRecord()
@@ -123,9 +130,7 @@ async def test_judgment_reads_the_framework_recorded_path_joined_with_result() -
 
     # Turn N — a first-turn delegation. The driver records the emitted
     # write (framework's own emission); no judgment fires on a first turn.
-    await driver.decide(
-        _context([ChatMessage(role="user", content="write string_utils.py")])
-    )
+    await driver.decide(_context([ChatMessage(role="user", content=_NO_FILE_TASK)]))
     assert seat.judgment_messages == []
     [recorded] = record.records("join-int")
     assert recorded.target_path == "string_utils.py"
@@ -136,7 +141,7 @@ async def test_judgment_reads_the_framework_recorded_path_joined_with_result() -
     await driver.decide(
         _context(
             [
-                ChatMessage(role="user", content="write string_utils.py"),
+                ChatMessage(role="user", content=_NO_FILE_TASK),
                 ChatMessage(role="assistant", content=None),
                 ChatMessage(role="tool", content="Wrote file successfully"),
             ]
@@ -158,7 +163,8 @@ async def test_judgment_reads_the_framework_recorded_path_joined_with_result() -
 async def test_complete_verdict_converges_the_session_end_to_end() -> None:
     seat = _DelegateThenJudge()
     record = SessionActionRecord()
-    # Seed a completed action so the trailing turn is work-complete.
+    # Seed an action whose result the judge reads in the digest; the no-file
+    # task routes completeness to the judge, which returns COMPLETE.
     record.record_action("join-int", action_kind="write", target_path="a.py")
     record.join_result("join-int", "Wrote file successfully")
     driver = _build_real_driver(seat, record)
@@ -166,7 +172,7 @@ async def test_complete_verdict_converges_the_session_end_to_end() -> None:
     outcome = await driver.decide(
         _context(
             [
-                ChatMessage(role="user", content="write a.py"),
+                ChatMessage(role="user", content=_NO_FILE_TASK),
                 ChatMessage(role="assistant", content=None),
                 ChatMessage(role="tool", content="Wrote file successfully"),
             ]
