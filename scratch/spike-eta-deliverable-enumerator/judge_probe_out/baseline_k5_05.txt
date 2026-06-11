@@ -1,0 +1,2 @@
+VERDICT: COMPLETE  
+The task has been completed with the creation of converters.py (conversion functions), test_converters.py (unit tests), cli.py (command-line tool), test_cli.py (CLI tests), and README.md (documentation).

@@ -1,0 +1,2 @@
+VERDICT: COMPLETE  
+A temperature-conversion library was created with conversion functions in `converters.py`, unit tests in `test_converters.py`, a CLI tool in `cli.py`, CLI tests in `test_cli.py`, and usage documentation in `README.md`.

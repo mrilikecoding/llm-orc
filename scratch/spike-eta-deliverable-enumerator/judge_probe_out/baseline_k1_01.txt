@@ -1,0 +1,2 @@
+VERDICT: REMAINING
+The action record only shows the converters.py module being written; remaining deliverables include unit tests, a command-line tool, tests for the CLI, and documentation.

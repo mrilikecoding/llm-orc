@@ -1,0 +1,64 @@
+{
+  "model": "qwen3:14b",
+  "reps": 6,
+  "states": [
+    1,
+    4,
+    5
+  ],
+  "produced": [
+    "converters.py",
+    "test_converters.py",
+    "cli.py",
+    "test_cli.py",
+    "README.md"
+  ],
+  "summary": {
+    "baseline": {
+      "k1": {
+        "complete": 0,
+        "remaining": 6,
+        "parse_miss": 0,
+        "n": 6,
+        "incomplete_state": true
+      },
+      "k4": {
+        "complete": 0,
+        "remaining": 6,
+        "parse_miss": 0,
+        "n": 6,
+        "incomplete_state": true
+      },
+      "k5": {
+        "complete": 6,
+        "remaining": 0,
+        "parse_miss": 0,
+        "n": 6,
+        "incomplete_state": false
+      }
+    },
+    "armD": {
+      "k1": {
+        "complete": 0,
+        "remaining": 6,
+        "parse_miss": 0,
+        "n": 6,
+        "incomplete_state": true
+      },
+      "k4": {
+        "complete": 0,
+        "remaining": 6,
+        "parse_miss": 0,
+        "n": 6,
+        "incomplete_state": true
+      },
+      "k5": {
+        "complete": 6,
+        "remaining": 0,
+        "parse_miss": 0,
+        "n": 6,
+        "incomplete_state": false
+      }
+    }
+  }
+}

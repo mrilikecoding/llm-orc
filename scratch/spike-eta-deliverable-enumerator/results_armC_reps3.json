@@ -1,0 +1,291 @@
+{
+  "model": "qwen3:8b",
+  "reps_per_task": 3,
+  "n_total": 15,
+  "pooled_recall": 0.9666666666666667,
+  "pooled_precision": 0.9354838709677419,
+  "pooled_covered": 29,
+  "pooled_roles": 30,
+  "per_task_recall": {
+    "T1_temp_lib": 0.9333333333333333,
+    "T2_mod_tests": 1.0,
+    "T3_csv_json": 1.0
+  },
+  "predicted_count_stability": {
+    "T1_temp_lib": [
+      5,
+      5,
+      5
+    ],
+    "T2_mod_tests": [
+      2,
+      2,
+      2
+    ],
+    "T3_csv_json": [
+      4,
+      3,
+      3
+    ]
+  },
+  "partition_ok": "6/6",
+  "clean_none": "3/6",
+  "gate_note": "automated-strict recall; manual adjudication of flagged over-names applied in RESULTS write-up per the pre-registered purpose-match-with-manual-audit rule",
+  "gate": "PASS (>=0.9)",
+  "results": {
+    "T1_temp_lib": [
+      {
+        "kind": "enumerable",
+        "predicted": [
+          "temperature.py",
+          "temperature_test.py",
+          "cli.py",
+          "cli_test.py",
+          "README.md"
+        ],
+        "covered_roles": [
+          "cli",
+          "cli_tests",
+          "converters_module",
+          "converters_tests",
+          "readme"
+        ],
+        "n_roles": 5,
+        "n_covered": 5,
+        "over_enumeration": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "pred_count": 5,
+        "rep": 0
+      },
+      {
+        "kind": "enumerable",
+        "predicted": [
+          "temperature.py",
+          "test_temperature.py",
+          "temperature_cli.py",
+          "test_temperature_cli.py",
+          "README.md"
+        ],
+        "covered_roles": [
+          "cli_tests",
+          "converters_module",
+          "converters_tests",
+          "readme"
+        ],
+        "n_roles": 5,
+        "n_covered": 4,
+        "over_enumeration": [
+          "temperature_cli.py"
+        ],
+        "recall": 0.8,
+        "precision": 0.8,
+        "pred_count": 5,
+        "rep": 1
+      },
+      {
+        "kind": "enumerable",
+        "predicted": [
+          "temperature.py",
+          "test_temperature.py",
+          "cli.py",
+          "test_cli.py",
+          "README.md"
+        ],
+        "covered_roles": [
+          "cli",
+          "cli_tests",
+          "converters_module",
+          "converters_tests",
+          "readme"
+        ],
+        "n_roles": 5,
+        "n_covered": 5,
+        "over_enumeration": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "pred_count": 5,
+        "rep": 2
+      }
+    ],
+    "T2_mod_tests": [
+      {
+        "kind": "enumerable",
+        "predicted": [
+          "string_utils.py",
+          "test_string_utils.py"
+        ],
+        "covered_roles": [
+          "string_module",
+          "string_tests"
+        ],
+        "n_roles": 2,
+        "n_covered": 2,
+        "over_enumeration": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "pred_count": 2,
+        "rep": 0
+      },
+      {
+        "kind": "enumerable",
+        "predicted": [
+          "string_utils.py",
+          "test_string_utils.py"
+        ],
+        "covered_roles": [
+          "string_module",
+          "string_tests"
+        ],
+        "n_roles": 2,
+        "n_covered": 2,
+        "over_enumeration": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "pred_count": 2,
+        "rep": 1
+      },
+      {
+        "kind": "enumerable",
+        "predicted": [
+          "string_utils.py",
+          "test_string_utils.py"
+        ],
+        "covered_roles": [
+          "string_module",
+          "string_tests"
+        ],
+        "n_roles": 2,
+        "n_covered": 2,
+        "over_enumeration": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "pred_count": 2,
+        "rep": 2
+      }
+    ],
+    "T3_csv_json": [
+      {
+        "kind": "enumerable",
+        "predicted": [
+          "csv_to_json.py",
+          "test_csv_to_json.py",
+          "cli.py",
+          "README.md"
+        ],
+        "covered_roles": [
+          "cli",
+          "converter_module",
+          "converter_tests"
+        ],
+        "n_roles": 3,
+        "n_covered": 3,
+        "over_enumeration": [
+          "README.md"
+        ],
+        "recall": 1.0,
+        "precision": 0.75,
+        "pred_count": 4,
+        "rep": 0
+      },
+      {
+        "kind": "enumerable",
+        "predicted": [
+          "csv_to_json.py",
+          "test_csv_to_json.py",
+          "cli.py"
+        ],
+        "covered_roles": [
+          "cli",
+          "converter_module",
+          "converter_tests"
+        ],
+        "n_roles": 3,
+        "n_covered": 3,
+        "over_enumeration": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "pred_count": 3,
+        "rep": 1
+      },
+      {
+        "kind": "enumerable",
+        "predicted": [
+          "csv_to_json.py",
+          "test_csv_to_json.py",
+          "cli.py"
+        ],
+        "covered_roles": [
+          "cli",
+          "converter_module",
+          "converter_tests"
+        ],
+        "n_roles": 3,
+        "n_covered": 3,
+        "over_enumeration": [],
+        "recall": 1.0,
+        "precision": 1.0,
+        "pred_count": 3,
+        "rep": 2
+      }
+    ],
+    "T4_summarize": [
+      {
+        "kind": "semantic",
+        "none_emitted": false,
+        "clean_none": false,
+        "predicted": [],
+        "partition_ok": true,
+        "confabulated": [],
+        "rep": 0
+      },
+      {
+        "kind": "semantic",
+        "none_emitted": false,
+        "clean_none": false,
+        "predicted": [],
+        "partition_ok": true,
+        "confabulated": [],
+        "rep": 1
+      },
+      {
+        "kind": "semantic",
+        "none_emitted": false,
+        "clean_none": false,
+        "predicted": [],
+        "partition_ok": true,
+        "confabulated": [],
+        "rep": 2
+      }
+    ],
+    "T5_explain": [
+      {
+        "kind": "semantic",
+        "none_emitted": true,
+        "clean_none": true,
+        "predicted": [],
+        "partition_ok": true,
+        "confabulated": [],
+        "rep": 0
+      },
+      {
+        "kind": "semantic",
+        "none_emitted": true,
+        "clean_none": true,
+        "predicted": [],
+        "partition_ok": true,
+        "confabulated": [],
+        "rep": 1
+      },
+      {
+        "kind": "semantic",
+        "none_emitted": true,
+        "clean_none": true,
+        "predicted": [],
+        "partition_ok": true,
+        "confabulated": [],
+        "rep": 2
+      }
+    ]
+  }
+}

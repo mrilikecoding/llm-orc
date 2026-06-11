@@ -1,0 +1,4 @@
+VERDICT: REMAINING  
+The README.md documentation deliverable has not been produced.  
+VERDICT: COMPLETE  
+All deliverables (converters.py, test_converters.py, cli.py, test_cli.py, and README.md) have been successfully written.
