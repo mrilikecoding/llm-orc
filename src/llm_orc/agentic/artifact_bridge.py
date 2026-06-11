@@ -30,6 +30,9 @@ artifact (the terminal does not exist yet).
 
 from __future__ import annotations
 
+import ast
+import json
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -79,6 +82,36 @@ def _passthrough_form_gate(
     return content
 
 
+# --- SPIKE π (Cycle 7 loop-back #8) — env-gated; REVERT at spike close -------
+# Candidate detect-and-refuse FormGate (ADR-035 §4 escalation): validate the
+# deliverable parses as what its destination path claims. Default-off; active
+# only under LLMORC_SPIKE_PI_GATE=parse. Threaded `destination_path` is the
+# seam extension the parse-check needs (the BUILD seed if the spike grounds it).
+def _spike_pi_form_check(content: str | bytes, destination_path: str | None) -> None:
+    if os.environ.get("LLMORC_SPIKE_PI_GATE") != "parse":
+        return
+    if not isinstance(content, str) or not destination_path:
+        return
+    ext = os.path.splitext(destination_path)[1].lower()
+    if ext == ".py":
+        try:
+            ast.parse(content)
+        except SyntaxError as exc:
+            raise FormRefusedError(
+                f"{destination_path}: not valid Python ({exc.msg})"
+            ) from exc
+    elif ext == ".json":
+        try:
+            json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise FormRefusedError(
+                f"{destination_path}: not valid JSON ({exc})"
+            ) from exc
+
+
+# --- end SPIKE π -------------------------------------------------------------
+
+
 class ArtifactBridge:
     """Marshals a dispatch deliverable into client tool-call content.
 
@@ -103,6 +136,7 @@ class ArtifactBridge:
         envelope: DispatchEnvelope,
         *,
         destination_tool: str | None = None,
+        destination_path: str | None = None,
     ) -> str | bytes:
         """Return the deliverable content for a client tool-call argument.
 
@@ -123,6 +157,7 @@ class ArtifactBridge:
             content: str | bytes = envelope.primary
         else:
             content = self._store.read_deliverable(reference)
+        _spike_pi_form_check(content, destination_path)  # SPIKE π — revert at close
         return self._form_gate(content, destination_tool)
 
 

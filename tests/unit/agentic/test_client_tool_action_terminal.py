@@ -180,15 +180,22 @@ class _RecordingBridge(ArtifactBridge):
     def __init__(self, store: SessionArtifactStore) -> None:
         super().__init__(store)
         self.destinations: list[str | None] = []
+        self.destination_paths: list[str | None] = []
 
     def marshal(
         self,
         envelope: DispatchEnvelope,
         *,
         destination_tool: str | None = None,
+        destination_path: str | None = None,
     ) -> str | bytes:
         self.destinations.append(destination_tool)
-        return super().marshal(envelope, destination_tool=destination_tool)
+        self.destination_paths.append(destination_path)
+        return super().marshal(
+            envelope,
+            destination_tool=destination_tool,
+            destination_path=destination_path,
+        )
 
 
 class TestTerminalThreadsDestinationTool:
