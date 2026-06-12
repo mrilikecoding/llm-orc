@@ -38,7 +38,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from llm_orc.agentic.artifact_bridge import ArtifactBridge
+from llm_orc.agentic.artifact_bridge import ArtifactBridge, parse_check_form_gate
 from llm_orc.agentic.autonomy_policy import AutonomyPolicy
 from llm_orc.agentic.budget_controller import BudgetController
 from llm_orc.agentic.calibration_gate import (
@@ -496,7 +496,13 @@ async def get_client_tool_action_terminal() -> _ChatCompletionsCaller:
     """
     return ClientToolActionTerminal(
         loop_driver=await get_loop_driver(),
-        bridge=ArtifactBridge(get_session_artifact_store()),
+        # ADR-041 §Decision 1 — the deterministic destination-validity gate
+        # installs at the FormGate seam (FC-57, zero-Terminal-edits): a
+        # deliverable that does not parse as what its destination path claims
+        # is refused before it reaches the client.
+        bridge=ArtifactBridge(
+            get_session_artifact_store(), form_gate=parse_check_form_gate
+        ),
         # ADR-039 V-04: the Terminal captures each resolved deliverable's
         # content onto the same process-scoped record the driver writes its
         # actions to — the content anchor's source for a later turn's callee.

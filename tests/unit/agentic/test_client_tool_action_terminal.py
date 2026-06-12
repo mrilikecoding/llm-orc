@@ -225,6 +225,9 @@ class TestTerminalThreadsDestinationTool:
         await _collect(terminal.run(_make_context()))
 
         assert bridge.destinations == ["write"]
+        # ADR-041 V-01: the destination *path* is threaded to the gate too,
+        # not just the tool — the parse-check derives the extension from it.
+        assert bridge.destination_paths == ["sort.py"]
 
 
 class TestApplyWorkCapturesDeliverableContent:

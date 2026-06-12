@@ -42,7 +42,12 @@ from llm_orc.agentic.session_artifact_store import (
     SessionArtifactStore,
 )
 
-__all__ = ["ArtifactBridge", "FormGate", "FormRefusedError"]
+__all__ = [
+    "ArtifactBridge",
+    "FormGate",
+    "FormRefusedError",
+    "parse_check_form_gate",
+]
 
 
 class FormRefusedError(Exception):
@@ -88,16 +93,31 @@ def _passthrough_form_gate(
     return content
 
 
-# --- SPIKE π (Cycle 7 loop-back #8) — env-gated; REVERT at spike close -------
-# Candidate detect-and-refuse FormGate (ADR-035 §4 escalation): validate the
-# deliverable parses as what its destination path claims. Default-off; active
-# only under LLMORC_SPIKE_PI_GATE=parse. Threaded `destination_path` is the
-# seam extension the parse-check needs (the BUILD seed if the spike grounds it).
-def _spike_pi_form_check(content: str | bytes, destination_path: str | None) -> None:
-    if os.environ.get("LLMORC_SPIKE_PI_GATE") != "parse":
-        return
+def parse_check_form_gate(
+    content: str | bytes,
+    destination_tool: str | None,
+    destination_path: str | None,
+) -> str | bytes:
+    """Deterministic destination-validity gate (ADR-041 §Decision 1).
+
+    The committed detect-and-refuse gate Spike π grounded: refuse any
+    deliverable that does not parse as what its destination *path* claims.
+    A ``.py`` must ``ast.parse``; a ``.json`` must ``json.loads``; other
+    destinations (prose/``.md``) pass un-inspected — the parse/validity
+    determinism boundary (§Decision 6). Both the σ form-bleed (trailing
+    prose) and the η intent-divergence (wrong language) break the same
+    parser, so one check covers both seams (corpus Fork 2, miss-set ∅).
+
+    The gate inspects bytes — it does not trust the model — and never
+    extracts or normalizes (Spike χ F-χ.1 / corpus Fork 1 reject that path
+    as fragile): it returns the content unchanged when valid (fidelity,
+    FC-49) and raises :class:`FormRefusedError` when structurally wrong.
+    Installed at the production construction site via the ``form_gate=``
+    seam (FC-57, zero-Terminal-edits); the Terminal degrades the refusal
+    to a dispatch-failure ``stop``.
+    """
     if not isinstance(content, str) or not destination_path:
-        return
+        return content
     ext = os.path.splitext(destination_path)[1].lower()
     if ext == ".py":
         try:
@@ -113,9 +133,7 @@ def _spike_pi_form_check(content: str | bytes, destination_path: str | None) -> 
             raise FormRefusedError(
                 f"{destination_path}: not valid JSON ({exc})"
             ) from exc
-
-
-# --- end SPIKE π -------------------------------------------------------------
+    return content
 
 
 class ArtifactBridge:
@@ -163,7 +181,6 @@ class ArtifactBridge:
             content: str | bytes = envelope.primary
         else:
             content = self._store.read_deliverable(reference)
-        _spike_pi_form_check(content, destination_path)  # SPIKE π — revert at close
         return self._form_gate(content, destination_tool, destination_path)
 
 
