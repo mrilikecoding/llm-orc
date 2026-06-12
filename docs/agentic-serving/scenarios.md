@@ -1683,3 +1683,40 @@ These Layer-match "no" entries are the table working as designed: they mark wher
 | A named-file multi-file session converges to a deterministic COMPLETE (all files produced, text-only finish, client loop ends) with no false-COMPLETE | Real OpenCode round-trip (real `llm-orc serve` + real client + local Ollama, $0) | Two $0 real-OpenCode 5-file runs, one at the 14b seat/coder and one at the production config (14b seat, 8b coder), each converging in six turns with `requested=[5]` every turn, monotonic produced 1→5, and COMPLETE at turn 6 | **yes — discharged 2026-06-10** (both tiers; evidence Spike σ log §RESOLUTION + `scratch/spike-sigma-premature-finish/j3_diag/`). The code was built and validated live before the ADR, so this is unconditional at the DECIDE gate |
 | persist-once holds the requested set stable under a real-client compaction event | Live real-client run | A real-client session exhibiting mid-session task compaction, with the gate still reading the persisted set | **no — unverified live** (no compaction occurred in either discharge run); validated only by a unit test that simulates the compaction. A BUILD-watch item carried forward |
 | The gate's coverage of the real task space (the named-file fraction) | Deployment characterization | The fraction of target-deployment tasks that name their files explicitly | **not characterized** — the cycle's north-star task shape is named-file, so the restriction is expected to cover the majority, but the coverage fraction is an untested assumption (ADR-040 §Consequences) |
+
+## Feature: Destination-Validity Gate (ADR-041, Spike π form/adequacy seam)
+
+*Conformance disposition (`housekeeping/audits/conformance-scan-cycle-7-loopback8.md`): the mechanism is **env-gated spike code** (active only under `LLMORC_SPIKE_PI_GATE=parse`), validated live but not in the production path. 10 BUILD-work items (de-gate ×3, FormGate-seam install, the `FormGate` 3-arg interface reconciliation, constructor/factory/cap/method renames, spike-comment removal) + 2 test-gap VIOLATIONS (the env-gated path is dead in CI: `bridge.destination_paths` recorded but never asserted; no test exercises the parse-check logic at all). `destination_path` is already fully threaded Terminal → `marshal`. The discharge gate below is met for protection-design + recovery at the spike layer; the production install and the named coder-tier escalation are BUILD. Scenarios are written against the de-gated production target.*
+
+### Scenario: an invalid deliverable never reaches the client (the protection floor)
+
+**Given** a delegated generation whose deliverable is bound for a client `write` tool with a destination path of `.py` (or `.json`), and a coder that produced output that does not `ast.parse` (a trailing-prose bleed or wrong-language content)
+**When** the marshalling boundary evaluates the deliverable at the destination-validity gate
+**Then** the gate refuses to emit (raises `FormRefusedError`), so no invalid file reaches the client's workspace — the deliverable is either recovered before emission or the turn degrades to a dispatch-failure rather than shipping a broken `write`. Refutable: a `.py` deliverable that fails `ast.parse` reaching the client as a `tool_calls` `write` violates the protection FC. *(Spike π live arm: 0 invalid files across 5 gated sessions vs baseline 3/5. The gate inspects bytes — protection is degradation-independent.)*
+
+### Scenario: an intermittent bleed self-heals within the serving turn (server-side recovery)
+
+**Given** a gate refusal on a destination whose coder bleeds *intermittently* (a valid re-sample is reachable within the retry cap)
+**When** the Loop Driver re-dispatches the same destination within the serving turn (the coder re-samples, reusing the delegation path so the action is recorded once)
+**Then** a valid deliverable emits and the session continues, with no client-visible refusal and no broken-file diff. Refutable: an intermittent bleed that ends the session at the first refusal (no within-turn re-dispatch) violates the recovery FC; a re-dispatch that double-records the action violates the single-record property. *(Spike π live arm runs 1/2/5: `cli.py`/`test_cli.py`/`converters.py` each rescued within the cap → converged. The smoke finding grounds *why* recovery is server-side: a client-facing refusal-as-`stop` ends the OpenCode loop before ADR-040's next-turn re-delegation could fire.)*
+
+### Scenario: a persistent bleed is protected, not converged, and routes to escalation
+
+**Given** a gate refusal on a destination whose coder bleeds *persistently* (the cheap 8b coder fails `ast.parse` on every attempt within the cap)
+**When** the recovery cap exhausts
+**Then** the gate degrades to a dispatch-failure `stop` (the session ends short with fewer files, never a broken file), and the failure surfaces as the protect-but-not-converge floor that routes to coder-tier escalation (ADR-014 Calibration Gate), not as a shipped invalid deliverable. Refutable: a cap-exhausted destination that emits an invalid file (rather than refusing) violates the protection floor. *(Spike π live arm runs 3/4: `cli.py` / `test_converters.py` exhausted → refused → short. Arm E: the cheap 8b bleeds `cli.py` ~50% even fresh [3/6]; MiniMax coder 6/6 — the lever is coder capability, confirmed in isolation, n=6.)*
+
+### Scenario (coverage boundary): a prose destination passes un-inspected
+
+**Given** a deliverable bound for a `.md` (or other non-structurally-checkable) destination
+**When** the gate evaluates it
+**Then** the gate passes it through un-inspected (prose form is not structurally checkable; a parseable-but-wrong prose deliverable is the irreducibly-semantic residual handed to PLAY). Refutable: a gate that refuses or mangles a legitimate `.md` deliverable violates the determinism-boundary FC (the corpus arm measured FP=0 for the parse-check, including a README carrying a ```bash fence). *(The parse/validity edge is the principled determinism boundary — the gate is deterministic exactly where the destination type admits a structural check.)*
+
+### Cycle Acceptance Criteria (form/adequacy seam)
+
+| Criterion | Specified layer | Verification method | Layer-match check |
+|---|---|---|---|
+| No invalid deliverable reaches the client across a real multi-file trajectory (the protection floor) | Real OpenCode round-trip (real `llm-orc serve` + real client + local Ollama, $0) | The $0 real-OpenCode 5-file run with the gate on, every produced `.py` `ast.parse`-valid and every `.json` `json.loads`-valid at the client | **yes — met at the spike layer** (Spike π Cell B: 0 invalid across 5 gated sessions; baseline 3/5). Production-path discharge of ADR-035's form-seam protection CA is the BUILD de-gate-and-install |
+| Intermittent bleeds self-heal via server-side recovery (the convergence helper) | Real OpenCode round-trip ($0) | The same run, with within-turn re-dispatch rescuing intermittent bleeds and the session converging | **partial — protects-but-does-not-recover** (converged B 3/5 vs A 2/5, +1/5; rescues intermittent, exhausts on persistent). Convergence under the cheap tier is a separate Conditional Acceptance |
+| Persistent bleeds close under coder-tier escalation | Wired session under an escalated coder tier | A real-client multi-file session that converges when the persistent-bleed destination is delegated to an escalated coder (ADR-014 lever) | **no — named, not built** (Arm E confirmed the lever in isolation, n=6 on `cli.py`; session-level convergence under wired escalation is BUILD) |
+| The experiential trade-off of the gate's visible failure mode (cap-exhausted short session vs. pass-through broken-file diff) | PLAY | Stakeholder observation of whether a short session reads as better/worse than a broken-file diff; FC-51 `TurnDecision` diagnostics distinguish the turn types | **PLAY** — the experiential question the spike did not resolve (argument-audit-surfaced), alongside the semantic parses-but-wrong residual |

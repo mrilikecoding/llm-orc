@@ -1,6 +1,22 @@
 # ADR-035: Client-Tool Deliverable Form Contract (Boundary-Composed)
 
-**Status:** Proposed — Conditional Acceptance (ADR-097); axis-2 / breadth validation pending PLAY
+> **Updated by ADR-041 on 2026-06-11.** §Decision 4's detect-and-refuse gate —
+> held here as a speculative escalation "if PLAY shows residual non-compliance" —
+> is promoted to a committed **deterministic destination-validity gate** (parse/
+> validate the deliverable against its destination path's claimed type), grounded
+> by Spike π *before* PLAY. The form-seam **protection** Conditional Acceptance is
+> *design-discharged* (the mechanism is model-compliance-independent and validated
+> live) but **not yet install-discharged** — ADR-041's gate is env-gated spike code
+> until the BUILD de-gate, so the production path does not run it by default. A
+> wrong-form deliverable is caught structurally (the gate inspects bytes) once
+> installed, not relied upon not to occur. ADR-041 also adds the server-side
+> re-dispatch recovery this ADR did not anticipate — the live arm showed a
+> client-facing refusal ends the OpenCode loop, so §4's "degrade to a
+> dispatch-failure completion" does not self-heal on its own. The boundary
+> directive (§Decision 1) stays the *primary* form mechanism; the rest of this ADR
+> is unchanged. See ADR-041.
+
+**Status:** Proposed — Conditional Acceptance (ADR-097), Updated by ADR-041 (form-seam protection design-discharged 2026-06-11; install-discharge is BUILD); axis-2 / breadth validation pending PLAY
 
 **Date:** 2026-06-03
 
