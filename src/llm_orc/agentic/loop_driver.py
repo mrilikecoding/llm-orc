@@ -124,12 +124,10 @@ _SPIKE_PI_MAX_REDISPATCH = 2
 def _spike_pi_invalid(content: str, destination_path: str) -> bool:
     """Is the deliverable invalid for what its destination path claims?
 
-    SPIKE π recovery probe — mirrors the parse-check FormGate. Returns False
-    (no retry) when the env gate is off or the destination is not structurally
-    checkable (``.md``/unknown), so the path is a no-op outside the spike.
+    The recovery probe — mirrors the parse-check FormGate (ADR-041
+    §Decision 3). Returns False (no retry) when the destination is not
+    structurally checkable (``.md``/unknown).
     """
-    if os.environ.get("LLMORC_SPIKE_PI_GATE") != "parse":
-        return False
     ext = os.path.splitext(destination_path)[1].lower()
     if ext == ".py":
         try:
@@ -822,7 +820,7 @@ class LoopDriver:
         destination_tool: str,
         file_path: str,
     ) -> DispatchEnvelope:
-        """SPIKE π — env-gated server-side re-dispatch on a parse-invalid deliverable.
+        """SPIKE π — server-side re-dispatch on a parse-invalid deliverable.
 
         Keeps the loop self-healing within the serving turn: a refused
         generation (invalid for its destination form) is re-dispatched — the
@@ -832,10 +830,12 @@ class LoopDriver:
         finding). Returns the first valid envelope, or the last attempt after
         the cap; the terminal's FormGate then makes the final protect-or-emit
         call (cap exhaustion is the pre-registered protect-but-not-recover
-        signal that routes to Arm E). Inline deliverables only — substrate
-        deliverables fall through to the terminal gate. REVERT at spike close.
+        signal that routes to coder-tier escalation, ADR-041 §Decision 5).
+        Resolves inline and substrate deliverables alike (ADR-041 §Decision 3);
+        gated on the artifact store, recovery's content-resolution dependency
+        (always wired in production; absent store → no recovery).
         """
-        if os.environ.get("LLMORC_SPIKE_PI_GATE") != "parse":
+        if self._spike_pi_store is None:
             return envelope
         redispatches = 0
         content = _spike_pi_resolve_content(envelope, self._spike_pi_store)

@@ -19,7 +19,11 @@ from pathlib import Path
 
 import pytest
 
-from llm_orc.agentic.artifact_bridge import ArtifactBridge, FormRefusedError
+from llm_orc.agentic.artifact_bridge import (
+    ArtifactBridge,
+    FormRefusedError,
+    parse_check_form_gate,
+)
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
 from llm_orc.agentic.session_artifact_store import SessionArtifactStore
 
@@ -127,3 +131,84 @@ class TestFormGateSeam:
 
         with pytest.raises(FormRefusedError, match="write"):
             bridge.marshal(envelope, destination_tool="write")
+
+
+class TestParseCheckFormGate:
+    """ADR-041 §Decision 1 — the deterministic destination-validity gate.
+
+    The committed detect-and-refuse gate (promoted from ADR-035 §4's
+    reserved escalation by Spike π): the marshalled content must parse as
+    what its destination *path* claims. A ``.py`` must ``ast.parse``; a
+    ``.json`` must ``json.loads``; other destinations (prose/``.md``) pass
+    un-inspected — the parse/validity determinism boundary (ADR-041
+    §Decision 6). The gate inspects bytes deterministically and never
+    extracts or normalizes (Spike χ F-χ.1 / corpus Fork-1): it only
+    recognizes a structurally-wrong deliverable and refuses it. Installed
+    at the production construction site via the ``form_gate=`` seam (FC-57,
+    zero-Terminal-edits).
+    """
+
+    def test_invalid_python_refuses(self, tmp_path: Path) -> None:
+        """The σ form-bleed seam: a ``.py`` with trailing prose does not
+        parse, so the gate refuses (ADR-041; Spike π corpus C1)."""
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        bridge = ArtifactBridge(store, form_gate=parse_check_form_gate)
+        bled = "def f():\n    return 1\nThis function returns one.\n"
+        envelope = DispatchEnvelope(status="success", primary=bled)
+
+        with pytest.raises(FormRefusedError, match="cli.py"):
+            bridge.marshal(
+                envelope, destination_tool="write", destination_path="cli.py"
+            )
+
+    def test_wrong_language_refuses(self, tmp_path: Path) -> None:
+        """The η intent-divergence seam: JavaScript in a ``.py`` slot does
+        not parse as Python, so the gate refuses (ADR-041; Spike π corpus C4)."""
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        bridge = ArtifactBridge(store, form_gate=parse_check_form_gate)
+        js = "const add = (a, b) => a + b;\n"
+        envelope = DispatchEnvelope(status="success", primary=js)
+
+        with pytest.raises(FormRefusedError, match="util.py"):
+            bridge.marshal(
+                envelope, destination_tool="write", destination_path="util.py"
+            )
+
+    def test_invalid_json_refuses(self, tmp_path: Path) -> None:
+        """A ``.json`` destination must ``json.loads`` (ADR-041 §Decision 1)."""
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        bridge = ArtifactBridge(store, form_gate=parse_check_form_gate)
+        envelope = DispatchEnvelope(status="success", primary="{not valid json,}")
+
+        with pytest.raises(FormRefusedError, match="config.json"):
+            bridge.marshal(
+                envelope, destination_tool="write", destination_path="config.json"
+            )
+
+    def test_valid_python_passes_through(self, tmp_path: Path) -> None:
+        """Valid Python marshals unchanged — the gate is a no-op on good
+        content (fidelity preserved, FC-49)."""
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        bridge = ArtifactBridge(store, form_gate=parse_check_form_gate)
+        content = "def add(a: int, b: int) -> int:\n    return a + b\n"
+        envelope = DispatchEnvelope(status="success", primary=content)
+
+        marshalled = bridge.marshal(
+            envelope, destination_tool="write", destination_path="adder.py"
+        )
+
+        assert marshalled == content
+
+    def test_prose_destination_passes_uninspected(self, tmp_path: Path) -> None:
+        """A ``.md`` destination is not structurally checkable, so it passes
+        un-inspected — the principled determinism edge (ADR-041 §Decision 6)."""
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        bridge = ArtifactBridge(store, form_gate=parse_check_form_gate)
+        prose = "# Title\n\nThis is documentation, not code.\n"
+        envelope = DispatchEnvelope(status="success", primary=prose)
+
+        marshalled = bridge.marshal(
+            envelope, destination_tool="write", destination_path="README.md"
+        )
+
+        assert marshalled == prose
