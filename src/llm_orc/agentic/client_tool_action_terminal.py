@@ -124,7 +124,7 @@ class ClientToolActionTerminal:
             content = self._bridge.marshal(
                 outcome.envelope,
                 destination_tool=outcome.tool_name,
-                destination_path=outcome.file_path,  # SPIKE π seam extension
+                destination_path=outcome.file_path,  # ADR-041 §2 — gate's extension
             )
         except (ArtifactNotFoundError, FormRefusedError) as error:
             return _finish_chunks(f"[dispatch failed: {error}]")

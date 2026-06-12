@@ -83,7 +83,7 @@ from llm_orc.agentic.session_action_record import (
     ActionRecord,
     SessionActionRecord,
 )
-from llm_orc.agentic.session_artifact_store import (  # SPIKE π — revert at close
+from llm_orc.agentic.session_artifact_store import (
     ArtifactNotFoundError,
     ArtifactReference,
     SessionArtifactStore,
@@ -111,17 +111,19 @@ __all__ = [
 
 _logger = logging.getLogger("llm_orc.agentic.loop_driver")
 
-# --- SPIKE π (Cycle 7 loop-back #8) — env-gated; REVERT at spike close --------
-# Server-side re-dispatch recovery: a parse-invalid generation deliverable is
-# re-dispatched (the coder re-samples) up to this many times rather than the
-# refusal degrading to a `stop` that ends the client loop. The smoke arm
-# established that FC-57's refusal-as-`stop` is incompatible with ADR-040's
-# next-turn re-delegation (a `stop` produces no next turn). Active only under
-# LLMORC_SPIKE_PI_GATE=parse; the terminal's FormGate stays the final arbiter.
-_SPIKE_PI_MAX_REDISPATCH = 2
+# Server-side re-dispatch recovery (ADR-041 §Decision 3/4): a parse-invalid
+# generation deliverable is re-dispatched (the coder re-samples) up to this many
+# times rather than the refusal degrading to a `stop` that ends the client loop.
+# The smoke arm established that FC-57's refusal-as-`stop` is incompatible with
+# ADR-040's next-turn re-delegation (a `stop` produces no next turn), so recovery
+# lives server-side. The terminal's FormGate stays the final arbiter; cap
+# exhaustion is the protect-but-not-recover signal routing to coder-tier
+# escalation (§Decision 5). The cap value is a tuning parameter (§Decision 4),
+# not a load-bearing commitment.
+_FORM_REDISPATCH_CAP = 2
 
 
-def _spike_pi_invalid(content: str, destination_path: str) -> bool:
+def _deliverable_invalid_for_form(content: str, destination_path: str) -> bool:
     """Is the deliverable invalid for what its destination path claims?
 
     The recovery probe — mirrors the parse-check FormGate (ADR-041
@@ -142,10 +144,10 @@ def _spike_pi_invalid(content: str, destination_path: str) -> bool:
     return False
 
 
-def _spike_pi_resolve_content(
+def _resolve_deliverable_content(
     envelope: DispatchEnvelope, store: SessionArtifactStore | None
 ) -> str | None:
-    """The deliverable text for the SPIKE π parse check (inline or substrate).
+    """The deliverable text for the recovery parse check (inline or substrate).
 
     Mirrors the bridge's resolution: inline (``artifacts`` empty) reads
     ``primary``; substrate-routed (``output_substrate: artifact``, as the
@@ -172,8 +174,6 @@ def _spike_pi_resolve_content(
         return None
     return content if isinstance(content, str) else None
 
-
-# --- end SPIKE π --------------------------------------------------------------
 
 _GENERATION_TOOL = "invoke_ensemble"
 """The internal tool name the seat-filler emits to delegate per-turn
@@ -426,7 +426,7 @@ class LoopDriver:
         budget: BudgetController,
         capabilities: frozenset[str] = frozenset(),
         event_substrate: DispatchEventSubstrate | None = None,
-        artifact_store: SessionArtifactStore | None = None,  # SPIKE π — revert
+        artifact_store: SessionArtifactStore | None = None,
     ) -> None:
         self._seat_filler = seat_filler
         self._enforcer = enforcer
@@ -436,7 +436,7 @@ class LoopDriver:
         self._budget = budget
         self._capabilities = capabilities
         self._event_substrate = event_substrate
-        self._spike_pi_store = artifact_store  # SPIKE π recovery — revert at close
+        self._artifact_store = artifact_store
 
     async def decide(self, context: SessionContext) -> TurnOutcome:
         """Decide one turn of the tool-driven multi-turn loop.
@@ -587,7 +587,7 @@ class LoopDriver:
                 file_path,
                 anchor_present,
             ) = await self._delegate_generation(action, context, destination_tool)
-            envelope = await self._spike_pi_recover(  # SPIKE π — revert at close
+            envelope = await self._recover_invalid_form(
                 envelope, action, context, destination_tool, file_path
             )
             self._action_record.record_action(
@@ -812,7 +812,7 @@ class LoopDriver:
         )
         return _result_to_envelope(result), capability, file_path, bool(anchor)
 
-    async def _spike_pi_recover(
+    async def _recover_invalid_form(
         self,
         envelope: DispatchEnvelope,
         action: ToolCall,
@@ -820,47 +820,48 @@ class LoopDriver:
         destination_tool: str,
         file_path: str,
     ) -> DispatchEnvelope:
-        """SPIKE π — server-side re-dispatch on a parse-invalid deliverable.
+        """Server-side re-dispatch on a parse-invalid deliverable (ADR-041 §3).
 
         Keeps the loop self-healing within the serving turn: a refused
         generation (invalid for its destination form) is re-dispatched — the
         seat re-samples at the model's default temperature — up to
-        ``_SPIKE_PI_MAX_REDISPATCH`` times, rather than the refusal degrading to
-        a dispatch-failure ``stop`` that ends the client loop (the smoke
+        ``_FORM_REDISPATCH_CAP`` times, rather than the refusal degrading to a
+        dispatch-failure ``stop`` that ends the client loop (the smoke
         finding). Returns the first valid envelope, or the last attempt after
         the cap; the terminal's FormGate then makes the final protect-or-emit
-        call (cap exhaustion is the pre-registered protect-but-not-recover
-        signal that routes to coder-tier escalation, ADR-041 §Decision 5).
-        Resolves inline and substrate deliverables alike (ADR-041 §Decision 3);
-        gated on the artifact store, recovery's content-resolution dependency
-        (always wired in production; absent store → no recovery).
+        call (cap exhaustion is the protect-but-not-recover signal that routes
+        to coder-tier escalation, ADR-041 §Decision 5). Resolves inline and
+        substrate deliverables alike (ADR-041 §Decision 3); gated on the
+        artifact store, recovery's content-resolution dependency (always wired
+        in production; absent store → no recovery).
         """
-        if self._spike_pi_store is None:
+        if self._artifact_store is None:
             return envelope
         redispatches = 0
-        content = _spike_pi_resolve_content(envelope, self._spike_pi_store)
+        content = _resolve_deliverable_content(envelope, self._artifact_store)
         while (
             content is not None
-            and _spike_pi_invalid(content, file_path)
-            and redispatches < _SPIKE_PI_MAX_REDISPATCH
+            and _deliverable_invalid_for_form(content, file_path)
+            and redispatches < _FORM_REDISPATCH_CAP
         ):
             redispatches += 1
             _logger.info(
-                "spike-pi recovery: re-dispatch %d/%d destination=%s "
+                "form recovery: re-dispatch %d/%d destination=%s "
                 "(deliverable invalid for its form)",
                 redispatches,
-                _SPIKE_PI_MAX_REDISPATCH,
+                _FORM_REDISPATCH_CAP,
                 file_path,
             )
             envelope, _, _, _ = await self._delegate_generation(
                 action, context, destination_tool
             )
-            content = _spike_pi_resolve_content(envelope, self._spike_pi_store)
+            content = _resolve_deliverable_content(envelope, self._artifact_store)
         if redispatches:
             _logger.info(
-                "spike-pi recovery: destination=%s recovered=%s redispatches=%d",
+                "form recovery: destination=%s recovered=%s redispatches=%d",
                 file_path,
-                content is not None and not _spike_pi_invalid(content, file_path),
+                content is not None
+                and not _deliverable_invalid_for_form(content, file_path),
                 redispatches,
             )
         return envelope
