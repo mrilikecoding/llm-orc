@@ -17,6 +17,7 @@ Terminal's job (ADR-034); see ``test_client_tool_action_terminal.py``.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -30,6 +31,7 @@ from llm_orc.agentic.loop_driver import (
     FinishTurn,
     LoopDriver,
     SeatFiller,
+    ToolDispatcher,
     TurnDecision,
     compose_form_directive,
     compose_judgment_message,
@@ -45,6 +47,7 @@ from llm_orc.agentic.session_action_record import (
     ActionRecord,
     SessionActionRecord,
 )
+from llm_orc.agentic.session_artifact_store import SessionArtifactStore
 from llm_orc.agentic.session_registry import SessionIdentity, SessionState
 from llm_orc.agentic.session_start import ChatMessage, SessionContext
 from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
@@ -112,12 +115,13 @@ def _make_context(
 def _build_driver(
     seat_filler: SeatFiller,
     *,
-    tool_dispatch: _FakeToolDispatch | None = None,
+    tool_dispatch: _FakeToolDispatch | ToolDispatcher | None = None,
     capabilities: frozenset[str] = frozenset(),
     event_substrate: DispatchEventSubstrate | None = None,
     action_record: SessionActionRecord | None = None,
     judgment_seat: _FakeJudgmentSeat | None = None,
     budget: BudgetController | None = None,
+    artifact_store: SessionArtifactStore | None = None,
 ) -> LoopDriver:
     return LoopDriver(
         seat_filler=seat_filler,
@@ -128,6 +132,7 @@ def _build_driver(
         action_record=action_record or SessionActionRecord(),
         judgment_seat=judgment_seat or _FakeJudgmentSeat("VERDICT: REMAINING\n"),
         budget=budget or BudgetController(turn_limit=1_000, token_limit=1_000_000),
+        artifact_store=artifact_store,
     )
 
 
@@ -386,6 +391,144 @@ class TestLoopDriverDelegatesToCallee:
         # The envelope, not baked content, travels to the Terminal (which
         # marshals it); WP-LB-B's deliverable is the inline primary.
         assert outcome.envelope.primary == "def sort(xs): ..."
+
+
+class _SequencedToolDispatch:
+    """Tool-dispatch double returning a scripted sequence of deliverables.
+
+    Each ``dispatch`` returns the next inline-envelope deliverable; the last
+    one repeats once the sequence is exhausted. This scripts the coder bleeding
+    invalid output then (optionally) re-sampling a valid file — the input to
+    the server-side recovery loop (ADR-041 §Decision 3).
+    """
+
+    def __init__(self, deliverables: list[str]) -> None:
+        self._deliverables = deliverables
+        self.calls: list[InternalToolCall] = []
+
+    async def dispatch(
+        self, call: InternalToolCall, *, session_id: str = ""
+    ) -> ToolCallResult:
+        index = min(len(self.calls), len(self._deliverables) - 1)
+        self.calls.append(call)
+        deliverable = self._deliverables[index]
+        return ToolCallSuccess(
+            id=call.id,
+            name=call.name,
+            content=deliverable,
+            envelope=DispatchEnvelope(status="success", primary=deliverable),
+        )
+
+
+def _delegate_seat_filler(file_path: str) -> _FakeSeatFiller:
+    """A seat-filler that delegates one generation bound for ``file_path``."""
+    return _FakeSeatFiller(
+        ToolCallingResponse(
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id="t1",
+                    name="invoke_ensemble",
+                    arguments_json=json.dumps(
+                        {
+                            "name": "code-generator",
+                            "input": "write the module",
+                            "filePath": file_path,
+                        }
+                    ),
+                )
+            ],
+            finish_reason="tool_calls",
+        )
+    )
+
+
+class TestLoopDriverFormRecovery:
+    """ADR-041 §Decision 3 — server-side re-dispatch on a parse-invalid deliverable.
+
+    When a delegated generation's deliverable does not parse as what its
+    destination path claims, the Loop Driver re-dispatches within the serving
+    turn (the coder re-samples) up to ``_FORM_REDISPATCH_CAP`` (=2) times,
+    rather than letting the refusal end the client loop (the smoke finding).
+    Recovery is gated on the artifact store — its content-resolution
+    dependency, always wired in production. The action is recorded once
+    regardless of how many re-dispatches run (the single-record property).
+    """
+
+    async def test_intermittent_bleed_self_heals_within_the_turn(
+        self, tmp_path: Path
+    ) -> None:
+        """Scenario: an intermittent bleed self-heals — a valid re-sample is
+        reachable within the cap, so the valid deliverable is the outcome."""
+        valid = "def main() -> None:\n    print('hi')\n"
+        dispatch = _SequencedToolDispatch(["def main(: !! not python", valid])
+        action_record = SessionActionRecord()
+        driver = _build_driver(
+            _delegate_seat_filler("cli.py"),
+            tool_dispatch=dispatch,
+            action_record=action_record,
+            artifact_store=SessionArtifactStore(agentic_sessions_root=tmp_path),
+        )
+
+        outcome = await driver.decide(_make_context())
+
+        assert isinstance(outcome, ApplyWork)
+        assert outcome.envelope.primary == valid  # recovered to the valid sample
+        assert len(dispatch.calls) == 2  # initial + one re-dispatch
+        # single-record property: re-dispatch reuses the delegation path, so the
+        # action is recorded once regardless of the re-dispatch count.
+        assert len(action_record.records("test-session")) == 1
+
+    async def test_persistent_bleed_exhausts_the_cap(self, tmp_path: Path) -> None:
+        """Scenario: a persistent bleed exhausts the cap (initial + 2
+        re-dispatches), returning the last attempt — the terminal's FormGate
+        is the final arbiter that degrades it to a dispatch-failure stop."""
+        dispatch = _SequencedToolDispatch(["def main(: still broken"])
+        driver = _build_driver(
+            _delegate_seat_filler("cli.py"),
+            tool_dispatch=dispatch,
+            artifact_store=SessionArtifactStore(agentic_sessions_root=tmp_path),
+        )
+
+        outcome = await driver.decide(_make_context())
+
+        assert isinstance(outcome, ApplyWork)
+        assert len(dispatch.calls) == 3  # initial + _FORM_REDISPATCH_CAP (2)
+        assert outcome.envelope.primary == "def main(: still broken"
+
+    async def test_recovery_inert_without_an_artifact_store(self) -> None:
+        """Without the store (recovery's content-resolution dependency) the
+        loop is inert — no re-dispatch — so a store-less driver behaves as it
+        did before the gate. Production always wires the store."""
+        dispatch = _SequencedToolDispatch(["def main(: broken"])
+        driver = _build_driver(
+            _delegate_seat_filler("cli.py"),
+            tool_dispatch=dispatch,
+            artifact_store=None,
+        )
+
+        outcome = await driver.decide(_make_context())
+
+        assert isinstance(outcome, ApplyWork)
+        assert len(dispatch.calls) == 1  # no re-dispatch
+        assert outcome.envelope.primary == "def main(: broken"
+
+    async def test_valid_deliverable_is_not_re_dispatched(self, tmp_path: Path) -> None:
+        """A valid first sample needs no recovery — one dispatch, passes
+        straight through (the common case is a no-op)."""
+        valid = "x = 1\n"
+        dispatch = _SequencedToolDispatch([valid])
+        driver = _build_driver(
+            _delegate_seat_filler("config.py"),
+            tool_dispatch=dispatch,
+            artifact_store=SessionArtifactStore(agentic_sessions_root=tmp_path),
+        )
+
+        outcome = await driver.decide(_make_context())
+
+        assert isinstance(outcome, ApplyWork)
+        assert len(dispatch.calls) == 1
+        assert outcome.envelope.primary == valid
 
 
 class TestFormDirectiveDestinationKeying:
