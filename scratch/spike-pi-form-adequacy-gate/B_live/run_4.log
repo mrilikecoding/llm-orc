@@ -1,0 +1,685 @@
+2026-06-11 17:38:55,286 [INFO] llm_orc.agentic.session_registry: SPIKE-PI-DEBUG resolve_identity: digest=343ad246dc9e nmsgs=3 roles=['system', 'user', 'user'] user_field=None first_user_len=40 tail='Generate a title for this conversation:\n'
+INFO:     127.0.0.1:60857 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-11 17:38:55,631 [INFO] llm_orc.agentic.session_registry: SPIKE-PI-DEBUG resolve_identity: digest=dd7233b4bc62 nmsgs=2 roles=['system', 'user'] user_field=None first_user_len=678 tail='functions in converters.py, and the README must document the real CLI usage.\n\n(Internal run label: B_live run 4. This line is not part of the task; ignore it.)"'
+2026-06-11 17:38:55,915 [ERROR] llm_orc.web.server: Unhandled error: Ensemble does not exist: agentic-routing-planner
+  + Exception Group Traceback (most recent call last):
+  |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 81, in collapse_excgroups
+  |     yield
+  |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 270, in __call__
+  |     async with anyio.create_task_group() as task_group:
+  |                ~~~~~~~~~~~~~~~~~~~~~~~^^
+  |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  |         "unhandled errors in a TaskGroup", self._exceptions
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    |     await self.app(scope, receive, _send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    |     await route.handle(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    |     await self.app(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 119, in app
+    |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 106, in app
+    |     await response(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 269, in __call__
+    |     with collapse_excgroups():
+    |          ~~~~~~~~~~~~~~~~~~^^
+    |   File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    |     self.gen.throw(value)
+    |     ~~~~~~~~~~~~~~^^^^^^^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    |     raise exc
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 273, in wrap
+    |     await func()
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 253, in stream_response
+    |     async for chunk in self.body_iterator:
+    |     ...<2 lines>...
+    |         await send({"type": "http.response.body", "body": chunk, "more_body": True})
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 824, in _stream_completion_with_heartbeat
+    |     async for chunk in _stream_completion(context, caller, model=model):
+    |         yield chunk
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 793, in _stream_completion
+    |     async for chunk in caller.run(context):
+    |     ...<2 lines>...
+    |             yield framed
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/dispatch_pipeline.py", line 254, in run
+    |     plan = await self._planner.plan(request=request)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/ensemble_backed_roles.py", line 79, in plan
+    |     result = await self._invoker.invoke(
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |         {"ensemble_name": self._ensemble_name, "input": request}
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     )
+    |     ^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/orchestra_service.py", line 251, in invoke
+    |     return await self._execution_handler.invoke(arguments)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/handlers/execution_handler.py", line 85, in invoke
+    |     raise ValueError(f"Ensemble does not exist: {ensemble_name}")
+    | ValueError: Ensemble does not exist: agentic-routing-planner
+    +------------------------------------
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 119, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 106, in app
+    await response(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 269, in __call__
+    with collapse_excgroups():
+         ~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 273, in wrap
+    await func()
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 253, in stream_response
+    async for chunk in self.body_iterator:
+    ...<2 lines>...
+        await send({"type": "http.response.body", "body": chunk, "more_body": True})
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 824, in _stream_completion_with_heartbeat
+    async for chunk in _stream_completion(context, caller, model=model):
+        yield chunk
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 793, in _stream_completion
+    async for chunk in caller.run(context):
+    ...<2 lines>...
+            yield framed
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/dispatch_pipeline.py", line 254, in run
+    plan = await self._planner.plan(request=request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/ensemble_backed_roles.py", line 79, in plan
+    result = await self._invoker.invoke(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        {"ensemble_name": self._ensemble_name, "input": request}
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/orchestra_service.py", line 251, in invoke
+    return await self._execution_handler.invoke(arguments)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/handlers/execution_handler.py", line 85, in invoke
+    raise ValueError(f"Ensemble does not exist: {ensemble_name}")
+ValueError: Ensemble does not exist: agentic-routing-planner
+ERROR:    Exception in ASGI application
+  + Exception Group Traceback (most recent call last):
+  |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 81, in collapse_excgroups
+  |     yield
+  |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 270, in __call__
+  |     async with anyio.create_task_group() as task_group:
+  |                ~~~~~~~~~~~~~~~~~~~~~~~^^
+  |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  |         "unhandled errors in a TaskGroup", self._exceptions
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/uvicorn/protocols/http/h11_impl.py", line 410, in run_asgi
+    |     result = await app(  # type: ignore[func-returns-value]
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |         self.scope, self.receive, self.send
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     )
+    |     ^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    |     return await self.app(scope, receive, send)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/applications.py", line 1134, in __call__
+    |     await super().__call__(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/applications.py", line 107, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    |     raise exc
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    |     await self.app(scope, receive, _send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    |     await route.handle(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    |     await self.app(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 119, in app
+    |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 106, in app
+    |     await response(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 269, in __call__
+    |     with collapse_excgroups():
+    |          ~~~~~~~~~~~~~~~~~~^^
+    |   File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    |     self.gen.throw(value)
+    |     ~~~~~~~~~~~~~~^^^^^^^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    |     raise exc
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 273, in wrap
+    |     await func()
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 253, in stream_response
+    |     async for chunk in self.body_iterator:
+    |     ...<2 lines>...
+    |         await send({"type": "http.response.body", "body": chunk, "more_body": True})
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 824, in _stream_completion_with_heartbeat
+    |     async for chunk in _stream_completion(context, caller, model=model):
+    |         yield chunk
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 793, in _stream_completion
+    |     async for chunk in caller.run(context):
+    |     ...<2 lines>...
+    |             yield framed
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/dispatch_pipeline.py", line 254, in run
+    |     plan = await self._planner.plan(request=request)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/ensemble_backed_roles.py", line 79, in plan
+    |     result = await self._invoker.invoke(
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |         {"ensemble_name": self._ensemble_name, "input": request}
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     )
+    |     ^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/orchestra_service.py", line 251, in invoke
+    |     return await self._execution_handler.invoke(arguments)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/handlers/execution_handler.py", line 85, in invoke
+    |     raise ValueError(f"Ensemble does not exist: {ensemble_name}")
+    | ValueError: Ensemble does not exist: agentic-routing-planner
+    +------------------------------------
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/uvicorn/protocols/http/h11_impl.py", line 410, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/applications.py", line 1134, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 119, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 106, in app
+    await response(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 269, in __call__
+    with collapse_excgroups():
+         ~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 273, in wrap
+    await func()
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 253, in stream_response
+    async for chunk in self.body_iterator:
+    ...<2 lines>...
+        await send({"type": "http.response.body", "body": chunk, "more_body": True})
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 824, in _stream_completion_with_heartbeat
+    async for chunk in _stream_completion(context, caller, model=model):
+        yield chunk
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 793, in _stream_completion
+    async for chunk in caller.run(context):
+    ...<2 lines>...
+            yield framed
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/dispatch_pipeline.py", line 254, in run
+    plan = await self._planner.plan(request=request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/ensemble_backed_roles.py", line 79, in plan
+    result = await self._invoker.invoke(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        {"ensemble_name": self._ensemble_name, "input": request}
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/orchestra_service.py", line 251, in invoke
+    return await self._execution_handler.invoke(arguments)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/handlers/execution_handler.py", line 85, in invoke
+    raise ValueError(f"Ensemble does not exist: {ensemble_name}")
+ValueError: Ensemble does not exist: agentic-routing-planner
+INFO:     127.0.0.1:60858 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-11 17:39:25,917 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:39:55,921 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:40:25,924 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:40:55,927 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:41:25,929 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:41:56,016 [ERROR] llm_orc.web.server: Unhandled error: 
+Traceback (most recent call last):
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 256, in handle_async_request
+    raise exc from None
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 236, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        pool_request.request
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_async/connection.py", line 103, in handle_async_request
+    return await self._connection.handle_async_request(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_async/http11.py", line 136, in handle_async_request
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_async/http11.py", line 106, in handle_async_request
+    ) = await self._receive_response_headers(**kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_async/http11.py", line 177, in _receive_response_headers
+    event = await self._receive_event(timeout=timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_async/http11.py", line 217, in _receive_event
+    data = await self._network_stream.read(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.READ_NUM_BYTES, timeout=timeout
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_backends/anyio.py", line 32, in read
+    with map_exceptions(exc_map):
+         ~~~~~~~~~~~~~~^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ReadTimeout
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 119, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 106, in app
+    await response(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 269, in __call__
+    with collapse_excgroups():
+         ~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 273, in wrap
+    await func()
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 253, in stream_response
+    async for chunk in self.body_iterator:
+    ...<2 lines>...
+        await send({"type": "http.response.body", "body": chunk, "more_body": True})
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 824, in _stream_completion_with_heartbeat
+    async for chunk in _stream_completion(context, caller, model=model):
+        yield chunk
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 793, in _stream_completion
+    async for chunk in caller.run(context):
+    ...<2 lines>...
+            yield framed
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/client_tool_action_terminal.py", line 91, in run
+    outcome = await self._loop_driver.decide(context)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/loop_driver.py", line 545, in decide
+    response = await self._seat_filler.generate_with_tools(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        messages=seat_messages, tools=seat_tools
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/models/openai_compat.py", line 125, in generate_with_tools
+    response = await client.post(
+               ^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1859, in post
+    return await self.request(
+           ^^^^^^^^^^^^^^^^^^^
+    ...<13 lines>...
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 393, in handle_async_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ReadTimeout
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 256, in handle_async_request
+    raise exc from None
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py", line 236, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        pool_request.request
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_async/connection.py", line 103, in handle_async_request
+    return await self._connection.handle_async_request(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_async/http11.py", line 136, in handle_async_request
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_async/http11.py", line 106, in handle_async_request
+    ) = await self._receive_response_headers(**kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_async/http11.py", line 177, in _receive_response_headers
+    event = await self._receive_event(timeout=timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_async/http11.py", line 217, in _receive_event
+    data = await self._network_stream.read(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.READ_NUM_BYTES, timeout=timeout
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_backends/anyio.py", line 32, in read
+    with map_exceptions(exc_map):
+         ~~~~~~~~~~~~~~^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpcore/_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ReadTimeout
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/uvicorn/protocols/http/h11_impl.py", line 410, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/applications.py", line 1134, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 119, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 106, in app
+    await response(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 269, in __call__
+    with collapse_excgroups():
+         ~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 273, in wrap
+    await func()
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 253, in stream_response
+    async for chunk in self.body_iterator:
+    ...<2 lines>...
+        await send({"type": "http.response.body", "body": chunk, "more_body": True})
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 824, in _stream_completion_with_heartbeat
+    async for chunk in _stream_completion(context, caller, model=model):
+        yield chunk
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 793, in _stream_completion
+    async for chunk in caller.run(context):
+    ...<2 lines>...
+            yield framed
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/client_tool_action_terminal.py", line 91, in run
+    outcome = await self._loop_driver.decide(context)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/loop_driver.py", line 545, in decide
+    response = await self._seat_filler.generate_with_tools(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        messages=seat_messages, tools=seat_tools
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/models/openai_compat.py", line 125, in generate_with_tools
+    response = await client.post(
+               ^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1859, in post
+    return await self.request(
+           ^^^^^^^^^^^^^^^^^^^
+    ...<13 lines>...
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 393, in handle_async_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/httpx/_transports/default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ReadTimeout
+2026-06-11 17:41:58,067 [INFO] llm_orc.agentic.session_registry: SPIKE-PI-DEBUG resolve_identity: digest=dd7233b4bc62 nmsgs=2 roles=['system', 'user'] user_field=None first_user_len=678 tail='functions in converters.py, and the README must document the real CLI usage.\n\n(Internal run label: B_live run 4. This line is not part of the task; ignore it.)"'
+INFO:     127.0.0.1:60976 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-11 17:42:28,378 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:42:43,785 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0002
+2026-06-11 17:42:43,785 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0002
+2026-06-11 17:42:43,786 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0002
+2026-06-11 17:42:43,786 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0002
+2026-06-11 17:43:13,790 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:43:43,794 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:44:05,568 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=81.783 exit=success dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0002
+2026-06-11 17:44:05,569 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-11 17:44:05,569 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=1 tail_kind=first_turn judgment_verdict=? action=write shape=generation delegated=code-generator carry_held=false replanned=true anchor=false dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0001
+2026-06-11 17:44:05,569 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=1.000 delegated=16 generation=16 boundary_excluded=0 considered=18
+2026-06-11 17:44:05,857 [INFO] llm_orc.agentic.session_registry: SPIKE-PI-DEBUG resolve_identity: digest=dd7233b4bc62 nmsgs=4 roles=['system', 'user', 'assistant', 'tool'] user_field=None first_user_len=678 tail='functions in converters.py, and the README must document the real CLI usage.\n\n(Internal run label: B_live run 4. This line is not part of the task; ignore it.)"'
+INFO:     127.0.0.1:60976 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-11 17:44:36,148 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:45:06,152 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:45:36,155 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:46:06,159 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:46:32,862 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0004
+2026-06-11 17:46:32,862 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-review profile=? dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0004
+2026-06-11 17:46:32,862 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-review dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0004
+2026-06-11 17:46:32,863 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=instruction_following dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0004
+2026-06-11 17:47:02,865 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:47:32,867 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:48:02,869 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:48:32,871 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b
+2026-06-11 17:48:48,478 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-review duration=135.616 exit=success dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0004
+2026-06-11 17:48:48,478 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-11 17:48:48,478 [INFO] llm_orc.agentic.loop_driver: spike-pi recovery: re-dispatch 1/2 destination=test_converters.py (deliverable invalid for its form)
+2026-06-11 17:48:48,510 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0005
+2026-06-11 17:48:48,510 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-review profile=? dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0005
+2026-06-11 17:48:48,510 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-review dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0005
+2026-06-11 17:48:48,511 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=instruction_following dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0005
+2026-06-11 17:49:06,914 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-review duration=18.404 exit=success dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0005
+2026-06-11 17:49:06,914 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-11 17:49:06,915 [INFO] llm_orc.agentic.loop_driver: spike-pi recovery: re-dispatch 2/2 destination=test_converters.py (deliverable invalid for its form)
+2026-06-11 17:49:06,951 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0006
+2026-06-11 17:49:06,951 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-review profile=? dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0006
+2026-06-11 17:49:06,951 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-review dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0006
+2026-06-11 17:49:06,951 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=instruction_following dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0006
+2026-06-11 17:49:26,165 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-review duration=19.215 exit=success dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0006
+2026-06-11 17:49:26,166 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-11 17:49:26,166 [INFO] llm_orc.agentic.loop_driver: spike-pi recovery: destination=test_converters.py recovered=False redispatches=2
+2026-06-11 17:49:26,166 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=2 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-review carry_held=false replanned=true anchor=true dispatch_id=dd7233b4bc627c4a645436ccde43d2ef8e337b7eb18a9cb24990d0d0f96c904b-dispatch-0003
+2026-06-11 17:49:26,166 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=1.000 delegated=17 generation=17 boundary_excluded=0 considered=19

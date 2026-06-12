@@ -1,0 +1,3 @@
+B_smoke	run=1	files=1	present5=False	checkable=1	invalid=0	all_valid=True	refusals=1
+=== B_smoke DONE ===
+all_valid=True: 1

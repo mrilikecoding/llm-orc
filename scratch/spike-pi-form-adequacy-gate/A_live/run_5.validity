@@ -1,0 +1,6 @@
+  README.md	SKIP_md
+  cli.py	FAIL:invalid syntax
+  converters.py	PASS
+  test_cli.py	PASS
+  test_converters.py	PASS
+SUMMARY	files=5	present5=True	checkable=4	invalid=1	all_valid=False
