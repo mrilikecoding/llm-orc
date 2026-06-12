@@ -57,8 +57,10 @@ Configuration — it does not import the L3 config module.
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -80,6 +82,11 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
 from llm_orc.agentic.session_action_record import (
     ActionRecord,
     SessionActionRecord,
+)
+from llm_orc.agentic.session_artifact_store import (  # SPIKE π — revert at close
+    ArtifactNotFoundError,
+    ArtifactReference,
+    SessionArtifactStore,
 )
 from llm_orc.agentic.session_start import ChatMessage, SessionContext
 from llm_orc.agentic.sibling_interface_extractor import build_content_anchor
@@ -103,6 +110,72 @@ __all__ = [
 ]
 
 _logger = logging.getLogger("llm_orc.agentic.loop_driver")
+
+# --- SPIKE π (Cycle 7 loop-back #8) — env-gated; REVERT at spike close --------
+# Server-side re-dispatch recovery: a parse-invalid generation deliverable is
+# re-dispatched (the coder re-samples) up to this many times rather than the
+# refusal degrading to a `stop` that ends the client loop. The smoke arm
+# established that FC-57's refusal-as-`stop` is incompatible with ADR-040's
+# next-turn re-delegation (a `stop` produces no next turn). Active only under
+# LLMORC_SPIKE_PI_GATE=parse; the terminal's FormGate stays the final arbiter.
+_SPIKE_PI_MAX_REDISPATCH = 2
+
+
+def _spike_pi_invalid(content: str, destination_path: str) -> bool:
+    """Is the deliverable invalid for what its destination path claims?
+
+    SPIKE π recovery probe — mirrors the parse-check FormGate. Returns False
+    (no retry) when the env gate is off or the destination is not structurally
+    checkable (``.md``/unknown), so the path is a no-op outside the spike.
+    """
+    if os.environ.get("LLMORC_SPIKE_PI_GATE") != "parse":
+        return False
+    ext = os.path.splitext(destination_path)[1].lower()
+    if ext == ".py":
+        try:
+            ast.parse(content)
+        except SyntaxError:
+            return True
+    elif ext == ".json":
+        try:
+            json.loads(content)
+        except json.JSONDecodeError:
+            return True
+    return False
+
+
+def _spike_pi_resolve_content(
+    envelope: DispatchEnvelope, store: SessionArtifactStore | None
+) -> str | None:
+    """The deliverable text for the SPIKE π parse check (inline or substrate).
+
+    Mirrors the bridge's resolution: inline (``artifacts`` empty) reads
+    ``primary``; substrate-routed (``output_substrate: artifact``, as the
+    code-generator ensemble is) reads the full content from the store via the
+    typed reference. Returns None when content cannot be resolved (binary, no
+    store) — those fall through to the terminal's FormGate.
+    """
+    if not envelope.artifacts:
+        primary = envelope.primary
+        return primary if isinstance(primary, str) else None
+    if store is None:
+        return None
+    data = envelope.artifacts[0]
+    reference = ArtifactReference(
+        path=data["path"],
+        content_type=data["content_type"],
+        size_bytes=data["size_bytes"],
+        summary=data["summary"],
+        retention=data["retention"],
+    )
+    try:
+        content = store.read_deliverable(reference)
+    except ArtifactNotFoundError:
+        return None
+    return content if isinstance(content, str) else None
+
+
+# --- end SPIKE π --------------------------------------------------------------
 
 _GENERATION_TOOL = "invoke_ensemble"
 """The internal tool name the seat-filler emits to delegate per-turn
@@ -355,6 +428,7 @@ class LoopDriver:
         budget: BudgetController,
         capabilities: frozenset[str] = frozenset(),
         event_substrate: DispatchEventSubstrate | None = None,
+        artifact_store: SessionArtifactStore | None = None,  # SPIKE π — revert
     ) -> None:
         self._seat_filler = seat_filler
         self._enforcer = enforcer
@@ -364,6 +438,7 @@ class LoopDriver:
         self._budget = budget
         self._capabilities = capabilities
         self._event_substrate = event_substrate
+        self._spike_pi_store = artifact_store  # SPIKE π recovery — revert at close
 
     async def decide(self, context: SessionContext) -> TurnOutcome:
         """Decide one turn of the tool-driven multi-turn loop.
@@ -514,6 +589,9 @@ class LoopDriver:
                 file_path,
                 anchor_present,
             ) = await self._delegate_generation(action, context, destination_tool)
+            envelope = await self._spike_pi_recover(  # SPIKE π — revert at close
+                envelope, action, context, destination_tool, file_path
+            )
             self._action_record.record_action(
                 session_id, action_kind=destination_tool, target_path=file_path
             )
@@ -735,6 +813,57 @@ class LoopDriver:
             session_id=context.state.identity.value,
         )
         return _result_to_envelope(result), capability, file_path, bool(anchor)
+
+    async def _spike_pi_recover(
+        self,
+        envelope: DispatchEnvelope,
+        action: ToolCall,
+        context: SessionContext,
+        destination_tool: str,
+        file_path: str,
+    ) -> DispatchEnvelope:
+        """SPIKE π — env-gated server-side re-dispatch on a parse-invalid deliverable.
+
+        Keeps the loop self-healing within the serving turn: a refused
+        generation (invalid for its destination form) is re-dispatched — the
+        seat re-samples at the model's default temperature — up to
+        ``_SPIKE_PI_MAX_REDISPATCH`` times, rather than the refusal degrading to
+        a dispatch-failure ``stop`` that ends the client loop (the smoke
+        finding). Returns the first valid envelope, or the last attempt after
+        the cap; the terminal's FormGate then makes the final protect-or-emit
+        call (cap exhaustion is the pre-registered protect-but-not-recover
+        signal that routes to Arm E). Inline deliverables only — substrate
+        deliverables fall through to the terminal gate. REVERT at spike close.
+        """
+        if os.environ.get("LLMORC_SPIKE_PI_GATE") != "parse":
+            return envelope
+        redispatches = 0
+        content = _spike_pi_resolve_content(envelope, self._spike_pi_store)
+        while (
+            content is not None
+            and _spike_pi_invalid(content, file_path)
+            and redispatches < _SPIKE_PI_MAX_REDISPATCH
+        ):
+            redispatches += 1
+            _logger.info(
+                "spike-pi recovery: re-dispatch %d/%d destination=%s "
+                "(deliverable invalid for its form)",
+                redispatches,
+                _SPIKE_PI_MAX_REDISPATCH,
+                file_path,
+            )
+            envelope, _, _, _ = await self._delegate_generation(
+                action, context, destination_tool
+            )
+            content = _spike_pi_resolve_content(envelope, self._spike_pi_store)
+        if redispatches:
+            _logger.info(
+                "spike-pi recovery: destination=%s recovered=%s redispatches=%d",
+                file_path,
+                content is not None and not _spike_pi_invalid(content, file_path),
+                redispatches,
+            )
+        return envelope
 
     def _content_anchor(self, context: SessionContext, *, exclude: str) -> str:
         """Build the ADR-039 content anchor from the session's produced siblings.
