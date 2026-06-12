@@ -1,0 +1,39 @@
+######## CELL A-live (flag OFF — baseline, no gate, no recovery) — 13:52:45 ########
+serve READY (flag='OFF') pid 83736
+A_live	run=1	files=5	present5=True	checkable=4	invalid=2	all_valid=False	refusals=0
+A_live	run=2	files=5	present5=True	checkable=4	invalid=0	all_valid=True	refusals=0
+A_live	run=3	files=5	present5=True	checkable=4	invalid=0	all_valid=True	refusals=0
+A_live	run=4	files=5	present5=True	checkable=4	invalid=3	all_valid=False	refusals=0
+A_live	run=5	files=5	present5=True	checkable=4	invalid=1	all_valid=False	refusals=0
+=== A_live DONE ===
+all_valid=False: 3
+all_valid=True: 2
+
+######## CELL B-live (parse gate + server-side recovery ON) — 16:05:57 ########
+serve READY (flag='parse') pid 85340
+B_live	run=1	files=5	present5=True	checkable=4	invalid=0	all_valid=True	refusals=0
+B_live	run=2	files=5	present5=True	checkable=4	invalid=0	all_valid=True	refusals=0
+B_live	run=3	files=3	present5=False	checkable=2	invalid=0	all_valid=True	refusals=1
+B_live	run=4	files=1	present5=False	checkable=1	invalid=0	all_valid=True	refusals=1
+B_live	run=5	files=5	present5=True	checkable=4	invalid=0	all_valid=True	refusals=0
+=== B_live DONE ===
+all_valid=True: 5
+
+######## FULL RUN DONE — 18:18:34 ########
+=== A_live SUMMARY ===
+A_live	run=1	files=5	present5=True	checkable=4	invalid=2	all_valid=False	refusals=0
+A_live	run=2	files=5	present5=True	checkable=4	invalid=0	all_valid=True	refusals=0
+A_live	run=3	files=5	present5=True	checkable=4	invalid=0	all_valid=True	refusals=0
+A_live	run=4	files=5	present5=True	checkable=4	invalid=3	all_valid=False	refusals=0
+A_live	run=5	files=5	present5=True	checkable=4	invalid=1	all_valid=False	refusals=0
+=== A_live DONE ===
+all_valid=False: 3
+all_valid=True: 2
+=== B_live SUMMARY ===
+B_live	run=1	files=5	present5=True	checkable=4	invalid=0	all_valid=True	refusals=0
+B_live	run=2	files=5	present5=True	checkable=4	invalid=0	all_valid=True	refusals=0
+B_live	run=3	files=3	present5=False	checkable=2	invalid=0	all_valid=True	refusals=1
+B_live	run=4	files=1	present5=False	checkable=1	invalid=0	all_valid=True	refusals=1
+B_live	run=5	files=5	present5=True	checkable=4	invalid=0	all_valid=True	refusals=0
+=== B_live DONE ===
+all_valid=True: 5
