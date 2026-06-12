@@ -56,19 +56,25 @@ class FormRefusedError(Exception):
     """
 
 
-FormGate = Callable[["str | bytes", "str | None"], "str | bytes"]
-"""The FormGate seam's contract (ADR-035 §Decision 4, FC-57).
+FormGate = Callable[["str | bytes", "str | None", "str | None"], "str | bytes"]
+"""The FormGate seam's contract (ADR-035 §Decision 4, FC-57; ADR-041 §Decision 2).
 
-Evaluates marshalled content against the destination tool's form before
-emission. A gate may *refuse* (raise) or apply the defined conservative
-normalization; it never paraphrases, summarizes, or attempts multi-fence
-extraction (Spike χ F-χ.1 rejects that path as fragile) — form-gating
-composes with, and does not weaken, the fidelity contract (FC-49).
+Evaluates marshalled content against the destination before emission, given
+both the destination tool (``write``/``edit``/``bash``) and the full
+destination path (``src/foo/bar.py``). A gate may *refuse* (raise) or apply
+the defined conservative normalization; it never paraphrases, summarizes, or
+attempts multi-fence extraction (Spike χ F-χ.1 rejects that path as fragile)
+— form-gating composes with, and does not weaken, the fidelity contract
+(FC-49). The destination path is the full path, not a pre-extracted
+extension, so the same seam serves any future extension-keyed check
+(ADR-041 §Decision 2).
 """
 
 
 def _passthrough_form_gate(
-    content: str | bytes, destination_tool: str | None
+    content: str | bytes,
+    destination_tool: str | None,
+    destination_path: str | None,
 ) -> str | bytes:
     """The default FormGate — identity.
 
@@ -158,7 +164,7 @@ class ArtifactBridge:
         else:
             content = self._store.read_deliverable(reference)
         _spike_pi_form_check(content, destination_path)  # SPIKE π — revert at close
-        return self._form_gate(content, destination_tool)
+        return self._form_gate(content, destination_tool, destination_path)
 
 
 def _artifact_reference(envelope: DispatchEnvelope) -> ArtifactReference | None:

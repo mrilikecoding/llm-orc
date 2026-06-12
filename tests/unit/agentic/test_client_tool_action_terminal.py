@@ -404,7 +404,9 @@ class TestApplyWorkDegradesOnBridgeFailure:
         the client.
         """
 
-        def refusing_gate(content: str | bytes, tool: str | None) -> str | bytes:
+        def refusing_gate(
+            content: str | bytes, tool: str | None, path: str | None
+        ) -> str | bytes:
             raise FormRefusedError("multi-fence deliverable; refusing to emit")
 
         store = SessionArtifactStore(agentic_sessions_root=tmp_path)
