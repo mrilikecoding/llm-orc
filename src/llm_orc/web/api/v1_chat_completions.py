@@ -477,6 +477,9 @@ async def get_loop_driver() -> LoopDriver:
         ),
         capabilities=await _build_capability_names(),
         event_substrate=get_dispatch_event_substrate(),
+        # SPIKE π (loop-back #8) — env-gated server-side re-dispatch recovery
+        # resolves substrate-routed deliverable content; revert at spike close.
+        artifact_store=get_session_artifact_store(),
     )
 
 
