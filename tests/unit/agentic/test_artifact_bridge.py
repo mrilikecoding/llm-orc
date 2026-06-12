@@ -116,7 +116,9 @@ class TestFormGateSeam:
         the seam (FC-57's zero-Terminal-edits criterion).
         """
 
-        def refusing_gate(content: str | bytes, tool: str | None) -> str | bytes:
+        def refusing_gate(
+            content: str | bytes, tool: str | None, path: str | None
+        ) -> str | bytes:
             raise FormRefusedError(f"clearly non-bare deliverable for {tool!r}")
 
         store = SessionArtifactStore(agentic_sessions_root=tmp_path)
