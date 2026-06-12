@@ -19,7 +19,11 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
-from llm_orc.agentic.artifact_bridge import ArtifactBridge, FormRefusedError
+from llm_orc.agentic.artifact_bridge import (
+    ArtifactBridge,
+    FormRefusedError,
+    parse_check_form_gate,
+)
 from llm_orc.agentic.budget_controller import BudgetController
 from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
 from llm_orc.agentic.dispatch_envelope import DispatchEnvelope
@@ -431,6 +435,58 @@ class TestApplyWorkDegradesOnBridgeFailure:
 
         assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks)
         assert chunks[-1] == Completion(finish_reason="stop")
+
+    async def test_real_parse_gate_refuses_invalid_python_through_the_terminal(
+        self, tmp_path: Path
+    ) -> None:
+        """ADR-041 §Decision 1 integration: the production parse-check gate,
+        installed at the seam, degrades an unparseable ``.py`` deliverable to a
+        dispatch-failure ``stop`` — no broken ``write`` reaches the client
+        (the protection floor, verified with the real gate not a stub)."""
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        bled = "def main():\n    return 1\nThis function returns one.\n"
+        outcome = ApplyWork(
+            invocation_id="t1",
+            tool_name="write",
+            file_path="cli.py",
+            envelope=DispatchEnvelope(status="success", primary=bled),
+            delegated_ensemble="code-generator",
+        )
+        terminal = ClientToolActionTerminal(
+            loop_driver=_ScriptedDecider(outcome),
+            bridge=ArtifactBridge(store, form_gate=parse_check_form_gate),
+        )
+
+        chunks = await _collect(terminal.run(_make_context()))
+
+        assert not any(isinstance(chunk, ClientToolCall) for chunk in chunks)
+        assert chunks[-1] == Completion(finish_reason="stop")
+
+    async def test_real_parse_gate_passes_valid_python_through_the_terminal(
+        self, tmp_path: Path
+    ) -> None:
+        """The gate is a no-op on valid content: a parseable ``.py`` deliverable
+        emits as a normal ``write`` tool call (fidelity preserved)."""
+        store = SessionArtifactStore(agentic_sessions_root=tmp_path)
+        content = "def main() -> None:\n    print('ok')\n"
+        outcome = ApplyWork(
+            invocation_id="t1",
+            tool_name="write",
+            file_path="cli.py",
+            envelope=DispatchEnvelope(status="success", primary=content),
+            delegated_ensemble="code-generator",
+        )
+        terminal = ClientToolActionTerminal(
+            loop_driver=_ScriptedDecider(outcome),
+            bridge=ArtifactBridge(store, form_gate=parse_check_form_gate),
+        )
+
+        chunks = await _collect(terminal.run(_make_context()))
+
+        invocation = _one_invocation(chunks)
+        assert invocation.name == "write"
+        args = json.loads(invocation.arguments)
+        assert args["content"] == content
 
     async def test_binary_deliverable_yields_a_text_completion(
         self, tmp_path: Path
