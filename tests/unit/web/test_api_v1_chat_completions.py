@@ -18,8 +18,9 @@ Shape/streaming/session tests drive a :class:`_StubPipeline`; the
 :class:`DispatchPipeline` wired to stub ports through the HTTP boundary.
 """
 
+import dataclasses
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,7 @@ from llm_orc.agentic.session_start import (
     SessionStartCache,
 )
 from llm_orc.agentic.single_step_enforcer import SingleStepEnforcer
+from llm_orc.agentic.tier_router import PerSkillTierDefaults, TopazSkill
 from llm_orc.models.base import ToolCallingResponse
 from llm_orc.web.api import v1_chat_completions
 from llm_orc.web.server import create_app
@@ -254,6 +256,50 @@ class _FakeConfigResolver:
 
     def resolve_validated(self) -> OrchestratorConfig:
         return self._config
+
+
+class TestCoderEscalationLadder:
+    """ADR-041 §Decision 5 — the factory builds the coder-tier escalation ladder.
+
+    The free less-cheap rung (``code_generation`` ``escalated_tier``) is present
+    whenever tier defaults are configured; the frontier rung is appended only
+    when an operator opts in via ``form_escalation_frontier_profile`` (the
+    cost-gated ceiling). No tier defaults → empty ladder (no escalation).
+    """
+
+    @staticmethod
+    def _config(
+        *, tiers: bool = True, frontier: str | None = None
+    ) -> OrchestratorConfig:
+        per_skill: Mapping[TopazSkill, PerSkillTierDefaults] | None = (
+            {
+                "code_generation": PerSkillTierDefaults(
+                    cheap_tier="agentic-tier-cheap-general",
+                    escalated_tier="agentic-tier-escalated-general",
+                )
+            }
+            if tiers
+            else None
+        )
+        return dataclasses.replace(
+            _default_orchestrator_config(),
+            per_skill_tier_defaults=per_skill,
+            form_escalation_frontier_profile=frontier,
+        )
+
+    def test_free_rung_only_when_no_frontier_configured(self) -> None:
+        ladder = v1_chat_completions._coder_escalation_ladder(self._config())
+        assert ladder == ("agentic-tier-escalated-general",)
+
+    def test_frontier_rung_appended_when_opted_in(self) -> None:
+        ladder = v1_chat_completions._coder_escalation_ladder(
+            self._config(frontier="agentic-coder-frontier")
+        )
+        assert ladder == ("agentic-tier-escalated-general", "agentic-coder-frontier")
+
+    def test_empty_ladder_without_tier_defaults(self) -> None:
+        ladder = v1_chat_completions._coder_escalation_ladder(self._config(tiers=False))
+        assert ladder == ()
 
 
 def _parse_sse_frames(body: bytes) -> list[dict[str, Any]]:

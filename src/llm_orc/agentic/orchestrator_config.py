@@ -301,6 +301,18 @@ class OrchestratorConfig:
     Layer reads ``heartbeat_interval_seconds`` per request to size the
     inference-wait heartbeat scheduler. Default 30s.
     """
+    form_escalation_frontier_profile: str | None = None
+    """ADR-041 §Decision 5 — the opt-in/cost-gated frontier coder profile.
+
+    The coder-tier escalation ladder for form/adequacy bleeds is cheap →
+    less-cheap (free, the per-skill ``escalated_tier``) → frontier. The free
+    rungs escalate deterministically; the frontier rung crosses a cost boundary
+    and is **opt-in** — set ``orchestrator.form_escalation.frontier_profile`` to
+    a paid Model Profile to enable it. ``None`` (the default) caps the ladder at
+    the best free rung — the local-degradation path, where a persistent bleed
+    yields the honest short session rather than silent paid escalation. Read by
+    the Serving Layer when it builds the Loop Driver's escalation ladder.
+    """
 
 
 class OrchestratorConfigResolver:
@@ -323,6 +335,11 @@ class OrchestratorConfigResolver:
         tier_audit = _as_mapping(orchestrator.get("tier_router_audit"))
         observability = _as_mapping(raw.get("observability"))
         per_skill_raw = orchestrator.get("per_skill_tier_defaults")
+        form_escalation = _as_mapping(orchestrator.get("form_escalation"))
+        frontier_raw = form_escalation.get("frontier_profile")
+        frontier_profile = (
+            frontier_raw if isinstance(frontier_raw, str) and frontier_raw else None
+        )
 
         model_profile = str(orchestrator.get("model_profile", DEFAULT_MODEL_PROFILE))
         allowed_profiles = _resolve_allowed_profiles(
@@ -423,6 +440,7 @@ class OrchestratorConfigResolver:
                     DEFAULT_TIER_AUDIT_SEVERE_DRIFT_MULTIPLIER,
                 ),
             ),
+            form_escalation_frontier_profile=frontier_profile,
             observability=ObservabilityDefaults(
                 heartbeat_interval_seconds=_positive_float(
                     observability.get("heartbeat_interval_seconds"),

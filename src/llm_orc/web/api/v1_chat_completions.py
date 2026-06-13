@@ -68,6 +68,7 @@ from llm_orc.agentic.orchestrator_chunk import (
     ContentDelta,
     OrchestratorChunk,
 )
+from llm_orc.agentic.orchestrator_config import OrchestratorConfig
 from llm_orc.agentic.orchestrator_context_event_sink import (
     OrchestratorContextEventSink,
 )
@@ -446,6 +447,26 @@ async def _resolve_seat_filler() -> ModelInterface:
     return model
 
 
+def _coder_escalation_ladder(config: OrchestratorConfig) -> tuple[str, ...]:
+    """The coder-tier escalation ladder for form bleeds (ADR-041 §Decision 5).
+
+    Ordered Model Profiles the Loop Driver escalates the coder to after the
+    cheap re-sample cap exhausts on a persistent form bleed: the free
+    less-cheap rung (``code_generation`` ``escalated_tier``, e.g. qwen3:14b)
+    first, then the **opt-in** frontier rung — appended only when an operator
+    configured ``orchestrator.form_escalation.frontier_profile`` (the cost-gated
+    ceiling). Empty when no tier defaults are configured (no escalation; cap
+    exhaustion degrades straight to the FormGate refusal).
+    """
+    ladder: list[str] = []
+    tiers = config.per_skill_tier_defaults
+    if tiers is not None and "code_generation" in tiers:
+        ladder.append(tiers["code_generation"].escalated_tier)
+    if config.form_escalation_frontier_profile is not None:
+        ladder.append(config.form_escalation_frontier_profile)
+    return tuple(ladder)
+
+
 async def get_loop_driver() -> LoopDriver:
     """Construct the real layer-A Loop Driver (ADR-033).
 
@@ -459,7 +480,8 @@ async def get_loop_driver() -> LoopDriver:
     ``monkeypatch.setattr``.
     """
     seat_filler_model = await _resolve_seat_filler()
-    budget = get_orchestrator_config_resolver().resolve().budget
+    config = get_orchestrator_config_resolver().resolve()
+    budget = config.budget
     return LoopDriver(
         seat_filler=seat_filler_model,
         enforcer=SingleStepEnforcer(),
@@ -481,6 +503,9 @@ async def get_loop_driver() -> LoopDriver:
         # dependency: it resolves the substrate-routed deliverable content the
         # parse-check re-dispatches on.
         artifact_store=get_session_artifact_store(),
+        # ADR-041 §Decision 5 — the coder-tier escalation ladder for persistent
+        # form bleeds: free less-cheap rung + the opt-in frontier rung.
+        escalation_ladder=_coder_escalation_ladder(config),
     )
 
 
