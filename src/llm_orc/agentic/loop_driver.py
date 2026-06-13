@@ -768,7 +768,12 @@ class LoopDriver:
         return [*messages, {"role": "user", "content": trailing}]
 
     async def _delegate_generation(
-        self, action: ToolCall, context: SessionContext, destination_tool: str
+        self,
+        action: ToolCall,
+        context: SessionContext,
+        destination_tool: str,
+        *,
+        model_profile_override: str | None = None,
     ) -> tuple[DispatchEnvelope, str, str, bool]:
         """Dispatch the per-turn callee ensemble and return its deliverable envelope.
 
@@ -781,7 +786,9 @@ class LoopDriver:
         Returns ``(envelope, capability, file_path, anchor_present)``; the
         capability name feeds the ``TurnDecision`` diagnostic and
         ``anchor_present`` stamps its ADR-039 content-anchor field (V-05).
-        Richer tool-mapping
+        ``model_profile_override`` forces the dispatch's Model Profile (the
+        ADR-041 §Decision 5 coder-tier escalation lever); ``None`` leaves the
+        verdict-router's tier selection in place. Richer tool-mapping
         (``edit``/``bash``) and capability-list validation are deferred to
         the WP-D Capability List Builder integration.
         """
@@ -813,6 +820,7 @@ class LoopDriver:
                 arguments={"name": capability, "input": composed_input},
             ),
             session_id=context.state.identity.value,
+            model_profile_override=model_profile_override,
         )
         return _result_to_envelope(result), capability, file_path, bool(anchor)
 
@@ -841,11 +849,10 @@ class LoopDriver:
         """
         if self._artifact_store is None:
             return envelope
-        redispatches = 0
         content = _resolve_deliverable_content(envelope, self._artifact_store)
+        redispatches = 0
         while (
-            content is not None
-            and _deliverable_invalid_for_form(content, file_path)
+            self._form_invalid(content, file_path)
             and redispatches < _FORM_REDISPATCH_CAP
         ):
             redispatches += 1
@@ -856,19 +863,44 @@ class LoopDriver:
                 _FORM_REDISPATCH_CAP,
                 file_path,
             )
-            envelope, _, _, _ = await self._delegate_generation(
-                action, context, destination_tool
+            envelope, content = await self._redispatch(
+                action, context, destination_tool, None
             )
-            content = _resolve_deliverable_content(envelope, self._artifact_store)
         if redispatches:
+            recovered = content is not None and not _deliverable_invalid_for_form(
+                content, file_path
+            )
             _logger.info(
                 "form recovery: destination=%s recovered=%s redispatches=%d",
                 file_path,
-                content is not None
-                and not _deliverable_invalid_for_form(content, file_path),
+                recovered,
                 redispatches,
             )
         return envelope
+
+    def _form_invalid(self, content: str | None, file_path: str) -> bool:
+        """The deliverable is resolved AND invalid for its destination form."""
+        return content is not None and _deliverable_invalid_for_form(content, file_path)
+
+    async def _redispatch(
+        self,
+        action: ToolCall,
+        context: SessionContext,
+        destination_tool: str,
+        model_profile_override: str | None,
+    ) -> tuple[DispatchEnvelope, str | None]:
+        """Re-dispatch the generation and resolve the new deliverable content.
+
+        ``model_profile_override`` forces a coder tier (ADR-041 §Decision 5
+        escalation); ``None`` re-samples at the verdict-router's selection.
+        """
+        envelope, _, _, _ = await self._delegate_generation(
+            action,
+            context,
+            destination_tool,
+            model_profile_override=model_profile_override,
+        )
+        return envelope, _resolve_deliverable_content(envelope, self._artifact_store)
 
     def _content_anchor(self, context: SessionContext, *, exclude: str) -> str:
         """Build the ADR-039 content anchor from the session's produced siblings.
