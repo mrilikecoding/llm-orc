@@ -144,7 +144,11 @@ class _StoreWritingDispatch:
         self.calls: list[InternalToolCall] = []
 
     async def dispatch(
-        self, call: InternalToolCall, *, session_id: str = ""
+        self,
+        call: InternalToolCall,
+        *,
+        session_id: str = "",
+        model_profile_override: str | None = None,
     ) -> ToolCallResult:
         self.calls.append(call)
         ref = self._store.write_deliverable(
