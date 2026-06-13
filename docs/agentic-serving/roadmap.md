@@ -85,7 +85,9 @@ This roadmap expresses the sequencing landscape for building agentic serving —
 
 ---
 
-### WP-LB-E: Wrapper-contingency accessibility + fallback ordering (ADR-033 §Rejected; advisory #1)
+### WP-LB-E: Wrapper-contingency accessibility + fallback ordering (ADR-033 §Rejected; advisory #1) — ✅ LANDED 2026-06-13 (commit `c09a886`; suite 3046 green)
+
+**Status: ✅ Landed** — the `GenerationTarget` protocol + default `_CalleeGenerationTarget` make the per-turn generation boundary a construction-time-injectable strategy; `_delegate_generation` routes through it; control structure / Single-Step Enforcer / Terminal unchanged (FC-52 verified by `TestGenerationTargetSeam` — an injected wrapper-stub target produces the deliverable with the callee dispatch bypassed). Default behavior byte-identical (callee is the default). The wrapper impl (`DispatchPipeline.run`) stays a **recorded contingency, not built** (depends on the single-turn pipeline WP-B/C). Fallback ordering documented on the protocol docstring: (1) frontier-tier driver (Model Profile swap, FC-46, preferred); (2) wrapper reversion (second-order, callee-incorrect FC-51 diagnosis only; split-incorrect → Design Amendment). **This is the last loop-back WP** — the tool-driven multi-turn surface is functionally complete (modulo the field-guide batch + PLAY validation).
 
 **Objective:** Make the per-turn generation delegation target a swappable strategy so the wrapper-contingency fallback is architecturally accessible without re-architecture, and record the fallback ordering. This is a structural-affordance WP, not a feature the callee design exercises — it keeps F3-1's recorded concession honest.
 
