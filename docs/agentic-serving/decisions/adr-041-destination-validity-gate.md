@@ -18,12 +18,16 @@ inspects bytes, it does not trust the model, so its architecture is
 model-compliance-independent — that closes ADR-035's form-seam honesty gap by
 design, and the corpus + live arm validate it (protection is
 degradation-independent — the gate catches whatever the coder produces,
-regardless of tier or ollama state). But **discharge of ADR-035's form-seam
-Conditional Acceptance is itself contingent on the production install**: the
-mechanism is currently env-gated spike code (`LLMORC_SPIKE_PI_GATE=parse`), not
-yet in the production path. De-gate, thread `destination_path`, and install at the
-FormGate seam are BUILD — until then the protection is proven and validated but
-not running by default. The **convergence** guarantee (a real multi-file session
+regardless of tier or ollama state). **ADR-035's form-seam protection
+Conditional Acceptance is install-discharged (BUILD loop-back #8, 2026-06-12):**
+the gate is de-gated and installed at the FormGate seam on the production path,
+the recovery loop is de-gated (gated on the artifact store, its content-
+resolution dependency), and the de-gated $0 real-OpenCode discharge run held 0
+invalid files at the client across 3 sessions — the cheap coder bled invalid
+form and the server-side recovery caught and re-dispatched to valid files in both
+completed sessions. (The third session stalled on ollama marathon-degradation at
+turn 5, orthogonal to the gate; even degraded, its 4 produced files were all
+valid.) The **convergence** guarantee (a real multi-file session
 completes all files under the cheap tier) is separately Conditional Acceptance:
 server-side recovery rescues intermittent bleeds but is cap-bounded against
 persistent ones; the coder-tier escalation lever that closes the persistent

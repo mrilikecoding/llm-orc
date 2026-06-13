@@ -1,0 +1,3 @@
+```python
+def main(): ...
+```
