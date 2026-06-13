@@ -446,6 +446,41 @@ class TestOrchestratorConfigResolver:
         )
         assert len(config.per_skill_tier_defaults) == 8
 
+    def test_form_escalation_frontier_profile_opt_in(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """ADR-041 §Decision 5 — the frontier coder profile resolves from
+        ``orchestrator.form_escalation.frontier_profile`` when an operator opts
+        in (the cost-gated escalation ceiling)."""
+        cm = _make_config_manager(
+            tmp_path,
+            monkeypatch,
+            global_yaml={
+                "agentic_serving": {
+                    "orchestrator": {
+                        "form_escalation": {
+                            "frontier_profile": "agentic-coder-frontier"
+                        }
+                    }
+                }
+            },
+        )
+
+        config = OrchestratorConfigResolver(cm).resolve()
+
+        assert config.form_escalation_frontier_profile == "agentic-coder-frontier"
+
+    def test_form_escalation_frontier_profile_defaults_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Absent config leaves the frontier rung off — the free-first default
+        (the ladder caps at the best free rung, no silent paid escalation)."""
+        cm = _make_config_manager(tmp_path, monkeypatch)
+
+        config = OrchestratorConfigResolver(cm).resolve()
+
+        assert config.form_escalation_frontier_profile is None
+
     def test_partial_per_skill_tier_defaults_raises_at_session_start(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
