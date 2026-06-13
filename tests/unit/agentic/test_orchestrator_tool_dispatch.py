@@ -1846,6 +1846,30 @@ class TestVerdictToTierMappingDeterministicViaDispatch:
         assert result.kind == "escalation_bypass"
         assert operations.invoke_calls == []
 
+    @pytest.mark.asyncio
+    async def test_forced_model_profile_override_takes_precedence(self) -> None:
+        """ADR-041 §Decision 5 — a caller-forced ``model_profile_override`` (the
+        coder-tier escalation lever) overrides the verdict-router selection.
+
+        The escalation re-dispatch is driven by the deterministic form-failure
+        signal, not the calibration confidence verdict: even when the verdict
+        would route to cheap-tier, the forced profile is what runs.
+        """
+        operations, dispatch = self._build("proceed")  # verdict → cheap-summ-A
+
+        await dispatch.dispatch(
+            InternalToolCall(
+                id="f1",
+                name="invoke_ensemble",
+                arguments={"name": "e", "input": "x"},
+            ),
+            model_profile_override="escalated-summ-A",
+        )
+
+        assert (
+            operations.invoke_calls[0]["model_profile_override"] == "escalated-summ-A"
+        )
+
 
 class TestADR011PreservationUnderTierEscalation:
     """Per system-design.agents.md L224:

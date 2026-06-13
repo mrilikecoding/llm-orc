@@ -228,7 +228,11 @@ class _RecordingDispatch:
         self.inputs: list[str] = []
 
     async def dispatch(
-        self, call: InternalToolCall, *, session_id: str = ""
+        self,
+        call: InternalToolCall,
+        *,
+        session_id: str = "",
+        model_profile_override: str | None = None,
     ) -> ToolCallResult:
         deliverable = self._deliverables[len(self.inputs)]
         self.inputs.append(str(call.arguments["input"]))

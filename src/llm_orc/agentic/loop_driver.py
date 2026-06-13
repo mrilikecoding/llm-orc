@@ -408,7 +408,11 @@ class ToolDispatcher(Protocol):
     """
 
     async def dispatch(
-        self, call: InternalToolCall, *, session_id: str = ""
+        self,
+        call: InternalToolCall,
+        *,
+        session_id: str = "",
+        model_profile_override: str | None = None,
     ) -> ToolCallResult: ...
 
 

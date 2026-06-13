@@ -80,7 +80,11 @@ class _EchoDispatch:
     """Tool dispatch double returning an inline deliverable envelope."""
 
     async def dispatch(
-        self, call: InternalToolCall, *, session_id: str = ""
+        self,
+        call: InternalToolCall,
+        *,
+        session_id: str = "",
+        model_profile_override: str | None = None,
     ) -> ToolCallResult:
         return ToolCallSuccess(
             id="t1",
