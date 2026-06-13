@@ -109,7 +109,11 @@ class _NoToolDispatch:
     """Tool-dispatch double that must not be called (finish-with-text paths)."""
 
     async def dispatch(
-        self, call: InternalToolCall, *, session_id: str = ""
+        self,
+        call: InternalToolCall,
+        *,
+        session_id: str = "",
+        model_profile_override: str | None = None,
     ) -> ToolCallResult:
         raise AssertionError("the finish-with-text path should not dispatch")
 
@@ -203,7 +207,11 @@ class _StubDispatcher:
         self.calls: list[InternalToolCall] = []
 
     async def dispatch(
-        self, call: InternalToolCall, *, session_id: str = ""
+        self,
+        call: InternalToolCall,
+        *,
+        session_id: str = "",
+        model_profile_override: str | None = None,
     ) -> ToolCallResult:
         self.calls.append(call)
         return ToolCallSuccess(id=call.id, name=call.name, content=self._content)

@@ -586,7 +586,11 @@ class _FakeToolDispatch:
         self._deliverable = deliverable
 
     async def dispatch(
-        self, call: InternalToolCall, *, session_id: str = ""
+        self,
+        call: InternalToolCall,
+        *,
+        session_id: str = "",
+        model_profile_override: str | None = None,
     ) -> ToolCallResult:
         return ToolCallSuccess(
             id=call.id,

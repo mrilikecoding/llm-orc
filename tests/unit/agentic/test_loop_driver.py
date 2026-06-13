@@ -88,7 +88,11 @@ class _FakeToolDispatch:
         self.calls: list[InternalToolCall] = []
 
     async def dispatch(
-        self, call: InternalToolCall, *, session_id: str = ""
+        self,
+        call: InternalToolCall,
+        *,
+        session_id: str = "",
+        model_profile_override: str | None = None,
     ) -> ToolCallResult:
         self.calls.append(call)
         return ToolCallSuccess(
@@ -405,12 +409,18 @@ class _SequencedToolDispatch:
     def __init__(self, deliverables: list[str]) -> None:
         self._deliverables = deliverables
         self.calls: list[InternalToolCall] = []
+        self.profiles: list[str | None] = []
 
     async def dispatch(
-        self, call: InternalToolCall, *, session_id: str = ""
+        self,
+        call: InternalToolCall,
+        *,
+        session_id: str = "",
+        model_profile_override: str | None = None,
     ) -> ToolCallResult:
         index = min(len(self.calls), len(self._deliverables) - 1)
         self.calls.append(call)
+        self.profiles.append(model_profile_override)
         deliverable = self._deliverables[index]
         return ToolCallSuccess(
             id=call.id,

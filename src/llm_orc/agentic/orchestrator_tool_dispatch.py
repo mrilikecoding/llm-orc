@@ -610,7 +610,11 @@ class OrchestratorToolDispatch:
         )
 
     async def dispatch(
-        self, call: InternalToolCall, *, session_id: str = ""
+        self,
+        call: InternalToolCall,
+        *,
+        session_id: str = "",
+        model_profile_override: str | None = None,
     ) -> ToolCallResult:
         """Route a tool call through the unknown-tool filter, gate, then routing.
 
@@ -631,6 +635,17 @@ class OrchestratorToolDispatch:
         tests that do not exercise calibration) continue to work — the
         Calibration Gate stores records under whatever string it is
         handed.
+
+        ``model_profile_override`` is the coder-tier escalation lever
+        (ADR-041 §Decision 5): when set, the caller forces this Model
+        Profile for the dispatch, taking precedence over the verdict-
+        router's tier selection. The router still runs for its
+        observability side-effects (the calibration-verdict event, the
+        ADR-018 audit), but the forced profile is what the invocation
+        uses. The Loop Driver passes it on a form-failure escalation
+        re-dispatch; the deterministic form signal, not the confidence
+        verdict, decides the tier. ``None`` (the default) preserves the
+        verdict-driven selection for every existing caller.
         """
         if call.name not in TOOL_NAMES:
             error = ToolCallError(
@@ -659,11 +674,18 @@ class OrchestratorToolDispatch:
             return error
 
         events = decision.events if isinstance(decision, Allow) else ()
-        result = _with_events(await self._route(call, session_id), events)
+        result = _with_events(
+            await self._route(call, session_id, model_profile_override), events
+        )
         _log_dispatch_result(call.name, result)
         return result
 
-    async def _route(self, call: InternalToolCall, session_id: str) -> ToolCallResult:
+    async def _route(
+        self,
+        call: InternalToolCall,
+        session_id: str,
+        model_profile_override: str | None = None,
+    ) -> ToolCallResult:
         """Dispatch a committed tool name to its method.
 
         Match-case makes the five committed tools visible at the dispatch
@@ -674,7 +696,12 @@ class OrchestratorToolDispatch:
         """
         match call.name:
             case "invoke_ensemble":
-                return await self.invoke_ensemble(call.id, call.arguments, session_id)
+                return await self.invoke_ensemble(
+                    call.id,
+                    call.arguments,
+                    session_id,
+                    model_profile_override=model_profile_override,
+                )
             case "compose_ensemble":
                 return await self.compose_ensemble(call.id, call.arguments, session_id)
             case "list_ensembles":
@@ -689,7 +716,12 @@ class OrchestratorToolDispatch:
                 )
 
     async def invoke_ensemble(
-        self, id_: str, arguments: dict[str, Any], session_id: str = ""
+        self,
+        id_: str,
+        arguments: dict[str, Any],
+        session_id: str = "",
+        *,
+        model_profile_override: str | None = None,
     ) -> ToolCallResult:
         """Resolve an ensemble by name, execute, then interpose the Harness.
 
@@ -767,8 +799,14 @@ class OrchestratorToolDispatch:
                 "ensemble_name": name,
                 "input": input_data,
             }
-            if selection is not None:
-                invocation_args["model_profile_override"] = selection.model_profile
+            # ADR-041 §Decision 5: a caller-forced profile (coder-tier
+            # escalation) wins over the router's verdict-driven selection;
+            # the router still ran above for its observability side-effects.
+            forced_profile = _override_or_selected_profile(
+                model_profile_override, selection
+            )
+            if forced_profile is not None:
+                invocation_args["model_profile_override"] = forced_profile
 
             try:
                 result = await self._operations.invoke(invocation_args)
@@ -1616,6 +1654,20 @@ class OrchestratorToolDispatch:
             )
         except Exception:  # noqa: BLE001 — ADR-007 clause 2: never block invocation
             return None
+
+
+def _override_or_selected_profile(
+    override: str | None, selection: TierSelection | None
+) -> str | None:
+    """The Model Profile for the invocation (ADR-041 §Decision 5).
+
+    A caller-forced ``override`` (the coder-tier escalation lever) wins over
+    the verdict-router ``selection``; absent both, the invocation carries no
+    ``model_profile_override`` and the ensemble runs its default profile.
+    """
+    if override is not None:
+        return override
+    return selection.model_profile if selection is not None else None
 
 
 def _validate_invoke_arguments(
