@@ -431,6 +431,7 @@ class LoopDriver:
         capabilities: frozenset[str] = frozenset(),
         event_substrate: DispatchEventSubstrate | None = None,
         artifact_store: SessionArtifactStore | None = None,
+        escalation_ladder: tuple[str, ...] = (),
     ) -> None:
         self._seat_filler = seat_filler
         self._enforcer = enforcer
@@ -441,6 +442,13 @@ class LoopDriver:
         self._capabilities = capabilities
         self._event_substrate = event_substrate
         self._artifact_store = artifact_store
+        # ADR-041 §Decision 5: ordered Model Profiles to escalate the coder to
+        # after the cheap re-sample cap exhausts on a persistent form bleed —
+        # free less-cheap rung(s) first, an opt-in frontier rung last. Empty =
+        # no escalation (cap exhaustion degrades straight to the FormGate
+        # refusal, the local-degradation path). The factory resolves it from
+        # config (escalated_tier + the opt-in frontier profile).
+        self._escalation_ladder = escalation_ladder
 
     async def decide(self, context: SessionContext) -> TurnOutcome:
         """Decide one turn of the tool-driven multi-turn loop.
@@ -875,6 +883,25 @@ class LoopDriver:
                 file_path,
                 recovered,
                 redispatches,
+            )
+        # ADR-041 §Decision 5: a persistent bleed (still invalid after the cheap
+        # cap) escalates the coder up the ladder — one re-dispatch per rung,
+        # stopping at the first valid deliverable. The free less-cheap rung is
+        # tier-independent; the frontier rung is opt-in (present only when an
+        # operator configured it). An exhausted ladder leaves the last invalid
+        # attempt for the terminal's FormGate to refuse (the local-degradation
+        # path — the honest short session).
+        for profile in self._escalation_ladder:
+            if not self._form_invalid(content, file_path):
+                break
+            _logger.info(
+                "form escalation: re-dispatch destination=%s tier_profile=%s "
+                "(persistent bleed — cheap recovery exhausted)",
+                file_path,
+                profile,
+            )
+            envelope, content = await self._redispatch(
+                action, context, destination_tool, profile
             )
         return envelope
 

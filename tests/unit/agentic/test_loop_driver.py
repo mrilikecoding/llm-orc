@@ -126,6 +126,7 @@ def _build_driver(
     judgment_seat: _FakeJudgmentSeat | None = None,
     budget: BudgetController | None = None,
     artifact_store: SessionArtifactStore | None = None,
+    escalation_ladder: tuple[str, ...] = (),
 ) -> LoopDriver:
     return LoopDriver(
         seat_filler=seat_filler,
@@ -137,6 +138,7 @@ def _build_driver(
         judgment_seat=judgment_seat or _FakeJudgmentSeat("VERDICT: REMAINING\n"),
         budget=budget or BudgetController(turn_limit=1_000, token_limit=1_000_000),
         artifact_store=artifact_store,
+        escalation_ladder=escalation_ladder,
     )
 
 
@@ -539,6 +541,109 @@ class TestLoopDriverFormRecovery:
         assert isinstance(outcome, ApplyWork)
         assert len(dispatch.calls) == 1
         assert outcome.envelope.primary == valid
+
+
+class TestLoopDriverFormEscalation:
+    """ADR-041 §Decision 5 — coder-tier escalation on persistent bleeds.
+
+    After the cheap re-sample cap exhausts on a still-invalid deliverable (the
+    persistent-bleed signal), the Loop Driver walks an ordered escalation
+    ladder of Model Profiles, forcing each on one re-dispatch and stopping at
+    the first valid deliverable. The free less-cheap rung (qwen3:8b →
+    qwen3:14b) escalates deterministically; a frontier rung is an opt-in/
+    cost-gated config addition (the factory appends it only when configured).
+    When the ladder is exhausted and the deliverable is still invalid, recovery
+    returns the last attempt → the terminal's FormGate refuses → the honest
+    short session (the local-degradation path).
+    """
+
+    _INVALID = "def f(: broken"
+    _VALID = "x = 1\n"
+
+    def _driver(
+        self, tmp_path: Path, dispatch: _SequencedToolDispatch, ladder: tuple[str, ...]
+    ) -> LoopDriver:
+        return _build_driver(
+            _delegate_seat_filler("cli.py"),
+            tool_dispatch=dispatch,
+            artifact_store=SessionArtifactStore(agentic_sessions_root=tmp_path),
+            escalation_ladder=ladder,
+        )
+
+    async def test_free_rung_recovers_after_cheap_cap(self, tmp_path: Path) -> None:
+        """Persistent cheap bleed (initial + 2 cheap re-samples all invalid) →
+        the free escalated rung re-dispatches and recovers."""
+        dispatch = _SequencedToolDispatch(
+            [self._INVALID, self._INVALID, self._INVALID, self._VALID]
+        )
+        driver = self._driver(tmp_path, dispatch, ("agentic-tier-escalated-general",))
+
+        outcome = await driver.decide(_make_context())
+
+        assert isinstance(outcome, ApplyWork)
+        assert outcome.envelope.primary == self._VALID
+        assert len(dispatch.calls) == 4  # 1 initial + 2 cheap + 1 escalated
+        assert dispatch.profiles == [
+            None,
+            None,
+            None,
+            "agentic-tier-escalated-general",
+        ]
+
+    async def test_frontier_rung_fires_after_free_rung_still_invalid(
+        self, tmp_path: Path
+    ) -> None:
+        """The free rung also bleeds → the opt-in frontier rung re-dispatches
+        and recovers; the ladder is walked in order."""
+        dispatch = _SequencedToolDispatch([self._INVALID] * 4 + [self._VALID])
+        driver = self._driver(
+            tmp_path, dispatch, ("agentic-tier-escalated-general", "frontier-coder")
+        )
+
+        outcome = await driver.decide(_make_context())
+
+        assert isinstance(outcome, ApplyWork)
+        assert outcome.envelope.primary == self._VALID
+        assert len(dispatch.calls) == 5
+        assert dispatch.profiles == [
+            None,
+            None,
+            None,
+            "agentic-tier-escalated-general",
+            "frontier-coder",
+        ]
+
+    async def test_ladder_exhausted_returns_last_invalid(self, tmp_path: Path) -> None:
+        """Every rung bleeds → recovery returns the last attempt (still
+        invalid); the terminal's FormGate refuses it (the protect-not-converge
+        floor)."""
+        dispatch = _SequencedToolDispatch([self._INVALID])  # repeats
+        driver = self._driver(tmp_path, dispatch, ("agentic-tier-escalated-general",))
+
+        outcome = await driver.decide(_make_context())
+
+        assert isinstance(outcome, ApplyWork)
+        assert outcome.envelope.primary == self._INVALID
+        assert len(dispatch.calls) == 4  # 1 initial + 2 cheap + 1 escalated
+        assert dispatch.profiles == [
+            None,
+            None,
+            None,
+            "agentic-tier-escalated-general",
+        ]
+
+    async def test_cheap_recovery_preempts_escalation(self, tmp_path: Path) -> None:
+        """An intermittent bleed recovers on the cheap rung → the ladder is
+        never walked (escalation is the persistent-bleed lever only)."""
+        dispatch = _SequencedToolDispatch([self._INVALID, self._VALID])
+        driver = self._driver(tmp_path, dispatch, ("agentic-tier-escalated-general",))
+
+        outcome = await driver.decide(_make_context())
+
+        assert isinstance(outcome, ApplyWork)
+        assert outcome.envelope.primary == self._VALID
+        assert len(dispatch.calls) == 2  # initial + 1 cheap re-sample; no escalation
+        assert "agentic-tier-escalated-general" not in dispatch.profiles
 
 
 class TestFormDirectiveDestinationKeying:
