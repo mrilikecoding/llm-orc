@@ -97,6 +97,7 @@ __all__ = [
     "ApplyWork",
     "CarryClientTool",
     "FinishTurn",
+    "GenerationTarget",
     "JudgmentSeat",
     "LoopDriver",
     "SeatFiller",
@@ -416,6 +417,74 @@ class ToolDispatcher(Protocol):
     ) -> ToolCallResult: ...
 
 
+class GenerationTarget(Protocol):
+    """The per-turn generation delegation target (FC-52; ADR-033 §Rejected).
+
+    The Loop Driver's generation boundary is a swappable strategy: the default
+    is the single-ensemble **callee** (one ``invoke_ensemble`` dispatch, FC-44);
+    the second-order **wrapper** contingency is the full ``DispatchPipeline.run()``
+    (plan → dispatch → synthesize as the per-turn subroutine). Swapping the
+    target is a construction-time injection — it requires no change to the
+    control structure (``decide``), the Single-Step Enforcer, or the Terminal
+    (FC-52).
+
+    Fallback ordering (ADR-033 §Rejected, F3-1) if BUILD/PLAY axis-2 validation
+    shows the cheap-tier driver cannot hold the long horizon:
+
+    1. **frontier-tier driver** — a seat-filler Model Profile swap (FC-46);
+       preferred, since it keeps the lean callee shape and only raises per-turn
+       driver cost;
+    2. **wrapper reversion** — second-order, only if a frontier driver also
+       fails AND the FC-51 diagnosis is *callee-incorrect* (a *split-incorrect*
+       failure implicates the two-layer split itself → Design Amendment, not the
+       wrapper). The wrapper impl is a **recorded contingency, not built** — it
+       depends on the single-turn Dispatch Pipeline (WP-B/C); this protocol
+       keeps it architecturally accessible without re-architecture.
+    """
+
+    async def generate(
+        self,
+        *,
+        capability: str,
+        composed_input: str,
+        action_id: str,
+        session_id: str,
+        model_profile_override: str | None,
+    ) -> DispatchEnvelope: ...
+
+
+class _CalleeGenerationTarget:
+    """Default :class:`GenerationTarget` — the single-ensemble callee (FC-44).
+
+    Dispatches one capability ensemble through the shared Tool Dispatch
+    chokepoint (no routing-planner / synthesizer stage) — the lean per-turn
+    generation the north-star flow composes across turns (ADR-033).
+    """
+
+    def __init__(self, tool_dispatch: ToolDispatcher) -> None:
+        self._tool_dispatch = tool_dispatch
+
+    async def generate(
+        self,
+        *,
+        capability: str,
+        composed_input: str,
+        action_id: str,
+        session_id: str,
+        model_profile_override: str | None,
+    ) -> DispatchEnvelope:
+        result = await self._tool_dispatch.dispatch(
+            InternalToolCall(
+                id=action_id,
+                name=_GENERATION_TOOL,
+                arguments={"name": capability, "input": composed_input},
+            ),
+            session_id=session_id,
+            model_profile_override=model_profile_override,
+        )
+        return _result_to_envelope(result)
+
+
 class LoopDriver:
     """Layer-A multi-turn control structure (callee delegation)."""
 
@@ -432,10 +501,17 @@ class LoopDriver:
         event_substrate: DispatchEventSubstrate | None = None,
         artifact_store: SessionArtifactStore | None = None,
         escalation_ladder: tuple[str, ...] = (),
+        generation_target: GenerationTarget | None = None,
     ) -> None:
         self._seat_filler = seat_filler
         self._enforcer = enforcer
-        self._tool_dispatch = tool_dispatch
+        # FC-52: the per-turn generation boundary is a swappable strategy. The
+        # default is the single-ensemble callee built from the Tool Dispatch
+        # chokepoint; a wrapper-contingency target (DispatchPipeline.run) can be
+        # injected here with no change to the control structure or Terminal.
+        self._generation_target: GenerationTarget = (
+            generation_target or _CalleeGenerationTarget(tool_dispatch)
+        )
         self._action_record = action_record
         self._judgment_seat = judgment_seat
         self._budget = budget
@@ -821,16 +897,17 @@ class LoopDriver:
         composed_input = (
             f"{task}\n\n{anchor}\n\n{directive}" if anchor else f"{task}\n\n{directive}"
         )
-        result = await self._tool_dispatch.dispatch(
-            InternalToolCall(
-                id=action.id,
-                name=_GENERATION_TOOL,
-                arguments={"name": capability, "input": composed_input},
-            ),
+        # FC-52: dispatch through the swappable generation target (default
+        # callee; wrapper-contingency injected). The control structure does not
+        # know or care which target produced the envelope.
+        envelope = await self._generation_target.generate(
+            capability=capability,
+            composed_input=composed_input,
+            action_id=action.id,
             session_id=context.state.identity.value,
             model_profile_override=model_profile_override,
         )
-        return _result_to_envelope(result), capability, file_path, bool(anchor)
+        return envelope, capability, file_path, bool(anchor)
 
     async def _recover_invalid_form(
         self,

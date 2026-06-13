@@ -29,6 +29,7 @@ from llm_orc.agentic.loop_driver import (
     ApplyWork,
     CarryClientTool,
     FinishTurn,
+    GenerationTarget,
     LoopDriver,
     SeatFiller,
     ToolDispatcher,
@@ -127,6 +128,7 @@ def _build_driver(
     budget: BudgetController | None = None,
     artifact_store: SessionArtifactStore | None = None,
     escalation_ladder: tuple[str, ...] = (),
+    generation_target: GenerationTarget | None = None,
 ) -> LoopDriver:
     return LoopDriver(
         seat_filler=seat_filler,
@@ -139,6 +141,7 @@ def _build_driver(
         budget=budget or BudgetController(turn_limit=1_000, token_limit=1_000_000),
         artifact_store=artifact_store,
         escalation_ladder=escalation_ladder,
+        generation_target=generation_target,
     )
 
 
@@ -644,6 +647,78 @@ class TestLoopDriverFormEscalation:
         assert outcome.envelope.primary == self._VALID
         assert len(dispatch.calls) == 2  # initial + 1 cheap re-sample; no escalation
         assert "agentic-tier-escalated-general" not in dispatch.profiles
+
+
+class _WrapperStubTarget:
+    """A stand-in :class:`GenerationTarget` for the wrapper-contingency seam.
+
+    Represents the second-order ``DispatchPipeline.run()`` reversion (ADR-033
+    §Rejected) without building it — the real wrapper depends on the single-turn
+    pipeline (WP-B/C) and is a recorded contingency, not built. This stub is
+    enough to verify FC-52: the swap is a construction-time injection.
+    """
+
+    def __init__(self, deliverable: str) -> None:
+        self._deliverable = deliverable
+        self.calls: list[dict[str, Any]] = []
+
+    async def generate(
+        self,
+        *,
+        capability: str,
+        composed_input: str,
+        action_id: str,
+        session_id: str,
+        model_profile_override: str | None,
+    ) -> DispatchEnvelope:
+        self.calls.append({"capability": capability, "input": composed_input})
+        return DispatchEnvelope(status="success", primary=self._deliverable)
+
+
+class TestGenerationTargetSeam:
+    """FC-52 — the per-turn generation target is a swappable strategy.
+
+    ADR-033 §Rejected: the wrapper-contingency fallback (``DispatchPipeline.run``)
+    is architecturally accessible behind the Loop Driver's generation boundary.
+    Swapping the target is a construction-time injection — the control structure
+    (``decide``), the Single-Step Enforcer, and the Terminal are unchanged
+    regardless of which target produced the deliverable envelope.
+    """
+
+    async def test_injected_target_replaces_the_callee(self) -> None:
+        """An injected wrapper-stub target produces the turn's deliverable; the
+        default-callee Tool Dispatch is never consulted for generation (the swap
+        touches only the injected target — FC-52)."""
+        wrapper = _WrapperStubTarget("wrapper produced this\n")
+        tool_dispatch = _FakeToolDispatch(deliverable="callee would produce this")
+        driver = _build_driver(
+            _delegate_seat_filler("sort.py"),
+            tool_dispatch=tool_dispatch,
+            generation_target=wrapper,
+        )
+
+        outcome = await driver.decide(_make_context())
+
+        assert isinstance(outcome, ApplyWork)
+        assert outcome.envelope.primary == "wrapper produced this\n"
+        assert len(wrapper.calls) == 1
+        assert wrapper.calls[0]["capability"] == "code-generator"
+        # the default-callee dispatch path was bypassed entirely by the swap
+        assert tool_dispatch.calls == []
+
+    async def test_default_target_is_the_single_ensemble_callee(self) -> None:
+        """Without injection the default is the callee — it dispatches through
+        Tool Dispatch, so the active production path is unchanged."""
+        tool_dispatch = _FakeToolDispatch(deliverable="def sort(xs): ...")
+        driver = _build_driver(
+            _delegate_seat_filler("sort.py"), tool_dispatch=tool_dispatch
+        )
+
+        outcome = await driver.decide(_make_context())
+
+        assert isinstance(outcome, ApplyWork)
+        assert outcome.envelope.primary == "def sort(xs): ..."
+        assert len(tool_dispatch.calls) == 1
 
 
 class TestFormDirectiveDestinationKeying:
