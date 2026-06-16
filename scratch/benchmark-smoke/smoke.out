@@ -1,0 +1,19 @@
+=== ARTIFACTS ===
+cell: h2c1 expected: ['stringutils.py', 'demo.py']
+produced: ['demo.py', 'stringutils.py']
+wall=498s rc=0 timed_out=False
+=== METRIC RECORD ===
+form_valid: True
+converged: True
+content_coherent: True
+terminated_clean: True
+delegation_rate: 0.5
+escalated: False churn: 0
+PASSED: True
+notes: []
+=== LOG SLICE: turn decisions + form events ===
+=write shape=generation delegated=- carry_held=true replanned=true anchor=false dispatch_id=c3b871f1c6e78654d32d3a0d12760720c7082be942bd03addd197dbd0e839516-dispatch-0001
+2026-06-16 10:20:53,549 [INFO] llm_orc.agentic.loop_driver: form recovery: re-dispatch 1/2 destination=demo.py (deliverable invalid for its form)
+2026-06-16 10:22:41,295 [INFO] llm_orc.agentic.loop_driver: form recovery: destination=demo.py recovered=True redispatches=1
+neration delegated=code-generator carry_held=false replanned=false anchor=false dispatch_id=c3b871f1c6e78654d32d3a0d12760720c7082be942bd03addd197dbd0e839516-dispatch-0002
+on=finish shape=carry delegated=- carry_held=false replanned=false anchor=false dispatch_id=c3b871f1c6e78654d32d3a0d12760720c7082be942bd03addd197dbd0e839516-dispatch-0005
