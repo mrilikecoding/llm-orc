@@ -123,8 +123,10 @@ neighbor on any higher-difficulty dimension (H+1 at equal C, or C+1 at equal H).
 function of pass-1 results — the harness selects pass-2 cells with no human judgment
 mid-run.
 
-**Pre-registered threshold (P2-B):** a cell at n>1 passes iff **≥2/3** of its runs pass
-(≥3/5 if n=5). Committed here, before any pass-2 run — not set post-hoc from the data.
+**Pre-registered threshold (P2-B):** a cell passes iff its pass-*rate* is **≥2/3** — i.e.
+`ceil(2n/3)` of its n runs pass (n=1→1, n=3→2, n=5→4). Committed here, before any pass-2
+run — not set post-hoc. (An earlier draft said "≥3/5 at n=5"; 3/5=0.6 < 2/3 was an error —
+the rate floor is a uniform 2/3.)
 
 ## 6. Form / escalation probe (P1-B) — adversarial bleed injection
 
