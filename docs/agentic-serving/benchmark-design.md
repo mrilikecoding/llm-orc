@@ -198,7 +198,50 @@ runs:
   + frontier-opt-in flags; degradation pre-flight.
 - `README.md` — how to run a grid, read a scorecard, add a cell.
 
-## 11. Unit-tested vs live
+## 11. How to run (operational runbook)
+
+The spec is the build-and-run plan; this is the literal operating procedure the harness
+exposes and a fresh session follows. CLI names / flags below are the *intended interface*
+— the build finalizes exact names, but it must support these operations.
+
+### Build order (small increments; deterministic parts test-first)
+1. `corpus/` — grid cells + §6 probe cells as declarative specs (data, no logic).
+2. `scorer.py` — the pure `artifacts → metric record` function. **Test-first** against
+   fixture workspaces: valid/invalid `.py`, valid/invalid `.json`, missing deliverable,
+   invented cross-reference (content-coherence fail), COMPLETE vs zombie/premature tail.
+3. `scorecard.py` + the boundary-cell function — `records → heatmap / ceiling / boundary /
+   match verdict`. **Test-first** against fixture record sets (incl. the expected-fail
+   cell and a stochastic boundary).
+4. `runner.py` — drives one cell live (workspace, uuid4 marker, serve, slice capture).
+   Exercised live, not unit-tested.
+5. `bench.py` (CLI) — orchestrates coarse → confirm → concentrate; pre-flight; flags.
+
+### Run a grid ($0 cheap-local — the default)
+1. **Pre-flight:** restart ollama fresh; confirm `qwen3:8b` + `qwen3:14b` pulled; opencode present.
+2. **Start the dedicated benchmark serve** on its own port (NOT a shared/production serve —
+   §8 isolation): `uv run llm-orc serve --port <bench-port>`.
+3. **Smoke:** the CLI runs the 2-deliverable smoke task and aborts if it exceeds the
+   wall-clock budget (degraded environment — do not grind a degraded run).
+4. **Run:** `python -m benchmarks.agentic_serving.bench --config cheap-local` (or the make
+   target) → coarse (n=1) → ceiling-confirm (n=3) → concentrate (n=3–5 at boundary cells).
+5. **Read** the scorecard (markdown + JSON sidecar) at the run-output path.
+
+### Tier comparison (frontier arm — opt-in, cost-gated)
+`... bench --compare cheap-local,frontier`. Surfaces a cost estimate and requires consent
+before spend (free-first); equal n-per-cell across configs; applies the pre-registered
+match criterion (§7).
+
+### Escalation / bleed probe (§6)
+`... bench --probe bleed-injection` — the adversarial-coder-prompt cells under a 2B→8B (or
+0.6B→8B) ladder; reported separately from the grid. This is where the live
+convergence-via-escalation evidence (ADR-041 CA) is produced.
+
+### Run the harness's own unit tests (CI-safe, deterministic)
+`uv run pytest benchmarks/agentic_serving/tests/` (or wherever they live) — `scorer` /
+`scorecard` / boundary-fn / corpus-loader only. The live runner + grid are **not** here
+(they need ollama + opencode and are slow/stochastic/sometimes paid).
+
+## 12. Unit-tested vs live
 
 - **Unit-tested (deterministic, in CI):** `scorer.py` (fixture artifacts → expected metric
   record, incl. the AST cross-reference check), `scorecard.py` (records → ceiling /
@@ -206,7 +249,7 @@ runs:
 - **Live (not in CI):** `runner.py` + the end-to-end grid — exercised by running the
   benchmark, not by the test suite.
 
-## 12. Deferred / out of scope
+## 13. Deferred / out of scope
 
 - **Published-benchmark translation** (mapping these reads to SWE-bench / external agentic
   benchmarks) — explicitly deferred (practitioner, 2026-06-15: "maybe for later or too
