@@ -1,0 +1,17 @@
+# Agentic-serving — frontier coder escalation rung (Spike τ / ADR-041 §Decision 5).
+#
+# MiniMax M2.5 on OpenCode Zen (paid). Used ONLY as the top rung of the coder-tier
+# escalation ladder: when the cheap 8b coder + the free 14b escalated rung both
+# bleed form on a file (the persistent cli.py bleed), the framework escalates the
+# code-generator dispatch to this profile. Spike π Arm E proved MiniMax produces
+# clean cli.py 6/6 where the 8b bled 3/6.
+#
+# As a CODER this is a one-shot completion (no multi-turn tool-calling), so the
+# MiniMax chat-template strictness that blocked it as a SEAT (Spike τ arm B-mmx)
+# does not apply here. Fires only on persistent bleeds → cents.
+name: agentic-tier-frontier-coder-minimax
+model: minimax-m2.5
+provider: openai-compatible/zen
+base_url: https://opencode.ai/zen/v1
+cost_per_token: 0.0
+timeout_seconds: 180

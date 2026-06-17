@@ -421,21 +421,29 @@ agentic_serving:
 
   orchestrator:
     # ADR-011: one Model Profile per Session; tool-call-capable.
-    # Default — cheap-cloud orchestrator via OpenCode Zen (free tier),
-    # defined in agentic-serving-profiles.yaml as `agentic-orchestrator`.
-    # Swap to `agentic-orchestrator-offline` (local qwen3:14b) for
-    # fully-offline deployments. The `agentic-orchestrator-minimax-m25`
-    # profile (paid tier, same provider) is available for endpoint
-    # characterization when the free-tier quota window is exhausted.
-    # Note (2026-05-20): MiniMax M2.5 free promotion has ended on Zen
-    # (returns 401 with FreeUsageLimitError suggesting OpenCode Go
-    # subscription); the `agentic-orchestrator` profile is currently
-    # blocked. Use `agentic-orchestrator-offline-tools` for cost-free
-    # local operation, or `agentic-orchestrator-minimax-m25` (paid) for
-    # production-shape characterization.
-    # Note (2026-06-03): switched to the cost-free local profile while
-    # the Zen free tier stays blocked (WP-LB-H smoke runs are $0 local).
-    model_profile: agentic-orchestrator-offline-tools
+    #
+    # ACTIVE — hosted qwen seat (Spike τ winning config, 2026-06-17): hosted
+    # qwen3.6-plus on Zen (PAID) as the seat + local qwen3:8b coder. Validated to
+    # converge clean multi-file projects (up to ~10-12 files) on a 32GB machine,
+    # mostly local, with the paid frontier coder (below) firing only on rare
+    # persistent form bleeds (≈cents). Rationale + ladder evidence:
+    # essays/research-logs/cycle-7-spike-tau-long-horizon-32gb.md.
+    #
+    # >>> SWAP TO FULLY-LOCAL / FREE: set model_profile below to
+    #     `agentic-orchestrator-offline-tools` (local qwen3:14b seat) AND comment
+    #     out the `form_escalation:` block (else the coder escalates to the paid
+    #     frontier on bleeds). Trade-off: free, but the 8b coder + 14b seat swap
+    #     on a 32GB machine → ~3x slower per turn (Spike τ arm A vs B-qwen).
+    #     (An all-local-8b seat `agentic-orchestrator-offline-8b` is fastest but
+    #     too weak to orchestrate multi-file — Spike τ arm S.)
+    model_profile: agentic-orchestrator-qwen36-zen
+
+    # Coder-tier escalation frontier rung (ADR-041 §Decision 5): the ladder is
+    # cheap 8b -> escalated 14b -> this PAID frontier coder, firing ONLY on a
+    # persistent form bleed (the cli.py case). Comment this block out for a
+    # fully-free local stack (see the SWAP note above).
+    form_escalation:
+      frontier_profile: agentic-tier-frontier-coder-minimax
 
     # ADR-007/014 Calibration Gate (verdict producer + first-N post-hoc
     # result-check). Defaults: N=3 invocations before trust transition;
@@ -463,7 +471,7 @@ agentic_serving:
     # deployments concentrated in a sub-taxonomy.
     per_skill_tier_defaults:
       code_generation:
-        cheap_tier: agentic-tier-cheap-general
+        cheap_tier: agentic-tier-cheap-general  # SPIKE-τ arm B-mmx (8b coder)
         escalated_tier: agentic-tier-escalated-general
       tool_use:
         # ADR-020: `tool_use` is satisfied by the `web-searcher`

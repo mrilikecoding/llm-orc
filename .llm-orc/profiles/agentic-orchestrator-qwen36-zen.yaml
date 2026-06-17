@@ -1,0 +1,14 @@
+# Agentic-serving — hosted qwen seat (Spike τ arm B-qwen: hosted seat, same family).
+#
+# Qwen3.6 Plus on OpenCode Zen (paid). Same provider/auth as the minimax-m25
+# profile (openai-compatible/zen). Qwen family → its tool-calling chat template
+# is compatible with the framework's orchestrator message construction (unlike
+# MiniMax's strict template, which 400'd on an unpaired tool-result). Pairs with
+# a local 8b coder: only the coder runs locally (no swap), the seat is remote +
+# fast. Restore the active seat to agentic-orchestrator-offline-tools at close.
+name: agentic-orchestrator-qwen36-zen
+model: qwen3.6-plus
+provider: openai-compatible/zen
+base_url: https://opencode.ai/zen/v1
+cost_per_token: 0.0
+timeout_seconds: 180
