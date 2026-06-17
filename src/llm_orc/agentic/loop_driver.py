@@ -122,6 +122,14 @@ _logger = logging.getLogger("llm_orc.agentic.loop_driver")
 # escalation (§Decision 5). The cap value is a tuning parameter (§Decision 4),
 # not a load-bearing commitment.
 _FORM_REDISPATCH_CAP = 2
+# ADR-039 amendment (Spike τ, 2026-06-17): bound the content anchor to the most
+# recent K produced siblings. The unbounded all-prior anchor bloats and degrades
+# the coder at scale (~12-file form bleeds escalation cannot fix, since every tier
+# gets the same bloated anchor). 8 preserves the common ≤8-file case (all siblings)
+# while capping growth below the observed bleed onset. Heuristic value pending the
+# clean coherence-at-scale re-run (Conditional Acceptance); dependency-scoped
+# selection is the deferred more-correct option (Spike ξ).
+_CONTENT_ANCHOR_MAX_SIBLINGS = 8
 
 
 def _deliverable_invalid_for_form(content: str, destination_path: str) -> bool:
@@ -1022,7 +1030,9 @@ class LoopDriver:
         for record in self._action_record.records(session_id):
             if record.content is not None and record.target_path != exclude:
                 siblings.append((record.target_path, record.content))
-        return build_content_anchor(siblings)
+        # ADR-039 amendment (Spike τ): bound the anchor to the most recent K
+        # siblings — the unbounded all-prior anchor degraded the coder at scale.
+        return build_content_anchor(siblings, max_siblings=_CONTENT_ANCHOR_MAX_SIBLINGS)
 
     def _new_dispatch_id(self, context: SessionContext) -> str | None:
         if self._event_substrate is None:

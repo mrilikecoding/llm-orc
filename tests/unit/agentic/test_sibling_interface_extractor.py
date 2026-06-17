@@ -83,3 +83,27 @@ class TestBuildContentAnchor:
         assert "b.json" in anchor
         assert "def a() -> int" in anchor
         assert '{"k": 1}' in anchor
+
+    def test_max_siblings_keeps_only_the_most_recent(self) -> None:
+        # ADR-039 amendment (Spike τ): the bounded anchor windows to the last K.
+        siblings = [
+            (f"step{i}.py", f"def step{i}() -> int:\n    return {i}\n")
+            for i in range(5)
+        ]
+        anchor = build_content_anchor(siblings, max_siblings=2)
+        assert "step3.py" in anchor  # last 2 kept
+        assert "step4.py" in anchor
+        assert "step0.py" not in anchor
+        assert "step1.py" not in anchor
+        assert "step2.py" not in anchor
+
+    def test_max_siblings_zero_yields_empty(self) -> None:
+        siblings = [("a.py", "def a() -> int:\n    return 1\n")]
+        assert build_content_anchor(siblings, max_siblings=0) == ""
+
+    def test_max_siblings_none_keeps_all(self) -> None:
+        siblings = [
+            (f"f{i}.py", f"def f{i}() -> int:\n    return {i}\n") for i in range(4)
+        ]
+        anchor = build_content_anchor(siblings, max_siblings=None)
+        assert all(f"f{i}.py" in anchor for i in range(4))
