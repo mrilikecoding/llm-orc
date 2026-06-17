@@ -67,7 +67,9 @@ def _class_lines(node: ast.ClassDef) -> list[str]:
     return out
 
 
-def build_content_anchor(siblings: Sequence[tuple[str, str]]) -> str:
+def build_content_anchor(
+    siblings: Sequence[tuple[str, str]], *, max_siblings: int | None = None
+) -> str:
     """Compose the content anchor from the produced siblings.
 
     Signatures where the framework has an extractor for the type (``.py`` now);
@@ -75,7 +77,16 @@ def build_content_anchor(siblings: Sequence[tuple[str, str]]) -> str:
     (content-agnostic by construction). Returns ``""`` when there are no
     siblings, so the caller injects nothing on a first file or a no-dependency
     write.
+
+    ``max_siblings`` bounds the anchor to the most recent K siblings (Spike τ,
+    2026-06-17, ADR-039 amendment): the unbounded all-prior anchor degrades the
+    coder at scale — a form bleed escalation cannot fix, since every tier is fed
+    the same bloated anchor. ``None`` keeps all (pre-amendment default); ``0``
+    keeps none. Recency is the dependency heuristic; a dependency-scoped subset
+    is the deferred more-correct option (Spike ξ).
     """
+    if max_siblings is not None:
+        siblings = siblings[-max_siblings:] if max_siblings > 0 else []
     if not siblings:
         return ""
     blocks: list[str] = []
