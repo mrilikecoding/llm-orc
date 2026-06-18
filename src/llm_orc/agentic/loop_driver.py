@@ -122,14 +122,16 @@ _logger = logging.getLogger("llm_orc.agentic.loop_driver")
 # escalation (§Decision 5). The cap value is a tuning parameter (§Decision 4),
 # not a load-bearing commitment.
 _FORM_REDISPATCH_CAP = 2
-# ADR-039 amendment (Spike τ, 2026-06-17): bound the content anchor to the most
-# recent K produced siblings. The unbounded all-prior anchor bloats and degrades
-# the coder at scale (~12-file form bleeds escalation cannot fix, since every tier
-# gets the same bloated anchor). 8 preserves the common ≤8-file case (all siblings)
-# while capping growth below the observed bleed onset. Heuristic value pending the
-# clean coherence-at-scale re-run (Conditional Acceptance); dependency-scoped
-# selection is the deferred more-correct option (Spike ξ).
-_CONTENT_ANCHOR_MAX_SIBLINGS = 8
+# Content-anchor selection: unbounded (all prior produced siblings, ADR-039).
+# ADR-042 bounded this to the most recent K=8 on a Spike τ anchor-overload
+# hypothesis, but the Spike τ′ isolation probe (2026-06-18) refuted that: the
+# unbounded anchor does not overload the coder's form at the tested scale (form
+# 30/30 across unbounded / bounded / full-content fallback), and the bound cost
+# cross-file coherence (reference resolution 3 < 7 < 10 monotonic in anchor size).
+# Reverted to unbounded. Dependency-scoped selection is the tracked successor if a
+# genuinely large-session overload ever shows up. See ADR-042 §Reassessment.
+# The max_siblings parameter stays available for that future bound (one-line set).
+_CONTENT_ANCHOR_MAX_SIBLINGS = None
 
 
 def _deliverable_invalid_for_form(content: str, destination_path: str) -> bool:
