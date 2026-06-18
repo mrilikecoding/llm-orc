@@ -247,6 +247,13 @@ gap as if it were an unknown.
 - The heuristic can mis-extract: a filename mentioned but not requested as a deliverable (for
   example "the way converters.py does it") over-counts requested; a deliverable named without a
   recognizable extension is missed. Refutable at the composition layer; the regex is tunable.
+  **Spike τ (2026-06-18) hit a sharper form of this.** The original open extension class
+  (``[A-Za-z][A-Za-z0-9]{1,7}``) matched module-qualified call expressions in the task prose
+  (``step1.step1``, ``base.start``) as phantom deliverables. Unlike a real-but-non-deliverable
+  filename, a phantom can never be produced, so ``requested − produced`` stayed permanently
+  non-empty and the gate never reached COMPLETE (multi-file sessions churned to the turn cap).
+  Resolved by restricting the extension to a recognized set (``_DELIVERABLE_EXTENSIONS``). The
+  general coupling that allows it is recorded under §Limitations.
 - Completeness here is existence (the file was written), not adequacy (the file is correct or
   runnable). The 8b discharge makes the boundary concrete: all five files existed and COMPLETE
   fired correctly, yet `cli.py` carried a trailing prose paragraph and would not parse (an
@@ -270,11 +277,44 @@ gap as if it were an unknown.
 - F-σ.1 (the REMAINING-retry seat-leg patch) rides underneath this verdict mechanism unchanged:
   it recovers a seat-filler stall on a REMAINING turn regardless of whether REMAINING came from
   the deterministic diff or the judge.
-- The diagnostic `completeness:` log and the `request_timeout.read` 600 config edit were
-  temporary spike instrumentation, removed and reverted at spike close (done 2026-06-10). The
-  same close removed the Spike η enumerator scaffolding (the `ETA_ARM`-gated arm-D/control wiring
-  in the Loop Driver) and the Spike σ `_resolve_judgment_seat` Arm-B judgment-seat hook in the
-  serving layer, restoring the FC-68 default (judgment seat = seat-filler model).
+- The `request_timeout.read` 600 config edit was temporary spike instrumentation, reverted at
+  spike close (done 2026-06-10). The same close removed the Spike η enumerator scaffolding (the
+  `ETA_ARM`-gated arm-D/control wiring in the Loop Driver) and the Spike σ
+  `_resolve_judgment_seat` Arm-B judgment-seat hook in the serving layer, restoring the FC-68
+  default (judgment seat = seat-filler model). The diagnostic `completeness:` log was removed at
+  that close too, but **Spike τ (2026-06-18) restored it as permanent observability** (no longer
+  spike instrumentation): its absence is why the over-extraction non-termination above was
+  invisible in the serve logs and slow to diagnose. The gate now logs requested/produced/
+  remaining counts and the verdict (or judge-fallback) on every trailing turn.
+
+## Limitations (forward constraints)
+
+The deterministic gate's correctness is coupled to task-prompt phrasing, which constrains future
+task and deliverable design. Recorded here (Spike τ, 2026-06-18) because it bounds future work:
+
+- **Coverage boundary.** Completeness is deterministic only for tasks that name file deliverables
+  with a recognized extension (`_DELIVERABLE_EXTENSIONS` in `loop_driver.py`). Any other
+  deliverable shape (an unlisted extension, or a non-file output) routes to the stochastic judge,
+  which Spike σ measured as unreliable at inferring requested-minus-produced. Extending the cycle
+  to new deliverable types needs an entry in that set, or a more robust deliverable-declaration
+  mechanism than regex-over-prose.
+
+- **Prompt-content coupling (the Spike τ lesson).** The requested set is mined by regex over the
+  task text, so prompt content that resembles a filename can corrupt it. The concrete instance:
+  the ADR-042 ladder-template call-form fix introduced module-qualified call expressions
+  (`step1.step1(x)`) into the task, which the original open-extension regex read as phantom
+  deliverables, permanently stalling termination. The narrowed whitelist closes that specific
+  case, but the general coupling stands: a task whose prose contains `name.ext` tokens that are
+  not deliverables can still mis-extract. Task authors and any future task generator must keep
+  deliverable filenames distinguishable from incidental dotted tokens, or the gate mis-counts.
+  This means a change to *task wording* (not just to the framework) can silently break
+  termination, so the two are no longer independent.
+
+- **Regex over a structured declaration (the deferred durable fix).** The more robust mechanism,
+  deferred, is for tasks to declare their deliverables structurally (an explicit list the
+  framework reads) rather than the framework mining filenames from prose. Until then the regex
+  heuristic is the mechanism and its coupling to prose is a known constraint, not a defect that
+  tuning fully closes.
 
 ## Empirical grounding (ADR-097 filter)
 

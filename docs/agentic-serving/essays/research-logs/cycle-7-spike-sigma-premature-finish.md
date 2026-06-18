@@ -343,3 +343,21 @@ anchor failures. Recorded as live 8b evidence for the separately-tracked ADR-035
   judgment seat was the FC-68 default seat-filler model) — remove at spike close.
 - Next: ADR-040 write-up (J-3 + persist-once); cycle-status updated; the ADR-039 status flip
   (Conditional → Accepted) is the practitioner's call given the discharge criterion is met.
+
+### Spike τ over-extraction regression (2026-06-18): distinct from this Finding I
+
+The RESOLUTION above confirmed J-3 fires and persist-once handles truncation for SIGMA-style
+tasks (no dotted tokens in the prose). Spike τ's long-horizon runs used a *pipeline* task
+template whose corrected call-form (the ADR-042 discharge fix) embeds module-qualified call
+expressions (`return step1.step1(x)`, `print(step8.step8(1))`). The J-3 regex
+`_REQUESTED_FILE_RE`'s open extension class read those as phantom deliverables (`step1.step1`,
+`base.start`), inflating `requested` so `requested − produced` never emptied: the gate stuck on
+REMAINING and multi-file sessions churned to the turn cap (l10: 50 REMAINING / 0 COMPLETE over
+51 turns, all files present and runnable; l15-unbound: 2 files, 30 turns). This is
+over-extraction, the opposite direction from this Finding I's feared empty-set/judge-fallback.
+Decisive static probe: `_extract_requested_deliverables(make_task(10))` returned 19 items (10
+real + 9 phantom). Fixed by restricting the regex to recognized extensions
+(`_DELIVERABLE_EXTENSIONS`); regression test added; the `completeness:` diagnostic log restored
+as permanent observability (no longer spike instrumentation, superseding the "remove at close"
+note above). Suite 3050 green. The general constraint (J-3 is coupled to task-prompt phrasing,
+so a task-wording change can silently break termination) is recorded in ADR-040 §Limitations.

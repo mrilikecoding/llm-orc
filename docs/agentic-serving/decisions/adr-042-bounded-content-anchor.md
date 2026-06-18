@@ -10,14 +10,52 @@
 > siblings. ADR-039 carries an `> Updated by ADR-042` header for its selection
 > policy; ADR-039's content-agnostic signature mechanism is unchanged.
 
-**Status:** Accepted with Conditional Acceptance (ADR-097). The **windowing
-mechanism** is demonstrated to fix the scale form-bleed (Spike τ: l15 broke 12/15
-unbounded; l15cap converged 15/15 form-clean with the bound, template held
-constant). Two conditions remain open, discharged by a **clean coherence-at-scale
-re-run** (§Discharge): (a) confirm anchor-overload on a *clean* task — Spike τ's
-ladder template had an off-by-one bug that confounds the exact bleed threshold; (b)
-confirm the windowed bound preserves cross-file coherence for non-linear
-dependencies, and tune K.
+**Status:** **Reverted (Spike τ′, 2026-06-18).** This ADR bounded the content
+anchor to the most recent K=8 produced siblings on a Spike τ anchor-overload
+hypothesis. The Spike τ′ isolation probe refuted that mechanism (form-validity
+30/30 across unbounded / bounded / full-content fallback) and found the bound costs
+cross-file coherence (reference resolution monotonic in anchor size), so the K=8
+bound is reverted to ADR-039's unbounded all-prior selection
+(`loop_driver._CONTENT_ANCHOR_MAX_SIBLINGS = None`). Dependency-scoped selection is
+the tracked successor if a genuinely large-session overload is ever observed. See
+§Reassessment for the evidence; the Context / Decision / Consequences below are the
+original ADR as accepted 2026-06-17, retained for provenance and superseded by
+§Reassessment.
+
+## Reassessment (Spike τ′ isolation probe, 2026-06-18)
+
+The full-session ladder could not test condition (a) (it was masked by the J-3
+over-extraction non-termination, fixed 2026-06-18). An isolated single-dispatch
+probe did: `scratch/spike-tau-anchor-overload/` (n=10 per arm, qwen3:8b, the real
+`build_content_anchor` over run 1's 20 produced siblings, task/target/coder held
+fixed, only the anchor varied).
+
+- **The overload mechanism does not reproduce.** Form-validity was 10/10 in all
+  three arms: A_unbounded clean (1.7KB), B_bounded (K=8, 440B), and A_fallback
+  (full-content, 6KB, the form-bled / unparseable-sibling condition this ADR
+  blamed for amplified bloat). "The unbounded anchor bloats and degrades the
+  coder, a form bleed" does not hold at any tested condition up to 6KB / 20
+  siblings.
+- **The bound shows a coherence COST, not a benefit.** Correct cross-file
+  reference resolution was monotonic in anchor content: B_bounded 3/10 <
+  A_unbounded 7/10 < A_fallback 10/10. More anchor gave the coder better
+  resolution; the bound made it worse, the opposite of the value proposition, and
+  exactly the coherence risk §Negative flagged. (n=10 per arm: form 30/30 is
+  rock-solid; the resolution trend is monotonic across three arms but each
+  pairwise gap is individually borderline.)
+
+**Consequences for this ADR.** Condition (a) is refuted, not discharged. The
+empirical observation that grounded the ADR (l15cap converged 15/15 vs l15 broke
+12/15) is real but mis-attributed: the break was not the content anchor degrading
+the coder, because no anchor condition does. Candidate true causes, untested here:
+stochastic variation, the J-3 over-extraction non-termination (which presents as a
+stalled session that reads as a "break"), or rig degradation on the longer
+unbounded run. On current evidence the K=8 bound is **net-negative** (no
+demonstrated form benefit, a demonstrated coherence cost), so it warrants
+reconsideration: revert to unbounded, replace with dependency-scoped selection (the
+deferred more-correct option, which preserves coherence), or gate any bound to a
+much larger anchor scale than tested here. This decision is pending. Scope of the
+refutation: tested to 6KB / 20 siblings; a far larger anchor remains untested.
 
 ## Context
 
