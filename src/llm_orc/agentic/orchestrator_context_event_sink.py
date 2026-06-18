@@ -258,15 +258,36 @@ class OrchestratorContextEventSink:
         ``dispatch_log.json`` so the integration with execution.json
         can compose later without coupling WP-C to WP-E's tree shape.
 
-        Creates parent directories if needed; overwrites existing file.
-        Empty dispatch_log (no dispatches completed) still writes a
-        valid file with an empty ``entries`` list — the file's
-        existence is the structural signal that the session closed
-        cleanly.
+        Creates parent directories if needed. A multi-turn session is
+        multiple chat-completions requests, each with its own per-request
+        sink that holds only its own dispatches, so the per-session file
+        **accumulates by dispatch_id across requests** rather than being
+        overwritten — a finish turn with no dispatches no longer wipes the
+        session's log (the operator post-hoc review use case). A repeated
+        dispatch_id takes the latest observation; completion order is
+        preserved (existing entries first, this request's appended).
+
+        Empty dispatch_log on the first request still writes a valid file
+        with an empty ``entries`` list — the file's existence is the
+        structural signal that the session opened cleanly.
         """
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"dispatch_log": {"entries": self.dispatch_log_entries()}}
+        payload = {"dispatch_log": {"entries": self._merge_with_existing(path)}}
         path.write_text(json.dumps(payload, indent=2))
+
+    def _merge_with_existing(self, path: Path) -> list[dict[str, Any]]:
+        """Merge this request's entries into any existing per-session log.
+
+        Keyed by ``dispatch_id`` (the source-of-truth correlation): existing
+        entries seed the order, this request's entries append or overwrite
+        their matching id with the latest observation.
+        """
+        merged: dict[str, dict[str, Any]] = {
+            entry["dispatch_id"]: entry for entry in _existing_entries(path)
+        }
+        for entry in self.dispatch_log_entries():
+            merged[entry["dispatch_id"]] = entry
+        return list(merged.values())
 
     # ------------------------------------------------------------------
     # Substrate lifecycle — per-request register/unregister
@@ -349,3 +370,21 @@ def _calibration_signal_to_dict(event: CalibrationSignal) -> dict[str, Any]:
         "deterministic_anchor": event.deterministic_anchor,
         "dispatch_id": event.dispatch_id,
     }
+
+
+def _existing_entries(path: Path) -> list[dict[str, Any]]:
+    """Read a per-session dispatch_log's prior entries for accumulation.
+
+    Returns an empty list when the file is absent or unreadable (corrupt or
+    partially written) — the close-time write must never raise, so a malformed
+    prior file degrades to this request's entries rather than failing the
+    response.
+    """
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    entries = data.get("dispatch_log", {}).get("entries", [])
+    return entries if isinstance(entries, list) else []

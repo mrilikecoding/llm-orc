@@ -308,6 +308,46 @@ def test_write_dispatch_log_with_no_dispatches_still_creates_valid_file(
     assert payload == {"dispatch_log": {"entries": []}}
 
 
+def test_write_dispatch_log_accumulates_across_requests(tmp_path: Path) -> None:
+    # A multi-turn session is multiple chat-completions requests, each with its
+    # own per-request sink that holds only its own dispatches. Writing to the
+    # shared per-session path must accumulate by dispatch_id, not overwrite.
+    log_path = tmp_path / SESSION_ID / "dispatch_log.json"
+    second_dispatch_id = "session-abc-dispatch-0002"  # same session, next turn
+
+    first = OrchestratorContextEventSink(session_id=SESSION_ID)
+    first.consume(_start_event())
+    first.consume(_end_event())
+    first.write_dispatch_log(log_path)
+
+    second = OrchestratorContextEventSink(session_id=SESSION_ID)
+    second.consume(_start_event(dispatch_id=second_dispatch_id))
+    second.consume(_end_event(dispatch_id=second_dispatch_id))
+    second.write_dispatch_log(log_path)
+
+    entries = json.loads(log_path.read_text())["dispatch_log"]["entries"]
+    assert {e["dispatch_id"] for e in entries} == {DISPATCH_ID, second_dispatch_id}
+
+
+def test_write_dispatch_log_empty_final_request_does_not_wipe_prior(
+    tmp_path: Path,
+) -> None:
+    # The reported bug: the final finish turn carries no dispatches; an
+    # overwriting write would wipe the whole session's accumulated log.
+    log_path = tmp_path / SESSION_ID / "dispatch_log.json"
+
+    first = OrchestratorContextEventSink(session_id=SESSION_ID)
+    first.consume(_start_event())
+    first.consume(_end_event())
+    first.write_dispatch_log(log_path)
+
+    finish = OrchestratorContextEventSink(session_id=SESSION_ID)
+    finish.write_dispatch_log(log_path)  # finish turn — no dispatches
+
+    entries = json.loads(log_path.read_text())["dispatch_log"]["entries"]
+    assert [e["dispatch_id"] for e in entries] == [DISPATCH_ID]
+
+
 def test_signal_for_different_session_ignored_under_opt_in(
     tmp_path: Path,
 ) -> None:
