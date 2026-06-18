@@ -33,6 +33,24 @@ server-side recovery rescues intermittent bleeds but is cap-bounded against
 persistent ones; the coder-tier escalation lever that closes the persistent
 residual (Arm E, in isolation) is named, not built.
 
+**Update (2026-06-18 — §6 escalation probe; live recovery validated, escalation
+unmanufacturable by injection):** the coder-tier escalation ladder is now built
+(BUILD loop-back #8, 2026-06-12 — free 8b->14b rung + opt-in frontier) and unit +
+integration validated (the `TestLoopDriverFormEscalation` suite + the
+real-gate-through-terminal test drive the escalation code path via in-process gate
+injection). The §6 bleed-injection probe attempted live escalate-and-converge
+evidence under a deliberately adversarial coder, free-first, across both the
+production 8b->14b ladder and the wide §6 0.6b->8b gap (3 runs, $0 local; research
+log `essays/research-logs/cycle-7-section6-escalation-probe.md`). Result:
+protection and bounded cheap-tier recovery handled every adversarial bleed live (0
+invalid files reached the client across all 3 runs), so escalation never fired —
+recovery is robust enough that even an adversarial 0.6b bleed self-closes within
+the 2-retry cap (run B2 came one re-sample short of the cap). The convergence CA's
+escalation lever is therefore validated by unit/integration + Arm E + this live
+protection/recovery evidence; **live escalate-and-converge** (a real persistent
+bleed escalated to a closing rung) stays the PLAY / organic-deployment item — it
+cannot be manufactured by prompt/model injection because recovery is robust.
+
 **Date:** 2026-06-11 (Cycle 7 loop-back #8 DECIDE)
 
 ---
