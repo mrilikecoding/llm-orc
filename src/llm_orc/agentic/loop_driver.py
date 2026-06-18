@@ -768,9 +768,17 @@ class LoopDriver:
         produced = _produced_paths(self._action_record.records(session_id))
         if requested:
             remaining = requested - produced
+            _logger.info(
+                "completeness: requested=%d produced=%d remaining=%d verdict=%s",
+                len(requested),
+                len(produced),
+                len(remaining),
+                "REMAINING" if remaining else "COMPLETE",
+            )
             if remaining:
                 return "REMAINING", _compose_remaining(remaining), None
             return "COMPLETE", None, _compose_done(requested)
+        _logger.info("completeness: no requested set, judge fallback")
         judgment_text = await self._dispatch_judgment(session_id, context)
         verdict = parse_verdict(judgment_text)
         stripped = strip_verdict(judgment_text) or None
@@ -1084,15 +1092,49 @@ directive.
 """
 
 
-_REQUESTED_FILE_RE = re.compile(r"\b[\w.-]+\.[A-Za-z][A-Za-z0-9]{1,7}\b")
-"""Filename heuristic for the J-3 deterministic completeness gate (Spike σ).
+# Recognized deliverable file extensions for the J-3 completeness gate. The gate
+# is deterministic ONLY for tasks naming files with one of these extensions; any
+# other deliverable shape (an unlisted extension, or a non-file output) falls
+# back to the stochastic judge, which Spike σ measured as unreliable at inferring
+# requested-minus-produced. So this whitelist is the gate's coverage boundary AND
+# a maintenance surface: extending the cycle to new deliverable types needs an
+# entry here, or a more robust deliverable-declaration mechanism than
+# regex-over-prose. See ADR-040 §Limitations.
+_DELIVERABLE_EXTENSIONS = (
+    "py",
+    "md",
+    "json",
+    "yaml",
+    "yml",
+    "toml",
+    "txt",
+    "cfg",
+    "ini",
+    "rst",
+    "sh",
+    "js",
+    "ts",
+    "tsx",
+    "jsx",
+    "html",
+    "css",
+    "csv",
+)
+_REQUESTED_FILE_RE = re.compile(
+    r"\b[\w-]+\.(?:" + "|".join(_DELIVERABLE_EXTENSIONS) + r")\b",
+    re.IGNORECASE,
+)
+"""Filename heuristic for the J-3 deterministic completeness gate (Spike σ/τ).
 
-Matches ``converters.py``, ``test_cli.py``, ``README.md`` — a stem of word /
-dot / dash chars, a dot, and a letter-led extension of 2-8 chars. The 2-char
-minimum extension filters abbreviation false positives (``e.g``, ``i.e``); the
-letter-led extension filters numeric tails (``273.15``, ``9.5``). A pragmatic
-heuristic for named-file tasks, not a general parser — tasks that name no files
-fall back to the stochastic judge."""
+Matches a stem of word/dash chars followed by a recognized deliverable extension
+(``_DELIVERABLE_EXTENSIONS``): ``converters.py``, ``test_cli.py``, ``README.md``.
+Restricting the extension to a known set (vs the original open
+``[A-Za-z][A-Za-z0-9]{1,7}`` class) is what excludes module-qualified call
+expressions in the task prose — ``step1.step1``, ``base.start`` — which the open
+class read as phantom deliverables, permanently inflating ``requested`` so the
+gate never reached COMPLETE (Spike τ J-3 root cause: l10/l15 non-termination). A
+pragmatic heuristic for named-file tasks, not a general parser — a task naming no
+recognized file falls back to the stochastic judge."""
 
 
 def _extract_requested_deliverables(task: str) -> frozenset[str]:
