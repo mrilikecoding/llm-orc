@@ -2310,6 +2310,24 @@ class TestDeterministicCompleteness:
             }
         )
 
+    def test_extract_requested_deliverables_excludes_module_qualified_calls(
+        self,
+    ) -> None:
+        # Regression (Spike τ J-3 root cause): a pipeline task names files AND
+        # embeds module-qualified call expressions in the prose ("returns
+        # step1.step1(x)", "prints step8.step8(1)"). The filename heuristic must
+        # NOT read those dotted call expressions as phantom deliverables — they
+        # are never produced as files, so an over-extracted requested set leaves
+        # ``requested - produced`` permanently non-empty and the gate is stuck on
+        # REMAINING (the non-termination churn observed at l10/l15).
+        from llm_orc.agentic.loop_driver import _extract_requested_deliverables
+
+        got = _extract_requested_deliverables(
+            "Create base.py, step1.py, main.py. step1.py imports base.py and "
+            "returns base.start(x) * 2; main.py prints step8.step8(1)."
+        )
+        assert got == frozenset({"base.py", "step1.py", "main.py"})
+
     async def test_complete_when_all_requested_produced_no_judge_call(self) -> None:
         # The judge would say COMPLETE here too, but the point is it is never
         # consulted — completeness is deterministic.
