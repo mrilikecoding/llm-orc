@@ -144,6 +144,20 @@ escalate-and-converge path is validated by a **separate, small probe**, not the 
 - This probe is **opt-in** within a benchmark run (it injects an artificial failure mode);
   it is reported separately from the grid scorecard.
 
+**Limit found (2026-06-18 §6 probe run; research log
+`essays/research-logs/cycle-7-section6-escalation-probe.md`).** The probe as
+designed cannot reliably produce the escalation evidence. An adversarial coder
+bleeds *intermittently* (8b and 0.6b both), and the bounded cheap-tier recovery
+(cap 2, re-sample at default temperature) closes the bleed before the cap
+exhausts, so escalation never fires (3/3 runs recovered without escalation; run
+B2 came within a single re-sample of cap exhaustion). The probe validates live
+protection + recovery (0 invalid files reached the client across all 3 runs); the
+live escalate-and-converge evidence (ADR-041 convergence CA) needs in-process
+gate injection (what the `TestLoopDriverFormEscalation` unit tests do) or a
+recovery-cap reduction, not adversarial prompting. The harness also does not
+apply the adversarial coder / tier ladder itself (`runner.py` runs probe cells
+identically to grid cells); the probe's bleed is operator-config-supplied.
+
 ## 7. Tier comparison — pre-registered "match" criterion
 
 - Model config (coder tier, seat tier) is a benchmark parameter. **Default = $0 cheap-local**
