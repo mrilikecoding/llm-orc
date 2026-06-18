@@ -424,3 +424,33 @@ stop glitch" attributions are both superseded by this (the raw log is the arbite
 
 **Keep pushing:** re-running l20/l30 with the bound to find the new ceiling (expected
 to be the accumulated conversation context next — the anchor bound doesn't touch it).
+
+### (a)-isolation probe (Spike τ′, 2026-06-18): the anchor-overload attribution is refuted
+
+ADR-042 condition (a) (the unbounded anchor overloads the coder on a clean task at
+scale) was tested in isolation, because the full-session ladder masked it under the
+J-3 over-extraction non-termination (fixed 2026-06-18). Harness:
+`scratch/spike-tau-anchor-overload/probe_a.py` (n=10/arm, qwen3:8b, the real
+`build_content_anchor` over run 1's 20 produced siblings; task/target/coder held
+fixed, only the anchor varied; $0 local).
+
+| arm | anchor | parse-valid | ref-resolved |
+|-----|--------|-------------|--------------|
+| B_bounded (K=8) | 440 B | 10/10 | 3/10 |
+| A_unbounded (clean signatures) | 1.7 KB | 10/10 | 7/10 |
+| A_fallback (full-content, bled siblings) | 6.0 KB | 10/10 | 10/10 |
+
+Form-validity is 30/30 across every condition: the anchor does not overload the
+coder's form at any tested scale (clean small, clean large, or full-content fallback
+to 6 KB / 20 siblings). Reference resolution is monotonic in anchor content
+(3 < 7 < 10): more anchor gives better cross-file coherence; the bound HURT it. The
+failures are the bare-module-call form (`step18(5)` instead of `step18.step18(5)`).
+
+So CORRECTION #2's attribution (content-anchor overload caused the l15 form bleed) is
+**refuted**: no anchor condition degrades the coder. The l15 break was not the anchor
+(candidate causes, untested: stochastic variation, the J-3 non-termination presenting
+as a stall, rig degradation on the longer run). The K=8 bound is net-negative on this
+evidence (no form benefit, a coherence cost). Recorded in ADR-042 §Reassessment; the
+bound is under reconsideration (revert / dependency-scoped / scale-gate). Caveat: form
+30/30 is solid; the resolution trend is monotonic across three arms but each pairwise
+gap is individually borderline at n=10. Scope: tested to 6 KB / 20 siblings.

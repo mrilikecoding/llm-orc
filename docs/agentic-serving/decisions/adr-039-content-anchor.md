@@ -1,13 +1,16 @@
 # ADR-039: Content Anchor — Routing Produced-Sibling Signatures into the Callee Dispatch
 
-> **Updated by ADR-042 (Bounded Content Anchor, 2026-06-17).** ADR-039's selection
-> policy — *all prior produced siblings* — bloats and degrades the coder at scale
-> (Spike τ: a ~12-file form bleed across every coder tier, escalation-proof because
-> all tiers get the same bloated anchor). ADR-042 bounds the anchor to the most
-> recent K siblings. The content-agnostic signature mechanism in this ADR is
-> unchanged; only the selection policy is windowed.
+> **Updated by ADR-042 (2026-06-17), then ADR-042 REVERTED (Spike τ′, 2026-06-18).**
+> ADR-042 bounded the anchor to the most recent K=8 siblings on a Spike τ
+> anchor-overload hypothesis. The Spike τ′ isolation probe refuted that hypothesis
+> (the unbounded anchor does not overload the coder's form, and bounding cost
+> cross-file coherence), so the bound was reverted and ADR-039's *all prior produced
+> siblings* selection stands. See ADR-042 §Reassessment. (The original ADR-042
+> claim, that all-prior bloats and degrades the coder at scale, is not supported by
+> the isolation evidence.) The content-agnostic signature mechanism in this ADR is
+> unchanged.
 
-**Status:** Proposed (Cycle 7 loop-back #7 DECIDE; argument audit + DECIDE gate pending). Intended Accepted with Conditional Acceptance per ADR-097; the discharge gate is the BUILD real-OpenCode multi-file trajectory re-run (see §Empirical grounding). **Selection policy windowed by ADR-042.**
+**Status:** Proposed (Cycle 7 loop-back #7 DECIDE; argument audit + DECIDE gate pending). Intended Accepted with Conditional Acceptance per ADR-097; the discharge gate is the BUILD real-OpenCode multi-file trajectory re-run (see §Empirical grounding). **Selection policy windowed by ADR-042, then reverted to all-prior (Spike τ′; ADR-042 §Reassessment).**
 
 ## Context
 
