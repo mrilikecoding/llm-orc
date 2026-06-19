@@ -178,6 +178,42 @@ class TestApplyWorkEmission:
         assert args["content"] == "def sort(xs): ..."
 
 
+class TestApplyWorkAdaptiveMarshalling:
+    """F-ι.1 (ADR-043) — when the client did not offer the deliverable's
+    destination tool, the marshalled content is emitted as a text completion,
+    not an un-executable client tool call. A toolless request (e.g. OpenCode's
+    title-generator aux call) has no ``write`` to execute, so the ensemble
+    deliverable is returned as text. Delegation stays uniform in the Loop
+    Driver; only this output shape adapts.
+    """
+
+    async def test_delegated_deliverable_marshalled_to_text_without_matching_tool(
+        self,
+    ) -> None:
+        outcome = ApplyWork(
+            invocation_id="t1",
+            tool_name="write",
+            file_path="sort.py",
+            envelope=DispatchEnvelope(status="success", primary="def sort(xs): ..."),
+            delegated_ensemble="code-generator",
+        )
+        terminal = _inline_terminal(_ScriptedDecider(outcome))
+        toolless_context = SessionContext(
+            messages=[ChatMessage(role="user", content="write a sorting function")],
+            tools=[],
+            state=SessionState(
+                identity=SessionIdentity(value="terminal-test", method="user_field")
+            ),
+        )
+
+        chunks = await _collect(terminal.run(toolless_context))
+
+        assert chunks == [
+            ContentDelta(content="def sort(xs): ..."),
+            Completion(finish_reason="stop"),
+        ]
+
+
 class _RecordingBridge(ArtifactBridge):
     """Bridge subclass recording the destination tool each marshal received."""
 
