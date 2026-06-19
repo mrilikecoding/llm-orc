@@ -1,8 +1,8 @@
 # System Design Companion: Agentic Serving — Agent Context
 
-**Version:** 4.0
+**Version:** 4.1
 **Status:** Current
-**Last amended:** 2026-05-15 (Cycle 6 ARCHITECT)
+**Last amended:** 2026-06-18 (Cycle 7 loop-back #9 BUILD Design Amendment — ADR-043 collapse to one serving surface; the Dispatch Pipeline module is retired). Prior: 2026-05-15 (Cycle 6 ARCHITECT)
 **Companion to:** [system-design.md](./system-design.md) (slim human-facing surface)
 **Scope:** Scoped RDD cycle at `docs/agentic-serving/`. Inherits the project-level domain model (Invariants 1-14) and existing system architecture.
 
@@ -432,7 +432,9 @@ class DispatchEnvelope:
 **Provenance:** ADR-024 (the typed envelope contract); spike α (candidate B selection — additive typed fields path); domain-model §Methodology Vocabulary on Common I/O envelope. **Cross-module producers/consumers:** Orchestrator Tool Dispatch (producer at `invoke_ensemble` return); Orchestrator Runtime (consumer — the envelope flows to the ReAct loop as the tool-call result); Skill orchestration clients via Serving Layer (downstream consumers of the chat-completion response).
 **Field-name `diagnostics` (not `metadata`)** aligns with the MODEL-phase vocabulary; the existing `execution.json` artifact retains `metadata` (the rename is at the envelope layer only — Cycle 7+ artifact-shape ADR may align). **`output_schema:` advisory** at dispatch time per spike β's reframing of output-spec drift as `input.data` override; schema validation is **not enforced** at the synthesizer's output.
 
-### Module: Dispatch Pipeline *(new in Cycle 7 per ADR-027)* — L2
+### Module: Dispatch Pipeline *(RETIRED by ADR-043, loop-back #9, 2026-06-18)* — L2
+
+> **⊘ Retired.** ADR-043 collapsed the two serving surfaces to one; this module (`dispatch_pipeline.py`) and its ensemble-backed planner/synthesizer roles (`ensemble_backed_roles.py`) are deleted. Every request now routes through the loop-driven Client-Tool-Action Terminal. The section below is preserved as historical record of the retired design; other Dispatch-Pipeline references in this companion are likewise superseded by ADR-043.
 
 **Purpose:** Orchestrates the chat-completions plan → dispatch → synthesize flow for every chat-completions request.
 **Provenance:** ADR-027 (primary direction); domain-model §Methodology Vocabulary "Framework-driven dispatch pipeline"; AS-9 (structural property satisfied on this surface); AS-10 (request-shape constraint within which the pipeline operates); Spike ε + ε' + μ (synthesis-stage empirical baseline); Spike ζ (planner-stage empirical baseline).
