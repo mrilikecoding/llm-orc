@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from typing import Protocol
+from typing import Any, Protocol
 
 from llm_orc.agentic.artifact_bridge import ArtifactBridge, FormRefusedError
 from llm_orc.agentic.loop_driver import (
@@ -89,21 +89,32 @@ class ClientToolActionTerminal:
     async def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]:
         """Decide one turn and emit it as wire chunks."""
         outcome = await self._loop_driver.decide(context)
-        for chunk in self._emit(outcome, context.state.identity.value):
+        client_tools = _offered_tool_names(context.tools)
+        for chunk in self._emit(outcome, context.state.identity.value, client_tools):
             yield chunk
 
-    def _emit(self, outcome: TurnOutcome, session_id: str) -> list[OrchestratorChunk]:
+    def _emit(
+        self,
+        outcome: TurnOutcome,
+        session_id: str,
+        client_tools: frozenset[str],
+    ) -> list[OrchestratorChunk]:
         """Map a per-turn outcome to the wire chunks for it."""
         if isinstance(outcome, CarryClientTool):
             return [ClientToolCall(tool_calls=(outcome.invocation,))]
         if isinstance(outcome, ApplyWork):
-            return self._emit_apply_work(outcome, session_id)
+            return self._emit_apply_work(outcome, session_id, client_tools)
         return _finish_chunks(outcome.content)
 
     def _emit_apply_work(
-        self, outcome: ApplyWork, session_id: str
+        self, outcome: ApplyWork, session_id: str, client_tools: frozenset[str]
     ) -> list[OrchestratorChunk]:
-        """Marshal a generation outcome's deliverable into a client tool call.
+        """Marshal a generation outcome's deliverable for the client.
+
+        When the client offered the deliverable's destination tool, the content
+        is placed into a client tool call it executes locally. When it did not
+        (a toolless request — F-ι.1, ADR-043), the content is returned as a text
+        completion instead of an un-executable tool call.
 
         The Artifact Bridge (ADR-034 §Decision 3) resolves the deliverable
         content from the envelope — full fidelity for substrate-routed
@@ -135,6 +146,13 @@ class ClientToolActionTerminal:
             )
         if self._action_record is not None:
             self._action_record.record_content(session_id, content)
+        # F-ι.1 (ADR-043): a client that did not offer the destination tool
+        # cannot execute it (a toolless request — e.g. OpenCode's title-gen aux
+        # call), so the marshalled deliverable is returned as a text completion
+        # rather than an un-executable tool call. Delegation stays uniform in the
+        # Loop Driver; only this output shape adapts.
+        if outcome.tool_name not in client_tools:
+            return _finish_chunks(content)
         invocation = ToolCallInvocation(
             id=outcome.invocation_id,
             name=outcome.tool_name,
@@ -150,3 +168,17 @@ def _finish_chunks(content: str | None) -> list[OrchestratorChunk]:
         chunks.append(ContentDelta(content=content))
     chunks.append(Completion(finish_reason="stop"))
     return chunks
+
+
+def _offered_tool_names(tools: list[dict[str, Any]]) -> frozenset[str]:
+    """The client tool names a request offered (the OpenAI tool shape).
+
+    Used by the F-ι.1 adaptive-marshalling branch to decide whether a delegated
+    deliverable's destination tool can be executed by the client.
+    """
+    names: set[str] = set()
+    for tool in tools:
+        function = tool.get("function")
+        if isinstance(function, dict) and isinstance(function.get("name"), str):
+            names.add(function["name"])
+    return frozenset(names)
