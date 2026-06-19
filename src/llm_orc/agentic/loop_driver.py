@@ -431,12 +431,10 @@ class GenerationTarget(Protocol):
     """The per-turn generation delegation target (FC-52; ADR-033 §Rejected).
 
     The Loop Driver's generation boundary is a swappable strategy: the default
-    is the single-ensemble **callee** (one ``invoke_ensemble`` dispatch, FC-44);
-    the second-order **wrapper** contingency is the full ``DispatchPipeline.run()``
-    (plan → dispatch → synthesize as the per-turn subroutine). Swapping the
-    target is a construction-time injection — it requires no change to the
-    control structure (``decide``), the Single-Step Enforcer, or the Terminal
-    (FC-52).
+    is the single-ensemble **callee** (one ``invoke_ensemble`` dispatch, FC-44).
+    Swapping the target is a construction-time injection — it requires no change
+    to the control structure (``decide``), the Single-Step Enforcer, or the
+    Terminal (FC-52).
 
     Fallback ordering (ADR-033 §Rejected, F3-1) if BUILD/PLAY axis-2 validation
     shows the cheap-tier driver cannot hold the long horizon:
@@ -447,9 +445,10 @@ class GenerationTarget(Protocol):
     2. **wrapper reversion** — second-order, only if a frontier driver also
        fails AND the FC-51 diagnosis is *callee-incorrect* (a *split-incorrect*
        failure implicates the two-layer split itself → Design Amendment, not the
-       wrapper). The wrapper impl is a **recorded contingency, not built** — it
-       depends on the single-turn Dispatch Pipeline (WP-B/C); this protocol
-       keeps it architecturally accessible without re-architecture.
+       wrapper). The wrapper-contingency fallback target (previously
+       ``DispatchPipeline.run``) is a recorded contingency; the Dispatch
+       Pipeline was retired in ADR-043, so any wrapper revival would require
+       a new design for the delegation subroutine.
     """
 
     async def generate(
@@ -517,8 +516,8 @@ class LoopDriver:
         self._enforcer = enforcer
         # FC-52: the per-turn generation boundary is a swappable strategy. The
         # default is the single-ensemble callee built from the Tool Dispatch
-        # chokepoint; a wrapper-contingency target (DispatchPipeline.run) can be
-        # injected here with no change to the control structure or Terminal.
+        # chokepoint; an alternative GenerationTarget can be injected here
+        # with no change to the control structure or Terminal.
         self._generation_target: GenerationTarget = (
             generation_target or _CalleeGenerationTarget(tool_dispatch)
         )
