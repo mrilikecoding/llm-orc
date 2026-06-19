@@ -1,24 +1,24 @@
 """Serving Layer ``/v1/chat/completions`` endpoint.
 
 Per ``docs/agentic-serving/system-design.md`` §Serving Layer (L3) and
-ADR-027 (Framework-Driven Dispatch Pipeline). Cycle 7 WP-A replaced the
-``OrchestratorRuntime`` ReAct loop on this surface with the framework-
-driven :class:`DispatchPipeline`. The endpoint:
+ADR-043 (Collapse Dual Serving Surfaces to One Loop-Driven Surface).
+Every chat-completions request routes through the Client-Tool-Action
+Terminal composing the layer-A Loop Driver (ADR-033 / ADR-034). The
+endpoint:
 
 1. Parses the OpenAI-compatible request.
 2. Resolves a Session via :class:`SessionRegistry`.
 3. Runs :func:`resolve_session_start_context` exactly once per session
    (FC-9); Phase 1 returns an empty list.
-4. Constructs a :class:`DispatchPipeline` over a routing-planner
-   ensemble (Stage 1), the shared Tool Dispatch wrapping
-   :class:`OrchestraService` (Stage 2), and a response-synthesizer
-   ensemble (Stage 3). The orchestrator-LLM is not in the routing-
-   decision or post-dispatch-synthesis surface (AS-9 + ADR-027).
-5. Drives the pipeline to produce either a non-streaming
+4. Hands the request to the :class:`ClientToolActionTerminal`, which
+   composes the :class:`LoopDriver` and owns tool-call emission and
+   multi-turn loop participation. Tool-driven clients receive a
+   ``tool_calls`` turn; toolless clients receive a finish-with-text
+   turn (F-ι.1 adaptive marshalling, ADR-043 §Decision 3).
+5. Drives the terminal to produce either a non-streaming
    ``chat.completion`` body or an SSE stream.
 
-The pipeline is constructed per request. The Tool Dispatch facade and
-the pipeline factory are process-scoped factories module-level tests
+The terminal factory is a process-scoped factory that module-level tests
 override via ``monkeypatch.setattr``. ``OrchestratorRuntime`` remains in
 the codebase per ADR-027 §"OrchestratorRuntime status" disposition (a)
 (preserved as architecture-for-future-surfaces) but has no caller here.
@@ -52,11 +52,6 @@ from llm_orc.agentic.composition_validator import (
     ConfigManagerPrimitiveRegistry,
 )
 from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
-from llm_orc.agentic.dispatch_pipeline import DispatchPipeline
-from llm_orc.agentic.ensemble_backed_roles import (
-    EnsembleResponseSynthesizer,
-    EnsembleRoutingPlanner,
-)
 from llm_orc.agentic.inference_wait_heartbeat import (
     InferenceWaitHeartbeatScheduler,
 )
@@ -99,14 +94,6 @@ from llm_orc.web.api.sse_format import OpenAiSseFormatter, encode_tool_call_for_
 from llm_orc.web.api.v1_models import get_orchestrator_config_resolver
 
 router = APIRouter(prefix="/v1", tags=["openai-compat"])
-
-# System-ensemble names for the WP-A dispatch pipeline (ADR-028 / ADR-029).
-# WP-B and WP-C ship the production ensembles under these names; WP-D's
-# Capability List Builder formalizes the capability source. Held as module
-# constants until that work makes them operator-configurable.
-ROUTING_PLANNER_ENSEMBLE = "agentic-routing-planner"
-RESPONSE_SYNTHESIZER_ENSEMBLE = "agentic-response-synthesizer"
-
 
 _SHARED_REGISTRY = SessionRegistry()
 _SHARED_SESSION_START_CACHE = SessionStartCache()
@@ -345,19 +332,16 @@ def _build_tier_router_and_audit(
 
 
 async def _build_capability_names() -> frozenset[str]:
-    """Build the registered capability-ensemble name set (interim — WP-A).
+    """Build the registered capability-ensemble name set.
 
-    The Dispatch Pipeline validates ``plan.ensemble`` against this set
-    before dispatching (the Spike ν E1/E3 backstop). A capability
-    ensemble is one that carries ADR-015's ``topaz_skill`` marker;
-    system ensembles (planner, synthesizer, summarizer, checker) carry
-    no ``topaz_skill`` and are excluded.
+    A capability ensemble carries ADR-015's ``topaz_skill`` marker;
+    system ensembles (summarizer, checker) carry no ``topaz_skill``
+    and are excluded.
 
     ``read_ensembles`` returns name/source/path metadata without
     ``topaz_skill``, so the marker is read per name via
     ``find_ensemble_by_name`` — the same EnsembleConfig surface the
-    tier-router's skill reader uses. WP-D's Capability List Builder
-    formalizes this as the single source of truth.
+    tier-router's skill reader uses.
     """
     service = get_orchestra_service()
     entries = await service.read_ensembles()
@@ -370,34 +354,6 @@ async def _build_capability_names() -> frozenset[str]:
         if config is not None and getattr(config, "topaz_skill", None):
             names.add(name)
     return frozenset(names)
-
-
-async def get_dispatch_pipeline() -> DispatchPipeline:
-    """Construct a per-request framework-driven Dispatch Pipeline (ADR-027).
-
-    Stage 1 (Routing Planner) and Stage 3 (Response Synthesizer) are
-    ensemble-backed adapters over ``OrchestraService.invoke``; Stage 2
-    reuses the shared Tool Dispatch chokepoint so the calibration gate,
-    tier router, and autonomy interpositions fire unchanged (per the
-    "OrchestratorToolDispatch.dispatch() contract is unchanged"
-    preservation scenario). Capability names gate plan validation.
-
-    Tests override this factory via ``monkeypatch.setattr`` to inject a
-    stub pipeline (shape/streaming tests) or a real pipeline wired to
-    stub ports (acceptance tests).
-    """
-    service = get_orchestra_service()
-    return DispatchPipeline(
-        planner=EnsembleRoutingPlanner(
-            invoker=service, ensemble_name=ROUTING_PLANNER_ENSEMBLE
-        ),
-        synthesizer=EnsembleResponseSynthesizer(
-            invoker=service, ensemble_name=RESPONSE_SYNTHESIZER_ENSEMBLE
-        ),
-        tool_dispatch=get_orchestrator_tool_dispatch(),
-        capability_names=await _build_capability_names(),
-        event_substrate=get_dispatch_event_substrate(),
-    )
 
 
 async def _resolve_seat_filler() -> ModelInterface:
@@ -510,15 +466,15 @@ async def get_loop_driver() -> LoopDriver:
 
 
 async def get_client_tool_action_terminal() -> _ChatCompletionsCaller:
-    """Construct the tool-driven-surface caller (ADR-034).
+    """Construct the universal surface caller (ADR-034 / ADR-043).
 
-    Parallel to :func:`get_dispatch_pipeline`. The Client-Tool-Action Terminal
-    composes the real Loop Driver (:func:`get_loop_driver`) and owns tool-call
-    emission + multi-turn loop participation, marshalling substrate-routed
-    deliverable content via the Artifact Bridge (ADR-034 §Decision 3) over the
-    shared Session Artifact Store. The surface-mode discriminator engages this
-    caller when a request carries client ``tools[]``. Tests override this
-    factory via ``monkeypatch.setattr`` to inject a stub caller.
+    The Client-Tool-Action Terminal composes the real Loop Driver
+    (:func:`get_loop_driver`) and owns tool-call emission + multi-turn loop
+    participation, marshalling substrate-routed deliverable content via the
+    Artifact Bridge (ADR-034 §Decision 3) over the shared Session Artifact
+    Store. Every chat-completions request routes here (ADR-043 §Decision 1).
+    Tests override this factory via ``monkeypatch.setattr`` to inject a stub
+    caller.
     """
     return ClientToolActionTerminal(
         loop_driver=await get_loop_driver(),
@@ -565,40 +521,19 @@ class _ChatCompletionsRequest(BaseModel):
     user: str | None = None
 
 
-def _is_tool_driven(request: _ChatCompletionsRequest) -> bool:
-    """Surface-mode discriminator (ADR-033 §Decision 1; D1).
-
-    A request that carries client ``tools[]`` is a tool-driven client
-    prepared to execute tool calls (e.g. OpenCode's build agent declaring
-    ``write``/``edit``/``bash``/``read``), so it engages the layer-A
-    loop-driver. A request with no client tools is a non-agentic
-    answer-a-question request and continues through ADR-027's single-turn
-    ``plan → dispatch → synthesize`` pipeline.
-
-    Validate-not-assume (loop-back ARCHITECT advisory #2): whether
-    ``tools[]`` presence is the right discriminator is a drafting-time
-    design choice grounded in Spike π Phase 0, not a measured result. A
-    tool-capable client could send ``tools[]`` for bookkeeping while
-    wanting a plain answer on a given turn; that edge case is safe
-    because the loop-driver can finish with text. Treat the first
-    unexpected ``tools[]`` pattern from production traffic as a named
-    validation event, not a defect.
-    """
-    return len(request.tools) > 0
-
-
 @router.post("/chat/completions", response_model=None)
 async def chat_completions(
     request: _ChatCompletionsRequest,
 ) -> dict[str, Any] | StreamingResponse:
-    """Resolve session, select the surface-mode caller, then stream or return a body.
+    """Resolve session, route to the loop-driven terminal, then stream or return a body.
 
-    The surface-mode discriminator (:func:`_is_tool_driven`, ADR-033 D1)
-    selects the caller: a tool-driven request (client ``tools[]`` present)
-    engages the Client-Tool-Action Terminal (ADR-034, composing the layer-A
-    loop-driver); a non-tool request continues through ADR-027's single-turn
-    Dispatch Pipeline. Both satisfy :class:`_ChatCompletionsCaller`, so the
-    heartbeat + context-sink lifecycle below wraps either caller unchanged.
+    Every request routes to the Client-Tool-Action Terminal (ADR-043
+    §Decision 1), which composes the layer-A Loop Driver (ADR-033 /
+    ADR-034). Tool-driven clients receive a ``tool_calls`` turn;
+    toolless clients receive a finish-with-text turn (F-ι.1 adaptive
+    marshalling, ADR-043 §Decision 3). The terminal satisfies
+    :class:`_ChatCompletionsCaller`, so the heartbeat + context-sink
+    lifecycle below wraps it unchanged.
 
     Per Cycle 6 WP-B piece 5 a per-request
     :class:`InferenceWaitHeartbeatScheduler` is registered with the
@@ -610,19 +545,15 @@ async def chat_completions(
     inference inactivity, giving operators liveness signal during
     long-inference waits.
 
-    The per-request context sink (Cycle 6 WP-C) keeps its substrate-
-    registration + end-of-session ``dispatch_log`` role under ADR-027;
-    its turn-boundary observation injection is moot because the
-    pipeline is single-turn (no orchestrator-LLM loop to inject into).
+    The per-request context sink (Cycle 6 WP-C) maintains its
+    substrate-registration + end-of-session ``dispatch_log`` role;
+    its turn-boundary observation injection fires on every request now
+    that all requests engage the loop-driver.
     """
     context = _resolve_context(request)
     session_id = context.state.identity.value
     context_sink = _build_context_sink(session_id=session_id)
-    caller: _ChatCompletionsCaller
-    if _is_tool_driven(request):
-        caller = await get_client_tool_action_terminal()
-    else:
-        caller = await get_dispatch_pipeline()
+    caller: _ChatCompletionsCaller = await get_client_tool_action_terminal()
     scheduler = _build_heartbeat_scheduler(session_id=session_id)
 
     if request.stream:
@@ -756,11 +687,11 @@ def _resolve_context(request: _ChatCompletionsRequest) -> SessionContext:
 class _ChatCompletionsCaller(Protocol):
     """The chat-completions request driver.
 
-    Both :class:`DispatchPipeline` (the ADR-027 caller on this surface)
-    and :class:`OrchestratorRuntime` (preserved for future surfaces per
-    ADR-027 disposition (a)) satisfy this structurally — ``run`` yields
-    the shared :class:`OrchestratorChunk` vocabulary the SSE formatter
-    and non-streaming collector consume.
+    The :class:`ClientToolActionTerminal` (ADR-034, the universal surface
+    per ADR-043) satisfies this structurally — ``run`` yields the shared
+    :class:`OrchestratorChunk` vocabulary the SSE formatter and
+    non-streaming collector consume. Tests inject :class:`_StubPipeline`
+    doubles through the same interface.
     """
 
     def run(self, context: SessionContext) -> AsyncIterator[OrchestratorChunk]: ...
@@ -786,13 +717,12 @@ async def _collect_non_streaming(
 ) -> _NonStreamingResult:
     """Drive the caller and flatten its chunks to the non-streaming shape.
 
-    The single-turn (non-tool) surface — the Dispatch Pipeline (ADR-027) —
-    yields ``ContentDelta`` text and a terminal ``Completion``; the composed
-    response is the concatenation of the content deltas. The tool-driven
-    multi-turn surface (ADR-033 / ADR-034) closes a turn with a
-    ``ClientToolCall``, which shapes into ``message.tool_calls`` +
-    ``finish_reason: "tool_calls"`` per the OpenAI non-streaming tool-call
-    shape (the streaming path renders the same chunk via the SSE formatter).
+    The loop-driven terminal yields ``ContentDelta`` text and a terminal
+    ``Completion`` for finish-with-text turns (toolless clients, ADR-043
+    §Decision 3); tool-driven turns close with a ``ClientToolCall``, which
+    shapes into ``message.tool_calls`` + ``finish_reason: "tool_calls"``
+    per the OpenAI non-streaming tool-call shape (the streaming path
+    renders the same chunk via the SSE formatter).
     """
     content_parts: list[str] = []
     finish_reason = "stop"
