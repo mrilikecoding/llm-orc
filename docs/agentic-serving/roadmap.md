@@ -572,7 +572,9 @@ WP-D ─ implied with WP-E (Population B advisory content; the same capability l
 
 ## Transition States (Cycle 7)
 
-### TS-10: Dispatch Pipeline operational on chat-completions surface (after WP-A + WP-B + WP-C)
+### TS-10: Dispatch Pipeline operational on chat-completions surface (after WP-A + WP-B + WP-C) ⊘ RETIRED (ADR-043)
+
+> **⊘ Retired by ADR-043 (loop-back #9).** This transition state tracked the now-deleted Dispatch Pipeline; the loop-driven terminal is the sole serving surface. Left as historical record.
 
 When WP-A + WP-B + WP-C land, the framework-driven dispatch pipeline is operational on the chat-completions surface. Every request flows through plan → dispatch (when applicable) → synthesize; the orchestrator-LLM is removed from the routing-decision and post-dispatch-synthesis surfaces; AS-9 is satisfied universally on the chat-completions surface. This is the **central architectural pivot of Cycle 7** — the configuration the corpus has been engineering toward across Cycles 4-7. Capability list (WP-D) and honest response labeling (WP-E) can ship before or after; TS-10 is independently meaningful because the architectural state is observable from any request the operator sends.
 
