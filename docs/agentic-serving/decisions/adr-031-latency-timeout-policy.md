@@ -1,6 +1,8 @@
 # ADR-031: Latency and Timeout Policy for the Agentic-Serving Chat-Completions Surface
 
-**Status:** Proposed
+> **Largely dormant after ADR-043 on 2026-06-18.** This policy characterizes the *Dispatch Pipeline's* latency profile (the ~36s plan → dispatch → synthesize floor) and its Population-A timeout coverage tiers, plus pipeline-specific tuning mechanisms (cached planner decisions, smaller planner model, streaming synthesizer). ADR-043 retired the Dispatch Pipeline, so that pipeline-specific analysis no longer has a live surface. The general concern — client timeout accommodation for the agentic-serving surface — persists, but is now governed by the loop-driven terminal's per-turn latency (seat-filler + single-ensemble dispatch), which this ADR does not characterize. Re-characterizing the loop's latency profile and re-deriving the client coverage tiers is deferred until a timeout issue is observed against the unified surface. Body preserved as architecture-of-record.
+
+**Status:** Proposed; largely dormant after ADR-043 (2026-06-18) — see header
 
 **Date:** 2026-05-22
 

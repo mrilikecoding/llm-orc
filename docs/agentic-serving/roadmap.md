@@ -459,6 +459,8 @@ The first two entries are `refactor:` commits that extend Spike artifacts to mat
 
 ---
 
+> **⊘ RETIRED by ADR-043 (loop-back #9, 2026-06-18).** The single-turn Dispatch Pipeline work packages **WP-B (Routing Planner), WP-C (Response Synthesizer), WP-D (Capability List Builder + Capability Discovery Endpoint), and WP-E (Response Labeling + `tool_choice` bridge)** are retired — they built the now-deleted pipeline surface. The loop-driven terminal is the sole serving surface; multi-ensemble composition happens across the loop's turns, and the plain-API "ask-and-compose" case, if ever needed, is served by wrapping a turn-driving agent (OpenCode), not by reviving these packages. Left in place as historical record. (These are the *Cycle-7 pipeline* WP-B/C/D/E; the unrelated Cycle-6 WP-B/C/D/E further down are unaffected.)
+
 ### WP-B: Routing Planner production ensemble + Routing Planner module (ADR-028)
 
 **Objective:** Land the routing-planner system ensemble (`agentic-routing-planner.yaml`) as a production ensemble + the Routing Planner module that wraps invocation through `OrchestratorToolDispatch.dispatch()`. The 20-prompt regression battery from Spike ζ becomes the integration test fixture per FC-31.

@@ -1,6 +1,8 @@
 # ADR-032: Fallback Shape and Transparent-Endpoint Promise Split
 
-**Status:** Proposed
+> **Largely dormant after ADR-043 on 2026-06-18.** This policy split the transparent-endpoint promise into (1) configuration honesty (the response declares its served-by path: `action: dispatch` / `direct` / intercept) and (2) cost-distribution accountability (capability-matched requests result in ensemble dispatch). Both were built on the Dispatch Pipeline (the routing-planner's action labeling; strict-dispatch-when-capability-matched), which ADR-043 retired. **Sub-promise (2)'s intent is preserved** by the unified loop: capability-matched requests still reach an ensemble via the seat-filler's uniform delegation — ADR-043 §F-ι.1 Resolution B keeps delegation available for every request, toolless included — so the cost-distribution commitment carries forward; only its *mechanism* shifts from planner strict-dispatch to seat-filler delegation. **Sub-promise (1)'s served-by labeling is dormant**: the pipeline's `action`-path declaration no longer exists; whether and how the loop labels a delegated-vs-text turn is undecided and would be a new design if the transparency promise is wanted on the unified surface. Body preserved as architecture-of-record.
+
+**Status:** Proposed; largely dormant after ADR-043 (2026-06-18) — see header
 
 **Date:** 2026-05-22
 
