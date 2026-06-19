@@ -1,0 +1,59 @@
+{
+  "cell": "match_caps",
+  "n": 10,
+  "finish": 7,
+  "delegate": 3,
+  "other": 0,
+  "results": [
+    {
+      "q": "Write a Python function that reverses a string.",
+      "outcome": "finish",
+      "content": ""
+    },
+    {
+      "q": "Write a Python function that checks whether a number is prime.",
+      "outcome": "delegate",
+      "content": ""
+    },
+    {
+      "q": "Write a Python function that returns the nth Fibonacci number.",
+      "outcome": "finish",
+      "content": ""
+    },
+    {
+      "q": "Write a Python function that sorts a list of integers ascending.",
+      "outcome": "finish",
+      "content": ""
+    },
+    {
+      "q": "Write a Python function that counts vowels in a string.",
+      "outcome": "finish",
+      "content": ""
+    },
+    {
+      "q": "Write a Python function that flattens a nested list.",
+      "outcome": "finish",
+      "content": ""
+    },
+    {
+      "q": "Write a Python function that computes the factorial of n.",
+      "outcome": "delegate",
+      "content": ""
+    },
+    {
+      "q": "Write a Python function that removes duplicates from a list.",
+      "outcome": "finish",
+      "content": ""
+    },
+    {
+      "q": "Write a Python function that converts Celsius to Fahrenheit.",
+      "outcome": "delegate",
+      "content": ""
+    },
+    {
+      "q": "Write a Python function that finds the max of three numbers.",
+      "outcome": "finish",
+      "content": ""
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 # ADR-033: Layer-A Loop-Driver as the Multi-Turn Agentic Control Structure (Callee)
 
+> **Updated by ADR-043 on 2026-06-18.** Cycle 7 loop-back #9 supersedes **§Decision 1** (surface-mode discrimination): the two-surface split collapses to one — all chat-completions requests engage this loop-driver, validated by Spike ι. Decisions 2–6 and the four fitness criteria are unchanged and now govern all requests, not only tool-driven ones. The §Decision 1 discriminator (`_is_tool_driven` selecting between two callers) is retired.
+
 **Status:** Proposed
 
 **Date:** 2026-06-01

@@ -1,8 +1,10 @@
 # ADR-027: Framework-Driven Dispatch Pipeline as Primary Direction for the Chat-Completions Surface
 
+> **Superseded by ADR-043 on 2026-06-18.** Cycle 7 loop-back #9 collapses the two serving surfaces to one: every chat-completions request now routes through the loop-driven Client-Tool-Action Terminal, and this single-turn `plan → dispatch → synthesize` Dispatch Pipeline is retired (`dispatch_pipeline.py` + `ensemble_backed_roles.py` removed). The loop subsumes the no-tools case (Spike ι); ensemble delegation is preserved for toolless clients via adaptive marshalling (ADR-043 §F-ι.1 Resolution B). The body is preserved as architecture-of-record; the routing-planner/synthesizer subtree (ADR-028/029/031/032) is dormant.
+
 > **Updated by ADR-033 on 2026-06-01.** Scopes this ADR's `plan → dispatch → synthesize` pipeline to the single-turn (non-tool-driven) answer-a-question surface and the layer-B generation role. The multi-turn agentic (tool-driven client) surface is centered on the layer-A loop-driver per ADR-033, which delegates per-turn generation to a single capability ensemble (callee) rather than running this pipeline per turn. The rest of this ADR remains current.
 
-**Status:** Accepted (Cycle 7 DECIDE first pass, 2026-05-22); Updated by ADR-033
+**Status:** Superseded by ADR-043 (2026-06-18). Was Accepted (Cycle 7 DECIDE first pass, 2026-05-22); Updated by ADR-033
 
 **Date:** 2026-05-22
 

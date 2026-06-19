@@ -1,0 +1,59 @@
+{
+  "cell": "plain_nocaps",
+  "n": 10,
+  "finish": 10,
+  "delegate": 0,
+  "other": 0,
+  "results": [
+    {
+      "q": "What is the capital of France?",
+      "outcome": "finish",
+      "content": "The capital of France is **Paris**. It is a major global city known for its cultural, historical, and artistic heritage, as well as iconic landmarks such as the"
+    },
+    {
+      "q": "What is 17 times 4?",
+      "outcome": "finish",
+      "content": "17 multiplied by 4 is calculated as follows:\n\n1. **Breakdown Method**:  \n   $ 17 \\times 4 = (10 + 7) \\times 4 = (10 \\times 4) + (7 \\times 4) = 40 + 28 = 68 $.\n\n"
+    },
+    {
+      "q": "Who wrote the play Hamlet?",
+      "outcome": "finish",
+      "content": "The play *Hamlet* was written by **William Shakespeare**, an English dramatist and poet of the Renaissance period. It is one of his most renowned works and a co"
+    },
+    {
+      "q": "What is the boiling point of water in Celsius at sea level?",
+      "outcome": "finish",
+      "content": "The boiling point of water at sea level is **100\u00b0C**. This value is defined under standard atmospheric pressure, which is approximately **101.325 kPa** (or 1 at"
+    },
+    {
+      "q": "Name the largest planet in our solar system.",
+      "outcome": "finish",
+      "content": "The largest planet in our solar system is **Jupiter**. It is a gas giant with a diameter of about 139,822 kilometers (86,881 miles), making it approximately 11 "
+    },
+    {
+      "q": "What year did the first human land on the Moon?",
+      "outcome": "finish",
+      "content": "The first human landed on the Moon in **1969**, during NASA's **Apollo 11** mission. On **July 20, 1969**, American astronauts **Neil Armstrong** and **Buzz Ald"
+    },
+    {
+      "q": "What is the chemical symbol for gold?",
+      "outcome": "finish",
+      "content": "The chemical symbol for gold is **Au**, derived from its Latin name *Aurum*."
+    },
+    {
+      "q": "How many continents are there on Earth?",
+      "outcome": "finish",
+      "content": "The number of continents on Earth is a topic of debate due to varying classification systems, but the **most commonly accepted answer is seven**. Here's a break"
+    },
+    {
+      "q": "What is the square root of 144?",
+      "outcome": "finish",
+      "content": "The square root of 144 is **12**. \n\n**Explanation:**  \nA square root of a number is a value that, when multiplied by itself, gives the original number. Since $1"
+    },
+    {
+      "q": "What language is primarily spoken in Brazil?",
+      "outcome": "finish",
+      "content": "The primary language spoken in Brazil is **Portuguese**. It is the official language and is used by the vast majority of the population for government, educatio"
+    }
+  ]
+}
