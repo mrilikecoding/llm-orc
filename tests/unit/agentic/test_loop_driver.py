@@ -652,10 +652,11 @@ class TestLoopDriverFormEscalation:
 class _WrapperStubTarget:
     """A stand-in :class:`GenerationTarget` for the wrapper-contingency seam.
 
-    Represents the second-order ``DispatchPipeline.run()`` reversion (ADR-033
-    §Rejected) without building it — the real wrapper depends on the single-turn
-    pipeline (WP-B/C) and is a recorded contingency, not built. This stub is
-    enough to verify FC-52: the swap is a construction-time injection.
+    Represents an alternative generation strategy injected at construction
+    time (ADR-033 §Rejected; FC-52). The Dispatch Pipeline that previously
+    served as the wrapper-contingency target was retired in ADR-043. This
+    stub verifies the seam remains functional: the swap is a construction-time
+    injection with no change to the control structure or Terminal.
     """
 
     def __init__(self, deliverable: str) -> None:
@@ -678,11 +679,10 @@ class _WrapperStubTarget:
 class TestGenerationTargetSeam:
     """FC-52 — the per-turn generation target is a swappable strategy.
 
-    ADR-033 §Rejected: the wrapper-contingency fallback (``DispatchPipeline.run``)
-    is architecturally accessible behind the Loop Driver's generation boundary.
-    Swapping the target is a construction-time injection — the control structure
-    (``decide``), the Single-Step Enforcer, and the Terminal are unchanged
-    regardless of which target produced the deliverable envelope.
+    The generation boundary is architecturally accessible behind the Loop
+    Driver; swapping the target is a construction-time injection. The control
+    structure (``decide``), the Single-Step Enforcer, and the Terminal are
+    unchanged regardless of which target produced the deliverable envelope.
     """
 
     async def test_injected_target_replaces_the_callee(self) -> None:
