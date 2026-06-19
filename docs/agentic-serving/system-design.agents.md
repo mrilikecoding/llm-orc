@@ -633,7 +633,9 @@ class DispatchEnvelope:
 
 **Owns (addition):** `read_deliverable(reference: ArtifactReference) -> str | bytes` — resolves `reference.path` relative to the store root and returns the deliverable content. The first read-side API addition (advisory #4 — the highest-priority BUILD design dependency from the conformance scan: the terminal chain cannot close without it). Scope note: fidelity at scale (large files, binary-ish content, encoding edge cases) is BUILD-scope validation, not an assumed property — spike evidence used trivially small content.
 
-### Module: Dispatch Pipeline *(scoped in Cycle 7 loop-back per ADR-033 + ADR-027 partial-update header)* — L2
+### Module: Dispatch Pipeline *(RETIRED by ADR-043, loop-back #9, 2026-06-18)* — L2
+
+> **⊘ Retired.** ADR-043 collapsed the two serving surfaces to one; this module is deleted (`dispatch_pipeline.py` removed). Section preserved as historical record.
 
 *Existing module (Cycle 7 first-pass per ADR-027); the loop-back scopes its surface.* Per ADR-027's `> Updated by ADR-033` partial-update header, the `plan → dispatch → synthesize` pipeline is now scoped to the **single-turn (non-tool-driven) answer-a-question surface and the layer-B generation role**. Its internals are unchanged; the surface-mode discriminator (Serving Layer) routes only non-tool requests to it. No module-decomposition change; the scoping is recorded so BUILD does not route tool-driven requests through it.
 
