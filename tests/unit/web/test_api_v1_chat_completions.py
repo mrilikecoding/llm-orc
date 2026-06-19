@@ -1,21 +1,21 @@
 """Tests for the Serving Layer ``/v1/chat/completions`` endpoint.
 
 Per ``docs/agentic-serving/system-design.md`` §Serving Layer (L3) and
-ADR-027. Cycle 7 WP-A swapped the handler's caller from
-``OrchestratorRuntime`` to the framework-driven :class:`DispatchPipeline`.
-The endpoint:
+ADR-043 (one surface). Every request routes through the Client-Tool-Action
+Terminal composing the layer-A Loop Driver. The endpoint:
 
 - Parses the OpenAI-compatible request (messages, model, tools, user,
   stream).
 - Resolves a ``SessionIdentity`` via Session Registry.
 - Calls ``resolve_session_start_context`` exactly once per session
   start (FC-9); Phase 1 returns ``[]``.
-- Drives the Dispatch Pipeline (plan → dispatch → synthesize) and shapes
-  its ``OrchestratorChunk`` stream into a ``chat.completion`` body or SSE.
+- Drives the loop-driven terminal and shapes its ``OrchestratorChunk``
+  stream into a ``chat.completion`` body or SSE.
 
-Shape/streaming/session tests drive a :class:`_StubPipeline`; the
-``TestDispatchPipelineHandlerSwap`` acceptance tests drive a real
-:class:`DispatchPipeline` wired to stub ports through the HTTP boundary.
+Shape/streaming/session tests drive a :class:`_StubCaller` double
+injected as the terminal; the routing and FC-42 tests drive the real
+:class:`ClientToolActionTerminal` wired to stub ports through the HTTP
+boundary.
 """
 
 import dataclasses
@@ -31,7 +31,6 @@ from llm_orc.agentic.artifact_bridge import ArtifactBridge
 from llm_orc.agentic.budget_controller import BudgetController
 from llm_orc.agentic.client_tool_action_terminal import ClientToolActionTerminal
 from llm_orc.agentic.dispatch_event_substrate import DispatchEventSubstrate
-from llm_orc.agentic.dispatch_pipeline import DispatchPipeline, DispatchPlan
 from llm_orc.agentic.loop_driver import LoopDriver, TurnDecision
 from llm_orc.agentic.orchestrator_chunk import (
     ClientToolCall,
@@ -50,7 +49,6 @@ from llm_orc.agentic.orchestrator_tool_dispatch import (
     TOOL_NAMES,
     InternalToolCall,
     ToolCallResult,
-    ToolCallSuccess,
 )
 from llm_orc.agentic.session_action_record import SessionActionRecord
 from llm_orc.agentic.session_artifact_store import SessionArtifactStore
@@ -67,10 +65,11 @@ from llm_orc.web.api import v1_chat_completions
 from llm_orc.web.server import create_app
 
 
-class _StubPipeline:
-    """A scripted Dispatch Pipeline double for shape/streaming/session tests.
+class _StubCaller:
+    """A scripted ``_ChatCompletionsCaller`` double for shape/streaming/session tests.
 
-    Yields a fixed ``OrchestratorChunk`` sequence; the default is a single
+    Stands in for the loop-driven terminal: yields a fixed
+    ``OrchestratorChunk`` sequence; the default is a single
     ``Completion(stop)`` so the response body is empty content +
     ``finish_reason: stop`` — the skeleton behavior the preserved
     shape/streaming/session tests assert.
@@ -161,68 +160,10 @@ def _real_terminal(
     )
 
 
-class _StubPlanner:
-    """Stage-1 RoutingPlanner port double returning a fixed plan."""
-
-    def __init__(self, plan: DispatchPlan | None) -> None:
-        self._plan = plan
-
-    async def plan(self, *, request: str) -> DispatchPlan | None:
-        return self._plan
-
-
-class _StubSynthesizer:
-    """Stage-3 ResponseSynthesizer port double yielding fixed text.
-
-    Records each call so acceptance tests can assert the pipeline fed the
-    synthesizer the dispatch output (capability path) or an empty
-    DISPATCH RESULTS section (direct path).
-    """
-
-    def __init__(self, text: str) -> None:
-        self._text = text
-        self.calls: list[dict[str, Any]] = []
-
-    async def synthesize(
-        self,
-        *,
-        original_request: str,
-        dispatched: list[str],
-        planned_but_not_run: list[str],
-        dispatch_results: list[tuple[str, str]],
-    ) -> AsyncIterator[str]:
-        self.calls.append(
-            {
-                "original_request": original_request,
-                "dispatched": dispatched,
-                "dispatch_results": dispatch_results,
-            }
-        )
-        yield self._text
-
-
-class _StubDispatcher:
-    """Stage-2 ToolDispatcher port double returning a fixed success result."""
-
-    def __init__(self, content: str = "DISPATCH OUTPUT") -> None:
-        self._content = content
-        self.calls: list[InternalToolCall] = []
-
-    async def dispatch(
-        self,
-        call: InternalToolCall,
-        *,
-        session_id: str = "",
-        model_profile_override: str | None = None,
-    ) -> ToolCallResult:
-        self.calls.append(call)
-        return ToolCallSuccess(id=call.id, name=call.name, content=self._content)
-
-
 def _default_orchestrator_config() -> OrchestratorConfig:
     """An OrchestratorConfig used when tests don't care about its contents.
 
-    The pipeline factory and lifecycle helpers read it via the
+    The terminal factory and lifecycle helpers read it via the
     :class:`_FakeConfigResolver`; the field values are arbitrary defaults.
     """
     return OrchestratorConfig(
@@ -329,23 +270,22 @@ def _build_client(
     *,
     registry: SessionRegistry | None = None,
     session_start_spy: (Callable[[SessionContext], list[PromptFragment]] | None) = None,
-    pipeline: "_StubPipeline | DispatchPipeline | None" = None,
-    terminal: "_StubPipeline | ClientToolActionTerminal | None" = None,
+    terminal: "_StubCaller | ClientToolActionTerminal | None" = None,
     config: OrchestratorConfig | None = None,
 ) -> tuple[TestClient, SessionRegistry, SessionStartCache]:
-    """Wire a TestClient with isolated Registry, cache, and Dispatch Pipeline.
+    """Wire a TestClient with isolated Registry, cache, and terminal stub.
 
     Overrides the module-level factories in ``v1_chat_completions`` so each
     test runs the real Serving Layer wiring (session resolution, SSE
-    framing, heartbeat + context-sink lifecycle) but with a stub Dispatch
-    Pipeline (ADR-027) in place of the ensemble-backed pipeline. The
-    default :class:`_StubPipeline` yields a single ``Completion(stop)`` —
-    empty assistant content + ``finish_reason: stop`` — preserving the
-    skeleton behavior the shape/streaming/session tests assert.
+    framing, heartbeat + context-sink lifecycle) but with a stub terminal
+    in place of the real Client-Tool-Action Terminal. The default
+    :class:`_StubCaller` yields a single ``Completion(stop)`` — empty
+    assistant content + ``finish_reason: stop`` — preserving the skeleton
+    behavior the shape/streaming/session tests assert.
 
-    Acceptance tests pass a real :class:`DispatchPipeline` wired to stub
-    ports via ``pipeline=`` to exercise plan → dispatch → synthesize
-    through the HTTP boundary.
+    FC-42 tests pass a real :class:`ClientToolActionTerminal` wired to stub
+    ports via ``terminal=`` to exercise real loop-driver behavior through
+    the HTTP boundary.
     """
     shared_registry = registry or SessionRegistry()
     monkeypatch.setattr(
@@ -358,18 +298,9 @@ def _build_client(
     )
     monkeypatch.setattr(v1_chat_completions, "get_session_start_cache", lambda: cache)
 
-    stub_pipeline: _StubPipeline | DispatchPipeline = pipeline or _StubPipeline()
+    stub_terminal: _StubCaller | ClientToolActionTerminal = terminal or _StubCaller()
 
-    async def _pipeline_factory() -> _StubPipeline | DispatchPipeline:
-        return stub_pipeline
-
-    monkeypatch.setattr(v1_chat_completions, "get_dispatch_pipeline", _pipeline_factory)
-
-    stub_terminal: _StubPipeline | ClientToolActionTerminal = (
-        terminal or _StubPipeline()
-    )
-
-    async def _terminal_factory() -> _StubPipeline | ClientToolActionTerminal:
+    async def _terminal_factory() -> _StubCaller | ClientToolActionTerminal:
         return stub_terminal
 
     monkeypatch.setattr(
@@ -467,7 +398,7 @@ class TestChatCompletionsRequestParsing:
         """Client-declared tools parse; under ADR-033 they engage the loop-driver.
 
         WP-LB-A routes a ``tools[]`` request to the loop-driver surface
-        (here the default :class:`_StubPipeline` loop-driver double), which
+        (here the default :class:`_StubCaller` loop-driver double), which
         finishes with a stop completion — the request still returns 200.
         Surface-mode discrimination itself is asserted in
         :class:`TestSurfaceModeDiscrimination`.
@@ -506,31 +437,26 @@ class TestChatCompletionsRequestParsing:
         assert response.status_code == 200
 
 
-class TestSurfaceModeDiscrimination:
-    """``POST /v1/chat/completions`` routes by client-tools presence (ADR-033 D1).
+class TestRequestRouting:
+    """``POST /v1/chat/completions`` routes all requests through the terminal (ADR-043).
 
-    A request carrying client ``tools[]`` engages the layer-A loop-driver;
-    a request with no client tools continues through ADR-027's single-turn
-    Dispatch Pipeline. The discriminator is the presence of client tools.
-    Each surface is injected as a distinguishable :class:`_StubPipeline`
+    Every request, tool-driven or toolless, engages the Client-Tool-Action
+    Terminal. The terminal is injected as a distinguishable :class:`_StubCaller`
     caller so the route is observable in the response content at the HTTP
     boundary.
     """
 
     @staticmethod
-    def _scripted(label: str) -> "_StubPipeline":
-        return _StubPipeline(
+    def _scripted(label: str) -> "_StubCaller":
+        return _StubCaller(
             [ContentDelta(content=label), Completion(finish_reason="stop")]
         )
 
     def test_tool_request_engages_loop_driver(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        pipeline_caller = self._scripted("PIPELINE")
         terminal_caller = self._scripted("LOOPDRIVER")
-        client, _, _ = _build_client(
-            monkeypatch, pipeline=pipeline_caller, terminal=terminal_caller
-        )
+        client, _, _ = _build_client(monkeypatch, terminal=terminal_caller)
 
         response = client.post(
             "/v1/chat/completions",
@@ -548,17 +474,14 @@ class TestSurfaceModeDiscrimination:
 
         body = response.json()
         assert body["choices"][0]["message"]["content"] == "LOOPDRIVER"
-        assert terminal_caller.contexts, "loop-driver should be driven"
-        assert not pipeline_caller.contexts, "pipeline should not be driven"
+        assert terminal_caller.contexts, "terminal should be driven"
 
-    def test_non_tool_request_uses_single_turn_pipeline(
+    def test_non_tool_request_engages_loop_driver(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        pipeline_caller = self._scripted("PIPELINE")
+        """ADR-043 §Decision 1: toolless requests also route through the terminal."""
         terminal_caller = self._scripted("LOOPDRIVER")
-        client, _, _ = _build_client(
-            monkeypatch, pipeline=pipeline_caller, terminal=terminal_caller
-        )
+        client, _, _ = _build_client(monkeypatch, terminal=terminal_caller)
 
         response = client.post(
             "/v1/chat/completions",
@@ -569,19 +492,15 @@ class TestSurfaceModeDiscrimination:
         )
 
         body = response.json()
-        assert body["choices"][0]["message"]["content"] == "PIPELINE"
-        assert pipeline_caller.contexts, "pipeline should be driven"
-        assert not terminal_caller.contexts, "loop-driver should not be driven"
+        assert body["choices"][0]["message"]["content"] == "LOOPDRIVER"
+        assert terminal_caller.contexts, "terminal should drive toolless requests"
 
     def test_tool_request_engages_loop_driver_on_streaming_path(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Discrimination happens before the stream/non-stream branch (wiring)."""
-        pipeline_caller = self._scripted("PIPELINE")
+        """Routing to the terminal happens before the stream/non-stream branch."""
         terminal_caller = self._scripted("LOOPDRIVER")
-        client, _, _ = _build_client(
-            monkeypatch, pipeline=pipeline_caller, terminal=terminal_caller
-        )
+        client, _, _ = _build_client(monkeypatch, terminal=terminal_caller)
 
         response = client.post(
             "/v1/chat/completions",
@@ -606,7 +525,6 @@ class TestSurfaceModeDiscrimination:
         ]
         assert "".join(deltas) == "LOOPDRIVER"
         assert terminal_caller.contexts
-        assert not pipeline_caller.contexts
 
     async def test_terminal_factory_composes_the_real_loop_driver(
         self, monkeypatch: pytest.MonkeyPatch
@@ -617,7 +535,7 @@ class TestSurfaceModeDiscrimination:
         resolved via the overridable :func:`_resolve_seat_filler` seam, a
         double here so the test does not stand up model resolution);
         :func:`get_client_tool_action_terminal` composes it into the Terminal
-        the discriminator engages. The Terminal's ``run`` drives the real
+        every request routes through. The Terminal's ``run`` drives the real
         driver — a no-action seat-filler finishes with a stop completion.
         """
         seat_filler = _FakeSeatFiller(
@@ -655,9 +573,9 @@ class TestSurfaceModeDiscrimination:
         """FC-42 (event-based): a ``tools[]`` request drives the real driver.
 
         WP-LB-A verified routing via distinguishable callers; the FC-42 event
-        assertion deferred to WP-LB-B verifies the discrimination engages the
-        *real* Loop Driver, which emits a ``TurnDecision`` diagnostic — not
-        faked against a stub.
+        assertion deferred to WP-LB-B verifies the routing engages the *real*
+        Loop Driver, which emits a ``TurnDecision`` diagnostic — not faked
+        against a stub.
         """
         substrate = DispatchEventSubstrate()
         sink = _CapturingSink()
@@ -683,10 +601,10 @@ class TestSurfaceModeDiscrimination:
         assert len(turn_decisions) == 1
         assert turn_decisions[0].action == "finish"
 
-    def test_non_tool_request_emits_no_turn_decision(
+    def test_non_tool_request_drives_real_loop_driver_emitting_turn_decision(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The non-tool surface routes to the pipeline, not the loop-driver."""
+        """ADR-043 §Decision 1: toolless requests also engage the real driver."""
         substrate = DispatchEventSubstrate()
         sink = _CapturingSink()
         substrate.register_sink(sink)
@@ -705,7 +623,9 @@ class TestSurfaceModeDiscrimination:
             },
         )
 
-        assert not [e for e in sink.events if isinstance(e, TurnDecision)]
+        turn_decisions = [e for e in sink.events if isinstance(e, TurnDecision)]
+        assert len(turn_decisions) == 1
+        assert turn_decisions[0].action == "finish"
 
 
 class TestNonStreamingToolCallEmission:
@@ -727,7 +647,7 @@ class TestNonStreamingToolCallEmission:
             name="write",
             arguments=json.dumps({"filePath": "f.py", "content": "x = 1\n"}),
         )
-        terminal = _StubPipeline([ClientToolCall(tool_calls=(invocation,))])
+        terminal = _StubCaller([ClientToolCall(tool_calls=(invocation,))])
         client, _, _ = _build_client(monkeypatch, terminal=terminal)
 
         response = client.post(
@@ -1231,9 +1151,9 @@ class TestServingResolvesSessionIdentity:
         state_after = registry.get_or_create_state(identity)
         assert state_after is state_between
         # The same SessionState is retained across requests, so the manual
-        # between-request mutations persist. Under ADR-027 the framework-
-        # driven pipeline records no ReAct iterations (no orchestrator-LLM
-        # loop on this surface), so only the two manual increments show.
+        # between-request mutations persist. The loop-driven terminal records
+        # no ReAct iterations (no orchestrator-LLM loop on this surface,
+        # ADR-043), so only the two manual increments show.
         assert state_after.turn_count == 2
         assert state_after.token_spend == 192
 
@@ -1337,101 +1257,22 @@ class TestServingResolvesSessionIdentity:
         assert cold_identities[0] != cold_identities[1]
 
 
-class TestDispatchPipelineHandlerSwap:
-    """ADR-027 / WP-A: the handler drives the framework-driven pipeline.
+class TestHandlerInvariants:
+    """Handler-level invariants preserved across the surface collapse (ADR-043).
 
-    These exercise a real :class:`DispatchPipeline` wired to stub ports
-    through the HTTP boundary — the handler-level integration the
-    pipeline's own unit tests (``test_dispatch_pipeline.py``) do not
-    cover. Scenarios 1, 2, and 4 of ``scenarios.md`` §Framework-Driven
-    Dispatch Pipeline.
+    These hold for the unified loop-driven surface (the two-surface split was
+    removed by ADR-043).
     """
-
-    def test_capability_match_flows_through_plan_dispatch_synthesize(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Scenario 1: plan(dispatch) → dispatch → synthesize → response."""
-        synth = _StubSynthesizer("SYNTH OUTPUT")
-        dispatcher = _StubDispatcher(content="raw dispatch result")
-        pipeline = DispatchPipeline(
-            planner=_StubPlanner(
-                DispatchPlan(
-                    action="dispatch",
-                    ensemble="code-generator",
-                    input="write a sort",
-                    rationale="capability match",
-                )
-            ),
-            synthesizer=synth,
-            tool_dispatch=dispatcher,
-            capability_names=frozenset({"code-generator"}),
-        )
-        client, _, _ = _build_client(monkeypatch, pipeline=pipeline)
-
-        body = client.post(
-            "/v1/chat/completions",
-            json={
-                "model": "primary",
-                "messages": [{"role": "user", "content": "write a sort"}],
-            },
-        ).json()
-
-        assert body["choices"][0]["message"]["content"] == "SYNTH OUTPUT"
-        assert body["choices"][0]["finish_reason"] == "stop"
-        # Dispatch fired once against the matched capability via invoke_ensemble.
-        assert len(dispatcher.calls) == 1
-        assert dispatcher.calls[0].name == "invoke_ensemble"
-        assert dispatcher.calls[0].arguments["ensemble_name"] == "code-generator"
-        # The synthesizer received the dispatch output as structured input.
-        assert synth.calls[0]["dispatched"] == ["code-generator"]
-        assert synth.calls[0]["dispatch_results"] == [
-            ("code-generator", "raw dispatch result")
-        ]
-
-    def test_no_capability_match_flows_through_direct_synthesize(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Scenario 2: plan(direct) → skip dispatch → synthesize empty results."""
-        synth = _StubSynthesizer("DIRECT ANSWER")
-        dispatcher = _StubDispatcher()
-        pipeline = DispatchPipeline(
-            planner=_StubPlanner(
-                DispatchPlan(
-                    action="direct",
-                    ensemble=None,
-                    input=None,
-                    rationale="no capability match",
-                )
-            ),
-            synthesizer=synth,
-            tool_dispatch=dispatcher,
-            capability_names=frozenset({"code-generator"}),
-        )
-        client, _, _ = _build_client(monkeypatch, pipeline=pipeline)
-
-        body = client.post(
-            "/v1/chat/completions",
-            json={
-                "model": "primary",
-                "messages": [{"role": "user", "content": "what's the weather?"}],
-            },
-        ).json()
-
-        assert body["choices"][0]["message"]["content"] == "DIRECT ANSWER"
-        # No dispatch fired; the synthesizer saw an empty DISPATCH RESULTS.
-        assert dispatcher.calls == []
-        assert synth.calls[0]["dispatched"] == []
-        assert synth.calls[0]["dispatch_results"] == []
 
     def test_orchestrator_runtime_is_not_constructed_on_this_surface(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Scenario 4: the runtime-construction path is gone from the handler.
+        """The runtime-construction path is gone from the handler.
 
-        The handler no longer constructs ``OrchestratorRuntime`` — the
+        The handler does not construct ``OrchestratorRuntime`` — the
         loader/runtime/compaction factories were removed. The class
         remains in the codebase (ADR-027 disposition (a)) but has no
-        caller here. A request resolves entirely via the pipeline.
+        caller here.
         """
         assert not hasattr(v1_chat_completions, "get_orchestrator_llm_loader")
         assert not hasattr(v1_chat_completions, "_build_runtime")
@@ -1439,7 +1280,7 @@ class TestDispatchPipelineHandlerSwap:
 
         client, _, _ = _build_client(
             monkeypatch,
-            pipeline=_StubPipeline(
+            terminal=_StubCaller(
                 [ContentDelta(content="ok"), Completion(finish_reason="stop")]
             ),
         )
@@ -1457,9 +1298,8 @@ class TestDispatchPipelineHandlerSwap:
     ) -> None:
         """Reserved TOOL_NAMES stay enforced as a defensive input guard.
 
-        The pipeline does not route by ``tools`` membership under ADR-027,
-        but the Cycle 1 reserved-name commitment is preserved: a client
-        tool reusing an internal name is rejected with HTTP 400.
+        The Cycle 1 reserved-name commitment is preserved: a client tool
+        reusing an internal name is rejected with HTTP 400.
         """
         client, _, _ = _build_client(monkeypatch)
         reserved = sorted(TOOL_NAMES)[0]
