@@ -194,6 +194,18 @@ Config: the adopted hosted-qwen seat is still the default (≈¢/session); local
 
 ## Feed-Forward Signals
 
+### From BUILD (loop-back #9 — skill/task/todowrite surface, for PLAY session design, 2026-06-18)
+
+The collapse is done, but it sharpened an axis-2 / PLAY-design requirement that must be **explicit before the rig-gated PLAY run is designed** (ADR-033 §6c + §6b):
+
+1. **The loop carries the full client tool surface, but its reliability machinery is file-action-shaped.** Grounded-carry (`CarryClientTool`) passes any client tool (`skill` / `task` / `todowrite`) through verbatim — a session using them won't crash. But the three reliability mechanisms are file-shaped: the **deterministic completeness gate** (ADR-040 — mines `name.ext` from task prose), the **content anchor** (ADR-039 — a cross-*file* baseline), and **delegated generation** (ADR-034 — maps to `write`/`edit` only). For skill/task/todowrite turns, termination falls to the **stochastic judge**, there is no content anchor, and generation cannot target a non-write tool.
+
+2. **PLAY session design MUST exercise the richer surface, not just file-actions.** A file-actions-only PLAY session validates axis-2 long-horizon coherence on the *narrow* surface and silently misses the entire skill/task/todowrite gap. Design the run as a real RDD-style flow via OpenCode that deliberately triggers `todowrite` (multi-step planning state), `task` (sub-agent spawning), and `skill` (skill invocation) — the surface §6b names as "what a future run-RDD-via-OpenCode flow would use."
+
+3. **Discovery targets to watch.** Where does the deterministic completeness gate fall to the stochastic judge (non-file deliverables)? Does a `task`-spawn turn terminate coherently, or does the loop mis-judge "done"? Does the absence of a content anchor cause cross-turn incoherence on non-file work? These are the requirements the real session surfaces — **the skill/task/todowrite work is discovered by PLAY, not built on spec; item 2 merges into the axis-2 run.**
+
+4. **Rig note.** This run wants a faster box than the 32GB rig (a real long RDD-via-OpenCode session exceeds it, same as the benchmark).
+
 ### From BUILD (§6 escalation probe, 2026-06-18)
 1. **Form-recovery is robust enough to defeat adversarial bleed injection.** Across 3 live $0-local runs (1× 8b, 2× 0.6b) with a deliberately adversarial single-agent coder (always-fence + trailing-prose, fighting the bare-output directive), the deterministic gate caught every bleed (0 invalid files at the client) and the bounded cheap-tier recovery (cap 2, re-sample at default temperature) closed it every time — escalation never fired. The bleed is intermittent at every model size; one clean re-sample lands within the cap. Run B2 reached the last cheap retry (one re-sample short of cap exhaustion) but still recovered.
 2. **The coder-tier escalation lever is a deeper backstop than the natural (or injected) failure distribution reaches.** It stays validated by the `TestLoopDriverFormEscalation` unit tests + the real-gate-through-terminal integration test (in-process gate injection drives the escalation code path directly) and Spike π Arm E (frontier closes a *forced* persistent bleed in isolation). Live escalate-and-converge is a PLAY / organic-deployment item — unmanufacturable by prompt/model injection because recovery is robust.
