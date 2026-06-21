@@ -196,6 +196,23 @@ The benchmark-grid handoff above is **superseded**: the grid can't run on this 3
 - **Scope re-scoped to what τ left un-run:** tier comparison (primary, totally un-run), complexity axis C1-C4 at fixed H3 (τ varied file count, not per-file complexity), post-J-3 horizon re-confirm l12/l15/l20 (J-3 fixed *after* τ's ~12 ceiling, never re-laddered), regression core. **Per-cell fresh restart** committed as the run shape (the τ method that held flat 70-146s latency; the `scratch/benchmark-grid-run/` phased driver graduates in).
 - **Status:** spec done (commit `074e453`); **harness deltas BUILT + verified (commit `69dc03d`)** — `scorer.score_frontier` + `MetricRecord.terminated_clean: bool|None`, corpus l12/l15/l20 + the four §3 sweeps, `frontier.py` (`frontier_prompt` + `score_cell`), `bench` re-pointed (τ CHEAP config, Sonnet FRONTIER arm, `autonomous_run_blocked` guard, cents cost). 86 benchmark tests green, mypy strict + ruff + complexity clean. The two-arm scorecard (`scorecard.match` / `render_scorecard`) was already present and is reused. **Remaining = live-only (verified at run time, not blind-coded):** the per-cell-restart wiring in `bench`'s live flow (graduate the proven `scratch/benchmark-grid-run/` reboot logic) + the actual in-session Sonnet-subagent dispatch for the frontier arm. Build order in `benchmark-design.md` §11.
 
+### FRESH-SESSION HANDOFF (live benchmark run — the tier comparison + horizon re-confirm)
+
+**Why a fresh session:** the live run is long, rig-bound (32GB, cool ollama between cells), and still needs live code built + watched. A clean context window is the right vehicle. The unit-testable harness is done (commit `69dc03d`); this is the run.
+
+**Build-first (live orchestration, not yet wired — TDD doesn't apply, it's subprocess; smoke-verify live):**
+1. **Per-cell fresh restart** in `bench`'s live flow. Graduate `scratch/benchmark-grid-run/run_grid_phased.py`'s `reboot_ollama()` + `maybe_reboot()` (osascript quit Ollama → `pkill -9 llama-server` → `open -a Ollama` → warm the seat+coder → heal/restart serve) into the `_execute` / `_run_group` loop so each cell starts fresh. Smoke-verify on ONE light cell (h1c1) before any sweep. This is the τ method that held flat 70-146s latency and cures the 2026-06-16 marathon degradation.
+
+**Run plan (rig-managed — free-first; cheap arm ≈cents/session, Sonnet arm = in-session tokens; surface a cell count before the Sonnet dispatch):**
+1. **Pre-flight:** set `.llm-orc` `agentic_serving.orchestrator.model_profile` to the τ stack (`agentic-orchestrator-qwen36-zen` hosted seat + the `form_escalation.frontier_profile` wired); confirm `qwen3:8b` pulled + `opencode` present + Zen auth live; restart ollama fresh.
+2. **Cheap arm** — complexity sweep (`corpus.COMPLEXITY_SWEEP` = H3C1-4) + horizon re-confirm (`corpus.HORIZON_RECONFIRM` = l12/l15/l20): run via `bench --config cheap-local` (after the per-cell-restart wiring) → read the scorecard. Watch `serve.log` `completeness:` lines for gate-vs-judge termination.
+3. **Frontier arm (in-session)** — for each cell in `corpus.TIER_COMPARISON` (H3C1-4, H2C2, L12): dispatch a Claude Sonnet subagent (Agent tool, `model: sonnet`) with `frontier.frontier_prompt(cell)` into a fresh per-cell workspace dir; score with `frontier.score_cell(workspace, cell)`.
+4. **Combine** — build a cheap `ConfigRun` (from step 2's tier-comparison cells) + a frontier `ConfigRun` (step 3); `bench.render_scorecard([cheap, frontier], prov)` → the two-arm heatmaps + match verdict (`scorecard.match`, within-one-rung, §7).
+
+**Discharge / what the run produces:** (a) the **tier-comparison match verdict** — does the cents stack match Sonnet within one rung on each axis? (the cycle's central claim); (b) the **post-J-3 horizon ceiling** — does the cheap arm now converge past ~12 files (l15/l20), or is the framework REMAINING→stop glitch still the wall? (ADR-033 §6b axis-2 CA). Both feed the PLAY discharge.
+
+**Honest construct note (don't be surprised mid-run):** Sonnet will likely sit near-ceiling on the three file-derived signals, so the match verdict's discriminating power is *where the cheap arm falls off*, not arm-vs-arm variation — the frontier arm is a fixed achievable-ceiling reference (§4 / §7).
+
 ---
 
 ### FRESH-SESSION HANDOFF (2026-06-18, BUILD-phase — superseded by the PLAY-entry handoff above): supersedes both earlier handoffs
