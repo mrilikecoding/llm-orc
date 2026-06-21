@@ -60,14 +60,16 @@ def _prov(
 
 
 class TestConfigs:
-    def test_cheap_local_is_default_and_free(self) -> None:
+    def test_cheap_config_is_the_tau_stack(self) -> None:
         cfg = bench.get_config("cheap-local")
         assert cfg.coder_cheap == "qwen3:8b"
-        assert cfg.seat == "qwen3:14b"
-        assert cfg.paid is False
+        assert "qwen3.6" in cfg.seat  # hosted qwen seat (§0), not the broken 14b swap
+        assert cfg.paid is False  # ≈cents/session, not the dollars-gated frontier
 
-    def test_frontier_is_paid(self) -> None:
-        assert bench.get_config("frontier").paid is True
+    def test_frontier_is_the_sonnet_arm(self) -> None:
+        cfg = bench.get_config("frontier")
+        assert cfg.paid is True
+        assert "sonnet" in cfg.seat.lower()
 
     def test_unknown_config_raises(self) -> None:
         with pytest.raises(ValueError, match="unknown config"):
@@ -149,9 +151,10 @@ class TestConcentratePlan:
 
 
 class TestCostEstimate:
-    def test_free_arms_report_no_spend(self) -> None:
+    def test_cheap_only_reports_cents_not_dollars(self) -> None:
         msg = bench.cost_estimate([bench.CHEAP_LOCAL], grid_size=16)
-        assert "no spend" in msg.lower()
+        assert "cents" in msg.lower()
+        assert "$0" not in msg  # the cheap arm is cents (hosted seat), not free
 
     def test_paid_arm_flags_cost_and_consent(self) -> None:
         msg = bench.cost_estimate([bench.FRONTIER], grid_size=16)
@@ -245,6 +248,17 @@ class TestScorecardAssembly:
         assert cfg["grid"][0]["cell"] == "h1c1"
         assert cfg["grid"][0]["passed"] is True
         assert cfg["ceiling"]["max_horizon"] == 1
+
+
+class TestAutonomousRunGuard:
+    def test_frontier_arm_is_blocked_from_autonomous_run(self) -> None:
+        # The Sonnet arm is gathered in-session, not run by the CLI through serve.
+        msg = bench.autonomous_run_blocked([bench.CHEAP_LOCAL, bench.FRONTIER])
+        assert msg is not None
+        assert "in-session" in msg.lower()
+
+    def test_cheap_only_runs_autonomously(self) -> None:
+        assert bench.autonomous_run_blocked([bench.CHEAP_LOCAL]) is None
 
 
 class TestResolveConfigs:

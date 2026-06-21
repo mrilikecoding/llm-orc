@@ -37,7 +37,7 @@ class MetricRecord:
     form_valid: bool
     converged: bool
     content_coherent: bool
-    terminated_clean: bool
+    terminated_clean: bool | None  # None = N/A (§7 frontier arm — no loop)
     # reported-not-gating
     delegation_rate: float | None
     escalated: bool
@@ -48,12 +48,18 @@ class MetricRecord:
 
     @property
     def passed(self) -> bool:
-        """A cell passes iff all four hard-pass signals hold (§4)."""
+        """A cell passes iff the file-derived signals hold and termination did
+        not fail (§4).
+
+        ``terminated_clean is None`` (the §7 frontier arm — a one-shot model has
+        no loop) does not gate; ``False`` (a cheap-arm zombie / never-finished
+        session) does.
+        """
         return (
             self.form_valid
             and self.converged
             and self.content_coherent
-            and self.terminated_clean
+            and self.terminated_clean is not False
         )
 
 

@@ -65,24 +65,34 @@ class BenchConfig:
     seat: str  # seat-filler / orchestrator model
     paid: bool  # is this arm cost-incurring (frontier)?
     note: str = ""
+    serve_runnable: bool = True  # served arm, or gathered in-session-only (§7)?
 
 
 CHEAP_LOCAL = BenchConfig(
     name="cheap-local",
     coder_cheap="qwen3:8b",
     coder_escalated="qwen3:14b",
-    seat="qwen3:14b",
-    paid=False,
-    note="$0 local default (qwen3:8b coder / qwen3:14b seat) — §7",
+    seat="hosted-qwen3.6-plus (Zen)",
+    paid=False,  # ≈cents/session (hosted seat) — not the dollars-gated frontier arm
+    note=(
+        "Spike-τ working config (§0): hosted qwen3.6-plus seat + local qwen3:8b "
+        "coder + 8b→14b→MiniMax coder-tier escalation; ≈cents/session, mostly local. "
+        "(Supersedes the pre-τ $0 14b-seat+8b-coder default, which is the broken swap.)"
+    ),
 )
 
 FRONTIER = BenchConfig(
     name="frontier",
-    coder_cheap="frontier-coder",
-    coder_escalated="frontier-coder",
-    seat="frontier-seat",
+    coder_cheap="claude-sonnet",
+    coder_escalated="claude-sonnet",
+    seat="claude-sonnet (subagent)",
     paid=True,
-    note="opt-in / cost-gated frontier arm — requires --i-accept-frontier-cost",
+    note=(
+        "Claude Sonnet subagent — one-shot, no llm-orc framework (§7). Gathered "
+        "in-session via the Agent tool; scored by frontier.score_cell. The "
+        "value-proposition pole: [cheap + framework] vs [frontier, no orchestration]."
+    ),
+    serve_runnable=False,  # gathered in-session, not run autonomously through serve
 )
 
 CONFIGS: dict[str, BenchConfig] = {c.name: c for c in (CHEAP_LOCAL, FRONTIER)}
@@ -95,6 +105,22 @@ def get_config(name: str) -> BenchConfig:
     except KeyError as exc:
         known = ", ".join(sorted(CONFIGS))
         raise ValueError(f"unknown config {name!r} (known: {known})") from exc
+
+
+def autonomous_run_blocked(configs: Sequence[BenchConfig]) -> str | None:
+    """Frontier (Sonnet-subagent) arms are gathered in-session, not run by this
+    CLI through serve (§7). Returns an error message if the autonomous run set
+    includes a non-serve-runnable arm, else ``None``."""
+    in_session = [c.name for c in configs if not c.serve_runnable]
+    if not in_session:
+        return None
+    arms = ", ".join(in_session)
+    return (
+        f"Arm(s) {arms} are gathered in-session via Claude Sonnet subagents (§7), "
+        "not run by this CLI. Run the cheap arm here, dispatch the frontier arm "
+        "in-session (frontier.frontier_prompt + frontier.score_cell), then combine "
+        "with render_scorecard. See the runbook (§11)."
+    )
 
 
 # --- Adaptive sampling plan (§5) — pure -------------------------------------
@@ -167,14 +193,16 @@ def cost_estimate(configs: Sequence[BenchConfig], grid_size: int) -> str:
     """
     paid = [c for c in configs if c.paid]
     if not paid:
-        return "All requested arms are $0 local — no spend."
+        return (
+            "No dollars-gated (frontier) arm requested. The cheap arm runs at "
+            "≈cents/session (hosted qwen seat — §0); no Sonnet spend."
+        )
     arms = ", ".join(c.name for c in paid)
     cells = grid_size + CONFIRM_N + CONCENTRATE_N  # rough upper bound of cells run
     return (
-        f"Paid arm(s): {arms}. Up to ~{cells} live cell runs per paid arm "
-        "(coarse grid + confirm + concentrate), each a multi-turn agentic "
-        "session against a paid model. This WILL incur cost. Re-run with "
-        "--i-accept-frontier-cost to proceed."
+        f"Paid arm(s): {arms}. The frontier arm dispatches a Claude Sonnet "
+        f"subagent per cell (up to ~{cells} cells), incurring Sonnet token usage. "
+        "Re-run with --i-accept-frontier-cost to proceed."
     )
 
 
@@ -617,6 +645,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     args = _parse_args(sys.argv[1:] if argv is None else argv)
     configs = _resolve_configs(args)
+
+    blocked = autonomous_run_blocked(configs)
+    if blocked is not None:
+        print(blocked, file=sys.stderr)
+        return 2
 
     grid, _ = corpus.load()
     if any(c.paid for c in configs) and not args.i_accept_frontier_cost:
