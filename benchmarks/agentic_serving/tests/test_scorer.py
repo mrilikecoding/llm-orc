@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from benchmarks.agentic_serving.model import Cell
-from benchmarks.agentic_serving.scorer import score
+from benchmarks.agentic_serving.scorer import score, score_frontier
 
 # A clean session: two generation writes delegated, then a COMPLETE finish.
 _GEN = "turn decision: action=write shape=generation delegated=code-generator\n"
@@ -179,3 +179,46 @@ class TestPassedComposition:
         assert rec.content_coherent
         assert rec.terminated_clean
         assert rec.passed
+
+
+class TestFrontierScoring:
+    """The §7 frontier arm: a one-shot subagent workspace, no serve-log.
+
+    Loop-termination is a property of the cheap arm's loop; a one-shot model has
+    no loop, so it is N/A (``None``) and does not gate ``passed`` (§4 / §7).
+    """
+
+    def test_termination_is_na_without_a_log(self, tmp_path: Path) -> None:
+        ws = _ws(tmp_path, {"a.py": "x = 1\n"})
+        assert score_frontier(ws, _cell(("a.py",))).terminated_clean is None
+
+    def test_passes_on_the_three_file_signals(self, tmp_path: Path) -> None:
+        ws = _ws(
+            tmp_path,
+            {"converters.py": _CONV, "cli.py": "from converters import c_to_f\n"},
+        )
+        rec = score_frontier(ws, _cell(("converters.py", "cli.py")))
+        assert rec.form_valid
+        assert rec.converged
+        assert rec.content_coherent
+        assert rec.terminated_clean is None
+        assert rec.passed  # n/a termination does not block a clean file set
+
+    def test_bad_form_still_fails(self, tmp_path: Path) -> None:
+        ws = _ws(tmp_path, {"a.py": "def f(: bad\n"})
+        rec = score_frontier(ws, _cell(("a.py",)))
+        assert not rec.form_valid
+        assert not rec.passed
+
+    def test_missing_deliverable_still_fails(self, tmp_path: Path) -> None:
+        ws = _ws(tmp_path, {"a.py": "x = 1\n"})
+        rec = score_frontier(ws, _cell(("a.py", "b.py")))
+        assert not rec.converged
+        assert not rec.passed
+
+    def test_log_only_metrics_are_none(self, tmp_path: Path) -> None:
+        ws = _ws(tmp_path, {"a.py": "x = 1\n"})
+        rec = score_frontier(ws, _cell(("a.py",)))
+        assert rec.delegation_rate is None
+        assert rec.churn is None
+        assert not rec.escalated

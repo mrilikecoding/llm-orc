@@ -410,6 +410,70 @@ GRID: tuple[Cell, ...] = (
 )
 
 
+# --- Horizon re-confirm ladder (§3 — post-J-3 ceiling) ----------------------
+#
+# Beyond the H4 rung (8–10 files): 12 / 15 / 20 trivial single-function modules
+# in an import chain, at fixed low complexity. τ found the cheap stack broke at
+# ~12 files PRE the J-3 fix and the ladder was never re-run post-fix; these
+# re-confirm whether the fix raised the ceiling. Horizon rungs continue past 4
+# (5 / 6 / 7) so the sweep's own ceiling is computable; the file count is in the
+# name (``l12`` / ``l15`` / ``l20``).
+
+
+def _chain_cell(n: int, horizon: int) -> Cell:
+    """A horizon-ladder cell: ``n`` trivial single-function modules in an import
+    chain (step1..stepN), each importing the previous. Low complexity, high
+    horizon — isolates session length from per-file difficulty (§3)."""
+    parts = ["step1.py: f1(x) returns x + 1."]
+    parts.extend(
+        f"step{i}.py: imports f{i - 1} from step{i - 1}, "
+        f"f{i}(x) returns f{i - 1}(x) + 1."
+        for i in range(2, n)
+    )
+    parts.append(
+        f"step{n}.py: imports f{n - 1} from step{n - 1} and prints f{n - 1}(0)."
+    )
+    body = (
+        f"Create {n} trivial single-function modules forming a chain, each "
+        "importing the previous. " + " ".join(parts)
+    )
+    return Cell(
+        name=f"l{n}",
+        horizon=horizon,
+        complexity=1,
+        prompt=_prompt(body),
+        expected_deliverables=tuple(f"step{i}.py" for i in range(1, n + 1)),
+    )
+
+
+L12 = _chain_cell(12, horizon=5)
+L15 = _chain_cell(15, horizon=6)
+L20 = _chain_cell(20, horizon=7)
+
+HORIZON_RECONFIRM: tuple[Cell, ...] = (L12, L15, L20)
+
+
+# --- Sweeps (§3) — named, possibly-overlapping cell groupings ---------------
+#
+# The run no longer sweeps the full 4×4 grid (τ mapped the horizon axis). Cells
+# are grouped into the four §3 sweeps; a cell may belong to several (the H3
+# complexity cells are also the tier-comparison subset).
+
+COMPLEXITY_SWEEP: tuple[Cell, ...] = (H3C1, H3C2, H3C3, H3C4)
+REGRESSION_CORE: tuple[Cell, ...] = (H1C1, H1C2)
+TIER_COMPARISON: tuple[Cell, ...] = (H3C1, H3C2, H3C3, H3C4, H2C2, L12)
+
+
+def sweeps() -> dict[str, tuple[Cell, ...]]:
+    """The §3 sweeps — named cell groupings (cells may appear in more than one)."""
+    return {
+        "complexity": COMPLEXITY_SWEEP,
+        "horizon_reconfirm": HORIZON_RECONFIRM,
+        "tier_comparison": TIER_COMPARISON,
+        "regression": REGRESSION_CORE,
+    }
+
+
 # --- §6 bleed-injection probe cells -----------------------------------------
 #
 # Hard cells (argparse CLI / cross-importing module) that the runner runs under

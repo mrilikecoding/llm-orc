@@ -11,6 +11,7 @@ import ast
 import json
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from benchmarks.agentic_serving.model import Cell, MetricRecord
@@ -19,21 +20,68 @@ _STRUCTURAL_EXT = {".py", ".json"}
 _TURN_DECISION = re.compile(r"turn decision:\s*(.+)")
 
 
-def score(workspace: Path, log_slice: str, cell: Cell) -> MetricRecord:
-    """The deterministic metric record for one cell run (§4)."""
+@dataclass(frozen=True)
+class _FileSignals:
+    """The file-derived signals both arms share (§4): the three hard signals
+    that are pure functions of the produced files, plus the produced set and the
+    form/coherence notes. Only the log-derived fields differ between arms."""
+
+    form_valid: bool
+    converged: bool
+    content_coherent: bool
+    produced: tuple[str, ...]
+    notes: tuple[str, ...]
+
+
+def _file_signals(workspace: Path, cell: Cell) -> _FileSignals:
+    """Compute the file-derived signals from a workspace (shared by both arms)."""
     produced = _produced_files(workspace)
     form_valid, form_notes = _form_valid(workspace, produced)
     coherent, coh_notes = _content_coherent(workspace, produced)
-    return MetricRecord(
+    return _FileSignals(
         form_valid=form_valid,
         converged=_converged(produced, cell),
         content_coherent=coherent,
+        produced=tuple(sorted(produced)),
+        notes=tuple(form_notes + coh_notes),
+    )
+
+
+def score(workspace: Path, log_slice: str, cell: Cell) -> MetricRecord:
+    """The deterministic metric record for one cheap-arm cell run (§4)."""
+    sig = _file_signals(workspace, cell)
+    return MetricRecord(
+        form_valid=sig.form_valid,
+        converged=sig.converged,
+        content_coherent=sig.content_coherent,
         terminated_clean=_terminated_clean(log_slice),
         delegation_rate=_delegation_rate(log_slice),
         escalated=_escalated(log_slice),
-        churn=_churn(log_slice, produced),
-        produced=tuple(sorted(produced)),
-        notes=tuple(form_notes + coh_notes),
+        churn=_churn(log_slice, list(sig.produced)),
+        produced=sig.produced,
+        notes=sig.notes,
+    )
+
+
+def score_frontier(workspace: Path, cell: Cell) -> MetricRecord:
+    """Score a frontier-arm cell — a one-shot subagent workspace, no serve-log (§7).
+
+    The three file-derived hard signals (form / convergence / coherence) score
+    identically to the cheap arm; loop-termination is N/A (``None``) because a
+    one-shot model has no loop to terminate, and the log-only diagnostics
+    (delegation rate, escalation, churn) are absent.
+    """
+    sig = _file_signals(workspace, cell)
+    return MetricRecord(
+        form_valid=sig.form_valid,
+        converged=sig.converged,
+        content_coherent=sig.content_coherent,
+        terminated_clean=None,
+        delegation_rate=None,
+        escalated=False,
+        churn=None,
+        produced=sig.produced,
+        notes=sig.notes,
     )
 
 

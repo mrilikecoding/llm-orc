@@ -341,8 +341,11 @@ The committed harness (`corpus.py` / `scorer.py` / `scorecard.py` / `runner.py` 
 1. `corpus.py` — re-organize cells by the §3 sweeps (complexity / horizon-reconfirm /
    tier-comparison / regression); add the C1-C4-at-H3 complexity cells + the l12/l15/l20
    horizon-reconfirm cells. Data only.
-2. `frontier.py` — the Sonnet-subagent driver returning a `CellArtifacts` (no serve-log).
-   Exercised live (the dispatch), not unit-tested.
+2. `frontier.py` — `frontier_prompt(cell)` (the subagent task) + `score_cell(workspace,
+   cell)` (score a Sonnet-populated workspace → `CellResult` via `score_frontier`). Both
+   pure parts are **test-first**; the live Sonnet dispatch is an in-session step (the Agent
+   tool, `model=sonnet`), not autonomous — `python -m bench` has no Agent tool, so the CLI
+   guards against running a non-serve-backed arm (`autonomous_run_blocked`).
 3. `scorer.py` — the frontier-arm scoring split (termination → `n/a` when there is no
    serve-log). **Test-first** against a no-serve-log fixture, alongside the existing
    valid/invalid-`.py`/`.json`, missing-deliverable, invented-cross-reference fixtures.
@@ -361,18 +364,24 @@ The committed harness (`corpus.py` / `scorer.py` / `scorecard.py` / `runner.py` 
    ollama **before every cell** (§8 per-cell fresh restart).
 3. **Smoke:** the CLI runs the 2-deliverable smoke task and aborts if it exceeds the
    wall-clock budget (degraded environment — do not grind a degraded run).
-4. **Run:** `python -m benchmarks.agentic_serving.bench --arm cheap` (or the make target) →
-   the §3 sweeps with per-cell restart → ceiling-confirm (n=3) → concentrate (n=3-5 at
-   boundary cells).
+4. **Run:** `python -m benchmarks.agentic_serving.bench --config cheap-local` (or the make
+   target) → the §3 sweeps with per-cell restart → ceiling-confirm (n=3) → concentrate
+   (n=3-5 at boundary cells).
 5. **Read** the scorecard (markdown + JSON sidecar) at the run-output path. The cheap arm's
    rare frontier-coder-rung spend is in the rolling cost total.
 
-### Tier comparison (frontier arm — Claude Sonnet subagent)
-`... bench --compare`. Runs the §3 tier-comparison cells against both arms: the cheap arm
-(above) and the frontier arm (a Claude Sonnet subagent dispatched per cell, §7). Surfaces a
-per-run estimate before the comparison (free-first); equal n-per-cell across arms; applies
-the pre-registered match criterion (§7). Scored on the three file-derived signals
-(termination is cheap-arm-only, §4).
+### Tier comparison (frontier arm — Claude Sonnet subagent, in-session)
+The frontier arm is **gathered in-session**, not run by the CLI (`python -m bench` has no
+Agent tool; it guards against autonomously running the Sonnet arm). The procedure:
+1. Run the cheap arm on the §3 tier-comparison cells (above) → cheap `CellResult`s.
+2. For each tier-comparison cell, dispatch a Claude Sonnet subagent with
+   `frontier.frontier_prompt(cell)` into a per-cell workspace, then score it with
+   `frontier.score_cell(workspace, cell)` → frontier `CellResult`s.
+3. Combine: `bench.render_scorecard([cheap_run, frontier_run], prov)` renders the two-arm
+   heatmaps + the match verdict (`scorecard.match`, the within-one-rung criterion, §7).
+Equal n-per-cell across arms; scored on the three file-derived signals (termination is
+cheap-arm-only, §4). The Sonnet usage is the conceptual "expensive" pole — surface a cell
+count before dispatching (free-first).
 
 ### Escalation / bleed probe (§6)
 `... bench --probe bleed-injection` — the adversarial-coder-prompt cells under a 2B→8B (or
@@ -406,7 +415,8 @@ convergence-via-escalation evidence (ADR-041 CA) is produced.
   PLAY territory (ADR-041).
 - **The free fully-local arms (Arm S: 8b seat; Arm A: 14b seat).** Retained as documented
   lower-bound / fail arms, cited from τ (§0): neither does long-horizon multi-file on the
-  32GB rig (8b too weak, 14b too slow). Reproducible as `--arm s` / `--arm a` to regenerate
-  the lower bound, but not the default and not part of the tier comparison. A free-local seat
-  becomes the default only if a future model — or a framework fix the 8b seat can ride —
-  clears the §0 seat dilemma.
+  32GB rig (8b too weak, 14b too slow). Reproducible by pointing the `.llm-orc` seat at the
+  `agentic-orchestrator-offline-8b` (Arm S) / `agentic-orchestrator-offline-tools` (Arm A)
+  profile and running the cheap-arm flow — not the default and not part of the tier
+  comparison. A free-local seat becomes the default only if a future model — or a framework
+  fix the 8b seat can ride — clears the §0 seat dilemma.
