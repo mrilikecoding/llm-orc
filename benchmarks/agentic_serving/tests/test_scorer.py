@@ -141,6 +141,15 @@ class TestTermination:
         ws = _ws(tmp_path, {"a.py": "x = 1\n"})
         assert not score(ws, "", _cell(("a.py",))).terminated_clean
 
+    def test_trailing_aux_request_does_not_mask_complete(self, tmp_path: Path) -> None:
+        # OpenCode 1.17.9 fires a trailing toolless aux request (the title
+        # generator) whose own decision lands last in the slice. It must not mask
+        # the task's COMPLETE finish — termination is a clean COMPLETE anywhere,
+        # not the literal last decision.
+        aux = "turn decision: turn=1 action=finish shape=carry judgment_verdict=?\n"
+        ws = _ws(tmp_path, {"a.py": "x = 1\n"})
+        assert score(ws, _CLEAN_LOG + aux, _cell(("a.py",))).terminated_clean
+
 
 class TestReportedMetrics:
     def test_delegation_rate_over_generation_turns(self, tmp_path: Path) -> None:

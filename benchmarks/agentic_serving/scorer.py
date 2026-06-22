@@ -234,16 +234,18 @@ def _module_attr_refs(
 
 
 def _terminated_clean(log_slice: str) -> bool:
-    """The session ended on its own — last turn is a COMPLETE finish (ADR-037/038).
+    """The task reached a clean COMPLETE finish (ADR-037/038).
 
-    A zombie loop (capped) or a never-finished session has no COMPLETE finish as
-    its last decision.
+    True iff some turn-decision is a COMPLETE finish. This is robust to a
+    trailing toolless aux request (e.g. OpenCode's title-generator) whose own
+    ``judgment_verdict=?`` decision lands last in the slice — that must not mask
+    the task's COMPLETE finish. A zombie/capped loop or a never-finished session
+    never reaches a COMPLETE finish, so it stays False.
     """
-    decisions = _TURN_DECISION.findall(log_slice)
-    if not decisions:
-        return False
-    last = decisions[-1]
-    return "action=finish" in last and "judgment_verdict=COMPLETE" in last
+    return any(
+        "action=finish" in d and "judgment_verdict=COMPLETE" in d
+        for d in _TURN_DECISION.findall(log_slice)
+    )
 
 
 # --- Reported (not pass-gating) ---------------------------------------------
