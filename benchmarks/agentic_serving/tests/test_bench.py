@@ -271,3 +271,54 @@ class TestResolveConfigs:
         args = bench._parse_args([])
         configs = bench._resolve_configs(args)
         assert [c.name for c in configs] == ["cheap-local"]
+
+
+def _files_cell(name: str, count: int) -> Cell:
+    return Cell(
+        name=name,
+        horizon=1,
+        complexity=1,
+        prompt="...",
+        expected_deliverables=tuple(f"f{i}.py" for i in range(count)),
+    )
+
+
+class TestCellTimeout:
+    def test_scales_with_file_count(self) -> None:
+        one = bench.cell_timeout(_files_cell("a", 1))
+        three = bench.cell_timeout(_files_cell("b", 3))
+        assert one == bench.CELL_BASE_S + bench.CELL_PER_FILE_S
+        assert three == bench.CELL_BASE_S + 3 * bench.CELL_PER_FILE_S
+
+    def test_empty_deliverables_treated_as_one_file(self) -> None:
+        assert bench.cell_timeout(_files_cell("c", 0)) == (
+            bench.CELL_BASE_S + bench.CELL_PER_FILE_S
+        )
+
+    def test_capped_at_max(self) -> None:
+        assert bench.cell_timeout(_files_cell("d", 50)) == bench.CELL_MAX_S
+
+
+class TestResolveGrid:
+    def test_default_is_the_sweep_union_without_h4(self) -> None:
+        grid = bench._resolve_grid(bench._parse_args([]))
+        names = [c.name for c in grid]
+        # Covers the tier-comparison cells the frontier arm must match against.
+        assert {"h3c1", "h3c2", "h3c3", "h3c4", "h2c2", "l12"} <= set(names)
+        # The horizon re-confirm ladder + regression tripwire are present.
+        assert {"l15", "l20", "h1c1", "h1c2"} <= set(names)
+        # The H4 (8–10 file) corner is excluded — it would blow the rig budget.
+        assert not any(c.horizon == 4 for c in grid)
+
+    def test_default_is_ordered_light_to_heavy(self) -> None:
+        grid = bench._resolve_grid(bench._parse_args([]))
+        keys = [(c.horizon, c.complexity) for c in grid]
+        assert keys == sorted(keys)
+
+    def test_explicit_cells_select_exactly_those(self) -> None:
+        grid = bench._resolve_grid(bench._parse_args(["--cells", "h1c1"]))
+        assert [c.name for c in grid] == ["h1c1"]
+
+    def test_named_sweep_selects_its_cells(self) -> None:
+        grid = bench._resolve_grid(bench._parse_args(["--sweep", "complexity"]))
+        assert [c.name for c in grid] == ["h3c1", "h3c2", "h3c3", "h3c4"]
