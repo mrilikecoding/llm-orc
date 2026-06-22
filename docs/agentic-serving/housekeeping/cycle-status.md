@@ -196,7 +196,39 @@ The benchmark-grid handoff above is **superseded**: the grid can't run on this 3
 - **Scope re-scoped to what τ left un-run:** tier comparison (primary, totally un-run), complexity axis C1-C4 at fixed H3 (τ varied file count, not per-file complexity), post-J-3 horizon re-confirm l12/l15/l20 (J-3 fixed *after* τ's ~12 ceiling, never re-laddered), regression core. **Per-cell fresh restart** committed as the run shape (the τ method that held flat 70-146s latency; the `scratch/benchmark-grid-run/` phased driver graduates in).
 - **Status:** spec done (commit `074e453`); **harness deltas BUILT + verified (commit `69dc03d`)** — `scorer.score_frontier` + `MetricRecord.terminated_clean: bool|None`, corpus l12/l15/l20 + the four §3 sweeps, `frontier.py` (`frontier_prompt` + `score_cell`), `bench` re-pointed (τ CHEAP config, Sonnet FRONTIER arm, `autonomous_run_blocked` guard, cents cost). 86 benchmark tests green, mypy strict + ruff + complexity clean. The two-arm scorecard (`scorecard.match` / `render_scorecard`) was already present and is reused. **Remaining = live-only (verified at run time, not blind-coded):** the per-cell-restart wiring in `bench`'s live flow (graduate the proven `scratch/benchmark-grid-run/` reboot logic) + the actual in-session Sonnet-subagent dispatch for the frontier arm. Build order in `benchmark-design.md` §11.
 
-### FRESH-SESSION HANDOFF (live benchmark run — the tier comparison + horizon re-confirm)
+### BENCHMARK COMPLETE (2026-06-22) — central-question evidence in hand
+
+The live-run handoff below is **discharged**. Full write-up:
+`essays/research-logs/cycle-7-benchmark-tier-comparison.md`; scorecard
+`benchmark-runs/tier-comparison/scorecard-final.{md,json}`.
+
+**Result:** cheap `[qwen3.6-plus seat (OpenCode Go) + framework]` **matches** the
+Sonnet frontier on the **complexity axis** (H3 × C1–C4, all reliable — h3c3/h3c4
+3/3 on a fresh env) and clean to **~12 files**; it **diverges** beyond ~12 on
+**coherence** (cross-reference fidelity fails 0/3 at l15/l20 — wrong import source,
+a real capability ceiling that reproduces fresh) and **speed** (l20 37–52 min vs
+Sonnet ~56 s). Two-arm verdict: complexity gap 0, **horizon gap 2**. Convergence +
+termination (the framework machinery) hold throughout; the cheap *model's*
+coherence + speed are the ceiling, not the framework.
+
+**Corrections to the in-flight reads:** "h3c4 C4-flaky" was a late-run degradation
+artifact (refuted 3/3 fresh); l20's "timeout" was the 30-min cap (it converges in
+37–52 min given room, then fails on coherence — not non-convergence).
+
+**Harness/env changes (real-client-earned):** per-cell ollama restart
+(marathon-degradation); seat moved to the OpenCode Go endpoint `/zen/go/v1`
+(cents-subscription, same qwen3.6-plus); opencode CLI upgraded 1.15.5→1.17.9 (DB
+schema skew vs the 1.17.9 desktop app); scorer `_terminated_clean` fixed (robust
+to OpenCode's trailing toolless aux request). bench.py + scorer.py + the two
+seat/escalation profiles committed.
+
+**PLAY-prep status:** the axis-2 long-horizon evidence the handoff wanted (ADR-033
+§6b CA) is in hand — the ~15-file coherence ceiling is the concrete axis-2 limit.
+PLAY can consume this.
+
+---
+
+### FRESH-SESSION HANDOFF (live benchmark run — the tier comparison + horizon re-confirm) [DISCHARGED 2026-06-22 — see BENCHMARK COMPLETE above]
 
 **Why a fresh session:** the live run is long, rig-bound (32GB, cool ollama between cells), and still needs live code built + watched. A clean context window is the right vehicle. The unit-testable harness is done (commit `69dc03d`); this is the run.
 
