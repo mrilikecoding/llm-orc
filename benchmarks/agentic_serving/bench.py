@@ -20,7 +20,7 @@ import json
 import subprocess
 import sys
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -477,21 +477,108 @@ def _capture_version(tool: str, args: list[str]) -> str:
     return (out.stdout or out.stderr).strip() or "unavailable"
 
 
+# --- Rig control: per-cell fresh restart (§8 / §11) --------------------------
+#
+# Graduated from scratch/benchmark-grid-run/run_grid_phased.py. The 32GB rig
+# memory-thrashes the cheap-local 8b<->14b seat/coder swap; left running, the
+# documented marathon-degradation sets in (the 2026-06-16 grid hang: h2c1 820s
+# in-grid vs 399s isolated). A fresh ollama before every cell is the Spike τ
+# method that held latency flat (70-146s/cell). macOS-specific (osascript /
+# open -a). Live-only — never invoked by the unit tests.
+
+# The local coder-tier models to warm after a reboot. The cheap-local seat is
+# hosted (Zen), so only the local coder + its escalation rung need warming.
+_WARM_MODELS: tuple[str, ...] = ("qwen3:8b", "qwen3:14b")
+
+# Per-cell timeout = base + per-file, capped. Calibrated for the fresh-restart
+# regime (warm rig ≈ sub-222s/file) with margin; the cap bounds a hung cell so a
+# watched run never waits more than CELL_MAX_S on one cell. The timeout is a
+# ceiling — cells that converge faster finish faster (opencode exits).
+CELL_BASE_S = 180.0
+CELL_PER_FILE_S = 240.0
+CELL_MAX_S = 1800.0
+
+
+def cell_timeout(cell: Cell) -> float:
+    """The per-cell wall-clock ceiling, scaled by deliverable count (§8/§11)."""
+    files = max(1, len(cell.expected_deliverables))
+    return min(CELL_BASE_S + CELL_PER_FILE_S * files, CELL_MAX_S)
+
+
+def reboot_ollama(models: Sequence[str] = _WARM_MODELS) -> None:
+    """Quit + relaunch Ollama and warm the coder models (§8 per-cell restart)."""
+    subprocess.run(["osascript", "-e", 'quit app "Ollama"'], capture_output=True)
+    subprocess.run(["pkill", "-9", "-f", "llama-server"], capture_output=True)
+    time.sleep(3)
+    subprocess.run(["open", "-a", "Ollama"], capture_output=True)
+    for _ in range(90):
+        if subprocess.run(["ollama", "list"], capture_output=True).returncode == 0:
+            break
+        time.sleep(1)
+    for model in models:
+        subprocess.run(["ollama", "run", model, "ok"], capture_output=True)
+
+
+def _restart_for_cell(serve: _ServeProcess) -> None:
+    """Reboot ollama, then heal the dedicated serve (§8 per-cell restart).
+
+    Killing ollama can take the served endpoint down; re-check readiness and
+    restart the serve if it did not recover on its own.
+    """
+    print("per-cell restart: rebooting ollama...", file=sys.stderr)
+    reboot_ollama()
+    for _ in range(30):
+        if serve._ready():
+            return
+        time.sleep(1)
+    print("serve unhealthy after ollama reboot -> restarting", file=sys.stderr)
+    serve.stop()
+    serve.start()
+
+
 def _run_group(
-    plan: CellPlan, *, serve_port: int, output_dir: Path, serve_log: Path
+    plan: CellPlan,
+    *,
+    serve_port: int,
+    output_dir: Path,
+    serve_log: Path,
+    before_cell: Callable[[], None] | None = None,
 ) -> CellResult:
-    """Run one CellPlan's n live sessions → a scored CellResult."""
+    """Run one CellPlan's n live sessions → a scored CellResult.
+
+    ``before_cell`` (when set) runs before each session — the per-cell fresh
+    restart (§8/§11). The per-cell timeout scales with deliverable count.
+    """
     records: list[MetricRecord] = []
     degraded = False
-    for _ in range(plan.n):
+    files = len(plan.cell.expected_deliverables)
+    for i in range(plan.n):
+        if before_cell is not None:
+            before_cell()
+        print(
+            f"  {plan.phase}/{plan.cell.name} [{i + 1}/{plan.n}] "
+            f"H{plan.cell.horizon}C{plan.cell.complexity} files={files} "
+            f"timeout={cell_timeout(plan.cell):.0f}s ...",
+            file=sys.stderr,
+        )
         artifacts = run_cell(
             plan.cell,
             serve_port=serve_port,
             output_dir=output_dir,
             serve_log=serve_log,
+            timeout_seconds=cell_timeout(plan.cell),
+        )
+        record = _score_artifacts(artifacts)
+        print(
+            f"  -> {plan.cell.name} wall={artifacts.wall_seconds:.0f}s "
+            f"timed_out={artifacts.timed_out} passed={record.passed} "
+            f"form={record.form_valid} conv={record.converged} "
+            f"coh={record.content_coherent} term={record.terminated_clean} "
+            f"produced={len(record.produced)}/{files}",
+            file=sys.stderr,
         )
         degraded = degraded or artifacts.timed_out
-        records.append(_score_artifacts(artifacts))
+        records.append(record)
     return CellResult(cell=plan.cell, records=tuple(records), degraded=degraded)
 
 
@@ -502,24 +589,36 @@ def _score_artifacts(artifacts: CellArtifacts) -> MetricRecord:
 def _run_one_config(
     config: BenchConfig,
     *,
+    grid: Sequence[Cell],
     serve_port: int,
     output_dir: Path,
     serve_log: Path,
     run_probe: bool,
+    before_cell: Callable[[], None] | None = None,
 ) -> ConfigRun:
-    """Drive the full adaptive flow for one config (§5) → a ConfigRun."""
-    run = ConfigRun(config=config)
-    grid, probes = corpus.load()
+    """Drive the full adaptive flow for one config over ``grid`` (§5) → ConfigRun.
 
-    coarse = _execute(coarse_plan(grid), serve_port, output_dir, serve_log)
+    ``grid`` is the cell set to run (the §3 sweep selection); probes are loaded
+    separately. ``before_cell`` is the per-cell fresh-restart hook.
+    """
+    run = ConfigRun(config=config)
+    _, probes = corpus.load()
+
+    coarse = _execute(coarse_plan(grid), serve_port, output_dir, serve_log, before_cell)
     run.grid_results.extend(coarse.values())
 
-    ceil_cell = _confirmed_ceiling(coarse, grid, serve_port, output_dir, serve_log)
+    ceil_cell = _confirmed_ceiling(
+        coarse, grid, serve_port, output_dir, serve_log, before_cell
+    )
     if ceil_cell is not None:
         _merge(run.grid_results, {ceil_cell.name: coarse.get(ceil_cell.name)})
 
     concentrate = _execute(
-        concentrate_plan(list(coarse.values())), serve_port, output_dir, serve_log
+        concentrate_plan(list(coarse.values())),
+        serve_port,
+        output_dir,
+        serve_log,
+        before_cell,
     )
     _merge(run.grid_results, concentrate)
 
@@ -530,6 +629,7 @@ def _run_one_config(
                 serve_port,
                 output_dir,
                 serve_log,
+                before_cell,
             ).values()
         )
     return run
@@ -541,11 +641,14 @@ def _confirmed_ceiling(
     serve_port: int,
     output_dir: Path,
     serve_log: Path,
+    before_cell: Callable[[], None] | None = None,
 ) -> Cell | None:
     """Confirm the apparent ceiling at n=3; drop a rung + re-confirm on ≤1/3 (§5)."""
     ceil_cell = apparent_ceiling_cell(list(coarse.values()))
     while ceil_cell is not None:
-        confirmed = _execute(confirm_plan(ceil_cell), serve_port, output_dir, serve_log)
+        confirmed = _execute(
+            confirm_plan(ceil_cell), serve_port, output_dir, serve_log, before_cell
+        )
         result = confirmed.get(ceil_cell.name)
         if result is not None and result.passed:
             coarse[ceil_cell.name] = result
@@ -559,12 +662,17 @@ def _execute(
     serve_port: int,
     output_dir: Path,
     serve_log: Path,
+    before_cell: Callable[[], None] | None = None,
 ) -> dict[str, CellResult]:
     """Run a list of CellPlans → {cell-name: CellResult}."""
     out: dict[str, CellResult] = {}
     for plan in plans:
         out[plan.cell.name] = _run_group(
-            plan, serve_port=serve_port, output_dir=output_dir, serve_log=serve_log
+            plan,
+            serve_port=serve_port,
+            output_dir=output_dir,
+            serve_log=serve_log,
+            before_cell=before_cell,
         )
     return out
 
@@ -623,12 +731,73 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="launch + tear down the dedicated serve (default); "
         "--no-manage-serve drives an already-running serve",
     )
+    parser.add_argument(
+        "--cells",
+        default=None,
+        help="comma-separated cell names to run (overrides --sweep); "
+        "e.g. h1c1 for a smoke-verify",
+    )
+    parser.add_argument(
+        "--sweep",
+        default=None,
+        help="comma-separated §3 sweep names (complexity, horizon_reconfirm, "
+        "tier_comparison, regression); default runs their union",
+    )
+    parser.add_argument(
+        "--per-cell-restart",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="reboot ollama + heal serve before every cell (§8/§11 — default); "
+        "--no-per-cell-restart disables it",
+    )
     return parser.parse_args(list(argv))
 
 
 def _resolve_configs(args: argparse.Namespace) -> list[BenchConfig]:
     names = args.compare.split(",") if args.compare else [args.config]
     return [get_config(n.strip()) for n in names]
+
+
+# --- Grid selection (§3 sweeps) ----------------------------------------------
+
+
+def _all_cells_by_name() -> dict[str, Cell]:
+    """Every runnable cell — the 4×4 grid + the horizon-reconfirm ladder (§3)."""
+    cells = list(corpus.GRID) + list(corpus.HORIZON_RECONFIRM)
+    return {c.name: c for c in cells}
+
+
+def _ordered_union(groups: Iterable[Sequence[Cell]]) -> list[Cell]:
+    """De-dup cells across groups, then order light → heavy (the coarse walk)."""
+    seen: set[str] = set()
+    cells: list[Cell] = []
+    for group in groups:
+        for cell in group:
+            if cell.name not in seen:
+                seen.add(cell.name)
+                cells.append(cell)
+    cells.sort(key=lambda c: (c.horizon, c.complexity))
+    return cells
+
+
+def _resolve_grid(args: argparse.Namespace) -> list[Cell]:
+    """The cell set to run (§3): explicit ``--cells``, named ``--sweep`` groups,
+    or the default cheap-arm sweep union.
+
+    The default unions all four §3 sweeps (complexity + horizon-reconfirm +
+    tier-comparison + regression). It covers every tier-comparison cell, so the
+    frontier arm can be matched later without re-running cheap cells, and it
+    excludes the H4 (8–10 file) grid corner that would blow the rig's wall-clock.
+    """
+    pool = _all_cells_by_name()
+    if args.cells:
+        names = [s.strip() for s in args.cells.split(",") if s.strip()]
+        return [pool[n] for n in names]
+    sweeps = corpus.sweeps()
+    if args.sweep:
+        wanted = [s.strip() for s in args.sweep.split(",") if s.strip()]
+        return _ordered_union(sweeps[w] for w in wanted)
+    return _ordered_union(sweeps.values())
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -651,7 +820,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(blocked, file=sys.stderr)
         return 2
 
-    grid, _ = corpus.load()
+    grid = _resolve_grid(args)
     if any(c.paid for c in configs) and not args.i_accept_frontier_cost:
         print(cost_estimate(configs, len(grid)), file=sys.stderr)
         return 2
@@ -661,11 +830,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     serve_log: Path = args.serve_log or (output_dir / "serve.log")
     run_probe = args.probe == "bleed-injection"
 
+    restart = args.per_cell_restart and args.manage_serve
     serve = _ServeProcess(args.serve_port, serve_log)
+    if restart:
+        reboot_ollama()  # fresh ollama before the managed serve starts + smoke
     if args.manage_serve and not serve.start():
         return 1
+
+    def _do_restart() -> None:
+        _restart_for_cell(serve)
+
+    before_cell: Callable[[], None] | None = _do_restart if restart else None
     try:
-        return _run_all(args, configs, output_dir, serve_log, run_probe)
+        return _run_all(
+            args, configs, grid, output_dir, serve_log, run_probe, before_cell
+        )
     finally:
         if args.manage_serve:
             serve.stop()
@@ -674,19 +853,23 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _run_all(
     args: argparse.Namespace,
     configs: Sequence[BenchConfig],
+    grid: Sequence[Cell],
     output_dir: Path,
     serve_log: Path,
     run_probe: bool,
+    before_cell: Callable[[], None] | None,
 ) -> int:
     if not args.skip_smoke and _smoke_aborts(args.serve_port, output_dir, serve_log):
         return 1
     runs = [
         _run_one_config(
             cfg,
+            grid=grid,
             serve_port=args.serve_port,
             output_dir=output_dir,
             serve_log=serve_log,
             run_probe=run_probe,
+            before_cell=before_cell,
         )
         for cfg in configs
     ]
