@@ -574,6 +574,10 @@ class LoopDriver:
         # stateless HTTP requests, so the count is the conversation-
         # recovered turn index, not the (unincremented-here) SessionState.
         if self._cap_reached(context, turn_index):
+            # The zombie-backstop fire — logged explicitly so a non-terminating
+            # session is greppable in the serve log (the cap path returns before
+            # the completeness block, so no `completeness:` line marks it).
+            _logger.info("termination: AS-3 cap reached turn=%d", turn_index)
             # A forced backstop finish, not a generation opportunity — shaped
             # ``carry`` so it never inflates the delegation-rate denominator.
             self._emit_turn_decision(
@@ -783,6 +787,10 @@ class LoopDriver:
         judgment_text = await self._dispatch_judgment(session_id, context)
         verdict = parse_verdict(judgment_text)
         stripped = strip_verdict(judgment_text) or None
+        # The stochastic judge's own verdict + reasoning — the only termination
+        # path with no deterministic record, so PLAY can attribute a mis-judge
+        # (a `None` verdict logs as a parse miss).
+        _logger.info("judge fallback: verdict=%s text=%r", verdict, stripped)
         if verdict == "COMPLETE":
             return "COMPLETE", None, stripped
         if verdict == "REMAINING":
