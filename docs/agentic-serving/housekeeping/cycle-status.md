@@ -226,6 +226,18 @@ seat/escalation profiles committed.
 §6b CA) is in hand — the ~15-file coherence ceiling is the concrete axis-2 limit.
 PLAY can consume this.
 
+**PLAY deferred-surface runbook (2026-06-25):**
+`housekeeping/play-runbook-deferred-surface.md` is the entry point for the next
+session — headless first (agent), then the live OpenCode TUI. **Primary arm = a
+composition session** testing whether the cheap seat + framework compose OpenCode's
+full tool surface (directed file-actions + carried `todowrite`/`task`/`skill`/`grep`)
+into one coherent trajectory; the per-tool T/K/S probes are secondary (causal isolation
+only). Confirmed surface (Spike π capture): OpenCode declares 10 tools and enumerates
+the `~/.claude/skills/` set (16, e.g. `codebase-audit`/`lit-review`) into its system
+prompt, but **not** the RDD plugin skills — that plugin gap is expected (plugins are
+Claude packaging; SKILL.md is the portable form), so the test target is tool
+**composition**, not RDD-skill reach.
+
 ---
 
 ### FRESH-SESSION HANDOFF (live benchmark run — the tier comparison + horizon re-confirm) [DISCHARGED 2026-06-22 — see BENCHMARK COMPLETE above]
