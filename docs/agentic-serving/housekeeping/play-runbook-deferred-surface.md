@@ -7,10 +7,12 @@ not directed** — grounded-carry (`CarryClientTool`) passes them through verbat
 session won't crash, but the reliability machinery is file-shaped and does not apply
 (completeness gate mines `name.ext`; content anchor is cross-*file*; delegated generation
 maps only to `write`/`edit`). This run discovers what breaks. **Findings are the output,
-not pass/fail** — per ADR-033 §6c + the cycle-status Feed-Forward "skill/task/todowrite
-surface". See `essays/research-logs/cycle-7-benchmark-tier-comparison.md` for the one
-axis-2 limit already known: the cheap stack's cross-reference coherence ceiling at ~15
-files.
+not pass/fail** (the PLAY stance, backed by the cycle-status Feed-Forward
+"skill/task/todowrite surface"). ADR-033 §6c is the design basis: the loop-driver must
+handle the full client tool surface, not only the file-action tools the spikes exercised.
+See `essays/research-logs/cycle-7-benchmark-tier-comparison.md` for the one axis-2 limit
+already known: the cheap stack's cross-reference coherence ceiling is ~12 files (clean at
+12, coherence fails 0/3 at 15).
 
 ## Confirmed tool surface (Spike π capture)
 
@@ -73,6 +75,18 @@ This invites `grep`/`glob`/`read` (explore) + `todowrite` (plan) + optionally `t
 > reproducing that behavior, actually emits the tool_call is the first thing to record. A
 > non-emission is itself a finding (the seat doesn't pick up the client's tool-use cues).
 
+> **Termination routing (read before picking prompts).** The completeness gate keys off a
+> filename regex over the *task prose* (`_REQUESTED_FILE_RE`, `loop_driver.py`), and
+> `todowrite`/`task`/`skill` are not write tools (`_WRITE_TOOLS = {write, edit}`), so they
+> never advance the produced set. Consequence: a prompt that names recognized files hits
+> the **deterministic** gate and terminates on those files, with the carried tool just
+> riding along; only a **file-free** prompt routes termination to the stochastic judge. So
+> Probe T (names 5 `.py`/`.md` files) and Probe K (names `summary.py`) actually test
+> *carry fidelity inside a deterministically-terminating session*, while Probe S (names no
+> file) is the only probe that tests *stochastic termination of non-file work* (the
+> central risk). If you want Probe T to exercise the judge too, run a second variant that
+> describes its steps by role without naming `.py`/`.md` files.
+
 **Probe T — `todowrite` (multi-step planning state).** Workspace: empty dir.
 > "Build a small Python package in this directory in stages, and keep a running todo list
 > as you go: (1) `config.py` with a `load_defaults()` returning a settings dict; (2)
@@ -87,10 +101,12 @@ files so the survey has something to find.
 > a new `summary.py` module with a function that calls the real functions you found."
 
 **Probe S — `skill` (invoke a skill).** Backed: OpenCode enumerates the skills in
-`~/.claude/skills/` into its system prompt (a Spike π capture listed 16 — `ai-detect`,
-`codebase-audit`, `lit-review`, `ensemble-designer`, … — each with a `file://` location),
-and loads `~/.claude/CLAUDE.md` too. So pick a real skill whose description matches the
-task and let the seat decide to load it. Workspace: something the skill can act on.
+`~/.claude/skills/` into its system prompt (Spike π confirmed the 10-tool inventory
+including `skill`; the specific skill *count* it surfaces is unverified, so do not rely on
+a fixed number such as "16") and loads `~/.claude/CLAUDE.md` too. So capture the live
+request's `<available_skills>` block first (see the north-star note below), then pick a
+real skill from that block whose description matches the task and let the seat decide to
+load it. Workspace: something the skill can act on.
 > e.g. "Audit the architecture of this codebase" (→ `codebase-audit`), or "Survey the
 > literature on <topic>" (→ `lit-review`).
 > Observe whether the qwen3.6-plus seat recognizes the match and emits a `skill`
@@ -130,16 +146,40 @@ todowrite/task/skill prompt instead of a file-gen cell.
    final answer is coherent.
 5. Tail `/tmp/play-serve.log` alongside to see the framework's turn decisions.
 
+## Reading termination from the serve log (the decoder)
+
+The driver emits the termination path to `/tmp/play-serve.log` at INFO (the operator sink's
+`turn decision:` line plus the driver's own `completeness:` lines). Two lines were added for
+this run so every path is greppable: the AS-3 cap fire and the stochastic judge's verdict
+(previously the only un-logged paths). Decode the slice:
+
+| Termination path | Log signature |
+|---|---|
+| Deterministic completeness | `completeness: requested=.. produced=.. remaining=0 verdict=COMPLETE` then `turn decision: … judgment_verdict=COMPLETE action=finish` |
+| Stochastic judge | `completeness: no requested set, judge fallback` + `judge fallback: verdict=… text=…` then `turn decision: … judgment_verdict=COMPLETE\|REMAINING action=finish` |
+| False-stop / incoherent stall | `turn decision: … judgment_verdict=REMAINING action=finish` (often with `remaining-retry: recovered=false`) |
+| AS-3 cap (zombie backstop) | `termination: AS-3 cap reached turn=N` (finish text in the client `.out` is `[Session budget exhausted: turn limit reached. Stopping.]`) |
+
+Carry fidelity is free in the same stream: a deferred-tool turn logs as `turn decision: …
+action=todowrite carry_held=true` (the `CarryClientTool` passthrough), so you confirm the
+client tool_call survived verbatim at the driver boundary without parsing the JSON stream.
+The `--format json` `.out` is only needed for finer per-turn shape, not for termination or
+carry fidelity.
+
 ## Observation targets (the mechanism-level questions — per the Feed-Forward signal)
 
 These sit behind both the composition seam and the isolation probes — use them to
 attribute a composition failure to a specific mechanism. For the composition session and
 each probe that fires, record:
 
-- **Termination.** With no `name.ext` to mine, the deterministic completeness gate can't
-  fire — termination falls to the **stochastic judge**. Does the loop know when the
-  `todowrite`/`task`/`skill` turn is "done", or does it mis-judge (premature finish, or a
-  zombie that never finishes)? This is the central risk.
+- **Termination.** Whether the deterministic gate or the stochastic judge owns the finish
+  depends on the prompt (see "Termination routing" above), not on which tools fired. For a
+  file-free task the judge owns it: does the loop know when the `todowrite`/`task`/`skill`
+  work is "done", or does it mis-judge (premature finish, or a zombie that never finishes)?
+  That is the central risk. For a file-naming task the gate terminates on the named files
+  while the carried tools ride along, so watch instead for decoupling: does the model keep
+  emitting `todowrite` turns after the files are written (a zombie the AS-3 cap then
+  catches, now visible as `termination: AS-3 cap reached`)?
 - **Coherence without an anchor.** There's no cross-file content anchor for non-file work.
   On a multi-turn `task`/`todowrite` flow, does the trajectory stay coherent across turns,
   or does it drift / repeat / lose the plan?
