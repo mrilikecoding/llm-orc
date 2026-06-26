@@ -874,3 +874,140 @@ Same ensembles, same upstream data, same Iceland-population prompt. The orchestr
 | ADR-025 substrate routing writes artifacts at session-dir paths | **Production-ready** | Nine artifacts in the OpenCode session, `.retention` markers + spec'd layout. AS-7 amended verified (no agentic-result-summarizer in any session). |
 | ADR-025 dispatch_log.json as operator-facing review surface | **Broken for session-scope use case** | File overwrites per-request; latest empty-dispatch request wipes prior entries. |
 | Composition pipelines preserve data across chained dispatches | **Not working** | Both curl and OpenCode show drift. Spike β reframing confirmed empirically in two configurations. |
+
+---
+
+# Cycle 7 — Deferred Client-Tool Surface (2026-06-25, PLAY-phase)
+
+**Play session:** 2026-06-25
+**Practitioner:** Nathan Green (cycle owner). Agent as gamemaster.
+**System state at play:** Cycle 7. Branch `agentic-serving`. Seat = `agentic-orchestrator-qwen36-zen` (hosted qwen3.6-plus on Zen, **PAID**) + local capability ensembles (qwen3:8b coder, with `form_escalation` → minimax frontier, unfired). `llm-orc serve` on :8765. opencode 1.17.9, headless `opencode run -m llmorc/agentic --format json`, non-git `/private/tmp` workspaces.
+**Stakeholder inhabited:** Developer driving OpenCode against the cheap llm-orc seat — types "improve this project" / a staged build / an audit and expects a coherent multi-turn agentic session.
+**Run:** runbook `docs/agentic-serving/housekeeping/play-runbook-deferred-surface.md`. One composition session (primary arm) + three causal-isolation probes (T `todowrite`, K `task`, S `skill`). Artifacts retained in `scratch/play-deferred-surface/` (serve-log slices, `.out` streams, produced workspaces).
+
+> **These are raw observations. Categorization (Category / Feeds back to) is deferred to the cross-cutting reflection at session close — gamemaster boundary.**
+
+## Composition session (primary arm)
+
+### 1. Gate terminated on the one named file; 3 of 4 self-planned items left undone
+**Observation:** Prompt asked to fix the bug in `account.py`, add the missing test, bring the README in line, and run the tests. The completeness gate mined `requested=1` from the prose (`account.py` is the only literal `name.ext`; "the missing test" / "the README" are not). Trajectory `read×4 → todowrite → read → todowrite → edit → finish` (9 turns, ~61s). Terminated deterministically: `completeness: requested=1 produced=1 remaining=0 verdict=COMPLETE`. On disk: `account.py` fixed correctly (`balance * rate` → `balance * (1 + rate)`); `test_account.py` and `README.md` untouched; tests never run (no `bash` turn). The model's own `todowrite` plan held four items — fix bug [marked done], add test [pending], fix README [pending], run tests [pending] — so three planned items were still `pending` at termination. Final synthesized text to the client: *"All requested files have been written: account.py."*
+**Feeds back to:** _(deferred — session close)_
+
+### 2. `todowrite` carried faithfully but never consulted as control state
+**Observation:** `todowrite` fired twice (turns 5, 7), both `carry_held=true`, and tracked all four sub-tasks accurately. It had no authority over execution or termination — the file gate owned the finish. The plan was a passive record, not a planning state the driver reads (`_WRITE_TOOLS = {write, edit}`; termination keys off produced files).
+**Feeds back to:** _(deferred — session close)_
+
+### 3. Carry fidelity intact; zero delegation
+**Observation:** Every carried tool (read×4, todowrite×2, edit×1) logged `carry_held=true` — nothing mangled or dropped at the driver boundary. `delegation rate: rate=0.000 delegated=0 generation=1 boundary_excluded=2 considered=9`. The single change was an `edit`, carried by the hosted seat (`delegated=-`); the local coder ensemble never ran. The whole composition executed on the paid seat.
+**Feeds back to:** _(deferred — session close)_
+
+## Probe T — `todowrite` (staged 5-file package, empty dir)
+
+### 4. Naming all five files drove all five to completion
+**Observation:** Prompt named `config.py, core.py, cli.py, test_core.py, README.md` → `requested=5`. Deterministic gate held until `produced=5 remaining=0 COMPLETE`; all five produced. Direct contrast with the composition (one named file → gate stopped at one). Same mechanism, opposite outcome — a file named in the prose is what enters `requested` and gets built.
+**Feeds back to:** _(deferred — session close)_
+
+### 5. `write` delegated to the local coder; ~18-minute runtime
+**Observation:** Runtime 17:17:55 → 17:35:53 (~18 min) vs the composition's 61s. The five `write` turns were delegated to local capability ensembles — `code-generator` (the `.py` files) and `prose-improver` (the README); `delegation rate` climbed 0.500 → 0.833. The delegation machinery engages on `write` (new-file generation), not on `edit` (the composition's edit carried). The cheap local tier did the work and held together, at ~18× the carried-seat latency on the 32GB rig.
+**Feeds back to:** _(deferred — session close)_
+
+### 6. `todowrite` emitted once, never updated
+**Observation:** `todowrite` fired a single time (turn 2), `carry_held=true`, despite the explicit "keep a running todo list… mark items done as you complete them." It created the list and never revised it. Consistent with composition observation #2.
+**Feeds back to:** _(deferred — session close)_
+
+### 7. Cross-file content anchor held the sources; the gate did not see the broken test
+**Observation:** `anchor=true` on turns 4–7 (the interdependent build). Source files mutually coherent: `config.py` defines `load_defaults`, `core.py` imports/uses it, `cli.py` has `argparse` + `__main__` guard. But `test_core.py` wrote `from play_probe_t_ws.core import process_settings` — a package-qualified import named after the workspace dir, against a flat file layout → `ModuleNotFoundError` on collection. The gate reported `produced=5 COMPLETE` on file existence; it does not check that files import or run, and the prompt did not ask to run tests, so the broken test was never caught.
+**Feeds back to:** _(deferred — session close)_
+
+## Probe K — `task` (sub-agent survey → `summary.py`)
+
+### 8. `task` non-emission: the seat inlined the survey
+**Observation (Obs #0):** Prompt explicitly said "Use a sub-agent to first survey the Python files…". The seat never emitted `action=task`. Trajectory `glob → read → read → write → finish`; it surveyed inline and wrote `summary.py` directly. The carried `task` surface was never exercised. Termination deterministic (`summary.py` named, `requested=1 produced=1 COMPLETE`); `write` delegated to `code-generator`; ~3 min. `summary.py` is coherent — imports the real functions (`shout`, `initials`, `circle_area`, `rectangle_area`) and loads clean. The inline survey was adequate for a task this small.
+**Feeds back to:** _(deferred — session close)_
+
+## Probe S — `skill` (file-free audit prompt)
+
+### 9. `skill` non-emission completes the trio pattern
+**Observation (Obs #0):** Prompt invited "use whatever tools or skills help" and matched `codebase-audit` (confirmed present in the `~/.claude/skills/` enumeration of 15 skills surfaced to opencode; RDD plugin skills under `~/.claude/plugins/cache/` are not in that set). The seat never emitted `action=skill`; trajectory `read×4 → write → finish`, audit written inline. Across the deferred trio: `todowrite` is emitted (but ignored as state); `task` and `skill` are not emitted at all. The seat reproduces one of OpenCode's three deferred tool-use cues and acts on none.
+**Feeds back to:** _(deferred — session close)_
+
+### 10. Stochastic judge owned termination of file-free work and tracked task semantics
+**Observation:** File-free prompt routed to the judge: `completeness: no requested set, judge fallback`. The judge ran every turn with reasoned verdicts — while incomplete, `verdict=REMAINING` (*"has only read one file"*, *"must read the remaining files and produce the requested architectural audit"*, *"not yet produced the requested architecture audit"*); when the deliverable appeared, `verdict=COMPLETE`. No premature finish, no zombie, no AS-3 cap. The judge evaluated task semantics, not file existence. ~4 min (17:42:21 → 17:46:15).
+**Feeds back to:** _(deferred — session close)_
+
+### 11. The seat materialized the analysis as a file, so the judge terminated on a file deliverable
+**Observation:** Although the prompt asked for an audit (no file named), the seat wrote `ARCHITECTURE.md`. The judge's `COMPLETE` came after that file existed and read complete. The pure case — judge terminating work that produces no file at all — was not observed this run; the seat converted the analysis into a file deliverable.
+**Feeds back to:** _(deferred — session close)_
+
+### 12. The capability ensemble imposed its own output form on the deliverable
+**Observation:** The audit `write` was delegated to a `code-review` ensemble (a third capability tier observed this run, after `code-generator` and `prose-improver`). The output came back as a *"CODE REVIEW SUMMARY"* (Confidence Level: 10, Critical Issues, Recommendations, Final Assessment) rather than an architecture audit — the ensemble's template overrode the requested form. No final text answer reached the client; the deliverable was the file alone. Capability ensembles observed routing by task type: `code-generator` (.py), `prose-improver` (README prose), `code-review` (audit).
+**Feeds back to:** _(deferred — session close)_
+
+## Cross-session observations
+
+### 13. opencode `run` bootstrap hang is intermittent (tooling, not framework)
+**Observation:** `opencode run` intermittently hangs at bootstrap before any chat POST reaches the serve (session never created; the seat is never called, so a wedged attempt is free). This session: PONG smoke OK; repo-`composition-ws` wedged; `/tmp` composition OK; `/tmp` Probe T wedged on first launch then booted on relaunch; K and S booted first try. Roughly half of launches wedged. An earlier in-session hypothesis that the wedge was git-project-specific (in-repo workspace triggering opencode's git-project bootstrap) was disconfirmed when a `/tmp` non-git run also wedged — the failure is intermittent, not path-dependent. Mitigated with a retry-on-wedge wrapper (`scratch/play-deferred-surface/run_probe.sh`): launch, detect first chat POST within 35s, graceful `TERM` + relaunch on wedge (never `-9`, which the prior session noted aggravates opencode global state). This is an opencode-client/tooling observation for the housekeeping runbook, not a framework field note.
+**Feeds back to:** _(deferred — session close; candidate: housekeeping runbook, not pipeline)_
+
+### 14. A constant turn-1 dispatch_id appears in every session
+**Observation:** `dispatch_id=343ad246dc9ed907e2c13991cdf17f7818c651ed05f9ba6679bc7e584298e07a…` logs a turn-1 immediate `action=finish` in all four sessions (composition, T, K, S) — byte-identical across independent runs. Consistent with a deterministic content-hash over an identical first-turn boundary dispatch. Benign-looking, but a fixed artifact rides every session's turn 1; shape varied (`boundary_excluded` in composition, `carry` in the probes).
+**Feeds back to:** _(deferred — session close)_
+
+## Code-confirmed mechanism (post-run read of `loop_driver.py`)
+
+> Attributes the behavioral observations above to the routing code. Verified facts ("what the system is"), gathered to settle whether capability selection is orchestrator-reasoned or a fixed map. Categorization still deferred to session close.
+
+### 15. Capability selection is orchestrator-reasoned; the destination tool is a hardcoded `write` stub
+**Observation:** The seat-filler (orchestrator LLM) chooses the capability ensemble. It is offered an `invoke_ensemble` tool whose `name` argument enumerates the registered capabilities (`_delegation_tools`, `loop_driver.py:828–838`), and the driver reads the choice straight off the call: `capability = _string_field(args, "name")` (`:905`, "selected by task content — AS-10"). There is no framework content-type→ensemble map in the routing path — the `CAPABILITY_DOMAINS` regex in `delegation_rate_meter.py` is delegation-rate *metering* only, not routing. So `code-generator` / `prose-improver` / `code-review` (#5, #12) were the orchestrator's reasoned picks, not a lookup. This reconciles the log: `action=write delegated=X` means the orchestrator emitted `invoke_ensemble(name=X)` and the driver marshalled the deliverable to a client `write`. **But** the destination is hardcoded — `destination_tool = "write"` (`:684`; "richer mapping (`edit`/`bash`) is deferred (LB-3)"). Every delegated generation lands as a new-file `write`; `edit` and `bash` cannot be delegation destinations yet. This is the *code* reason the composition's `edit` ran on the paid seat with `delegation rate=0.000` (#3) and why `write` delegated while `edit` did not (#5) — a path limitation, not an orchestrator decision. For the long-horizon coding north-star (mostly edits to existing files + command-running), the cheap-tier offload surface currently reaches only greenfield file creation.
+**Feeds back to:** _(deferred — session close; candidates: ARCHITECT/DECIDE for the LB-3 `edit`/`bash` delegation destinations)_
+
+### 16. Delegation is single-callee per turn; no decompose / fan-out / synthesize layer
+**Observation:** `_delegate_generation` dispatches exactly one capability ensemble — "a *single* capability… no routing-planner / synthesizer stage (FC-44)" (`loop_driver.py:38–48, 879–935`). The "composition" is single-callee content substitution, one deliverable per turn; there is no task-level decomposition into multiple ensembles with integration. The callee ensemble's form template can override the parent task's framing at this boundary (#12: the requested architecture audit returned as a `code-review` "CODE REVIEW SUMMARY"). The plan the seat produces in `todowrite` (#1, #2, #6) has no path into this dispatch loop — the controller's completeness signal is the named-file gate or the fallback judge, never the agent's own plan.
+**Feeds back to:** _(deferred — session close; candidates: RESEARCH/ARCHITECT for the absent task-orchestration layer — connects to Cycle 6 spike δ / candidate ADR-027 framework-driven chaining)_
+
+## Cross-cutting reflection (session close, 2026-06-25)
+
+**Attribution.** This reflection was agent-synthesized during the session, then **confirmed by the practitioner after a grounding reframe**. The play→synthesize susceptibility snapshot (`docs/agentic-serving/housekeeping/audits/susceptibility-snapshot-cycle-7-play.md`) flagged that the first draft adopted a mid-session critical prior and under-weighted what the run showed working (notably Probe T's greenfield success and the LLM-reasoned selection in #15). The text below is the rebalanced, practitioner-confirmed read. Note for SYNTHESIZE: do not inherit this as an undifferentiated "composition is fundamentally missing" verdict.
+
+**Practitioner's read (Nathan, confirmed).** Good progress, mixed maturity. Some parts of the system work; others are underdeveloped or not yet undertaken relative to the north-star (long-horizon agentic coding across modes). The results are promising and position us to articulate a **roadmap to north-star**, not a viability verdict.
+
+**What this run showed working.**
+- Cheap-tier delegation builds coherent greenfield code: Probe T produced five mutually consistent files at `delegation rate=0.833` on local models (#5, #7). The cheap-orchestration-plus-local-models thesis is demonstrated for new-file generation.
+- Ensemble *selection* is genuinely dynamic and LLM-reasoned, not a fixed map: the orchestrator chose `code-generator` / `prose-improver` / `code-review` by task content (#15).
+- The stochastic judge tracks task *semantics* on file-free work, holding the session open with sound reasoning until a deliverable appears (#10).
+- Carry fidelity is intact across every carried tool (#3).
+
+**What is underdeveloped or not yet undertaken (vs. north-star).**
+- *Composition* as distinct from *selection*: no decomposition into sub-tasks dispatched across multiple ensembles and integrated; delegation is single-callee per turn (#16, FC-44).
+- Plan-driven control: the agent produces a plan in `todowrite` but the loop never reads it; termination is a filename regex or a fallback judge, so "done" is divorced from the task on any multi-step horizon (#1, #2, #16).
+- Delegation destinations: only greenfield `write` is reachable; `edit`/`bash` are a deferred stub (#15, LB-3), so on edit-and-run coding the cheap tier sits out and the paid seat does everything (#3).
+- Seat mode breadth: `task` and `skill` are never emitted (#8, #9), so the sub-agent and skill modes are not exercised. (Qualifier from #8: for a small survey, inlining instead of spawning a sub-agent was adequate behavior, not necessarily a defect.)
+
+**Which session had the hardest time.** The composition (primary arm): it terminated at 1 of 4 self-planned items because the gate recognized only the one named file (#1). Probe S's form bleed (architecture audit returned as a code-review summary, #12) and Probe T's ~18-minute runtime (#5) are the other two frictions, though Probe T also carries the run's clearest success.
+
+**How understanding shifted, against the cycle's central question.** The cheap-orchestration value is real where the machinery engages (greenfield write) and absent where it doesn't (edits, commands, multi-step control). The gap is a task-orchestration layer, not ensemble selection. This is the same framework-driven-orchestration direction Cycle 6 spike δ pointed at (candidate ADR-027), now seen from the planning side: the agent *can* produce the plan; the framework has no path to drive execution from it. The stronger judgment that this is "not yet usable for real agentic work" is a value call on whether greenfield-only delegation is sufficient today, not an observation; the observations support "partial, promising, roadmap-able."
+
+## Categorization (session close — proposed, for practitioner sign-off)
+
+> Gamemaster boundary: categorization is the practitioner's conclusion-work. Proposed here for review; adjust any row.
+
+| # | Observation (short) | Category | Feeds back to |
+|---|---|---|---|
+| 1 | Gate terminates on the one named file; 3/4 planned items undone | Missing scenario | **DECIDE** — completion/termination semantics for multi-step tasks whose sub-goals aren't named files |
+| 2 | `todowrite` carried but never consulted as control state | Interaction gap | **Interaction specs** (+ DECIDE: direct, don't just carry, the deferred surface) |
+| 3 | Carry fidelity intact; zero delegation on the edit task | Delight + mechanism | **SYNTHESIS** (carry fidelity works); RESEARCH (zero-delegation → #15) |
+| 4 | Naming all 5 files drove all 5 to completion | Challenged assumption | **DECIDE** — same termination-semantics gap as #1 (naming is what gates) |
+| 5 | `write` delegated to local coder; ~18-min runtime | Usability friction | **DISCOVER** — value tension cost/speed on the 32GB rig |
+| 6 | `todowrite` emitted once, never updated | Interaction gap | **Interaction specs** |
+| 7 | Anchor held sources; gate blind to the broken test import | Missing scenario | **DECIDE** — completion = file existence, not runnability |
+| 8 | `task` non-emission; seat inlined the survey | Challenged assumption | **DISCOVER** (assumption inversion: seat doesn't reproduce client tool-use cues) + RESEARCH (why) |
+| 9 | `skill` non-emission completes the trio pattern | Challenged assumption | **DISCOVER** — as #8 |
+| 10 | Stochastic judge tracked task semantics on file-free work | Delight | **SYNTHESIS** |
+| 11 | Analysis materialized as a file; file-less termination untested | New question | **RESEARCH** — does the judge terminate genuinely file-less work? |
+| 12 | Callee ensemble imposed its own form (audit → code-review summary) | Missing scenario | **DECIDE** — form/intent preservation across delegation (recurs with prior-cycle form drift) |
+| 13 | opencode `run` bootstrap hang is intermittent | Tooling (outside pipeline) | **Housekeeping runbook** — not a framework requirement |
+| 14 | Constant turn-1 dispatch_id across all sessions | New question | **RESEARCH** / domain-model — low priority |
+| 15 | Capability selection LLM-reasoned; destination hardcoded `write` stub | Challenged assumption + mechanism | **ARCHITECT/DECIDE** — LB-3 `edit`/`bash` delegation destinations |
+| 16 | Single-callee, no decompose/synthesize; plan has no path into the loop | New question + missing capability | **RESEARCH + ARCHITECT** — the task-orchestration layer (ties to spike δ / candidate ADR-027) |
+
+**Balancing note (per the susceptibility snapshot).** The split above routes the positives (#3, #10, #15) to SYNTHESIS and the frictions to DECIDE/RESEARCH/ARCHITECT. That mapping follows the RDD destinations (delights → SYNTHESIS), but the asymmetry can read as "all problems, no wins." Two alternative readings are preserved explicitly so SYNTHESIZE weighs them: (a) **#5 is also a positive** — the same Probe T that took ~18 min produced five coherent files via cheap-tier delegation (`rate=0.833`), i.e. the greenfield-write thesis *confirmed*, not just a latency cost; (b) **#8 carries a mitigating qualifier** — inlining a small survey instead of spawning a sub-agent may be appropriate, so the `task` non-emission is not unambiguously a defect. The roadmap framing (working vs. underdeveloped vs. not-yet-undertaken) in the reflection above is the intended lens, not the friction-weighted table alone.
