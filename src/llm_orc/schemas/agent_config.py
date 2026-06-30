@@ -20,6 +20,11 @@ class BaseAgentConfig(BaseModel):
     fan_out: bool = False
     input_key: str | None = None
 
+    # Guard predicate (control-flow primitive): the node is skipped at
+    # execution time when this evaluates false against upstream results.
+    # e.g. "${gate.ok}" or "${gate.ok} == false". None means always run.
+    when: str | None = None
+
     timeout_seconds: int | None = None
 
     # Fan-out instance metadata (runtime only, set by FanOutExpander)

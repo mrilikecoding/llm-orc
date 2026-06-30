@@ -177,6 +177,21 @@ class TestBaseAgentConfigFields:
         config = parse_agent_config(data)
         assert config.fan_out is True
 
+    def test_when_guard_predicate_accepted(self) -> None:
+        data: dict[str, Any] = {
+            "name": "build",
+            "model_profile": "gpt4",
+            "depends_on": ["gate"],
+            "when": "${gate.ok}",
+        }
+        config = parse_agent_config(data)
+        assert config.when == "${gate.ok}"
+
+    def test_when_defaults_to_none(self) -> None:
+        data: dict[str, Any] = {"name": "test", "model_profile": "gpt4"}
+        config = parse_agent_config(data)
+        assert config.when is None
+
 
 class TestEnsembleLoaderProducesPydanticConfigs:
     """Scenario 7: EnsembleLoader produces list[AgentConfig]."""
