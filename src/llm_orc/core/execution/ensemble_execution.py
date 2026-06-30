@@ -57,6 +57,7 @@ from llm_orc.core.execution.results_processor import (
 )
 from llm_orc.core.execution.runners.ensemble_runner import EnsembleAgentRunner
 from llm_orc.core.execution.runners.llm_runner import LlmAgentRunner
+from llm_orc.core.execution.runners.loop_runner import LoopAgentRunner
 from llm_orc.core.execution.scripting.agent_runner import ScriptAgentRunner
 from llm_orc.core.execution.scripting.cache import ScriptCache, ScriptCacheConfig
 from llm_orc.core.execution.scripting.user_input_handler import (
@@ -74,6 +75,7 @@ from llm_orc.schemas.agent_config import (
     AgentConfig,
     EnsembleAgentConfig,
     LlmAgentConfig,
+    LoopAgentConfig,
     ScriptAgentConfig,
 )
 
@@ -299,6 +301,12 @@ class EnsembleExecutor:
         )
         self._ensemble_loader = EnsembleLoader()
         self._ensemble_agent_runner = EnsembleAgentRunner(
+            ensemble_loader=self._resolve_ensemble_reference,
+            parent_executor=self,
+            current_depth=self._depth,
+            depth_limit=depth_limit,
+        )
+        self._loop_agent_runner = LoopAgentRunner(
             ensemble_loader=self._resolve_ensemble_reference,
             parent_executor=self,
             current_depth=self._depth,
@@ -900,6 +908,8 @@ class EnsembleExecutor:
             return await self._llm_agent_runner.execute(agent_config, input_data)
         if isinstance(agent_config, EnsembleAgentConfig):
             return await self._ensemble_agent_runner.execute(agent_config, input_data)
+        if isinstance(agent_config, LoopAgentConfig):
+            return await self._loop_agent_runner.execute(agent_config, input_data)
         raise ValueError(
             f"Agent '{agent_config.name}' has unknown type: "
             f"{type(agent_config).__name__}"

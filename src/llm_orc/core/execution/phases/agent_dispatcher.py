@@ -16,6 +16,7 @@ from llm_orc.schemas.agent_config import (
     AgentConfig,
     EnsembleAgentConfig,
     LlmAgentConfig,
+    LoopAgentConfig,
     ScriptAgentConfig,
 )
 
@@ -108,6 +109,8 @@ class AgentDispatcher:
             return "llm"
         if isinstance(agent_config, EnsembleAgentConfig):
             return "ensemble"
+        if isinstance(agent_config, LoopAgentConfig):
+            return "loop"
         return None
 
     async def _execute_single_agent_in_phase(

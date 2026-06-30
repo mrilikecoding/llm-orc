@@ -407,6 +407,32 @@ class TestEnsembleAgentDispatchedByAgentDispatcher:
         assert result == "ensemble"
 
 
+class TestLoopAgentConfigParsing:
+    """Scenario: Loop agent config parsed from a `loop:` block."""
+
+    def test_loop_agent_parsed(self) -> None:
+        from llm_orc.schemas.agent_config import LoopAgentConfig
+
+        data: dict[str, Any] = {
+            "name": "resolve",
+            "loop": {"body": "attempt", "until": "${ok}", "max_iterations": 2},
+        }
+        config = parse_agent_config(data)
+        assert isinstance(config, LoopAgentConfig)
+        assert config.loop.body == "attempt"
+        assert config.loop.until == "${ok}"
+        assert config.loop.max_iterations == 2
+        assert config.loop.carry is None
+
+    def test_loop_requires_positive_max_iterations(self) -> None:
+        data: dict[str, Any] = {
+            "name": "resolve",
+            "loop": {"body": "attempt", "until": "${ok}", "max_iterations": 0},
+        }
+        with pytest.raises(ValidationError):
+            parse_agent_config(data)
+
+
 class TestOptionsFieldAccepted:
     """Scenario: options dict accepted on LLM agent config."""
 
