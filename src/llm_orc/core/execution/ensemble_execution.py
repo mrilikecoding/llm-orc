@@ -46,6 +46,7 @@ from llm_orc.core.execution.phases.agent_request_processor import (
 )
 from llm_orc.core.execution.phases.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
+from llm_orc.core.execution.phases.guard_evaluator import GuardEvaluator
 from llm_orc.core.execution.phases.phase_result_processor import PhaseResultProcessor
 from llm_orc.core.execution.progress_controller import NoOpProgressController
 from llm_orc.core.execution.result_types import AgentResult, ExecutionResult
@@ -256,6 +257,7 @@ class EnsembleExecutor:
         self._model_factory = _model_factory
         self._dependency_analyzer = DependencyAnalyzer()
         self._dependency_resolver = DependencyResolver(self._get_agent_role_description)
+        self._guard_evaluator = GuardEvaluator()
         self._usage_collector = UsageCollector()
 
         self._streaming_progress_tracker = StreamingProgressTracker()
@@ -605,6 +607,29 @@ class EnsembleExecutor:
         phases: list[list[AgentConfig]] = dependency_analysis["phases"]
         return phases
 
+    def _partition_by_guard(
+        self,
+        phase_agents: list[AgentConfig],
+        results_dict: dict[str, Any],
+    ) -> list[AgentConfig]:
+        """Drop nodes whose guard fails, recording each as skipped.
+
+        Guards are evaluated against accumulated upstream results, which are
+        complete for this phase's dependencies by topological ordering. A
+        skipped node is recorded so downstream guards and joins can see it.
+        """
+        active: list[AgentConfig] = []
+        for agent_config in phase_agents:
+            if self._guard_evaluator.should_run(agent_config, results_dict):
+                active.append(agent_config)
+            else:
+                results_dict[agent_config.name] = {
+                    "response": None,
+                    "status": "skipped",
+                    "model_substituted": False,
+                }
+        return active
+
     async def _execute_phase_with_monitoring(
         self,
         phase_index: int,
@@ -618,6 +643,8 @@ class EnsembleExecutor:
         Returns:
             Tuple of (has_errors, user_inputs_collected)
         """
+        phase_agents = self._partition_by_guard(phase_agents, results_dict)
+
         fan_out_agents = self._fan_out_coordinator.detect_in_phase(
             phase_agents, results_dict
         )
