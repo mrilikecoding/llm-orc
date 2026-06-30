@@ -23,12 +23,13 @@ Before you write a script stage, an adapter, or a harness loop that calls
    the graph where it is visible and reusable, not buried in `run_e.py`.
 2. **Is this "could be an LLM or a script"?** That is already a node-type
    choice: `script:` vs `model_profile:` vs `ensemble:`. Pick per node.
-3. **Is this a conditional or a branch?** That ships now: `when:` on the node
-   (see below). **Is this a bounded loop or dynamic dispatch?** Those are still
-   *planned* — until they land, keep them in a **thin** adapter and flag the
-   need; do not let the adapter grow into the orchestration graph. If your
-   control flow lives in Python and the engine is a leaf-caller, you have
-   rebuilt the bespoke LoopDriver.
+3. **Is this a conditional, a branch, or a bounded loop?** Those ship now:
+   `when:` on a node, and the `loop:` node (see below). **Is this dynamic
+   dispatch** (a runtime-chosen target)? That is still *planned* — until it
+   lands, keep it in a **thin** adapter and flag the need; do not let the
+   adapter grow into the orchestration graph. If your control flow lives in
+   Python and the engine is a leaf-caller, you have rebuilt the bespoke
+   LoopDriver.
 
 ---
 
@@ -45,6 +46,7 @@ Before you write a script stage, an adapter, or a harness loop that calls
 | **Node = sub-ensemble** | `ensemble: <name>` | a node *is* another ensemble (composition) | `agent_config.py:89`, `ensemble_runner.py:66` |
 | **Guard / conditional skip** | `when: ${gate.ok}` | node is skipped (not just starved) when the predicate is false, or when all its deps skipped | `guard_evaluator.py`; wired at `ensemble_execution.py` `_partition_by_guard` |
 | **Branch / route-and-judge** | `when: ${x.choice} == "code"` | guarded siblings fire selectively; a join runs on whichever branch fired | `guard_evaluator.py` (equality + skip-propagation) |
+| **Bounded loop** | `loop: {body, until, max_iterations, carry}` | re-run a body ensemble until `until` holds over its output or the mandatory bound trips; `carry` threads a field into the next iteration | `loop_controller.py`, `loop_runner.py`; routed in `_execute_agent` |
 
 The old `routing-demo.yaml` pattern routed *data* (a classifier emits keyed
 buckets, downstream nodes select via `input_key`/`fan_out`, but both always
@@ -55,7 +57,6 @@ router's choice and only the chosen branch runs.
 
 | primitive | intended YAML | why it is needed | current home |
 |---|---|---|---|
-| **Bounded loop** | `loop: {body, until, max_iterations}` | retry/repair until a predicate holds or a hard bound trips | impossible today — acyclicity is asserted (`ensemble_config.py:79-118`) |
 | **Dynamic dispatch** | runtime-resolved `ensemble:` | invoke a capability chosen at runtime | adapter-mediated (`ensemble_runner.py:66` resolves a static string) |
 
 **Branch is guard.** A branch is a set of mutually-exclusive guards: an upstream
@@ -70,13 +71,16 @@ produced (or it has no deps). Skipped nodes are recorded
 `${dep.field}` truthiness, and `${dep.field} == <literal>` (`true`/`false`/
 number/quoted string).
 
-**Loop is a combinator, not a cyclic graph.** A `loop:` node wraps a body
-sub-DAG and re-runs it under a termination policy. The top-level graph stays
-acyclic and analyzable; iteration is scoped inside the node, so per-iteration
-results stay unambiguous. Termination =
-`max_iterations` (mandatory hard bound) ∧ (`until` predicate ∨ stall-detect ∨
-budget). The acyclicity *prohibition* is relaxed; the termination *guarantee*
-is kept, and made stronger (every loop has a finite ceiling).
+**Loop is a combinator, not a cyclic graph.** A `loop:` node names a body
+ensemble and re-runs it each iteration. The top-level graph stays acyclic and
+analyzable; iteration is scoped inside the node, so per-iteration results stay
+unambiguous. Termination today = `max_iterations` (mandatory hard bound) ∨
+`until` (a predicate over the body's terminal output). `carry` (a body-output
+field) feeds the next iteration's input; the outcome reports `terminated:
+until|exhausted`. The acyclicity *prohibition* is relaxed inside the node; the
+termination *guarantee* is kept and made stronger (every loop has a finite
+ceiling). Stall-detect and a wall-clock budget are natural future bounds, not
+yet built.
 
 ---
 
