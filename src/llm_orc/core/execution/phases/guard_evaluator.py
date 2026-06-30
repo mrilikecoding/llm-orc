@@ -11,6 +11,7 @@ import json
 import re
 from typing import Any
 
+from llm_orc.core.execution.phases import predicate
 from llm_orc.core.execution.utils import dep_name
 from llm_orc.schemas.agent_config import AgentConfig
 
@@ -31,36 +32,15 @@ class GuardEvaluator:
         when = agent_config.when
         if when is None:
             return True
-        return self._evaluate(when.strip(), results_dict)
+        return predicate.evaluate(
+            when, lambda token: self._resolve(token, results_dict)
+        )
 
     @staticmethod
     def _is_skipped(result: Any) -> bool:
         if isinstance(result, dict):
             return result.get("status") == SKIPPED
         return getattr(result, "status", None) == SKIPPED
-
-    def _evaluate(self, expr: str, results_dict: dict[str, Any]) -> bool:
-        if "==" in expr:
-            left, right = expr.split("==", 1)
-            resolved = self._resolve(left.strip(), results_dict)
-            return bool(resolved == self._literal(right.strip()))
-        return bool(self._resolve(expr, results_dict))
-
-    @staticmethod
-    def _literal(token: str) -> Any:
-        if token == "true":
-            return True
-        if token == "false":
-            return False
-        if len(token) >= 2 and token[0] == token[-1] and token[0] in {'"', "'"}:
-            return token[1:-1]
-        try:
-            return int(token)
-        except ValueError:
-            try:
-                return float(token)
-            except ValueError:
-                return token
 
     def _resolve(self, token: str, results_dict: dict[str, Any]) -> Any:
         match = _REF.match(token)
