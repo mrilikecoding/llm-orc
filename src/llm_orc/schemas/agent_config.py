@@ -94,7 +94,24 @@ class EnsembleAgentConfig(BaseAgentConfig):
     ensemble: str  # Static ensemble reference, resolved at load time
 
 
-AgentConfig = LlmAgentConfig | ScriptAgentConfig | EnsembleAgentConfig
+class LoopSpec(BaseModel):
+    """The body + termination policy of a loop node (control-flow primitive)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    body: str  # ensemble run once per iteration
+    until: str  # predicate over the body output; stop when true
+    max_iterations: int = Field(gt=0)  # mandatory hard bound; no unbounded loops
+    carry: str | None = None  # body-output field fed to the next iteration
+
+
+class LoopAgentConfig(BaseAgentConfig):
+    """Config for a loop agent — re-runs a body ensemble under a bound."""
+
+    loop: LoopSpec
+
+
+AgentConfig = LlmAgentConfig | ScriptAgentConfig | EnsembleAgentConfig | LoopAgentConfig
 
 
 def parse_agent_config(data: dict[str, Any]) -> AgentConfig:
@@ -107,6 +124,8 @@ def parse_agent_config(data: dict[str, Any]) -> AgentConfig:
     """
     if "script" in data:
         return ScriptAgentConfig(**data)
+    if "loop" in data:
+        return LoopAgentConfig(**data)
     if "ensemble" in data:
         return EnsembleAgentConfig(**data)
     if "model_profile" in data or "model" in data:
