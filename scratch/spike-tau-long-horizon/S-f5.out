@@ -1,0 +1,5 @@
+arm=S files=5 timeout=1800s
+serve READY on port 8770
+TAU S files=5: converged=False produced=0/5 wall=338s timed_out=False turns=1 median_turn_wall=0s slope=0.0 form=True conv=False coh=True term=False
+  per_turn_walls=[]
+  dispatch_durations=[246]

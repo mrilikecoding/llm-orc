@@ -1,0 +1,16 @@
+name: spike-omega-loop-body-exhaust
+description: |
+  Ω-loop body (non-converging arm): identical to the converging body, but the
+  architect's repair fixture is ALSO the incoherent contract — it never produces
+  a coherent one no matter how much feedback is carried in. Models an architect
+  that cannot self-repair, so the loop must terminate by tripping its bound.
+agents:
+  - name: architect
+    script: scripts/spike-omega-loop/fixture_architect.py
+    parameters:
+      fresh_fixture: scratch/spike-omega-e/fixtures/calc_incoherent_contract.json
+      repair_fixture: scratch/spike-omega-e/fixtures/calc_incoherent_contract.json
+
+  - name: gate
+    script: scripts/spike-omega-loop/coherence_gate_node.py
+    depends_on: [architect]

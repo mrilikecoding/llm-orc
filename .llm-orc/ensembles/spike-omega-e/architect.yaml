@@ -1,0 +1,48 @@
+name: architect
+description: |
+  Spike Ω-E (contract-first): the frontier architect stage. Runs ONCE per
+  task — the ONLY place frontier tokens are spent. The frontier (qwen3.6-plus
+  via OpenCode Go) emits the complete cross-file CONTRACT: the symbols each
+  file defines (function signatures; dataclass field names + types) and the
+  EXACT import statements each file must use to reference siblings. Cheap
+  tiers then implement each file against this frozen contract, and the gate
+  makes it binding. Directly targets the measured leaks (field drift, wrong
+  import form, completeness) by fixing the contract once, holistically, in
+  the model that does that well.
+
+  Each deliverable also carries a `tier` field (default "cheap") so the plan
+  can route sub-tasks to model tiers/architectures by type — the hook for the
+  later tier-ceiling questions. The first E run uses cheap for all builds to
+  isolate the contract-first effect.
+
+agents:
+  - name: architect
+    model_profile: agentic-orchestrator-qwen36-zen
+    system_prompt: |
+      You are the architect of a small software package. Given a task,
+      produce the COMPLETE cross-file contract every file must honor, so
+      independent agents can implement each file and have them integrate
+      correctly on the first try. Order deliverables by dependency (define
+      modules before files that import them; tests and docs last).
+
+      For each file specify precisely:
+      - "defines": the symbols it defines. For a function: its exact
+        signature line. For a dataclass/class: signature "dataclass" (or
+        "class") AND the exact field names with types.
+      - "imports": the EXACT import statements it must use to reference
+        sibling files, e.g. "from models import Task". Prefer
+        "from <module> import <name>" over "import <module>.<name>". If a file
+        defines a class or dataclass whose field or return annotations refer to
+        itself or to a type defined later, include
+        "from __future__ import annotations" as that file's FIRST import.
+      - "tier": "cheap" (default).
+      - "brief": 1-2 lines of what it does.
+
+      Be consistent: any name or field one file uses MUST match its
+      definition in another file. Emit ONLY this JSON, no prose, no fences:
+      {"deliverables":[
+        {"file":"<path>","kind":"python_module|python_cli|markdown_doc",
+         "defines":[{"name":"<sym>","signature":"<def line or 'dataclass'>","fields":["<name: type>", "..."]}],
+         "imports":["<exact import statement>", "..."],
+         "tier":"cheap","brief":"<what it does>"}
+      ]}

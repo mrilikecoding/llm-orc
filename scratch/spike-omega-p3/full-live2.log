@@ -1,0 +1,18 @@
+[Ω-P3 LIVE] running spike-omega-p3-full-live ...
+
+==== spike-omega-p3-full-live  (370s) ====
+stage status: {'resolve-contract': 'success', 'plan': 'success', 'build': 'success', 'score': 'success'}
+resolve-contract (frontier loop): terminated=until iterations=1 ok=True
+build instances: {'build[0]': 'success', 'build[1]': 'success', 'build[2]': 'success', 'build[3]': 'success', 'build[4]': 'success', 'build[5]': 'success'}
+
+files built: 6   test files: ['test_calc.py']
+   tokenizer.py     tier=code   bytes=921
+   parser.py        tier=code   bytes=1235
+   evaluator.py     tier=code   bytes=590
+   cli.py           tier=code   bytes=559
+   test_calc.py     tier=code   bytes=845
+   README.md        tier=prose  bytes=807
+
+EXECUTION GATE: rc=0 | 1 passed in 0.00s
+
+saved -> scratch/spike-omega-p3/spike-omega-p3-full-live_result.json + spike-omega-p3-full-live_debug.json

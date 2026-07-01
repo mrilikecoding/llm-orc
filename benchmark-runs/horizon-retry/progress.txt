@@ -1,0 +1,15 @@
+[2026-06-22 08:20:33] run l15 [1/3] cap=2400s files=15
+[2026-06-22 08:39:02]  -> l15 wall=1110s timed_out=False passed=False form=True conv=True coh=False term=True produced=15/15
+[2026-06-22 08:39:39] run l15 [2/3] cap=2400s files=15
+[2026-06-22 09:01:18]  -> l15 wall=1299s timed_out=False passed=False form=True conv=True coh=False term=True produced=15/15
+[2026-06-22 09:01:41] run l15 [3/3] cap=2400s files=15
+[2026-06-22 09:18:52]  -> l15 wall=1030s timed_out=False passed=False form=True conv=True coh=False term=True produced=15/15
+[2026-06-22 09:18:52] === l15: 0/3 passed (cap 2400s) ===
+[2026-06-22 09:19:14] run l20 [1/3] cap=3600s files=20
+[2026-06-22 09:56:11]  -> l20 wall=2218s timed_out=False passed=False form=True conv=True coh=False term=True produced=20/20
+[2026-06-22 09:56:34] run l20 [2/3] cap=3600s files=20
+[2026-06-22 10:48:48]  -> l20 wall=3133s timed_out=False passed=False form=True conv=True coh=False term=True produced=20/20
+[2026-06-22 10:49:18] run l20 [3/3] cap=3600s files=20
+[2026-06-22 11:32:19]  -> l20 wall=2581s timed_out=False passed=False form=True conv=True coh=False term=True produced=20/20
+[2026-06-22 11:32:19] === l20: 0/3 passed (cap 3600s) ===
+[2026-06-22 11:32:19] DONE: {'l15': 0, 'l20': 0}

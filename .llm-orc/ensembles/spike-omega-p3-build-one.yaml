@@ -1,0 +1,28 @@
+name: spike-omega-p3-build-one
+description: |
+  Ω-P3 (3b): the per-file build sub-ensemble, fanned over once per deliverable.
+  classify recovers the {deliverable, contract} chunk and emits routing booleans;
+  build-code / build-prose are mutually-exclusive GUARDED branches (the closed
+  capability set, so a branch — not dynamic dispatch — suffices); marshal joins
+  on whichever branch fired and emits the per-file deliverable.
+agents:
+  - name: classify
+    script: scripts/spike-omega-p3/classify.py
+
+  - name: build-code
+    depends_on: [classify]
+    when: ${classify.is_code}
+    loop:
+      body: spike-omega-p3-code-attempt
+      until: ${ok}
+      carry: ${next_input}
+      max_iterations: 2
+
+  - name: build-prose
+    script: scripts/spike-omega-p3/build_prose.py
+    depends_on: [classify]
+    when: ${classify.is_doc}
+
+  - name: marshal
+    script: scripts/spike-omega-p3/marshal_one.py
+    depends_on: [build-code, build-prose]

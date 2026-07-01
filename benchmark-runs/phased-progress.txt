@@ -1,0 +1,32 @@
+[2026-06-16 13:26:49] === PHASED RUN START === cells=16 resume_done=0
+[2026-06-16 13:26:49] reboot ollama: quit app + kill llama-server
+[2026-06-16 13:27:25] reboot ollama: warm done
+[2026-06-16 13:27:27] run coarse/h1c1 [1/1] H1C1 files=1 timeout=500s
+[2026-06-16 13:29:58]   -> wall=151s timed_out=False passed=True form=True conv=True coh=True term=True produced=1/1
+[2026-06-16 13:29:58] GROUP DONE coarse/h1c1: 1/1 passed (cell passed=True, degraded=False)
+[2026-06-16 13:29:58] run coarse/h1c2 [1/1] H1C2 files=1 timeout=500s
+[2026-06-16 13:32:43]   -> wall=164s timed_out=False passed=True form=True conv=True coh=True term=True produced=1/1
+[2026-06-16 13:32:43] GROUP DONE coarse/h1c2: 1/1 passed (cell passed=True, degraded=False)
+[2026-06-16 13:32:43] run coarse/h1c3 [1/1] H1C3 files=1 timeout=500s
+[2026-06-16 13:36:36]   -> wall=233s timed_out=False passed=True form=True conv=True coh=True term=True produced=1/1
+[2026-06-16 13:36:36] GROUP DONE coarse/h1c3: 1/1 passed (cell passed=True, degraded=False)
+[2026-06-16 13:36:36] run coarse/h1c4 [1/1] H1C4 files=1 timeout=500s
+[2026-06-16 13:44:56]   -> wall=500s timed_out=True passed=False form=True conv=False coh=True term=False produced=0/1
+[2026-06-16 13:44:56] GROUP DONE coarse/h1c4: 0/1 passed (cell passed=False, degraded=True)
+[2026-06-16 13:44:56] run coarse/h2c1 [1/1] H2C1 files=2 timeout=820s
+[2026-06-16 13:58:36]   -> wall=820s timed_out=True passed=False form=True conv=False coh=True term=False produced=1/2
+[2026-06-16 13:58:36] GROUP DONE coarse/h2c1: 0/1 passed (cell passed=False, degraded=True)
+[2026-06-16 13:58:36] run coarse/h2c2 [1/1] H2C2 files=2 timeout=820s
+[2026-06-16 14:12:16]   -> wall=820s timed_out=True passed=False form=True conv=False coh=True term=False produced=0/2
+[2026-06-16 14:12:16] GROUP DONE coarse/h2c2: 0/1 passed (cell passed=False, degraded=True)
+[2026-06-16 14:12:16] reboot ollama: quit app + kill llama-server
+[2026-06-16 14:12:41] reboot ollama: warm done
+[2026-06-16 14:12:41] run coarse/h2c3 [1/1] H2C3 files=3 timeout=1140s
+[2026-06-16 14:31:41]   -> wall=1140s timed_out=True passed=False form=True conv=False coh=True term=False produced=1/3
+[2026-06-16 14:31:41] GROUP DONE coarse/h2c3: 0/1 passed (cell passed=False, degraded=True)
+[2026-06-16 14:31:41] run coarse/h2c4 [1/1] H2C4 files=3 timeout=1140s
+[2026-06-16 14:50:41]   -> wall=1140s timed_out=True passed=False form=True conv=False coh=True term=False produced=0/3
+[2026-06-16 14:50:41] GROUP DONE coarse/h2c4: 0/1 passed (cell passed=False, degraded=True)
+[2026-06-16 14:50:41] reboot ollama: quit app + kill llama-server
+[2026-06-16 14:51:02] reboot ollama: warm done
+[2026-06-16 14:51:02] run coarse/h3c1 [1/1] H3C1 files=5 timeout=1780s

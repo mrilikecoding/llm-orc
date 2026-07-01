@@ -1,0 +1,17 @@
+serve READY on port 8772
+
+=== RUN 1/1: probe-cli (H1C3) ===
+produced=['cli.py'] wall=341s rc=0 timed_out=False
+form_valid=True converged=True content_coherent=True terminated_clean=True
+escalated=False delegation_rate=1.0 churn=0 PASSED=True
+notes=[]
+--- gate / recovery / escalation log lines ---
+6-18 14:26:01,469 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=982f437988266ee36a01fcfe6bd8bec128c04d9df6cc83f320b522d2209f3c9d-dispatch-0002
+.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=982f437988266ee36a01fcfe6bd8bec128c04d9df6cc83f320b522d2209f3c9d-dispatch-0002
+2026-06-18 14:27:11,734 [INFO] llm_orc.agentic.loop_driver: form recovery: re-dispatch 1/2 destination=cli.py (deliverable invalid for its form)
+6-18 14:27:11,763 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=982f437988266ee36a01fcfe6bd8bec128c04d9df6cc83f320b522d2209f3c9d-dispatch-0003
+.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=982f437988266ee36a01fcfe6bd8bec128c04d9df6cc83f320b522d2209f3c9d-dispatch-0003
+2026-06-18 14:29:19,563 [INFO] llm_orc.agentic.loop_driver: form recovery: destination=cli.py recovered=True redispatches=1
+erdict=? action=write shape=generation delegated=code-generator carry_held=false replanned=false anchor=false dispatch_id=982f437988266ee36a01fcfe6bd8bec128c04d9df6cc83f320b522d2209f3c9d-dispatch-0001
+2026-06-18 14:29:20,153 [INFO] llm_orc.agentic.loop_driver: completeness: requested=1 produced=1 remaining=0 verdict=COMPLETE
+judgment_verdict=COMPLETE action=finish shape=carry delegated=- carry_held=false replanned=false anchor=false dispatch_id=982f437988266ee36a01fcfe6bd8bec128c04d9df6cc83f320b522d2209f3c9d-dispatch-0004

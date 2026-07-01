@@ -1,0 +1,42 @@
+{
+  "elapsed_s": 297.9,
+  "score": {
+    "count": 6,
+    "built": [
+      {
+        "file": "tokenizer.py",
+        "tier": "code",
+        "bytes": 153
+      },
+      {
+        "file": "parser.py",
+        "tier": "code",
+        "bytes": 431
+      },
+      {
+        "file": "evaluator.py",
+        "tier": "code",
+        "bytes": 647
+      },
+      {
+        "file": "cli.py",
+        "tier": "code",
+        "bytes": 416
+      },
+      {
+        "file": "test.py",
+        "tier": "code",
+        "bytes": 258
+      },
+      {
+        "file": "README.md",
+        "tier": "prose",
+        "bytes": 1376
+      }
+    ],
+    "test_files": [
+      "test.py"
+    ],
+    "execution": "rc=1 | 1 failed in 0.02s"
+  }
+}

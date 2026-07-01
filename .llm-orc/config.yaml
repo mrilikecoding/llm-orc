@@ -6,6 +6,10 @@ project:
 performance:
   streaming_enabled: true
   timeout_seconds: 120
+  execution:
+    default_timeout: 300
+  script_cache:
+    enabled: false
   concurrency:
     adaptive_enabled: true
     base_limit: 1

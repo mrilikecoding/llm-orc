@@ -1,0 +1,33 @@
+{
+  "arm": "frontier",
+  "model": "qwen3.6-plus",
+  "turns": 6,
+  "elapsed_s": 51.3,
+  "tokens": 9777,
+  "produced": [
+    "models.py",
+    "storage.py",
+    "operations.py",
+    "cli.py",
+    "test_operations.py",
+    "README.md"
+  ],
+  "score": {
+    "per_file": {
+      "models.py": "correct",
+      "storage.py": "correct",
+      "operations.py": "correct",
+      "cli.py": "correct",
+      "test_operations.py": "correct",
+      "README.md": "FAIL: missing mention ['models.py', 'storage.py', 'operations.py', 'add_task', 'complete_task', 'list_tasks']"
+    },
+    "structural_correct": "5/6",
+    "py_compiles": {
+      "models.py": true,
+      "storage.py": true,
+      "operations.py": true,
+      "cli.py": true,
+      "test_operations.py": true
+    }
+  }
+}

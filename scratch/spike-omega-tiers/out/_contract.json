@@ -1,0 +1,124 @@
+[
+  {
+    "file": "models.py",
+    "kind": "python_module",
+    "defines": [
+      {
+        "name": "Task",
+        "signature": "dataclass",
+        "fields": [
+          "id: int",
+          "title: str",
+          "completed: bool"
+        ]
+      }
+    ],
+    "imports": [],
+    "tier": "micro",
+    "brief": "Defines the core immutable Task data structure with id, title, and completion status."
+  },
+  {
+    "file": "storage.py",
+    "kind": "python_module",
+    "defines": [
+      {
+        "name": "load_tasks",
+        "signature": "def load_tasks(filepath: str) -> list[Task]:",
+        "fields": []
+      },
+      {
+        "name": "save_tasks",
+        "signature": "def save_tasks(filepath: str, tasks: list[Task]) -> None:",
+        "fields": []
+      }
+    ],
+    "imports": [
+      "from models import Task",
+      "import json",
+      "from pathlib import Path"
+    ],
+    "tier": "small",
+    "brief": "Handles JSON serialization and deserialization of Task lists to and from a local file."
+  },
+  {
+    "file": "operations.py",
+    "kind": "python_module",
+    "defines": [
+      {
+        "name": "add_task",
+        "signature": "def add_task(filepath: str, title: str) -> Task:",
+        "fields": []
+      },
+      {
+        "name": "complete_task",
+        "signature": "def complete_task(filepath: str, task_id: int) -> Task:",
+        "fields": []
+      },
+      {
+        "name": "list_tasks",
+        "signature": "def list_tasks(filepath: str) -> list[Task]:",
+        "fields": []
+      }
+    ],
+    "imports": [
+      "from models import Task",
+      "from storage import load_tasks, save_tasks"
+    ],
+    "tier": "cheap",
+    "brief": "Implements business logic for adding, completing, and listing todos while managing persistence via storage."
+  },
+  {
+    "file": "cli.py",
+    "kind": "python_cli",
+    "defines": [
+      {
+        "name": "main",
+        "signature": "def main() -> None:",
+        "fields": []
+      }
+    ],
+    "imports": [
+      "import argparse",
+      "from operations import add_task, complete_task, list_tasks"
+    ],
+    "tier": "cheap",
+    "brief": "Provides an argparse CLI exposing subcommands for add, complete, and list operations with a configurable data path."
+  },
+  {
+    "file": "test_operations.py",
+    "kind": "python_module",
+    "defines": [
+      {
+        "name": "test_add_task",
+        "signature": "def test_add_task():",
+        "fields": []
+      },
+      {
+        "name": "test_complete_task",
+        "signature": "def test_complete_task():",
+        "fields": []
+      },
+      {
+        "name": "test_list_tasks",
+        "signature": "def test_list_tasks():",
+        "fields": []
+      }
+    ],
+    "imports": [
+      "import pytest",
+      "import tempfile",
+      "from models import Task",
+      "from operations import add_task, complete_task, list_tasks"
+    ],
+    "tier": "cheap",
+    "brief": "Unit tests validating state transitions and I/O using a temporary JSON file backend."
+  },
+  {
+    "file": "README.md",
+    "kind": "markdown_doc",
+    "defines": [],
+    "imports": [],
+    "tier": "micro",
+    "brief": "Documents package installation, CLI usage examples, architecture, and contribution guidelines."
+  }
+]

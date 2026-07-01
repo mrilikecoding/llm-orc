@@ -1,0 +1,5 @@
+arm=B-qwen files=5 timeout=1800s
+serve READY on port 8770
+TAU B-qwen files=5: converged=False produced=2/5 wall=1492s timed_out=False turns=4 median_turn_wall=131s slope=634.3 form=True conv=False coh=True term=False
+  per_turn_walls=[7, 131, 1276]
+  dispatch_durations=[50, 115, 276, 348, 283, 356]

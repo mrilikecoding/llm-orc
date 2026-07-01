@@ -1,0 +1,5 @@
+arm=l20clean files=20 timeout=6000s
+serve READY on port 8770
+TAU l20clean files=20: converged=True produced=21/20 wall=2592s timed_out=False turns=22 median_turn_wall=112s slope=-2.6 form=True conv=True coh=True term=True
+  per_turn_walls=[52, 137, 203, 164, 185, 140, 112, 91, 218, 66, 149, 112, 72, 122, 120, 84, 124, 82, 104, 51, 1]
+  dispatch_durations=[183, 122, 190, 121, 144, 100, 75, 56, 207, 61, 121, 86, 50, 102, 103, 79, 111, 75, 96, 44]

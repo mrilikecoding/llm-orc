@@ -1,0 +1,116 @@
+[
+  {
+    "file": "models.py",
+    "kind": "python_module",
+    "defines": [
+      {
+        "name": "Task",
+        "signature": "dataclass",
+        "fields": [
+          "id: int",
+          "title: str",
+          "completed: bool"
+        ]
+      }
+    ],
+    "imports": [
+      "from dataclasses import dataclass"
+    ],
+    "tier": "cheap",
+    "brief": "Defines the core Task dataclass."
+  },
+  {
+    "file": "storage.py",
+    "kind": "python_module",
+    "defines": [
+      {
+        "name": "load_tasks",
+        "signature": "def load_tasks(path: str) -> list[Task]:",
+        "fields": []
+      },
+      {
+        "name": "save_tasks",
+        "signature": "def save_tasks(path: str, tasks: list[Task]) -> None:",
+        "fields": []
+      }
+    ],
+    "imports": [
+      "import json",
+      "from pathlib import Path",
+      "from models import Task"
+    ],
+    "tier": "cheap",
+    "brief": "Handles reading/writing lists of Task objects to a JSON file."
+  },
+  {
+    "file": "operations.py",
+    "kind": "python_module",
+    "defines": [
+      {
+        "name": "add_task",
+        "signature": "def add_task(title: str, db_path: str) -> Task:",
+        "fields": []
+      },
+      {
+        "name": "complete_task",
+        "signature": "def complete_task(task_id: int, db_path: str) -> None:",
+        "fields": []
+      },
+      {
+        "name": "list_tasks",
+        "signature": "def list_tasks(db_path: str) -> list[Task]:",
+        "fields": []
+      }
+    ],
+    "imports": [
+      "from models import Task",
+      "from storage import load_tasks, save_tasks"
+    ],
+    "tier": "cheap",
+    "brief": "Exposes add/complete/list business logic over JSON storage."
+  },
+  {
+    "file": "cli.py",
+    "kind": "python_cli",
+    "defines": [
+      {
+        "name": "main",
+        "signature": "def main() -> None:",
+        "fields": []
+      }
+    ],
+    "imports": [
+      "import argparse",
+      "import sys",
+      "from operations import add_task, complete_task, list_tasks"
+    ],
+    "tier": "cheap",
+    "brief": "Argparse-based CLI routing commands to operations module."
+  },
+  {
+    "file": "test_operations.py",
+    "kind": "python_module",
+    "defines": [
+      {
+        "name": "test_lifecycle",
+        "signature": "def test_lifecycle() -> None:",
+        "fields": []
+      }
+    ],
+    "imports": [
+      "import tempfile",
+      "import os",
+      "from operations import add_task, complete_task, list_tasks"
+    ],
+    "tier": "cheap",
+    "brief": "Verifies add/list/complete roundtrip using a temporary JSON file."
+  },
+  {
+    "file": "README.md",
+    "kind": "markdown_doc",
+    "defines": [],
+    "imports": [],
+    "tier": "cheap",
+    "brief": "Usage guide and architecture overview for the todo-list package."
+  }
+]

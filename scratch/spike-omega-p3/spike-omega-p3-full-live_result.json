@@ -1,0 +1,4 @@
+{
+  "elapsed_s": 370.1,
+  "score_raw": "{\"count\": 6, \"built\": [{\"file\": \"tokenizer.py\", \"tier\": \"code\", \"bytes\": 921}, {\"file\": \"parser.py\", \"tier\": \"code\", \"bytes\": 1235}, {\"file\": \"evaluator.py\", \"tier\": \"code\", \"bytes\": 590}, {\"file\": \"cli.py\", \"tier\": \"code\", \"bytes\": 559}, {\"file\": \"test_calc.py\", \"tier\": \"code\", \"bytes\": 845}, {\"file\": \"README.md\", \"tier\": \"prose\", \"bytes\": 807}], \"test_files\": [\"test_calc.py\"], \"execution\": \"rc=0 | 1 passed in 0.00s\"}"
+}

@@ -1,0 +1,3 @@
+serve READY on port 8770
+Pre-flight degradation smoke...
+ABORT: degraded environment (smoke took 300s). Restart ollama fresh.

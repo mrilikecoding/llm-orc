@@ -1,0 +1,71 @@
+{
+  "label": "A_fallback",
+  "max_siblings": null,
+  "anchor_chars": 6088,
+  "n": 10,
+  "model": "qwen3:8b",
+  "parse_valid": 10,
+  "references_target": 10,
+  "results": [
+    {
+      "parse_valid": true,
+      "references_target": true,
+      "note": "",
+      "raw_len": 37
+    },
+    {
+      "parse_valid": true,
+      "references_target": true,
+      "note": "",
+      "raw_len": 37
+    },
+    {
+      "parse_valid": true,
+      "references_target": true,
+      "note": "",
+      "raw_len": 37
+    },
+    {
+      "parse_valid": true,
+      "references_target": true,
+      "note": "",
+      "raw_len": 37
+    },
+    {
+      "parse_valid": true,
+      "references_target": true,
+      "note": "",
+      "raw_len": 37
+    },
+    {
+      "parse_valid": true,
+      "references_target": true,
+      "note": "",
+      "raw_len": 37
+    },
+    {
+      "parse_valid": true,
+      "references_target": true,
+      "note": "",
+      "raw_len": 37
+    },
+    {
+      "parse_valid": true,
+      "references_target": true,
+      "note": "",
+      "raw_len": 37
+    },
+    {
+      "parse_valid": true,
+      "references_target": true,
+      "note": "",
+      "raw_len": 37
+    },
+    {
+      "parse_valid": true,
+      "references_target": true,
+      "note": "",
+      "raw_len": 37
+    }
+  ]
+}

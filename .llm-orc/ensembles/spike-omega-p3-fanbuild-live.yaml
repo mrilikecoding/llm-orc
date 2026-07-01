@@ -1,0 +1,21 @@
+name: spike-omega-p3-fanbuild-live
+description: |
+  Ω-P3 local-only de-risk: the REAL build + execution-gate path over the pinned
+  coherent calc contract, WITHOUT the paid architect. plan-fixed -> fan-out over
+  the live build sub-ensemble (real cheap-local generators) -> real execution
+  gate. Confirms classify_live / generators / marshal_live / score_live plumb
+  correctly and the cheap tier can build a running package, before spending
+  architect tokens on the full live run.
+agents:
+  - name: plan
+    script: scripts/spike-omega-p3/plan_fixed_live.py
+
+  - name: build
+    ensemble: spike-omega-p3-build-one-live
+    depends_on: [plan]
+    input_key: tasks
+    fan_out: true
+
+  - name: score
+    script: scripts/spike-omega-p3/score_live.py
+    depends_on: [build]

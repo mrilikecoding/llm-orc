@@ -1,0 +1,16 @@
+name: spike-omega-loop-exhaust
+description: |
+  Ω-loop (non-converging): same loop spec as the converging arm, over the body
+  whose architect never produces a coherent contract. The mandatory bound is the
+  only termination guarantee here.
+
+  Expected: incoherent on every iteration -> `until` never holds -> terminate
+  "exhausted" at iterations == max_iterations (3), reporting the last failure
+  honestly rather than looping forever.
+agents:
+  - name: repair-loop
+    loop:
+      body: spike-omega-loop-body-exhaust
+      until: ${ok}
+      carry: ${next_input}
+      max_iterations: 3

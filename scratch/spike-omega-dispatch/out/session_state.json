@@ -1,0 +1,13 @@
+{
+  "task": "Create a small temperature library:\n  - converters.py: def celsius_to_fahrenheit(c), fahrenheit_to_celsius(f), celsius_to_kelvin(c). Use float math. No imports.\n  - README.md: brief Markdown documentation for converters.py, naming the real functions.\n",
+  "requested": [
+    "converters.py",
+    "README.md"
+  ],
+  "produced": [
+    "converters.py",
+    "README.md"
+  ],
+  "plan_queue": [],
+  "remaining_anchor": "All deliverables produced."
+}
