@@ -80,7 +80,29 @@ field) feeds the next iteration's input; the outcome reports `terminated:
 until|exhausted`. The acyclicity *prohibition* is relaxed inside the node; the
 termination *guarantee* is kept and made stronger (every loop has a finite
 ceiling). Stall-detect and a wall-clock budget are natural future bounds, not
-yet built.
+yet built. Validated as a real flow (not just unit tests) by spike Ω-loop
+(`scratch/spike-omega-loop/`): the Ω-E architect-coherence repair cycle runs as
+a declarative loop through the real executor — converge stops via `until`,
+non-converge stops "exhausted" at the bound, and `carry` threads the gate's
+feedback into the next iteration's input. Caveat it surfaced: `carry` replaces
+the *whole* next input, so a body that needs both the task and the carried
+field must compose them into the one carried field.
+
+**Composition holds to the full serving flow.** Spike Ω-P3
+(`scratch/spike-omega-p3/`) assembled `resolve-contract (loop) → plan → build
+(ensemble + fan_out) → score` as ONE declarative ensemble — no Python driver.
+`fan_out: true` composes with an `ensemble:` node (run the sub-ensemble per array
+item, routing-demo pattern), and a guard branch AND a `loop:` both nest inside a
+fanned sub-ensemble (within the depth-5 limit). So a per-item SUB-GRAPH is
+expressible: wrap it as a sub-ensemble and fan over it. Dynamic dispatch is NOT
+needed for a CLOSED capability set (code vs prose → a guarded branch); it stays
+the open-library lever. The remaining frictions are ergonomic, not missing
+primitives: (1) fan-out delivers a chunk as the text `"...Chunk content:\n
+<json>"`, and a node with deps re-wraps inputs in enhanced-input prose, so
+deterministic stages must `raw_decode` their JSON out rather than naive-parse;
+(2) per-instance context must be folded into the chunk (fan-out hands an instance
+only its element); (3) a bare-list `script:` output trips the request processor
+(emit a dict + select with `input_key`).
 
 ---
 
