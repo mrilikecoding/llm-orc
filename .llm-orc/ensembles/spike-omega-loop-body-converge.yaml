@@ -1,0 +1,20 @@
+name: spike-omega-loop-body-converge
+description: |
+  Ω-loop body (converging arm): deterministic fixture architect -> coherence
+  gate. A fresh request emits an INCOHERENT calc contract; once the gate's
+  rejection feedback is carried into the architect's input, it emits a COHERENT
+  one. The gate is the terminal node, so its {ok, reasons, contract, next_input}
+  becomes the body's deliverable that the loop's `until`/`carry` read.
+
+  Stands in for spike-omega-e/run_e.py's resolve_contract body so the bounded
+  loop can be validated without spending frontier tokens.
+agents:
+  - name: architect
+    script: scripts/spike-omega-loop/fixture_architect.py
+    parameters:
+      fresh_fixture: scratch/spike-omega-e/fixtures/calc_incoherent_contract.json
+      repair_fixture: scratch/spike-omega-e/fixtures/calc_coherent_contract.json
+
+  - name: gate
+    script: scripts/spike-omega-loop/coherence_gate_node.py
+    depends_on: [architect]

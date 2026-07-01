@@ -1,0 +1,4 @@
+import step11
+
+def step12(x):
+    return step11.step11(x) * 2

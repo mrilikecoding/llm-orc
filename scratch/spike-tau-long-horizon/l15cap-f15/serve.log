@@ -1,0 +1,520 @@
+Starting llm-orc agentic serving layer at http://127.0.0.1:8770
+Press Ctrl+C to stop
+INFO:     Started server process [26840]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8770 (Press CTRL+C to quit)
+INFO:     127.0.0.1:55520 - "GET /v1/models HTTP/1.1" 200 OK
+2026-06-17 12:23:13,529 [WARNING] llm_orc.agentic.operator_terminal: invalid ensemble yaml: path=/Users/nathangreen/Development/eddi-lab/llm-orc/llm-orchestra-library/ensembles/examples/neon-shadows-detective/ensemble.yaml error=1 validation error for LlmAgentConfig
+conversation
+  Extra inputs are not permitted [type=extra_forbidden, input_value={'max_turns': 1, 'triggers_conversation': True}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+INFO:     127.0.0.1:55531 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:23:14,112 [ERROR] llm_orc.web.server: Unhandled error: Ensemble does not exist: agentic-routing-planner
+  + Exception Group Traceback (most recent call last):
+  |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 81, in collapse_excgroups
+  |     yield
+  |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 270, in __call__
+  |     async with anyio.create_task_group() as task_group:
+  |                ~~~~~~~~~~~~~~~~~~~~~~~^^
+  |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  |         "unhandled errors in a TaskGroup", self._exceptions
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    |     await self.app(scope, receive, _send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    |     await route.handle(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    |     await self.app(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 119, in app
+    |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 106, in app
+    |     await response(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 269, in __call__
+    |     with collapse_excgroups():
+    |          ~~~~~~~~~~~~~~~~~~^^
+    |   File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    |     self.gen.throw(value)
+    |     ~~~~~~~~~~~~~~^^^^^^^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    |     raise exc
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 273, in wrap
+    |     await func()
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 253, in stream_response
+    |     async for chunk in self.body_iterator:
+    |     ...<2 lines>...
+    |         await send({"type": "http.response.body", "body": chunk, "more_body": True})
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 856, in _stream_completion_with_heartbeat
+    |     async for chunk in _stream_completion(context, caller, model=model):
+    |         yield chunk
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 825, in _stream_completion
+    |     async for chunk in caller.run(context):
+    |     ...<2 lines>...
+    |             yield framed
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/dispatch_pipeline.py", line 254, in run
+    |     plan = await self._planner.plan(request=request)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/ensemble_backed_roles.py", line 79, in plan
+    |     result = await self._invoker.invoke(
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |         {"ensemble_name": self._ensemble_name, "input": request}
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     )
+    |     ^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/orchestra_service.py", line 251, in invoke
+    |     return await self._execution_handler.invoke(arguments)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/handlers/execution_handler.py", line 85, in invoke
+    |     raise ValueError(f"Ensemble does not exist: {ensemble_name}")
+    | ValueError: Ensemble does not exist: agentic-routing-planner
+    +------------------------------------
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 119, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 106, in app
+    await response(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 269, in __call__
+    with collapse_excgroups():
+         ~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 273, in wrap
+    await func()
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 253, in stream_response
+    async for chunk in self.body_iterator:
+    ...<2 lines>...
+        await send({"type": "http.response.body", "body": chunk, "more_body": True})
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 856, in _stream_completion_with_heartbeat
+    async for chunk in _stream_completion(context, caller, model=model):
+        yield chunk
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 825, in _stream_completion
+    async for chunk in caller.run(context):
+    ...<2 lines>...
+            yield framed
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/dispatch_pipeline.py", line 254, in run
+    plan = await self._planner.plan(request=request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/ensemble_backed_roles.py", line 79, in plan
+    result = await self._invoker.invoke(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        {"ensemble_name": self._ensemble_name, "input": request}
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/orchestra_service.py", line 251, in invoke
+    return await self._execution_handler.invoke(arguments)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/handlers/execution_handler.py", line 85, in invoke
+    raise ValueError(f"Ensemble does not exist: {ensemble_name}")
+ValueError: Ensemble does not exist: agentic-routing-planner
+ERROR:    Exception in ASGI application
+  + Exception Group Traceback (most recent call last):
+  |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 81, in collapse_excgroups
+  |     yield
+  |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 270, in __call__
+  |     async with anyio.create_task_group() as task_group:
+  |                ~~~~~~~~~~~~~~~~~~~~~~~^^
+  |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  |         "unhandled errors in a TaskGroup", self._exceptions
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/uvicorn/protocols/http/h11_impl.py", line 410, in run_asgi
+    |     result = await app(  # type: ignore[func-returns-value]
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |         self.scope, self.receive, self.send
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     )
+    |     ^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    |     return await self.app(scope, receive, send)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/applications.py", line 1134, in __call__
+    |     await super().__call__(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/applications.py", line 107, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    |     raise exc
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    |     await self.app(scope, receive, _send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    |     await route.handle(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    |     await self.app(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 119, in app
+    |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 106, in app
+    |     await response(scope, receive, send)
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 269, in __call__
+    |     with collapse_excgroups():
+    |          ~~~~~~~~~~~~~~~~~~^^
+    |   File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    |     self.gen.throw(value)
+    |     ~~~~~~~~~~~~~~^^^^^^^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    |     raise exc
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 273, in wrap
+    |     await func()
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 253, in stream_response
+    |     async for chunk in self.body_iterator:
+    |     ...<2 lines>...
+    |         await send({"type": "http.response.body", "body": chunk, "more_body": True})
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 856, in _stream_completion_with_heartbeat
+    |     async for chunk in _stream_completion(context, caller, model=model):
+    |         yield chunk
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 825, in _stream_completion
+    |     async for chunk in caller.run(context):
+    |     ...<2 lines>...
+    |             yield framed
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/dispatch_pipeline.py", line 254, in run
+    |     plan = await self._planner.plan(request=request)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/ensemble_backed_roles.py", line 79, in plan
+    |     result = await self._invoker.invoke(
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |         {"ensemble_name": self._ensemble_name, "input": request}
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     )
+    |     ^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/orchestra_service.py", line 251, in invoke
+    |     return await self._execution_handler.invoke(arguments)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/handlers/execution_handler.py", line 85, in invoke
+    |     raise ValueError(f"Ensemble does not exist: {ensemble_name}")
+    | ValueError: Ensemble does not exist: agentic-routing-planner
+    +------------------------------------
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/uvicorn/protocols/http/h11_impl.py", line 410, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/applications.py", line 1134, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 87, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 119, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 106, in app
+    await response(scope, receive, send)
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 269, in __call__
+    with collapse_excgroups():
+         ~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.4/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 273, in wrap
+    await func()
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/.venv/lib/python3.13/site-packages/starlette/responses.py", line 253, in stream_response
+    async for chunk in self.body_iterator:
+    ...<2 lines>...
+        await send({"type": "http.response.body", "body": chunk, "more_body": True})
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 856, in _stream_completion_with_heartbeat
+    async for chunk in _stream_completion(context, caller, model=model):
+        yield chunk
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/web/api/v1_chat_completions.py", line 825, in _stream_completion
+    async for chunk in caller.run(context):
+    ...<2 lines>...
+            yield framed
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/dispatch_pipeline.py", line 254, in run
+    plan = await self._planner.plan(request=request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/agentic/ensemble_backed_roles.py", line 79, in plan
+    result = await self._invoker.invoke(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        {"ensemble_name": self._ensemble_name, "input": request}
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/orchestra_service.py", line 251, in invoke
+    return await self._execution_handler.invoke(arguments)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/nathangreen/Development/eddi-lab/llm-orc/src/llm_orc/services/handlers/execution_handler.py", line 85, in invoke
+    raise ValueError(f"Ensemble does not exist: {ensemble_name}")
+ValueError: Ensemble does not exist: agentic-routing-planner
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:23:44,113 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:24:05,010 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=1 tail_kind=first_turn judgment_verdict=? action=write shape=generation delegated=- carry_held=true replanned=true anchor=false dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0001
+2026-06-17 12:24:05,010 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.000 delegated=0 generation=1 boundary_excluded=0 considered=1
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:24:24,897 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0003
+2026-06-17 12:24:24,897 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0003
+2026-06-17 12:24:24,897 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0003
+2026-06-17 12:24:24,897 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0003
+2026-06-17 12:24:54,898 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:25:24,900 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:25:54,902 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:26:24,904 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:26:54,905 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:27:08,771 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=163.874 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0003
+2026-06-17 12:27:08,771 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:27:08,771 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=2 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=false anchor=false dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0002
+2026-06-17 12:27:08,772 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.500 delegated=1 generation=2 boundary_excluded=0 considered=2
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:27:17,525 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0005
+2026-06-17 12:27:17,525 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0005
+2026-06-17 12:27:17,525 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0005
+2026-06-17 12:27:17,526 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0005
+2026-06-17 12:27:47,527 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:28:17,531 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:28:47,533 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:29:17,535 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:29:47,537 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:30:17,541 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:30:47,546 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:31:17,549 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:31:47,552 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:32:17,556 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:32:34,818 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=317.293 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0005
+2026-06-17 12:32:34,818 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:32:34,819 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=3 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=false anchor=true dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0004
+2026-06-17 12:32:34,819 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.667 delegated=2 generation=3 boundary_excluded=0 considered=3
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:33:05,341 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:33:13,145 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0007
+2026-06-17 12:33:13,145 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0007
+2026-06-17 12:33:13,145 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0007
+2026-06-17 12:33:13,145 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0007
+2026-06-17 12:33:43,147 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:34:13,149 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:34:16,791 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=63.646 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0007
+2026-06-17 12:34:16,791 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:34:16,791 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=4 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=true anchor=true dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0006
+2026-06-17 12:34:16,791 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.750 delegated=3 generation=4 boundary_excluded=0 considered=4
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:34:47,296 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:34:48,029 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0009
+2026-06-17 12:34:48,029 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0009
+2026-06-17 12:34:48,029 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0009
+2026-06-17 12:34:48,030 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0009
+2026-06-17 12:35:18,032 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:35:48,034 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:36:02,942 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=74.913 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0009
+2026-06-17 12:36:02,942 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:36:02,943 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=5 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=true anchor=true dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0008
+2026-06-17 12:36:02,943 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.800 delegated=4 generation=5 boundary_excluded=0 considered=5
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:36:32,550 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0011
+2026-06-17 12:36:32,550 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0011
+2026-06-17 12:36:32,550 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0011
+2026-06-17 12:36:32,550 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0011
+2026-06-17 12:37:02,552 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:37:23,147 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=50.598 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0011
+2026-06-17 12:37:23,147 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:37:23,148 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=6 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=true anchor=true dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0010
+2026-06-17 12:37:23,148 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.833 delegated=5 generation=6 boundary_excluded=0 considered=6
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:37:52,833 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0013
+2026-06-17 12:37:52,833 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0013
+2026-06-17 12:37:52,833 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0013
+2026-06-17 12:37:52,833 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0013
+2026-06-17 12:38:22,836 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:38:47,794 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=54.961 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0013
+2026-06-17 12:38:47,795 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:38:47,795 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=7 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=true anchor=true dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0012
+2026-06-17 12:38:47,795 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.857 delegated=6 generation=7 boundary_excluded=0 considered=7
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:39:18,305 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:39:21,110 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0015
+2026-06-17 12:39:21,110 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0015
+2026-06-17 12:39:21,110 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0015
+2026-06-17 12:39:21,110 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0015
+2026-06-17 12:39:51,112 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:40:03,123 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=42.013 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0015
+2026-06-17 12:40:03,124 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:40:03,124 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=8 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=true anchor=true dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0014
+2026-06-17 12:40:03,124 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.875 delegated=7 generation=8 boundary_excluded=0 considered=8
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:40:25,843 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0017
+2026-06-17 12:40:25,843 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0017
+2026-06-17 12:40:25,844 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0017
+2026-06-17 12:40:25,844 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0017
+2026-06-17 12:40:55,847 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:41:24,889 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=59.046 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0017
+2026-06-17 12:41:24,890 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:41:24,890 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=9 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=true anchor=true dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0016
+2026-06-17 12:41:24,891 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.889 delegated=8 generation=9 boundary_excluded=0 considered=9
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:41:47,442 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0019
+2026-06-17 12:41:47,443 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0019
+2026-06-17 12:41:47,443 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0019
+2026-06-17 12:41:47,443 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0019
+2026-06-17 12:42:17,444 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:42:47,448 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:43:17,451 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:43:27,136 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=99.693 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0019
+2026-06-17 12:43:27,136 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:43:27,136 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=10 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=true anchor=true dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0018
+2026-06-17 12:43:27,136 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.900 delegated=9 generation=10 boundary_excluded=0 considered=10
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:43:46,932 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0021
+2026-06-17 12:43:46,932 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0021
+2026-06-17 12:43:46,932 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0021
+2026-06-17 12:43:46,932 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0021
+2026-06-17 12:44:16,933 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:44:46,934 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:45:16,936 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:45:24,070 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=97.138 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0021
+2026-06-17 12:45:24,070 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:45:24,071 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=11 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=true anchor=true dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0020
+2026-06-17 12:45:24,071 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.909 delegated=10 generation=11 boundary_excluded=0 considered=11
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:45:46,336 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0023
+2026-06-17 12:45:46,336 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0023
+2026-06-17 12:45:46,336 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0023
+2026-06-17 12:45:46,336 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0023
+2026-06-17 12:46:16,340 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:46:26,857 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=40.521 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0023
+2026-06-17 12:46:26,857 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:46:26,858 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=12 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=true anchor=true dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0022
+2026-06-17 12:46:26,858 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.917 delegated=11 generation=12 boundary_excluded=0 considered=12
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:46:38,786 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=13 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=read shape=carry delegated=- carry_held=true replanned=true anchor=false dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0024
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:46:51,050 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0026
+2026-06-17 12:46:51,051 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0026
+2026-06-17 12:46:51,051 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0026
+2026-06-17 12:46:51,051 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0026
+2026-06-17 12:47:21,053 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:47:51,055 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:48:21,058 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:48:27,027 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=95.977 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0026
+2026-06-17 12:48:27,027 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:48:27,028 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=14 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=true anchor=true dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0025
+2026-06-17 12:48:27,028 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.923 delegated=12 generation=13 boundary_excluded=0 considered=14
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:48:38,369 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0028
+2026-06-17 12:48:38,369 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0028
+2026-06-17 12:48:38,369 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0028
+2026-06-17 12:48:38,369 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0028
+2026-06-17 12:49:08,370 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:49:31,538 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=53.169 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0028
+2026-06-17 12:49:31,538 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:49:31,538 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=15 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=true anchor=true dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0027
+2026-06-17 12:49:31,539 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.929 delegated=13 generation=14 boundary_excluded=0 considered=15
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:49:40,018 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0030
+2026-06-17 12:49:40,018 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0030
+2026-06-17 12:49:40,018 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0030
+2026-06-17 12:49:40,018 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0030
+2026-06-17 12:50:10,019 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:50:23,306 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=43.288 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0030
+2026-06-17 12:50:23,307 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:50:23,307 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=16 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=true anchor=true dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0029
+2026-06-17 12:50:23,307 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.933 delegated=14 generation=15 boundary_excluded=0 considered=16
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:50:29,368 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0032
+2026-06-17 12:50:29,369 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0032
+2026-06-17 12:50:29,369 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0032
+2026-06-17 12:50:29,369 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0032
+2026-06-17 12:50:59,370 [INFO] llm_orc.agentic.operator_terminal: inference wait: elapsed=30 session_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f
+2026-06-17 12:51:19,219 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=49.851 exit=success dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0032
+2026-06-17 12:51:19,220 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-17 12:51:19,220 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=17 tail_kind=trailing_tool_result judgment_verdict=REMAINING action=write shape=generation delegated=code-generator carry_held=false replanned=false anchor=true dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0031
+2026-06-17 12:51:19,220 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=0.938 delegated=15 generation=16 boundary_excluded=0 considered=17
+INFO:     127.0.0.1:55532 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-17 12:51:19,739 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=18 tail_kind=trailing_tool_result judgment_verdict=COMPLETE action=finish shape=carry delegated=- carry_held=false replanned=false anchor=false dispatch_id=2b01daa50d70135297e343e33a4316d1394bf0d0da842698173da5ec43e6d26f-dispatch-0033
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [26840]

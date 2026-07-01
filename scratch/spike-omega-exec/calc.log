@@ -1,0 +1,60 @@
+[Ω-exec] architect (frontier) for task 'calc'...
+[Ω-exec] contract: ['tokenizer.py', 'parser.py', 'evaluator.py', 'cli.py', 'test_calc.py', 'README.md']
+[Ω-exec] initial build — all CHEAP (8b)...
+    tokenizer.py: cheap ok
+    parser.py: cheap ok
+    evaluator.py: cheap ok
+    cli.py: cheap ok
+    test_calc.py: cheap ok
+    README.md: cheap gate-GAVEUP
+[Ω-exec] exec gate (all cheap): FAIL
+  [Ω-exec] round 1: escalated parser.py -> standard (ok)
+[Ω-exec] exec gate (round 1): FAIL
+  [Ω-exec] round 2: escalated parser.py -> frontier (ok)
+[Ω-exec] exec gate (round 2): FAIL
+  [Ω-exec] round 3: escalated tokenizer.py -> standard (ok)
+  [Ω-exec] round 3: escalated evaluator.py -> standard (ok)
+  [Ω-exec] round 3: escalated cli.py -> standard (ok)
+[Ω-exec] exec gate (round 3): FAIL
+  [Ω-exec] round 4: escalated tokenizer.py -> frontier (ok)
+  [Ω-exec] round 4: escalated evaluator.py -> frontier (ok)
+  [Ω-exec] round 4: escalated cli.py -> frontier (ok)
+[Ω-exec] exec gate (round 4): FAIL
+
+==== RESULT ====
+{
+  "task": "calc",
+  "passed": false,
+  "escalation_rounds": 4,
+  "elapsed_s": 1811.9,
+  "final_tiers": {
+    "tokenizer.py": "frontier",
+    "parser.py": "frontier",
+    "evaluator.py": "frontier",
+    "cli.py": "frontier",
+    "test_calc.py": "cheap",
+    "README.md": "cheap"
+  },
+  "frontier_files": [
+    "tokenizer.py",
+    "parser.py",
+    "evaluator.py",
+    "cli.py"
+  ],
+  "frontier_token_files": 4
+}
+---- last test output ----
+========= ERRORS ====================================
+________________________ ERROR collecting test_calc.py _________________________
+test_calc.py:2: in <module>
+    from parser import parse
+parser.py:10: in <module>
+    class BinOp:
+parser.py:11: in BinOp
+    left: Union[Number, BinOp]
+                        ^^^^^
+E   NameError: name 'BinOp' is not defined
+=========================== short test summary info ============================
+ERROR test_calc.py - NameError: name 'BinOp' is not defined
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.06s

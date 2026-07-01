@@ -1,0 +1,12 @@
+name: spike-omega-p3-code-attempt
+description: |
+  Ω-P3 (3c): one iteration body of the per-file code-build loop — attempt -> form
+  gate. The gate emits {ok, content, next_input} so the wrapping loop node can run
+  `until: ${ok}` / `carry: ${next_input}`.
+agents:
+  - name: attempt
+    script: scripts/spike-omega-p3/code_attempt.py
+
+  - name: form-gate
+    script: scripts/spike-omega-p3/form_gate.py
+    depends_on: [attempt]

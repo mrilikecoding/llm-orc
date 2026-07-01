@@ -1,0 +1,21 @@
+{
+  "task": "Build a todo-list package as these six files, in this order:\n1. models.py \u2014 a `Task` dataclass with fields: id (int), title (str), done (bool).\n2. storage.py \u2014 `from models import Task`; def save_tasks(tasks, path) and def load_tasks(path) persisting a list of Task to/from JSON.\n3. operations.py \u2014 import models and storage; def add_task(tasks, title), def complete_task(tasks, task_id), def list_tasks(tasks).\n4. cli.py \u2014 import argparse and operations; def main() with an argparse CLI exposing add/complete/list subcommands that call operations' functions.\n5. test_operations.py \u2014 import operations and models; at least one test function named test_* that calls add_task and asserts on the result.\n6. README.md \u2014 Markdown documenting models.py, storage.py, operations.py, cli.py and naming the real functions add_task, complete_task, list_tasks.\n",
+  "requested": [
+    "models.py",
+    "storage.py",
+    "operations.py",
+    "cli.py",
+    "test_operations.py",
+    "README.md"
+  ],
+  "produced": [
+    "models.py",
+    "storage.py",
+    "operations.py",
+    "cli.py",
+    "test_operations.py",
+    "README.md"
+  ],
+  "plan_queue": [],
+  "remaining_anchor": ""
+}

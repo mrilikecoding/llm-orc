@@ -1,0 +1,52 @@
+{
+  "task": "Create a small temperature library with three files:\n  - converters.py: def celsius_to_fahrenheit(c), fahrenheit_to_celsius(f), celsius_to_kelvin(c). Use float math. No imports.\n  - cli.py: an argparse CLI that imports converters and exposes the three conversions, calling converters' functions (do not re-implement them).\n  - README.md: Markdown documentation for converters.py and cli.py, naming the real functions.\n",
+  "requested": [
+    "converters.py",
+    "cli.py",
+    "README.md"
+  ],
+  "produced": [
+    "converters.py",
+    "cli.py",
+    "README.md"
+  ],
+  "plan_queue": [],
+  "remaining_anchor": "All deliverables resolved.",
+  "expectations": {
+    "converters.py": {
+      "file": "converters.py",
+      "kind": "python_module",
+      "must_define": [
+        "celsius_to_fahrenheit",
+        "fahrenheit_to_celsius",
+        "celsius_to_kelvin"
+      ]
+    },
+    "cli.py": {
+      "file": "cli.py",
+      "kind": "python_cli",
+      "must_import": [
+        "converters"
+      ],
+      "must_reference": [
+        "celsius_to_fahrenheit",
+        "fahrenheit_to_celsius",
+        "celsius_to_kelvin"
+      ],
+      "must_define": [
+        "main"
+      ]
+    },
+    "README.md": {
+      "file": "README.md",
+      "kind": "markdown_doc",
+      "must_mention": [
+        "converters.py",
+        "cli.py",
+        "celsius_to_fahrenheit",
+        "fahrenheit_to_celsius",
+        "celsius_to_kelvin"
+      ]
+    }
+  }
+}

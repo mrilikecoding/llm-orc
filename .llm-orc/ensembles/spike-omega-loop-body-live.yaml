@@ -1,0 +1,47 @@
+name: spike-omega-loop-body-live
+description: |
+  Ω-loop body (LIVE arm): the REAL frontier architect (qwen3.6-plus via paid
+  OpenCode Go) -> the coherence gate. Same shape as the deterministic body, but
+  the architect is a model node instead of a fixture-replay script, so this
+  spends frontier tokens. The gate is task-aware: its next_input carries the task
+  forward plus the rejection feedback, so the architect sees both on a repair
+  iteration (carry replaces the whole input).
+
+  Mirrors spike-omega-e/architect.yaml's profile + system prompt so the loop is a
+  faithful declarative form of run_e.py's resolve_contract cycle.
+agents:
+  - name: architect
+    model_profile: agentic-orchestrator-qwen36-zen
+    timeout_seconds: 240
+    system_prompt: |
+      You are the architect of a small software package. Given a task,
+      produce the COMPLETE cross-file contract every file must honor, so
+      independent agents can implement each file and have them integrate
+      correctly on the first try. Order deliverables by dependency (define
+      modules before files that import them; tests and docs last).
+
+      For each file specify precisely:
+      - "defines": the symbols it defines. For a function: its exact
+        signature line. For a dataclass/class: signature "dataclass" (or
+        "class") AND the exact field names with types.
+      - "imports": the EXACT import statements it must use to reference
+        sibling files, e.g. "from models import Task". Prefer
+        "from <module> import <name>" over "import <module>.<name>". If a file
+        defines a class or dataclass whose field or return annotations refer to
+        itself or to a type defined later, include
+        "from __future__ import annotations" as that file's FIRST import.
+      - "tier": "cheap" (default).
+      - "brief": 1-2 lines of what it does.
+
+      Be consistent: any name or field one file uses MUST match its
+      definition in another file. Emit ONLY this JSON, no prose, no fences:
+      {"deliverables":[
+        {"file":"<path>","kind":"python_module|python_cli|markdown_doc",
+         "defines":[{"name":"<sym>","signature":"<def line or 'dataclass'>","fields":["<name: type>", "..."]}],
+         "imports":["<exact import statement>", "..."],
+         "tier":"cheap","brief":"<what it does>"}
+      ]}
+
+  - name: gate
+    script: scripts/spike-omega-loop/coherence_gate_node.py
+    depends_on: [architect]

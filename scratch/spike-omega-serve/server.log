@@ -1,0 +1,8 @@
+[serve] ensemble-agent on http://127.0.0.1:8099 (decompose=decompose, decide=agent-turn-omega4)
+[serve 885dc90734805127] decomposed -> ['models.py', 'storage.py', 'operations.py', 'cli.py', 'test_operations.py', 'README.md']
+[serve 885dc90734805127] turn -> models.py (python_module) ok after 1 attempt(s), 99B; remaining ['storage.py', 'operations.py', 'cli.py', 'test_operations.py', 'README.md']
+[serve 885dc90734805127] turn -> storage.py (python_module) ok after 1 attempt(s), 286B; remaining ['operations.py', 'cli.py', 'test_operations.py', 'README.md']
+[serve 885dc90734805127] turn -> operations.py (python_module) ok after 1 attempt(s), 512B; remaining ['cli.py', 'test_operations.py', 'README.md']
+[serve 885dc90734805127] turn -> cli.py (python_cli) ok after 1 attempt(s), 897B; remaining ['test_operations.py', 'README.md']
+[serve 885dc90734805127] turn -> test_operations.py (python_module) ok after 1 attempt(s), 893B; remaining ['README.md']
+[serve 885dc90734805127] turn -> README.md (markdown_doc) ok after 1 attempt(s), 1238B; remaining []

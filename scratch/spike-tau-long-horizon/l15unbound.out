@@ -1,0 +1,5 @@
+arm=l15unbound files=15 timeout=4500s
+serve READY on port 8770
+TAU l15unbound files=15: converged=False produced=2/15 wall=4500s timed_out=True turns=30 median_turn_wall=132s slope=0.1 form=True conv=False coh=True term=False
+  per_turn_walls=[81, 155, 97, 90, 59, 38, 75, 283, 80, 110, 158, 197, 121, 151, 183, 157, 155, 65, 90, 142, 119, 179, 119, 162, 804, 132, 153, 208, 83]
+  dispatch_durations=[39, 114, 56, 47, 28, 33, 33, 147, 123, 36, 97, 117, 151, 116, 110, 139, 110, 112, 60, 43, 96, 76, 136, 103, 148, 227, 392, 172, 89, 131, 192, 72]

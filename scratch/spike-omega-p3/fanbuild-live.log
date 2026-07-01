@@ -1,0 +1,16 @@
+[Ω-P3 LIVE] running spike-omega-p3-fanbuild-live ...
+
+==== spike-omega-p3-fanbuild-live  (298s) ====
+stage status: {'plan': 'success', 'build': 'success', 'score': 'success'}
+
+files built: 6   test files: ['test.py']
+   tokenizer.py     tier=code   bytes=153
+   parser.py        tier=code   bytes=431
+   evaluator.py     tier=code   bytes=647
+   cli.py           tier=code   bytes=416
+   test.py          tier=code   bytes=258
+   README.md        tier=prose  bytes=1376
+
+EXECUTION GATE: rc=1 | 1 failed in 0.02s
+
+saved -> scratch/spike-omega-p3/spike-omega-p3-fanbuild-live_result.json

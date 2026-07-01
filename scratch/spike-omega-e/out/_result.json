@@ -1,0 +1,17 @@
+{
+  "arm": "E-contract-first",
+  "architect_s": 72.9,
+  "build_s": 260.1,
+  "score": {
+    "per_file": {
+      "models.py": "correct",
+      "storage.py": "correct",
+      "operations.py": "correct",
+      "cli.py": "correct",
+      "test_operations.py": "correct",
+      "README.md": "correct"
+    },
+    "structural_correct": "6/6",
+    "execution": "rc=1 |   warnings.warn(CovReportWarning(message), stacklevel=1)"
+  }
+}

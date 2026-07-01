@@ -1,0 +1,1 @@
+b'from stringutils import shout, whisper\n\nif __name__ == "__main__":\n    print(shout("Hello"))\n    print(whisper("Hello"))'

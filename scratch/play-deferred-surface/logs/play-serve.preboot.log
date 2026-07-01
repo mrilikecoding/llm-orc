@@ -1,0 +1,23 @@
+Starting llm-orc agentic serving layer at http://127.0.0.1:8765
+Press Ctrl+C to stop
+INFO:     Started server process [81371]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8765 (Press CTRL+C to quit)
+INFO:     127.0.0.1:62996 - "GET /v1/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62998 - "GET /v1/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51860 - "GET /v1/models HTTP/1.1" 200 OK
+2026-06-25 15:57:13,774 [WARNING] llm_orc.agentic.operator_terminal: invalid ensemble yaml: path=/Users/nathangreen/Development/eddi-lab/llm-orc/llm-orchestra-library/ensembles/examples/neon-shadows-detective/ensemble.yaml error=1 validation error for LlmAgentConfig
+conversation
+  Extra inputs are not permitted [type=extra_forbidden, input_value={'max_turns': 1, 'triggers_conversation': True}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+INFO:     127.0.0.1:55609 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55610 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-25 15:57:16,950 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=1 tail_kind=first_turn judgment_verdict=? action=finish shape=carry delegated=- carry_held=false replanned=false anchor=false dispatch_id=babf466398dad5eae697e3ff61f3316f39c22bb6f0b347448d9af0e36c69c932-dispatch-0001
+INFO:     127.0.0.1:55664 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55665 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-06-25 15:57:21,403 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=1 tail_kind=first_turn judgment_verdict=? action=finish shape=carry delegated=- carry_held=false replanned=false anchor=false dispatch_id=34a1886d5eff0bdb0e3b6411e0fe09bad21954b40911ed358f1d655acc32c07a-dispatch-0001
+INFO:     127.0.0.1:58177 - "GET /v1/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52032 - "GET /v1/models HTTP/1.1" 200 OK
+2026-06-25 16:22:52,384 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=1 tail_kind=first_turn judgment_verdict=? action=finish shape=carry delegated=- carry_held=false replanned=false anchor=false dispatch_id=eaabd06a4ba1493d4e665f0325a1f22b1d587caf679f7c4a5482322a8ebbcc1d-dispatch-0001
+INFO:     127.0.0.1:52034 - "POST /v1/chat/completions HTTP/1.1" 200 OK

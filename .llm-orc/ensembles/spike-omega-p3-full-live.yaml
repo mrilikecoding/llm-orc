@@ -1,0 +1,33 @@
+name: spike-omega-p3-full-live
+description: |
+  Ω-P3 (LIVE / PAID) — the full agentic serving flow as ONE declarative ensemble,
+  driven by REAL models end to end. Same structure as spike-omega-p3-full, with:
+    resolve-contract : loop over spike-omega-loop-body-live (REAL frontier
+                       architect qwen3.6-plus via paid Go) until coherent
+    build            : fan-out over spike-omega-p3-build-one-live (REAL cheap-local
+                       qwen3:8b code/prose generators)
+    score            : real execution gate (write files + run the tests)
+
+  PAID (architect) + slow (local builds). The capstone "does the declarative agent
+  actually serve, end to end, with a real model" run.
+agents:
+  - name: resolve-contract
+    loop:
+      body: spike-omega-loop-body-live
+      until: ${ok}
+      carry: ${next_input}
+      max_iterations: 3
+
+  - name: plan
+    script: scripts/spike-omega-p3/plan_from_contract.py
+    depends_on: [resolve-contract]
+
+  - name: build
+    ensemble: spike-omega-p3-build-one-live
+    depends_on: [plan]
+    input_key: tasks
+    fan_out: true
+
+  - name: score
+    script: scripts/spike-omega-p3/score_live.py
+    depends_on: [build]

@@ -1,0 +1,15 @@
+{
+  "task": "Create a small temperature library with three Python files:\n  - converters.py: def celsius_to_fahrenheit(c), fahrenheit_to_celsius(f), celsius_to_kelvin(c). Use float math. No imports.\n  - cli.py: a small argparse CLI exposing `convert c-to-f`, `convert f-to-c`, `convert c-to-k` subcommands, calling converters.py functions.\n  - README.md: brief Markdown documentation for both converters.py and cli.py, naming the real functions.\n",
+  "requested": [
+    "converters.py",
+    "cli.py",
+    "README.md"
+  ],
+  "produced": [
+    "converters.py",
+    "cli.py",
+    "README.md"
+  ],
+  "plan_queue": [],
+  "remaining_anchor": "All deliverables produced."
+}

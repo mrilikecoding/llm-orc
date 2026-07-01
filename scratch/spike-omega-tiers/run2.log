@@ -1,0 +1,53 @@
+[Ω-tiers] architect (frontier) emitting contract + tier assignments...
+[Ω-tiers] contract (90s). tier assignments:
+    models.py: micro
+    storage.py: small
+    operations.py: cheap
+    cli.py: cheap
+    test_operations.py: cheap
+    README.md: micro
+  [Ω-tiers] models.py assigned=micro succeeded@small (escalated from micro) ok in 4 attempt(s), 82s
+  [Ω-tiers] storage.py assigned=small succeeded@small ok in 1 attempt(s), 31s
+  [Ω-tiers] operations.py assigned=cheap succeeded@cheap ok in 1 attempt(s), 42s
+  [Ω-tiers] cli.py assigned=cheap succeeded@cheap ok in 1 attempt(s), 100s
+  [Ω-tiers] test_operations.py assigned=cheap succeeded@cheap ok in 1 attempt(s), 197s
+  [Ω-tiers] README.md assigned=cheap(prose) succeeded@cheap (escalated from cheap(prose)) GAVEUP in 3 attempt(s), 114s
+
+==== RESULT ====
+{
+  "arm": "tiers",
+  "architect_s": 90.2,
+  "build_s": 566.7,
+  "tier_assignments": {
+    "models.py": "micro",
+    "storage.py": "small",
+    "operations.py": "cheap",
+    "cli.py": "cheap",
+    "test_operations.py": "cheap",
+    "README.md": "micro"
+  },
+  "per_tier": {
+    "small": {
+      "files": 2,
+      "first_try": 1,
+      "gaveup": 0
+    },
+    "cheap": {
+      "files": 4,
+      "first_try": 3,
+      "gaveup": 1
+    }
+  },
+  "score": {
+    "per_file": {
+      "models.py": "correct",
+      "storage.py": "correct",
+      "operations.py": "correct",
+      "cli.py": "correct",
+      "test_operations.py": "correct",
+      "README.md": "FAIL: doc must mention: ['models.py', 'cli.py', 'test_operations.py', 'main']"
+    },
+    "structural_correct": "5/6",
+    "execution": "rc=1 |   warnings.warn(CovReportWarning(message), stacklevel=1)"
+  }
+}

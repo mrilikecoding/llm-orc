@@ -1,0 +1,6 @@
+[2026-06-17 12:53:12] === LADDER CAMPAIGN START === 2 runs
+[2026-06-17 12:53:12] --- l20cap files=20 timeout=6000s: reboot + serve ---
+serve READY on port 8770
+[2026-06-17 13:30:09] RESULT l20cap	files=20	converged=False	produced=21/20	wall=2188s	timed_out=False	turns=22	med_turn=86s	form=True	conv=True	coh=False	term=True	notes=["coherence: step10.py references undefined step9.['step9']", "coherence: base.py references undefined step9.['step9']"]
+[2026-06-17 13:30:09] --- l30cap files=30 timeout=9000s: reboot + serve ---
+serve READY on port 8770

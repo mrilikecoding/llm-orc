@@ -1,0 +1,89 @@
+[
+  {
+    "file": "tokenizer.py",
+    "kind": "python_module",
+    "defines": [
+      {
+        "name": "tokenize",
+        "signature": "def tokenize(expression: str) -> list[str]:"
+      }
+    ],
+    "imports": [
+      "from __future__ import annotations"
+    ],
+    "tier": "cheap",
+    "brief": "Tokenizes an expression string into a list of tokens."
+  },
+  {
+    "file": "parser.py",
+    "kind": "python_module",
+    "defines": [
+      {
+        "name": "parse",
+        "signature": "def parse(tokens: list[str]) -> dict[str, object]:"
+      }
+    ],
+    "imports": [
+      "from __future__ import annotations",
+      "from tokenizer import tokenize"
+    ],
+    "tier": "cheap",
+    "brief": "Builds an abstract syntax tree from tokens."
+  },
+  {
+    "file": "evaluator.py",
+    "kind": "python_module",
+    "defines": [
+      {
+        "name": "evaluate",
+        "signature": "def evaluate(node: dict[str, object]) -> float:"
+      }
+    ],
+    "imports": [
+      "from __future__ import annotations",
+      "from parser import parse"
+    ],
+    "tier": "cheap",
+    "brief": "Computes a numeric result from an abstract syntax tree."
+  },
+  {
+    "file": "cli.py",
+    "kind": "python_cli",
+    "defines": [
+      {
+        "name": "main",
+        "signature": "def main() -> None:"
+      }
+    ],
+    "imports": [
+      "import argparse",
+      "from evaluator import evaluate"
+    ],
+    "tier": "cheap",
+    "brief": "Reads an expression argument and prints the result."
+  },
+  {
+    "file": "test.py",
+    "kind": "python_module",
+    "defines": [
+      {
+        "name": "test_evaluate",
+        "signature": "def test_evaluate() -> None:"
+      }
+    ],
+    "imports": [
+      "from evaluator import evaluate",
+      "from tokenizer import tokenize"
+    ],
+    "tier": "cheap",
+    "brief": "Tests the evaluator end to end."
+  },
+  {
+    "file": "README.md",
+    "kind": "markdown_doc",
+    "defines": [],
+    "imports": [],
+    "tier": "cheap",
+    "brief": "Documents the arithmetic expression calculator and how to run it."
+  }
+]

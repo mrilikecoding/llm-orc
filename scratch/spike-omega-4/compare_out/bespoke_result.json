@@ -1,0 +1,23 @@
+{
+  "arm": "bespoke",
+  "turns": 2,
+  "elapsed_s": 46.7,
+  "tokens": 0,
+  "produced": [
+    "models.py"
+  ],
+  "score": {
+    "per_file": {
+      "models.py": "correct",
+      "storage.py": "MISSING",
+      "operations.py": "MISSING",
+      "cli.py": "MISSING",
+      "test_operations.py": "MISSING",
+      "README.md": "MISSING"
+    },
+    "structural_correct": "1/6",
+    "py_compiles": {
+      "models.py": true
+    }
+  }
+}

@@ -1,0 +1,755 @@
+{
+  "provenance": {
+    "date": "2026-06-22T00:00:00+00:00",
+    "configs": [
+      {
+        "name": "cheap-local",
+        "coder_cheap": "qwen3:8b",
+        "coder_escalated": "qwen3:14b",
+        "seat": "hosted-qwen3.6-plus (Zen)",
+        "paid": false
+      },
+      {
+        "name": "frontier",
+        "coder_cheap": "claude-sonnet",
+        "coder_escalated": "claude-sonnet",
+        "seat": "claude-sonnet (subagent)",
+        "paid": true
+      }
+    ],
+    "serve_port": 8770,
+    "n_per_cell": {
+      "coarse": 1,
+      "confirm": 3,
+      "concentrate": 3
+    },
+    "pre_registered_threshold": "pass-rate \u2265 2/3 \u2014 ceil(2n/3) of n runs pass",
+    "pre_registered_match": "cheap-local ceiling within one rung per axis of frontier",
+    "tool_versions": {
+      "note": "cheap: coarse n=1 + h3c3/h3c4 retry n=3 + l15/l20 retry n=3; frontier: Sonnet subagents n=1; opencode 1.17.9; OpenCode Go"
+    },
+    "probe_ran": false
+  },
+  "configs": [
+    {
+      "config": "cheap-local",
+      "grid": [
+        {
+          "cell": "h2c2",
+          "horizon": 2,
+          "complexity": 2,
+          "n": 1,
+          "passes": 1,
+          "passed": true,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1"
+              ],
+              "notes": []
+            }
+          ]
+        },
+        {
+          "cell": "h3c1",
+          "horizon": 3,
+          "complexity": 1,
+          "n": 1,
+          "passes": 1,
+          "passed": true,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4"
+              ],
+              "notes": []
+            }
+          ]
+        },
+        {
+          "cell": "h3c2",
+          "horizon": 3,
+          "complexity": 2,
+          "n": 1,
+          "passes": 1,
+          "passed": true,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4"
+              ],
+              "notes": []
+            }
+          ]
+        },
+        {
+          "cell": "h3c3",
+          "horizon": 3,
+          "complexity": 3,
+          "n": 3,
+          "passes": 3,
+          "passed": true,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4"
+              ],
+              "notes": []
+            },
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4"
+              ],
+              "notes": []
+            },
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4"
+              ],
+              "notes": []
+            }
+          ]
+        },
+        {
+          "cell": "h3c4",
+          "horizon": 3,
+          "complexity": 4,
+          "n": 3,
+          "passes": 3,
+          "passed": true,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4"
+              ],
+              "notes": []
+            },
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4"
+              ],
+              "notes": []
+            },
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4"
+              ],
+              "notes": []
+            }
+          ]
+        },
+        {
+          "cell": "l12",
+          "horizon": 5,
+          "complexity": 1,
+          "n": 1,
+          "passes": 1,
+          "passed": true,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4",
+                "f5",
+                "f6",
+                "f7",
+                "f8",
+                "f9",
+                "f10",
+                "f11"
+              ],
+              "notes": []
+            }
+          ]
+        },
+        {
+          "cell": "l15",
+          "horizon": 6,
+          "complexity": 1,
+          "n": 3,
+          "passes": 0,
+          "passed": false,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": false,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4",
+                "f5",
+                "f6",
+                "f7",
+                "f8",
+                "f9",
+                "f10",
+                "f11",
+                "f12",
+                "f13",
+                "f14"
+              ],
+              "notes": []
+            },
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": false,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4",
+                "f5",
+                "f6",
+                "f7",
+                "f8",
+                "f9",
+                "f10",
+                "f11",
+                "f12",
+                "f13",
+                "f14"
+              ],
+              "notes": []
+            },
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": false,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4",
+                "f5",
+                "f6",
+                "f7",
+                "f8",
+                "f9",
+                "f10",
+                "f11",
+                "f12",
+                "f13",
+                "f14"
+              ],
+              "notes": []
+            }
+          ]
+        },
+        {
+          "cell": "l20",
+          "horizon": 7,
+          "complexity": 1,
+          "n": 3,
+          "passes": 0,
+          "passed": false,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": false,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4",
+                "f5",
+                "f6",
+                "f7",
+                "f8",
+                "f9",
+                "f10",
+                "f11",
+                "f12",
+                "f13",
+                "f14",
+                "f15",
+                "f16",
+                "f17",
+                "f18",
+                "f19"
+              ],
+              "notes": []
+            },
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": false,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4",
+                "f5",
+                "f6",
+                "f7",
+                "f8",
+                "f9",
+                "f10",
+                "f11",
+                "f12",
+                "f13",
+                "f14",
+                "f15",
+                "f16",
+                "f17",
+                "f18",
+                "f19"
+              ],
+              "notes": []
+            },
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": false,
+              "terminated_clean": true,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "f0",
+                "f1",
+                "f2",
+                "f3",
+                "f4",
+                "f5",
+                "f6",
+                "f7",
+                "f8",
+                "f9",
+                "f10",
+                "f11",
+                "f12",
+                "f13",
+                "f14",
+                "f15",
+                "f16",
+                "f17",
+                "f18",
+                "f19"
+              ],
+              "notes": []
+            }
+          ]
+        }
+      ],
+      "probes": [],
+      "ceiling": {
+        "max_horizon": 5,
+        "max_complexity": 4,
+        "frontier": [
+          "h3c4",
+          "l12"
+        ]
+      }
+    },
+    {
+      "config": "frontier",
+      "grid": [
+        {
+          "cell": "h2c2",
+          "horizon": 2,
+          "complexity": 2,
+          "n": 1,
+          "passes": 1,
+          "passed": true,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": null,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "shapes.py",
+                "test_shapes.py"
+              ],
+              "notes": []
+            }
+          ]
+        },
+        {
+          "cell": "h3c1",
+          "horizon": 3,
+          "complexity": 1,
+          "n": 1,
+          "passes": 1,
+          "passed": true,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": null,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "combine.py",
+                "greet.py",
+                "louder.py",
+                "main.py",
+                "softer.py"
+              ],
+              "notes": []
+            }
+          ]
+        },
+        {
+          "cell": "h3c2",
+          "horizon": 3,
+          "complexity": 2,
+          "n": 1,
+          "passes": 1,
+          "passed": true,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": null,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "animal.py",
+                "cat.py",
+                "dog.py",
+                "shelter.py",
+                "test_shelter.py"
+              ],
+              "notes": []
+            }
+          ]
+        },
+        {
+          "cell": "h3c3",
+          "horizon": 3,
+          "complexity": 3,
+          "n": 1,
+          "passes": 1,
+          "passed": true,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": null,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "README.md",
+                "cli.py",
+                "converters.py",
+                "test_cli.py",
+                "test_converters.py"
+              ],
+              "notes": []
+            }
+          ]
+        },
+        {
+          "cell": "h3c4",
+          "horizon": 3,
+          "complexity": 4,
+          "n": 1,
+          "passes": 1,
+          "passed": true,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": null,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "errors.py",
+                "parser.py",
+                "pipeline.py",
+                "test_pipeline.py",
+                "validators.py"
+              ],
+              "notes": []
+            }
+          ]
+        },
+        {
+          "cell": "l12",
+          "horizon": 5,
+          "complexity": 1,
+          "n": 1,
+          "passes": 1,
+          "passed": true,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": null,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "step1.py",
+                "step10.py",
+                "step11.py",
+                "step12.py",
+                "step2.py",
+                "step3.py",
+                "step4.py",
+                "step5.py",
+                "step6.py",
+                "step7.py",
+                "step8.py",
+                "step9.py"
+              ],
+              "notes": []
+            }
+          ]
+        },
+        {
+          "cell": "l15",
+          "horizon": 6,
+          "complexity": 1,
+          "n": 1,
+          "passes": 1,
+          "passed": true,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": null,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "step1.py",
+                "step10.py",
+                "step11.py",
+                "step12.py",
+                "step13.py",
+                "step14.py",
+                "step15.py",
+                "step2.py",
+                "step3.py",
+                "step4.py",
+                "step5.py",
+                "step6.py",
+                "step7.py",
+                "step8.py",
+                "step9.py"
+              ],
+              "notes": []
+            }
+          ]
+        },
+        {
+          "cell": "l20",
+          "horizon": 7,
+          "complexity": 1,
+          "n": 1,
+          "passes": 1,
+          "passed": true,
+          "degraded": false,
+          "records": [
+            {
+              "form_valid": true,
+              "converged": true,
+              "content_coherent": true,
+              "terminated_clean": null,
+              "delegation_rate": null,
+              "escalated": false,
+              "churn": null,
+              "produced": [
+                "step1.py",
+                "step10.py",
+                "step11.py",
+                "step12.py",
+                "step13.py",
+                "step14.py",
+                "step15.py",
+                "step16.py",
+                "step17.py",
+                "step18.py",
+                "step19.py",
+                "step2.py",
+                "step20.py",
+                "step3.py",
+                "step4.py",
+                "step5.py",
+                "step6.py",
+                "step7.py",
+                "step8.py",
+                "step9.py"
+              ],
+              "notes": []
+            }
+          ]
+        }
+      ],
+      "probes": [],
+      "ceiling": {
+        "max_horizon": 7,
+        "max_complexity": 4,
+        "frontier": [
+          "h3c4",
+          "l20"
+        ]
+      }
+    }
+  ]
+}

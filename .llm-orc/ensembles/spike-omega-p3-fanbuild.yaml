@@ -1,0 +1,18 @@
+name: spike-omega-p3-fanbuild
+description: |
+  Ω-P3 (3a probe): plan -> fan-out over the build-one SUB-ENSEMBLE -> collect.
+  Tests whether `fan_out: true` on an `ensemble:` node runs the sub-ensemble once
+  per array element (the routing-demo pattern, applied to the serving build step).
+agents:
+  - name: plan
+    script: scripts/spike-omega-p3/plan.py
+
+  - name: build
+    ensemble: spike-omega-p3-build-one
+    depends_on: [plan]
+    input_key: tasks
+    fan_out: true
+
+  - name: collect
+    script: scripts/spike-omega-p3/collect.py
+    depends_on: [build]

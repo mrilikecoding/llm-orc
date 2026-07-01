@@ -1,0 +1,25 @@
+Starting llm-orc agentic serving layer at http://127.0.0.1:8773
+Press Ctrl+C to stop
+INFO:     Started server process [20850]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8773 (Press CTRL+C to quit)
+INFO:     127.0.0.1:52877 - "GET /v1/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52878 - "GET /v1/models HTTP/1.1" 200 OK
+2026-06-21 21:32:36,310 [WARNING] llm_orc.agentic.operator_terminal: invalid ensemble yaml: path=/Users/nathangreen/Development/eddi-lab/llm-orc/llm-orchestra-library/ensembles/examples/neon-shadows-detective/ensemble.yaml error=1 validation error for LlmAgentConfig
+conversation
+  Extra inputs are not permitted [type=extra_forbidden, input_value={'max_turns': 1, 'triggers_conversation': True}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/extra_forbidden
+2026-06-21 21:32:41,365 [INFO] llm_orc.agentic.operator_terminal: tool-call emit: tool=invoke_ensemble dispatch_id=0b039ef362654adf47093a213d6b4f35e0eb7427ee382bb67892f5e5b953df49-dispatch-0002
+2026-06-21 21:32:41,366 [INFO] llm_orc.agentic.operator_terminal: dispatch start: ensemble=code-generator profile=? dispatch_id=0b039ef362654adf47093a213d6b4f35e0eb7427ee382bb67892f5e5b953df49-dispatch-0002
+2026-06-21 21:32:41,366 [INFO] llm_orc.agentic.operator_terminal: calibration verdict: proceed ensemble=code-generator dispatch_id=0b039ef362654adf47093a213d6b4f35e0eb7427ee382bb67892f5e5b953df49-dispatch-0002
+2026-06-21 21:32:41,366 [INFO] llm_orc.agentic.operator_terminal: tier selection: profile=agentic-tier-cheap-general tier=cheap topaz_skill=code_generation dispatch_id=0b039ef362654adf47093a213d6b4f35e0eb7427ee382bb67892f5e5b953df49-dispatch-0002
+2026-06-21 21:33:10,173 [INFO] llm_orc.agentic.operator_terminal: dispatch end: ensemble=code-generator duration=28.808 exit=success dispatch_id=0b039ef362654adf47093a213d6b4f35e0eb7427ee382bb67892f5e5b953df49-dispatch-0002
+2026-06-21 21:33:10,173 [INFO] llm_orc.agentic.orchestrator_tool_dispatch: tool dispatch: result name=invoke_ensemble kind=success
+2026-06-21 21:33:10,174 [INFO] llm_orc.agentic.operator_terminal: turn decision: turn=1 tail_kind=first_turn judgment_verdict=? action=write shape=generation delegated=code-generator carry_held=false replanned=false anchor=false dispatch_id=0b039ef362654adf47093a213d6b4f35e0eb7427ee382bb67892f5e5b953df49-dispatch-0001
+2026-06-21 21:33:10,174 [INFO] llm_orc.agentic.operator_terminal: delegation rate: rate=1.000 delegated=1 generation=1 boundary_excluded=0 considered=1
+INFO:     127.0.0.1:52879 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [20850]

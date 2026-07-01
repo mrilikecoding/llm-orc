@@ -1,0 +1,130 @@
+{
+  "elapsed_s": 88.4,
+  "outcome": {
+    "output": {
+      "ok": true,
+      "reasons": [],
+      "contract": [
+        {
+          "file": "tokenizer.py",
+          "kind": "python_module",
+          "defines": [
+            {
+              "name": "Token",
+              "signature": "dataclass",
+              "fields": [
+                "type: str",
+                "value: str | float"
+              ]
+            },
+            {
+              "name": "tokenize",
+              "signature": "def tokenize(expr: str) -> list[Token]",
+              "fields": []
+            }
+          ],
+          "imports": [
+            "from __future__ import annotations",
+            "from dataclasses import dataclass"
+          ],
+          "tier": "cheap",
+          "brief": "Tokenizes an arithmetic expression string into a list of typed tokens for numbers, operators, and parentheses."
+        },
+        {
+          "file": "parser.py",
+          "kind": "python_module",
+          "defines": [
+            {
+              "name": "ASTNode",
+              "signature": "dataclass",
+              "fields": [
+                "type: str",
+                "value: float | None = None",
+                "op: str | None = None",
+                "left: ASTNode | None = None",
+                "right: ASTNode | None = None"
+              ]
+            },
+            {
+              "name": "parse",
+              "signature": "def parse(tokens: list[Token]) -> ASTNode",
+              "fields": []
+            }
+          ],
+          "imports": [
+            "from __future__ import annotations",
+            "from dataclasses import dataclass",
+            "from tokenizer import Token"
+          ],
+          "tier": "cheap",
+          "brief": "Parses a token list into a recursive AST using precedence climbing for +, -, *, /, and parentheses."
+        },
+        {
+          "file": "evaluator.py",
+          "kind": "python_module",
+          "defines": [
+            {
+              "name": "evaluate",
+              "signature": "def evaluate(node: ASTNode) -> float",
+              "fields": []
+            }
+          ],
+          "imports": [
+            "from __future__ import annotations",
+            "from parser import ASTNode"
+          ],
+          "tier": "cheap",
+          "brief": "Recursively traverses and evaluates an AST node to compute the final numeric result."
+        },
+        {
+          "file": "cli.py",
+          "kind": "python_cli",
+          "defines": [
+            {
+              "name": "main",
+              "signature": "def main() -> None",
+              "fields": []
+            }
+          ],
+          "imports": [
+            "import argparse",
+            "from tokenizer import tokenize",
+            "from parser import parse",
+            "from evaluator import evaluate"
+          ],
+          "tier": "cheap",
+          "brief": "Argparse-based CLI entry point that reads an expression string, runs the tokenize/parse/evaluate pipeline, and prints the result."
+        },
+        {
+          "file": "test_e2e.py",
+          "kind": "python_module",
+          "defines": [
+            {
+              "name": "test_calculator_e2e",
+              "signature": "def test_calculator_e2e() -> None",
+              "fields": []
+            }
+          ],
+          "imports": [
+            "from tokenizer import tokenize",
+            "from parser import parse",
+            "from evaluator import evaluate"
+          ],
+          "tier": "cheap",
+          "brief": "End-to-end test verifying the full calculator pipeline correctly evaluates expressions with +, -, *, /, and parentheses."
+        },
+        {
+          "file": "README.md",
+          "kind": "markdown_doc",
+          "defines": [],
+          "imports": [],
+          "tier": "cheap",
+          "brief": "Markdown documentation covering installation, CLI usage examples, supported operators, and module architecture."
+        }
+      ],
+      "next_input": ""
+    },
+    "iterations": 1,
+    "terminated": "until"
+  }
+}
