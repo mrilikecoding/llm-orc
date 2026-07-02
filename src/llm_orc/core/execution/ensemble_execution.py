@@ -46,6 +46,7 @@ from llm_orc.core.execution.phases.agent_request_processor import (
 )
 from llm_orc.core.execution.phases.dependency_analyzer import DependencyAnalyzer
 from llm_orc.core.execution.phases.dependency_resolver import DependencyResolver
+from llm_orc.core.execution.phases.dispatch_resolver import DispatchResolver
 from llm_orc.core.execution.phases.guard_evaluator import GuardEvaluator
 from llm_orc.core.execution.phases.phase_result_processor import PhaseResultProcessor
 from llm_orc.core.execution.progress_controller import NoOpProgressController
@@ -54,6 +55,9 @@ from llm_orc.core.execution.results_processor import (
     create_initial_result,
     finalize_result,
     resolve_deliverable,
+)
+from llm_orc.core.execution.runners.dynamic_dispatch_runner import (
+    DynamicDispatchRunner,
 )
 from llm_orc.core.execution.runners.ensemble_runner import EnsembleAgentRunner
 from llm_orc.core.execution.runners.llm_runner import LlmAgentRunner
@@ -73,6 +77,7 @@ from llm_orc.core.validation import (
 from llm_orc.models.base import ModelInterface
 from llm_orc.schemas.agent_config import (
     AgentConfig,
+    DynamicDispatchAgentConfig,
     EnsembleAgentConfig,
     LlmAgentConfig,
     LoopAgentConfig,
@@ -312,6 +317,13 @@ class EnsembleExecutor:
             current_depth=self._depth,
             depth_limit=depth_limit,
         )
+        self._dynamic_dispatch_runner = DynamicDispatchRunner(
+            ensemble_loader=self._resolve_ensemble_reference,
+            parent_executor=self,
+            current_depth=self._depth,
+            depth_limit=depth_limit,
+        )
+        self._dispatch_resolver = DispatchResolver()
 
         # Initialize execution coordinator with agent executor function
         # Use a wrapper that goes through _execute_agent for test patchability
@@ -652,6 +664,9 @@ class EnsembleExecutor:
             Tuple of (has_errors, user_inputs_collected)
         """
         phase_agents = self._partition_by_guard(phase_agents, results_dict)
+        phase_agents = self._dispatch_resolver.resolve_targets(
+            phase_agents, results_dict
+        )
 
         fan_out_agents = self._fan_out_coordinator.detect_in_phase(
             phase_agents, results_dict
@@ -910,6 +925,8 @@ class EnsembleExecutor:
             return await self._ensemble_agent_runner.execute(agent_config, input_data)
         if isinstance(agent_config, LoopAgentConfig):
             return await self._loop_agent_runner.execute(agent_config, input_data)
+        if isinstance(agent_config, DynamicDispatchAgentConfig):
+            return await self._dynamic_dispatch_runner.execute(agent_config, input_data)
         raise ValueError(
             f"Agent '{agent_config.name}' has unknown type: "
             f"{type(agent_config).__name__}"
