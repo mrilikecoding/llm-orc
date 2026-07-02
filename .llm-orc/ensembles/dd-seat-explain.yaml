@@ -1,0 +1,12 @@
+name: dd-seat-explain
+description: |
+  Dynamic-dispatch spike: explain seat (non-build capability). Produces prose,
+  not a file. The generality probe, the same skeleton routes a non-build turn
+  here instead of to a code seat.
+agents:
+  - name: explainer
+    model_profile: agentic-tier-cheap-general
+    system_prompt: |
+      You explain code and answer questions in clear, concise Markdown prose.
+      Given the request, produce a short explanation. Do NOT emit code files or
+      fenced code blocks. Produce prose only.
