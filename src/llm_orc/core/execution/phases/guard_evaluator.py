@@ -7,15 +7,12 @@ the conditional-execution primitive: deterministic, no model involvement.
 
 from __future__ import annotations
 
-import json
-import re
 from typing import Any
 
 from llm_orc.core.execution.phases import predicate
+from llm_orc.core.execution.phases.reference import resolve_reference
 from llm_orc.core.execution.utils import dep_name
 from llm_orc.schemas.agent_config import AgentConfig
-
-_REF = re.compile(r"^\$\{([^.}]+)\.([^}]+)\}$")
 
 SKIPPED = "skipped"
 
@@ -33,7 +30,7 @@ class GuardEvaluator:
         if when is None:
             return True
         return predicate.evaluate(
-            when, lambda token: self._resolve(token, results_dict)
+            when, lambda token: resolve_reference(token, results_dict)
         )
 
     @staticmethod
@@ -41,15 +38,3 @@ class GuardEvaluator:
         if isinstance(result, dict):
             return result.get("status") == SKIPPED
         return getattr(result, "status", None) == SKIPPED
-
-    def _resolve(self, token: str, results_dict: dict[str, Any]) -> Any:
-        match = _REF.match(token)
-        if not match:
-            return token
-        dep, field = match.group(1), match.group(2)
-        result = results_dict.get(dep, {})
-        parsed = json.loads(result.get("response", ""))
-        value: Any = parsed
-        for part in field.split("."):
-            value = value[part]
-        return value
