@@ -10,7 +10,7 @@
 
 **Cycle number:** 8
 **Started:** 2026-07-01
-**Current phase:** DECIDE — in progress (opened 2026-07-01; leads with the no-parallel-architecture invariant)
+**Current phase:** DECIDE — in progress. 5 ADRs Accepted (044 AS-11, 045 clean-slate collapse, 046 target architecture/dissolution, 047 Q4 extensibility, 048 Q2 grounded acceptance), all argument-audit-converged. **Next: scenarios + interaction specs** (Q1 settled general by DISCOVER; Q5 removal-sequencing still open, roadmap/BUILD-facing), then the DECIDE→ARCHITECT gate.
 **Cycle type:** standard (full pipeline from DISCOVER; RESEARCH skipped — the Cycle-7 PLAY Ω-spikes are the research)
 **Skipped phases:** research
 **BUILD mode:** gated (declared at cycle open; design-alternative-heavy — extensibility architecture + the clean-slate removal sequencing warrant surfacing trade-offs; gated stewardship appropriate)
