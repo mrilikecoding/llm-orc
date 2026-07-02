@@ -1,5 +1,7 @@
 # ADR-037: Session-Termination Mechanism — Two-Call Trailing Composition
 
+> **Superseded by ADR-045 on 2026-07-01 (Cycle-8 clean-slate collapse, AS-11).** The imperative loop-driver serving architecture is retired; its implementation is removed, not adapted. The behavioral requirement this ADR validated is carried forward to the Cycle-8 declarative target per ADR-045's carry-forward table.
+
 > **Updated by ADR-038 on 2026-06-08.** The FC (call-2 form preservation) is
 > amended: on a REMAINING verdict, call 2 carries the judge's remaining-work
 > statement plus a framework imperative as a next-step anchor — it is no longer
@@ -19,7 +21,7 @@
 > fallback), so the judgment-first composition, digest provenance, and the
 > COMPLETE protocol-clean finish all remain current on that path. See ADR-040.
 
-**Status:** Accepted, Updated by ADR-038 and ADR-040 (Cycle 7 loop-back #5 DECIDE, gate
+**Status:** Superseded by ADR-045 (2026-07-01); formerly Accepted, Updated by ADR-038 and ADR-040 (Cycle 7 loop-back #5 DECIDE, gate
 closed 2026-06-05; Conditional Acceptance per ADR-097 **discharged 2026-06-08**
 jointly with ADR-038 by the WP-LB-L real-OpenCode run — a single multi-file
 session that converged [COMPLETE → text-only finish, client loop ended] and, via

@@ -1,5 +1,7 @@
 # ADR-042: Bounded Content Anchor — Windowing the Produced-Sibling Anchor at Scale
 
+> **Superseded by ADR-045 on 2026-07-01 (Cycle-8 clean-slate collapse, AS-11).** The imperative loop-driver serving architecture is retired; its implementation is removed, not adapted. This ADR was already Reverted (Spike τ′); its content-coherence concern is carried forward to the Cycle-8 declarative target per ADR-045's carry-forward table.
+
 > **Extends ADR-039 (Content Anchor).** ADR-039 routes the produced-sibling API
 > signatures into the callee dispatch so a dependent file references real sibling
 > APIs (Finding H), with selection policy **all prior produced siblings** (ADR-039
@@ -10,7 +12,7 @@
 > siblings. ADR-039 carries an `> Updated by ADR-042` header for its selection
 > policy; ADR-039's content-agnostic signature mechanism is unchanged.
 
-**Status:** **Reverted (Spike τ′, 2026-06-18).** This ADR bounded the content
+**Status:** Superseded by ADR-045 (2026-07-01); formerly **Reverted (Spike τ′, 2026-06-18).** This ADR bounded the content
 anchor to the most recent K=8 produced siblings on a Spike τ anchor-overload
 hypothesis. The Spike τ′ isolation probe refuted that mechanism (form-validity
 30/30 across unbounded / bounded / full-content fallback) and found the bound costs

@@ -1,5 +1,7 @@
 # ADR-038: Remaining-Work Anchor — Routing the Judge's Signal Forward
 
+> **Superseded by ADR-045 on 2026-07-01 (Cycle-8 clean-slate collapse, AS-11).** The imperative loop-driver serving architecture is retired; its implementation is removed, not adapted. The behavioral requirement this ADR validated is carried forward to the Cycle-8 declarative target per ADR-045's carry-forward table.
+
 > **Conditional Acceptance discharged 2026-06-08** (jointly with ADR-037). The
 > real-OpenCode multi-file run (WP-LB-L) passed in a single session: turn 1
 > wrote `string_utils.py`, turn 2 (REMAINING) advanced to `test_string_utils.py`
@@ -15,7 +17,7 @@
 > advance) still applies to tasks that name no files (the general-task fallback).
 > See ADR-040.
 
-**Status:** Accepted, Updated by ADR-040 (Cycle 7 loop-back #6 DECIDE, gate closed 2026-06-08;
+**Status:** Superseded by ADR-045 (2026-07-01); formerly Accepted, Updated by ADR-040 (Cycle 7 loop-back #6 DECIDE, gate closed 2026-06-08;
 Conditional Acceptance per ADR-097 discharged 2026-06-08 by the WP-LB-L
 real-OpenCode multi-file run — see §Empirical grounding)
 

@@ -1,6 +1,8 @@
 # ADR-010: Plexus Ingestion Boundary — Source Material, Push Model
 
-**Status:** Accepted
+> **Partial update by ADR-046 on 2026-07-01.** The push-model ingestion boundary survives unchanged (source-material-only, client-driven, non-blocking; AS-4). Only the `record_outcome`-tool-call phrasing in Decision item 2 is stale — under ADR-046 the KG-write access re-homes from an orchestrator tool call to an engine/script operation (see the ADR-009 update). The push-model, source-material, enrichment-as-quality-gate, and non-blocking properties are unaffected. Body immutable.
+
+**Status:** Accepted; partial update by ADR-046 on 2026-07-01 (write-access phrasing re-homed)
 
 **Date:** 2026-04-17
 

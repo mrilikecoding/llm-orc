@@ -1,6 +1,8 @@
 # ADR-025: Artifact-as-Substrate for Capability Ensemble Deliverables — Always Scope
 
-**Status:** Proposed
+> **Partial update by ADR-046 on 2026-07-01.** The artifact substrate survives as the primary home of the relocated cross-turn persistence (ADR-046 §3). Only ADR-025's §"Calibration-gate evaluation surface under substrate-routing" goes with the superseded ADR-007/014 gate; the artifact-path scheme and the substrate contract are unaffected. Body immutable.
+
+**Status:** Proposed; partial update by ADR-046 on 2026-07-01 (calibration-gate-evaluation subsection retired)
 
 **Date:** 2026-05-15
 

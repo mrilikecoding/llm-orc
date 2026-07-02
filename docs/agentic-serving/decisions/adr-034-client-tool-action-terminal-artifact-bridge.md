@@ -1,6 +1,8 @@
 # ADR-034: Client-Tool-Action Terminal and Artifact-Bridge
 
-**Status:** Proposed
+> **Superseded by ADR-045 on 2026-07-01 (Cycle-8 clean-slate collapse, AS-11).** The imperative loop-driver serving architecture is retired; its implementation is removed, not adapted. The behavioral requirement this ADR validated is carried forward to the Cycle-8 declarative target per ADR-045's carry-forward table.
+
+**Status:** Superseded by ADR-045 (2026-07-01); formerly Proposed
 
 **Date:** 2026-06-01
 

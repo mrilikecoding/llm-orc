@@ -1,5 +1,7 @@
 # ADR-039: Content Anchor — Routing Produced-Sibling Signatures into the Callee Dispatch
 
+> **Superseded by ADR-045 on 2026-07-01 (Cycle-8 clean-slate collapse, AS-11).** The imperative loop-driver serving architecture is retired; its implementation is removed, not adapted. The behavioral requirement this ADR validated is carried forward to the Cycle-8 declarative target per ADR-045's carry-forward table.
+
 > **Updated by ADR-042 (2026-06-17), then ADR-042 REVERTED (Spike τ′, 2026-06-18).**
 > ADR-042 bounded the anchor to the most recent K=8 siblings on a Spike τ
 > anchor-overload hypothesis. The Spike τ′ isolation probe refuted that hypothesis
@@ -10,7 +12,7 @@
 > the isolation evidence.) The content-agnostic signature mechanism in this ADR is
 > unchanged.
 
-**Status:** Proposed (Cycle 7 loop-back #7 DECIDE; argument audit + DECIDE gate pending). Intended Accepted with Conditional Acceptance per ADR-097; the discharge gate is the BUILD real-OpenCode multi-file trajectory re-run (see §Empirical grounding). **Selection policy windowed by ADR-042, then reverted to all-prior (Spike τ′; ADR-042 §Reassessment).**
+**Status:** Superseded by ADR-045 (2026-07-01); formerly Proposed (Cycle 7 loop-back #7 DECIDE; argument audit + DECIDE gate pending). Intended Accepted with Conditional Acceptance per ADR-097; the discharge gate is the BUILD real-OpenCode multi-file trajectory re-run (see §Empirical grounding). **Selection policy windowed by ADR-042, then reverted to all-prior (Spike τ′; ADR-042 §Reassessment).**
 
 ## Context
 
