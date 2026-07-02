@@ -1,0 +1,8 @@
+name: dd-echo-explain
+description: |
+  Dynamic-dispatch spike: deterministic echo seat for the no-model smoke
+  (explain shape, prose). Stands in for dd-seat-explain so the smoke proves the
+  non-build path (marshal produces a prose finish, not a file write).
+agents:
+  - name: out
+    script: "echo '# EXPLAIN-PROSE'"

@@ -1,0 +1,40 @@
+
+=== build -> solo seat (strategy A) ===
+routed seat: dd-seat-code-solo   (63.5s)
+outcome: WRITE is_prime.py
+import math
+
+def is_prime(n):
+    if n <= 1:
+        return False
+    if n == 2:
+        return True
+    if n % 2 == 0:
+        return False
+    max_divisor = int(math.sqrt(n)) + 1
+    for i in range(3, max_divisor, 2):
+        if n % i == 0:
+            return False
+    return True
+
+=== build -> verified seat (strategy B, structurally different) ===
+routed seat: dd-seat-code-verified   (81.8s)
+outcome: WRITE is_prime.py
+def is_prime(n):
+    if n < 2:
+        return False
+    if n == 2:
+        return True
+    if n % 2 == 0:
+        return False
+    i = 3
+    while i * i <= n:
+        if n % i == 0:
+            return False
+        i += 2
+    return True
+
+=== non-build -> explain seat (generality) ===
+routed seat: dd-seat-explain   (13.3s)
+outcome: FINISH (prose)
+A Python list comprehension is a compact way to create lists by applying an expression to each item in an iterable (like a list or range), optionally filtered by a condition. It follows the syntax `[expression for item in iterable if condition]`. For example, `[x**2 for x in range(5)]` generates `[0, 1, 4, 9, 16]`, while `[x for x in range(10) if x % 2 == 0]` filters even numbers. List comprehensions streamline code, reduce boilerplate, and improve readability compared to traditional loops with `append()`.

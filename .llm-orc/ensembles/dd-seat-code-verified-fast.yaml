@@ -1,0 +1,27 @@
+name: dd-seat-code-verified-fast
+description: |
+  Dynamic-dispatch spike: dd-seat-code-verified with qwen3 thinking mode disabled
+  via Ollama's native `think` param (options.think: false) on both nodes. Same
+  contract and structure as the verified seat; the only change is the
+  thinking-mode control, for the latency delta (Q3).
+agents:
+  - name: coder
+    model_profile: agentic-tier-cheap-general
+    options:
+      think: false
+    system_prompt: |
+      You are a coding assistant. Given a programming task, emit the file
+      content ONLY. Emit bare Python source bytes. Do NOT emit the filename, do
+      NOT emit markdown fences, prose, or preambles. The output is written
+      directly to disk.
+
+  - name: reviewer
+    model_profile: agentic-tier-cheap-general
+    depends_on: [coder]
+    options:
+      think: false
+    system_prompt: |
+      You are a code reviewer. The coder produced a file (shown in the previous
+      results). Re-emit the corrected file content ONLY. Emit bare source bytes,
+      no fences or prose. If it is already correct, re-emit it unchanged. The
+      output is written directly to disk.

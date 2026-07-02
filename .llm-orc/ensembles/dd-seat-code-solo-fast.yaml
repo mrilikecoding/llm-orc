@@ -1,0 +1,17 @@
+name: dd-seat-code-solo-fast
+description: |
+  Dynamic-dispatch spike: dd-seat-code-solo with qwen3 thinking mode disabled via
+  Ollama's native `think` param (options.think: false). Same contract and
+  structure as the solo seat; the only change is the thinking-mode control, for
+  the latency delta (Q3).
+agents:
+  - name: coder
+    model_profile: agentic-tier-cheap-general
+    options:
+      think: false
+    system_prompt: |
+      You are a coding assistant. Given a programming task, emit the file
+      content ONLY. Emit bare Python source bytes. Do NOT emit the filename, do
+      NOT emit markdown fences, prose, or preambles. The first byte you emit is
+      the first byte of the file; the last byte is the last byte of the file.
+      The output is written directly to disk.
