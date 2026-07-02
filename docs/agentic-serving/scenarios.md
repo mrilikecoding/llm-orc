@@ -1,6 +1,213 @@
 # Behavior Scenarios: Agentic Serving
 
-*Derived from domain model, ADRs 001-017, deferred candidate #5, conformance scan conformance-scan-decide-001, and conformance-scan-cycle-4-decide. Every term used here comes from the scoped domain model or the project-level domain model.*
+*Cycle-8 scenarios (the driving contract) are derived from the Cycle-8 domain-model dispositions (Amendment Log #23; AS-1/2/5/6/7/9/11) and ADR-044/045/046/047/048. Pre-Cycle-8 scenarios were derived from domain model, ADRs 001-017, deferred candidate #5, conformance scan conformance-scan-decide-001, and conformance-scan-cycle-4-decide. Every term used here comes from the scoped domain model or the project-level domain model.*
+
+> **Cycle-8 supersession (2026-07-02).** The clean-slate collapse (ADR-045) and the target-architecture ADR (ADR-046) dissolved the imperative orchestrator-actor serving architecture. The feature blocks below the second divider keyed to ADR-001 through ADR-043 (Session Lifecycle, Orchestrator Tool Surface, Ensemble Composition, Calibration, Autonomy/Promotion, the loop-driver chain, and the Cycle-4 acceptance table) specify that dissolved form. They are **retained as historical record**, not Cycle-8 build targets, and are removed with the `src/llm_orc/agentic/` code at the Cycle-8 BUILD code-deletion sweep. Rewriting them before the code is removed would document an unbuilt architecture (this matches the deferred current-state-doc discipline for system-design / ORIENTATION / roadmap / field-guide). The behavior that survives is carried forward per ADR-045's carry-forward table and re-specified in the **Cycle 8 — Target Architecture Scenarios** section immediately below, which is the driving contract for Cycle-8 BUILD.
+
+---
+
+## Cycle 8 — Target Architecture Scenarios (ADR-044/045/046/047/048)
+
+*This section is the driving behavioral contract for Cycle-8 BUILD. It specifies the declarative-ensemble serving form: the per-turn handler as one ensemble (classify → seat → marshal), dynamic dispatch, the Topaz-keyed capability registry plus operator-curated shape catalog, the grounded-acceptance gate, and thinking-mode routing. Vocabulary is from the Cycle-8 domain-model dispositions and ADR-046/047/048.*
+
+### Cycle-8 Acceptance Criteria Table
+
+These Cycle-8 acceptance criteria are emergent (observable only at integration or PLAY), aggregate (multiple scenarios compose), or name a layer that individual scenarios stub. Several are the ADR-048 Conditional-Acceptance validation targets: spike-grounded for *discrimination*, but their load-bearing property is unproven until BUILD/PLAY. BUILD Step 5.5 verifies each at its specified layer.
+
+| Criterion | Specified layer | Verification method | Layer-match check |
+|-----------|-----------------|---------------------|-------------------|
+| The serve does everything a single model does with no capability degradation — build / explain / fix / edit-existing / run-tests (full model-parity via composition; DISCOVER settled premise) | End-to-end via a real client (`opencode run`) across a task battery covering each capability | Composes the classify→seat→marshal scenarios across capability turns + a real-client battery (a2 transport proven Cycle-7; the general capability spread is Cycle-8) | no — per-capability scenarios exercise one turn shape each; the parity claim is emergent across the battery and needs a real-client run |
+| Accept-gate independence holds against a live, non-cooperative builder | End-to-end with a live builder in the loop (not static fixtures) | Composes the accept-gate scenarios + a live-builder harness probing the produced-artifact influence channel and builder/judge model-weight correlation | no — the spike tested discrimination on static fixtures; independence-against-a-live-builder is the ADR-048 Conditional-Acceptance target, un-exercised by unit scenarios |
+| The isolated judge's adequacy/coverage verdict is reliable across runs and requirement phrasings | Integration (multi-run, multiple phrasings of one requirement) | Repeated judge runs against varied acceptance-criteria phrasings; measures verdict consistency and the coverage-awareness result | no — feasibility rested on single-sample probes; consistency is a BUILD calibration measurement |
+| The seat contract (`core/validation/`) wired as the seat's pass/fail admission gate | Integration (dispatch a candidate through a seat whose contract is a real `ValidationConfig`) | The dynamic-dispatch scenario extended so the resolved candidate is admitted/rejected by a wired `ValidationEvaluator.evaluate`, not by inspection | no — ADR-046 §2 analyzed the framework (F3, design); the spike asserted seat correctness by inspection, so wiring is unvalidated |
+| Sandboxed execution of the deterministic executor seat | Integration (executor runs produced code inside an isolation boundary) | The executor scenario run against untrusted produced code in a sandbox | no — the spike ran in-process on trusted fixtures; sandboxing is BUILD work |
+
+The Layer-match "no" entries are the table working as designed: each names where BUILD Step 5.5 closes a verification gap, and independence / judge reliability / sandboxing coincide with ADR-048's Conditional-Acceptance targets that transition the ADR from Conditional to full Acceptance.
+
+---
+
+### Feature: Per-Turn Serving Handler — classify → seat → marshal (ADR-046 §1)
+
+### Scenario: A build turn routes classify → capability seat → marshal and writes a deliverable
+**Given** a serving request whose turn asks for new code, and a registered capability seat for `code_generation`
+**When** the per-turn handler runs as one declarative ensemble
+**Then** classify emits a routing decision naming the `code_generation` target, the seat produces the code, and the marshal node emits a client `tool_call` that writes the deliverable to disk
+
+### Scenario: An explain turn routes through the same skeleton and returns prose, not a file
+**Given** a serving request whose turn asks to explain existing code
+**When** the same per-turn handler runs
+**Then** classify routes to an explanatory capability seat and the marshal node returns a prose finish with no file-writing `tool_call`
+
+### Scenario: classify emits a structural routing decision deterministically
+**Given** a turn whose routing signal is structural (a fenced code block tagged `python`, or a named target file extension)
+**When** classify runs
+**Then** classify resolves the target from the structural signal without a model call
+
+### Scenario: classify reads intent with a model-backed decider when the signal is not structural
+**Given** a turn whose routing cannot be resolved from structural signals alone
+**When** classify runs
+**Then** the decider seat reads the turn intent and emits a routing decision `{target, ...}`
+
+### Scenario (integration): the marshal node consumes the seat's real common I/O envelope
+**Given** a capability seat that emits an ADR-024 `DispatchEnvelope` (status / primary / structured / diagnostics / errors / artifacts), not a stub
+**When** the marshal `script:` node runs on that envelope
+**Then** marshal shapes `primary` / `artifacts` into the serve outcome (a client `tool_call` for a deliverable, a prose finish otherwise) without needing any field the envelope does not carry
+
+### Preservation: dynamic dispatch leaves guard and bounded-loop behavior unchanged
+**Given** an ensemble using guard/branch and a bounded `loop:` alongside a `dispatch:` seat node
+**When** the ensemble executes
+**Then** the guard partition and the loop `until:` / `carry:` behavior resolve exactly as they did before dynamic dispatch shipped
+
+### Preservation: the common I/O envelope container shape is unchanged by the collapse
+**Given** the ADR-024 envelope (a surviving container per the Cycle-8 classification)
+**When** a Cycle-8 seat emits it and marshal consumes it
+**Then** the envelope's status / primary / structured / diagnostics / errors / artifacts container shape is unchanged; only the superseded `diagnostics.calibration_verdict` and `diagnostics.audit_findings` sub-fields are absent (they went with their retired gates)
+
+---
+
+### Feature: Dynamic Dispatch Seat Resolution (ADR-046 §1, ADR-047 §1–2)
+
+### Scenario: the seat's dispatch target resolves at the phase layer and runs as a child ensemble
+**Given** a `dispatch:` node with target `"${classify.target}"` and a `classify` result naming `code_generation`
+**When** the phase layer resolves the node
+**Then** the target resolves against `results_dict` via the shared `${dep.field}` resolver and the registered `code_generation` ensemble runs as a child, its output returned to the seat position
+
+### Scenario: a structurally different seat strategy swaps in at zero skeleton change
+**Given** the same classify → seat → marshal skeleton, and two registered `code_generation` parts — a single-model seat and a coder+reviewer seat
+**When** the registry entry for `code_generation` is switched from one to the other
+**Then** the serving turn runs unchanged and the marshal outcome differs only by the swapped seat's output, with no edit to the skeleton
+
+### Scenario: a dispatch target that resolves to no registry entry fails before any child runs
+**Given** a routing decision naming a target with no registered part
+**When** the phase layer attempts to resolve the dispatch node
+**Then** resolution fails with a typed error before any child ensemble executes
+
+### Preservation: the `${dep.field}` resolver behaves identically for guard siblings and dispatch nodes
+**Given** an ensemble where a guard sibling and a `dispatch:` node both reference `${some.field}`
+**When** the phase layer resolves both
+**Then** both resolve against `results_dict` with identical semantics (the dispatch node reuses guard's resolver, not a parallel one)
+
+---
+
+### Feature: Capability Registry and Composition-Shape Catalog (ADR-047)
+
+### Scenario: a capability part registers under a Topaz skill key after AS-2 validation
+**Given** a candidate capability ensemble for `writing_quality` that references only existing library entries
+**When** an operator registers it as a part
+**Then** AS-2 validates its reference graph (no cycle, within depth, every reference resolves to an existing entry) and the part becomes dispatchable under the `writing_quality` key
+
+### Scenario: a part that would introduce a reference-graph cycle is rejected at registration
+**Given** a candidate part whose reference graph contains a cycle
+**When** an operator attempts to register it
+**Then** AS-2 rejects it at registration with a typed error and it never becomes dispatchable
+
+### Scenario: a part exceeding the ensemble recursion depth limit is rejected at registration
+**Given** a candidate part whose reference graph exceeds the depth limit
+**When** an operator attempts to register it
+**Then** AS-2 rejects it at registration
+
+### Scenario: classify selects a shape from the catalog and dynamic dispatch fills its slots (load-time-first binding)
+**Given** a catalog holding a `gen → review` shape and registered parts for each slot
+**When** classify selects the `gen → review` shape for a turn
+**Then** dynamic dispatch binds the runtime-chosen parts into the shape's slots and the shape runs, with the selection expressed in the declarative structure rather than inside a capability ensemble's self-routing (Strategy A)
+
+### Scenario: an operator extends the serving surface by adding a part or shape, never by editing the engine
+**Given** an operator who wants a new capability composition
+**When** the operator adds a part and a shape and registers them
+**Then** the serving surface gains the composition with no change to engine code (AS-11)
+
+### Scenario: the catalog is operator-curated with no auto-promotion path
+**Given** a part that has been dispatched many times with positive outcomes
+**When** the registry state is inspected
+**Then** no accumulate-quality-then-promote transition has occurred — standing in the catalog comes only from operator curation plus AS-2, never from earned trust (AS-5's cross-session promotion half is retired)
+
+### Preservation: the load-path validator and the registry admission gate are the single AS-2 routine
+**Given** an ensemble validated at load time and a part validated at registration
+**When** both validations run
+**Then** both invoke the same validation routine — composition-time and load-time share one implementation, and the registry does not fork a second validator
+
+---
+
+### Feature: Grounded-Acceptance Gate (ADR-048)
+
+*Applicability — gate-conversation synthesis (DECIDE→ARCHITECT gate, 2026-07-02), not a decision ADR-046/048 states; validation-pending. The gate is **default-on in the build-turn shape**. This rests on one spike-grounded argument plus one open, measurable question:*
+
+- ***Grounded (spike evidence):** the isolated judge's triviality-detection floor (spike fixture b — rejecting `assert True`) is builder- and criteria-independent. A **presence-gated** opt-in (run the gate only when the turn carries acceptance criteria) reduces to executor-only on no-criteria turns, which ADR-048 §Rejected-alternatives rejects for shipping trivial-test gaming. So default-on is better-grounded than opt-in on the spike's own evidence. (A **richness-judged** opt-in — a model deciding whether criteria are "rich enough" — is separately a stochastic carve-out against the determinism-over-carve-outs lens; the deterministic presence-gated form is ruled out by the trivial-test-gaming argument, not the carve-out lens. An earlier draft of this note conflated the two.)*
+- ***Open (validation-pending — Grounding Reframe logged at this gate):** on thin or absent criteria the judge adds only triviality-detection (coverage analysis needs criteria, §2). Whether that floor beats executor-only enough to justify its per-round cost on thin-criteria turns is measurable by rerunning ADR-048's grounding-spike fixtures with criteria withheld/thinned. Owed before BUILD wires the gate unconditional.*
+
+*Build-vs-non-build split (sound, low-risk reuse of classify's routing): the gate applies where classify has routed an executable deliverable; non-build turns (explain/prose) run no gate because the deterministic executor anchor is inert there and judge-only is insufficient. Round budget: multiple accept rounds are acceptable when each is short (target: a few seconds) and well-scoped — per-round latency, round-count bounding, and ADR-048 §5's open composition rule (which bears on the judge false-reject rate, inflating rounds on cheap seats) are ARCHITECT/BUILD fitness concerns (Q3 interactive-speed).*
+
+### Scenario: the accept gate is default-on for build turns and inert for non-build turns
+**Given** the per-turn handler routing a build turn (an executable deliverable) and, separately, an explain turn (no executable deliverable)
+**When** each turn reaches the marshal / accept boundary
+**Then** the build turn runs the composed accept gate as part of the default serving shape, and the explain turn runs no accept gate — gate presence follows classify's executable-deliverable routing, not acceptance-criteria richness
+
+### Scenario: accept = tests_pass AND tests_adequate — a correct, adequately-tested output is accepted
+**Given** a produced artifact that runs, whose tests pass and cover the acceptance criteria
+**When** the composed verification gate runs (deterministic executor seat AND isolated adequacy/coverage judge seat, combined by a deterministic gate seat)
+**Then** both signals are positive and the gate accepts the turn's deliverable
+
+### Scenario: the executor rejects wrong code that real tests exercise, routing another round
+**Given** a produced artifact whose tests exercise behavior the code gets wrong
+**When** the gate runs
+**Then** the deterministic executor signal is negative, `accept` is false, and the loop routes another round
+
+### Scenario: the isolated judge rejects a trivially-tested output the executor passes (orthogonal catch)
+**Given** a produced artifact that runs and whose only test is `assert True`
+**When** the gate runs
+**Then** the executor signal is positive but the isolated judge signal is negative, `accept` is false, and the loop routes another round
+
+### Scenario: verifier seats receive only the contract, artifact, and execution result — never builder context
+**Given** a builder seat and the verifier seats (executor, judge)
+**When** the gate runs
+**Then** each verifier seat receives only `{acceptance criteria, produced artifact, execution result}` and no builder reasoning or conversation context (independence via seat isolation)
+
+### Scenario: the judge does requirement-coverage analysis against the acceptance-criteria contract
+**Given** an acceptance-criteria contract that states a rule (e.g. the leap-year century rule) and a produced artifact whose tests omit that case
+**When** the isolated judge checks the artifact against the contract
+**Then** the judge reports the coverage gap for the stated rule, not merely the absence of trivial tests
+
+### Preservation: the per-seat contract composes with, and does not replace, the loop-level gate
+**Given** a seat that clears its per-seat admission contract (ADR-046 §2)
+**When** the loop-level accept gate then runs on the turn's deliverable
+**Then** the gate still evaluates independently and may reject the turn even though the seat's own contract passed (per-seat admission and loop-level accept are different granularities that compose)
+
+---
+
+### Feature: Honest Limits of the Accept Gate (ADR-048 §2, §5)
+
+### Scenario (degradation): under thin acceptance criteria the judge degrades to triviality detection and the executor anchors
+**Given** an acceptance-criteria contract that is weak or underspecified
+**When** the gate runs on a produced artifact whose tests are non-trivial but under-cover the (unnamed) cases
+**Then** the judge can still reject `assert True`-style triviality but cannot demand coverage of cases the contract never names, and the deterministic executor remains the anchoring signal (the gate's guarantee weakens honestly to "runs and is non-trivially tested")
+
+### Scenario (ceiling): a bug on a requirement-unstated input passes the gate
+**Given** a produced artifact correct on every input the acceptance criteria state, but wrong on an input the requirement never mentions
+**When** the minimal gate runs (executor + adequacy judge, no oracle rung)
+**Then** the gate accepts the deliverable — the unstated-input ceiling stands until the deferred held-out / property / golden oracle rung is built
+
+*Null-coverage note: preservation for this feature is covered by the Grounded-Acceptance Gate block above; these scenarios specify the gate's boundary, not new module-touching behavior.*
+
+---
+
+### Feature: Thinking-Mode Routing (ADR-046 §4)
+
+### Scenario: an easy/interactive turn routes to a thinking-off seat
+**Given** a turn classified as easy/interactive
+**When** classify routes it
+**Then** the seat runs with thinking off (the ~10x interactive-latency lever) and produces output on the tested task class without the thinking-token latency wall
+
+### Scenario: a hard turn routes to a thinking-on seat
+**Given** a turn classified as hard
+**When** classify routes it
+**Then** the seat runs with thinking on — thinking-mode is a per-seat routing dimension alongside model size and verify-heaviness
+
+### Preservation: an ensemble that sets no thinking control is unaffected
+**Given** a seat whose profile does not set the thinking control
+**When** it runs
+**Then** its behavior is unchanged by the thinking-routing mechanism (thinking-off/on is opt-in per seat, not a global default flip)
+
+*Boundary note: the thinking-off quality claim is spike-grounded on easy tasks only; the hard-task quality boundary is an untested edge (ADR-046 §4, Q3). These scenarios specify dispatch behavior, not the quality boundary.*
 
 ---
 
