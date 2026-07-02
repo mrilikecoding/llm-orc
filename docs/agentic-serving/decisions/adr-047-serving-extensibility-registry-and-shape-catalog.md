@@ -1,6 +1,6 @@
 # ADR-047: Serving extensibility — capability registry, composition-shape catalog, and declarative binding
 
-**Status:** Proposed (2026-07-02)
+**Status:** Accepted (2026-07-02)
 
 ## Context
 
@@ -32,14 +32,17 @@ not the reflex.
 - **Shapes** are named composition patterns authored declaratively as ensemble skeletons or wrappers (solo; gen → review; gather → analyze → synthesize; fan-out → merge; and so on). The catalog *structure* is borrowed from llm-conductor's pattern library (keyed by capability × shape × output-type); only the structure, not its populator.
 - Both parts and shapes are **operator-curated**. **AS-2 (validate-before-load) is the admission gate**: every registered part and every registered shape is validated against the ensemble reference graph (no cycle, within the depth limit, every reference resolves to an existing entry) before it can fill a seat or run.
 
-### 2. Binding is declarative and load-time-first (Strategy A).
+### 2. Binding is declarative and load-time-first.
 
 The classify decider selects a shape and fills its slots; dynamic dispatch binds the
 runtime-chosen parts. Selection lives in the declarative structure, not inside a
 small model's self-routing. This runs on the shipped primitives today (feasibility
 spike). Turn-time selection among several candidates per capability is a hybrid that
-a guard/branch or a richer decider can express, but the default is **load-time
-curation + classify-selection**, not a separate runtime routing actor.
+a guard/branch or a richer decider can express. Both load-time curation and turn-time
+selection keep routing *external* to the capability ensembles: essay-004's Strategy-A
+criterion is about external-vs-internal placement, not binding time, so both satisfy
+it. The default is **load-time curation + classify-selection** because it needs no new
+primitive, not because turn-time selection would be less "Strategy A".
 
 ### 3. Invention of new shapes is an author-time activity that grows the catalog.
 
@@ -59,7 +62,8 @@ shapes, never by editing the engine (AS-11).
 
 The catalog is operator-curated, not calibration-grown. There is no
 accumulate-quality-then-auto-promote loop (retired AS-5). A composition is admitted by
-AS-2 plus its contract, not by earned standing trust. Per-dispatch quality signal is
+AS-2 plus its contract (the seat contract ADR-046 §Open still tracks as designed but
+unwired and unvalidated), not by earned standing trust. Per-dispatch quality signal is
 Q2's concern, kept separate.
 
 ## Deferred — the composer-ensemble path (named forward direction, not built here)
@@ -77,11 +81,23 @@ bounded, not vague:
   (AS-11).
 - **composer ensembles**, with these strategy pillars:
   - (a) compose from the registry's validated parts;
-  - (b) AS-2 gates the composed output before it registers or runs;
-  - (c) the composer is a **verified ensemble, not a lone model** — and per the standing
-    principle, the compose step is first attempted as an **orchestration of bounded
-    small-model roles plus deterministic verification** (the ensemble-over-frontier
-    bet), with a frontier model as fallback and benchmark, not the default;
+  - (b) AS-2 validates the composer's output (the newly composed ensemble's
+    reference-graph structure: no cycle, within depth, every reference resolves to an
+    existing entry) before it registers; per-dispatch output quality stays Q2's concern
+    (§5), unchanged for composer-produced ensembles;
+  - (c) the composer is a **verified ensemble, not a lone model**. Whether the compose
+    step itself runs as an **orchestration of bounded small-model roles plus
+    deterministic verification**, rather than a single capable reasoning process, is an
+    open **hypothesis** (the standing ensemble-over-frontier principle, §Context), not
+    an evidence-backed claim. essay-004's
+    cited evidence backs ensemble-first for *routing/selection*; it assigns *design*
+    work (choosing DAG shapes, composing from parts) to the more capable tier and
+    reports mixed-model synthesis underperforming on open-ended generation. So the
+    baseline and benchmark for the compose step is a capable-model-composed structure,
+    and ensemble-decomposition of that step is the standing-principle bet to *validate*
+    against the baseline at BUILD/PLAY: held open, not ruled out. The
+    attempt-then-escalate decision, where used, is gated by (d)'s deterministic checks,
+    never by a small model judging its own output;
   - (d) acceptance is **deterministic** (contract + verification), never
     trust-accumulation;
   - (e) **author-time-with-review first**; per-request runtime composition (on the
@@ -93,24 +109,32 @@ bounded, not vague:
 - **Strategy B (a general ensemble with internal small-model self-routing).** Rejected
   on the evidence llm-conductor's essay-004 cites: the failure is placing routing where
   a small model must execute it. The classify seat is external and declarative
-  (Strategy A). *Note per the standing principle:* Strategy A does not mean "a frontier
-  model routes" — it means routing lives in declarative structure over bounded roles;
-  the router itself can be an orchestration of small models.
+  (Strategy A). *Extension flagged (standing principle, beyond the cited evidence):*
+  essay-004's validated Strategy A puts a *capable* model (Claude) in the external
+  router seat, and no source it cites tests a small model there. This ADR's position
+  that the external router may itself be an orchestration of bounded small-model roles
+  is a considered extension of essay-004's external-vs-internal placement axis, driven
+  by the standing principle. It is not a claim the cited evidence already establishes.
 - **Build the compose-at-runtime primitive now.** Rejected as premature. The catalog
   plus runtime-fill covers the near-term, and AS-11 says extend the engine when a flow
   needs a shape the catalog lacks. None does yet. Held as the named deferred extension.
 - **Calibration-grown catalog (llm-conductor's Design → Calibrate → Trust → Promote).**
   Rejected: it is the retired AS-5 trust/promotion machinery wearing a design-laboratory
   coat. Copy the catalog structure, reject the populator.
-- **Frontier-model default for hard composition (or routing) steps.** Rejected as the
-  default per the standing principle: question what bounded-role ensemble orchestration
-  can do first; frontier is a fallback and a benchmark, not the reflex.
+- **Frontier-model default for routing/selection steps.** Rejected as the default per
+  both essay-004's evidence (external SLM routing beats internal self-routing) and the
+  standing principle: question what bounded-role ensemble orchestration can do first;
+  frontier is a fallback and a benchmark, not the reflex. **For composition/design
+  steps this rejection does not hold on the evidence** (essay-004 assigns design to the
+  capable tier): there a capable-model-composed structure is the baseline and benchmark,
+  and ensemble-first-for-composition is the open hypothesis (§Deferred pillar c), not a
+  settled rejection.
 
 ## Consequences
 
 **Positive:**
 - Near-term extensibility ships on already-shipped primitives; no new engine work is required to reach a curated, composable serving surface.
-- The composer-ensemble vision has a bounded, evidence-grounded path rather than an open question, with guardrails (AS-2, deterministic acceptance) that keep it clear of the retired machinery.
+- The composer-ensemble vision has a bounded path rather than an open question: the compose-at-runtime primitive has a grounded spec (the feasibility spike's four named gaps), while ensemble-first-for-composition (pillar c) remains an open, un-grounded hypothesis under the standing ensemble-over-frontier principle (§Context). The other strategy pillars are design guardrails, not empirical bets. Guardrails (AS-2, deterministic acceptance) keep any future work on the direction clear of the retired machinery.
 - The ensemble-over-frontier principle is applied as a design lens, wired into the composer's compose step.
 
 **Negative / cost:**
@@ -122,6 +146,7 @@ bounded, not vague:
 
 ## Provenance check
 
-- **Driver-derived:** the registry-plus-catalog shape and the Strategy-A binding follow from the runtime-composition feasibility spike and the llm-conductor mining (Strategy A/B; the ADR-019 pattern-library structure). The dissolution, AS-11, and AS-2's survival are from ADR-046 and the domain model.
-- **Drafting-time synthesis (flagged for the auditor):** the composer-ensemble strategy pillars are a synthesis of the practitioner's stated vision with the dissolution constraints; the serving-default candidate shapes are not yet chosen (BUILD); the standing ensemble-over-frontier principle is the practitioner's directive applied as a lens.
-- **Empirical-Grounding Filter (ADR-097):** the near-term decision (catalog + runtime-fill) is spike-grounded (feasibility PASS for fixed-shape, runtime-filled compositions). The composer-ensemble direction is a **named forward direction, not a commitment** — deferred and un-grounded; the compose-at-runtime primitive is spec'd from the spike's four gaps but unbuilt. No feature is committed on research-surfaced possibility alone.
+- **Driver-derived:** the registry-plus-catalog shape and the load-time-first binding follow from the runtime-composition feasibility spike and the llm-conductor mining (Strategy A/B; the ADR-019 pattern-library structure). The dissolution, AS-11, and AS-2's survival are from ADR-046 and the domain model.
+- **Drafting-time synthesis:** the composer-ensemble strategy pillars are a synthesis of the practitioner's stated vision with the dissolution constraints; the serving-default candidate shapes are not yet chosen (BUILD); the standing ensemble-over-frontier principle is the practitioner's directive applied as a lens.
+- **Evidence scope (refined after the R1 argument audit, 2026-07-02):** essay-004's Strategy-A / SLM-routing evidence grounds the *routing/selection* decision (§1–§3) only. It does **not** ground ensemble-first-for-*composition* (pillar c): essay-004 assigns design work to the capable tier and reports mixed-model synthesis underperforming on open-ended generation. Ensemble-first-for-composition is held as the standing-principle hypothesis (ensemble-over-frontier, §Context), deferred and not ruled out. The domain model's AS-6 disposition (2026-07-02 forward note) is the anchor: what is retired is the orchestrator-LLM `compose_ensemble` actor; runtime composition *as a declarative engine capability* remains a live Q4+ direction.
+- **Empirical-Grounding Filter (ADR-097):** the near-term decision (catalog + runtime-fill) is spike-grounded (feasibility PASS for fixed-shape, runtime-filled compositions). The composer-ensemble direction is a **named forward direction, not a commitment**: deferred and un-grounded; the compose-at-runtime primitive is spec'd from the spike's four gaps but unbuilt. No feature is committed on research-surfaced possibility alone.
