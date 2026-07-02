@@ -1,0 +1,54 @@
+name: q2-accept-gate
+description: |
+  Cycle-8 Q2 grounding spike — minimal independent accept gate (§6.2b).
+
+  executor (deterministic: runs code+tests) -> judge (isolated LLM: test
+  adequacy) -> gate (accept = tests_pass AND tests_adequate) -> guarded
+  accept / revise terminals.
+
+  The point: the accept/another-round decision must be independent of the
+  builder. Here independence comes from seat isolation (verifier seats see only
+  {requirement, produced artifact, results}, never builder context) plus
+  deterministic execution. Composed entirely from shipped primitives (script,
+  llm, when-guard) — no new engine primitive.
+agents:
+  - name: executor
+    script: scripts/spike-q2-grounded-accept/executor.py
+
+  - name: judge
+    model_profile: agentic-tier-cheap-general
+    depends_on: [executor]
+    options:
+      think: false
+    system_prompt: |
+      You are an independent test-adequacy reviewer. You are given a coding
+      REQUIREMENT, the produced CODE, the produced TESTS, and whether the tests
+      currently pass.
+
+      Judge ONLY whether the tests adequately verify that the code meets the
+      requirement. Tests are INADEQUATE if they are trivial: e.g. assert True,
+      only checking the function exists or is callable, or not checking actual
+      output values against the requirement. Tests are ADEQUATE if they check
+      the code's real behavior against the requirement with meaningful cases.
+
+      The test: would these tests CATCH a wrong implementation? If a subtly
+      broken version of the code would still pass them, they are inadequate.
+
+      Do not judge the code's correctness directly. Judge the tests.
+
+      Respond with ONLY a JSON object, no other text, no code fences:
+      {"tests_adequate": true or false, "reason": "<one sentence>"}
+
+  - name: gate
+    script: scripts/spike-q2-grounded-accept/gate.py
+    depends_on: [executor, judge]
+
+  - name: accept
+    script: scripts/spike-q2-grounded-accept/terminal_accept.py
+    depends_on: [gate]
+    when: ${gate.accept}
+
+  - name: revise
+    script: scripts/spike-q2-grounded-accept/terminal_revise.py
+    depends_on: [gate]
+    when: ${gate.accept} == false
