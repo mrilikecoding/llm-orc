@@ -14,6 +14,7 @@ from llm_orc.core.execution.progress_controller import ProgressController
 from llm_orc.core.execution.result_types import AgentResult
 from llm_orc.schemas.agent_config import (
     AgentConfig,
+    DynamicDispatchAgentConfig,
     EnsembleAgentConfig,
     LlmAgentConfig,
     LoopAgentConfig,
@@ -111,6 +112,8 @@ class AgentDispatcher:
             return "ensemble"
         if isinstance(agent_config, LoopAgentConfig):
             return "loop"
+        if isinstance(agent_config, DynamicDispatchAgentConfig):
+            return "dynamic_dispatch"
         return None
 
     async def _execute_single_agent_in_phase(

@@ -111,7 +111,30 @@ class LoopAgentConfig(BaseAgentConfig):
     loop: LoopSpec
 
 
-AgentConfig = LlmAgentConfig | ScriptAgentConfig | EnsembleAgentConfig | LoopAgentConfig
+class DynamicDispatchAgentConfig(BaseAgentConfig):
+    """Config for a dynamic-dispatch agent — resolves and runs an ensemble
+    chosen at runtime from an upstream stage's output.
+
+    Unlike EnsembleAgentConfig's load-time `ensemble` reference, `dispatch` is
+    a `${ref}` template resolved at execution time against upstream results to
+    the target ensemble's name.
+    """
+
+    dispatch: str
+
+    # Runtime-only: the target ensemble name resolved at the phase layer from
+    # `dispatch` against results_dict (set by DispatchResolver, read by the
+    # runner). Excluded from serialization, like the fan-out runtime fields.
+    dispatch_resolved: str | None = Field(default=None, exclude=True)
+
+
+AgentConfig = (
+    LlmAgentConfig
+    | ScriptAgentConfig
+    | EnsembleAgentConfig
+    | LoopAgentConfig
+    | DynamicDispatchAgentConfig
+)
 
 
 def parse_agent_config(data: dict[str, Any]) -> AgentConfig:
@@ -119,6 +142,8 @@ def parse_agent_config(data: dict[str, Any]) -> AgentConfig:
 
     Discriminates by key presence:
     - 'script' -> ScriptAgentConfig
+    - 'loop' -> LoopAgentConfig
+    - 'dispatch' -> DynamicDispatchAgentConfig
     - 'ensemble' -> EnsembleAgentConfig
     - 'model_profile' or 'model' -> LlmAgentConfig
     """
@@ -126,6 +151,8 @@ def parse_agent_config(data: dict[str, Any]) -> AgentConfig:
         return ScriptAgentConfig(**data)
     if "loop" in data:
         return LoopAgentConfig(**data)
+    if "dispatch" in data:
+        return DynamicDispatchAgentConfig(**data)
     if "ensemble" in data:
         return EnsembleAgentConfig(**data)
     if "model_profile" in data or "model" in data:

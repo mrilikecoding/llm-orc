@@ -407,6 +407,39 @@ class TestEnsembleAgentDispatchedByAgentDispatcher:
         assert result == "ensemble"
 
 
+class TestDynamicDispatchAgentConfigParsing:
+    """Scenario: Dynamic-dispatch agent config parsed from a `dispatch:` key.
+
+    The target ensemble is chosen at runtime from an upstream stage's output
+    (a `${ref}` template), unlike EnsembleAgentConfig's load-time `ensemble`.
+    """
+
+    def test_dynamic_dispatch_agent_parsed(self) -> None:
+        from llm_orc.schemas.agent_config import DynamicDispatchAgentConfig
+
+        data: dict[str, Any] = {
+            "name": "seat",
+            "dispatch": "${capability}",
+        }
+        config = parse_agent_config(data)
+        assert isinstance(config, DynamicDispatchAgentConfig)
+        assert config.dispatch == "${capability}"
+
+
+class TestDynamicDispatchDispatchedByAgentDispatcher:
+    """AgentDispatcher routes DynamicDispatchAgentConfig to 'dynamic_dispatch'."""
+
+    def test_isinstance_dispatch_for_dynamic_dispatch_agent(self) -> None:
+        from llm_orc.core.execution.phases.agent_dispatcher import (
+            AgentDispatcher,
+        )
+        from llm_orc.schemas.agent_config import DynamicDispatchAgentConfig
+
+        config = DynamicDispatchAgentConfig(name="seat", dispatch="${capability}")
+        result = AgentDispatcher._determine_agent_type(None, config)  # type: ignore[arg-type]
+        assert result == "dynamic_dispatch"
+
+
 class TestLoopAgentConfigParsing:
     """Scenario: Loop agent config parsed from a `loop:` block."""
 
