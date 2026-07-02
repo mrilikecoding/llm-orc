@@ -8,6 +8,8 @@
 
 **Open boundary.** One interaction boundary is not yet pinned: how the Orchestrator Agent handles the *client's* tool definitions (the tools declared by an agentic coding tool in its `/v1/chat/completions` request). The current ADRs specify the orchestrator's internal tool surface (ADR-003) but do not commit on whether client-declared tools are passed through to the orchestrator's LLM, held by the orchestrator for delegation to invoked ensembles, or rejected. This affects the Tool User interaction below — the placeholder text reflects the ambiguity rather than hiding it. Decision needed in ARCHITECT or a follow-up DECIDE mini-cycle.
 
+> **Cycle-8 supersession (2026-07-02).** ADR-045/046 dissolved the imperative orchestrator-actor serving architecture. The **Orchestrator LLM** stakeholder below no longer exists as an actor: the client (OpenCode, or any caller) owns the multi-turn loop, each request is one declarative ensemble pass (classify → seat → marshal, ADR-046), and cross-turn state lives in the substrate, not an orchestrator's memory. That stakeholder's tasks re-home — routing → the classify decider seat; composition → the operator-curated registry (ADR-047); terminate cleanly → the marshal node under the client-owned loop; record outcomes → substrate reads/writes. The **Routing-Planner Ensemble** stakeholder (Cycle-7) is the classify decider seat in the collapsed form; the Cycle-7 loop-driver / marshalling-boundary actor tasks describe the dissolved imperative chain (ADR-033–043, superseded). These are **retained as historical record** and removed with the `src/llm_orc/agentic/` code at the Cycle-8 BUILD sweep. The **Cycle 8 interaction-spec additions** section at the end of this file is the current interaction surface. The client-tool-definitions "Open boundary" just above is largely resolved by ADR-046: the client owns the loop and the marshal node emits the client `tool_call`s the client executes.
+
 ---
 
 ## Stakeholder: Tool User
@@ -507,3 +509,49 @@ The Skill Orchestration User (Cycle 5 introduction) composes a client-side skill
 #### Task (Tool User): Never receive a broken (un-parseable) file in the workspace
 
 **Interaction mechanics:** Extends the ADR-040 multi-file task to *adequacy of form*, not only completeness. A named-file session that previously could land a SyntaxError-carrying `cli.py` (trailing prose, or wrong-language content) now either self-heals that file invisibly or finishes short without it — the workspace never receives a file that does not parse as what its extension claims. The common intermittent case is invisible (the recovered file simply appears valid); the persistent case is the one experiential change PLAY must weigh: a *shorter* session (fewer files, none broken) instead of a complete-but-broken one. Whether a short session reads as better or worse than a broken-file diff the client could have rejected is the open experiential question (argument-audit-surfaced); FC-51 `TurnDecision` diagnostics distinguish the turn types. The protection itself is deterministic and tier-independent; full convergence on the hardest files under the cheap tier needs coder-tier escalation (ADR-014), named but not yet wired. *(The gate is env-gated spike code until the BUILD de-gate; this interaction is the production target, validated at the spike layer.)*
+
+---
+
+## Cycle 8 interaction-spec additions (ADR-044/045/046/047/048)
+
+*The collapse changes the interaction surface in three ways: the Tool User's serve becomes a general per-turn handler with full model-parity (not a build-new-files pipeline); the Ensemble Author / Operator gains a registry-and-catalog curation surface and loses the promotion/calibration surface; and the Orchestrator LLM stakeholder is dissolved (its tasks re-home, per the banner at the top of this file). Derived from the Cycle-8 DISCOVER feed-forward (full model-parity via composition; interactive speed as a first-class constraint) and ADR-046/047/048.*
+
+### Stakeholder: Tool User — Cycle 8 refinements
+
+**Super-Objective (unchanged):** Complete coding work through an agentic coding tool without knowing or caring what sits behind the endpoint, while retaining autonomy from a single provider.
+
+#### Task: Complete any coding turn — explain, fix, edit existing, run tests, or build — with no capability degradation
+
+**Interaction mechanics:** The tool user interacts with their agentic coding tool exactly as with any other backend. Behind the endpoint, each request is one declarative-ensemble pass: classify reads the turn and routes it, a capability seat handles it, and the marshal node returns the outcome (a client `tool_call` for a file deliverable, prose otherwise). The serve does everything a single model does — the earlier narrow build-new-files serve (Cycle-7 Ω-serve) was one sub-case. The tool user does not see the classify/seat/marshal structure; they see responses, tool calls, and streamed content in the shape their tool expects. Client-declared tools (bash, file-edit) are executed by the client under its own loop: the marshal node emits the `tool_call`, the client runs it, and the result returns on the next request (the client owns the loop; ADR-046 resolves the earlier client-tool-definitions open boundary).
+
+#### Task: Experience the accept gate transparently (another round, or a finish)
+
+**Interaction mechanics:** When a build turn's deliverable does not clear the grounded-acceptance gate (deterministic executor + isolated adequacy/coverage judge; ADR-048), the serve routes another round rather than shipping the output. To the tool user this reads as the assistant iterating toward a working result, not as an error. Under thin acceptance criteria the guarantee weakens honestly to "runs and is non-trivially tested" (ADR-048 §2); the tool user raises the ceiling by stating clearer acceptance criteria in the turn (criteria-elicitation is the primary lever). A bug on an input the request never mentioned can still pass (the unstated-input ceiling; ADR-048 §5).
+
+#### Task: Get interactive latency on the local rig
+
+**Interaction mechanics:** Easy/interactive turns route to thinking-off seats (ADR-046 §4), keeping the serve interactive on the 32GB rig; hard turns route to thinking-on seats. The tool user experiences responsiveness on ordinary turns without a global quality/speed toggle — thinking-mode is a per-seat routing decision made behind the endpoint. (Hard-task quality under thinking-off is an untested edge; the routing splits the axis rather than forcing one setting.)
+
+### Stakeholder: Ensemble Author / Operator — Cycle 8 additions
+
+**Super-Objective (refined):** Curate and extend the serving surface declaratively — adding capability parts and composition shapes — without editing the engine, and without a promotion/trust surface to administer.
+
+#### Task: Register a capability part under a Topaz skill key
+
+**Interaction mechanics:** The operator authors a capability ensemble and registers it as a **part** under one of the eight Topaz skill keys (`code_generation`, `tool_use`, `mathematical_reasoning`, `logical_reasoning`, `factual_knowledge`, `writing_quality`, `instruction_following`, `summarization`). Registration runs AS-2 validation (no reference cycle, within depth, every reference resolves to an existing entry); an invalid part is refused at registration and never becomes dispatchable. The classify decider emits a Topaz target and dynamic dispatch resolves it against the registry.
+
+#### Task: Author and register a composition shape into the catalog
+
+**Interaction mechanics:** The operator authors a **shape** — a named composition pattern (solo; gen → review; gather → analyze → synthesize; fan-out → merge) as a declarative ensemble skeleton or wrapper — and registers it into the catalog after AS-2 validation and review. Shape *invention* is an author-time activity that grows the catalog; the serve does not invent shapes at runtime (the Strategy-A/B documented failure mode). Binding is load-time-first: classify selects a registered shape and fills its slots via dynamic dispatch.
+
+#### Task: Extend the serving surface without editing the engine
+
+**Interaction mechanics:** The operator extends capability by adding parts and shapes, never by editing engine code (AS-11). A new capability composition ships as registry-and-catalog content plus its ensembles. When a flow demonstrably needs a shape the catalog cannot express, the resolution is a minimal new engine primitive (the deferred compose-at-runtime primitive; ADR-047 §Deferred), authored TDD like guard/loop/dispatch — still not a parallel orchestration layer.
+
+#### Task (removed surface): promotion and calibration curation
+
+**Interaction mechanics:** *This surface is dissolved.* There is no accumulate-quality-then-auto-promote loop and no calibration-verdict review to administer (retired AS-5 cross-session promotion; ADR-046, ADR-047 §5). Standing in the catalog comes only from operator curation plus AS-2. Per-dispatch quality is the accept gate's concern (ADR-048), not a promotion surface. Operators who previously tuned calibration/promotion now curate the registry instead.
+
+### Stakeholder: Orchestrator LLM — dissolved
+
+**Interaction mechanics:** *This stakeholder no longer exists as an actor (ADR-046 orchestrator-actor dissolution).* The client owns the multi-turn loop; each request is one declarative ensemble pass; there is no persistent internal orchestrator running a ReAct loop, holding accumulating conversation context, or composing ensembles at runtime via a tool surface. Its former tasks re-home: *route an existing ensemble* → the classify decider seat emitting a Topaz target resolved by dynamic dispatch; *compose a new ensemble* → operator-curated registry parts and shapes (ADR-047), with runtime composition-from-ensembles a deferred declarative-engine direction rather than an orchestrator-LLM tool; *record outcomes / stay within budget / terminate cleanly* → substrate reads/writes and the marshal node under the client-owned loop. The **Routing-Planner Ensemble** stakeholder (Cycle-7) is this classify decider seat in the collapsed form.
