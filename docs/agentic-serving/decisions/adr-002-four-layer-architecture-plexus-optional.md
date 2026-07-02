@@ -1,8 +1,14 @@
 # ADR-002: Four-Layer Architecture with Plexus Optional
 
-> **Updated by ADR-016 on 2026-05-06.** The layering rule's "edges never upward" property is amended for a single narrow exception — a read-only signal channel may flow from L0 (Ensemble Engine outputs) to L1 (Calibration Gate dispatch decisions), gated by five bounding mechanisms specified in ADR-016. The exception is signal-channel-specific (calibration only) and read-only (no upward writes). All other layer pairs remain prohibited; the rest of this ADR (four-layer architecture, Plexus optionality, baseline-vs-upgrade distinction, and consequences) remains current.
+> **Updated by ADR-046 on 2026-07-01 (supersedes the ADR-016 amendment below).** Two changes follow from the orchestrator-actor dissolution (ADR-046 §3):
+> 1. **Layering-rule revert.** ADR-016 is superseded, so its "edges never upward, with one exception (the L0→L1 calibration channel)" amendment is **struck — the rule reverts to no exception, edges never upward.** (The literal rule text in `system-design.md` reverts with the deferred Cycle-8 BUILD current-state sweep, when the `calibration_signal_channel` code is removed.)
+> 2. **Layer-2 definition superseded.** Decision item 2 below — "Orchestrator Agent — ReAct loop powered by a model profile, exercising a fixed tool surface (ADR-003)" — no longer describes the architecture. Under ADR-046 the orchestrator actor is dissolved: the client owns the loop, and the per-turn serving handler is **one declarative ensemble (classify → seat → marshal)** — typed seats joined by the common I/O envelope (ADR-024), the capability seat filled by runtime dynamic dispatch, with no persistent internal ReAct loop and no fixed LLM-facing tool surface. The four-layer split, Plexus optionality (AS-8), and Layers 1 / 3 / 4 remain current.
+>
+> Body immutable.
+>
+> **Updated by ADR-016 on 2026-05-06 — SUPERSEDED by ADR-046 (see above).** The layering rule's "edges never upward" property was amended for a single narrow exception — a read-only signal channel from L0 to L1, gated by five bounding mechanisms specified in ADR-016. This amendment is now reverted.
 
-**Status:** Updated by ADR-016 (was: Accepted)
+**Status:** Updated by ADR-046 on 2026-07-01 (Layer-2 definition superseded; ADR-016 layering-rule exception reverted) — core four-layer split + Plexus optionality remain Accepted
 
 **Date:** 2026-04-17
 

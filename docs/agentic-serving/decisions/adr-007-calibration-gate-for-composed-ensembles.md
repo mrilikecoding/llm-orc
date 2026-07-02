@@ -1,6 +1,8 @@
 # ADR-007: Calibration Gate for Composed Ensembles
 
-**Status:** Accepted
+> **Superseded by ADR-046 on 2026-07-01.** The cross-session calibration/trust mechanism (first-N invocations result-checked, verdicts accumulating to a promotable library-tier entry) governed the now-dissolved runtime self-composition surface (`compose_ensemble`, superseded with ADR-006). **AS-5 survives as an invariant:** its per-dispatch quality-gating re-homes to seat contracts (ADR-046 §2); its cross-session stabilization/promotion half is out of scope — there is no self-composition surface left to promote into. Body immutable.
+
+**Status:** Superseded by ADR-046 on 2026-07-01 (was: Accepted)
 
 **Date:** 2026-04-17
 

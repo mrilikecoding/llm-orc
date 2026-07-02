@@ -1,6 +1,8 @@
 # ADR-009: Plexus Integration — Tool-First, Injection Later
 
-**Status:** Accepted
+> **Partial update by ADR-046 on 2026-07-01.** The Plexus/KG substrate survives (ADR-046 §3); its *access path* re-homes. `query_knowledge`/`record_outcome` as orchestrator tool calls (per ADR-003) is superseded with the tool surface — KG reads/writes re-home to engine/script operations. **Phase 1's tool-first premise is superseded** (no persistent tool-calling orchestrator), and **Phase 2's context-injection hook point** (specified against "the orchestrator's system prompt" / the ADR-001 ReAct loop) **needs re-examination** under the per-turn classify→seat→marshal architecture. The ingestion-boundary invariant (AS-4) and the substrate itself are unaffected. Body immutable.
+
+**Status:** Accepted; partial update by ADR-046 on 2026-07-01 (access path re-homed)
 
 **Date:** 2026-04-17
 

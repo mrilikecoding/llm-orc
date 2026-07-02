@@ -1,6 +1,8 @@
 # ADR-015: Per-Role Tier-Escalation Router via OI-MAS
 
-**Status:** Updated by ADR-018; Updated by ADR-019
+> **Superseded by ADR-045 on 2026-07-01 (Cycle-8 clean-slate collapse, AS-11).** The tier-router-as-dedicated-L2-Python-layer mechanism (`tier_router.py`) is the imperative-orchestration shape AS-11 forbids and lives in the removed `src/llm_orc/agentic/`; it is retired. The tier-routing/escalation requirement and the Topaz capability taxonomy carry forward to the Cycle-8 declarative target (see ADR-045).
+
+**Status:** Superseded by ADR-045 (2026-07-01); formerly Updated by ADR-018; Updated by ADR-019
 
 **Date:** 2026-05-05
 

@@ -1,6 +1,8 @@
 # ADR-040: Deterministic Completeness Gate for Named-File Tasks (J-3 + persist-once)
 
-**Status:** Accepted, **scope finalized as named-file-grounded after Spike η** (Cycle 7 loop-back
+> **Superseded by ADR-045 on 2026-07-01 (Cycle-8 clean-slate collapse, AS-11).** The imperative loop-driver serving architecture is retired; its implementation is removed, not adapted. The behavioral requirement this ADR validated is carried forward to the Cycle-8 declarative target per ADR-045's carry-forward table.
+
+**Status:** Superseded by ADR-045 (2026-07-01); formerly Accepted, **scope finalized as named-file-grounded after Spike η** (Cycle 7 loop-back
 #7 tail DECIDE; drafted 2026-06-10, scope finalized 2026-06-10). The named-file *mechanism* is
 built, live-discharged (both tiers, 2026-06-10), and audit-clean (argument audit converged R2;
 conformance scan CONFORMING). The DECIDE gate had held the *scope* decision open — it rejected

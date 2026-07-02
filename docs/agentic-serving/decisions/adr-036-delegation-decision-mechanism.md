@@ -1,5 +1,7 @@
 # ADR-036: Delegation-Decision Mechanism — User-Turn Guidance Composition
 
+> **Superseded by ADR-045 on 2026-07-01 (Cycle-8 clean-slate collapse, AS-11).** The imperative loop-driver serving architecture is retired; its implementation is removed, not adapted. The behavioral requirement this ADR validated is carried forward to the Cycle-8 declarative target per ADR-045's carry-forward table.
+
 > **Updated by ADR-037 on 2026-06-05.** Trailing-turn (tool-result tail)
 > composition only: the unconditional standalone trailing C3 guidance of
 > Decision 1 is replaced by ADR-037's two-call composition (framework-
@@ -21,7 +23,7 @@
 > the win-not-coerce property, and the delegation-rate instrumentation all
 > remain current.
 
-**Status:** Accepted; Updated by ADR-037 (2026-06-05 — trailing-turn composition); Extended by ADR-039 (2026-06-09 — callee-dispatch content anchor) (Cycle 7 loop-back #3 DECIDE, gate closed 2026-06-04; Conditional Acceptance per ADR-097 — see §Empirical grounding for the discharge condition; gating condition met 2026-06-04, WP-LB-I acceptance run)
+**Status:** Superseded by ADR-045 (2026-07-01); formerly Accepted; Updated by ADR-037 (2026-06-05 — trailing-turn composition); Extended by ADR-039 (2026-06-09 — callee-dispatch content anchor) (Cycle 7 loop-back #3 DECIDE, gate closed 2026-06-04; Conditional Acceptance per ADR-097 — see §Empirical grounding for the discharge condition; gating condition met 2026-06-04, WP-LB-I acceptance run)
 
 ## Context
 

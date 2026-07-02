@@ -1,6 +1,8 @@
 # ADR-043: Collapse the Dual Serving Surfaces to One Loop-Driven Surface
 
-**Status:** Accepted (Cycle 7 loop-back #9 DECIDE, 2026-06-18). **Supersedes ADR-027** (Framework-Driven Dispatch Pipeline). **Updates ADR-033 §Decision 1** (surface-mode discrimination). Empirically grounded by **Spike ι** (ADR-097 grounding-mechanism path 3 — spike validation), so full Acceptance, not Conditional.
+> **Superseded by ADR-045 on 2026-07-01 (Cycle-8 clean-slate collapse, AS-11).** The imperative loop-driver serving architecture is retired; its implementation is removed, not adapted. The one-serving-surface requirement is carried forward to the Cycle-8 declarative target (one declarative serving ensemble) per ADR-045's carry-forward table.
+
+**Status:** Superseded by ADR-045 (2026-07-01); formerly Accepted (Cycle 7 loop-back #9 DECIDE, 2026-06-18). **Supersedes ADR-027** (Framework-Driven Dispatch Pipeline). **Updates ADR-033 §Decision 1** (surface-mode discrimination). Empirically grounded by **Spike ι** (ADR-097 grounding-mechanism path 3 — spike validation), so full Acceptance, not Conditional.
 
 ## Context
 

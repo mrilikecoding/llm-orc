@@ -2,7 +2,9 @@
 
 > **Updated by ADR-035 on 2026-06-03.** For deliverables bound to a client tool, the output-form contract is composed at the marshalling boundary and delivered through the dispatch input — it is not the advisory `output_schema` this ADR describes. ADR-024's advisory-schema stance remains current for inter-ensemble composition; only the client-tool-deliverable path is refined by ADR-035. (Empirical correction recorded in ADR-035: `default_task` is inert at execution, so the "drift is `input.data` overriding `default_task`" mechanism named below does not operate for the client-tool path — the dispatch input is the sole contract surface reaching the model.)
 
-**Status:** Accepted; Updated by ADR-035 on 2026-06-03 (client-tool-deliverable path)
+> **Partial update by ADR-046 on 2026-07-01.** The common I/O envelope survives as the inter-seat seam (ADR-046 §1). Two `diagnostics` sub-fields go with the mechanisms they served, both now superseded: `calibration_verdict` (the ADR-007/014 gate) and `audit_findings` (the ADR-018 tier-router-audit / ADR-016 drift audit). The envelope shape (status / primary / structured / diagnostics / errors / artifacts) is otherwise unaffected. Body immutable.
+
+**Status:** Accepted; Updated by ADR-035 on 2026-06-03 (client-tool-deliverable path); partial update by ADR-046 on 2026-07-01 (two calibration/audit diagnostics sub-fields retired)
 
 **Date:** 2026-05-15
 

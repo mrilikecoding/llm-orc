@@ -1,6 +1,8 @@
 # ADR-001: Internal ReAct Loop as Execution Model
 
-**Status:** Accepted
+> **Superseded by ADR-046 on 2026-07-01.** The internal ReAct loop is superseded: under the orchestrator-actor dissolution, the client (OpenCode / any caller) owns the loop and each request is one declarative classify→seat→marshal ensemble pass (ADR-046 §1) — no persistent internal orchestrator. This is the reversal of ADR-001's internal-model choice, reached via OQ #26 (callee / client-owned loop → ADR-033). **AS-1 survives independently:** dynamic invocations by a composing role sit outside the ensemble reference graph (Invariant 7) — that framing does not depend on the internal-loop mechanism. Body immutable.
+
+**Status:** Superseded by ADR-046 on 2026-07-01 (was: Accepted)
 
 **Date:** 2026-04-17
 

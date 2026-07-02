@@ -1,5 +1,7 @@
 # ADR-041: Destination-Validity Gate — Deterministic Form Protection with Server-Side Recovery
 
+> **Superseded by ADR-045 on 2026-07-01 (Cycle-8 clean-slate collapse, AS-11).** The imperative loop-driver serving architecture is retired; its implementation is removed, not adapted. The behavioral requirement this ADR validated is carried forward to the Cycle-8 declarative target per ADR-045's carry-forward table.
+
 > **Extends ADR-035 (Client-Tool Deliverable Form Contract).** ADR-035 made the
 > boundary directive the primary form mechanism and held a *detect-and-refuse*
 > gate (ADR-035 §Decision 4) as a speculative escalation, to be installed "if
@@ -12,7 +14,7 @@
 > ADR-035 carries an `> Updated by ADR-041` header for §Decision 4 and its
 > escalation order.
 
-**Status:** Accepted — split grounding (ADR-097), with two distinct conditions.
+**Status:** Superseded by ADR-045 (2026-07-01); formerly Accepted — split grounding (ADR-097), with two distinct conditions.
 The **protection design** is structural and discharged *in principle*: the gate
 inspects bytes, it does not trust the model, so its architecture is
 model-compliance-independent — that closes ADR-035's form-seam honesty gap by

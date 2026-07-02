@@ -1,5 +1,7 @@
 # ADR-035: Client-Tool Deliverable Form Contract (Boundary-Composed)
 
+> **Superseded by ADR-045 on 2026-07-01 (Cycle-8 clean-slate collapse, AS-11).** The imperative loop-driver serving architecture is retired; its implementation is removed, not adapted. The behavioral requirement this ADR validated is carried forward to the Cycle-8 declarative target per ADR-045's carry-forward table.
+
 > **Updated by ADR-041 on 2026-06-11.** §Decision 4's detect-and-refuse gate —
 > held here as a speculative escalation "if PLAY shows residual non-compliance" —
 > is promoted to a committed **deterministic destination-validity gate** (parse/
@@ -18,7 +20,7 @@
 > directive (§Decision 1) stays the *primary* form mechanism; the rest of this ADR
 > is unchanged. See ADR-041.
 
-**Status:** Proposed — Conditional Acceptance (ADR-097), Updated by ADR-041 (form-seam protection **install-discharged** 2026-06-12, BUILD loop-back #8); axis-2 / breadth validation pending PLAY
+**Status:** Superseded by ADR-045 (2026-07-01); formerly Proposed — Conditional Acceptance (ADR-097), Updated by ADR-041 (form-seam protection **install-discharged** 2026-06-12, BUILD loop-back #8); axis-2 / breadth validation pending PLAY
 
 **Date:** 2026-06-03
 

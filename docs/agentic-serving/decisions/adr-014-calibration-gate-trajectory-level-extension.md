@@ -1,6 +1,8 @@
 # ADR-014: Calibration Gate Trajectory-Level Extension
 
-**Status:** Proposed
+> **Superseded by ADR-046 on 2026-07-01.** The imperative per-dispatch Proceed/Reflect/Abstain machinery is superseded — the seat contract's per-dispatch pass/fail (ADR-046 §2) covers output-correctness gating. **The process-level AUQ/HTC confidence signal is NOT discarded:** it is a different signal type (verbalized confidence + generation-trajectory features — token-entropy, attention-weight distribution — that catch a contract-conforming-but-anomalous generation an output check cannot see) and is carried forward as a named candidate for Q2 grounded acceptance (ADR-046 §Open). Body immutable.
+
+**Status:** Superseded by ADR-046 on 2026-07-01 (was: Proposed)
 
 **Date:** 2026-05-05
 
