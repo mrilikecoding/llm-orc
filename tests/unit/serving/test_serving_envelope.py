@@ -58,3 +58,22 @@ def test_envelope_extracts_clean_code_from_chatty_synthesizer_prose() -> None:
 def test_envelope_passes_through_already_clean_code() -> None:
     env = _envelope({"results": {"out": {"response": "x = 1\n"}}})
     assert env["artifacts"][0]["content"] == "x = 1"
+
+
+def test_envelope_container_shape_survives_the_collapse_without_retired_subfields() -> (
+    None
+):
+    """Preservation (scenarios.md "the common I/O envelope container shape is
+    unchanged by the collapse"): a Cycle-8 seat emits the surviving ADR-024
+    container shape, and ONLY the superseded ``diagnostics.calibration_verdict``
+    and ``diagnostics.audit_findings`` sub-fields are absent (they went with
+    their retired gates).
+    """
+    env = _envelope({"results": {"out": {"response": "x = 1\n"}}})
+    # Surviving ADR-024 container fields.
+    assert env["status"] == "success"
+    for field in ("primary", "structured", "artifacts", "diagnostics"):
+        assert field in env
+    # The retired calibration sub-fields are gone.
+    assert "calibration_verdict" not in env["diagnostics"]
+    assert "audit_findings" not in env["diagnostics"]

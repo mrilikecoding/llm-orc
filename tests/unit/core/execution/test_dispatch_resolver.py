@@ -60,3 +60,30 @@ class TestDispatchResolver:
         resolved = resolver.resolve_targets([plain], {})
 
         assert resolved == [plain]
+
+    def test_dispatch_reuses_the_shared_reference_resolver_not_a_parallel_one(
+        self,
+    ) -> None:
+        """Preservation (scenarios.md "the ${dep.field} resolver behaves
+        identically for guard siblings and dispatch nodes"): a dispatch node
+        resolves its target via the same ``phases.reference.resolve_reference``
+        the guard partition uses, so both resolve a ``${dep.field}`` reference
+        against ``results_dict`` identically — not through a parallel resolver.
+        """
+        from llm_orc.core.execution.phases.reference import resolve_reference
+
+        results: dict[str, Any] = {
+            "classify": {
+                "status": "success",
+                "response": json.dumps({"target": "seat-a"}),
+            }
+        }
+        seat = DynamicDispatchAgentConfig(
+            name="seat", dispatch="${classify.target}", depends_on=["classify"]
+        )
+
+        resolved_seat = DispatchResolver().resolve_targets([seat], results)[0]
+        assert isinstance(resolved_seat, DynamicDispatchAgentConfig)
+        guard_value = resolve_reference("${classify.target}", results)
+
+        assert resolved_seat.dispatch_resolved == guard_value == "seat-a"
