@@ -1,7 +1,7 @@
 # System Design: Agentic Serving
 
-**Version:** 6.6
-**Status:** Current
+**Version:** 6.7
+**Status:** Current — **Cycle-8 target architecture added additively (ARCHITECT 2026-07-02); see [§Cycle 8 — Target Architecture](#cycle-8--target-architecture-declarative-serving).** The pre-Cycle-8 sections below and the `system-design.agents.md` companion describe the dissolved orchestrator-actor architecture; their current-state sweep is deferred to Cycle-8 BUILD (lands with the `agentic/` code deletion).
 **Last amended:** 2026-06-18 — Cycle 7 loop-back #9 BUILD **Design Amendment** (ADR-043: collapse the two serving surfaces to one — the Dispatch Pipeline is retired and all `/v1/chat/completions` requests route through the loop-driven terminal; F-ι.1 adaptive marshalling returns a delegated deliverable as text for toolless clients; Amendment #20; no new module/edge, ARCHITECT skipped). Prior amendment: 2026-06-08 (Cycle 7 loop-back #6 BUILD **Design Amendment** — WP-LB-M, the Delegation Rate Meter `turn_shape` outcome-derived redesign; Amendment #19. A BUILD-time Design Amendment, no new ADR [a meter refinement under ADR-036 §Decision 3 / FC-59], no structural allocation, so ARCHITECT was skipped and the system-design touch rides BUILD. Prior: 2026-06-08 — Amendment #18, ADR-038 remaining-work anchor.)
 **Scope:** Scoped RDD cycle at `docs/agentic-serving/`. Inherits the project-level domain model (Invariants 1-14, AS-1..AS-10 — AS-7 amended Cycle 6; AS-9 + AS-10 added Cycle 7; AS-9 §Scope boundary annotated Cycle 7 loop-back) and existing system architecture. **v6.0 adds the Cycle 7 loop-back tool-driven multi-turn surface** (layer-A loop-driver + client-tool-action terminal + artifact-bridge per ADR-033/ADR-034) alongside the v5.0 single-turn pipeline surface. **v6.1 adds the client-tool deliverable form contract** (ADR-035: boundary-composed destination-keyed form directive; FormGate seam; D1 extraction fix; FC-53..FC-57). **v6.2 adds the delegation-decision mechanism** (ADR-036: user-turn guidance composition — the system slot loses the attention contest, baseline 0/10 vs 55/55; Delegation Rate Meter module; TurnDecision turn-shape stamping + sink surfacing; FC-58..FC-62). **v6.3 adds the session-termination mechanism** (ADR-037: two-call trailing composition — a framework-composed termination judgment opens every trailing turn; COMPLETE finishes protocol-clean, REMAINING falls through to the ADR-036 action call; Session Action Record module owns the framework-owned digest as the extensible meta-record seam; TurnDecision finish-policy fields settle the WP-LB-J event shape; FC-63..FC-69; ADR-036's trailing C3 branch is partially superseded — see its dated update header). **v6.4 amends the REMAINING branch** (ADR-038, loop-back #6 BUILD Design Amendment): on REMAINING the action call carries the judge's own remaining-work statement + a fixed imperative as a next-step anchor (routing forward the signal ADR-037 discarded — the Finding G multi-file-progress fix); ADR-037's call-2 form-preservation FC is updated accordingly — see ADR-037's dated update header. **v6.5 makes the meter `turn_shape` outcome-derived** (WP-LB-M, loop-back #6 BUILD Design Amendment): the Loop Driver stamps `turn_shape` from the turn's outcome (write → `generation`, read/command/finish → `carry`) instead of classifying once from the driving instruction; `classify_turn` still owns `boundary_excluded`. Closes the ladder-surfaced gap where instruction-based stamping under-instrumented multi-file and mixed sessions; FC-59's denominator now reads from action + instruction.
 
@@ -16,6 +16,204 @@ This is the technical perspective on **agentic serving** — how llm-orc serves 
 The split between this artifact and `system-design.agents.md` is the **companion-file pattern** (ADR-084 Pattern B): a single human-facing surface here, with a parallel-sibling agent-context file at a predictable path. The diagram below retains its load-bearing role for human orientation; the dense reference material has been relocated rather than removed.
 
 **Sequencing** lives in [roadmap.md](./roadmap.md). **Decisions** live in [decisions/](./decisions/). **Vocabulary** lives in [domain-model.md](./domain-model.md). **Behavior** lives in [scenarios.md](./scenarios.md) and [interaction-specs.md](./interaction-specs.md). If you are coming to this corpus with no prior context, read [ORIENTATION.md](./ORIENTATION.md) first.
+
+---
+
+## Cycle 8 — Target Architecture (declarative serving)
+
+> **Cycle-8 supersession (ARCHITECT 2026-07-02).** This section is the current target architecture. The clean-slate collapse (ADR-045) and the target-architecture ADR (ADR-046) dissolved the imperative orchestrator-actor serving architecture that the sections below (**Architecture at a glance**, **Modules — brief**, the L2 Runtime cluster) and the companion `system-design.agents.md` describe. Those are **retained as historical record** and are swept to the collapsed form at Cycle-8 BUILD, landing with the `src/llm_orc/agentic/` code deletion (rewriting them before the code is removed documents an unbuilt architecture). This section is additive and self-contained enough for `/rdd-build` to work from; the full current-state sweep + the `system-design.agents.md` companion update are deferred to BUILD.
+
+The Cycle-8 collapse is mostly subtraction. The entire L2 imperative Runtime cluster dissolves, and its work is done by the surviving **L0 Ensemble Engine** executing ONE declarative ensemble through primitives that already ship (guard/branch, bounded `loop:`, and dynamic dispatch — `core/execution/phases/dispatch_resolver.py` + `core/execution/runners/dynamic_dispatch_runner.py`). ARCHITECT allocates a thin band of new/re-homed modules; it does not design a new layer.
+
+### Cycle-8 Architectural Drivers
+
+| Driver | Type | Provenance |
+|--------|------|------------|
+| Declarative-ensemble-native serving; extend the engine, never a parallel layer | Constraint (invariant) | AS-11; ADR-044 |
+| The per-turn handler is ONE declarative ensemble (classify → seat → marshal) | Constraint | ADR-046 §1 |
+| The client owns the multi-turn loop; no persistent internal orchestrator actor; cross-turn state relocates to the substrate | Constraint | ADR-046 §3 |
+| Validate-before-load is the registry admission gate | Constraint (invariant) | AS-2; ADR-047 §1 |
+| The accept signal is a composed verification gate independent of the builder | Quality attribute | ADR-048 |
+| Full model-parity via composition (general per-turn handler, no capability degradation) | Quality attribute | DISCOVER settled premise; ADR-046 |
+| Interactive latency on the 32GB rig (thinking-mode as a routing dimension) | Quality attribute | Q3; ADR-046 §4 |
+
+### Cycle-8 Module Decomposition
+
+**New / re-homed (the thin band):**
+
+#### Module: Serving Ensemble
+**Purpose:** Handles one serving turn as classify → seat → marshal, executed by the L0 Ensemble Engine.
+**Provenance:** ADR-046 §1; AS-11.
+**Owns:** the per-turn serving flow (as a declarative ensemble, not imperative code).
+**Depends on:** L0 Ensemble Engine; classify; seat; the marshal sub-sequence (shape → form-gate → emit).
+**Depended on by:** L3 Serving Layer.
+
+#### Module: classify (decider seat)
+**Purpose:** Emits the routing decision `{target, ...}` for a turn — deterministic where the signal is structural (file extension, fenced tag), model-backed where it must read intent.
+**Provenance:** ADR-046 §1.
+**Owns:** the routing decision; the build-vs-non-build (executable-deliverable) determination.
+**Depends on:** (a model profile when model-backed).
+
+#### Module: seat (dynamic-dispatch node)
+**Purpose:** Resolves the runtime-chosen ensemble target `${classify.target}` at the phase layer and runs the resolved ensemble as a child.
+**Provenance:** ADR-046 §1 (shipped: `dispatch_resolver.py`, `dynamic_dispatch_runner.py`).
+**Owns:** seat resolution; the child-execution boundary.
+**Depends on:** Capability List Builder parts (resolves the target); Seat Contract (per-seat admission).
+
+#### Module: marshal sub-sequence — shape → form-gate → emit
+Per AS-11 and one-responsibility-per-node, the finalize step is three bounded nodes, not one.
+
+**Node: shape**
+**Purpose:** Reads the seat's deliverable from the I/O envelope / substrate and places it in the client tool-call content faithfully (not a summary).
+**Provenance:** ADR-046 §1; ADR-034 (re-homes the retired **Artifact Bridge**).
+**Owns:** fidelity marshalling of the deliverable.
+**Depends on:** I/O Envelope (ADR-024).
+
+**Node: form-gate**
+**Purpose:** Applies the deterministic destination-validity check (a `.py` deliverable parses, a `.json` deliverable loads) and refuses a deliverable that does not parse as what its path claims.
+**Provenance:** ADR-046 §1; ADR-035 (re-homes the form gate). A deterministic verifier node — the cheapest rung of the same verification ladder the Accept Gate extends (parse-check → executor → judge).
+**Owns:** destination-validity refusal.
+
+**Node: emit**
+**Purpose:** Emits the serve outcome on the client permission seam — a `finish_reason: tool_calls` for a deliverable, or a prose finish otherwise.
+**Provenance:** ADR-046 §1; ADR-034 (re-homes the **Client-Tool-Action Terminal**).
+**Owns:** client-tool-call / prose emission (the reusable permission seam).
+**Depends on:** the client tool surface.
+**Fitness:**
+- **Fitness:** emit is caller-agnostic — the Accept Gate's executor (if ODP-1 lands client-delegated) surfaces a test-run `tool_call` by reusing emit without invoking shape or form-gate — verified by an emit-reuse integration test that drives emit from both the deliverable path and the executor-delegation path.
+
+#### Module: Shape Catalog (new)
+**Purpose:** Holds the operator-curated composition-shape catalog (named declarative ensemble skeletons) and enumerates registered shapes for classify to select.
+**Provenance:** ADR-047 §1.
+**Owns:** composition shape, catalog, shape enumeration.
+**Depends on:** Composition Validator (AS-2 admission at registration).
+
+*The ADR-047 registry is not a new module.* Per AS-11 (minimal addition, no parallel structure), it decomposes into existing surfaces plus the Shape Catalog:
+- **Parts** (Topaz-keyed capability ensembles) are the existing **Capability List Builder**'s output — it already filters loaded ensembles to capability ensembles by `topaz_skill`; extend it to key by the Topaz taxonomy.
+- **Admission** (AS-2 validate-before-load) is the existing **Composition Validator**'s single routine.
+- **Shapes** are the genuinely new piece — the Shape Catalog above.
+
+#### Build-shape composition: Accept Gate (a sub-graph, not a module)
+Per the ensemble-spirit / one-responsibility rule, the accept gate is a **composition of nodes inside the build shape**, not a framework module: a deterministic **executor** (script node — runs the produced code + tests), an isolated **judge** (model node — adequacy/coverage against the acceptance-criteria contract), and a deterministic **gate** (script node — `accept = tests_pass AND tests_adequate`) that routes accept (→ the marshal sub-sequence) or another-round (→ the accept loop, per ODP-2). classify routes build turns to the gated shape; non-build turns to the ungated shape.
+**Provenance:** ADR-048.
+**Composed of:** executor seat, judge seat, gate seat (all ensemble nodes; no framework module).
+**Depends on:** the acceptance-criteria contract (input); an execution surface (ODP-1); emit (reused for a client-delegated executor, ODP-1).
+**Fitness (of the build shape):**
+- **Fitness:** verifier-seat inputs contain only `{acceptance criteria, produced artifact, execution result}` and no builder conversation or reasoning fields — verified by an input-envelope assertion in the gate integration test. (Isolation-boundary property only; full independence-against-a-live-builder is the ADR-048 Conditional-Acceptance BUILD/PLAY target, tracked separately.)
+- **Fitness:** a non-build turn (classify routes no executable deliverable) runs zero accept-gate seats; a build turn runs the gate — verified by the "gate default-on for build turns and inert for non-build turns" scenario.
+
+#### Module: Seat Contract (re-pointed)
+**Purpose:** Provides each seat's pass/fail admission check, used seat-owned, black-box, and deterministic-first.
+**Provenance:** ADR-046 §2 (re-points the surviving `core/validation/` framework — `ValidationConfig` / `ValidationEvaluator`).
+**Owns:** seat-contract evaluation (structural/schema/behavioral/quantitative/semantic layers).
+**Fitness:**
+- **Fitness:** the contract is evaluated with the candidate's internal agent names absent from the config (no `required_agents` coupling) — verified by asserting the seat contract uses only I/O-facing layers in the seat-swap integration test.
+
+**Surviving (re-pointed, not re-designed):** L0 **Ensemble Engine** (executes the serving ensemble; owns guard/loop/dynamic-dispatch); L3 **Serving Layer** (wire protocol; now invokes the Serving Ensemble in place of the retired Dispatch Pipeline); **Session Registry** (ADR-013 substrate — a relocated home of cross-turn state); **Capability Discovery Endpoint** (advertises registry parts); **Plexus Adapter** (optional KG substrate; access re-homes from orchestrator tool-call to engine/script per ADR-046 §3); **Conversation Compaction** (re-homed to the session substrate per ADR-012 disposition); **Composition Validator** (AS-2 admission — the AS-6 "compose from existing only" clause is dropped; AS-2 survives); **Capability List Builder** (produces the Topaz-keyed parts; extended to key by the Topaz taxonomy); **I/O Envelope** (ADR-024 container — see the relocation constraint below).
+
+**Dissolved (marked; deletion at Cycle-8 BUILD with `agentic/`):** Dispatch Pipeline, Routing Planner, Response Synthesizer (already RETIRED, ADR-043); **Loop Driver, Single-Step Enforcer, Delegation Rate Meter, Orchestrator Runtime, Orchestrator Tool Dispatch, Result Summarizer Harness** (the client owns the loop; ADR-046 §3); **Tier-Escalation Router, Calibration Gate, Calibration Signal Channel** (superseded, ADR-046); **Session Action Record** (the internal termination-judgment evidence base — the client owns the loop, cross-turn state relocates to the substrate). **Artifact Bridge** and **Client-Tool-Action Terminal** are not deleted but **re-home into the marshal sub-sequence** (Artifact Bridge → the shape node; Client-Tool-Action Terminal → the emit node; the ADR-035 form gate → the form-gate node).
+
+**Relocation constraint (feeds Q5 / roadmap):** the surviving **I/O Envelope** (ADR-024) currently lives at `src/llm_orc/agentic/dispatch_envelope.py`, inside the deletion target. Any surviving container housed under `agentic/` must relocate out **before** the code deletion, or the collapse breaks it. This is a hard ordering constraint on the removal sequence.
+
+### Cycle-8 Responsibility Matrix
+
+| Domain Concept/Action | Owning Module | Provenance |
+|-----------------------|---------------|------------|
+| serving turn (classify → seat → marshal) | Serving Ensemble | ADR-046 §1 |
+| routing decision `{target}` / decider seat | classify | ADR-046 §1 |
+| executable-deliverable (build-vs-non-build) determination | classify | ADR-046 §1; gate resolution 2026-07-02 |
+| dynamic dispatch / seat resolution | seat (dispatch node) | ADR-046 §1 |
+| capability seat (the resolved child) | Capability List Builder part (dispatched) | ADR-046 §1; ADR-047 |
+| fidelity marshalling of the deliverable | shape | ADR-046 §1; ADR-034 |
+| destination-validity refusal (form gate) | form-gate | ADR-046 §1; ADR-035 |
+| serve-outcome emission (client tool_call / prose; reusable permission seam) | emit | ADR-046 §1; ADR-034 |
+| capability part (Topaz-keyed) | Capability List Builder (extended) | ADR-047 §1 |
+| composition shape / shape catalog | Shape Catalog | ADR-047 §1 |
+| registration / AS-2 admission gate | Composition Validator (single routine) | ADR-047 §1; AS-2 |
+| seat contract (pass/fail admission) | Seat Contract (`core/validation/`) | ADR-046 §2 |
+| accept decision (`tests_pass AND tests_adequate`) | Accept Gate composition (gate seat) | ADR-048 §1 |
+| deterministic executor seat | Accept Gate composition | ADR-048 §1 |
+| isolated adequacy/coverage judge seat | Accept Gate composition | ADR-048 §1 |
+| acceptance-criteria contract | Accept Gate composition (threaded to verifier seats) | ADR-048 §2 |
+| thinking-mode routing (per-seat) | classify (routes) / seat (executes) | ADR-046 §4 |
+| round budget / accept-loop bound | Accept Gate composition + serving-loop location (open) | ADR-048 §5; gate resolution |
+| cross-turn state (substrate) | Session Registry / Plexus Adapter (optional) | ADR-046 §3; ADR-013; ADR-009/010 |
+| common I/O envelope (inter-seat seam) | I/O Envelope (ADR-024; relocation owed) | ADR-024 |
+
+### Cycle-8 Dependency Graph
+
+Directed edges (A → B means A depends on B):
+
+- L3 Serving Layer → Serving Ensemble
+- Serving Ensemble → classify, seat, shape, form-gate, emit (sequence via the common I/O envelope)
+- seat → Capability List Builder parts (resolves `${classify.target}`), Seat Contract (per-seat admission)
+- classify → Shape Catalog (selects a shape); Shape Catalog → Composition Validator (AS-2 admission at registration)
+- Accept Gate composition (nodes within the build shape) → acceptance-criteria contract (input), execution surface (ODP-1: internal sandbox vs client-delegated)
+- shape → I/O Envelope; emit → client tool surface; Accept Gate executor (if client-delegated, ODP-1) → emit (reuse, not shape/form-gate)
+- Serving Ensemble, seat, Accept Gate composition → L0 Ensemble Engine (execution)
+- substrate reads/writes → Session Registry, Plexus Adapter (optional)
+
+**Layering:** L3 (Serving Layer) → L0 execution; L1 (Shape Catalog, Composition Validator, Capability List Builder, Seat Contract policy) → L0; L0 Core (Ensemble Engine) depends on nothing above it. **No cycles.** The client's multi-turn loop sits **outside** the module graph (the client owns it); the accept-loop's internal-vs-outer location is an open decision point (below).
+
+### Cycle-8 Integration Contracts
+
+#### Serving Layer → Serving Ensemble
+**Protocol:** ensemble invocation on the `/v1/chat/completions` request. **Shared types:** the request content in; the serve outcome (a completion carrying `tool_calls` or prose) out. **Error handling:** a dispatch/resolution failure returns a typed error surfaced as a completion error. **Owned by:** Serving Layer.
+
+#### seat → Capability List Builder parts (+ classify → Shape Catalog)
+**Protocol:** classify selects a shape from the Shape Catalog; the seat resolves `${classify.target}` to a Topaz-keyed part (Capability List Builder's output) via the shared `${dep.field}` resolver against `results_dict`. **Shared types:** the Topaz-keyed target string + the selected shape in; the resolved ensemble reference out. **Error handling:** unresolved target → typed error before any child runs. **Owned by:** the dispatch primitive (engine).
+
+#### Accept Gate composition (executor / judge / gate) → acceptance-criteria contract
+**Protocol:** verifier seats receive `{acceptance criteria, produced artifact, execution result}` only. **Shared types:** the acceptance-criteria contract (natural-language spec) + the produced artifact + the execution result. **Error handling:** a failing signal (executor or judge) yields `accept = false` and routes another round (up to the round bound). **Owned by:** the Accept Gate composition (gate seat).
+
+#### marshal sub-sequence (shape → form-gate → emit) → I/O Envelope + client tool surface
+**Protocol:** shape reads the seat's ADR-024 envelope and fills the tool-call content; form-gate applies the deterministic destination-validity check; emit sends `finish_reason: tool_calls` (deliverable) or a prose finish. **Shared types:** the envelope (status/primary/structured/diagnostics/errors/artifacts) in; the client completion out. **Error handling:** an un-parseable deliverable is refused at form-gate before emit (ADR-035 re-homed). **Reuse:** the Accept Gate's executor reuses emit for a client-delegated test-run (ODP-1) without shape or form-gate. **Owned by:** the respective node.
+
+### Cycle-8 Fitness Criteria
+
+System-level (spanning modules):
+
+| Criterion | Measure | Threshold | Derived From |
+|-----------|---------|-----------|-------------|
+| No parallel orchestration layer | Every Cycle-8 control-flow element is an engine node or a shipped primitive; no new imperative driver module is added beside the engine | 0 new driver/adapter/harness modules | AS-11; ADR-044 |
+| Seat swap-ability | Swapping a registered part's registry entry and re-running the same serving-ensemble skeleton file yields a serve outcome differing only in the swapped seat's output, with a byte-identical skeleton file | byte-identical skeleton | ADR-046 §2; scenarios "seat swaps at zero skeleton change" |
+| AS-2 admission | Every registered part/shape passes reference-graph validation (no cycle, within depth, resolves) before becoming dispatchable | 100% of registrations gated | AS-2; ADR-047 |
+| Single AS-2 routine | The registry admission gate and the load-path validator invoke one shared routine | 1 implementation | AS-2; scenarios "single AS-2 routine" |
+| (a) Gate applicability | Non-build turns run zero accept-gate seats; build turns run the gate | per classify's executable-deliverable routing | gate resolution 2026-07-02 |
+| (b) Round budget | The accept loop is bounded (max-rounds), per-round latency target on the order of seconds on the 32GB rig | bounded; ~seconds/round | ADR-048 §5; Q3; gate resolution |
+
+Module-level fitness properties are recorded inline in the module entries above (emit, the Accept Gate composition, Seat Contract) per ADR-076.
+
+**Note on (b):** the round-count bound, the per-round latency target, and the judge false-reject rate are measured at BUILD; ADR-048 §5's composition rule (strict AND vs weighted/hierarchical across added rungs) is an open design question the two-signal spike did not settle, and it bears directly on the false-reject rate that inflates rounds.
+
+### Cycle-8 Test Architecture
+
+**Boundary integration tests** (one per edge, real types both sides):
+
+| Dependency Edge | Integration Test | What It Verifies |
+|-----------------|------------------|------------------|
+| Serving Ensemble → classify/seat/marshal nodes | end-to-end build-turn + explain-turn run | the classify → seat → shape/form-gate/emit flow produces a `tool_call` (build) and prose (explain) |
+| seat → Capability List Builder parts | dispatch-resolution test with a real registered part | `${classify.target}` resolves to a registered ensemble and runs it as a child; unresolved → typed error |
+| seat → Seat Contract | seat-swap test with a real `ValidationConfig` | the resolved candidate is admitted/rejected by a wired `ValidationEvaluator.evaluate`, not by inspection (the ADR-046 §2 wiring gap) |
+| Accept Gate composition → contract | gate test over the ADR-048 fixtures | executor rejects wrong code; judge rejects trivial tests (orthogonal); accept = both-pass |
+| shape → I/O Envelope | shape test on a real ADR-024 envelope | fills the tool-call content faithfully from the envelope's primary/artifacts |
+| form-gate | parse-check test | refuses a `.py`/`.json` deliverable that does not parse as its path claims |
+| emit → client (+ executor reuse) | emit test from the deliverable path and the executor-delegation path | emits `tool_calls`/prose; the same node serves the client-delegated executor test-run (ODP-1) |
+
+**Invariant enforcement:**
+
+| Invariant | Enforcement Location | Test |
+|-----------|---------------------|------|
+| AS-11 (no parallel layer) | module-graph inspection | assert no new driver/adapter/harness module beside the engine |
+| AS-2 (validate-before-load) | Composition Validator | registration-admission tests (cycle/depth/resolve) |
+| AS-5 (quality not frequency; promotion retired) | Shape Catalog / Capability List Builder | assert no accumulate-then-auto-promote transition exists |
+
+### Cycle-8 Open Decision Points (handed to the roadmap / BUILD)
+
+1. **Executor home — internal sandbox vs client-delegated execution.** The Accept Gate's deterministic executor runs the produced code + tests. It can run inside a serving-side isolation boundary (sandbox; ADR-048 BUILD item) or delegate to the client via the permissions seam (`finish_reason: tool_calls`, reusing the bash/file-edit boundary), which sidesteps sandboxing at the cost of a client round-trip per check. Held open; resolve against round-budget + flow-vs-autonomous evidence at BUILD/PLAY.
+2. **Accept-loop location — internal bounded `loop:` vs the client's outer re-invocation loop.** The build→gate→rebuild cycle can be an internal bounded `loop:` within the serving ensemble (the shipped combinator; ADR-046 carries ADR-037/038 forward to `loop until:/carry:`) or the client's outer loop (the client owns the outer loop per ADR-046/048). This determines where the round budget is enforced and interacts with the surface-trigger set (a permissioned client action, round-budget exhaustion, or criteria-too-thin-to-proceed — all deterministic; trajectory-confidence advisory only). Held open for the roadmap.
+
+The two DECIDE→ARCHITECT gate sub-questions are resolved: (a) gate applicability is a classify-routed, build-shape concern (fitness above); (b) round-multiplier bounding lives as a fitness criterion, with the loop *location* recorded as Open Decision Point 2.
 
 ---
 
@@ -213,6 +411,7 @@ See [`./roadmap.md`](./roadmap.md) for active work packages, classified dependen
 
 | # | Date | What Changed | Trigger | Status |
 |---|------|-------------|---------|--------|
+| 21 | 2026-07-02 | **Cycle 8 ARCHITECT — additive Target Architecture (the declarative-ensemble collapse).** Integration of ADRs 044-048 as an **additive** §Cycle-8 section; the pre-Cycle-8 sections + the `system-design.agents.md` companion describe the dissolved orchestrator-actor architecture and their current-state sweep is deferred to Cycle-8 BUILD (lands with the `agentic/` code deletion). **The collapse is mostly subtraction:** the L2 imperative Runtime cluster (Dispatch Pipeline, Loop Driver, Single-Step Enforcer, Delegation Rate Meter, Orchestrator Runtime, Orchestrator Tool Dispatch, Result Summarizer Harness, Tier-Escalation Router, Calibration Gate, Calibration Signal Channel, Session Action Record) dissolves; its work is done by the surviving L0 Ensemble Engine executing ONE declarative ensemble on shipped primitives (guard/loop + dynamic dispatch). **Seven new/re-homed modules:** Serving Ensemble; classify (decider seat); seat (dynamic-dispatch node, shipped `dispatch_resolver.py`/`dynamic_dispatch_runner.py`); marshal (script node, consolidates the retired Artifact Bridge + Client-Tool-Action Terminal); Serving Registry (Topaz-keyed parts + operator-curated shape catalog, AS-2 admission); Accept Gate (composed verification gate, ADR-048); Seat Contract (re-points `core/validation/`). **Six Cycle-8 system-level fitness criteria** (AS-11 no-parallel-layer; seat swap-ability; AS-2 admission; single AS-2 routine; gate applicability; round budget) + module-level Fitness on Accept Gate + Seat Contract (ADR-076 decomposition complete; the two qualitative claims "swappable" and "independent" each carry an adjacent refutable Fitness line). **Hard sequencing finding:** the surviving ADR-024 I/O Envelope lives at `agentic/dispatch_envelope.py` (inside the deletion target) → WP-B8 relocation is a hard prerequisite of the WP-F8 deletion. **Two DECIDE→ARCHITECT gate sub-questions resolved:** (a) gate applicability = a classify-routed build-shape concern; (b) round-multiplier bounding = a fitness criterion, with the accept-loop *location* recorded as an open decision point. **Two open decision points** (executor home: internal sandbox vs client-delegated; accept-loop location: internal bounded `loop:` vs client outer loop). **No invariant change** — the Cycle-8 AS dispositions (AS-1/2/5/6/7/9/11) landed at DECIDE (domain-model Amendment #23). Roadmap: six additive WPs (WP-A8..F8) + Cycle-8 dependency graph + TS-1/TS-2 + four ODPs. Grounding Reframe (rerun ADR-048 fixtures with thinned criteria) owed at WP-D8 entry. | Cycle 8 ARCHITECT (2026-07-02); cross-references ADR-044/045/046/047/048; scenarios.md §Cycle 8 + interaction-specs.md §Cycle 8; domain-model Amendment #23 (Cycle-8 AS dispositions); susceptibility-snapshot-cycle-8-decide.md; gate note `.rdd/gates/cycle-8-decide-architect-gate.md`; roadmap.md §Cycle 8 (WP-A8..F8). | Current |
 | 20 | 2026-06-18 | **ADR-043 — collapse the two serving surfaces to one.** Retire the Dispatch Pipeline (delete `dispatch_pipeline.py` + `ensemble_backed_roles.py` + tests); the surface-mode discriminator is removed and every request routes through the loop-driven Client-Tool-Action Terminal. F-ι.1: the Terminal marshals a delegated deliverable to text when the client offers no matching tool (toolless requests). ADR-027 superseded; ADR-033 §Decision 1 superseded; ADR-028/029/031/032 dormant (ADR-032's cost-distribution intent preserved by the loop's uniform delegation). No new module/edge — subtractive BUILD Design Amendment (ARCHITECT skipped). | Cycle 7 loop-back #9 BUILD; grounded by Spike ι; gate note `.rdd/gates/cycle-7-loopback9-decide-build-gate.md` | Current |
 | — | 2026-04-20 | Initial system design | ARCHITECT phase | Superseded by v2.0 |
 | 1 | 2026-04-20 | Demote Context Injection Stage from module to typed function `resolve_session_start_context` owned by Serving Layer | ARCHITECT reflection-time Grounding Reframe (Item 1) | Current |
