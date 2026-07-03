@@ -55,3 +55,24 @@ def test_a_named_target_file_is_carried_structurally() -> None:
     decision = _classify({"task": "build a cli", "file": "cli.py"})
     assert decision["file"] == "cli.py"
     assert decision["build"] is True
+
+
+def test_ambiguous_turn_defers_to_the_model_backed_decider() -> None:
+    """A turn with no structural signal (no explain marker, no build verb, no
+    named file) cannot be routed deterministically, so classify flags it for the
+    model-backed decider rather than defaulting to a seat (scenarios.md "classify
+    reads intent with a model-backed decider when the signal is not structural").
+    """
+    decision = _classify({"task": "I'm not sure how to approach this"})
+    assert decision["needs_decider"] is True
+
+
+def test_structural_turns_do_not_need_the_decider() -> None:
+    """The deterministic fast-path resolves structural turns without a model, so
+    the guarded decider never runs for them (determinism preserved)."""
+    for task in (
+        "write a function that adds two numbers in add.py",
+        "explain what foo.py does",
+        "implement a stack",
+    ):
+        assert _classify({"task": task})["needs_decider"] is False

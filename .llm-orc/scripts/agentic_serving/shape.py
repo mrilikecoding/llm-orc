@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Serving marshal — shape node (fidelity marshalling).
 
-Reads the seat's ADR-024 ``DispatchEnvelope`` and the classify decision and
-produces the faithful deliverable: the deliverable CONTENT comes from the
+Reads the seat's ADR-024 ``DispatchEnvelope`` and the resolved routing decision
+and produces the faithful deliverable: the deliverable CONTENT comes from the
 envelope (``artifacts[0].content``, else ``primary``), the DESTINATION path and
-build flag come from classify (scenarios.md "Per-Turn Serving Handler"; ADR-046
-§1, ADR-034 re-homes the Artifact Bridge). Consumers read ``artifacts`` /
-``structured``, never parse ``primary`` structurally (ADR-024).
+build flag come from the routing decision (``resolve`` when the guarded decider
+ran, else ``classify`` directly; scenarios.md "Per-Turn Serving Handler";
+ADR-046 §1, ADR-034 re-homes the Artifact Bridge). Consumers read ``artifacts``
+/ ``structured``, never parse ``primary`` structurally (ADR-024).
 
 When the seat did not emit an envelope (e.g. a non-build explain seat that
 returns raw prose), the raw terminal text is the deliverable — shape degrades
@@ -79,8 +80,11 @@ def _envelope_deliverable(seat_terminal: str) -> str | None:
 
 def main() -> None:
     deps = _deps(sys.stdin.read().strip())
+    # The routing decision is ``resolve`` when the guarded decider ran, else the
+    # structural ``classify`` decision directly (backward-compatible).
+    decision_dep = deps.get("resolve") or deps.get("classify", {})
     try:
-        decision = json.loads(_response(deps.get("classify", {})))
+        decision = json.loads(_response(decision_dep))
     except json.JSONDecodeError:
         decision = {}
     if not isinstance(decision, dict):
