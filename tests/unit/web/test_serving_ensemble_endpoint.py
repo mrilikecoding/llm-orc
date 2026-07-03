@@ -66,6 +66,18 @@ _ECHO_CODE_GENERATOR = (
     "    script: \"echo 'def add(a, b): return a + b'\"\n"
 )
 
+# A deterministic explain seat: one echo node emitting prose (no envelope), so
+# the explain turn runs classify -> seat(explainer) -> shape -> form-gate ->
+# emit with no model tokens. shape degrades gracefully to the seat terminal for
+# a raw-prose seat; the real model prose path is covered by opencode grounding.
+_ECHO_EXPLAINER = (
+    "name: explainer\n"
+    "description: deterministic echo explain seat for hermetic serving tests\n"
+    "agents:\n"
+    "  - name: out\n"
+    "    script: \"echo 'foo.py defines add, which returns a plus b.'\"\n"
+)
+
 
 @pytest.fixture
 def serving_project(tmp_path: Path) -> Path:
@@ -80,6 +92,9 @@ def serving_project(tmp_path: Path) -> Path:
     shutil.copy(REAL_SERVING_ENSEMBLE, ensembles / "serving.yaml")
     shutil.copy(REAL_CODE_SEAT, ensembles / "code-seat.yaml")
     (ensembles / "code-generator.yaml").write_text(_ECHO_CODE_GENERATOR)
+    # The explain seat dispatch target — a top-level entry, since dispatch
+    # discovery is non-recursive (WP-A8 discovery note b).
+    (ensembles / "explainer.yaml").write_text(_ECHO_EXPLAINER)
     return tmp_path
 
 
@@ -138,3 +153,30 @@ def test_build_turn_writes_deliverable_via_tool_call(
     # shape reads the deliverable faithfully from the seat's envelope (defect 2)
     assert "def add" in args["content"]
     assert args["content"].startswith("def add")
+
+
+def test_explain_turn_returns_prose_not_a_tool_call(
+    serving_client: TestClient,
+) -> None:
+    """An explain turn routes through the SAME skeleton and returns prose, not a
+    file (scenarios.md "An explain turn routes through the same skeleton and
+    returns prose, not a file"; ADR-046 §1). classify routes to the explain seat
+    with build=false; marshal returns a prose finish with no file-writing
+    tool_call.
+    """
+    resp = serving_client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "ensemble-agent",
+            "messages": [{"role": "user", "content": "explain what foo.py does"}],
+            "tools": [_WRITE_TOOL],
+        },
+    )
+
+    assert resp.status_code == 200
+    choice = resp.json()["choices"][0]
+    assert choice["finish_reason"] == "stop"
+    assert not choice["message"].get("tool_calls")
+    content = choice["message"]["content"]
+    assert content
+    assert "foo.py" in content

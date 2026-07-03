@@ -1,0 +1,34 @@
+name: explainer
+description: |
+  Serving explain seat (ADR-046 §1–2; scenarios.md "An explain turn routes
+  through the same skeleton and returns prose, not a file"). A non-build turn:
+  classify routes an explain-shaped request here with build=false, the seat
+  produces a short prose explanation, and the serving marshal returns a prose
+  finish with no file-writing tool_call.
+
+  Single-model prose seat — the TS-1 baseline (mirrors the single-agent
+  text-summarizer precedent). It emits raw prose rather than an ADR-024
+  envelope: the serving `shape` node degrades gracefully to the seat terminal
+  when there is no envelope (that path exists for exactly this seat), so a code
+  deliverable's artifact structure is not imposed on an explanation. Richer
+  explain compositions (e.g. an explainer + fact-checker part) are operator-
+  curated catalog shapes at WP-C8, not a TS-1 requirement — the dispatch surface
+  stays the same as long as the replacement carries `topaz_skill: summarization`.
+
+  Thinking mode is disabled (options.think: false) so an explain turn stays
+  interactive on the 32GB rig (Q3; thinking-as-routing-dimension, ADR-046 §4).
+
+# ADR-015 per-skill metadata. Explaining/describing existing code is the
+# summarization capability; the registry (WP-C8) keys this seat under it. At
+# TS-1 the serving classify targets it by name.
+topaz_skill: summarization
+
+agents:
+  - name: explainer
+    model_profile: agentic-tier-cheap-general
+    options:
+      think: false
+    system_prompt: |
+      You explain code and answer questions in clear, concise Markdown prose.
+      Given the request, produce a short explanation. Do NOT emit code files or
+      fenced code blocks. Produce prose only.
