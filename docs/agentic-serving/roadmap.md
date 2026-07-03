@@ -1,11 +1,106 @@
 # Roadmap: Agentic Serving
 
-**Generated:** 2026-04-20; **last amended:** 2026-06-08 (Cycle 7 loop-back #6 BUILD — WP-LB-L added [remaining-work anchor, ADR-038]; ARCHITECT skipped). Prior: 2026-06-05 (loop-back #5 ARCHITECT close — WP-LB-K added; WP-LB-J unheld)
-**Derived from:** `system-design.md` (v6.3), ADRs 001-037, scenarios.md (Cycle 7 + loop-back additions), interaction-specs.md (Cycle 7 + loop-back additions)
+**Generated:** 2026-04-20; **last amended:** 2026-07-02 (Cycle 8 ARCHITECT — additive Cycle-8 Work Packages WP-A8..F8 for the declarative-ensemble collapse; the Cycle-4/6/7 WPs below describe the dissolved architecture and migrate to the Completed Work Log at Cycle-8 BUILD). Prior: 2026-06-08 (Cycle 7 loop-back #6 BUILD — WP-LB-L added [remaining-work anchor, ADR-038]; ARCHITECT skipped)
+**Derived from:** `system-design.md` (v6.7, §Cycle 8), ADRs 044-048 (Cycle 8); prior bands from ADRs 001-043, scenarios.md, interaction-specs.md
 
 This roadmap expresses the sequencing landscape for building agentic serving — what depends on what, where the builder has a choice, and which coherent intermediates are worth pausing at. It does not prescribe a build order. Work package order within each dependency band is a build-time decision.
 
 > **Cycle 7 has two surfaces after the loop-back.** The first-pass Cycle 7 ARCHITECT designed the **single-turn (answer-a-question) surface** (Dispatch Pipeline plan → dispatch → synthesize). The BUILD reflection-gate then surfaced that this surface cannot deliver work to a tool-driven client's filesystem, triggering the loop-back. The loop-back ARCHITECT (this close) adds the **tool-driven multi-turn surface** (layer-A Loop Driver + client-tool-action Terminal + Artifact Bridge). **Both surfaces are Cycle 7 BUILD scope.** The loop-back tool-driven WPs are in the new section immediately below; the single-turn WPs are the section after it (first-pass WP-A landed; WP-B/C/D/E remain pending and valid). A surface-mode discriminator on the Serving Layer routes each request to the right surface; the **Capability List Builder (single-turn WP-D) is shared by both surfaces**.
+
+---
+
+## Work Packages — Cycle 8 (active; the declarative-ensemble collapse)
+
+> **Cycle-8 supersession (ARCHITECT 2026-07-02).** The clean-slate collapse (ADR-045/046) dissolves the imperative orchestrator-actor serving architecture. The Cycle-4/6/7 work packages below describe that dissolved form; they are **retained as historical record** and migrated to the Completed Work Log at Cycle-8 BUILD, landing with the `agentic/` code deletion (WP-F8). The Cycle-8 WPs here are the active sequencing surface. **BUILD-mode:** gated (declared at cycle open; design-alternative-heavy — the extensibility architecture + the removal sequencing want practitioner-in-the-loop stewardship). Derived from `system-design.md` §Cycle 8 and ADR-044/045/046/047/048.
+
+### WP-A8: Serving Ensemble skeleton (classify → seat → marshal)
+
+**Objective:** Build the per-turn handler as ONE declarative ensemble on the shipped primitives — the classify decider node (deterministic-or-model-backed routing + the executable-deliverable determination), the seat dynamic-dispatch node (shipped: `dispatch_resolver.py` / `dynamic_dispatch_runner.py`), and the marshal sub-sequence — shape / form-gate / emit nodes (re-homing Artifact Bridge / the ADR-035 form gate / the Client-Tool-Action Terminal respectively; emit is the reusable permission-seam node, per the ARCHITECT-gate decomposition 2026-07-02).
+
+**Changes:** Serving Ensemble, classify, seat, and the shape/form-gate/emit nodes (system-design §Cycle 8); L3 Serving Layer re-pointed to invoke the Serving Ensemble.
+
+**Scenarios covered:** "Per-Turn Serving Handler" feature block (build turn writes a deliverable; explain turn returns prose; deterministic-vs-model-backed classify; marshal consumes the real envelope); the two per-turn preservation scenarios.
+
+**Dependencies:** None hard (primitives shipped). WP-B8 (envelope relocation) is implied-logic before the marshal consumes the ADR-024 envelope from its final location.
+
+### WP-B8: Envelope relocation (surviving containers out of `agentic/`)
+
+**Objective:** Relocate the surviving ADR-024 I/O Envelope (`src/llm_orc/agentic/dispatch_envelope.py`) and any other surviving container currently housed under `agentic/` to a surviving module, so the code deletion (WP-F8) does not break them. Structural (`refactor:`) work, no behavior change.
+
+**Changes:** I/O Envelope module relocation; import updates across the surviving seams.
+
+**Scenarios covered:** the "common I/O envelope container shape is unchanged" preservation scenario.
+
+**Dependencies:** None. **Hard prerequisite of WP-F8.**
+
+### WP-C8: Shape Catalog + registry reuse (parts + admission)
+
+**Objective:** Build the operator-curated composition-shape catalog (the genuinely new piece) and wire the rest of the ADR-047 registry from existing surfaces — parts from Capability List Builder (extended to key by the Topaz taxonomy), AS-2 admission from Composition Validator's single routine, load-time-first binding. No standalone "registry" module (AS-11 minimal addition; ARCHITECT-gate recast 2026-07-02).
+
+**Changes:** new Shape Catalog module + shape enumeration for classify; Capability List Builder extended to Topaz-key parts; Composition Validator reused for AS-2 admission (the AS-6 "compose from existing only" clause dropped; AS-2 survives).
+
+**Scenarios covered:** "Capability Registry and Composition-Shape Catalog" feature block (Topaz-key registration; AS-2 cycle/depth rejection; load-time-first shape binding; operator-extends-not-engine; no auto-promotion); the single-AS-2-routine preservation scenario.
+
+**Dependencies:** WP-A8 (implied — the seat resolves `${classify.target}` against the registry; can stub during A8). Open choice with WP-A8 otherwise.
+
+### WP-D8: Accept Gate (composed verification gate)
+
+**Objective:** Build the accept gate as a build-shape segment of the Serving Ensemble — deterministic executor seat AND isolated adequacy/coverage judge seat, combined by a deterministic gate seat (`accept = tests_pass AND tests_adequate`), with the acceptance-criteria contract threaded to the verifier seats.
+
+**Changes:** Accept Gate module (executor/judge/gate seats + acceptance-criteria-contract threading); classify's build-vs-non-build routing selects the gated build shape vs the ungated non-build shape.
+
+**Scenarios covered:** "Grounded-Acceptance Gate" + "Honest Limits of the Accept Gate" feature blocks (accept=both-pass; executor catches wrong code; judge catches trivial tests; isolation; coverage analysis; thin-criteria degradation; unstated-input ceiling; default-on-for-build-turns applicability).
+
+**Dependencies:** WP-A8 (hard — the gate is a segment of the serving ensemble). **Grounding Reframe owed at WP-entry** (rerun ADR-048's fixtures with criteria withheld/thinned, measuring what the judge adds over the executor on thin-criteria turns, before wiring the gate unconditional). Carries ODP-1 (executor home) and ODP-2 (accept-loop location).
+
+### WP-E8: Seat-contract wiring
+
+**Objective:** Wire the surviving `core/validation/` framework (`ValidationConfig` / `ValidationEvaluator`) as the seat's pass/fail admission gate, seat-owned / black-box / deterministic-first — closing the ADR-046 §2 designed-but-unwired gap.
+
+**Changes:** Seat Contract module (re-points `core/validation/`); seat admission wired to `ValidationEvaluator.evaluate`.
+
+**Scenarios covered:** the Cycle-8 acceptance-criteria-table "seat contract wired" entry; the seat-swap black-box fitness.
+
+**Dependencies:** WP-A8 (hard — wires the seat).
+
+### WP-F8: Clean-slate removal (the `agentic/` deletion + Cycle-7 serving-ADR supersession + current-state sweep)
+
+**Objective:** Delete `src/llm_orc/agentic/` (~12.7K LOC, 32 files) + the 37 agentic test files once the declarative form reaches parity; supersede the Cycle-7 serving ADRs (033/036/037/039/041/043) with headers; sweep the deferred current-state docs (`system-design.agents.md`, ORIENTATION, roadmap Cycle-4/6/7 WPs → Completed Work Log, field-guide). Spike retirement is deferred to corpus close per the retention discipline. This is the Q5 removal-execution package.
+
+**Changes:** code deletion; ADR supersession headers; current-state doc sweep.
+
+**Scenarios covered:** none directly (removal + doc sweep); verified by the full Cycle-8 scenario suite passing on the new form with `agentic/` gone.
+
+**Dependencies:** WP-B8 (hard — surviving containers must be out of `agentic/` first). WP-A8/C8/D8/E8 reaching parity (hard — parity-before-delete; the new form must serve before the old is removed).
+
+## Dependency Graph (Cycle 8)
+
+- WP-B8 → WP-F8: **hard** (cannot delete `agentic/` while a surviving container lives in it)
+- WP-A8 → WP-D8: **hard** (the gate is a segment of the serving ensemble)
+- WP-A8 → WP-E8: **hard** (wires the seat)
+- {WP-A8, WP-C8, WP-D8, WP-E8} reach parity → WP-F8: **hard** (parity-before-delete)
+- WP-C8 → WP-A8: **implied logic** (the seat resolves against the registry; stub during A8)
+- WP-A8, WP-C8: **open choice** (both build on shipped primitives; start either)
+- WP-B8: **open choice** (independent structural work; only gates F8)
+
+**Classification key:** **Hard** = structural necessity; **Implied logic** = simpler-first but stubbable; **Open choice** = genuinely independent.
+
+## Transition States (Cycle 8)
+
+### TS-1 (Cycle 8): declarative serve on the new form (after WP-A8, stub registry)
+
+The serving ensemble serves a build turn end-to-end (classify → seat → marshal) on the new declarative form with a stubbed registry and no accept gate. Coherent and demonstrable, narrower than target, and it validates the collapse's central claim (one ensemble on the shipped engine) before the registry, the gate, or the deletion.
+
+### TS-2 (Cycle 8): parity reached (after WP-A8/C8/D8/E8)
+
+Registry + accept gate + seat-contract wiring in place; the new form matches the narrow Cycle-7 serve (build-new-files) and extends toward general-turn parity. The old `agentic/` layer can now be deleted (WP-F8) without capability loss.
+
+## Open Decision Points (Cycle 8)
+
+- **ODP-1 — Executor home:** internal sandbox vs client-delegated execution (reuse the permissions seam). Resolve against round-budget + flow-vs-autonomous evidence at BUILD/PLAY. (system-design §Cycle 8 ODP-1.)
+- **ODP-2 — Accept-loop location:** internal bounded `loop:` within the serving ensemble vs the client's outer re-invocation loop. Determines where the round budget is enforced. (system-design §Cycle 8 ODP-2.)
+- **ODP-3 — Serving default shape:** plain classify→seat→marshal with a general capability seat vs a gather→build→verify shape (ADR-047 §4). Chosen at BUILD.
+- **ODP-4 — Q5 removal sequencing detail:** what lands first within WP-F8. The envelope-relocation-before-deletion order (WP-B8 → WP-F8) is fixed; the rest is BUILD-sequenced.
 
 ---
 
