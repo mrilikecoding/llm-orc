@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Serving marshal — shape node (fidelity marshalling).
+
+Reads the seat's ADR-024 ``DispatchEnvelope`` and the classify decision and
+produces the faithful deliverable: the deliverable CONTENT comes from the
+envelope (``artifacts[0].content``, else ``primary``), the DESTINATION path and
+build flag come from classify (scenarios.md "Per-Turn Serving Handler"; ADR-046
+§1, ADR-034 re-homes the Artifact Bridge). Consumers read ``artifacts`` /
+``structured``, never parse ``primary`` structurally (ADR-024).
+
+When the seat did not emit an envelope (e.g. a non-build explain seat that
+returns raw prose), the raw terminal text is the deliverable — shape degrades
+gracefully rather than requiring every seat to envelope first.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+
+
+def _deps(raw: str) -> dict:
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return data.get("dependencies", {}) if isinstance(data, dict) else {}
+
+
+def _response(dep: object) -> str:
+    return dep.get("response", "") if isinstance(dep, dict) else ""
+
+
+def _terminal(text: str) -> str:
+    """The seat's deliverable, unwrapping the layers the engine adds
+    (``deliverable`` / script ``{"success","output"}`` / nested ``results``).
+    For a build seat this yields the ADR-024 envelope JSON; for a raw seat it
+    yields the plain terminal text."""
+    current = text
+    for _ in range(6):
+        try:
+            obj = json.loads(current)
+        except (json.JSONDecodeError, TypeError):
+            return current
+        if not isinstance(obj, dict):
+            return current
+        if isinstance(obj.get("deliverable"), str):
+            current = obj["deliverable"]
+            continue
+        if isinstance(obj.get("output"), str):
+            current = obj["output"]
+            continue
+        results = obj.get("results")
+        if isinstance(results, dict) and results:
+            node = results[list(results.keys())[-1]]
+            current = node.get("response", "") if isinstance(node, dict) else str(node)
+            continue
+        return current
+    return current
+
+
+def _envelope_deliverable(seat_terminal: str) -> str | None:
+    """The deliverable content from an ADR-024 envelope, or ``None`` when the
+    seat terminal is not an envelope."""
+    try:
+        env = json.loads(seat_terminal)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(env, dict) or "status" not in env:
+        return None
+    artifacts = env.get("artifacts")
+    if isinstance(artifacts, list) and artifacts and isinstance(artifacts[0], dict):
+        content = artifacts[0].get("content")
+        if isinstance(content, str):
+            return content
+    primary = env.get("primary")
+    return primary if isinstance(primary, str) else None
+
+
+def main() -> None:
+    deps = _deps(sys.stdin.read().strip())
+    try:
+        decision = json.loads(_response(deps.get("classify", {})))
+    except json.JSONDecodeError:
+        decision = {}
+    if not isinstance(decision, dict):
+        decision = {}
+
+    seat_terminal = _terminal(_response(deps.get("seat", {})))
+    deliverable = _envelope_deliverable(seat_terminal)
+    if deliverable is None:
+        deliverable = seat_terminal.strip()
+
+    print(
+        json.dumps(
+            {
+                "build": bool(
+                    decision.get("build", decision.get("kind") != "explanation")
+                ),
+                "file": decision.get("file", "solution.py"),
+                "content": deliverable,
+            }
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

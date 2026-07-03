@@ -1,0 +1,21 @@
+name: code-seat
+description: |
+  Serving default code_generation seat (ADR-046 §1–2). Composes the reusable
+  code-generator capability flow (referenced unchanged, so any skill framework
+  keeps using it as-is) with a deterministic envelope terminal that emits an
+  ADR-024 DispatchEnvelope. The envelope carries the extracted code deliverable
+  in artifacts[0] / primary, so the serving marshal (shape) consumes a faithful
+  structured artifact instead of the synthesizer's chatty prose.
+
+  The registry (WP-C8) will key this seat under the Topaz code_generation
+  capability; at TS-1 the serving classify targets it by name.
+
+topaz_skill: code_generation
+
+agents:
+  - name: generate
+    ensemble: code-generator
+
+  - name: envelope
+    script: scripts/agentic_serving/emit_envelope.py
+    depends_on: [generate]

@@ -27,6 +27,7 @@ the codebase per ADR-027 §"OrchestratorRuntime status" disposition (a)
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -92,6 +93,7 @@ from llm_orc.models.base import ModelInterface
 from llm_orc.web.api import get_orchestra_service
 from llm_orc.web.api.sse_format import OpenAiSseFormatter, encode_tool_call_for_message
 from llm_orc.web.api.v1_models import get_orchestrator_config_resolver
+from llm_orc.web.serving.serving_ensemble_caller import ServingEnsembleCaller
 
 router = APIRouter(prefix="/v1", tags=["openai-compat"])
 
@@ -492,6 +494,36 @@ async def get_client_tool_action_terminal() -> _ChatCompletionsCaller:
     )
 
 
+_SERVING_MODE_ENV = "LLM_ORC_SERVING_MODE"
+_DECLARATIVE_ENSEMBLE = "declarative-ensemble"
+
+
+def _serving_mode() -> str:
+    """Select the serving path for the Cycle-8 parity window.
+
+    ``declarative-ensemble`` routes to the Serving Ensemble (classify -> seat
+    -> marshal, ADR-046 §1); anything else (the default) keeps the loop-driver
+    path. The toggle is a migration seam: the loop-driver stays runnable until
+    the declarative form reaches parity (WP-F8), then the default flips and the
+    loop-driver path is deleted. Set via ``LLM_ORC_SERVING_MODE``.
+    """
+    return os.environ.get(_SERVING_MODE_ENV, "loop-driver")
+
+
+def _resolve_serving_project_dir() -> Path:
+    local = Path.cwd() / ".llm-orc"
+    return local if local.exists() else Path.cwd()
+
+
+def get_serving_ensemble_caller() -> ServingEnsembleCaller:
+    """Return the Cycle-8 declarative Serving Ensemble caller (ADR-046 §1).
+
+    Tests override this factory to point at a hermetic project dir whose
+    ``code_generation`` seat is a deterministic echo (no model).
+    """
+    return ServingEnsembleCaller(project_dir=_resolve_serving_project_dir())
+
+
 class _ChatCompletionMessage(BaseModel):
     """One message in the OpenAI chat-completions request.
 
@@ -551,6 +583,21 @@ async def chat_completions(
     that all requests engage the loop-driver.
     """
     context = _resolve_context(request)
+
+    if _serving_mode() == _DECLARATIVE_ENSEMBLE:
+        # Cycle-8 declarative Serving Ensemble path (ADR-046 §1). Bypasses the
+        # dissolving loop-driver observability lifecycle (heartbeat / context
+        # sink); serving-turn introspection is the vendor-neutral turn trace.
+        serving_caller: _ChatCompletionsCaller = get_serving_ensemble_caller()
+        if request.stream:
+            return StreamingResponse(
+                _stream_completion(context, serving_caller, model=request.model),
+                media_type="text/event-stream",
+            )
+        return await _build_completion_body(
+            context, serving_caller, model=request.model
+        )
+
     session_id = context.state.identity.value
     context_sink = _build_context_sink(session_id=session_id)
     caller: _ChatCompletionsCaller = await get_client_tool_action_terminal()
