@@ -145,8 +145,80 @@ L1 contract-confidence judge). The general recursive form is the composer-ensemb
 ADR-047 §Deferred already parks. Q2's ADR stays scoped to the accept signal; the
 hierarchical-confidence generalization is a named thread that lands there.
 
+## WP-D8 Grounding Reframe (BUILD, 2026-07-03) — thinned-criteria rerun
+
+**Owed at WP-D8 entry** (DECIDE→ARCHITECT gate synthesis + susceptibility snapshot):
+measure what the isolated judge adds OVER the deterministic executor on *thin-criteria*
+turns, before wiring the gate default-on. Controlled manipulation: hold `{code, tests}`
+constant, vary ONLY requirement richness. N=5 per (condition × fixture), same $0 local
+qwen3:8b `think:false` gate. Drives:
+`scratch/spike-q2-grounded-accept/drive_reframe{,_novel,_opaque}.py`.
+
+| Fixture | Reconstructable tell | rich reject | thin reject | Judge's role |
+|---|---|---|---|---|
+| a_correct | — | 0/5 | 0/5 | correctly accepts (no false-reject drift under thinning) |
+| b_trivial_tests | obvious triviality | 5/5 | 5/5 | anti-gaming catch — criteria-INDEPENDENT |
+| c_wrong_code | — (executor's job) | 5/5 | 5/5 | executor anchors; judge verdict moot |
+| d_leap_year | world knowledge | 5/5 | 5/5 | coverage catch survives via domain knowledge |
+| e_late_fee | naming/signature | 5/5 | 5/5 | coverage catch survives via naming semantics |
+| e2_categorize (opaque) | NONE | 5/5 | 0/5 | coverage catch collapses → buggy ships |
+
+**Result for the default-on decision (what the reframe was owed to settle).** The
+anti-gaming catch (b) is 100% criteria-independent (10/10 across conditions). The
+gate-synthesis argument — "the judge's trivial-test rejection is criteria-independent, so a
+presence-gated opt-in collapses into the rejected executor-only mode" — is now GROUNDED, not
+asserted. Default-on for build turns adds real value even on thin-criteria turns. Cleared to
+wire unconditional.
+
+**Correction to ADR-048 §2 (a confound the single-sample spike missed).** §2 states the
+judge's coverage catch is criteria-*dependent* and cites the leap-year fixture: "the judge
+caught the gap only because the requirement stated the century rule." That sub-claim is
+FALSIFIED. The coverage catch survives criteria-thinning through three criteria-independent
+sources — world knowledge (d), naming/signature semantics (e), and test-shape structure —
+and collapses ONLY when all three are stripped (e2 opaque: 0/5, and consistently so). The
+§2 mechanism is real but its trigger is far narrower than "thin requirement": degradation
+needs thin criteria AND an opaque spec with no reconstructable tell. The §2 *decision*
+(criteria-as-contract primary) survives; the supporting rationale is corrected. One
+Conditional-Acceptance target — judge consistency — now has supporting evidence: every one
+of the 8 (fixture × condition) cells was unanimous across N=5 (0/5 or 5/5, never split).
+
+**The generation-side dual (practitioner, forward thread, musing-not-committed).** The
+reframe measured only the VERIFICATION role of criteria (does the judge catch a bad
+deliverable). Criteria's load-bearing value for the small-model bet is on the GENERATION
+side (does a spec let a weak builder *produce* a good deliverable), which these fixtures do
+not touch — the spike supplied the generated artifact and exercised only the check. The two
+are the same contract doing two jobs: it constrains generation (converting an open-ended
+task into build-against-tests, tractable for a small model — TDD / specification-by-example)
+AND it grounds verification. That is why it is a two-way street, not two mechanisms.
+
+The sharpening: the verification-strength gradient (ADR-048 §4 — concrete/tests deterministic
+and strong, prose/judge soft) has a **generation-strength dual**. "Spec then generate against
+it" (TDD as a metaphor for any generative need) holds structurally at every level
+(spec → generate → check → iterate), but its *torque* tracks the check's determinism: tight
+at the concrete bottom (tests, types, schema), weak at the abstract top (prose, "whatever").
+Because both properties come from the same contract, a thin-and-soft spec loses
+generation-constraint and verification-catch TOGETHER — exactly the opaque-corner failure
+(e2). The pyramid therefore governs both sides symmetrically: the human / capable tier owns
+the abstract top because *generating* the abstract spec is the irreducible hard half (the
+verify-vs-generate asymmetry, ADR-048 §Deferred); the small-model loop has torque at the
+concrete bottom. Forward/north-star (feeds the composer-ensemble direction), not WP-D8 scope.
+
+**Implication for elicitation (refines the acceptance-criteria surface).** The invariant is
+criteria-*present*; elicitation is how it is upheld when the human does not supply them:
+human-sourced in flow-mode, elicitor-sourced (fallback) in autonomous mode. Not-always-
+eliciting risks, for weak builders specifically: (1) round-thrash / non-convergence (the gate
+rejects but does not steer; elicited tests convert open-ended generation into
+build-against-tests); (2) silent ship in the opaque corner (e2 — worse when the builder
+authored its own tests, since the judge has no independent contract to expand coverage
+against); (3) frontier-fallback pressure. Cost to keep visible: the elicitor is itself a
+small model and can fabricate criteria not in the requirement (false-rejects / misdirection),
+so it needs a derive-and-check guard or human surfacing in flow-mode. This lives on the
+generation side (the build shape / ADR-047 shape-catalog, WP-C8), threaded into the D8 gate
+as a criteria-contract input, not built as a D8 seat.
+
 ## Artifacts
 
 - Ensemble: `.llm-orc/ensembles/q2-accept-gate.yaml`
 - Scripts: `.llm-orc/scripts/spike-q2-grounded-accept/{executor,gate,terminal_accept,terminal_revise}.py`
 - Drive: `scratch/spike-q2-grounded-accept/drive.py`
+- WP-D8 reframe drives: `scratch/spike-q2-grounded-accept/drive_reframe{,_novel,_opaque}.py`
