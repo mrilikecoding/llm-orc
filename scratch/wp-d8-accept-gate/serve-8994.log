@@ -1,0 +1,9 @@
+Starting llm-orc agentic serving layer at http://127.0.0.1:8994
+Press Ctrl+C to stop
+INFO:     Started server process [55297]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8994 (Press CTRL+C to quit)
+INFO:     127.0.0.1:59191 - "GET /v1/models HTTP/1.1" 200 OK
+[serve-trace] serving: classify -> decide -> resolve -> seat -> shape -> form_gate -> emit
+INFO:     127.0.0.1:59193 - "POST /v1/chat/completions HTTP/1.1" 200 OK
