@@ -42,8 +42,16 @@ def main() -> None:
 
     build = bool(gated.get("build", False))
     content = str(gated.get("content", ""))
+    accept = gated.get("accept")
 
-    if build and gated.get("valid", False):
+    if build and accept is False:
+        # The accept gate rejected the deliverable: route another round rather
+        # than ship it, even though it parses (ODP-2, the client owns the loop;
+        # ADR-048 §1). Only an explicit False rejects — an ungated turn (accept
+        # None) or an accepted one falls through to the normal path.
+        reason = gated.get("accept_reason") or "accept gate rejected"
+        outcome = {"finish": True, "content": f"Another round needed: {reason}"}
+    elif build and gated.get("valid", False):
         outcome = {
             "finish": False,
             "file": gated.get("file", "solution.py"),

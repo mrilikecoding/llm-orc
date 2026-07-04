@@ -71,6 +71,11 @@ def main() -> None:
                 "content": content,
                 "valid": valid,
                 "reason": reason,
+                # Pass the accept-gate verdict through to emit unchanged (the
+                # form-gate is the cheaper syntax rung; the accept gate ran in the
+                # build shape). ``None`` when the seat carries no verdict.
+                "accept": shaped.get("accept"),
+                "accept_reason": str(shaped.get("accept_reason", "")),
             }
         )
     )

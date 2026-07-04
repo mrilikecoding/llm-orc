@@ -50,3 +50,17 @@ def test_unparseable_python_deliverable_is_refused() -> None:
 def test_non_build_turn_is_inert() -> None:
     gated = _gate({"build": False, "file": "n/a", "content": "prose"})
     assert gated["valid"] is True
+
+
+def test_form_gate_passes_the_accept_verdict_through() -> None:
+    gated = _gate(
+        {
+            "build": True,
+            "file": "a.py",
+            "content": "x = 1",
+            "accept": False,
+            "accept_reason": "tests inadequate",
+        }
+    )
+    assert gated["accept"] is False
+    assert gated["accept_reason"] == "tests inadequate"
