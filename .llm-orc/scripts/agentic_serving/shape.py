@@ -78,6 +78,23 @@ def _envelope_deliverable(seat_terminal: str) -> str | None:
     return primary if isinstance(primary, str) else None
 
 
+def _envelope_verdict(seat_terminal: str) -> tuple[bool | None, str]:
+    """The accept-gate verdict from a build-gated envelope's diagnostics, or
+    ``(None, "")`` when the seat carries no verdict (an ungated code-seat or a
+    non-build explainer). ``None`` means "no gate ran here"; the emit node treats
+    only an explicit ``False`` as a rejection (WP-D8; ADR-048 §1)."""
+    try:
+        env = json.loads(seat_terminal)
+    except (json.JSONDecodeError, TypeError):
+        return None, ""
+    if not isinstance(env, dict):
+        return None, ""
+    diagnostics = env.get("diagnostics")
+    if not isinstance(diagnostics, dict) or "accept" not in diagnostics:
+        return None, ""
+    return bool(diagnostics["accept"]), str(diagnostics.get("accept_reason", ""))
+
+
 def main() -> None:
     deps = _deps(sys.stdin.read().strip())
     # The routing decision is ``resolve`` when the guarded decider ran, else the
@@ -95,6 +112,8 @@ def main() -> None:
     if deliverable is None:
         deliverable = seat_terminal.strip()
 
+    accept, accept_reason = _envelope_verdict(seat_terminal)
+
     print(
         json.dumps(
             {
@@ -103,6 +122,8 @@ def main() -> None:
                 ),
                 "file": decision.get("file", "solution.py"),
                 "content": deliverable,
+                "accept": accept,
+                "accept_reason": accept_reason,
             }
         )
     )

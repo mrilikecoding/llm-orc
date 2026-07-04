@@ -64,19 +64,29 @@ def _ambiguous(dispatch_input: str) -> dict[str, Any]:
     }
 
 
-def test_structural_decision_passes_through_unchanged() -> None:
+def test_structural_decision_passes_through_and_maps_to_the_build_shape() -> None:
     resolved = _resolve(_structural())
-    assert resolved["target"] == "code-seat"
+    # A code intent resolves to the default gated build shape (WP-D8, default-on).
+    assert resolved["target"] == "build-gated"
     assert resolved["build"] is True
+    # build/kind/file/dispatch_input pass through from classify unchanged.
     assert resolved["file"] == "add.py"
     assert resolved["dispatch_input"] == "write add in add.py"
+
+
+def test_code_intent_maps_to_the_gated_build_shape() -> None:
+    # The semantic intent 'code-seat' maps to the gated build shape at the
+    # routing layer; explain stays a prose seat, unknown stays unresolved.
+    assert _resolve(_structural(target="code-seat"))["target"] == "build-gated"
+    prose = _resolve(_structural(target="explainer", build=False))
+    assert prose["target"] == "explainer"
 
 
 def test_ambiguous_turn_takes_the_decider_target_and_derives_build() -> None:
     resolved = _resolve(
         _ambiguous("sort this data for me"), json.dumps({"target": "code-seat"})
     )
-    assert resolved["target"] == "code-seat"
+    assert resolved["target"] == "build-gated"
     assert resolved["build"] is True
     assert resolved["kind"] == "python_module"
     # file and dispatch_input still come from classify

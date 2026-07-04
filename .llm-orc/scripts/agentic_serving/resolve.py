@@ -18,10 +18,17 @@ import re
 import sys
 
 # The closed seat set the decider chooses from, and the build/kind each implies.
+# These are the semantic intents (code vs prose), not the serving shape.
 _DERIVED = {
     "code-seat": ("python_module", True),
     "explainer": ("explanation", False),
 }
+# Intent -> serving shape. The default build shape is the gated accept shape
+# (WP-D8: the accept gate is default-on for build turns; ADR-048 §1 + the gate-
+# conversation synthesis). Explain stays a prose seat. WP-C8's registry will make
+# this mapping operator-curated; here it is the built-in default.
+_BUILD_SHAPE = "build-gated"
+_SHAPE = {"code-seat": _BUILD_SHAPE}
 _JSON_RE = re.compile(r"\{[^{}]*\}")
 
 
@@ -78,10 +85,15 @@ def main() -> None:
         kind = classify.get("kind", "")
         build = bool(classify.get("build", False))
 
+    # Map the semantic intent to the serving shape the seat dispatches: a code
+    # intent resolves to the default gated build shape (unknown/empty and the
+    # prose seat pass through unchanged).
+    shape_target = _SHAPE.get(target, target)
+
     print(
         json.dumps(
             {
-                "target": target,
+                "target": shape_target,
                 "kind": kind,
                 "file": file,
                 "dispatch_input": dispatch_input,

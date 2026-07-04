@@ -71,3 +71,38 @@ def test_shape_degrades_to_raw_seat_terminal_when_no_envelope() -> None:
     )
     assert shaped["build"] is False
     assert "adds two numbers" in shaped["content"]
+
+
+def test_shape_carries_the_accept_verdict_from_the_build_gated_envelope() -> None:
+    code = "def add(a, b):\n    return a + b"
+    envelope = {
+        "status": "success",
+        "primary": code,
+        "artifacts": [{"content": code, "content_type": "text/x-python"}],
+        "diagnostics": {
+            "ensemble": "build-gated",
+            "accept": False,
+            "accept_reason": "tests inadequate",
+        },
+    }
+    shaped = _shape(
+        {"build": True, "file": "add.py", "kind": "python_module"},
+        {"results": {"envelope": {"response": json.dumps(envelope)}}},
+    )
+    assert shaped["content"] == code
+    assert shaped["accept"] is False
+    assert "inadequate" in shaped["accept_reason"]
+
+
+def test_shape_has_no_verdict_for_an_ungated_seat_envelope() -> None:
+    # A code-seat / explainer envelope carries no accept diagnostics -> None.
+    envelope = {
+        "status": "success",
+        "primary": "x = 1",
+        "artifacts": [{"content": "x = 1"}],
+    }
+    shaped = _shape(
+        {"build": True, "file": "a.py"},
+        {"results": {"envelope": {"response": json.dumps(envelope)}}},
+    )
+    assert shaped["accept"] is None

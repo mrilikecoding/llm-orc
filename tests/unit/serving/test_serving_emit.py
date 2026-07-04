@@ -67,3 +67,37 @@ def test_non_build_is_a_prose_finish() -> None:
     outcome = _emit({"build": False, "valid": True, "content": "It adds two numbers."})
     assert outcome["finish"] is True
     assert "adds two numbers" in outcome["content"]
+
+
+def test_rejected_accept_gate_emits_another_round_with_no_write() -> None:
+    # accept=False routes another round (ODP-2: the client owns the loop); the
+    # serve never writes a gate-rejected deliverable, even if it parses.
+    outcome = _emit(
+        {
+            "build": True,
+            "valid": True,
+            "file": "a.py",
+            "content": "def f():\n    pass",
+            "accept": False,
+            "accept_reason": "tests inadequate to verify the requirement",
+        }
+    )
+    assert outcome["finish"] is True
+    assert "another round" in outcome["content"].lower()
+    assert "inadequate" in outcome["content"]
+    assert "file" not in outcome
+
+
+def test_accepted_build_emits_a_file_write() -> None:
+    outcome = _emit(
+        {
+            "build": True,
+            "valid": True,
+            "file": "a.py",
+            "content": "def f():\n    pass",
+            "accept": True,
+            "accept_reason": "tests pass and are adequate",
+        }
+    )
+    assert outcome["finish"] is False
+    assert outcome["file"] == "a.py"
