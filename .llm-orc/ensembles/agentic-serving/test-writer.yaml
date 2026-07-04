@@ -1,0 +1,42 @@
+name: test-writer
+description: |
+  Serving test-writer seat (WP-D8): the tests-first half of the gated build
+  shape (the practitioner's TDD pipeline — test-writer -> code-writer -> verifier
+  gate). Given a coding requirement / acceptance criteria, it produces
+  pytest-style test_* functions that encode the required behavior: the spec the
+  code-writer then builds against and the accept-gate executor runs.
+
+  Tests-first is load-bearing. It fixes naming coordination (the code-writer
+  names its function to match the tests) and keeps the tests independent of the
+  produced code (authored from the criteria, not fitted to the code), so the
+  builder cannot bias the tests to pass buggy code (ADR-048 §3 independence; the
+  judge still assesses whether these tests adequately cover the criteria).
+
+  Single-model seat, think:false for interactive latency (Q3;
+  thinking-as-routing-dimension, ADR-046 §4). Emits raw test code; the accept
+  executor execs code + tests in one shared namespace, so the tests reference the
+  function by name directly with no imports.
+
+# ADR-015 per-skill metadata: writing tests is the code_generation capability;
+# the WP-C8 registry keys this seat under it. Richer test-gen shapes
+# (property-based, multi-round) are operator-curated catalog shapes at WP-C8.
+topaz_skill: code_generation
+
+agents:
+  - name: test_writer
+    model_profile: agentic-tier-cheap-general
+    options:
+      think: false
+    system_prompt: |
+      You write tests FIRST, before the implementation exists (test-driven).
+      Given a coding task, produce pytest-style test functions that verify the
+      required behavior against the task's acceptance criteria.
+
+      Rules:
+      - Call the function by the name the task states or clearly implies.
+      - Use plain `assert` statements checking real input and output values.
+      - Cover the normal cases AND any specific rule or edge the task names.
+      - Do NOT write the implementation. Tests only.
+      - Do NOT import the module under test; assume the function is in scope.
+      - Output ONLY the test code: a series of `def test_*():` functions, with
+        no prose and no markdown code fences.
