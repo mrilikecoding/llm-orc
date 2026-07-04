@@ -27,6 +27,26 @@ RUNNER = Path(__file__).with_name("accept_executor_runner.py")
 DEFAULT_TIMEOUT = 15.0
 
 
+def _from_dependencies(envelope: dict[str, object]) -> dict[str, object] | None:
+    """The ``{requirement, code, tests}`` contract from a dependency (the
+    build-gated ``gather`` node), when the executor runs inside the ensemble.
+    Returns ``None`` in flat direct-payload mode (no such dependency)."""
+    deps = envelope.get("dependencies")
+    if not isinstance(deps, dict):
+        return None
+    for node in deps.values():
+        response = node.get("response") if isinstance(node, dict) else None
+        if not isinstance(response, str):
+            continue
+        try:
+            parsed = json.loads(response)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and "code" in parsed and "tests" in parsed:
+            return parsed
+    return None
+
+
 def _payload(envelope: dict[str, object]) -> dict[str, object]:
     """Extract the task payload across llm-orc's envelope formats: a root node
     arrives as ``{"input": "<json>"}``, a dependent node as
@@ -90,10 +110,10 @@ def main() -> None:
     data: dict[str, object] = {}
     try:
         envelope = json.loads(raw)
-        if isinstance(envelope, dict):
-            data = _payload(envelope)
     except (json.JSONDecodeError, TypeError):
-        data = {}
+        envelope = None
+    if isinstance(envelope, dict):
+        data = _from_dependencies(envelope) or _payload(envelope)
 
     requirement = str(data.get("requirement", ""))
     code = str(data.get("code", ""))
