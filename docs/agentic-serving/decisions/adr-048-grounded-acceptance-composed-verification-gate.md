@@ -2,6 +2,21 @@
 
 **Status:** Accepted (Conditional) — BUILD validation pending (2026-07-02)
 
+> **BUILD validation update (Cycle-8 WP-D8, 2026-07-03).** The owed Grounding Reframe ran
+> (thinned-criteria rerun; `essays/research-logs/cycle-8-spike-q2-grounded-acceptance.md`
+> §"WP-D8 Grounding Reframe"). Findings: (a) the anti-gaming catch is 100%
+> criteria-independent (10/10 across rich/thin), grounding the default-on-for-build-turns
+> decision. (b) §2's "coverage catch is criteria-dependent" sub-claim is corrected: the catch
+> survives criteria-thinning via world-knowledge / naming / test-shape tells and degrades ONLY
+> in the opaque-spec-with-no-tell corner (e2: 0/5), so the degradation trigger is narrower than
+> §2 states — the *decision* (criteria-as-contract primary) stands, the supporting rationale is
+> corrected. (c) The judge-consistency Conditional-Acceptance target has supporting evidence:
+> every (fixture × condition) cell was unanimous across N=5. Remaining Conditional targets
+> (independence vs a live builder, the produced-artifact injection channel, sandboxed
+> execution, the unstated-input oracle rung) stay pending. Elicitation is reframed as upholding
+> a criteria-*present* invariant on the generation side (WP-C8 / shape-catalog), threaded into
+> this gate as a criteria-contract input, not built as a gate seat.
+
 ## Context
 
 Q2 (§6.2b) is the DECIDE item after Q4 (ADR-047). ADR-046 settled the per-turn handler
